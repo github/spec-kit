@@ -112,7 +112,7 @@ available during this deprecation period until the removal stage.
 | ------------------------- | --------------------------------- |
 | `/speckit.taskstoissues`  | `/speckit.github.taskstoissues`   |
 
-Apart from the core command's deprecation warning, conversion behavior is unchanged: the same feature resolution, the same `plan.md` and `tasks.md` prerequisites, the same remote validation, the same deduplication across open and closed issues, the same issue titles, and the same hook contract. This extension does **not** register `speckit.taskstoissues` as an alias, so the two commands coexist without shadowing each other while the core command still exists.
+Apart from the core command's deprecation warning, conversion behavior is unchanged: the same feature resolution, the same `plan.md` and `tasks.md` prerequisites, the same remote validation, the same deduplication across open and closed issues, the same issue titles, and the same hook contract. The extension command and deprecated core command coexist without shadowing each other while the core command still exists.
 
 ### Presets and dependent extensions
 
@@ -130,7 +130,7 @@ If an extension proposal or external dependency declaration uses
 `speckit.github.taskstoissues`. `requires.commands` is not an enforced dependency
 field in the current extension manifest API, so do not rely on that declaration
 to install or check the GitHub extension. Follow the supported requirements in
-the [extension API reference](../EXTENSION-API-REFERENCE.md#extension-manifest).
+the [extension API reference](https://github.github.io/spec-kit/extensions/api.html#extension-manifest).
 
 Preset command overrides are separate from command references: an override of
 `speckit.taskstoissues` does not automatically customize the namespaced GitHub

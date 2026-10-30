@@ -27,7 +27,7 @@ Read the GitHub issue to extract all metadata:
 
 ### 2. Validate against publishing rules
 
-Check **all** of the following (per `extensions/EXTENSION-PUBLISHING-GUIDE.md`):
+Check **all** of the following (per `docs/extensions/publishing.md`):
 
 | Check | How |
 |-------|-----|

@@ -242,6 +242,7 @@ def integration_upgrade(
             script_type=selected_script,
             raw_options=raw_options,
             events=events_map,
+            force=force,
         )
         settings = _with_integration_setting(
             current,

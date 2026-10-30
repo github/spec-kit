@@ -853,7 +853,7 @@ def register(app: typer.Typer) -> None:
                     "integration": resolved_integration.key,
                     "here": here,
                     "script": selected_script,
-                    "feature_numbering": "sequential",
+                    "feature_numbering": previous_init_options.get("feature_numbering", "sequential"),
                     "speckit_version": get_speckit_version(),
                     "allow_symlinks": allow_symlinks,
                 }

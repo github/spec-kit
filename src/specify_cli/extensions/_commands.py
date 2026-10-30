@@ -64,9 +64,9 @@ def _command_safe_id(raw_id: object, placeholder: str = "<extension-id>") -> str
     ``foo; rm -rf ~`` could otherwise be interpolated into a command we
     explicitly encourage the user to copy and run. ``rich.markup.escape`` only
     neutralizes Rich markup, not shell metacharacters, so it is not sufficient
-    here. Only emit the real ID when it matches the same
+    here. Only emit the real ID when its entire value matches the same
     lowercase-alphanumeric-and-hyphen rule ``ExtensionManifest`` enforces
-    (``^[a-z0-9-]+$``); otherwise fall back to a literal placeholder so the
+    (a full match of ``[a-z0-9-]+``); otherwise fall back to a literal placeholder so the
     printed command never carries catalog-controlled shell text.
 
     A leading hyphen is additionally rejected: an ID like ``--force`` satisfies
@@ -78,7 +78,7 @@ def _command_safe_id(raw_id: object, placeholder: str = "<extension-id>") -> str
     text = str(raw_id)
     if text.startswith("-"):
         return placeholder
-    if VALID_EXTENSION_ARTIFACT_NAME_PATTERN.match(text):
+    if VALID_EXTENSION_ARTIFACT_NAME_PATTERN.fullmatch(text):
         return text
     return placeholder
 

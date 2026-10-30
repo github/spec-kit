@@ -14,6 +14,7 @@ API, Typer application, and registration.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -874,12 +875,12 @@ ResolvedEvents = dict[str, list[dict[str, Any]]]
 
 
 def _normalize_handlers(value: Any) -> list[dict[str, Any]]:
-    """Coerce a single handler config or a list of them into a validated list.
+    """Coerce a single handler config or a list of them into a list of mappings.
 
     Accepts both the legacy single-mapping shape (``{command: ...}``) and the
-    explicit list shape (``[{command: ...}, ...]``). Drops any entry that is
-    not a mapping or lacks a ``command`` with a warning, so a malformed user
-    override never reaches installation and crashes on ``cfg.get(...)`` (#21).
+    explicit list shape (``[{command: ...}, ...]``). Drops entries that are
+    not mappings with a warning. The remaining handlers require validation by
+    the caller before installation.
     """
     if isinstance(value, dict):
         value = [value]
@@ -915,16 +916,15 @@ def _validate_resolved_event(event_name: str, handlers: list[dict[str, Any]]) ->
                 f"Event '{event_name}' handler missing required non-empty 'command' string"
             )
         # C10: matcher must be a string (or absent). A non-string matcher such
-        # as `matcher: []` passes extension validation but later crashes
-        # by_matcher.setdefault(matcher, ...) with TypeError: unhashable type.
+        # as `matcher: []` later crashes by_matcher.setdefault with TypeError.
         matcher = handler.get("matcher")
-        if matcher is not None and not isinstance(matcher, str):
+        if "matcher" in handler and not isinstance(matcher, str):
             raise ValidationError(
                 f"Event '{event_name}' handler has invalid 'matcher': "
                 "must be a string"
             )
         timeout = handler.get("timeout")
-        if timeout is not None:
+        if "timeout" in handler:
             if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
                 raise ValidationError(
                     f"Event '{event_name}' handler has invalid 'timeout': must be a positive integer"
@@ -996,7 +996,7 @@ def resolve_events(
                     override_file, integration_key,
                 )
             else:
-                key_events = key_data.get("events", {})
+                key_events = key_data.get("events")
                 if not isinstance(key_events, dict):
                     logger.warning(
                         "Override %s: 'events' for '%s' is not a mapping; ignoring override",
@@ -1092,7 +1092,7 @@ def collect_extension_events(project_root: Path) -> ResolvedEvents:
     obsolete name and ``_find_command_template`` could not match it, leaving
     the hook silently inert.
     """
-    from ..extensions import ExtensionManager
+    from ..extensions import ExtensionManager, ValidationError
 
     events: ResolvedEvents = {}
     exts_dir = project_root / ".specify" / "extensions"
@@ -1146,8 +1146,18 @@ def collect_extension_events(project_root: Path) -> ResolvedEvents:
             continue
         for event, config in runtime.items():
             handlers = _normalize_handlers(config)
-            if handlers:
-                events.setdefault(event, []).extend(handlers)
+            for handler in handlers:
+                try:
+                    _validate_resolved_event(event, [handler])
+                except ValidationError as exc:
+                    logger.warning(
+                        "Extension %s: skipping invalid event handler for '%s': %s",
+                        ext_id,
+                        event,
+                        exc,
+                    )
+                    continue
+                events.setdefault(event, []).append(handler)
     return events
 
 
@@ -1345,6 +1355,8 @@ def install_integration_events(
     project_root: Path,
     manifest: IntegrationManifest,
     events: ResolvedEvents,
+    *,
+    force: bool = False,
 ) -> list[Path]:
     """Generate dispatcher, merge native config, return created files.
 
@@ -1377,7 +1389,7 @@ def install_integration_events(
     # new manifest no longer claims it and stale cleanup excludes it).
     if not filtered:
         _remove_native_event_hooks(integration, project_root, manifest)
-        _cleanup_shared_dispatcher(integration, project_root, manifest)
+        _cleanup_shared_dispatcher(integration, project_root, manifest, force=force)
         return []
 
     created: list[Path] = []
@@ -1690,51 +1702,74 @@ def _other_event_integrations_reference_dispatcher(
 
 
 def _cleanup_shared_dispatcher(
-    integration: IntegrationBase, project_root: Path, manifest: IntegrationManifest
+    integration: IntegrationBase, project_root: Path, manifest: IntegrationManifest,
+    *,
+    force: bool = False,
 ) -> None:
-    """Drop this integration's manifest claim on the shared dispatcher and
-    delete the file only when no other installed event-capable integration
-    still references it (#10, S3).
+    """Release this integration's claim; delete only its last managed copy."""
+    from ..integrations.manifest import IntegrationManifest
 
-    The manifest.remove() runs in both branches (S1): if we retain the file
-    but leave it tracked, the subsequent manifest.uninstall() in teardown()
-    sees the matching hash and deletes the file another integration still
-    depends on. Used by full teardown and by the empty-resolved-map install
-    path so an ``--events false`` upgrade of the last event integration
-    doesn't orphan ``.specify/events.py`` permanently (S3).
-    """
     dispatcher_rel = EVENTS_DISPATCHER_REL
-    # Drop this integration's manifest claim if present. The remove() is
-    # conditional (S1): an upgrade passes a *fresh* manifest that may never
-    # have claimed the dispatcher, so the key may be absent — that's a no-op.
+    owner = manifest
+    # Upgrades emit into a fresh manifest before replacing the installed one.
+    # Only this integration's prior manifest can supply its missing claim.
+    if dispatcher_rel not in owner.files:
+        try:
+            owner = IntegrationManifest.load(integration.key, project_root)
+        except FileNotFoundError:
+            owner = manifest
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "Could not read prior dispatcher manifest for '%s'; preserving %s: %s",
+                integration.key, project_root / dispatcher_rel, exc,
+            )
+            return
+    expected_hash = owner.files.get(dispatcher_rel)
+    recovered = owner.is_recovered(dispatcher_rel)
+    partial = owner.ownership_modes.get(dispatcher_rel) == "partial"
+
+    # Release even retained claims so manifest-only teardown cannot delete a
+    # user-owned copy or a dispatcher still used by another integration.
     if dispatcher_rel in manifest.files:
         manifest.remove(dispatcher_rel)
-    # S2: run the no-other-references deletion independently of whether the
-    # new manifest currently contains the key. An ``integration upgrade
-    # --events false`` passes a fresh manifest that never recorded the
-    # dispatcher, so gating the deletion on its presence orphans the file the
-    # old on-disk manifest owned — and stale cleanup excludes it (C3). If no
-    # other installed event-capable integration references the dispatcher,
-    # delete it; otherwise leave it for them.
-    if not _other_event_integrations_reference_dispatcher(project_root, integration.key):
-        dispatcher_path = project_root / dispatcher_rel
-        if dispatcher_path.exists():
-            _ensure_safe_destination(dispatcher_path)
-            _unlink_file(dispatcher_path, missing_ok=True)
+    if not expected_hash or recovered or partial:
+        return
+    if _other_event_integrations_reference_dispatcher(project_root, integration.key):
+        return
+    dispatcher_path = project_root / dispatcher_rel
+    if dispatcher_path.exists():
+        _ensure_safe_destination(dispatcher_path)
+        if not force:
+            try:
+                content = dispatcher_path.read_bytes()
+            except OSError as exc:
+                logger.warning("Preserving unreadable dispatcher %s: %s", dispatcher_path, exc)
+                return
+            # Another integration may have regenerated the shared file since
+            # this manifest recorded it. Accept only exact generated LF/CRLF.
+            matches = hashlib.sha256(content).hexdigest() == expected_hash or content in (
+                _EVENTS_DISPATCHER_TEMPLATE.encode("utf-8"),
+                _EVENTS_DISPATCHER_TEMPLATE.replace("\n", "\r\n").encode("utf-8"),
+            )
+            if not matches:
+                logger.warning("Preserving modified dispatcher: %s", dispatcher_path)
+                return
+        _unlink_file(dispatcher_path, missing_ok=True)
 
 
 def remove_integration_events(
-    integration: IntegrationBase, project_root: Path, manifest: IntegrationManifest
+    integration: IntegrationBase, project_root: Path, manifest: IntegrationManifest,
+    *,
+    force: bool = False,
 ) -> None:
     """Remove Specify-authored event entries from native config.
 
-    The shared ``.specify/events.py`` dispatcher is deleted only when no other
-    installed event-capable integration still references it (#10); otherwise
-    it is left in place so multi-install setups don't lose the dispatcher
-    mid-stream.
+    The shared dispatcher is deleted only if this integration owns it and no
+    other installed integration references it. Modified copies require force;
+    unowned or recovered copies are always retained.
     """
     _remove_native_event_hooks(integration, project_root, manifest)
-    _cleanup_shared_dispatcher(integration, project_root, manifest)
+    _cleanup_shared_dispatcher(integration, project_root, manifest, force=force)
 
     # Clean up opencode TS plugin (owned solely by the opencode integration).
     if integration.key == "opencode":
@@ -1906,12 +1941,12 @@ def validate_events(data: dict[str, Any]) -> None:
             # C10: matcher must be a string (or absent). A non-string matcher
             # such as `matcher: []` would later crash by_matcher.setdefault.
             matcher = event_config.get("matcher")
-            if matcher is not None and not isinstance(matcher, str):
+            if "matcher" in event_config and not isinstance(matcher, str):
                 raise ValidationError(
                     f"Event '{event_name}' has invalid 'matcher': must be a string"
                 )
             timeout = event_config.get("timeout")
-            if timeout is not None:
+            if "timeout" in event_config:
                 if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
                     raise ValidationError(
                         f"Event '{event_name}' has invalid 'timeout': must be a positive integer"

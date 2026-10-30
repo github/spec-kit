@@ -384,11 +384,25 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="not valid UTF-8"):
             ExtensionManifest(manifest_path)
 
-    def test_invalid_extension_id(self, temp_dir, valid_manifest_data):
+    @pytest.mark.parametrize(
+        "extension_id",
+        [
+            "Invalid_ID",
+            "",
+            "../test-ext",
+            "test-ext\n",
+            "test-ext\r\n",
+            "test\next",
+            "test-ext ",
+            " test-ext",
+        ],
+    )
+    def test_invalid_extension_id(self, temp_dir, valid_manifest_data, extension_id):
         """Test manifest with invalid extension ID format."""
         import yaml
 
-        valid_manifest_data["extension"]["id"] = "Invalid_ID"  # Uppercase not allowed
+        valid_manifest_data["extension"]["id"] = extension_id
+        valid_manifest_data["provides"]["commands"] = []
 
         manifest_path = temp_dir / "extension.yml"
         with open(manifest_path, 'w') as f:
@@ -876,6 +890,26 @@ provides:
             yaml.dump(valid_manifest_data, f)
 
         with pytest.raises(ValidationError, match="Invalid hook 'after_tasks'"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("as_list", [False, True])
+    @pytest.mark.parametrize("command", [
+        pytest.param(["speckit.test-ext.hello"], id="list"),
+        pytest.param({"name": "speckit.test-ext.hello"}, id="mapping"),
+        pytest.param(123, id="integer"),
+        pytest.param(True, id="boolean"),
+        pytest.param("  ", id="blank"),
+    ])
+    def test_hook_command_must_be_a_string(
+        self, temp_dir, valid_manifest_data, command, as_list
+    ):
+        """Reject non-string commands before hook registration can fail (#5080)."""
+        entry = {"command": command}
+        valid_manifest_data["hooks"]["after_tasks"] = [entry] if as_list else entry
+        manifest_path = temp_dir / "extension.yml"
+        manifest_path.write_text(yaml.safe_dump(valid_manifest_data), encoding="utf-8")
+
+        with pytest.raises(ValidationError, match="Hook 'after_tasks' missing required 'command' string"):
             ExtensionManifest(manifest_path)
 
     def test_hook_single_mapping_still_accepted(self, extension_dir):
@@ -7190,6 +7224,21 @@ class TestCatalogStack:
 class TestExtensionIgnore:
     """Test .extensionignore support during extension installation."""
 
+    @pytest.mark.parametrize("excluded", ["extension.yml", "commands/hello.md"])
+    def test_declared_files_are_not_exempt(self, temp_dir, valid_manifest_data, excluded):
+        """Filtering does not implicitly protect manifests or declared command files."""
+        ext_dir = self._make_extension(
+            temp_dir, valid_manifest_data, ignore_content=excluded + "\n"
+        )
+        project = temp_dir / "project"
+        (project / ".specify").mkdir(parents=True)
+        manager = ExtensionManager(project)
+
+        manifest = manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        assert manager.registry.is_installed(manifest.id)
+        assert not (project / ".specify/extensions" / manifest.id / excluded).exists()
+
     def _make_extension(self, temp_dir, valid_manifest_data, extra_files=None, ignore_content=None):
         """Helper to create an extension directory with optional extra files and .extensionignore."""
         import yaml
@@ -8737,6 +8786,83 @@ class TestConfigManagerNonMappingManifestConfigSection:
         (ext_dir / "extension.yml").write_text("config:\n  - foo\n", encoding="utf-8")
         executor = HookExecutor(tmp_path)
         assert executor._evaluate_condition("config.x is set", "jira") is False
+
+
+class TestConfigManagerTopLevelManifestDefaults:
+    """A top-level `defaults:` in extension.yml must be loaded (#5084).
+
+    The extension template and docs/extensions/api.md put defaults under a
+    top-level ``defaults:`` key, but ``_get_extension_defaults`` only read
+    ``config.defaults``, so an extension built from the template silently had
+    no defaults at runtime.
+    """
+
+    def _make(self, tmp_path, manifest_body: str):
+        ext_dir = tmp_path / ".specify" / "extensions" / "myext"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "extension.yml").write_text(manifest_body, encoding="utf-8")
+        return ConfigManager(tmp_path, "myext")
+
+    def test_top_level_defaults_load(self, tmp_path):
+        cm = self._make(tmp_path, "defaults:\n  feature:\n    enabled: true\n")
+        assert cm.get_config() == {"feature": {"enabled": True}}
+
+    def test_shipped_template_defaults_load(self, tmp_path):
+        """The defaults in extensions/template/extension.yml reach get_config()."""
+        template = (
+            Path(__file__).resolve().parent.parent
+            / "extensions" / "template" / "extension.yml"
+        ).read_text(encoding="utf-8")
+        expected = yaml.safe_load(template)["defaults"]
+        assert expected, "template no longer ships example defaults"
+        cm = self._make(tmp_path, template)
+        assert cm.get_config() == expected
+
+    def test_config_defaults_win_on_conflict(self, tmp_path):
+        cm = self._make(
+            tmp_path,
+            "defaults:\n  feature:\n    enabled: true\n    auto_sync: true\n"
+            "config:\n  defaults:\n    feature:\n      auto_sync: false\n",
+        )
+        assert cm.get_config() == {"feature": {"enabled": True, "auto_sync": False}}
+
+    def test_project_config_merges_over_top_level_defaults(self, tmp_path):
+        cm = self._make(
+            tmp_path, "defaults:\n  feature:\n    enabled: true\n    auto_sync: true\n"
+        )
+        (cm.extension_dir / "myext-config.yml").write_text(
+            "feature:\n  enabled: false\n", encoding="utf-8"
+        )
+        assert cm.get_config() == {"feature": {"enabled": False, "auto_sync": True}}
+
+    def test_non_mapping_top_level_defaults_is_ignored(self, tmp_path):
+        cm = self._make(
+            tmp_path,
+            "defaults:\n  - foo\nconfig:\n  defaults:\n    feature:\n      enabled: true\n",
+        )
+        assert cm.get_config() == {"feature": {"enabled": True}}
+
+    @pytest.mark.parametrize(
+        "config_section",
+        [
+            "config:\n  - foo\n",
+            "config: just-a-string\n",
+            "config:\n  defaults:\n    - foo\n",
+            "config:\n  defaults: just-a-string\n",
+        ],
+        ids=["list-config", "scalar-config", "list-defaults", "scalar-defaults"],
+    )
+    def test_top_level_defaults_survive_non_mapping_config(self, tmp_path, config_section):
+        """A malformed `config` or `config.defaults` must not drop valid top-level defaults."""
+        cm = self._make(
+            tmp_path, "defaults:\n  feature:\n    enabled: true\n" + config_section
+        )
+        assert cm.get_config() == {"feature": {"enabled": True}}
+
+    def test_hook_condition_sees_top_level_default(self, tmp_path):
+        self._make(tmp_path, "defaults:\n  feature:\n    enabled: true\n")
+        executor = HookExecutor(tmp_path)
+        assert executor._evaluate_condition("config.feature.enabled is set", "myext") is True
 
 
 class TestConfigManagerEnvPrefixCollision:

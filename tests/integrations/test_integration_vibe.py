@@ -1,14 +1,16 @@
 """Tests for VibeIntegration."""
 
+import json
 import os
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
 
 from specify_cli.events import install_integration_events, remove_integration_events
 from specify_cli.integrations import get_integration
-from specify_cli.integrations.base import IntegrationBase
+from specify_cli.integrations.base import IntegrationBase, SkillsIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
 from specify_cli.integrations.vibe import VibeIntegration
 
@@ -18,6 +20,24 @@ try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
     import tomli as tomllib  # type: ignore
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def _reset_vibe_model_invocation():
+    """``setup()`` stores ``--no-model-invocation`` on the process-wide Vibe
+    singleton; keep it from leaking between tests."""
+    vibe = get_integration("vibe")
+    vibe._disable_model_invocation = False
+    yield
+    vibe._disable_model_invocation = False
+
+
+def _skill_frontmatter(skill_file: Path) -> dict:
+    content = skill_file.read_text(encoding="utf-8")
+    return yaml.safe_load(content.split("---", 2)[1])
 
 
 def _vibe_manifest() -> MagicMock:
@@ -314,6 +334,39 @@ class TestVibeTomlMerging:
         remaining = self._parse(tmp_path)["hooks"]
         assert [h["name"] for h in remaining] == ["deny-rm-rf"]
 
+    @pytest.mark.parametrize(
+        "user_after",
+        (
+            "# NOTE: keep guard-bash first\n"
+            "[[hooks]]\n"
+            'name = "user-hook"\n'
+            'type = "pre_tool"\n'
+            'command = "guard-bash"\n',
+            "# notes about these hooks\n",
+        ),
+        ids=("comment-before-user-hook", "trailing-comment"),
+    )
+    def test_refresh_and_teardown_keep_comments_after_a_managed_hook(
+        self, tmp_path, user_after
+    ):
+        """A comment after a managed block is user content, not part of the block (#5079)."""
+        path = tmp_path / ".vibe" / "hooks.toml"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(
+            b'[[hooks]]\nname = "deny-rm-rf"\ntype = "pre_tool"\ncommand = "guard-rm"\n'
+        )
+        events = {"pre_tool_use": [{"command": "speckit.tdd.validate"}]}
+        integration, manifest = self._install(tmp_path, events)
+        path.write_bytes(path.read_bytes() + ("\n" + user_after).encode("utf-8"))
+
+        integration, manifest = self._install(tmp_path, events)
+        assert user_after in path.read_text(encoding="utf-8")
+
+        remove_integration_events(integration, tmp_path, manifest)
+        remaining = path.read_text(encoding="utf-8")
+        assert user_after in remaining
+        assert "speckit_marker" not in remaining
+
     @pytest.mark.parametrize("newline", ("\n", "\r\n"), ids=("lf", "crlf"))
     def test_merge_preserves_user_physical_line_bytes(self, tmp_path, newline):
         """A native Windows write must not expand retained CRLF to CRCRLF."""
@@ -464,6 +517,20 @@ class TestVibeTomlMerging:
         remove_integration_events(integration, tmp_path, manifest)
         assert not (tmp_path / ".vibe" / "hooks.toml").exists()
 
+    def test_teardown_deletes_file_when_only_comments_remain(self, tmp_path):
+        """A trailing comment survives refresh, but a file left with only
+        comments is deleted, as for Codex's config.toml (#5079)."""
+        path = tmp_path / ".vibe" / "hooks.toml"
+        events = {"pre_tool_use": [{"command": "speckit.tdd.validate"}]}
+        integration, manifest = self._install(tmp_path, events)
+        path.write_bytes(path.read_bytes() + b"\n# notes about these hooks\n")
+
+        integration, manifest = self._install(tmp_path, events)
+        assert "# notes about these hooks" in path.read_text(encoding="utf-8")
+
+        remove_integration_events(integration, tmp_path, manifest)
+        assert not path.exists()
+
 
 class TestVibeTomlNoOpRemoval:
     """Unowned Vibe hooks.toml files survive no-op cleanup byte-for-byte."""
@@ -540,6 +607,73 @@ class TestVibeTomlNoOpRemoval:
             f"name = \"user-hook\"{newline}"
             f"command = \"guard-bash\"{newline}"
         )
+        path, _ = self._user_hooks_file(tmp_path, (managed + user).encode())
+
+        removed_file = get_integration("vibe").remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        )
+
+        assert removed_file is False
+        assert path.read_bytes() == user.encode()
+
+    @pytest.mark.parametrize(
+        ("managed", "user"),
+        (
+            (
+                '[[hooks]]\nname = "managed"\nspeckit_marker = true\n\n',
+                "# NOTE: keep guard-bash first\n"
+                "[[hooks]]\n"
+                'name = "user-hook"\n'
+                'command = "guard-bash"\n',
+            ),
+            # Blank lines after a kept comment stay with it.
+            (
+                '[[hooks]]\nname = "managed"\nspeckit_marker = true\n\n',
+                '# NOTE: keep guard-bash first\n\n\n[[hooks]]\nname = "user-hook"\n',
+            ),
+            # A comment followed by more keys of the managed block is inside it.
+            (
+                '[[hooks]]\nname = "managed"\n# inside\n\nspeckit_marker = true\n\n',
+                '[[hooks]]\nname = "user-hook"\n',
+            ),
+        ),
+        ids=(
+            "comment-before-user-hook",
+            "blank-lines-after-comment",
+            "comment-between-managed-keys",
+        ),
+    )
+    @pytest.mark.parametrize("newline", ("\n", "\r\n"), ids=("lf", "crlf"))
+    def test_removal_ends_a_managed_hook_at_its_last_toml_line(
+        self, tmp_path, managed, user, newline
+    ):
+        """The blank separator goes with the managed block; a comment after it stays (#5079)."""
+        managed = managed.replace("\n", newline)
+        user = user.replace("\n", newline)
+        path, _ = self._user_hooks_file(tmp_path, (managed + user).encode())
+
+        removed_file = get_integration("vibe").remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        )
+
+        assert removed_file is False
+        assert path.read_bytes() == user.encode()
+
+    def test_removal_still_takes_comment_like_lines_inside_managed_values(self, tmp_path):
+        """Lines inside a managed multiline string or array belong to its block."""
+        managed = (
+            "[[hooks]]\n"
+            'name = "managed"\n'
+            "speckit_marker = true\n"
+            "args = [\n"
+            "  # part of the array\n"
+            '  "a",\n'
+            "]\n"
+            'command = """\n'
+            "# part of the command\n"
+            '"""\n'
+        )
+        user = '[[hooks]]\nname = "user-hook"\n'
         path, _ = self._user_hooks_file(tmp_path, (managed + user).encode())
 
         removed_file = get_integration("vibe").remove_vibe_event_hooks(
@@ -851,3 +985,230 @@ class TestVibeInjectFrontmatterFlagNoTrailingNewline:
             content, "user-invocable"
         )
         assert result == "---\r\nname: x\r\nuser-invocable: true\r\n---\r\n"
+
+
+class TestVibeNoModelInvocationOption:
+    """``--integration-options="--no-model-invocation"`` opts out of model invocation (#2654)."""
+
+    def test_options_include_no_model_invocation_flag(self):
+        opts = get_integration("vibe").options()
+        matching = [o for o in opts if o.name == "--no-model-invocation"]
+        assert len(matching) == 1
+        assert matching[0].is_flag is True
+        # Opt-in: skills stay model-invocable unless the flag is passed.
+        assert matching[0].default is False
+
+    def test_setup_with_option_sets_disable_model_invocation_true(self, tmp_path):
+        i = get_integration("vibe")
+        m = IntegrationManifest("vibe", tmp_path)
+        created = i.setup(
+            tmp_path, m, parsed_options={"no_model_invocation": True}, script_type="sh"
+        )
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            fm = _skill_frontmatter(f)
+            assert fm["disable-model-invocation"] is True, f.parent.name
+            assert fm["user-invocable"] is True, f.parent.name
+            assert f.read_text(encoding="utf-8").count("disable-model-invocation:") == 1
+
+    def test_post_process_follows_option_from_setup(self, tmp_path):
+        """Preset overrides of core commands re-registered in the same run as
+        ``setup()`` (init, upgrade) get the same value."""
+        i = get_integration("vibe")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("vibe", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation: true" in result
+        assert "disable-model-invocation: false" not in result
+
+    def test_extension_skills_stay_model_invocable(self, tmp_path):
+        """Mandatory extension hooks rely on the model invoking the hook skill,
+        so the option never applies to extension commands."""
+        i = get_integration("vibe")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("vibe", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content(
+            "---\nname: speckit-git-feature\n---\n\nBody\n"
+        )
+        assert "disable-model-invocation: false" in result
+        assert "disable-model-invocation: true" not in result
+
+    def test_option_requires_speckit_prefixed_core_name(self, tmp_path):
+        """A skill merely named like a core stem is not a core command skill."""
+        i = get_integration("vibe")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("vibe", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content("---\nname: tasks\n---\n\nBody\n")
+        assert "disable-model-invocation: false" in result
+        result = i.post_process_skill_content("---\nname: speckit-tasks\n---\n\nBody\n")
+        assert "disable-model-invocation: true" in result
+
+    def test_failed_setup_does_not_leave_option_set(self, tmp_path):
+        i = get_integration("vibe")
+        with patch.object(SkillsIntegration, "setup", side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError):
+                i.setup(
+                    tmp_path,
+                    IntegrationManifest("vibe", tmp_path),
+                    parsed_options={"no_model_invocation": True},
+                    script_type="sh",
+                )
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation: false" in result
+
+    def test_setup_without_option_resets_to_false(self, tmp_path):
+        i = get_integration("vibe")
+        first = tmp_path / "first"
+        first.mkdir()
+        i.setup(
+            first,
+            IntegrationManifest("vibe", first),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        second = tmp_path / "second"
+        second.mkdir()
+        created = i.setup(second, IntegrationManifest("vibe", second), script_type="sh")
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is False, f.parent.name
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation: false" in result
+
+    def test_cli_rejects_value_for_flag(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "vibe-bad-option"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    "vibe",
+                    "--integration-options",
+                    "--no-model-invocation=yes",
+                    "--script",
+                    "sh",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code != 0
+        assert "does not accept a value" in result.output
+        assert not (project / ".vibe" / "skills").exists()
+
+    def test_option_persists_across_upgrade_and_can_be_cleared(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "vibe", "--no-model-invocation")
+        skills_dir = project / ".vibe" / "skills"
+        skill_files = sorted(skills_dir.glob("*/SKILL.md"))
+        assert len(skill_files) > 0
+        for f in skill_files:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is True, f.parent.name
+
+        state = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        settings = state["integration_settings"]["vibe"]
+        assert settings["raw_options"] == "--no-model-invocation"
+        assert settings["parsed_options"] == {"no_model_invocation": True}
+
+        # A later ``specify integration upgrade`` is a new process: drop the
+        # in-memory value so only the persisted options can supply it.
+        get_integration("vibe")._disable_model_invocation = False
+        result = _run_in_project(project, ["integration", "upgrade", "vibe", "--force"])
+        assert result.exit_code == 0, result.output
+        for f in skill_files:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is True, f.parent.name
+
+        # Passing replacement options (here: none) clears it.
+        result = _run_in_project(
+            project,
+            ["integration", "upgrade", "vibe", "--force", "--integration-options", ""],
+        )
+        assert result.exit_code == 0, result.output
+        for f in skill_files:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is False, f.parent.name
+        state = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert "parsed_options" not in state["integration_settings"]["vibe"]
+
+    def test_upgrade_reapplies_option_to_preset_overrides(self, tmp_path):
+        """``preset add`` runs without ``setup()`` (documented limitation);
+        ``integration upgrade vibe --force`` reapplies the option to the
+        core-command skills a preset overrides."""
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "vibe", "--no-model-invocation")
+        skill_file = project / ".vibe" / "skills" / "speckit-plan" / "SKILL.md"
+        assert _skill_frontmatter(skill_file)["disable-model-invocation"] is True
+
+        get_integration("vibe")._disable_model_invocation = False
+        result = _run_in_project(
+            project, ["preset", "add", "--dev", str(REPO_ROOT / "presets" / "lean")]
+        )
+        assert result.exit_code == 0, result.output
+        fm = _skill_frontmatter(skill_file)
+        assert fm["metadata"]["source"] == "preset:lean"
+        # Documented in docs/integrations/vibe.md; update the docs if
+        # preset commands start honouring the option.
+        assert fm["disable-model-invocation"] is False
+
+        # The docs say ``--force`` is needed here: preset add modified
+        # installed skill files, so a plain upgrade refuses.
+        result = _run_in_project(project, ["integration", "upgrade", "vibe"])
+        assert result.exit_code != 0
+        assert "modified since installation" in result.output
+        assert _skill_frontmatter(skill_file)["disable-model-invocation"] is False
+
+        get_integration("vibe")._disable_model_invocation = False
+        result = _run_in_project(project, ["integration", "upgrade", "vibe", "--force"])
+        assert result.exit_code == 0, result.output
+        fm = _skill_frontmatter(skill_file)
+        assert fm["metadata"]["source"] == "preset:lean"
+        assert fm["disable-model-invocation"] is True
+
+    def test_extension_hook_skills_stay_model_invocable_after_upgrade(self, tmp_path):
+        """``integration upgrade`` re-registers extension skills in the same
+        process as ``setup()``; they must keep ``false`` so mandatory hooks
+        (e.g. ``speckit.git.feature``) can still be invoked by the model."""
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "vibe", "--no-model-invocation")
+        result = _run_in_project(
+            project, ["extension", "add", "--dev", str(REPO_ROOT / "extensions" / "git")]
+        )
+        assert result.exit_code == 0, result.output
+        get_integration("vibe")._disable_model_invocation = False
+        result = _run_in_project(project, ["integration", "upgrade", "vibe", "--force"])
+        assert result.exit_code == 0, result.output
+
+        skills_dir = project / ".vibe" / "skills"
+        git_skills = sorted(skills_dir.glob("speckit-git-*/SKILL.md"))
+        assert git_skills, "git extension skills were not generated"
+        for f in git_skills:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is False, f.parent.name
+        assert _skill_frontmatter(skills_dir / "speckit-specify" / "SKILL.md")[
+            "disable-model-invocation"
+        ] is True

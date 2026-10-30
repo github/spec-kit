@@ -504,36 +504,102 @@ def _register_presets_for_agent(
         )
 
 
+def _snapshot_manifest_before_registration(
+    project_root: Path, agent_key: str,
+) -> tuple[Any, set[str]]:
+    """Snapshot an installed manifest's unmodified files before rescaffolding (#5078).
+
+    Same rules as ``check_modified()``, applied one file at a time after
+    ``record_existing()``'s path check, so no file outside the project is
+    read. A path that fails the check or can't be read counts as modified,
+    with a warning: its hash isn't refreshed after registration.
+    """
+    try:
+        from .manifest import IntegrationManifest, _sha256, _validate_record_path
+
+        manifest = IntegrationManifest.load(agent_key, project_root)
+        unmodified: set[str] = set()
+        for rel, expected_hash in manifest.files.items():
+            # RuntimeError is a symlink loop in Path.resolve() before 3.13.
+            try:
+                abs_path = _validate_record_path(Path(rel), manifest.project_root)
+                if not abs_path.exists() or (
+                    abs_path.is_file() and _sha256(abs_path) == expected_hash
+                ):
+                    unmodified.add(rel)
+            except (OSError, RuntimeError, ValueError) as file_err:
+                from .. import _print_cli_warning
+
+                _print_cli_warning(
+                    "snapshot manifest hash for",
+                    "file",
+                    rel,
+                    file_err,
+                    continuing="Its hash won't be refreshed after registration.",
+                )
+        return manifest, unmodified
+    except FileNotFoundError:
+        return None, set()
+    except Exception as manifest_err:  # noqa: BLE001 - manifest refresh is best-effort
+        from .. import _print_cli_warning
+
+        _print_cli_warning(
+            "snapshot manifest hashes for",
+            "integration",
+            agent_key,
+            manifest_err,
+            continuing="Continuing without refreshing manifest hashes.",
+        )
+        return None, set()
+
+
 def _resync_manifest_after_registration(
     new_manifest: Any,
     agent_key: str,
     *,
     continuing: str,
+    unmodified_files: set[str] | None = None,
 ) -> None:
     """Refresh tracked-file hashes after extensions/presets re-registration.
 
     ``_register_extensions_for_agent`` / ``_register_presets_for_agent`` run
     after ``new_manifest`` is saved and can overwrite files it already
     tracks (e.g. a preset overriding a core command rendered as a skill).
-    Nothing else touches the project between the manifest save and these
-    calls, so any tracked file whose bytes now differ was changed by our own
-    registration step, not by the user — re-hash it and persist the refresh
-    so ``check_modified()`` doesn't misreport a legitimate override as
-    tampering (see #4696).
+    For ``upgrade`` (#4696) and a new-target ``switch`` (#5078), nothing else
+    touches the project between the manifest save and these calls, so any
+    tracked file whose bytes now differ was changed by registration. Re-hash
+    it so ``check_modified()`` doesn't misreport a legitimate override.
+
+    ``use`` and installed-target ``switch`` reuse an older manifest (#5078).
+    They must pass ``unmodified_files`` from before registration; only those
+    files whose bytes changed are refreshed, preserving earlier user edits.
+    A new-target ``switch`` passes every tracked file, so files registration
+    didn't change keep their recovered markers.
 
     Best-effort: registration itself is best-effort, so a failure here must
     not abort the surrounding upgrade/use/switch transaction.
     """
     try:
+        from .manifest import _sha256, _validate_record_path
+
         changed = False
-        for rel in new_manifest.files:
+        for rel, expected_hash in new_manifest.files.items():
+            if unmodified_files is not None and rel not in unmodified_files:
+                continue
             abs_path = new_manifest.project_root / rel
             try:
                 if abs_path.is_symlink() or not abs_path.is_file():
                     continue
+                # Only re-hash bytes registration changed: record_existing()
+                # also clears a file's recovered marker. Check the path the
+                # way record_existing() does before reading it.
+                if unmodified_files is not None and _sha256(
+                    _validate_record_path(Path(rel), new_manifest.project_root)
+                ) == expected_hash:
+                    continue
                 new_manifest.record_existing(rel)
                 changed = True
-            except (ValueError, OSError) as file_err:
+            except (ValueError, OSError, RuntimeError) as file_err:
                 from .. import _print_cli_warning
 
                 _print_cli_warning(

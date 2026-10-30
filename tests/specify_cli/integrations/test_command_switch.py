@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json  # noqa: F401
 import os  # noqa: F401
 import shutil  # noqa: F401
@@ -26,6 +27,178 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationSwitch:
+    @pytest.mark.parametrize("installed", [False, True])
+    def test_switch_syncs_manifest_hash_for_preset_override(
+        self, tmp_path, tasks_preset_src, installed
+    ):
+        """Both switch paths must record the preset's final bytes (#5078)."""
+        project = _init_project(tmp_path, "claude")
+        if installed:
+            result = _run_in_project(project, [
+                "integration", "install", "codex", "--script", "sh",
+            ])
+            assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+
+        result = _run_in_project(project, ["integration", "switch", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+
+        rel = ".agents/skills/speckit-tasks/SKILL.md"
+        content = (project / rel).read_bytes()
+        assert b"Preset tasks body" in content
+        manifest = json.loads((project / ".specify/integrations/codex.manifest.json").read_bytes())
+        assert manifest["files"][rel] == hashlib.sha256(content).hexdigest(), (
+            "manifest hash must match the preset-overridden skill (#5078)"
+        )
+        result = _run_in_project(project, ["integration", "upgrade", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+
+    def test_switch_new_target_keeps_recovered_markers(self, tmp_path, monkeypatch):
+        """The new-target resync must not re-record unchanged files (#5078).
+
+        ``record_existing()`` clears a recovered marker, and ownership checks
+        such as the events dispatcher cleanup rely on it.
+        """
+        from specify_cli.integrations.codex import CodexIntegration
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        rel = ".agents/skills/speckit-plan/SKILL.md"
+        original_setup = CodexIntegration.setup
+
+        def setup_with_recovered_file(self, project_root, manifest, *args, **kwargs):
+            created = original_setup(self, project_root, manifest, *args, **kwargs)
+            manifest.record_existing(rel, recovered=True)
+            return created
+
+        project = _init_project(tmp_path, "claude")
+        monkeypatch.setattr(CodexIntegration, "setup", setup_with_recovered_file)
+
+        result = _run_in_project(project, ["integration", "switch", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        assert IntegrationManifest.load("codex", project).is_recovered(rel)
+
+    @pytest.mark.parametrize("state", ["missing", "corrupt"])
+    def test_switch_installed_target_without_readable_manifest_skips_hash_refresh(
+        self, tmp_path, tasks_preset_src, state
+    ):
+        """A missing or unreadable target manifest skips the hash refresh, nothing else (#5078)."""
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+        manifest_path = project / ".specify/integrations/codex.manifest.json"
+        if state == "missing":
+            manifest_path.unlink()
+        else:
+            manifest_path.write_text("{invalid", encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "switch", "codex"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads((project / ".specify/integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "codex"
+        skill = project / ".agents/skills/speckit-tasks/SKILL.md"
+        assert b"Preset tasks body" in skill.read_bytes(), "registration must still run"
+        output = strip_ansi(result.output)
+        if state == "missing":
+            assert not manifest_path.exists(), "no manifest may be created"
+            assert "Warning:" not in output
+        else:
+            assert manifest_path.read_text(encoding="utf-8") == "{invalid"
+            assert "snapshot manifest hashes for integration 'codex'" in output
+
+    @pytest.mark.parametrize("command", ["plan", "tasks"])
+    def test_switch_installed_target_preserves_modified_manifest_hash(
+        self, tmp_path, tasks_preset_src, command
+    ):
+        """Rescaffolding must not bless earlier user edits as pristine (#5078)."""
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+        rel = f".agents/skills/speckit-{command}/SKILL.md"
+        before = IntegrationManifest.load("codex", project).files[rel]
+        (project / rel).write_bytes(b"User-edited skill\n")
+
+        result = _run_in_project(project, ["integration", "switch", "codex"])
+        assert result.exit_code == 0, result.output
+        manifest = IntegrationManifest.load("codex", project)
+        assert manifest.files[rel] == before, "pre-existing edits must not be recorded as pristine"
+        assert rel in manifest.check_modified()
+        result = _run_in_project(project, ["integration", "upgrade", "codex", "--script", "sh"])
+        assert result.exit_code == 1, result.output
+        assert "modified since installation" in result.output
+
+    @pytest.mark.parametrize("command", ["install", "switch"])
+    def test_invalid_incoming_manifest_does_not_block_rollback(self, tmp_path, monkeypatch, caplog, command):
+        from specify_cli.integrations.copilot import CopilotIntegration
+
+        project = _init_project(tmp_path, "claude", "--events false")
+        stale_manifest = project / ".specify/integrations/copilot.manifest.json"
+        stale_manifest.write_text("{invalid", encoding="utf-8")
+        dispatcher = project / ".specify/events.py"
+        dispatcher.write_text("# User-owned dispatcher\n", encoding="utf-8")
+        setup = CopilotIntegration.setup
+        generated = []
+
+        def setup_then_fail(self, project_root, manifest, *args, **kwargs):
+            generated.extend(setup(self, project_root, manifest, *args, **kwargs))
+            raise OSError("injected setup failure")
+
+        monkeypatch.setattr(CopilotIntegration, "setup", setup_then_fail)
+        args = [
+            "integration", command, "copilot", "--script", "sh",
+            "--integration-options", "--events false",
+        ]
+        if command == "install":
+            args.append("--force")
+
+        result = _run_in_project(project, args)
+
+        assert result.exit_code == 1, result.output
+        assert not (project / ".github/skills/speckit-plan/SKILL.md").exists(), result.output
+        assert generated
+        assert all(not path.exists() for path in generated)
+        assert not stale_manifest.exists()
+        assert dispatcher.read_text(encoding="utf-8") == "# User-owned dispatcher\n"
+        output = _normalize_cli_output(result.output)
+        assert "injected setup failure" in output
+        assert "Failed to rollback" not in output
+        assert "prior dispatcher manifest" in caplog.text
+
+    @pytest.mark.parametrize("command", ["install", "switch"])
+    @pytest.mark.parametrize("force", [False, True])
+    def test_incoming_copilot_preserves_unowned_dispatcher(self, tmp_path, command, force):
+        project = _init_project(
+            tmp_path, "claude", "--events false",
+        )
+        if command == "install":
+            uninstall = _run_in_project(project, ["integration", "uninstall", "claude"])
+            assert uninstall.exit_code == 0, uninstall.output
+        dispatcher = project / ".specify" / "events.py"
+        content = b"# User-owned dispatcher\n"
+        dispatcher.write_bytes(content)
+
+        args = [
+            "integration", command, "copilot", "--script", "sh",
+            "--integration-options", "--events false",
+        ]
+        if force:
+            args.append("--force")
+        result = _run_in_project(project, args)
+
+        assert result.exit_code == 0, result.output
+        assert dispatcher.read_bytes() == content
+        manifest = json.loads(
+            (project / ".specify/integrations/copilot.manifest.json").read_text(encoding="utf-8")
+        )
+        assert ".specify/events.py" not in manifest["files"]
+
     def test_switch_requires_speckit_project(self, tmp_path):
         old_cwd = os.getcwd()
         try:

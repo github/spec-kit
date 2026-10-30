@@ -26,7 +26,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Dict, List, Optional, Set
 
-import pathspec
 import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
@@ -43,6 +42,7 @@ from .._download_security import (
     safe_extract_archive,
 )
 from .._init_options import is_ai_skills_enabled
+from .._install_ignore import load_install_ignore
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
 from ..catalogs import CatalogEntry as BaseCatalogEntry
@@ -324,7 +324,7 @@ class ExtensionManifest:
                 )
 
         # Validate extension ID format
-        if not re.match(r"^[a-z0-9-]+$", ext["id"]):
+        if not re.fullmatch(r"[a-z0-9-]+", ext["id"]):
             raise ValidationError(
                 f"Invalid extension ID '{ext['id']}': "
                 "must be lowercase alphanumeric with hyphens only"
@@ -432,9 +432,13 @@ class ExtensionManifest:
                             f"Invalid hook '{hook_name}': "
                             "expected a mapping or list of mappings"
                         )
-                    if not entry.get("command"):
+                    command = entry.get("command")
+                    # #5080: same rule as validate_events() in events/__init__.py.
+                    # A truthy non-string (e.g. command: [foo]) passed a bare
+                    # truthiness check and crashed hook registration mid-install.
+                    if not isinstance(command, str) or not command.strip():
                         raise ValidationError(
-                            f"Hook '{hook_name}' missing required 'command' field"
+                            f"Hook '{hook_name}' missing required 'command' string"
                         )
                     if "priority" in entry:
                         priority = entry["priority"]
@@ -1275,67 +1279,7 @@ class ExtensionManager:
             An ignore function compatible with shutil.copytree, or None
             if no .extensionignore file exists.
         """
-        ignore_file = source_dir / ".extensionignore"
-        if not ignore_file.exists():
-            return None
-
-        # Pin UTF-8 explicitly: ``Path.read_text`` defaults to the system
-        # locale codec on Windows (cp1252 / gb2312 / cp932), which silently
-        # corrupts multibyte patterns when the file is shared across
-        # machines with different locales. The next line already
-        # normalises backslashes "so Windows-authored files work" — the
-        # codebase already expects Windows authors to write this file.
-        #
-        # A file that is not valid UTF-8 is a user-authoring mistake, so
-        # surface it as ``ValidationError`` with a pointer to the offending
-        # byte — the same pattern ``ExtensionManifest._load_yaml`` uses
-        # for ``extension.yml`` (see ``UnicodeDecodeError`` handler in
-        # this module). Without the wrap, the raw ``UnicodeDecodeError``
-        # would abort installation with a Python traceback instead of a
-        # clear message naming the file.
-        try:
-            raw = ignore_file.read_text(encoding="utf-8")
-        except UnicodeDecodeError as e:
-            raise ValidationError(
-                f".extensionignore is not valid UTF-8: {ignore_file} "
-                f"({e.reason} at byte {e.start})"
-            )
-        lines: List[str] = raw.splitlines()
-
-        # Normalise backslashes in patterns so Windows-authored files work
-        normalised: List[str] = []
-        for line in lines:
-            stripped = line.strip()
-            if stripped and not stripped.startswith("#"):
-                normalised.append(stripped.replace("\\", "/"))
-            else:
-                # Preserve blanks/comments so pathspec line numbers stay stable
-                normalised.append(line)
-
-        # Always ignore the .extensionignore file itself
-        normalised.append(".extensionignore")
-
-        spec = pathspec.GitIgnoreSpec.from_lines(normalised)
-
-        def _ignore(directory: str, entries: List[str]) -> Set[str]:
-            ignored: Set[str] = set()
-            rel_dir = Path(directory).relative_to(source_dir)
-            for entry in entries:
-                rel_path = str(rel_dir / entry) if str(rel_dir) != "." else entry
-                # Normalise to forward slashes for consistent matching
-                rel_path_fwd = rel_path.replace("\\", "/")
-
-                entry_full = Path(directory) / entry
-                if entry_full.is_dir():
-                    # Append '/' so directory-only patterns (e.g. tests/) match
-                    if spec.match_file(rel_path_fwd + "/"):
-                        ignored.add(entry)
-                else:
-                    if spec.match_file(rel_path_fwd):
-                        ignored.add(entry)
-            return ignored
-
-        return _ignore
+        return load_install_ignore(source_dir, ".extensionignore", ValidationError)
 
     @project_registration
     def _get_skills_dir(self, *, create: bool = True) -> Optional[Path]:
@@ -5364,6 +5308,11 @@ class ConfigManager:
     def _get_extension_defaults(self) -> Dict[str, Any]:
         """Get default configuration from extension manifest.
 
+        Reads the top-level ``defaults`` key documented in the extension
+        template and API reference, and ``config.defaults`` used by the
+        bundled git extension. When both are present they are merged, with
+        ``config.defaults`` winning on conflicting keys.
+
         Returns:
             Default configuration dictionary
         """
@@ -5372,6 +5321,9 @@ class ConfigManager:
             return {}
 
         manifest_data = self._load_yaml_config(manifest_path)
+        top_level_defaults = manifest_data.get("defaults", {})
+        if not isinstance(top_level_defaults, dict):
+            top_level_defaults = {}
         # _load_yaml_config already coerces a non-mapping *root* to {}, but
         # extension.yml's top-level 'config' key is unvalidated by
         # ExtensionManifest (only 'provides.config' is checked there -- a
@@ -5388,9 +5340,11 @@ class ConfigManager:
         # deeper in the manifest's own 'config' section.
         config_section = manifest_data.get("config", {})
         if not isinstance(config_section, dict):
-            return {}
+            return top_level_defaults
         defaults = config_section.get("defaults", {})
-        return defaults if isinstance(defaults, dict) else {}
+        if not isinstance(defaults, dict):
+            return top_level_defaults
+        return self._merge_configs(top_level_defaults, defaults)
 
     def _get_project_config(self) -> Dict[str, Any]:
         """Get project-level configuration.

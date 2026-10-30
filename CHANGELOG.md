@@ -2,6 +2,81 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.2.5] - 2026-10-28
+
+### Changed
+
+- docs: publish extension development guide on docs site (#5166)
+- docs: publish extensions overview and navigation (#5165)
+- fix(extensions): load top-level defaults from extension.yml (#5164)
+- fix(bundles): reject integration mappings without an id (#5161)
+- docs: publish extension publishing guide on the docs site (#5163)
+- feat(workflows): expose installed workflow listing through MCP (#5115)
+- fix(extensions): reject hook commands that are not strings (#5146)
+- fix(workflows): accept equivalent version spellings in archive updates (#5155)
+- Add Domain Spec Maintenance extension to community catalog (#5162)
+- Update Architecture Governance preset to v0.6.5 (#5153)
+- Update Quality Gates (Enforcement Layer) extension to v0.5.0 (#5151)
+- Update SFSpeckit — Salesforce Spec-Driven Development to v2.0.1 (#5154)
+- docs(workflows): correct filtered-count comparison guidance (#5148)
+- fix: validate collected extension events (#5133)
+- test(workflows): pin untested workflow expression behavior (#5130)
+- fix(presets): treat non-mapping command frontmatter as empty (#5125)
+- fix(workflows): handle undecodable shell output as a step failure (#5064)
+- fix(vibe): keep user comments that follow a managed hook block (#5109)
+- [extension] Add Shared Knowledge extension to community catalog (#5140)
+- chore: release 1.2.4, begin 1.2.5.dev0 development (#5142)
+
+## [1.2.4] - 2026-10-27
+
+### Changed
+
+- Update Secure Development Assurance Governance preset to v0.1.8 (#5139)
+- feat(bundles): allow bundles to reference other bundles (#5067)
+- fix: report a non-file .extensionignore or .presetignore as a validation error (#5131)
+- fix(presets): attribute core templates with overrides-prefixed names correctly (#5129)
+- ci: select pytest worker count automatically (#5132)
+- feat(vibe): add --no-model-invocation integration option (#5119)
+- refactor(workflows): split the expression evaluator into a package (#5114)
+- fix: make bundle step refresh rollback transactional (#4827)
+- Update Security Governance preset to v0.7.4 (#5128)
+- Update Quality Gates (Enforcement Layer) extension to v0.4.2 (#5127)
+- Update Product Spec Extension to v2.1.0 (#5126)
+- Fix local bundle installation for uppercase .ZIP artifacts (#5106)
+- fix: preserve feature numbering during reinitialization (#5101)
+- fix: retain event hooks when override omits events (#5102)
+- feat(auth): support GitHub CLI credentials (#4960)
+- fix(integrations): pass the Junie dispatch prompt via --task (#5065)
+- chore(deps): bump the codeql-action group with 2 updates (#5066)
+- Add CSDD — Controlled Spec-Driven Development extension to community catalog (#5062)
+- Add Entalpa to Community Friends (#4993)
+- chore: release 1.2.3, begin 1.2.4.dev0 development (#5063)
+
+## [1.2.3] - 2026-10-22
+
+### Changed
+
+- Feat/4913 workflow mcp inventory (#5054)
+- docs: correct built-in workflow step source paths (#5059)
+- fix(events): preserve dispatcher ownership during cleanup (#5055)
+- feat: add .presetignore support (#5020)
+- fix(scripts): write --json output of the Python helpers as ASCII (#5048)
+- Update Linear Weave extension to v1.0.2 (#5049)
+- fix(events): preserve unowned Vibe hooks files (#4646)
+- ci: shorten test runs with two workers and faster fixture shutdown (#5051)
+- fix(powershell): treat bracketed feature paths literally (#4970)
+- fix(cli): align integration guidance with available output (#5041)
+- fix(integrations): map Pi JSON dispatch to --mode json (#5043)
+- docs: organize agent-specific integration documentation (#5034)
+- feat(integration): add none for shared scaffolding only (#5030)
+- fix(extensions): reject malformed catalog entries before removal (#5033)
+- fix(integrations): map Kimi Code JSON dispatch to --output-format stream-json (#5031)
+- docs: streamline README onboarding and process guides (#5029)
+- docs: distinguish extension events from hooks (#5026)
+- fix(workflows): keep integer number inputs exact instead of rounding them (#5027)
+- docs: say how to replace an older install before specify init (#5004)
+- chore: release 1.2.2, begin 1.2.3.dev0 development (#5024)
+
 ## [1.2.2] - 2026-10-19
 
 ### Changed
