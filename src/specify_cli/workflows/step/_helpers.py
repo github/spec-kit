@@ -47,3 +47,18 @@ def _resolve_steps_base_dir_or_exit(project_root: cli.Path) -> cli.Path:
     except StepInstallError as exc:
         cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1) from exc
+
+
+def _load_step_registry_or_exit(project_root: cli.Path):
+    """Build the step registry, turning an OSError into a clean CLI error.
+
+    The registry fails loudly when the file is symlinked or corrupted, so
+    surface that as a printed error rather than an unhandled traceback.
+    """
+    from .catalog import StepRegistry
+
+    try:
+        return StepRegistry(project_root)
+    except OSError as exc:
+        cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
+        raise cli.typer.Exit(1) from exc
