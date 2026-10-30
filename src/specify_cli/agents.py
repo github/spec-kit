@@ -1369,6 +1369,79 @@ class CommandRegistrar:
                     continue
         return results
 
+    def registered_artifact_paths(
+        self,
+        agent_name: str,
+        project_root: Path,
+        *,
+        commands: list[str],
+        skills: list[str],
+        registrar_config: dict[str, Any] | None = None,
+    ) -> set[Path]:
+        """Enumerate recorded contribution outputs without loading adapter packages.
+
+        The caller validates ownership and filesystem policy before using these
+        paths. Supplemental skill directories include their copied resources;
+        native command registrations own only their generated command file.
+        """
+        from . import _get_skills_dir
+        from .integrations import BUILTIN_INTEGRATION_KEYS
+
+        if agent_name not in BUILTIN_INTEGRATION_KEYS and registrar_config is None:
+            raise ValueError(
+                f"Uninstall contributed artifacts for external integration '{agent_name}' "
+                "before destroy; executable adapter layouts are not loaded during cleanup"
+            )
+
+        if registrar_config is not None:
+            config = registrar_config
+        elif agent_name == "generic":
+            from .integrations.generic import registration_directory
+
+            config = {
+                "dir": str(registration_directory(project_root)),
+                "extension": ".md",
+            }
+        else:
+            config = self.AGENT_CONFIGS.get(agent_name)
+        if config is None:
+            raise ValueError(f"No registration layout for integration '{agent_name}'")
+
+        for name in [*commands, *skills]:
+            if not name or name in {".", ".."} or not self._is_safe_command_name(name):
+                raise ValueError(f"Invalid registered artifact name: {name!r}")
+
+        canonical_config = dict(config)
+        legacy = canonical_config.pop("legacy_dir", None)
+        destinations = [self._resolve_agent_dir(agent_name, canonical_config, project_root)]
+        if legacy:
+            destinations.append(project_root / legacy)
+        paths: set[Path] = set()
+        for name in commands:
+            output_name = self._compute_output_name(agent_name, name, config)
+            names = [output_name]
+            if output_name != name:
+                names.append(name)
+            for destination in destinations:
+                for cleanup_name in names:
+                    if not self._is_safe_command_name(cleanup_name) or cleanup_name in {"", ".", ".."}:
+                        raise ValueError(f"Invalid formatted artifact name: {cleanup_name!r}")
+                    if config["extension"] == "/SKILL.md":
+                        paths.add(destination / cleanup_name / "SKILL.md")
+                    else:
+                        paths.add(destination / f"{cleanup_name}{config['extension']}")
+            if agent_name == "copilot":
+                paths.add(project_root / ".github/prompts" / f"{name}.prompt.md")
+        if skills:
+            if agent_name not in BUILTIN_INTEGRATION_KEYS:
+                if config["extension"] != "/SKILL.md":
+                    raise ValueError(f"Cannot establish external supplemental skill ownership for '{agent_name}'")
+                skills_dir = project_root / config["dir"]
+            else:
+                skills_dir = _get_skills_dir(project_root, agent_name)
+            paths.update(skills_dir / name for name in skills)
+        return paths
+
     def unregister_commands(
         self, registered_commands: Dict[str, List[str]], project_root: Path
     ) -> None:

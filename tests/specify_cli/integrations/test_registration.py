@@ -71,6 +71,103 @@ def test_version_lookup_remains_late_bound_through_commands_module(monkeypatch):
     assert _get_speckit_version() == "9.8.7-test"
 
 
+@pytest.mark.parametrize("corrupt_manifest", [False, True])
+@pytest.mark.parametrize("nested", [False, True])
+def test_failed_managed_registration_preserves_error_and_baseline(tmp_path, corrupt_manifest, nested):
+    from types import SimpleNamespace
+
+    from specify_cli.integrations._file_changes import registration_changes, write_text
+    from specify_cli.integrations._registration import managed_registration
+    from specify_cli.integrations.manifest import IntegrationManifest
+
+    relative = ".claude/skills/speckit-plan/SKILL.md"
+    manifest = IntegrationManifest("claude", tmp_path)
+    output = manifest.record_file(relative, b"original")
+    manifest.save()
+    before = manifest.manifest_path.read_bytes()
+    if corrupt_manifest:
+        (manifest.manifest_path.parent / "broken.manifest.json").write_text("invalid JSON")
+    failure = RuntimeError("registration failed after writing one output")
+    owner = SimpleNamespace(project_root=tmp_path)
+
+    @managed_registration
+    def write_output(self):
+        write_text(output, "partial output")
+
+    @managed_registration
+    def fail_registration(self):
+        if nested:
+            write_output(self)
+        else:
+            write_text(output, "partial output")
+        raise failure
+
+    assert registration_changes.get() is None
+    with pytest.raises(RuntimeError) as caught:
+        fail_registration(owner)
+    assert caught.value is failure
+    assert manifest.manifest_path.read_bytes() == before
+    assert IntegrationManifest.load("claude", tmp_path).check_modified() == [relative]
+    assert registration_changes.get() is None
+
+
+@pytest.mark.parametrize("overwrite_user_edit", [False, True])
+def test_successful_nested_managed_registration_refreshes_only_written_outputs(tmp_path, overwrite_user_edit):
+    from types import SimpleNamespace
+
+    from specify_cli.integrations._file_changes import registration_changes, write_text
+    from specify_cli.integrations._registration import managed_registration
+    from specify_cli.integrations.manifest import IntegrationManifest
+
+    manifest = IntegrationManifest("claude", tmp_path)
+    output = manifest.record_file(".claude/skills/speckit-plan/SKILL.md", b"original")
+    untouched = ".claude/skills/speckit-tasks/SKILL.md"
+    user_file = manifest.record_file(untouched, b"original")
+    manifest.save()
+    before = manifest.manifest_path.read_bytes()
+    user_file.write_text("user customization")
+    result = object()
+
+    @managed_registration
+    def write_output(self):
+        write_text(output, "managed output")
+        if overwrite_user_edit:
+            write_text(user_file, "managed overwrite")
+        return result
+
+    @managed_registration
+    def register(self):
+        returned = write_output(self)
+        assert manifest.manifest_path.read_bytes() == before
+        return returned
+
+    assert register(SimpleNamespace(project_root=tmp_path)) is result
+    assert IntegrationManifest.load("claude", tmp_path).check_modified() == [untouched]
+    assert registration_changes.get() is None
+
+
+def test_managed_registration_keeps_recovered_claims_for_unchanged_files(tmp_path):
+    from types import SimpleNamespace
+
+    from specify_cli.integrations._registration import managed_registration
+    from specify_cli.integrations.manifest import IntegrationManifest
+
+    manifest = IntegrationManifest("claude", tmp_path)
+    relative = ".claude/skills/speckit-plan/SKILL.md"
+    manifest.record_file(relative, b"existing output")
+    manifest.record_existing(relative, recovered=True)
+    manifest.save()
+    before = manifest.manifest_path.read_bytes()
+
+    @managed_registration
+    def observe_output(self):
+        manifest.record_existing(relative)
+
+    observe_output(SimpleNamespace(project_root=tmp_path))
+    assert manifest.manifest_path.read_bytes() == before
+    assert IntegrationManifest.load("claude", tmp_path).is_recovered(relative)
+
+
 class TestParseIntegrationOptionsEqualsForm:
     def test_equals_form_parsed(self):
         """--commands-dir=./x should be parsed the same as --commands-dir ./x."""

@@ -179,6 +179,131 @@ def install(project):
     return result
 
 
+@pytest.mark.parametrize("contribution", [("extension", "git"), ("preset", "lean")])
+def test_destroy_uses_trusted_external_lifecycle_and_contribution_cleanup(tmp_path, server, contribution):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    added = run(project, [contribution[0], "add", contribution[1]])
+    assert added.exit_code == 0, added.output
+    source = project / "src/app.py"
+    source.parent.mkdir()
+    source.write_bytes(b"application source")
+    before = snapshot(project)
+    preview = run(project, ["destroy", "--dry-run", "--json"])
+    assert preview.exit_code == 0, preview.output
+    assert snapshot(project) == before
+    result = run(project, ["destroy", "--yes", "--force", "--json"])
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    assert source.read_bytes() == b"application source"
+    assert not list((project / ".sample-agent").rglob("SKILL.md"))
+    assert not (project / ".specify").exists()
+
+
+def test_healthy_external_uninstall_without_manifest_removes_stale_package(tmp_path, server):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    (project / f".specify/integrations/{KEY}.manifest.json").unlink()
+    rejected = run(project, ["destroy", "--dry-run", "--json"])
+    assert rejected.exit_code == 1
+    assert "Missing manifest" in rejected.stderr
+    result = run(project, ["integration", "uninstall", KEY])
+    assert result.exit_code == 0, result.output
+    assert not read_records(project)
+    assert not (project / ".specify/integration.json").exists()
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_destroy_preserves_constitution_recorded_by_a_trusted_adapter(tmp_path, server, force):
+    body = '''    def setup(self, project_root, manifest, **kwargs):
+        created = super().setup(project_root, manifest, **kwargs)
+        created.append(manifest.record_file(".specify/memory/constitution.md", "# Existing principles\\r\\n"))
+        return created
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    constitution = project / ".specify/memory/constitution.md"
+    expected = constitution.read_bytes()
+    result = run(project, [
+        "destroy", "--yes", "--json", "--preserve-constitution",
+    ] + (["--force"] if force else []))
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    assert constitution.read_bytes() == expected
+    assert json.loads(result.stdout)["preserved"] == [".specify/memory/constitution.md"]
+    assert not read_records(project)
+
+
+@pytest.mark.parametrize("flags,keep_constitution,keep_specs", [
+    ([], False, False),
+    (["--preserve-specs"], False, True),
+    (["--preserve-constitution", "--preserve-specs"], True, True),
+    (["--preserve-all"], True, True),
+])
+@pytest.mark.parametrize("force", [False, True])
+def test_destroy_preservation_flags_cover_trusted_adapter_owned_specs(
+    tmp_path, server, flags, keep_constitution, keep_specs, force,
+):
+    body = '''    def setup(self, project_root, manifest, **kwargs):
+        created = super().setup(project_root, manifest, **kwargs)
+        created.append(manifest.record_file(".specify/memory/constitution.md", "# Principles\\r\\n"))
+        created.append(manifest.record_file("specs/001-feature/spec.md", "# Specification\\r\\n"))
+        return created
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    source = project / "app.py"
+    source.write_bytes(b"unrelated source")
+    before = snapshot(project)
+    command = ["destroy", "--json", *flags, *(["--force"] if force else [])]
+    preview = run(project, [*command, "--dry-run"])
+    assert preview.exit_code == 0, preview.output
+    assert snapshot(project) == before
+    result = run(project, [*command, "--yes"])
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    constitution = project / ".specify/memory/constitution.md"
+    spec = project / "specs/001-feature/spec.md"
+    assert constitution.exists() is keep_constitution
+    assert spec.exists() is keep_specs
+    if keep_constitution:
+        assert constitution.read_bytes() == b"# Principles\r\n"
+    else:
+        assert not (project / ".specify").exists()
+    if keep_specs:
+        assert spec.read_bytes() == b"# Specification\r\n"
+    else:
+        assert not (project / "specs").exists()
+    assert source.read_bytes() == b"unrelated source"
+    assert not read_records(project)
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_destroy_cannot_replace_revoked_external_ownership_with_force(tmp_path, server, monkeypatch, force):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    trust_path = Path.home() / ".specify/integration-trust.json"
+    trust = json.loads(trust_path.read_text())
+    trust["grants"] = []
+    trust_path.write_text(json.dumps(trust))
+    before = snapshot(project)
+
+    def fail(*args, **kwargs):
+        pytest.fail("An untrusted adapter must not be loaded during destroy")
+
+    monkeypatch.setattr("specify_cli.integrations.installer.load_installed_integrations", fail)
+    result = run(project, ["destroy", "--yes", "--json"] + (["--force"] if force else []))
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "ownership" in json.loads(result.stderr)["error"]["message"]
+    assert snapshot(project) == before
+
+
 def snapshot(project):
     return {
         path.relative_to(project).as_posix(): path.read_bytes()
@@ -3889,7 +4014,7 @@ def test_check_renders_external_adapter_names_as_literal_text(tmp_path, server, 
 @pytest.mark.parametrize("contents", ["empty", "user", "generated"])
 @pytest.mark.parametrize("fail", [False, True])
 def test_kimi_legacy_parent_removal_obeys_lifecycle_rollback(tmp_path, server, monkeypatch, operation, contents, fail):
-    from specify_cli.integrations import command_install, command_uninstall
+    from specify_cli.integrations import _operation_uninstall, command_install
 
     publish(server)
     project = catalog_project(tmp_path, server)
@@ -3916,7 +4041,7 @@ def test_kimi_legacy_parent_removal_obeys_lifecycle_rollback(tmp_path, server, m
             assert legacy.exists() == (contents == "user")
             raise OSError("sample failure after legacy cleanup")
 
-        module = command_install if operation == "migrate" else command_uninstall
+        module = command_install if operation == "migrate" else _operation_uninstall
         monkeypatch.setattr(module, "_write_integration_json", fail_after_cleanup)
     arguments = (
         ["integration", "install", "kimi", "--force", "--script", "py", "--integration-options=--migrate-legacy"]

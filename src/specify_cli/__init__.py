@@ -391,12 +391,14 @@ SKILL_DESCRIPTIONS = {
 # ===== Root Commands =====
 
 from . import command_check as _command_check  # noqa: E402
+from . import command_destroy as _command_destroy  # noqa: E402
 from . import command_init as _command_init  # noqa: E402
 from . import command_mcp as _command_mcp  # noqa: E402
 from . import command_version as _command_version  # noqa: E402
 
 _command_init.register(app)
 _command_check.register(app)
+_command_destroy.register(app)
 _command_version.register(app)
 _command_mcp.register(app)
 

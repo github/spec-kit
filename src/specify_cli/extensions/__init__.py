@@ -2103,7 +2103,7 @@ class ExtensionManager:
         return list(dict.fromkeys(registered + retained))
 
     def _remove_generic_artifact_paths(
-        self, extension_id: str, metadata: Dict[str, Any], *, skills: bool = True
+        self, extension_id: str, metadata: Dict[str, Any], *, skills: bool = True, force: bool = False,
     ) -> None:
         """Clean recorded generic paths even after the configured directory moves."""
         from ..shared_infra import _validate_safe_shared_directory
@@ -2133,6 +2133,8 @@ class ExtensionManager:
         for relative, expected in hashes.items():
             if not isinstance(relative, str) or not isinstance(expected, str):
                 continue
+            if force and not re.fullmatch(r"[0-9a-fA-F]{64}", expected):
+                continue
             name = Path(relative)
             if name.is_absolute() or ".." in name.parts:
                 continue
@@ -2155,7 +2157,7 @@ class ExtensionManager:
             if path.is_symlink() and not path.resolve().is_relative_to(source):
                 continue
             content = path.read_bytes()
-            if hashlib.sha256(content).hexdigest() != expected:
+            if not force and hashlib.sha256(content).hexdigest() != expected:
                 if path.is_symlink():
                     unlink(path)
                     write_bytes(path, content)
@@ -3670,6 +3672,8 @@ class ExtensionManager:
         *,
         enabled_only: bool = False,
         commands_only: bool = False,
+        force: bool = False,
+        require_complete: bool = False,
     ) -> None:
         """Remove extension files registered for a specific agent.
 
@@ -3685,6 +3689,12 @@ class ExtensionManager:
         Set ``commands_only=True`` for command-directory reconciliation where
         skill artifacts are outside the target agent's lifecycle and must not
         be touched.
+
+        ``force=True`` also removes modified generic output files whose recorded
+        names, paths, and ownership hashes pass the existing cleanup checks.
+
+        ``require_complete`` keeps registration metadata when an owned output
+        is skipped and raises for the strict uninstall caller.
 
         Skips cleanup when *agent_name* is not a supported agent to avoid
         losing registry entries while leaving orphaned files on disk.
@@ -3707,9 +3717,40 @@ class ExtensionManager:
             if enabled_only and not metadata.get("enabled", True):
                 continue
 
+            pending_paths: set[Path] = set()
+            if require_complete:
+                from .._file_policy import project_files
+                from ..agents import CommandRegistrar as AgentRegistrar
+                from ..file_helper import FileHelper
+
+                commands = metadata.get("registered_commands", {})
+                pending_paths.update(AgentRegistrar(self.project_root).registered_artifact_paths(
+                    agent_name, self.project_root,
+                    commands=self._valid_name_list(commands.get(agent_name)) if isinstance(commands, dict) else [],
+                    skills=[], registrar_config=registrar.AGENT_CONFIGS[agent_name],
+                ))
+                if agent_name == "generic":
+                    pending_paths.update(
+                        self.project_root / name for name in metadata.get("generic_artifact_hashes", {})
+                    )
+                if not commands_only:
+                    policy = project_files(self.project_root)
+                    scope = self.project_root if agent_skills_dir.is_relative_to(self.project_root) else Path.home()
+                    files = FileHelper(scope, allow_symlinks=policy.allow_symlinks)
+                    for name in self._valid_name_list(metadata.get("registered_skills")):
+                        path = agent_skills_dir / name
+                        try:
+                            content = files.read_text(path / "SKILL.md")
+                        except FileNotFoundError:
+                            continue
+                        frontmatter, _ = registrar.parse_frontmatter(content)
+                        marker = frontmatter.get("metadata", {})
+                        if isinstance(marker, dict) and marker.get("source") == f"extension:{ext_id}":
+                            pending_paths.add(path)
+
             if agent_name == "generic":
                 self._remove_generic_artifact_paths(
-                    ext_id, metadata, skills=not commands_only
+                    ext_id, metadata, skills=not commands_only, force=force,
                 )
             updates: Dict[str, Any] = {}
 
@@ -3794,6 +3835,9 @@ class ExtensionManager:
                     if remaining_skills != registered_skills:
                         updates["registered_skills"] = remaining_skills
 
+            retained = sorted(path for path in pending_paths if path.exists() or path.is_symlink())
+            if retained:
+                raise ValueError("Extension artifacts were preserved: " + ", ".join(str(path) for path in retained))
             if updates:
                 self.registry.update(ext_id, updates)
 

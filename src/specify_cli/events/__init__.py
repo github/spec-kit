@@ -1701,6 +1701,14 @@ def _other_event_integrations_reference_dispatcher(
     return False
 
 
+def dispatcher_content_matches(content: bytes, expected_hash: str) -> bool:
+    """Accept the recorded copy or an exact regenerated LF/CRLF dispatcher."""
+    return hashlib.sha256(content).hexdigest() == expected_hash or content in (
+        _EVENTS_DISPATCHER_TEMPLATE.encode("utf-8"),
+        _EVENTS_DISPATCHER_TEMPLATE.replace("\n", "\r\n").encode("utf-8"),
+    )
+
+
 def _cleanup_shared_dispatcher(
     integration: IntegrationBase, project_root: Path, manifest: IntegrationManifest,
     *,
@@ -1747,14 +1755,50 @@ def _cleanup_shared_dispatcher(
                 return
             # Another integration may have regenerated the shared file since
             # this manifest recorded it. Accept only exact generated LF/CRLF.
-            matches = hashlib.sha256(content).hexdigest() == expected_hash or content in (
-                _EVENTS_DISPATCHER_TEMPLATE.encode("utf-8"),
-                _EVENTS_DISPATCHER_TEMPLATE.replace("\n", "\r\n").encode("utf-8"),
-            )
-            if not matches:
+            if not dispatcher_content_matches(content, expected_hash):
                 logger.warning("Preserving modified dispatcher: %s", dispatcher_path)
                 return
         _unlink_file(dispatcher_path, missing_ok=True)
+
+
+def validate_integration_event_cleanup(
+    integration: IntegrationBase, project_root: Path, *, require_clean: bool = False,
+) -> None:
+    """Verify that a claimed native config is readable and, after teardown, clean."""
+    config_file = getattr(integration, "events_config_file", None)
+    if not config_file:
+        return
+    path = project_root / config_file
+    if not path.exists():
+        return
+    _ensure_safe_destination(path)
+    fmt = getattr(integration, "events_format", None)
+    if fmt in {"toml", "toml-vibe"}:
+        import tomllib
+
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    else:
+        data = _load_user_json(path)
+        if data is None:
+            raise ValueError(f"Cannot verify native event cleanup for {config_file}")
+
+    def marked(value: Any) -> bool:
+        if isinstance(value, dict):
+            return (
+                value.get(_SPECKIT_MARKER) is True
+                or value.get("speckit_marker") is True
+                or any(marked(child) for child in value.values())
+            )
+        if isinstance(value, list):
+            return any(marked(child) for child in value)
+        return False
+
+    plugin_ref = "./.opencode/plugin/speckit-events.ts"
+    plugins = data.get("plugin", [])
+    if require_clean and (
+        marked(data) or (fmt == "ts-plugin" and isinstance(plugins, list) and plugin_ref in plugins)
+    ):
+        raise ValueError(f"Spec Kit event entries remain in {config_file}")
 
 
 def remove_integration_events(

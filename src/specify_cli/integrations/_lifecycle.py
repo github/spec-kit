@@ -444,7 +444,7 @@ def external_lifecycle(operation: str):
                 try:
                     installer.load_installed_integrations(root)
                 except installer.IntegrationInstallError:
-                    if operation not in {"upgrade", "uninstall"} or not values.get("force") or key not in records:
+                    if operation != "upgrade" or not values.get("force") or key not in records:
                         raise
                     recovery_token = installer.recovery_exclusion.set((root.resolve(), key))
                     installer.load_installed_integrations(root)
@@ -552,23 +552,6 @@ def external_lifecycle(operation: str):
                             installer.unload_installed_integrations()
                             installer.persist_package(root, key, *candidate)
                         for removed in records.keys() - set(remaining):
-                            # The uninstall command cleans up its own key. A stale
-                            # record's contributions must go here, while its adapter
-                            # is still loaded.
-                            if operation == "uninstall" and removed != key:
-                                from ._helpers import (
-                                    _unregister_extensions_for_agent,
-                                    _unregister_presets_for_agent,
-                                )
-
-                                _unregister_extensions_for_agent(
-                                    root, removed,
-                                    continuing="The adapter was removed, but extension artifacts may need manual cleanup.",
-                                )
-                                _unregister_presets_for_agent(
-                                    root, removed,
-                                    continuing="The adapter was removed, but preset artifacts may need manual cleanup.",
-                                )
                             installer.remove_package(root, removed)
                         if not candidate:
                             installer.load_installed_integrations(root)

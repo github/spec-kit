@@ -1,6 +1,6 @@
 # Core Commands
 
-The core `specify` commands handle project initialization, system checks, and version information.
+The core `specify` commands handle project initialization, project uninstall, system checks, and version information.
 
 ## Initialize a Project
 
@@ -92,6 +92,149 @@ specify init my-project --integration copilot --preset compliance
 > that root is always checked in deny mode: `.specify/` and `init-options.json`
 > cannot be symlinks. Unmigrated operations elsewhere in the project retain
 > their existing symlink behavior.
+
+## Uninstall Spec Kit from a Project
+
+```bash
+specify destroy --dry-run
+specify destroy --yes
+```
+
+`destroy` uninstalls the project's integrations first, then removes its remaining
+Spec Kit infrastructure, not the Specify CLI itself. It removes recorded integration
+commands/skills, registered extension/preset artifacts, **all `.specify/` contents
+including the constitution**, and the **project-local `specs/` directory** by default.
+Project source and unrelated agent files remain untouched. Nonempty agent directories
+are never removed wholesale.
+
+Use preservation flags to retain SDD artifacts while removing the tooling:
+
+```bash
+specify destroy --yes --preserve-constitution
+specify destroy --yes --preserve-specs
+specify destroy --yes --preserve-all
+# --preserve-all is equivalent to --preserve-constitution --preserve-specs
+```
+
+Preserved artifacts keep their original bytes, including when an integration manifest
+tracks them. Both individual flags can be combined; combining either with
+`--preserve-all` is harmless. `--force` never overrides preservation.
+Preservation recognizes alternate case spellings on case-insensitive filesystems,
+including the constitution's parent directories, without following a preserved link.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | Explicit project root; otherwise use `SPECIFY_INIT_DIR` or the current directory |
+| `--dry-run` | Preview file and directory cleanup, managed settings updates, and declared home-scoped outputs without modifying anything |
+| `--yes`, `-y` | Explicitly confirm destructive cleanup; required for unattended use |
+| `--force` | Also delete modified or unverified whole-owned agent artifacts |
+| `--json` | Emit a result on stdout or one structured error on stderr; never prompt |
+| `--preserve-constitution` | Keep `.specify/memory/constitution.md` and its parent directories |
+| `--preserve-specs` | Keep project-local `specs/` without traversing or modifying it |
+| `--preserve-all` | Keep both supported SDD artifact groups above; still remove integrations, tooling, and configuration |
+
+**Back up specifications and custom content first.** Confirmation authorizes
+removing its templates, scripts, installed packages, workflows, caches, and
+project-local configuration, including your custom files, constitution, and `specs/`
+unless explicitly preserved. Preview the exact file and directory list before confirming.
+Only the literal project-local `specs/` directory is removed: feature-directory
+overrides, including `SPECIFY_FEATURE_DIRECTORY` and `.specify/feature.json`, do
+not expand the deletion scope. A directory without a `.specify` project marker
+is a no-op, even if it contains `specs/`.
+An invalid `SPECIFY_INIT_DIR` remains an error; an explicit `--project` takes
+precedence over that environment override.
+
+Modified hash-tracked generated files outside `.specify` stop cleanup before
+deletion unless `--force` is explicit. Contribution cleanup uses the existing
+integration lifecycle's registry, provenance-marker, and hash checks. A flat
+skill name alone does not establish ownership of same-named skills in other
+agents' directories. `--force` does **not** imply confirmation, establish
+ownership, override filesystem policy, or authorize deleting shared settings.
+For generic integration outputs, force permits removal of modified extension files
+only after the recorded command names, output paths, and ownership hashes have
+passed validation. Incomplete contribution cleanup retains the integration state
+needed to retry.
+Managed preset rendering refreshes hashes only for tracked files it writes,
+after the rendering handler succeeds. This includes `init --preset`, a later
+`preset add`, and skill restoration and reconciliation during `preset remove`.
+Failed handlers leave the previous hashes intact and preserve their original
+errors. Files modified before rendering retain their previous hash baseline,
+even if rescaffolding overwrites their contents. Unchanged recovered claims
+keep their recovery markers; neither is adopted as a pristine generated file.
+For example:
+
+```bash
+specify destroy --project ./my-project --dry-run --json
+specify destroy --project ./my-project --yes --force
+```
+
+Non-default integrations are uninstalled first and the default last, without
+switching defaults merely to remove the next integration. Their ordinary teardown
+removes Spec Kit's merged native event entries while preserving user entries and
+settings. The last installed integration referencing an owned `.specify/events.py`
+dispatcher releases and removes it under the existing ownership and force rules.
+Preview checks the dispatcher against its ownership records and the lifecycle's
+accepted generated content, using the last claimant in uninstall order. A modified managed dispatcher requires force before
+any integration is uninstalled; missing, partial, or recovered ownership does not
+become deletion authority through force.
+Claimed built-in native settings are also parsed during planning, so malformed
+settings stop destruction before another integration is removed.
+If teardown preserves the dispatcher or leaves cleanup unresolved, destroy stops
+and retains recovery metadata instead of purging the remaining `.specify` tree.
+
+Missing/corrupt ownership metadata and unsafe paths block cleanup. External
+manifest paths and ownership modes must be authorized by the user's existing
+local ownership binding; neither confirmation nor force replaces that proof.
+Confirmed uninstall uses the normal trusted-adapter loading, teardown, recovery,
+and rollback machinery. Dry-run validates metadata without loading adapter code.
+Integration-specific uninstall behavior also applies to home-scoped outputs,
+such as Hermes skills; those declared directories and registered contribution
+files are shown separately in preview (`global_scopes` and `global_files` in
+JSON). Only an installed integration's declared home scope can supply these
+paths. They are removed by its normal teardown, not by project-tree deletion.
+The CLI installation and machine-level trust records are not removed.
+Untracked settings not owned by native event cleanup remain in place.
+
+Persisted symlink policy applies. Destroy never traverses symlinked directories
+to identify agent artifacts; allowed leaf links are unlinked without deleting
+their targets. An explicitly preserved constitution or `specs/` entry may be a link and is
+left untouched. Otherwise the persisted symlink policy applies; targets are
+never recursively traversed merely because a link is selected for deletion.
+Metadata is always read without following links. Tree inventory inspects paths
+without reading arbitrary caches or specification assets; payload reads are
+limited to ownership metadata, provenance checks, and tracked-file hashes.
+
+Preview, rejected confirmation, and validation failures leave files unchanged.
+An I/O failure during deletion can leave a partial uninstall and is reported
+explicitly. External integration lifecycle transactions retain their normal
+rollback behavior, but destroy as a whole is not atomic: earlier integrations
+may already have been uninstalled when a later cleanup fails. Remaining
+metadata is retained for recovery. Repeating destroy with the same preservation
+flags succeeds without further changes. A retained constitution by itself is
+a no-op with `--preserve-constitution` or `--preserve-all`; without those flags,
+its deletion still requires confirmation.
+Extension and preset registries are retained until their package files and
+directories have been removed, so a failed package purge can be retried.
+If strict cleanup fails, destroy restores the original ownership manifest,
+installation inventory, and init options together so the recorded integration
+can be retried after the error is resolved. Skipped contribution cleanup retains
+its registration rather than discarding ownership evidence. This preserves
+recovery evidence; it does not undo files that were already removed outside a
+lifecycle transaction.
+Specification files and directories are removed before remaining infrastructure:
+a locked `specs/` directory leaves the project marker available for retry.
+Human-readable failures list remaining paths and completed file/integration
+removals alongside the error; JSON errors expose the same recovery details.
+Completed home-scoped deletions are reported separately in `global_files`,
+including when teardown fails after deleting only some of its outputs.
+
+Legacy setups with only an `init-options.json` integration selection and no
+`integration.json` inventory are rejected during preview. Re-run `specify init`
+for the selected integration to migrate that inventory before using destroy.
+
+For removing just one integration while retaining Spec Kit tooling, use
+[`specify integration uninstall`](../integrations/cli.md#uninstall-an-integration).
+`destroy` is currently CLI-only; its MCP inventory records it as unavailable.
 
 ## Naming Features with the Helper Scripts
 
