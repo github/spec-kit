@@ -329,10 +329,13 @@ def _set_default_integration(
     )
 
     if refresh_templates:
+        from .._file_policy import project_files
+        files = project_files(project_root)
         try:
             _install_shared_infra(
                 project_root,
                 resolved_script,
+                files=files,
                 invoke_separator=_invoke_separator_for_integration(
                     integration, {"integration_settings": settings}, key, parsed_options,
                     project_root=project_root,

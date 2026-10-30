@@ -740,16 +740,10 @@ class TestInitIntegrationFlag:
         assert victim.read_bytes() == victim_bytes
 
     def test_shared_infra_stale_cleanup_skips_escaping_key_without_failing(
-        self, tmp_path, monkeypatch
+        self, tmp_path
     ):
-        """A key that passes the lexical guard but escapes containment — e.g. a
-        Windows drive-relative ``C:tmp`` that is not ``is_absolute()`` yet discards
-        the project root when joined — is skipped via ``_validate_rel_path``, never
-        unlinked, and never turned into an install-time hard failure (#3076 review
-        round 4). Simulated portably by forcing ``_validate_rel_path`` to reject the
-        managed key, since real drive-relative paths only escape on Windows."""
+        """Corrupt stale keys are rejected lexically before accessing files."""
         from specify_cli import _install_shared_infra
-        from specify_cli.integrations import manifest as manifest_mod
         from specify_cli.integrations.manifest import IntegrationManifest
 
         project = tmp_path / "escaping-key"
@@ -759,23 +753,12 @@ class TestInitIntegrationFlag:
         scripts_dir.mkdir(parents=True)
 
         # A managed stale orphan that would normally be removed.
-        stale_rel = ".specify/scripts/bash/update-agent-context.sh"
         stale = scripts_dir / "update-agent-context.sh"
         stale.write_text("# legacy orphan\n", encoding="utf-8")
         manifest = IntegrationManifest("speckit", project, version="test")
-        manifest.record_existing(stale_rel)
+        import hashlib
+        manifest._files[".specify/scripts/bash/../bash/update-agent-context.sh"] = hashlib.sha256(stale.read_bytes()).hexdigest()
         manifest.save()
-
-        # Force the containment check to reject this key, as it would for a
-        # drive-relative escape on Windows. The cleanup must skip it gracefully.
-        real_validate = manifest_mod._validate_rel_path
-
-        def fake_validate(rel, root):
-            if str(rel).endswith("update-agent-context.sh"):
-                raise ValueError("simulated drive-relative escape")
-            return real_validate(rel, root)
-
-        monkeypatch.setattr(manifest_mod, "_validate_rel_path", fake_validate)
 
         # Must not raise (no install-time hard failure from a corrupted key).
         _install_shared_infra(project, "sh", force=False)
@@ -844,8 +827,8 @@ class TestInitIntegrationFlag:
         assert "A new shared manifest will be created" in captured.out
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_shared_infra_buckets_symlinked_script_destination(self, tmp_path, capsys):
-        """Symlinked script destinations are bucketed with a warning; the symlink target is preserved."""
+    def test_shared_infra_rejects_symlinked_script_destination(self, tmp_path):
+        """Denied script links abort without changing their targets."""
         from specify_cli import _install_shared_infra
 
         project = tmp_path / "symlink-script-test"
@@ -858,15 +841,14 @@ class TestInitIntegrationFlag:
         scripts_dir.mkdir(parents=True)
         os.symlink(outside, scripts_dir / "common.sh")
 
-        _install_shared_infra(project, "sh", force=True)
+        with pytest.raises(ValueError, match="Refusing symlink"):
+            _install_shared_infra(project, "sh", force=True)
 
-        captured = capsys.readouterr()
-        assert "symlinked shared infrastructure" in captured.out
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_shared_infra_buckets_symlinked_template_destination(self, tmp_path, capsys):
-        """Symlinked template destinations are bucketed with a warning; the symlink target is preserved."""
+    def test_shared_infra_rejects_symlinked_template_destination(self, tmp_path):
+        """Denied template links abort without changing their targets."""
         from specify_cli import _install_shared_infra
 
         project = tmp_path / "symlink-template-test"
@@ -879,10 +861,9 @@ class TestInitIntegrationFlag:
         templates_dir.mkdir(parents=True)
         os.symlink(outside, templates_dir / "plan-template.md")
 
-        _install_shared_infra(project, "sh", force=True)
+        with pytest.raises(ValueError, match="Refusing symlink"):
+            _install_shared_infra(project, "sh", force=True)
 
-        captured = capsys.readouterr()
-        assert "symlinked shared infrastructure" in captured.out
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
@@ -900,7 +881,7 @@ class TestInitIntegrationFlag:
         templates_dir.mkdir(parents=True)
         os.symlink(outside, templates_dir / "plan-template.md")
 
-        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
+        with pytest.raises(ValueError, match="Refusing symlink"):
             _refresh_shared_templates(project, invoke_separator=".", force=True)
 
         assert outside.read_text(encoding="utf-8") == "# outside\n"
@@ -943,7 +924,7 @@ class TestInitIntegrationFlag:
         templates_src.mkdir(parents=True)
         (templates_src / "plan-template.md").write_text("# plan\n", encoding="utf-8")
 
-        with pytest.raises(ValueError, match="symlinked integration manifest"):
+        with pytest.raises(ValueError, match="Refusing symlink"):
             install_shared_infra(
                 project,
                 "sh",
@@ -978,7 +959,7 @@ class TestInitIntegrationFlag:
         outside.write_text("# outside\n", encoding="utf-8")
         os.symlink(outside, templates_dir / "z-template.md")
 
-        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
+        with pytest.raises(ValueError, match="Refusing symlink"):
             refresh_shared_templates(
                 project,
                 version="test",
@@ -993,8 +974,8 @@ class TestInitIntegrationFlag:
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_shared_infra_install_buckets_unsafe_destinations_and_continues(self, tmp_path):
-        """Symlinked destinations are bucketed with a warning; safe destinations in the same install still complete."""
+    def test_shared_infra_install_rejects_unsafe_destinations_before_writes(self, tmp_path):
+        """Denied links abort planning before regular files are overwritten."""
         from specify_cli.shared_infra import install_shared_infra
 
         project = tmp_path / "preflight-install-test"
@@ -1014,19 +995,19 @@ class TestInitIntegrationFlag:
         outside.write_text("# outside\n", encoding="utf-8")
         os.symlink(outside, scripts_dir / "z.sh")
 
-        install_shared_infra(
-            project,
-            "sh",
-            version="test",
-            core_pack=core_pack,
-            repo_root=tmp_path / "unused",
-            console=_NoopConsole(),
-            force=True,
-        )
+        with pytest.raises(ValueError, match="Refusing symlink"):
+            install_shared_infra(
+                project,
+                "sh",
+                version="test",
+                core_pack=core_pack,
+                repo_root=tmp_path / "unused",
+                console=_NoopConsole(),
+                force=True,
+            )
 
-        # Symlinked z.sh is preserved (bucketed); regular a.sh is overwritten.
         assert outside.read_text(encoding="utf-8") == "# outside\n"
-        assert existing.read_text(encoding="utf-8") == "# new a\n"
+        assert existing.read_text(encoding="utf-8") == "# old a\n"
 
     def test_shared_infra_install_supports_nested_script_sources(self, tmp_path):
         """Nested script source files create safe destination parents at write time."""

@@ -302,9 +302,37 @@ paths untouched and retains recovery snapshots, including when a previously
 existing path was deleted. An unchanged pending path needs no restoration.
 Host settings merges, native event updates/removal, legacy migrations, and
 extension/preset rendering caches participate in the journal without becoming
-uninstall-owned files. Existing built-in home-scoped destinations are journaled
+uninstall-owned files. Host execute-bit adjustments also observe the actual
+file target, including preserved user scripts reached through allowed shared
+directory links, so rollback restores their prior permissions without claiming
+uninstall ownership. Existing built-in home-scoped destinations are journaled
 only for participating built-ins; external adapters remain project-local.
-Host write helpers reject symlinked destinations and ancestors before creating
+FileHelper-owned shared infrastructure follows the selected symlink setting
+for `.specify/scripts/`, `.specify/templates/`, `.specify/.gitignore`, and the
+shared `speckit.manifest.json` I/O. Deny rejects accessed links; allow uses
+supported contained targets while preserving link identity. Init supplies its
+current requested setting; install/upgrade/switch read persisted project policy.
+FileHelper performs filesystem operations, not ownership or overwrite decisions.
+Shared callers retain their existing customization/recovery rules, and allow
+mode preserves stale leaf links without following their targets. Helper-mode
+manifest policy failures propagate rather than becoming tolerant recovery or preserved-file
+success. This does not relax adapter-package/registry scope validation, config
+bootstrap, legacy manifest consumers, or uninstall.
+External adapter transactions still reject linked `.specify/integrations` scope
+roots; shared manifest leaf links are supported.
+Without force, a preserved selected shared file protects its file identity
+from writes through another selected alias. Shared-script execute-permission
+repair uses the same helper handoff, including allowed leaf and parent links.
+The host retains directory traversal and executable-bit selection; FileHelper
+only lists names, reads metadata/content and applies the requested mode with
+the existing mutation observer.
+Switch validates the outgoing manifest and refreshes the selected shared
+infrastructure before removing the outgoing integration. Failures in that
+refresh leave the outgoing integration's files and metadata intact. Later
+setup/fallback failures retain their existing recovery behavior; this ordering
+does not add a transaction guarantee to built-in-only operations.
+
+Other host write helpers reject symlinked destinations and ancestors before creating
 directories or writing. Manifest recording validates lexical paths before
 resolution, including project-local and dangling symlinks, so resolution cannot
 hide a link to an unrelated project file. Removing an owned leaf symlink unlinks
