@@ -151,6 +151,9 @@ class _PresetSkillMethods:
         # directory-independent, so it's computed once and then applied to
         # every affected directory below.
         preset_cmds: Dict[str, List[str]] = {}
+        # Commands won by a composing preset whose stack no longer has any
+        # replace base: nothing resolves, so their owned output is removed.
+        unresolvable_cmds: Set[str] = set()
         non_preset_skills: List[tuple] = []
         managed_skill_names: set = set()
         reconciled_skill_commands: set[str] = set()
@@ -195,6 +198,11 @@ class _PresetSkillMethods:
                 pack_dir = self.presets_dir / pack_id
                 if top_path.is_relative_to(pack_dir):
                     preset_cmds.setdefault(pack_id, []).append(cmd_name)
+                    if (
+                        all(layer["strategy"] != "replace" for layer in layers)
+                        and resolver.resolve_content(cmd_name, "command") is None
+                    ):
+                        unresolvable_cmds.add(cmd_name)
                     found_preset = True
                     break
             if not found_preset:
@@ -327,6 +335,18 @@ class _PresetSkillMethods:
                         for name in self._skill_names_for_command(cmd)
                     )
                 ]
+                stale_cmds = [cmd for cmd in dir_cmds if cmd in unresolvable_cmds]
+                if stale_cmds:
+                    self._remove_owned_skills(
+                        skills_dir,
+                        [
+                            name
+                            for cmd in stale_cmds
+                            for name in self._skill_names_for_command(cmd)
+                            if name in dir_managed_names
+                        ],
+                    )
+                    dir_cmds = [cmd for cmd in dir_cmds if cmd not in unresolvable_cmds]
                 if not dir_cmds:
                     continue
                 pack_dir = self.presets_dir / pack_id
@@ -362,11 +382,14 @@ class _PresetSkillMethods:
                     # Preserve exact prior behaviour for the currently
                     # active directory (including the ability to create
                     # brand-new skill subdirectories when ai_skills is on).
-                    written = self._register_skills(filtered_manifest, pack_dir)
+                    written = self._register_skills(
+                        filtered_manifest, pack_dir, only_skill_names=managed_names,
+                    )
                 else:
                     written = self._register_skills(
                         filtered_manifest, pack_dir,
                         target_dir=skills_dir, target_agent=dir_agent or "",
+                        only_skill_names=managed_names,
                     )
                 if target_agent is None:
                     written_names = {
@@ -391,7 +414,18 @@ class _PresetSkillMethods:
                 # reconciliation just wrote to on its behalf (#2948).
                 self._merge_pack_registered_skills(pack_id, written)
 
-        extra_dirs = extra_skills_dirs or {}
+        extra_dirs = dict(extra_skills_dirs or {})
+        if extra_skills_dirs is not None:
+            # _unregister_skills only restored what the removed preset owned.
+            # Skills a surviving preset rendered on top of it are its own, so
+            # refresh those recorded destinations from the remaining stack too.
+            for skills_dir, (agent, names) in self._surviving_owned_skills(
+                command_names, presets_by_priority, active_ai, active_skills_dir
+            ).items():
+                prior_agent, prior_names = extra_dirs.get(skills_dir, (agent, []))
+                extra_dirs[skills_dir] = (
+                    prior_agent, list(dict.fromkeys([*prior_names, *names]))
+                )
         if active_skills_dir:
             active_provenance = extra_dirs.get(active_skills_dir)
             if extra_skills_dirs is None or active_provenance:
@@ -417,6 +451,97 @@ class _PresetSkillMethods:
             )
 
         return reconciled_skill_commands
+
+    def _surviving_owned_skills(
+        self,
+        command_names: List[str],
+        presets_by_priority: List[Any],
+        active_ai: Optional[str],
+        active_skills_dir: Optional[Path],
+    ) -> Dict[Path, tuple[Optional[str], List[str]]]:
+        """Recorded skill destinations of ``command_names`` still owned by a survivor.
+
+        Reads each remaining preset's ``registered_skills`` (inferring per-agent
+        provenance for legacy flat lists) and keeps the names whose ``SKILL.md``
+        still carries that preset's ``preset:<id>`` marker.
+        """
+        registrar = self._command_registrar()
+        affected = {
+            name
+            for cmd_name in command_names
+            for name in self._skill_names_for_command(cmd_name)
+        }
+        found: Dict[Path, tuple[Optional[str], List[str]]] = {}
+        for pack_id, meta in presets_by_priority:
+            if not isinstance(meta, dict):
+                continue
+            recorded = meta.get("registered_skills")
+            if isinstance(recorded, list) and active_ai:
+                recorded = self._infer_legacy_skill_provenance(
+                    [n for n in recorded if isinstance(n, str)], pack_id, active_ai
+                )
+            if not isinstance(recorded, dict):
+                continue
+            for agent, names in recorded.items():
+                if not isinstance(agent, str) or not isinstance(names, list):
+                    continue
+                skills_dir = (
+                    active_skills_dir
+                    if agent == active_ai
+                    else self._safe_skills_dir_for_agent(agent)
+                )
+                if skills_dir is None:
+                    continue
+                for name in names:
+                    if name not in affected:
+                        continue
+                    skill_file = skills_dir / name / "SKILL.md"
+                    if not self._validate_skill_subdir(
+                        skill_file.parent, create=False, skills_root=skills_dir
+                    ) or not skill_file.is_file():
+                        continue
+                    try:
+                        content = skill_file.read_text(encoding="utf-8")
+                    except (OSError, UnicodeDecodeError):
+                        continue
+                    metadata = registrar.parse_frontmatter(content)[0].get("metadata")
+                    if isinstance(metadata, dict) and metadata.get("source") == f"preset:{pack_id}":
+                        dir_agent, dir_names = found.get(skills_dir, (agent, []))
+                        found[skills_dir] = (dir_agent, [*dir_names, name])
+        return found
+
+    def _remove_owned_skills(self, skills_dir: Path, skill_names: List[str]) -> None:
+        """Delete preset-owned skills among ``skill_names`` (journaled).
+
+        A skill is preset-owned when its ``SKILL.md`` source marker names an
+        installed preset, either as ``preset:<id>`` (skill registration) or
+        ``<id>:<file>`` (command registration for native skill agents);
+        anything else is left untouched.
+        """
+        from ..integrations._file_changes import after_file_change, before_file_change
+
+        registrar = self._command_registrar()
+        pack_ids = list(self.registry.list())
+        for name in dict.fromkeys(skill_names):
+            skill_dir = skills_dir / name
+            skill_file = skill_dir / "SKILL.md"
+            if not self._validate_skill_subdir(
+                skill_dir, create=False, skills_root=skills_dir
+            ) or not skill_file.is_file():
+                continue
+            try:
+                content = skill_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            metadata = registrar.parse_frontmatter(content)[0].get("metadata")
+            source = metadata.get("source") if isinstance(metadata, dict) else None
+            if isinstance(source, str) and any(
+                source == f"preset:{pack_id}" or source.startswith(f"{pack_id}:")
+                for pack_id in pack_ids
+            ):
+                before_file_change(skill_dir, removal=True)
+                shutil.rmtree(skill_dir)
+                after_file_change(skill_dir)
 
     def _resolve_agent_skills_dir(self, agent_name: str) -> Path:
         """Resolve the real skill output directory for an integration."""
@@ -626,6 +751,7 @@ class _PresetSkillMethods:
         *,
         target_dir: Optional[Path] = None,
         target_agent: Optional[str] = None,
+        only_skill_names: Optional[Set[str]] = None,
     ) -> Dict[str, List[str]]:
         """Generate SKILL.md files for preset command overrides.
 
@@ -651,6 +777,9 @@ class _PresetSkillMethods:
                 subdirectories are never created for a non-active,
                 explicitly targeted directory (that creation path is only
                 meaningful for the currently active agent).
+            only_skill_names: When given, write only these skill
+                directory names; any other existing modern or legacy
+                skill for the same command is left untouched.
 
         Returns:
             ``{agent_name: [skill_name, ...]}`` for the single active
@@ -736,6 +865,10 @@ class _PresetSkillMethods:
                 missing_skill_dir = skills_dir / skill_name
                 if not missing_skill_dir.exists():
                     target_skill_names.append(skill_name)
+            if only_skill_names is not None:
+                target_skill_names = [
+                    name for name in target_skill_names if name in only_skill_names
+                ]
             if not target_skill_names:
                 continue
 
@@ -759,9 +892,11 @@ class _PresetSkillMethods:
                 or frontmatter.get("strategy")
                 or "replace"
             )
+            # A cached composition can outlive its base (e.g. one removed
+            # while its composer was disabled), so the resolver decides even
+            # when the cache exists.
             if (
                 effective_strategy != "replace"
-                and not composed_file.exists()
                 and resolver.resolve_content(cmd_name, "command") is None
             ):
                 continue
