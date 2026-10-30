@@ -6363,6 +6363,42 @@ class TestExtensionCatalog:
         # silently dropped rather than raising or crashing.
         assert [ext["id"] for ext in merged] == ["good"]
 
+    @pytest.mark.parametrize("bad_body", [b"\xff", b"not json"])
+    def test_merged_extensions_skips_invalid_catalog_response(
+        self, temp_dir, capsys, bad_body
+    ):
+        """A broken source must not hide extensions from a healthy source."""
+        from unittest.mock import patch
+
+        catalog = self._make_catalog(temp_dir)
+        bad = CatalogEntry("https://example.com/bad.json", "bad", 1, True)
+        good = CatalogEntry("https://example.com/good.json", "good", 2, True)
+        good_body = json.dumps({
+            "schema_version": "1.0",
+            "extensions": {"healthy": {"name": "Healthy", "version": "1.0.0"}},
+        }).encode()
+
+        def open_catalog(url, **_kwargs):
+            response = MagicMock()
+            body = bad_body if url == bad.url else good_body
+            response.read.side_effect = io.BytesIO(body).read
+            response.geturl.return_value = url
+            response.__enter__.return_value = response
+            return response
+
+        with patch.object(catalog, "get_active_catalogs", return_value=[bad, good]), \
+             patch.object(catalog, "_open_url", side_effect=open_catalog):
+            merged = catalog._get_merged_extensions(force_refresh=True)
+
+        assert [ext["id"] for ext in merged] == ["healthy"]
+        assert merged[0]["_catalog_name"] == "good"
+        assert "Could not fetch catalog 'bad'" in capsys.readouterr().err
+
+        with patch.object(catalog, "get_active_catalogs", return_value=[bad]), \
+             patch.object(catalog, "_open_url", side_effect=open_catalog), \
+             pytest.raises(ExtensionError, match="Failed to fetch any extension catalog"):
+            catalog._get_merged_extensions(force_refresh=True)
+
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
         """download_extension passes Authorization header when a provider is configured."""
         from unittest.mock import patch, MagicMock
