@@ -741,10 +741,11 @@ class StepCatalog:
                 # existing priority as 0 rather than crashing 'catalog add'.
                 return 0
 
+        # Match the config parser's one-based default for omitted priorities.
         max_priority = max(
             (
-                _coerce_priority(cat.get("priority", 0))
-                for cat in catalogs
+                _coerce_priority(cat.get("priority", idx + 1))
+                for idx, cat in enumerate(catalogs)
                 if isinstance(cat, dict)
             ),
             default=0,
