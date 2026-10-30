@@ -104,16 +104,21 @@ read_feature_json_feature_directory() {
     # an availability-gated `elif` would pick python3, swallow its failure, and
     # never reach the grep/sed fallback -- leaving feature.json unreadable even
     # though it is valid (issue #3304).
+    # A success marker preserves trailing newlines in parsed path values.
     local _fd=''
     if command -v jq >/dev/null 2>&1; then
-        if ! _fd=$(jq -r '.feature_directory // empty' "$fj" 2>/dev/null); then
+        if ! _fd=$(jq -jr '.feature_directory // empty' "$fj" 2>/dev/null && printf '.'); then
             _fd=''
+        else
+            _fd="${_fd%.}"
         fi
     fi
     if [[ -z "$_fd" ]] && command -v python3 >/dev/null 2>&1; then
         # Use Python so pretty-printed/multi-line JSON still parses correctly.
-        if ! _fd=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); v=d.get('feature_directory'); print(v if v else '')" "$fj" 2>/dev/null); then
+        if ! _fd=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); v=d.get('feature_directory'); print(v if v else '', end='')" "$fj" 2>/dev/null && printf '.'); then
             _fd=''
+        else
+            _fd="${_fd%.}"
         fi
     fi
     if [[ -z "$_fd" ]]; then
@@ -144,7 +149,8 @@ _persist_feature_json() {
 
     # Read current value (if any) and skip write when unchanged
     local current_val
-    current_val=$(read_feature_json_feature_directory "$repo_root")
+    current_val=$(read_feature_json_feature_directory "$repo_root" && printf '.')
+    current_val="${current_val%.}"
     if [[ "$current_val" == "$feature_dir_value" ]]; then
         return 0
     fi
@@ -172,13 +178,19 @@ _resolve_feature_directory() {
         fi
         case "$component" in
             ""|.) continue ;;
-            ..) resolved="$(dirname -- "$resolved")"; continue ;;
+            ..)
+                resolved="${resolved%/*}"
+                resolved="${resolved:-/}"
+                continue
+                ;;
         esac
         target="${resolved%/}/$component"
         if [[ -L "$target" ]]; then
             links=$((links + 1))
             [[ "$links" -le 40 ]] || return 1
-            target="$(readlink -- "$target")" || return 1
+            # The marker retains target newlines across command substitution.
+            target="$(readlink -n -- "$target" && printf '.')" || return 1
+            target="${target%.}"
             remaining="$target${remaining:+/$remaining}"
             [[ "$target" != /* ]] || resolved="/"
         elif [[ -e "$target" && ! -d "$target" ]]; then
@@ -187,7 +199,7 @@ _resolve_feature_directory() {
             resolved="$target"
         fi
     done
-    printf '%s\n' "$resolved"
+    printf '%s' "$resolved"
 }
 
 get_feature_paths() {
@@ -230,18 +242,21 @@ get_feature_paths() {
         fi
     elif [[ -f "$repo_root/.specify/feature.json" ]]; then
         local _fd
-        _fd=$(read_feature_json_feature_directory "$repo_root")
+        _fd=$(read_feature_json_feature_directory "$repo_root" && printf '.')
+        _fd="${_fd%.}"
         if [[ -n "$_fd" ]]; then
             feature_dir="$_fd"
             # Normalize relative paths to absolute under repo root
             [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
             local physical_root
             physical_root=$(CDPATH="" cd -- "$repo_root" && pwd -P) || return 1
-            if ! feature_dir=$(_resolve_feature_directory "$feature_dir") ||
-                [[ "$feature_dir" != "$physical_root" && "$feature_dir" != "$physical_root/"* ]]; then
+            local resolved_feature_dir
+            if ! resolved_feature_dir=$(_resolve_feature_directory "$feature_dir" && printf '.') ||
+                [[ "${resolved_feature_dir%.}" != "$physical_root" && "${resolved_feature_dir%.}" != "$physical_root/"* ]]; then
                 echo "ERROR: Stored feature directory is invalid or outside the project. Set SPECIFY_FEATURE_DIRECTORY explicitly to use an external directory." >&2
                 return 1
             fi
+            feature_dir="${resolved_feature_dir%.}"
         else
             echo "ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory." >&2
             return 1

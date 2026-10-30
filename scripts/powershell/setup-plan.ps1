@@ -42,9 +42,14 @@ $pathComparison = [System.StringComparison]::Ordinal
 if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
     $pathComparison = [System.StringComparison]::OrdinalIgnoreCase
 }
-$planEntry = Get-ChildItem -LiteralPath $paths.FEATURE_DIR -Force -ErrorAction Stop |
-    Where-Object { $_.Name.Equals('plan.md', $pathComparison) } | Select-Object -First 1
-if ($planEntry -and ($planEntry.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+try {
+    $planEntry = Get-Item -LiteralPath $paths.IMPL_PLAN -Force -ErrorAction Stop
+} catch [System.Management.Automation.ItemNotFoundException] {
+    # Windows PowerShell 5.1 may only expose dangling links through their parent.
+    $planEntry = Get-ChildItem -LiteralPath $paths.FEATURE_DIR -Force -ErrorAction Stop |
+        Where-Object { $_.Name.Equals('plan.md', $pathComparison) } | Select-Object -First 1
+}
+if (Test-NameRedirectingLink -Entry $planEntry) {
     [Console]::Error.WriteLine("ERROR: Plan destination must not be a symbolic link.")
     exit 1
 }

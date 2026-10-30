@@ -158,6 +158,13 @@ function Save-FeatureJson {
     [System.IO.File]::WriteAllText($fjPath, $json, $utf8NoBom)
 }
 
+function Test-NameRedirectingLink {
+    param([object]$Entry)
+
+    return ($Entry -and ($Entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -and
+        ($Entry.LinkType -in @('SymbolicLink', 'Junction') -or $Entry.Target))
+}
+
 function Resolve-FeatureDirectoryPath {
     param([string]$Path, [ref]$LinkCount = ([ref]0))
 
@@ -168,11 +175,8 @@ function Resolve-FeatureDirectoryPath {
     if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
         $pathComparison = [System.StringComparison]::OrdinalIgnoreCase
     }
-    $separators = [regex]::Escape(
-        [string][System.IO.Path]::DirectorySeparatorChar +
-        [string][System.IO.Path]::AltDirectorySeparatorChar
-    )
-    foreach ($component in ($Path.Substring($root.Length) -split "[$separators]")) {
+    # The PowerShell FileSystem provider recognizes both separators on every OS.
+    foreach ($component in ($Path.Substring($root.Length) -split '[\\/]')) {
         if (-not $component -or $component -eq '.') { continue }
         if ($component -eq '..') {
             $parent = [System.IO.Path]::GetDirectoryName($resolved.TrimEnd('/', '\'))
@@ -191,8 +195,7 @@ function Resolve-FeatureDirectoryPath {
                 Select-Object -First 1
         }
         # Cloud placeholders can be reparse directories without redirecting names.
-        if ($entry -and ($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -and
-            ($entry.LinkType -in @('SymbolicLink', 'Junction') -or $entry.Target)) {
+        if (Test-NameRedirectingLink -Entry $entry) {
             $LinkCount.Value += 1
             if ($LinkCount.Value -gt 40) { throw 'Too many symbolic links in feature directory' }
             $target = @($entry.Target)[0]
