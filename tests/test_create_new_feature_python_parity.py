@@ -1612,6 +1612,93 @@ def test_python_dash_prefixed_short_name_matches_bash(
     assert json_stdout(bash)["BRANCH_NAME"] == expected
 
 
+@requires_bash
+@pytest.mark.parametrize("dry_run", [False, True], ids=["create", "dry_run"])
+@pytest.mark.parametrize(
+    "description,short_name,expected",
+    [
+        ("-n", None, "001-n"),
+        ("-e", None, "001-e"),
+        ("-E", None, "001-e"),
+        ("-neE", None, "001-nee"),
+        ("Add user authentication", None, "001-user-authentication"),
+        (" \tAdd user authentication\t ", None, "001-user-authentication"),
+        ("-n", "custom-name", "001-custom-name"),
+    ],
+    ids=["n", "e", "E", "neE", "ordinary", "padded", "explicit_short_name"],
+)
+def test_python_literal_description_matches_bash(
+    repo_pair: tuple[Path, Path],
+    dry_run: bool,
+    description: str,
+    short_name: str | None,
+    expected: str,
+) -> None:
+    """Descriptions resembling echo options must survive trimming (#5096)."""
+    repo_a, repo_b = repo_pair
+    args = ["--json"]
+    if dry_run:
+        args.append("--dry-run")
+    if short_name is not None:
+        args.extend(["--short-name", short_name])
+    args.append(description)
+    py = run(py_cmd(repo_b, SCRIPT, *args), repo_b)
+    bash = run(bash_cmd(repo_a, SCRIPT, *args), repo_a)
+
+    for result, current in ((py, repo_b), (bash, repo_a)):
+        assert result.returncode == 0, result.stderr
+        output = json_stdout(result)
+        spec = current / "specs" / expected / "spec.md"
+        expected_output = {
+            "BRANCH_NAME": expected,
+            "SPEC_FILE": str(spec),
+            "FEATURE_NUM": "001",
+        }
+        state = current / ".specify" / "feature.json"
+        if dry_run:
+            expected_output["DRY_RUN"] = True
+            assert not (current / "specs").exists()
+            assert not state.exists()
+        else:
+            assert spec.read_bytes() == (
+                current / ".specify" / "templates" / "spec-template.md"
+            ).read_bytes()
+            assert state.read_bytes() == (
+                f'{{"feature_directory":"specs/{expected}"}}\n'.encode("utf-8")
+            )
+        assert output == expected_output
+    assert normalize_repo_paths(py.stdout, repo_b) == normalize_repo_paths(
+        bash.stdout, repo_a
+    )
+    assert normalize_repo_paths(py.stderr, repo_b) == normalize_repo_paths(
+        bash.stderr, repo_a
+    )
+
+
+@requires_bash
+@pytest.mark.parametrize("dry_run", [False, True], ids=["create", "dry_run"])
+@pytest.mark.parametrize("description", ["   ", " \t\t "], ids=["spaces", "tabs"])
+def test_python_whitespace_description_matches_bash(
+    repo_pair: tuple[Path, Path], dry_run: bool, description: str
+) -> None:
+    repo_a, repo_b = repo_pair
+    args = ["--json"]
+    if dry_run:
+        args.append("--dry-run")
+    args.append(description)
+    bash = run(bash_cmd(repo_a, SCRIPT, *args), repo_a)
+    py = run(py_cmd(repo_b, SCRIPT, *args), repo_b)
+
+    assert py.returncode == bash.returncode == 1
+    assert py.stdout == bash.stdout == ""
+    assert py.stderr == bash.stderr == (
+        "Error: Feature description cannot be empty or contain only whitespace\n"
+    )
+    for current in repo_pair:
+        assert not (current / "specs").exists()
+        assert not (current / ".specify" / "feature.json").exists()
+
+
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
 @pytest.mark.parametrize(
     ("description", "expected"),

@@ -88,6 +88,15 @@ def _twin_projects(tmp_path: Path, *, git: bool = True) -> tuple[Path, Path]:
     return bash_proj, py_proj
 
 
+def _branch_state(project: Path) -> tuple[str, str]:
+    return tuple(
+        subprocess.run(
+            ["git", *args], cwd=project, check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        for args in (("symbolic-ref", "--short", "HEAD"), ("for-each-ref",))
+    )
+
+
 def _assert_parity(
     bash_result: subprocess.CompletedProcess,
     py_result: subprocess.CompletedProcess,
@@ -120,6 +129,77 @@ def _without_persist_hint(stderr: str) -> str:
 
 @requires_bash
 class TestCreateFeatureBranchParity:
+    @pytest.mark.parametrize("dry_run", [False, True], ids=["create", "dry_run"])
+    @pytest.mark.parametrize(
+        "description,short_name,expected",
+        [
+            ("-n", None, "001-n"),
+            ("-e", None, "001-e"),
+            ("-E", None, "001-e"),
+            ("-neE", None, "001-nee"),
+            ("Add user authentication", None, "001-user-authentication"),
+            (" \tAdd user authentication\t ", None, "001-user-authentication"),
+            ("Add user authentication", "custom-name", "001-custom-name"),
+            ("-n", "custom-name", "001-custom-name"),
+        ],
+        ids=["n", "e", "E", "neE", "ordinary", "padded", "short_name", "literal_short_name"],
+    )
+    def test_literal_description(
+        self, tmp_path: Path, dry_run: bool, description: str,
+        short_name: str | None, expected: str,
+    ):
+        """Option-like descriptions survive trimming without --short-name (#5096)."""
+        projects = _twin_projects(tmp_path)
+        before = [_branch_state(project) for project in projects]
+        args = ["--json"]
+        if dry_run:
+            args.append("--dry-run")
+        if short_name is not None:
+            args.extend(["--short-name", short_name])
+        args.append(description)
+        b = _run_bash("create-new-feature-branch.sh", projects[0], *args)
+        p = _run_py("create-new-feature-branch", projects[1], *args)
+        _assert_parity(b, p)
+
+        for result, project, initial_state in zip((b, p), projects, before):
+            assert result.returncode == 0, result.stderr
+            expected_data = {"BRANCH_NAME": expected, "FEATURE_NUM": "001"}
+            if dry_run:
+                expected_data["DRY_RUN"] = True
+                assert _branch_state(project) == initial_state
+            else:
+                assert _branch_state(project)[0] == expected
+            assert json.loads(result.stdout) == expected_data
+            assert not (project / "specs").exists()
+            assert not (project / ".specify" / "feature.json").exists()
+
+    @pytest.mark.parametrize("dry_run", [False, True], ids=["create", "dry_run"])
+    @pytest.mark.parametrize("description", ["   ", " \t\t "], ids=["spaces", "tabs"])
+    @pytest.mark.parametrize("short_name", [None, "custom-name"], ids=["default", "short_name"])
+    def test_whitespace_description(
+        self, tmp_path: Path, dry_run: bool, description: str, short_name: str | None,
+    ):
+        projects = _twin_projects(tmp_path)
+        before = [_branch_state(project) for project in projects]
+        args = ["--json"]
+        if dry_run:
+            args.append("--dry-run")
+        if short_name is not None:
+            args.extend(["--short-name", short_name])
+        args.append(description)
+        b = _run_bash("create-new-feature-branch.sh", projects[0], *args)
+        p = _run_py("create-new-feature-branch", projects[1], *args)
+
+        assert b.returncode == p.returncode == 1
+        assert b.stdout == p.stdout == ""
+        assert b.stderr == p.stderr == (
+            "Error: Feature description cannot be empty or contain only whitespace\n"
+        )
+        for project, initial_state in zip(projects, before):
+            assert _branch_state(project) == initial_state
+            assert not (project / "specs").exists()
+            assert not (project / ".specify" / "feature.json").exists()
+
     def test_sequential_branch_json(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
         b = _run_bash("create-new-feature-branch.sh", bash_proj, "--json", "Add user authentication")
