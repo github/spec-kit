@@ -705,9 +705,10 @@ class TestInstallerLookupSecurity:
         alias = home / ".local"
         try:
             (bin_dir / selected_name).symlink_to(os.path.relpath(dispatcher, bin_dir))
-            alias.symlink_to("../install", target_is_directory=True)
+            alias.symlink_to(os.path.relpath(install, home), target_is_directory=True)
         except OSError:
             pytest.skip("symlinks are unavailable")
+        assert (alias / "bin" / selected_name).resolve(strict=True) == dispatcher
         original_lstat = Path.lstat
         original_readlink = Path.readlink
         link_status = original_lstat(alias)
