@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -246,7 +247,23 @@ def _sorted_preset_ids(presets_dir: Path) -> list[str]:
         return []
 
 
+def _validate_extension_registry_hierarchy(extensions_dir: Path) -> None:
+    for path in (extensions_dir.parent, extensions_dir, extensions_dir / ".registry"):
+        try:
+            entry = path.lstat()
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            raise TemplateResolutionError(f"Cannot inspect extension registry {path}: {exc}") from exc
+        if (
+            stat.S_ISLNK(entry.st_mode)
+            or getattr(entry, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+        ):
+            raise TemplateResolutionError(f"Refusing symlink or unsupported reparse point: {path}")
+
+
 def _sorted_extension_ids(extensions_dir: Path) -> list[str]:
+    _validate_extension_registry_hierarchy(extensions_dir)
     registry = extensions_dir / ".registry"
     registered_ids: set[str] = set()
     extensions: dict[object, object] = {}
@@ -340,12 +357,11 @@ def resolve_template(template_name: str, repo_root: Path) -> Path | None:
                 return candidate
 
     ext_dir = repo_root / ".specify" / "extensions"
-    if ext_dir.is_dir():
-        for extension_id in _sorted_extension_ids(ext_dir):
-            ext = ext_dir / extension_id
-            candidate = _conventional_template(ext, template_name)
-            if candidate is not None:
-                return candidate
+    for extension_id in _sorted_extension_ids(ext_dir):
+        ext = ext_dir / extension_id
+        candidate = _conventional_template(ext, template_name)
+        if candidate is not None:
+            return candidate
 
     core = base / f"{template_name}.md"
     if core.is_file():

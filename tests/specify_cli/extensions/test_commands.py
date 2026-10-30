@@ -30,9 +30,9 @@ def test_linked_registry_reports_cli_error(project_dir, tmp_path, monkeypatch, a
         registry.symlink_to(external)
     except OSError:
         pytest.skip("Symlink creation unavailable")
-    monkeypatch.chdir(project_dir)
-
-    result = CliRunner().invoke(app, ["extension", *arguments])
+    with monkeypatch.context() as context:
+        context.chdir(project_dir)
+        result = CliRunner().invoke(app, ["extension", *arguments])
 
     assert result.exit_code == 1, result.output
     assert isinstance(result.exception, SystemExit), repr(result.exception)

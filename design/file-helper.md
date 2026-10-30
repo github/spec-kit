@@ -104,6 +104,10 @@ Generated event dispatchers validate the registry hierarchy using only the
 standard library before delegating to an installed CLI or using their inline
 fallback, so unavailable or stale packages cannot bypass link and reparse-point
 rejection. A rejected hierarchy produces a diagnostic and exit status 2.
+Bundled Bash, Python, and Windows PowerShell 5.1 template helpers reject linked
+registry storage before reading or scanning the extension layer, including
+dangling parent links. Higher-priority replacement layers retain their existing
+short-circuit behavior.
 This boundary has the portable helper's
 concurrent-mutation limits described below.
 
