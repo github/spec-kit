@@ -777,7 +777,7 @@ class TestClaudeNoModelInvocationOption:
 
     def test_upgrade_reapplies_option_to_preset_overrides(self, tmp_path):
         """``preset add`` runs without ``setup()`` (documented limitation);
-        ``integration upgrade claude --force`` reapplies the option to the
+        ``integration upgrade claude`` reapplies the option to the
         core-command skills a preset overrides."""
         from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
 
@@ -792,16 +792,20 @@ class TestClaudeNoModelInvocationOption:
         assert result.exit_code == 0, result.output
         fm = _skill_frontmatter(skill_file)
         assert fm["metadata"]["source"] == "preset:lean"
-        # Documented in docs/reference/integrations.md; update the docs if
+        # Documented in docs/integrations/claude.md; update the docs if
         # preset commands start honouring the option.
         assert fm["disable-model-invocation"] is False
 
-        # The docs say ``--force`` is needed here: preset add modified
-        # installed skill files, so a plain upgrade refuses.
+        result = _run_in_project(project, ["integration", "upgrade", "claude"])
+        assert result.exit_code == 0, result.output
+        assert _skill_frontmatter(skill_file)["disable-model-invocation"] is True
+
+        edited = skill_file.read_bytes() + b"\nUser customization\n"
+        skill_file.write_bytes(edited)
         result = _run_in_project(project, ["integration", "upgrade", "claude"])
         assert result.exit_code != 0
         assert "modified since installation" in result.output
-        assert _skill_frontmatter(skill_file)["disable-model-invocation"] is False
+        assert skill_file.read_bytes() == edited
 
         get_integration("claude")._disable_model_invocation = False
         result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])

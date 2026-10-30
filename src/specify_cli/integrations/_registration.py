@@ -30,34 +30,40 @@ def managed_registration(handler):
     @wraps(handler)
     def invoke(self, *args, **kwargs):
         from ._file_changes import registration_changes
+        from ._helpers import _resync_manifest_after_registration, _snapshot_manifest_before_registration
         from .manifest import IntegrationManifest
         from ..file_helper import FileHelper
         from ..shared_infra import _validate_safe_shared_directory
 
         if registration_changes.get() is not None:
             return handler(self, *args, **kwargs)
+        root = self.project_root
+        directory = root / ".specify/integrations"
+        _validate_safe_shared_directory(root, directory)
+        metadata = FileHelper(root)
+        snapshots: dict[str, set[str]] = {}
+        for path in sorted(directory.glob("*.manifest.json")):
+            metadata.read_bytes(path)
+            key = path.name.removesuffix(".manifest.json")
+            manifest, unmodified = _snapshot_manifest_before_registration(root, key)
+            if manifest is not None:
+                snapshots[key] = unmodified
         changed: set[Path] = set()
         token = registration_changes.set(changed)
         try:
             result = handler(self, *args, **kwargs)
         finally:
             registration_changes.reset(token)
-        if changed:
-            root = self.project_root
-            directory = root / ".specify/integrations"
-            _validate_safe_shared_directory(root, directory)
-            metadata = FileHelper(root)
-            for path in sorted(directory.glob("*.manifest.json")):
-                metadata.read_bytes(path)
-                manifest = IntegrationManifest.load(path.name.removesuffix(".manifest.json"), root)
-                refreshed = False
-                for name in manifest.files:
-                    output = root / name
-                    if output in changed and output.is_file() and not output.is_symlink():
-                        manifest.record_existing(name)
-                        refreshed = True
-                if refreshed:
-                    manifest.save()
+        for key, unmodified in snapshots.items():
+            written = {name for name in unmodified if root / name in changed}
+            if not written:
+                continue
+            metadata.read_bytes(f".specify/integrations/{key}.manifest.json")
+            manifest = IntegrationManifest.load(key, root)
+            _resync_manifest_after_registration(
+                manifest, key, unmodified_files=written,
+                continuing="Managed outputs were rendered, but their manifest hashes may be stale.",
+            )
         return result
 
     return invoke

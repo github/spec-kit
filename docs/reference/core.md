@@ -158,7 +158,9 @@ Managed preset rendering refreshes hashes only for tracked files it writes,
 after the rendering handler succeeds. This includes `init --preset`, a later
 `preset add`, and skill restoration and reconciliation during `preset remove`.
 Failed handlers leave the previous hashes intact and preserve their original
-errors. Unchanged user edits are not adopted as generated content.
+errors. Files modified before rendering retain their previous hash baseline,
+even if rescaffolding overwrites their contents. Unchanged recovered claims
+keep their recovery markers; neither is adopted as a pristine generated file.
 For example:
 
 ```bash
