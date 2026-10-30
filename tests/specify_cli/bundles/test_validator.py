@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from specify_cli.bundles import validator as validator_mod
-from specify_cli.bundles.manifest import BundleManifest
+from specify_cli.bundles.manifest import BundleManifest, ComponentRef
 from specify_cli.bundles.validator import validate_manifest
 from tests.specify_cli.bundles.helpers import valid_manifest_dict
 
@@ -31,6 +31,40 @@ def test_duplicate_component_id_cannot_request_two_versions():
         "ext-a" in error and "duplicate" in error.lower()
         for error in report.errors
     )
+
+
+def test_components_override_is_checked():
+    manifest = _manifest()
+    expanded_component = ComponentRef(
+        kind="extensions", id="expanded-only", version="1.0.0"
+    )
+
+    report = validate_manifest(
+        manifest,
+        reference_checker=lambda component: "not found",
+        components=[expanded_component],
+    )
+
+    assert report.errors == [
+        "Unresolved reference extension:expanded-only@1.0.0: not found"
+    ]
+
+
+def test_unresolved_expanded_component_is_reported():
+    manifest = _manifest()
+    expanded_component = ComponentRef(
+        kind="extensions", id="expanded-only", version="1.0.0"
+    )
+
+    report = validate_manifest(
+        manifest,
+        reference_checker=lambda component: (
+            "missing expanded component" if component.id == "expanded-only" else None
+        ),
+        components=[*manifest.components, expanded_component],
+    )
+
+    assert any("expanded-only" in error for error in report.errors)
 
 
 def test_non_bundler_error_not_swallowed(monkeypatch):

@@ -12,6 +12,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from .._download_security import safe_extract_archive
 from .._init_options import is_ai_skills_enabled, resolve_active_agent_for_registration
+from .._install_ignore import load_install_ignore
 from .._utils import version_satisfies
 from ..extensions import REINSTALL_COMMAND, normalize_priority
 from ..shared_infra import (
@@ -402,13 +403,16 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 f"Preset '{manifest.id}' is already installed. "
                 f"Use 'specify preset remove {manifest.id}' first."
             )
+        # Validate before remove() changes registry/agent artifacts or deleting
+        # an unregistered destination left behind by an earlier installation.
+        ignore_fn = load_install_ignore(source_dir, ".presetignore", PresetValidationError)
         before_file_change(dest_dir, removal=True)
         try:
             if installed:
                 self.remove(manifest.id)
             if dest_dir.exists():
                 shutil.rmtree(dest_dir)
-            shutil.copytree(source_dir, dest_dir)
+            shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
         finally:
             after_file_change(dest_dir)
 

@@ -183,7 +183,7 @@ Registration is explicit — each step class is imported and instantiated. New s
 
 ## Expression Engine
 
-Workflow definitions use Jinja2-like `{{ expression }}` syntax for dynamic values. The expression engine in `src/specify_cli/workflows/expressions.py` supports:
+Workflow definitions use Jinja2-like `{{ expression }}` syntax for dynamic values. The expression engine in `src/specify_cli/workflows/expressions/` supports:
 
 | Feature | Syntax | Example |
 |---------|--------|---------|
@@ -212,7 +212,13 @@ The older filters are more permissive and are unchanged: `join` stringifies unsu
 
 **`to_json` output is deterministic.** It pins `sort_keys=True` and `ensure_ascii=False`, so the same value always serializes to the same bytes regardless of dict insertion order or platform, and non-ASCII text is not `\uXXXX`-escaped. This buys reproducibility only — it does **not** make the result safe to pass through a shell, because expression interpolation adds no quoting or escaping. See [Interpolation and shell safety](../docs/reference/workflows.md#interpolation-and-shell-safety) before interpolating JSON into a `run` field.
 
-**Filters and comparisons.** The parser splits on the top-level `|` before looking for operators, so a comparison or other trailing token after a filter is rejected as ambiguous rather than silently evaluated (`{{ items | default(0) > 5 }}` raises) — the same holds for the new filters. The count a `length` filter would produce does not exist before the filter runs, so there is no way to write `{{ items | length > 0 }}`; the only supported branching form is the filtered value's own truthiness in a `condition:`, since `length` returns `0` for an empty input:
+**Filters and comparisons.** The parser splits on the top-level `|` before looking for operators, so an unparenthesized trailing comparison such as `{{ inputs.items | length > 0 }}` raises a `ValueError`. Parenthesize the filtered operand to compare its result: `{{ (inputs.items | length) > 0 }}`. For a threshold of at least two:
+
+```yaml
+condition: "{{ (inputs.items | length) >= 2 }}"
+```
+
+For an emptiness check, use the filtered count's truthiness directly:
 
 ```yaml
 condition: "{{ inputs.items | length }}"   # 0 -> False, any non-zero count -> True
@@ -290,7 +296,9 @@ src/specify_cli/
 │   ├── base.py              # StepBase, StepContext, StepResult, StepStatus, RunStatus
 │   ├── catalog.py           # WorkflowCatalog, WorkflowCatalogEntry, WorkflowRegistry
 │   ├── engine.py            # WorkflowDefinition, WorkflowEngine, RunState, validate_workflow()
-│   ├── expressions.py       # evaluate_expression(), evaluate_condition(), filters
+│   ├── expressions/         # expression engine package
+│   │   ├── engine.py        # the single engine selection point
+│   │   └── api.py           # evaluate_expression(), evaluate_condition()
 │   └── steps/
 │       ├── command/         # Dispatch command to AI integration
 │       ├── shell/           # Run shell command

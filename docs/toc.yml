@@ -135,6 +135,19 @@
     - name: Contributing Integrations
       href: integrations/contributing.md
 
+# Extensions
+- name: Extensions
+  href: extensions/overview.md
+  items:
+    - name: Overview
+      href: extensions/overview.md
+    - name: Developing
+      href: extensions/developing.md
+    - name: API Reference
+      href: extensions/api.md
+    - name: Publishing
+      href: extensions/publishing.md
+
 # Reference
 - name: Reference
   items:

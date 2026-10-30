@@ -398,7 +398,7 @@ class TestIntegrationStatus:
         assert result.stdout == ""
         assert "Cannot establish project root" in json.loads(result.stderr)["error"]
 
-    def test_status_loads_manifests_when_project_root_resolution_keeps_failing(
+    def test_status_reports_state_error_when_project_root_resolution_keeps_failing(
         self,
         copilot_project,
         monkeypatch,
@@ -414,13 +414,15 @@ class TestIntegrationStatus:
 
         from specify_cli.integration_status import build_integration_status_report
 
-        # The tolerant domain diagnostic remains available; CLI policy preflight
-        # now requires an established root before reaching this diagnostic.
+        # State I/O must establish its boundary even outside CLI policy preflight.
         payload = build_integration_status_report(copilot_project)
-        assert payload["status"] == "warning"
-        assert payload["manifests"]["copilot"]["readable"] is True
-        assert payload["manifests"]["speckit"]["readable"] is True
+        assert payload["status"] == "error"
+        assert payload["manifests"] == {}
         assert any(item["code"] == "project-root-unresolved" for item in payload["findings"])
+        state_error = next(
+            item for item in payload["findings"] if item["code"] == "integration-state-unreadable"
+        )
+        assert "Cannot establish project root" in state_error["message"]
 
     def test_status_uses_lexical_manifest_paths_when_project_root_resolution_falls_back(self, tmp_path):
         from specify_cli.integration_status import _manifest_file_status

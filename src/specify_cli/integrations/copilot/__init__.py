@@ -512,7 +512,8 @@ class CopilotIntegration(IntegrationBase):
 
         # Install agent runtime events
         event_files = self.emit_events(
-            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options,
+            force=opts.get("force", False),
         )
         created.extend(event_files)
         return created

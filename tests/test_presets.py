@@ -506,6 +506,21 @@ def test_core_checklist_command_resolves_template_at_runtime():
     assert "Use TEMPLATE_CONTENT as the structural template" in content
 
 
+def test_core_specify_command_writes_composed_spec_template():
+    """The specify command must start spec.md from the composed spec-template."""
+    content = (CORE_CONSTITUTION_COMMAND.parent / "specify.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "resolve-template.sh spec-template --json" in content
+    assert "resolve-template.ps1 spec-template -Json" in content
+    assert "resolve_template.py spec-template --json" in content
+    assert "parse `TEMPLATE_CONTENT` as the active `spec-template`" in content
+    assert "Write `TEMPLATE_CONTENT` to `SPECIFY_FEATURE_DIRECTORY/spec.md`" in content
+    assert "do not continue with only one contributing template layer" in content
+    assert "Copy the resolved `spec-template` file" not in content
+
+
 class TestLeanPreset:
     """Tests for the lean preset that ships with the repo."""
 

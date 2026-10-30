@@ -7,9 +7,11 @@ from rich.markup import escape as _escape_markup
 
 from .._console import console
 from . import BundlerError
+from .expansion import require_installable
 from ._commands import (
     _build_stack,
-    _fail,
+    _expand_manifest,
+    _fail_with_notes,
     _render_install_warnings,
     _speckit_version,
     bundle_app,
@@ -56,13 +58,24 @@ def bundle_update(
                     "Update requires an install-allowed source (FR-025)."
                 )
             manifest = _download_manifest(resolved, offline=offline)
+            expanded = _expand_manifest(
+                project_root,
+                manifest,
+                offline=offline,
+                stack=stack,
+                download=_download_manifest,
+            )
+            require_installable(expanded)
             detected = active_integration(project_root)
             plan = resolve_install_plan(
-                manifest,
+                expanded,
                 speckit_version=_speckit_version(),
                 active_integration=detected if detected is not None else integration,
                 integration_explicit=bool(integration) and detected is None,
             )
+            if expanded.has_references:
+                for warning in plan.warnings:
+                    console.print(f"[yellow]![/yellow] {_escape_markup(str(warning))}")
             result = install_bundle(
                 project_root, plan, installer, manifest=manifest, refresh=True
             )
@@ -72,5 +85,5 @@ def bundle_update(
                 f"to v{_escape_markup(str(plan.version))}."
             )
     except BundlerError as exc:
-        _fail(str(exc))
+        _fail_with_notes(exc)
         return
