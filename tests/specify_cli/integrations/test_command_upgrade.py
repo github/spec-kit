@@ -68,6 +68,9 @@ class TestIntegrationUpgradeDetailed:
         before = command.read_bytes()
         assert b".specify/scripts/python/pre_hooks.py" in before
         dispatchers = project / ".specify/scripts/powershell"
+        # Windows setup may already have copied its native script variant.
+        for phase in ("pre", "post"):
+            (dispatchers / f"{phase}-hooks.ps1").unlink(missing_ok=True)
         assert not (dispatchers / "pre-hooks.ps1").exists()
         if unsafe_dispatcher:
             dispatchers.mkdir(parents=True, exist_ok=True)
