@@ -1,7 +1,9 @@
 """Tests for the Docker Agent integration."""
 
 import os
+import shutil
 import subprocess
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -344,7 +346,7 @@ def test_dispatch_rejects_checkout_local_executable(tmp_path, monkeypatch, strea
     run.assert_not_called()
 
 
-@pytest.mark.parametrize("override_kind", ["absolute", "bare"])
+@pytest.mark.parametrize("override_kind", ["absolute", "bare", "bare-relative-lookup"])
 def test_dispatch_preserves_explicit_checkout_local_override(
     tmp_path, monkeypatch, override_kind
 ):
@@ -356,6 +358,15 @@ def test_dispatch_preserves_explicit_checkout_local_override(
     monkeypatch.setenv("PATHEXT", ".exe")
     override = str(executable) if override_kind == "absolute" else "docker-agent"
     monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", override)
+    if override_kind == "bare-relative-lookup":
+        original_which = shutil.which
+
+        def relative_which(command):
+            if command == "docker-agent":
+                return os.path.join(os.curdir, executable.name)
+            return original_which(command)
+
+        monkeypatch.setattr(shutil, "which", relative_which)
     run = Mock(return_value=subprocess.CompletedProcess([], 0, stdout="done", stderr=""))
     monkeypatch.setattr(subprocess, "run", run)
 
@@ -367,7 +378,8 @@ def test_dispatch_preserves_explicit_checkout_local_override(
     )
 
     assert result == {"exit_code": 0, "stdout": "done", "stderr": ""}
-    assert run.call_args.args[0][0] == str(executable)
+    assert Path(run.call_args.args[0][0]).samefile(executable)
+    assert run.call_args.kwargs["cwd"] == str(tmp_path)
     run.assert_called_once()
 
 
