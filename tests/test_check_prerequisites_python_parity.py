@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,12 @@ HAS_PWSH = shutil.which("pwsh") is not None
 _WINDOWS_POWERSHELL = (
     shutil.which("powershell.exe") or shutil.which("powershell")
 ) if os.name == "nt" else None
+_GIT_EXE = shutil.which("git")
+_GIT_BASH = (
+    Path(_GIT_EXE).resolve().parent.parent / "bin" / "bash.exe"
+    if os.name == "nt" and _GIT_EXE
+    else None
+)
 
 
 def _install_scripts(repo: Path) -> None:
@@ -99,6 +106,12 @@ def _bash_cmd(repo: Path, *args: str) -> list[str]:
     return ["bash", str(script), *args]
 
 
+def _git_bash_cmd(repo: Path, *args: str) -> list[str]:
+    assert _GIT_BASH is not None
+    script = repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+    return [str(_GIT_BASH), "--noprofile", "--norc", script.as_posix(), *args]
+
+
 def _ps_cmd(repo: Path, *args: str) -> list[str]:
     script = repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
@@ -116,6 +129,78 @@ def _run(
         check=False,
         env=env or _clean_env(),
     )
+
+
+def _require_shell_read_denial(
+    shell: list[str], plan: Path, env: dict[str, str] | None = None
+) -> None:
+    probe = _run(
+        [*shell, "-c", 'cat -- "$1" >/dev/null', "bash", plan.as_posix()],
+        plan.parent,
+        env=env,
+    )
+    if probe.returncode == 0:
+        pytest.skip("selected shell retains read access to the denied plan")
+
+
+@contextmanager
+def _deny_plan_read(plan: Path):
+    if os.name != "nt":
+        mode = plan.stat().st_mode
+        try:
+            plan.chmod(0)
+            if os.access(plan, os.R_OK):
+                pytest.skip("current user can read files with no read permissions")
+            yield
+        finally:
+            plan.chmod(mode)
+        return
+
+    env = {**_clean_env(), "TEST_PLAN_PATH": str(plan)}
+    command = [_WINDOWS_POWERSHELL, "-NoProfile", "-Command"]
+    saved = _run(
+        [
+            *command,
+            "([System.IO.File]::GetAccessControl($env:TEST_PLAN_PATH)).Sddl",
+        ],
+        plan.parent,
+        env=env,
+    )
+    assert saved.returncode == 0, saved.stderr
+    env["TEST_PLAN_SDDL"] = saved.stdout.strip()
+    try:
+        denied = _run(
+            [
+                *command,
+                "$ErrorActionPreference = 'Stop'; "
+                "$acl = [System.IO.File]::GetAccessControl($env:TEST_PLAN_PATH); "
+                "$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User; "
+                "$rule = New-Object System.Security.AccessControl.FileSystemAccessRule("
+                "$sid, 'ReadData', 'Deny'); "
+                "$acl.AddAccessRule($rule); "
+                "[System.IO.File]::SetAccessControl($env:TEST_PLAN_PATH, $acl)",
+            ],
+            plan.parent,
+            env=env,
+        )
+        assert denied.returncode == 0, denied.stderr
+        with pytest.raises(PermissionError):
+            plan.read_bytes()
+        yield
+    finally:
+        restored = _run(
+            [
+                *command,
+                "$ErrorActionPreference = 'Stop'; "
+                "$acl = [System.IO.File]::GetAccessControl($env:TEST_PLAN_PATH); "
+                "$acl.SetSecurityDescriptorSddlForm($env:TEST_PLAN_SDDL, "
+                "[System.Security.AccessControl.AccessControlSections]::Access); "
+                "[System.IO.File]::SetAccessControl($env:TEST_PLAN_PATH, $acl)",
+            ],
+            plan.parent,
+            env=env,
+        )
+        assert restored.returncode == 0, restored.stderr
 
 
 def _json_stdout(result: subprocess.CompletedProcess[str]) -> object:
@@ -670,7 +755,16 @@ def test_python_negative_errors_are_stderr_only(
     ],
 )
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
-@pytest.mark.parametrize("plan_state", ["missing", "empty", "nonempty", "whitespace"])
+@pytest.mark.parametrize(
+    "plan_state",
+    [
+        "missing", "empty", "nonempty", "padded",
+        "whitespace", "whitespace_crlf", "whitespace_controls",
+        "whitespace_nbsp", "whitespace_bom", "whitespace_bom_nbsp",
+        "whitespace_unicode", "bom_content", "utf16_content", "cp1252_content",
+        "non_whitespace_control", "internal_bom", "double_bom",
+    ],
+)
 def test_plan_prerequisite_diagnostics(
     tmp_path: Path, port: str, json_mode: bool, plan_state: str
 ) -> None:
@@ -683,7 +777,27 @@ def test_plan_prerequisite_diagnostics(
     feature = repo / "specs" / "001-my-feature"
     feature.mkdir(parents=True)
     plan = feature / "plan.md"
-    bodies = {"empty": b"", "nonempty": b"# Plan\n", "whitespace": b" \t\n"}
+    bodies = {
+        "empty": b"",
+        "nonempty": b"# Plan\n",
+        "padded": b" \t\n# Plan\n \t\r\n",
+        "whitespace": b" \t\n",
+        "whitespace_crlf": b" \t\r\n\r\n",
+        "whitespace_controls": b"\v\f\n",
+        "whitespace_nbsp": "\u00a0\n".encode(),
+        "whitespace_bom": b"\xef\xbb\xbf \t\r\n",
+        "whitespace_bom_nbsp": "\ufeff\u00a0\n".encode(),
+        "whitespace_unicode": (
+            "\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005"
+            "\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\n"
+        ).encode(),
+        "bom_content": b"\xef\xbb\xbf \t# Plan\n",
+        "utf16_content": "# Plan\n".encode("utf-16"),
+        "cp1252_content": b"# \x93Plan\x94\n",
+        "non_whitespace_control": b"\x1c",
+        "internal_bom": b"\n\xef\xbb\xbf\n",
+        "double_bom": b"\xef\xbb\xbf\xef\xbb\xbf\n",
+    }
     if plan_state != "missing":
         plan.write_bytes(bodies[plan_state])
         before = plan.stat().st_mtime_ns
@@ -693,9 +807,9 @@ def test_plan_prerequisite_diagnostics(
         command_fn = _bash_cmd if port == "bash" else _py_cmd
         command = command_fn(repo, *(("--json",) if json_mode else ()))
 
-    result = _run(command, repo)
+    result = _run(command, repo, env={**_clean_env(), "LC_ALL": "C"})
 
-    if plan_state in {"missing", "empty"}:
+    if plan_state in {"missing", "empty"} or plan_state.startswith("whitespace"):
         assert result.returncode == 1
         assert result.stdout == ""
         lines = result.stderr.replace("\\", "/").splitlines()
@@ -718,6 +832,205 @@ def test_plan_prerequisite_diagnostics(
     else:
         assert plan.read_bytes() == bodies[plan_state]
         assert plan.stat().st_mtime_ns == before
+
+
+@pytest.mark.parametrize(
+    "port",
+    [
+        pytest.param("bash", marks=requires_bash),
+        pytest.param(
+            "git-bash",
+            marks=pytest.mark.skipif(
+                _GIT_BASH is None or not _GIT_BASH.is_file(),
+                reason="Git for Windows Bash required",
+            ),
+        ),
+        pytest.param(
+            "powershell",
+            marks=pytest.mark.skipif(
+                not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+            ),
+        ),
+        pytest.param("python"),
+    ],
+)
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+def test_unreadable_plan_is_not_reported_as_empty(
+    prereq_repo: Path, port: str, json_mode: bool
+) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    plan = feature / "plan.md"
+    content = b"# Existing implementation plan\n"
+    plan.write_bytes(content)
+    before = plan.stat().st_mtime_ns
+    if port == "powershell":
+        command_fn = _ps_cmd
+        args = ("-Json",) if json_mode else ()
+        paths_flag = "-PathsOnly"
+    else:
+        command_fn = {
+            "bash": _bash_cmd,
+            "git-bash": _git_bash_cmd,
+            "python": _py_cmd,
+        }[port]
+        args = ("--json",) if json_mode else ()
+        paths_flag = "--paths-only"
+    feature_path = str(feature)
+    if port in {"bash", "git-bash"}:
+        path = _run([command_fn(prereq_repo)[0], "-c", "pwd"], feature)
+        assert path.returncode == 0, path.stderr
+        feature_path = path.stdout.strip()
+
+    with _deny_plan_read(plan):
+        if port in {"bash", "git-bash"}:
+            _require_shell_read_denial([command_fn(prereq_repo)[0]], plan)
+        result = _run(command_fn(prereq_repo, *args), prereq_repo)
+        paths_only = _run(command_fn(prereq_repo, *args, paths_flag), prereq_repo)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        f"ERROR: plan.md is not readable in {feature_path}",
+        "Check its file permissions and rerun the prerequisite check.",
+    ]
+    assert paths_only.returncode == 0, paths_only.stderr
+    assert plan.read_bytes() == content
+    assert plan.stat().st_mtime_ns == before
+    readable = _run(command_fn(prereq_repo, *args), prereq_repo)
+    assert readable.returncode == 0, readable.stderr
+
+
+@requires_bash
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux procfs required")
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+def test_bash_plan_open_success_does_not_hide_read_failure(
+    prereq_repo: Path, json_mode: bool
+) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    plan = feature / "plan.md"
+    plan.symlink_to("/proc/self/mem")
+    before = plan.lstat()
+    args = ("--json",) if json_mode else ()
+    opened = _run(["bash", "-c", 'true < "$1"', "bash", str(plan)], prereq_repo)
+    assert opened.returncode == 0, opened.stderr
+    path = _run(["bash", "-c", "pwd"], feature)
+    assert path.returncode == 0, path.stderr
+
+    result = _run(_bash_cmd(prereq_repo, *args), prereq_repo)
+    paths_only = _run(_bash_cmd(prereq_repo, *args, "--paths-only"), prereq_repo)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        f"ERROR: plan.md is not readable in {path.stdout.strip()}",
+        "Check its file permissions and rerun the prerequisite check.",
+    ]
+    assert paths_only.returncode == 0, paths_only.stderr
+    assert plan.is_symlink()
+    assert plan.readlink() == Path("/proc/self/mem")
+    assert plan.lstat().st_mtime_ns == before.st_mtime_ns
+    plan.unlink()
+    plan.write_text("# Restored plan\n", encoding="utf-8")
+    readable = _run(_bash_cmd(prereq_repo, *args), prereq_repo)
+    assert readable.returncode == 0, readable.stderr
+
+
+@(
+    pytest.mark.skipif(
+        _GIT_BASH is None or not _GIT_BASH.is_file(),
+        reason="Git for Windows Bash required",
+    )
+    if os.name == "nt"
+    else requires_bash
+)
+@pytest.mark.parametrize("posix_mode", ["option", "environment"])
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+def test_bash_posix_plan_read_failure(
+    prereq_repo: Path, posix_mode: str, json_mode: bool
+) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    plan = feature / "plan.md"
+    content = b"# Existing implementation plan\n"
+    plan.write_bytes(content)
+    before = plan.stat().st_mtime_ns
+    command_fn = _git_bash_cmd if os.name == "nt" else _bash_cmd
+    command = command_fn(prereq_repo, *(("--json",) if json_mode else ()))
+    shell = [command[0]]
+    env = _clean_env()
+    if posix_mode == "option":
+        command.insert(1, "--posix")
+        shell.append("--posix")
+    else:
+        env["POSIXLY_CORRECT"] = "1"
+    syntax = _run([*shell, "-c", "true < <(true)"], prereq_repo, env=env)
+    if syntax.returncode != 0:
+        pytest.skip("selected POSIX Bash does not support process substitution")
+    path = _run([*shell, "-c", "pwd"], feature, env=env)
+    assert path.returncode == 0, path.stderr
+
+    with _deny_plan_read(plan):
+        _require_shell_read_denial(shell, plan, env=env)
+        result = _run(command, prereq_repo, env=env)
+        paths_only = _run([*command, "--paths-only"], prereq_repo, env=env)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        f"ERROR: plan.md is not readable in {path.stdout.strip()}",
+        "Check its file permissions and rerun the prerequisite check.",
+    ]
+    assert paths_only.returncode == 0, paths_only.stderr
+    assert plan.read_bytes() == content
+    assert plan.stat().st_mtime_ns == before
+    readable = _run(command, prereq_repo, env=env)
+    assert readable.returncode == 0, readable.stderr
+
+
+@pytest.mark.skipif(
+    _GIT_BASH is None or not _GIT_BASH.is_file(), reason="Git for Windows Bash required"
+)
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+def test_git_bash_noacl_plan_read_failure(prereq_repo: Path, json_mode: bool) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    plan = feature / "plan.md"
+    content = b"# Existing implementation plan\n"
+    plan.write_bytes(content)
+    before = plan.stat().st_mtime_ns
+    args = ("--json",) if json_mode else ()
+    feature_path = _run([str(_GIT_BASH), "-c", "pwd"], feature).stdout.strip()
+
+    with _deny_plan_read(plan):
+        probe = _run(
+            [str(_GIT_BASH), "-c", '[[ -r "$1" ]]', "bash", plan.as_posix()],
+            prereq_repo,
+        )
+        if probe.returncode != 0:
+            pytest.skip("Git Bash honors ACL readability on this mount")
+        _require_shell_read_denial([str(_GIT_BASH)], plan)
+        result = _run(_git_bash_cmd(prereq_repo, *args), prereq_repo)
+        paths_only = _run(
+            _git_bash_cmd(prereq_repo, *args, "--paths-only"), prereq_repo
+        )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        f"ERROR: plan.md is not readable in {feature_path}",
+        "Check its file permissions and rerun the prerequisite check.",
+    ]
+    assert paths_only.returncode == 0, paths_only.stderr
+    assert plan.read_bytes() == content
+    assert plan.stat().st_mtime_ns == before
+    readable = _run(_git_bash_cmd(prereq_repo, *args), prereq_repo)
+    assert readable.returncode == 0, readable.stderr
 
 
 def test_python_branch_falls_back_to_feature_dir_basename(prereq_repo: Path) -> None:
