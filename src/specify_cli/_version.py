@@ -533,7 +533,10 @@ def _find_installer(name: str) -> str | None:
                 if key in seen:
                     continue
                 seen.add(key)
-                entry_status = ancestor.lstat()
+                # Follow ".." as directory navigation, not as a possible link.
+                entry_status = (
+                    ancestor.stat() if ancestor.name == ".." else ancestor.lstat()
+                )
                 is_link = stat.S_ISLNK(entry_status.st_mode)
                 is_reparse = bool(
                     getattr(entry_status, "st_file_attributes", 0)

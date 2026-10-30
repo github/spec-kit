@@ -689,6 +689,56 @@ class TestInstallerLookupSecurity:
             )
 
     @pytest.mark.parametrize("name", ["uv", "pipx"])
+    def test_parent_component_does_not_rebase_relative_directory_link(
+        self, monkeypatch, tmp_path, name
+    ):
+        home = tmp_path / "home"
+        home.mkdir()
+        install = tmp_path / "install"
+        install.mkdir()
+        bin_dir = install / "bin"
+        bin_dir.mkdir()
+        cellar = install / "Cellar"
+        cellar.mkdir()
+        dispatcher = self.executable(cellar, "dispatcher")
+        selected_name = f"{name}.exe" if os.name == "nt" else name
+        alias = home / ".local"
+        try:
+            (bin_dir / selected_name).symlink_to(os.path.relpath(dispatcher, bin_dir))
+            alias.symlink_to("../install", target_is_directory=True)
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+        original_lstat = Path.lstat
+        original_readlink = Path.readlink
+        link_status = original_lstat(alias)
+        read_links = []
+
+        def parent_component(path):
+            return path.name == ".." and path.parent == alias / "bin"
+
+        def lstat(path, *args, **kwargs):
+            return (
+                link_status
+                if parent_component(path)
+                else original_lstat(path, *args, **kwargs)
+            )
+
+        def readlink(path):
+            read_links.append(path)
+            return original_readlink(alias if parent_component(path) else path)
+
+        monkeypatch.setattr(Path, "lstat", lstat)
+        monkeypatch.setattr(Path, "readlink", readlink)
+        monkeypatch.chdir(home)
+        monkeypatch.setenv("PATH", str(alias / "bin"))
+
+        found = specify_cli._version._find_installer(name)
+
+        assert found is not None
+        assert Path(found) == alias / "bin" / selected_name
+        assert all(path.name != ".." for path in read_links)
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
     @pytest.mark.parametrize("link_name", [".local", ".nix-profile"])
     @pytest.mark.parametrize("relative", [False, True])
     @pytest.mark.parametrize("operation", ["lookup", "registry", "upgrade"])
