@@ -183,11 +183,22 @@ def _render_argv(argv: list[str]) -> str:
 
 _INSTALLER_PATH_PREFIXES: dict[str, list[str]] = {
     "uv-tool": [
+        "${UV_TOOL_DIR}/specify-cli/",
+        "${XDG_DATA_HOME}/uv/tools/specify-cli/",
         "~/.local/share/uv/tools/specify-cli/",
+        "${APPDATA}/uv/tools/specify-cli/",
+        "${APPDATA}/uv/data/tools/specify-cli/",
+        "~/Library/Application Support/uv/tools/specify-cli/",
         "%LOCALAPPDATA%\\uv\\tools\\specify-cli\\",
     ],
     "pipx": [
+        "${PIPX_HOME}/venvs/specify-cli/",
+        "${XDG_DATA_HOME}/pipx/venvs/specify-cli/",
+        "~/.local/share/pipx/venvs/specify-cli/",
+        "~/Library/Application Support/pipx/venvs/specify-cli/",
+        "${LOCALAPPDATA}/pipx/pipx/venvs/specify-cli/",
         "~/.local/pipx/venvs/specify-cli/",
+        "~/pipx/venvs/specify-cli/",
         "%LOCALAPPDATA%\\pipx\\venvs\\specify-cli\\",
     ],
     "uvx-ephemeral": [
@@ -351,18 +362,25 @@ def _validate_tag(tag: str) -> str:
 def _expand_prefix(prefix: str) -> Path | None:
     """Expand `~` or `%LOCALAPPDATA%`-style tokens in a path prefix."""
 
-    expanded = os.path.expanduser(prefix)
+    # An unset or empty directory override must not become a root-level prefix.
+    for token in _UNRESOLVED_ENV_VAR_RE.findall(prefix):
+        if not os.environ.get(token.strip("${}%")):
+            return None
+    expanded = prefix
     if "%LOCALAPPDATA%" in expanded:
         local_app_data = os.environ.get("LOCALAPPDATA")
         if not local_app_data:
             return None
         expanded = expanded.replace("%LOCALAPPDATA%", local_app_data)
-    expanded = os.path.expandvars(expanded)
+    expanded = os.path.expanduser(os.path.expandvars(expanded))
     if _UNRESOLVED_ENV_VAR_RE.search(expanded):
         return None
     try:
         expanded_path = Path(expanded)
-        return expanded_path.resolve() if expanded_path.is_absolute() else expanded_path
+        # uv and pipx resolve their relative tool directories against the working directory.
+        if expanded_path.is_absolute() or prefix.startswith(("${UV_TOOL_DIR}/", "${PIPX_HOME}/")):
+            return expanded_path.resolve()
+        return expanded_path
     except OSError:
         return None
 
