@@ -391,8 +391,6 @@ settings:
 # Bundled bug extension events (when installed):
 #                   before_bug_assess, after_bug_assess, before_bug_fix, after_bug_fix,
 #                   before_bug_test, after_bug_test
-# Bundled github extension events (when installed; not core events):
-#                   before_taskstoissues, after_taskstoissues
 hooks:
   after_tasks:
     - extension: jira

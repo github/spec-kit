@@ -486,14 +486,6 @@ Docker Agent currently exposes structured agent/safety configuration.
 Headless approval flags, model forwarding, and structured-output support are
 also adapter-specific, not universal guarantees.
 
-## GitHub Issue Creation
-
-The core `speckit.taskstoissues` command has been removed. Install the opt-in GitHub extension
-with `specify extension add github` and use `speckit.github.taskstoissues`
-instead. See the [extension's migration guide](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#migrating-from-the-core-taskstoissues-command)
-for invocation syntax and migration details. The extension is not installed
-automatically and does not restore the old invocation.
-
 ## FAQ
 
 ### Can I install multiple integrations in the same project?

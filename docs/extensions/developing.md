@@ -240,7 +240,6 @@ Available hook points:
 - `before_bug_assess` / `after_bug_assess`: Before/after bug assessment (bundled `bug` extension)
 - `before_bug_fix` / `after_bug_fix`: Before/after bug remediation (bundled `bug` extension)
 - `before_bug_test` / `after_bug_test`: Before/after bug verification (bundled `bug` extension)
-- `before_taskstoissues` / `after_taskstoissues`: Before/after tasks-to-issues conversion by `speckit.github.taskstoissues` (bundled `github` extension, available when installed; not core events)
 
 Each event accepts a single hook object or a list of hook objects (multiple commands on one event).
 

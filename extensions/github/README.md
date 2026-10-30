@@ -112,8 +112,7 @@ default integration only. Before using the replacement in a non-default
 integration, run `specify integration use <integration>` to select it and register
 the extension there. After upgrading, installing if needed, and selecting the
 integration, reapply customizations from your separate backup to the namespaced
-extension command. See the [public upgrade guide](https://github.github.io/spec-kit/upgrade.html#breaking-core-taskstoissues-removal)
-for the complete migration sequence.
+extension command.
 
 The `generic` integration supports this migration in both commands and skills
 layouts under its configured `--commands-dir`.
