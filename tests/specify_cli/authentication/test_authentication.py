@@ -1291,14 +1291,20 @@ class TestAzureDevOpsAuth:
             assert token is None
             run.assert_not_called()
 
-    def test_resolve_token_azure_cli_not_installed_returns_none(self, az_cli_executable):
-        """azure-cli returns None when az is not installed."""
+    def test_resolve_token_azure_cli_launch_error_returns_none(self, az_cli_executable):
+        """Return None when launching the resolved Azure CLI executable fails."""
         from unittest.mock import patch
         entry = AuthConfigEntry(
             hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
         )
-        with patch("specify_cli.authentication.azure_devops.subprocess.run", side_effect=OSError("not found")):
+        with patch(
+            "specify_cli.authentication.azure_devops.subprocess.run",
+            side_effect=OSError("not found"),
+        ) as run:
             assert AzureDevOpsAuth().resolve_token(entry) is None
+
+        run.assert_called_once()
+        assert os.path.normcase(run.call_args.args[0][0]) == os.path.normcase(str(az_cli_executable))
 
     def test_resolve_token_azure_cli_undecodable_output_returns_none(self, az_cli_executable):
         """Undecodable az output returns None, not a crash. With text=True,
