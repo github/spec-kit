@@ -591,6 +591,46 @@ def test_stale_plan_rechecks_managed_hash_after_shared_writes(shared_project):
     assert relative in IntegrationManifest.load("speckit", project, files=files).files
 
 
+@pytest.mark.parametrize("mode", ["missing-only", "managed", "force"])
+@pytest.mark.parametrize("relative", [
+    ".specify/scripts/bash/common.sh",
+    ".specify/templates/plan-template.md",
+    ".specify/.gitignore",
+])
+def test_stale_cleanup_preserves_live_bundle_targets_through_parent_aliases(
+    shared_project, mode, relative,
+):
+    project, core = shared_project
+    files = allow(project)
+    install(project, core, files=files)
+    destination = project / relative
+    original = destination.read_bytes()
+    directory = project / ".specify/scripts/bash"
+    alias = directory / "obsolete"
+    alias.symlink_to(project, target_is_directory=True)
+    stale_relative = f".specify/scripts/bash/obsolete/{relative}"
+    obsolete = directory / "stale.sh"
+    obsolete.write_bytes(original)
+    obsolete_relative = ".specify/scripts/bash/obsolete/.specify/scripts/bash/stale.sh"
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    manifest.record_existing(stale_relative)
+    manifest.record_existing(obsolete_relative)
+    manifest.save()
+
+    install(
+        project, core, files=files, force=mode == "force",
+        refresh_managed=mode == "managed",
+    )
+
+    assert destination.read_bytes() == original
+    assert alias.is_symlink()
+    assert not obsolete.exists()
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    assert manifest.files[relative] == hashlib.sha256(original).hexdigest()
+    assert stale_relative in manifest.files
+    assert obsolete_relative not in manifest.files
+
+
 @pytest.mark.parametrize("suffix", ["D:outside", "D:", "nested/D:outside", "D:/outside", r"D:\outside"])
 def test_stale_windows_drive_components_are_skipped_before_access(
     shared_project, tmp_path, monkeypatch, suffix,

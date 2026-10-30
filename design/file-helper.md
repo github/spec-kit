@@ -235,7 +235,10 @@ project-relative identity even when file bytes are read through allowed aliases.
 Stale leaf links remain customizations, including dangling/external-target links:
 they are never hash-promoted into managed files or deleted by stale cleanup.
 Eligible stale regular files reached through contained linked parents can be
-removed through the helper without deleting their parent links.
+removed through the helper without deleting their parent links. Shared cleanup
+preserves entries whose file identity matches a current bundled destination,
+so a stale parent alias cannot delete a live shared script, template or
+`.specify/.gitignore`.
 
 `mkdir`, `write_bytes`/`write_text`, and `delete` accept an optional explicit
 `Callable[[Path, bool, bool], None]` mutation observer (path, before, removal).

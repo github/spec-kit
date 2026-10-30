@@ -308,6 +308,11 @@ success. This does not relax adapter-package/registry scope validation, config
 bootstrap, legacy manifest consumers, or uninstall.
 External adapter transactions still reject linked `.specify/integrations` scope
 roots; shared manifest leaf links are supported.
+Switch validates the outgoing manifest and refreshes the selected shared
+infrastructure before removing the outgoing integration. Failures in that
+refresh leave the outgoing integration's files and metadata intact. Later
+setup/fallback failures retain their existing recovery behavior; this ordering
+does not add a transaction guarantee to built-in-only operations.
 
 Other host write helpers reject symlinked destinations and ancestors before creating
 directories or writing. Manifest recording validates lexical paths before

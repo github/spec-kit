@@ -134,41 +134,23 @@ def integration_switch(
     )
     target_integration.is_skills_mode(target_parsed_options, project_root)
 
-    # Phase 1: Uninstall current integration (if any)
+    current_integration = None
+    old_manifest = None
     if installed_key:
         current_integration = get_integration(installed_key)
         manifest_path = project_root / ".specify" / "integrations" / f"{installed_key}.manifest.json"
-
-        if current_integration and manifest_path.exists():
-            console.print(f"Uninstalling current integration: [cyan]{installed_key}[/cyan]")
+        if manifest_path.exists():
             try:
                 old_manifest = IntegrationManifest.load(installed_key, project_root)
             except _MANIFEST_READ_ERRORS as exc:
-                console.print(f"[red]Error:[/red] Could not read integration manifest for '{installed_key}': {manifest_path}")
-                console.print(f"[dim]{exc}[/dim]")
-                console.print(
-                    f"To recover, delete the unreadable manifest at {manifest_path}, "
-                    f"run [cyan]specify integration uninstall {installed_key}[/cyan], then retry."
-                )
-                raise typer.Exit(1)
-            removed, skipped = current_integration.teardown(
-                project_root, old_manifest, force=force,
-            )
-            if removed:
-                console.print(f"  Removed {len(removed)} file(s)")
-            if skipped:
-                console.print(f"  [yellow]⚠[/yellow]  {len(skipped)} modified file(s) preserved")
-        elif not current_integration and manifest_path.exists():
-            # Integration removed from registry but manifest exists — use manifest-only uninstall
-            console.print(f"Uninstalling unknown integration '{installed_key}' via manifest")
-            try:
-                old_manifest = IntegrationManifest.load(installed_key, project_root)
-                removed, skipped = old_manifest.uninstall(project_root, force=force)
-                if removed:
-                    console.print(f"  Removed {len(removed)} file(s)")
-                if skipped:
-                    console.print(f"  [yellow]⚠[/yellow]  {len(skipped)} modified file(s) preserved")
-            except _MANIFEST_READ_ERRORS as exc:
+                if current_integration:
+                    console.print(f"[red]Error:[/red] Could not read integration manifest for '{installed_key}': {manifest_path}")
+                    console.print(f"[dim]{exc}[/dim]")
+                    console.print(
+                        f"To recover, delete the unreadable manifest at {manifest_path}, "
+                        f"run [cyan]specify integration uninstall {installed_key}[/cyan], then retry."
+                    )
+                    raise typer.Exit(1)
                 console.print(f"[yellow]Warning:[/yellow] Could not read manifest for '{installed_key}': {exc}")
         else:
             console.print(f"[red]Error:[/red] Integration '{installed_key}' is installed but has no manifest.")
@@ -177,6 +159,53 @@ def integration_switch(
                 f"then retry [cyan]specify integration switch {target}[/cyan]."
             )
             raise typer.Exit(1)
+
+    # Refresh before teardown so shared-path policy errors leave the outgoing
+    # integration and its metadata intact, including without a transaction.
+    _install_shared_infra_or_exit(
+        project_root,
+        selected_script,
+        files=files,
+        force=refresh_shared_infra,
+        refresh_managed=True,
+        invoke_separator=_invoke_separator_for_integration(
+            target_integration, current, target, target_parsed_options,
+            project_root=project_root,
+        ),
+        invoke_prefix=_invoke_prefix_for_integration(
+            target_integration, target, target_parsed_options, project_root
+        ),
+        refresh_hint=(
+            "To overwrite customizations, re-run with "
+            "[cyan]specify integration switch ... --refresh-shared-infra[/cyan]."
+        ),
+    )
+    if os.name != "nt":
+        from .. import ensure_executable_scripts
+        ensure_executable_scripts(project_root)
+
+    # Phase 1: Uninstall current integration (if any)
+    if installed_key:
+        if current_integration and old_manifest is not None:
+            console.print(f"Uninstalling current integration: [cyan]{installed_key}[/cyan]")
+            removed, skipped = current_integration.teardown(
+                project_root, old_manifest, force=force,
+            )
+            if removed:
+                console.print(f"  Removed {len(removed)} file(s)")
+            if skipped:
+                console.print(f"  [yellow]⚠[/yellow]  {len(skipped)} modified file(s) preserved")
+        elif old_manifest is not None:
+            # Integration removed from registry but manifest exists — use manifest-only uninstall
+            console.print(f"Uninstalling unknown integration '{installed_key}' via manifest")
+            try:
+                removed, skipped = old_manifest.uninstall(project_root, force=force)
+                if removed:
+                    console.print(f"  Removed {len(removed)} file(s)")
+                if skipped:
+                    console.print(f"  [yellow]⚠[/yellow]  {len(skipped)} modified file(s) preserved")
+            except _MANIFEST_READ_ERRORS as exc:
+                console.print(f"[yellow]Warning:[/yellow] Could not read manifest for '{installed_key}': {exc}")
 
         # Unregister extension commands for the old agent so they don't
         # remain as orphans in the old agent's directory.
@@ -228,37 +257,6 @@ def integration_switch(
         else:
             _remove_integration_json(project_root)
         current = _read_integration_json(project_root)
-
-    # Refresh shared infrastructure to the current CLI version. Switching
-    # integrations is exactly when stale vendored shared scripts (e.g.
-    # update-agent-context.sh that pre-dates the target integration's
-    # supported-agent list) would silently break the new integration.
-    #
-    # Use refresh_managed=True so only files that match their previously
-    # recorded hash are overwritten — user customizations are detected via
-    # hash divergence and preserved with a warning. Pass
-    # --refresh-shared-infra to overwrite customizations as well. See #2293.
-    _install_shared_infra_or_exit(
-        project_root,
-        selected_script,
-        files=files,
-        force=refresh_shared_infra,
-        refresh_managed=True,
-        invoke_separator=_invoke_separator_for_integration(
-            target_integration, current, target, target_parsed_options,
-            project_root=project_root,
-        ),
-        invoke_prefix=_invoke_prefix_for_integration(
-            target_integration, target, target_parsed_options, project_root
-        ),
-        refresh_hint=(
-            "To overwrite customizations, re-run with "
-            "[cyan]specify integration switch ... --refresh-shared-infra[/cyan]."
-        ),
-    )
-    if os.name != "nt":
-        from .. import ensure_executable_scripts
-        ensure_executable_scripts(project_root)
 
     # Phase 2: Install target integration
     console.print(f"Installing integration: [cyan]{target}[/cyan]")

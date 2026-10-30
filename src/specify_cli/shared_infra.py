@@ -723,6 +723,11 @@ def install_shared_infra(
     # a user-customized file (hash diverges), a symlink, or a recovered entry is
     # preserved by the leaf-identity and managed-hash checks.
     if planned_stale:
+        live_file_ids: set[tuple[int, int]] = set()
+        for rel in seen_rels:
+            entry = files.stat(rel, missing_ok=True)
+            if entry is not None and stat.S_ISREG(entry.st_mode):
+                live_file_ids.add((entry.st_dev, entry.st_ino))
         stale_removed: list[str] = []
         for rel, dst in planned_stale:
             entry = files.stat(dst, follow_symlinks=False, missing_ok=True)
@@ -732,6 +737,8 @@ def install_shared_infra(
                 manifest.remove(rel)
                 continue
             if stat.S_ISLNK(entry.st_mode):
+                continue
+            if (entry.st_dev, entry.st_ino) in live_file_ids:
                 continue
             if not _is_managed(rel, dst):
                 continue  # user-modified / symlink / recovered → preserve

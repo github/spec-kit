@@ -47,10 +47,18 @@ class TestIntegrationSwitch:
         assert result.exit_code != 0
         assert "Unknown integration" in result.output
 
-    def test_switch_invalid_current_manifest_reports_cli_error(self, tmp_path):
+    def test_switch_invalid_current_manifest_reports_cli_error(self, tmp_path, monkeypatch):
         project = _init_project(tmp_path, "claude")
         _write_invalid_manifest(project, "claude")
+        before = {
+            path.relative_to(project): path.read_bytes()
+            for path in project.rglob("*") if path.is_file()
+        }
 
+        def unexpected_refresh(*args, **kwargs):
+            pytest.fail("Invalid outgoing manifest must fail before shared refresh")
+
+        monkeypatch.setattr("specify_cli._install_shared_infra", unexpected_refresh)
         old_cwd = os.getcwd()
         try:
             os.chdir(project)
@@ -62,6 +70,10 @@ class TestIntegrationSwitch:
             os.chdir(old_cwd)
         assert result.exit_code != 0
         assert "Could not read integration manifest" in result.output
+        assert {
+            path.relative_to(project): path.read_bytes()
+            for path in project.rglob("*") if path.is_file()
+        } == before
 
     def test_switch_same_noop(self, tmp_path):
         project = _init_project(tmp_path, "copilot")
@@ -637,6 +649,64 @@ class TestIntegrationSwitch:
         assert result.exit_code == 0
         # Recovered file must NOT be overwritten — team content preserved.
         assert shared_script.read_bytes() == custom_bytes
+
+    @pytest.mark.parametrize("force", [False, True])
+    @pytest.mark.parametrize("fallback", [False, True])
+    @pytest.mark.parametrize("kind", [
+        "denied-leaf", "denied-parent", "denied-stale-parent",
+        "external-parent", "dangling-parent",
+    ])
+    def test_shared_refresh_failure_preserves_outgoing_integration(
+        self, tmp_path, force, fallback, kind,
+    ):
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, "claude")
+        if fallback:
+            result = _run_in_project(project, [
+                "integration", "install", "codex", "--script", "sh",
+            ])
+            assert result.exit_code == 0, result.output
+        allow_links = kind in {"external-parent", "dangling-parent"}
+        options_path = project / ".specify/init-options.json"
+        options = json.loads(options_path.read_text(encoding="utf-8"))
+        options["allow_symlinks"] = allow_links
+        options_path.write_text(json.dumps(options), encoding="utf-8")
+        directory = project / ".specify/scripts/bash"
+        if kind in {"denied-stale-parent", "dangling-parent"}:
+            directory /= "obsolete"
+            directory.mkdir()
+            stale = directory / "stale.sh"
+            stale.write_text("# managed stale\n", encoding="utf-8")
+            manifest = IntegrationManifest.load("speckit", project)
+            manifest.record_existing(stale.relative_to(project).as_posix())
+            manifest.save()
+        link = directory / "common.sh" if kind == "denied-leaf" else directory
+        target = tmp_path / "outside" if kind == "external-parent" else project / "shared-target"
+        link.rename(target)
+        link.symlink_to(
+            project / "missing" if kind == "dangling-parent" else target,
+            target_is_directory=kind != "denied-leaf",
+        )
+        link_identity = os.readlink(link)
+        before = {
+            path.relative_to(project): path.read_bytes()
+            for path in project.rglob("*") if path.is_file()
+        }
+        arguments = ["integration", "switch", "copilot", "--script", "sh"]
+        if force:
+            arguments.append("--force")
+
+        result = _run_in_project(project, arguments)
+
+        assert result.exit_code == 1, result.output
+        assert "shared infrastructure" in result.output
+        assert "Uninstalling current integration" not in result.output
+        assert {
+            path.relative_to(project): path.read_bytes()
+            for path in project.rglob("*") if path.is_file()
+        } == before
+        assert link.is_symlink() and os.readlink(link) == link_identity
 
     def test_switch_rejects_symlinked_parent_directory(self, tmp_path):
         """Regression: if .specify/scripts/bash is a symlink, switch must not write through it.
