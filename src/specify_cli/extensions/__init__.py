@@ -4782,7 +4782,7 @@ class ExtensionCatalog(CatalogStackBase):
 
         except urllib.error.URLError as e:
             raise ExtensionError(f"Failed to fetch catalog from {entry.url}: {e}")
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
             raise ExtensionError(f"Invalid JSON in catalog from {entry.url}: {e}")
 
     def _get_merged_extensions(
