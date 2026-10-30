@@ -59,7 +59,7 @@ Unmodified managed copies are refreshed; customized scripts are preserved.
 
 ## Requirements
 
-- Spec Kit **1.1.3 or newer**. Older releases cannot resolve the hook
+- Spec Kit **1.2.6 or newer**. Older releases cannot resolve the hook
   placeholders or install the shared pre/post dispatchers used by this command.
 - A Git remote pointing at GitHub.
 - The **GitHub MCP server** available to your coding agent, providing the `list_issues` and `issue_write` tools.

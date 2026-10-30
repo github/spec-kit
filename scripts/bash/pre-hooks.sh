@@ -187,7 +187,7 @@ hook_installed_field() {
 }
 
 hook_priority() {
-    local raw=$1 quoted=$2 whole frac="" exponent=0 shift digits part octal=false
+    local raw=$1 quoted=$2 whole frac="" exponent=0 exponent_sign=1 shift digits part octal=false
     HOOK_RANK=10
     [[ $raw == -* ]] && return
     if [[ $quoted == false && $raw =~ ^\+?0x[0-9a-fA-F_]+$ ]]; then
@@ -233,7 +233,11 @@ hook_priority() {
             digits=${digits//_/}
             if [[ $digits == *[eE]* ]]; then
                 exponent=${digits##*[eE]}
+                [[ $exponent == -* ]] && exponent_sign=-1
+                exponent=${exponent#[+-]}
+                while [[ $exponent == 0* && ${#exponent} -gt 1 ]]; do exponent=${exponent#0}; done
                 (( ${#exponent} <= 4 )) || return
+                exponent=$((exponent_sign * 10#$exponent))
                 digits=${digits%[eE]*}
             fi
             whole=${digits%%.*}

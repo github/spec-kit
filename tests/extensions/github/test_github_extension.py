@@ -38,11 +38,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "github"
 CORE_COMMAND = PROJECT_ROOT / "templates" / "commands" / "taskstoissues.md"
 
-# A released Spec Kit version that satisfies the manifest floor. Installs are
+# A Spec Kit version that satisfies the manifest floor. Installs are
 # refused below it, so this cannot be an arbitrary synthetic value.
-INSTALL_SPECKIT_VERSION = "1.1.3.dev0"
+INSTALL_SPECKIT_VERSION = "1.2.6.dev0"
 # Hook placeholders and dispatcher installation first ship with this CLI release.
-MIN_SPECKIT_VERSION = "1.1.3.dev0"
+MIN_SPECKIT_VERSION = "1.2.6.dev0"
 
 COMMAND_NAME = "speckit.github.taskstoissues"
 COMMAND_FILE = EXT_DIR / "commands" / f"{COMMAND_NAME}.md"
@@ -193,8 +193,8 @@ class TestManifest:
         but auto-registered skills did not resolve ``__SPECKIT_COMMAND_*__``
         tokens until 0.12.17 (#3544). Versions through 0.12.16 therefore
         accept the extension but leak a raw command token in skills mode.
-        Hook placeholders and dispatcher installation require 1.1.3 or later;
-        1.1.2 still accepts the extension but cannot run its hook commands.
+        Hook placeholders and dispatcher installation require 1.2.6 or later;
+        released clients through 1.2.5 cannot run its hook commands.
         """
         from packaging.specifiers import SpecifierSet
 
@@ -203,6 +203,7 @@ class TestManifest:
         assert "0.12.5" not in spec, floor
         assert "0.12.16" not in spec, floor
         assert "1.1.2" not in spec, floor
+        assert "1.2.5" not in spec, floor
         assert MIN_SPECKIT_VERSION in spec, floor
         # And the version the install tests use must satisfy it.
         assert INSTALL_SPECKIT_VERSION in spec, floor

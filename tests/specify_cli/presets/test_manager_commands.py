@@ -3080,6 +3080,112 @@ def _make_wrap_preset_dir(
 class TestRemoveReconciliation:
     """Test that removing a preset re-registers the next layer's command."""
 
+    @pytest.mark.parametrize("upper_owns_alias", [False, True])
+    def test_shadowed_replacement_alias_provisions_its_hook_variant(
+        self, project_dir, temp_dir, upper_owns_alias
+    ):
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        manager = PresetManager(project_dir)
+        upper = _make_wrap_preset_dir(
+            temp_dir, "upper-no-hooks", "speckit.specify", "before", "after",
+            aliases=["speckit.spec"] if upper_owns_alias else None,
+        )
+        (upper / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Upper replacement\nstrategy: replace\n"
+            "---\n\nUpper command without hooks.\n", encoding="utf-8"
+        )
+        manager.install_from_directory(upper, "0.1.5", priority=10)
+        lower = _make_wrap_preset_dir(
+            temp_dir, "lower-with-alias", "speckit.specify", "before", "after",
+            aliases=["speckit.spec"],
+        )
+        (lower / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Lower replacement\nstrategy: replace\n"
+            "scripts:\n  py: .specify/scripts/python/check_prerequisites.py\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n", encoding="utf-8"
+        )
+
+        manager.install_from_directory(lower, "0.1.5", priority=20)
+
+        commands = project_dir / ".gemini/commands"
+        assert "Upper command without hooks." in (
+            commands / "speckit.specify.toml"
+        ).read_text(encoding="utf-8")
+        alias_content = (commands / "speckit.spec.toml").read_text(encoding="utf-8")
+        assert (
+            "Upper command without hooks." if upper_owns_alias
+            else ".specify/scripts/python/pre_hooks.py"
+        ) in alias_content
+        for phase in ("pre", "post"):
+            assert (project_dir / f".specify/scripts/python/{phase}_hooks.py").is_file() is (
+                not upper_owns_alias
+            )
+
+    @pytest.mark.parametrize("ai_skills", [False, True])
+    def test_reregister_provisions_missing_fallback_hook_variant(
+        self, project_dir, temp_dir, ai_skills
+    ):
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        (project_dir / ".specify/init-options.json").write_text(
+            json.dumps({"ai": "gemini", "script": "sh", "ai_skills": ai_skills}),
+            encoding="utf-8",
+        )
+        preset = _make_wrap_preset_dir(
+            temp_dir, "fallback-hooks", "speckit.specify", "before", "after"
+        )
+        (preset / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Python hook replacement\nstrategy: replace\n"
+            "scripts:\n  py: .specify/scripts/python/check_prerequisites.py\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n", encoding="utf-8"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset, "0.1.5")
+        dispatchers = project_dir / ".specify/scripts/python"
+        for phase in ("pre", "post"):
+            (dispatchers / f"{phase}_hooks.py").unlink()
+
+        manager.register_enabled_presets_for_agent("gemini")
+
+        command = (
+            project_dir / ".gemini/skills/speckit-specify/SKILL.md"
+            if ai_skills else project_dir / ".gemini/commands/speckit.specify.toml"
+        )
+        assert ".specify/scripts/python/pre_hooks.py" in command.read_text(encoding="utf-8")
+        for phase in ("pre", "post"):
+            assert (dispatchers / f"{phase}_hooks.py").is_file()
+
+    def test_reregister_preserves_command_when_hook_dispatcher_is_unsafe(
+        self, project_dir, temp_dir
+    ):
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        (project_dir / ".specify/init-options.json").write_text(
+            json.dumps({"ai": "gemini", "script": "py"}), encoding="utf-8"
+        )
+        preset = _make_wrap_preset_dir(
+            temp_dir, "unsafe-hooks", "speckit.specify", "before", "after"
+        )
+        (preset / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Hook replacement\nstrategy: replace\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n", encoding="utf-8"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset, "0.1.5")
+        command = project_dir / ".gemini/commands/speckit.specify.toml"
+        previous = command.read_text(encoding="utf-8") + "\n# Retained existing command\n"
+        command.write_text(previous, encoding="utf-8")
+        dispatcher = project_dir / ".specify/scripts/python/pre_hooks.py"
+        dispatcher.unlink()
+        try:
+            dispatcher.symlink_to(temp_dir / "missing-dispatcher.py")
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"file symlinks unavailable: {exc}")
+
+        with pytest.warns(UserWarning, match="Post-rescaffold reconciliation failed"):
+            manager.register_enabled_presets_for_agent("gemini")
+
+        assert dispatcher.is_symlink()
+        assert command.read_text(encoding="utf-8") == previous
+
     def test_replace_install_ignores_discarded_core_hook_refs(self, project_dir, temp_dir):
         core = project_dir / ".specify/templates/commands"
         core.mkdir(parents=True, exist_ok=True)

@@ -101,9 +101,11 @@ or on runtime PyYAML; it rejects stale, corrupt, or missing projections.
 The legacy YAML resolver remains for projects not yet refreshed. The resolver
 returns ordered hook metadata as JSON; agent commands themselves remain the
 responsibility of the agent. The command/skill registrar resolves these
-placeholders too when a preset wraps a core command. Preset installation
-provisions selected dispatchers only when the effective command references
-hooks; removal resolves the surviving command without the removed preset and
+placeholders too when a preset wraps a core command. Preset installation and
+re-registration provision selected dispatchers when the effective command or
+an independently rendered, surviving alias references hooks. Shadowed primary
+commands and aliases do not require dispatchers for discarded content.
+Removal resolves the surviving command without the removed preset and
 provisions its selected variant before restoring hook-bearing lower layers in
 older projects that lack them.
 

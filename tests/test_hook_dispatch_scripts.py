@@ -1246,6 +1246,36 @@ def test_yaml_numeric_priority_parity(tmp_path, variant, raw, expected):
 
 
 @pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("raw,expected", [
+    ("2.0e+08", 200000000), ("2.0e-08", 10), ("2.0e+010", 10),
+    ("2.0e+0008", 200000000), ("2.0e+0000000000000008", 200000000),
+    ("2.0e-00", 2), ("2.0e+0000", 2), ("2.0e+99999", 10),
+])
+def test_legacy_priority_exponents_are_decimal(tmp_path, variant, phase, raw, expected):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    write_config(tmp_path, (
+        f"hooks:\n  {event}:\n"
+        "    - extension: high\n      command: speckit.high.run\n      optional: false\n"
+        f"      priority: {raw}\n"
+        "    - extension: default\n      command: speckit.default.run\n"
+    ))
+
+    code, data = run_hook(tmp_path, phase, variant=variant)
+
+    assert code == 0, data
+    assert data == run_hook(tmp_path, phase)[1]
+    high = next(hook for hook in data["hooks"] if hook["extension"] == "high")
+    assert high["priority"] == expected
+    assert high["optional"] is False
+    assert [hook["extension"] for hook in data["hooks"]] == (
+        ["default", "high"] if expected > 10 else ["high", "default"]
+    )
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
 @pytest.mark.parametrize("value", [
     "\a", "\v", "\x01", "\x1b", "\x85", "\xa0", "\u2028", "\u2029",
     "\ufeff", "😀", "😀\nmore",

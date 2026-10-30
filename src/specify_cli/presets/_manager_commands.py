@@ -105,6 +105,8 @@ class _PresetCommandMethods:
         options = load_init_options(self.project_root)
         requested = options.get("script") or ("ps" if os.name == "nt" else "sh")
         variants = set()
+        contents = []
+        effective_sources = set()
         for name in command_names:
             try:
                 content = resolver.resolve_content(
@@ -115,6 +117,37 @@ class _PresetCommandMethods:
                 continue
             if content is None:
                 continue
+            contents.append((name, content))
+            layers = resolver.collect_all_layers(
+                name, "command", exclude_preset_id=exclude_preset_id
+            )
+            effective_sources.add(layers[0]["path"])
+
+        # A shadowed primary can still emit a live alias from its own source.
+        claimed_aliases = set()
+        for pack_id, _metadata in self.registry.list_by_priority():
+            if pack_id == exclude_preset_id:
+                continue
+            pack_dir = self.presets_dir / pack_id
+            manifest = resolver._get_manifest(pack_dir)
+            if manifest is None:
+                continue
+            for template in manifest.templates:
+                if (
+                    template.get("type") == "command"
+                    and template.get("name") in command_names
+                    and template.get("aliases")
+                ):
+                    aliases = set(template["aliases"])
+                    live_aliases = aliases - claimed_aliases
+                    claimed_aliases.update(aliases)
+                    source_file = pack_dir / template["file"]
+                    if live_aliases and source_file not in effective_sources and source_file.is_file():
+                        contents.append((
+                            template["name"], source_file.read_text(encoding="utf-8")
+                        ))
+
+        for name, content in contents:
             frontmatter, body = registrar.parse_frontmatter(content)
             if frontmatter.get("strategy") == "wrap" and "{CORE_TEMPLATE}" in body:
                 body, core_frontmatter = _substitute_core_template(
@@ -184,6 +217,8 @@ class _PresetCommandMethods:
         ]
         if not command_templates:
             return {}
+
+        self._ensure_hook_dispatchers_for_commands([t["name"] for t in command_templates])
 
         # A preset command template always ships its own body, so it is
         # self-contained and scaffolds regardless of whether any similarly
@@ -996,6 +1031,8 @@ class _PresetCommandMethods:
         """
         if not command_names:
             return set()
+
+        self._ensure_hook_dispatchers_for_commands(command_names)
 
         # Every preset-owned command name flows through unchanged. Names are
         # NOT filtered by the ``speckit.<ns>.<cmd>`` shape: a self-contained
