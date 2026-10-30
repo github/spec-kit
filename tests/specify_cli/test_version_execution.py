@@ -571,6 +571,45 @@ class TestWindowsUvToolEnvironment:
         assert "Upgrade failed" not in out
         assert mock_run.call_count == 0
 
+    def test_windows_uv_tool_already_on_latest_is_noop(
+        self, uv_tool_argv0, clean_environ
+    ):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.shutil.which", return_value="uv"
+        ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
+            "specify_cli._version._get_installed_version", return_value="1.2.4"
+        ), patch(
+            "specify_cli._version._runs_from_uv_tool_env_on_windows", return_value=True
+        ):
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v1.2.4"})
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        assert result.exit_code == 0
+        out = strip_ansi(result.output)
+        assert "Already on latest release: v1.2.4" in out
+        assert "Not upgrading" not in out
+        assert "uv tool install" not in out
+        assert mock_run.call_count == 0
+
+    def test_windows_uv_tool_already_on_requested_tag_is_noop(
+        self, uv_tool_argv0, clean_environ
+    ):
+        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+            "specify_cli._version.subprocess.run"
+        ) as mock_run, patch(
+            "specify_cli._version._get_installed_version", return_value="1.2.4"
+        ), patch(
+            "specify_cli._version._runs_from_uv_tool_env_on_windows", return_value=True
+        ):
+            result = runner.invoke(app, ["self", "upgrade", "--tag", "v1.2.4"])
+
+        assert result.exit_code == 0
+        out = strip_ansi(result.output)
+        assert "Already on requested release: v1.2.4" in out
+        assert "Not upgrading" not in out
+        assert "uv tool install" not in out
+        assert mock_run.call_count == 0
+
     def test_windows_pipx_still_runs_installer(self, pipx_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="pipx"
