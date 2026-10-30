@@ -299,6 +299,61 @@ class TestCreateFeatureBranchParity:
         _assert_parity(b, p)
         assert json.loads(p.stdout)["FEATURE_NUM"] == "042"
 
+    def test_explicit_number_max_int64_accepted(self, tmp_path: Path):
+        _, py_proj = _twin_projects(tmp_path)
+        p = _run_py(
+            "create-new-feature-branch",
+            py_proj,
+            "--json",
+            "--dry-run",
+            "--number",
+            str(2**63 - 1),
+            "some feature",
+        )
+        assert p.returncode == 0, p.stderr
+        assert json.loads(p.stdout)["FEATURE_NUM"] == str(2**63 - 1)
+
+    def test_explicit_number_above_max_int64_rejected(self, tmp_path: Path):
+        """Pin Python-side bound checking; bash currently has no equivalent guard."""
+        _, py_proj = _twin_projects(tmp_path)
+        too_large = str(2**63)
+        p = _run_py(
+            "create-new-feature-branch",
+            py_proj,
+            "--json",
+            "--dry-run",
+            "--number",
+            too_large,
+            "some feature",
+        )
+        assert p.returncode == 1
+        assert (
+            "Error: --number must be between 0 and 9223372036854775807, "
+            f"got '{too_large}'"
+        ) in p.stderr
+        assert "Traceback" not in p.stderr
+
+    def test_explicit_number_oversized_digits_rejected_without_traceback(
+        self, tmp_path: Path
+    ):
+        _, py_proj = _twin_projects(tmp_path)
+        oversized = "9" * 5000
+        p = _run_py(
+            "create-new-feature-branch",
+            py_proj,
+            "--json",
+            "--dry-run",
+            "--number",
+            oversized,
+            "some feature",
+        )
+        assert p.returncode == 1
+        assert (
+            "Error: --number must be between 0 and 9223372036854775807, "
+            f"got '{oversized}'"
+        ) in p.stderr
+        assert "Traceback" not in p.stderr
+
     def test_timestamp_mode_format(self, tmp_path: Path):
         _, py_proj = _twin_projects(tmp_path)
         p = _run_py(
