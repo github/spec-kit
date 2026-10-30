@@ -24,6 +24,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 MAX_BRANCH_LENGTH = 244  # GitHub enforces a 244-byte limit on branch names
+MAX_FEATURE_NUMBER = 2**63 - 1
 
 USAGE = (
     "Usage: create_new_feature_branch.py [--json] [--dry-run] "
@@ -76,6 +77,16 @@ def _persist_hint(var_name: str, value: str) -> str:
     return f"export {var_name}={escaped_value}"
 
 
+def _int64_from_digits(value: str) -> int | None:
+    normalized = value.lstrip("0") or "0"
+    maximum = str(MAX_FEATURE_NUMBER)
+    if len(normalized) > len(maximum) or (
+        len(normalized) == len(maximum) and normalized > maximum
+    ):
+        return None
+    return int(normalized, 10)
+
+
 @dataclass
 class Args:
     json_mode: bool = False
@@ -112,6 +123,12 @@ def parse_args(argv: list[str]) -> Args:
             args.branch_number = argv[i]
             if not re.fullmatch(r"[0-9]+", args.branch_number):
                 _err("Error: --number must be a non-negative integer")
+                raise SystemExit(1)
+            if _int64_from_digits(args.branch_number) is None:
+                _err(
+                    "Error: --number must be between 0 and "
+                    f"{MAX_FEATURE_NUMBER}, got '{args.branch_number}'"
+                )
                 raise SystemExit(1)
         elif arg == "--timestamp":
             args.use_timestamp = True
@@ -529,7 +546,14 @@ def main(argv: list[str]) -> int:
                 else:
                     branch_number = get_highest_from_specs(specs_dir) + 1
 
-            feature_num = f"{int(branch_number):03d}"
+            try:
+                feature_num = f"{int(branch_number):03d}"
+            except ValueError:
+                _err(
+                    "Error: --number must be between 0 and "
+                    f"{MAX_FEATURE_NUMBER}, got '{branch_number}'"
+                )
+                return 1
             branch_name = build_branch_name(feature_num, branch_suffix)
 
     branch_byte_len = _byte_length(branch_name)
