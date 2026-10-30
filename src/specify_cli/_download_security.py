@@ -36,6 +36,9 @@ MAX_ZIP_CENTRAL_DIRECTORY_BYTES = 4 * 1024 * 1024
 # Include tar headers, padding, and GNU/PAX metadata, not just file payloads.
 MAX_TAR_STREAM_BYTES = MAX_ZIP_TOTAL_BYTES + 4 * 1024 * 1024
 MAX_TAR_METADATA_BYTES = 64 * 1024
+# Global fields are copied into every retained member.
+MAX_TAR_GLOBAL_PAX_BYTES = 8 * 1024
+MAX_TAR_METADATA_DEPTH = 32
 READ_CHUNK_SIZE = 64 * 1024
 
 # Tighter ceilings for responses that are read fully into memory and parsed as
@@ -117,11 +120,18 @@ class _BoundedTarInfo(tarfile.TarInfo):
             tarfile.XHDTYPE,
             tarfile.XGLTYPE,
             tarfile.SOLARIS_XHDTYPE,
-        ) and self.size > MAX_TAR_METADATA_BYTES:
-            raise _TarLimitError(
-                "tar.gz metadata payload exceeds maximum size "
-                f"of {MAX_TAR_METADATA_BYTES} bytes"
-            )
+        ):
+            if self.size < 0:
+                raise _TarLimitError("tar.gz metadata payload has negative size")
+            if self.size > MAX_TAR_METADATA_BYTES:
+                raise _TarLimitError(
+                    "tar.gz metadata payload exceeds maximum size "
+                    f"of {MAX_TAR_METADATA_BYTES} bytes"
+                )
+            if not isinstance(archive, _BoundedTarFile):
+                raise TypeError("Metadata validation requires a bounded tar archive")
+            with archive._metadata_header(self):
+                return super()._proc_member(archive)
         return super()._proc_member(archive)
 
     def _proc_gnusparse_10(
@@ -132,6 +142,32 @@ class _BoundedTarInfo(tarfile.TarInfo):
     ) -> NoReturn:
         # This map lives in file data, outside the bounded PAX header payload.
         raise _TarLimitError("Unsupported GNU sparse metadata in tar.gz archive")
+
+
+class _BoundedTarFile(tarfile.TarFile):
+    tarinfo = _BoundedTarInfo
+    _global_pax_bytes: int = 0
+    _metadata_depth: int = 0
+
+    @contextmanager
+    def _metadata_header(self, member: tarfile.TarInfo) -> Iterator[None]:
+        if self._metadata_depth >= MAX_TAR_METADATA_DEPTH:
+            raise _TarLimitError(
+                "tar.gz metadata chain exceeds maximum depth "
+                f"of {MAX_TAR_METADATA_DEPTH}"
+            )
+        if member.type == tarfile.XGLTYPE:
+            if self._global_pax_bytes + member.size > MAX_TAR_GLOBAL_PAX_BYTES:
+                raise _TarLimitError(
+                    "tar.gz global PAX metadata exceeds maximum cumulative size "
+                    f"of {MAX_TAR_GLOBAL_PAX_BYTES} bytes"
+                )
+            self._global_pax_bytes += member.size
+        self._metadata_depth += 1
+        try:
+            yield
+        finally:
+            self._metadata_depth -= 1
 
 
 class _BoundedTarGzipFile(gzip.GzipFile):
@@ -252,9 +288,7 @@ def detect_archive_format(
                 try:
                     with (
                         _BoundedTarGzipFile(fileobj=archive_file, mode="rb") as source,
-                        tarfile.open(
-                            fileobj=source, mode="r:", tarinfo=_BoundedTarInfo
-                        ),
+                        _BoundedTarFile.open(fileobj=source, mode="r:"),
                     ):
                         is_tar_gz = True
                 except _TarLimitError:
@@ -1180,7 +1214,7 @@ def safe_extract_tar(
                 )
             )
             archive = stack.enter_context(
-                tarfile.open(fileobj=source, mode="r:", tarinfo=_BoundedTarInfo)
+                _BoundedTarFile.open(fileobj=source, mode="r:")
             )
         except (*_TAR_DECOMPRESSION_ERRORS, OSError) as exc:
             _raise_from(error_type, f"Invalid tar.gz archive: {archive_path}: {exc}", exc)

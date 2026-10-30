@@ -28,7 +28,167 @@ from specify_cli._download_security import (
     safe_extract_tar,
     safe_extract_zip,
 )
-from tests.archive_helpers import tar_safety_archive
+from tests.archive_helpers import (
+    tar_global_pax_archive,
+    tar_metadata_chain_archive,
+    tar_metadata_record,
+    tar_negative_metadata_archive,
+    tar_safety_archive,
+)
+
+
+@pytest.mark.parametrize("operation", ["detect", "extract", "combined"])
+@pytest.mark.parametrize(
+    "kind, diagnostic",
+    [
+        ("global-pax", "global PAX.*cumulative size.*8192"),
+        ("metadata-chain", "metadata chain.*maximum depth.*32"),
+    ],
+)
+def test_tar_archive_metadata_budgets_reject_before_parsing(
+    tmp_path, monkeypatch, operation, kind, diagnostic
+):
+    archive_path = tmp_path / "metadata.tar.gz"
+    archive_path.write_bytes(tar_safety_archive(kind))
+    out_dir = tmp_path / "out"
+    original_parser = tarfile.TarInfo._proc_pax
+    parsed_global_bytes = 0
+    active_depth = 0
+
+    def bounded_parser(member, archive):
+        nonlocal parsed_global_bytes, active_depth
+        if member.type == tarfile.XGLTYPE:
+            parsed_global_bytes += member.size
+            assert parsed_global_bytes <= 8192, "Global metadata reached parser"
+        active_depth += 1
+        assert active_depth <= 32, "Long metadata chain reached parser"
+        try:
+            return original_parser(member, archive)
+        finally:
+            active_depth -= 1
+
+    monkeypatch.setattr(tarfile.TarInfo, "_proc_pax", bounded_parser)
+    with archive_path.open("rb") as source:
+        with pytest.raises(_CustomZipError, match=diagnostic):
+            if operation == "detect":
+                detect_archive_format(
+                    archive_path, archive_file=source, error_type=_CustomZipError
+                )
+            else:
+                extractor = (
+                    safe_extract_tar if operation == "extract" else safe_extract_archive
+                )
+                extractor(
+                    archive_path, out_dir, archive_file=source,
+                    error_type=_CustomZipError,
+                )
+        assert not source.closed
+    assert not out_dir.exists()
+
+
+@pytest.mark.parametrize("extractor", [safe_extract_tar, safe_extract_archive])
+@pytest.mark.parametrize("over_budget", [False, True])
+def test_interleaved_global_pax_budget_is_cumulative(
+    tmp_path, monkeypatch, extractor, over_budget
+):
+    archive_path = tmp_path / "global.tar.gz"
+    sizes = [4096, 4097 if over_budget else 4096]
+    archive_path.write_bytes(tar_global_pax_archive(sizes, interleaved=True))
+    original_parser = tarfile.TarInfo._proc_pax
+    parsed_bytes = {}
+
+    def bounded_parser(member, archive):
+        parsed_bytes[archive] = parsed_bytes.get(archive, 0) + member.size
+        assert parsed_bytes[archive] <= 8192, "Excess global metadata reached parser"
+        return original_parser(member, archive)
+
+    monkeypatch.setattr(tarfile.TarInfo, "_proc_pax", bounded_parser)
+    out_dir = tmp_path / "out"
+    if over_budget:
+        with pytest.raises(_CustomZipError, match="global PAX.*cumulative size.*8192"):
+            extractor(archive_path, out_dir, error_type=_CustomZipError)
+        assert not out_dir.exists()
+    else:
+        extractor(archive_path, out_dir)
+        assert (out_dir / "file0.txt").read_bytes() == b""
+        assert (out_dir / "file1.txt").read_bytes() == b""
+
+
+@pytest.mark.parametrize(
+    "metadata_type",
+    [tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.SOLARIS_XHDTYPE,
+     tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK],
+)
+@pytest.mark.parametrize("operation", ["detect", "extract", "combined"])
+def test_negative_metadata_size_rejected_before_legacy_unsized_read(
+    tmp_path, monkeypatch, metadata_type, operation
+):
+    archive_path = tmp_path / "negative.tar.gz"
+    data = tar_negative_metadata_archive(metadata_type)
+    assert gzip.decompress(data)[124] == 255  # Negative base-256 representation.
+    archive_path.write_bytes(data)
+    original_read = gzip.GzipFile.read
+
+    def bounded_read(stream, size=-1):
+        assert 0 <= size <= 65536, "Negative metadata size became an unsized read"
+        return original_read(stream, size)
+
+    # Older supported patch releases rounded negative sizes instead of rejecting them.
+    monkeypatch.setattr(
+        tarfile.TarInfo, "_block",
+        lambda _self, size: ((size + 511) // 512) * 512,
+    )
+    monkeypatch.setattr(gzip.GzipFile, "read", bounded_read)
+    with pytest.raises(_CustomZipError, match="metadata.*negative size"):
+        if operation == "detect":
+            detect_archive_format(archive_path, error_type=_CustomZipError)
+        else:
+            extractor = (
+                safe_extract_tar if operation == "extract" else safe_extract_archive
+            )
+            extractor(archive_path, tmp_path / "out", error_type=_CustomZipError)
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("metadata_type", [tarfile.XHDTYPE, tarfile.GNUTYPE_LONGNAME])
+@pytest.mark.parametrize("count", [32, 33])
+def test_metadata_chain_depth_boundary(tmp_path, metadata_type, count):
+    archive_path = tmp_path / "chain.tar.gz"
+    archive_path.write_bytes(tar_metadata_chain_archive(count, metadata_type))
+    if count > 32:
+        with pytest.raises(_CustomZipError, match="maximum depth.*32"):
+            safe_extract_archive(
+                archive_path, tmp_path / "out", error_type=_CustomZipError
+            )
+    else:
+        assert safe_extract_archive(archive_path, tmp_path / "out") == "tar.gz"
+
+
+def test_metadata_chain_depth_resets_between_members(tmp_path):
+    chain = tar_metadata_record(tarfile.XHDTYPE, 32) * 32
+    plain = chain + tarfile.TarInfo("first.txt").tobuf()
+    plain += chain + tarfile.TarInfo("second.txt").tobuf()
+    archive_path = tmp_path / "chains.tar.gz"
+    archive_path.write_bytes(gzip.compress(plain + b"\0" * tarfile.BLOCKSIZE))
+
+    assert safe_extract_archive(archive_path, tmp_path / "out") == "tar.gz"
+    assert (tmp_path / "out" / "first.txt").exists()
+    assert (tmp_path / "out" / "second.txt").exists()
+
+
+def test_global_pax_budget_is_independent_per_archive(tmp_path):
+    archive_path = tmp_path / "global.tar.gz"
+    archive_path.write_bytes(tar_global_pax_archive([8192], interleaved=False))
+    for index in range(2):
+        assert safe_extract_archive(archive_path, tmp_path / f"out{index}") == "tar.gz"
+
+
+@pytest.mark.parametrize("metadata_type", [tarfile.XHDTYPE, tarfile.XGLTYPE])
+def test_zero_length_metadata_remains_supported(tmp_path, metadata_type):
+    plain = tar_metadata_record(metadata_type, 0) + tarfile.TarInfo("file.txt").tobuf()
+    archive_path = tmp_path / "empty-metadata.tar.gz"
+    archive_path.write_bytes(gzip.compress(plain + b"\0" * tarfile.BLOCKSIZE))
+    assert safe_extract_archive(archive_path, tmp_path / "out") == "tar.gz"
 
 
 @pytest.mark.parametrize("kind", ["gnu-sparse", "pax-sparse-1.0"])
@@ -184,9 +344,10 @@ def test_tar_metadata_payload_limit_precedes_read(
         tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK,
     ],
 )
-def test_tar_accepts_metadata_at_payload_limit(tmp_path, metadata_type):
+def test_tar_accepts_metadata_at_effective_payload_limit(tmp_path, metadata_type):
     archive_path = tmp_path / "metadata.tar.gz"
-    _write_tar_metadata_archive(archive_path, metadata_type, 65536)
+    size = 8192 if metadata_type == tarfile.XGLTYPE else 65536
+    _write_tar_metadata_archive(archive_path, metadata_type, size)
     out_dir = tmp_path / "out"
 
     assert safe_extract_archive(archive_path, out_dir) == "tar.gz"

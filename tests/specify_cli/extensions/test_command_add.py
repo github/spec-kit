@@ -48,6 +48,9 @@ class TestExtensionAddCLI:
             ("metadata", "metadata payload exceeds"),
             ("gnu-sparse", "Unsupported GNU sparse"),
             ("pax-sparse-1.0", "Unsupported GNU sparse"),
+            ("global-pax", "global PAX metadata"),
+            ("metadata-chain", "metadata chain"),
+            ("negative-metadata", "negative size"),
         ],
     )
     @pytest.mark.parametrize("suffix", ["ext.tar.gz", "assets/42"])

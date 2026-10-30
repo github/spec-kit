@@ -1392,6 +1392,9 @@ steps:
             ("metadata", "metadata payload exceeds"),
             ("gnu-sparse", "Unsupported GNU sparse"),
             ("pax-sparse-1.0", "Unsupported GNU sparse"),
+            ("global-pax", "global PAX metadata"),
+            ("metadata-chain", "metadata chain"),
+            ("negative-metadata", "negative size"),
         ],
     )
     def test_suffixless_download_preserves_archive_safety_errors(
