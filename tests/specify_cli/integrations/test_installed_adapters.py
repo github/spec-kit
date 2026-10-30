@@ -1210,7 +1210,7 @@ def test_skill_templates_use_skills_prefix_with_reference_separator_override(
 
     content = (
         project / ".sample-agent/skills/speckit-specify/SKILL.md"
-    ).read_text()
+    ).read_text(encoding="utf-8")
     assert "$speckit_specify" in content
     assert "$speckit_plan" in content
     assert "/speckit_specify" not in content
