@@ -13,7 +13,13 @@ import yaml
 
 from .._init_options import load_init_options
 from ..integrations._file_changes import changing_file, unlink, write_bytes
-from . import DEFAULT_HOOK_PRIORITY, normalize_priority
+from . import (
+    DEFAULT_HOOK_PRIORITY,
+    ExtensionManifest,
+    ValidationError,
+    coerce_hook_entries,
+    normalize_priority,
+)
 
 _EVENT = re.compile(r"(before|after)_[a-z0-9][a-z0-9_]*\Z")
 
@@ -104,6 +110,20 @@ def project_hooks(config: dict[str, Any]) -> dict[str, bytes]:
             json.dumps({"event": event, "hooks": selected}, ensure_ascii=True, separators=(",", ":")) + "\n"
         ).encode("utf-8")
     return projected
+
+
+def validate_manifest_hooks(manifest: ExtensionManifest) -> None:
+    """Validate manifest hooks before an opted-in install or update mutates state."""
+    try:
+        project_hooks({"hooks": {
+            event: [
+                {**entry, "extension": manifest.id}
+                for entry in coerce_hook_entries(entries)
+            ]
+            for event, entries in manifest.hooks.items()
+        }})
+    except ValueError as exc:
+        raise ValidationError(f"Invalid manifest hooks: {exc}") from exc
 
 
 def load_for_update(config_file: Path) -> dict[str, Any]:

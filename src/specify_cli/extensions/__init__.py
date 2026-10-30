@@ -2405,20 +2405,11 @@ class ExtensionManager:
         # Load and validate manifest
         manifest_path = source_dir / "extension.yml"
         manifest = ExtensionManifest(manifest_path)
-        from ._hook_projection import projection_enabled, project_hooks
+        from ._hook_projection import projection_enabled, validate_manifest_hooks
 
         native_hooks = projection_enabled(self.project_root)
         if native_hooks:
-            try:
-                project_hooks({"hooks": {
-                    event: [
-                        {**entry, "extension": manifest.id}
-                        for entry in coerce_hook_entries(entries)
-                    ]
-                    for event, entries in manifest.hooks.items()
-                }})
-            except ValueError as exc:
-                raise ValidationError(f"Invalid manifest hooks: {exc}") from exc
+            validate_manifest_hooks(manifest)
         HookExecutor(self.project_root).load_project_config_for_update()
 
         # Check compatibility

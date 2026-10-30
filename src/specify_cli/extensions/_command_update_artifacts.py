@@ -49,6 +49,7 @@ def preflight_update_archive(
 ) -> PreflightResult:
     """Validate an update archive before the installed extension is modified."""
     from . import ExtensionManifest
+    from ._hook_projection import projection_enabled, validate_manifest_hooks
 
     with tempfile.TemporaryDirectory(
         prefix="speckit-update-archive-"
@@ -135,6 +136,8 @@ def preflight_update_archive(
         manifest_file = Path(manifest_tmpdir) / "extension.yml"
         manifest_file.write_bytes(manifest_bytes)
         preflight_manifest = ExtensionManifest(manifest_file)
+        if projection_enabled(manager.project_root):
+            validate_manifest_hooks(preflight_manifest)
         manager.check_compatibility(preflight_manifest, speckit_version)
 
     if preflight_manifest.id != extension_id:

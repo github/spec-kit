@@ -368,6 +368,11 @@ not change execution behavior. For projection portability, missing or invalid
 priorities and values above `2147483647` use the default `10`; the current
 in-process hook reader retains its existing priority handling.
 
+Update archives receive the same opted-in hook validation as installation
+before the installed extension is removed. An archive rejected by this
+validation leaves the installed files, hook order, and configuration bytes
+unchanged.
+
 Opted-in hook configuration and projection writes are direct, not atomic. If
 an I/O error interrupts a write, Spec Kit reports the failure, but
 `.specify/extensions.yml` or `.specify/hook-dispatch/` may be incomplete.
