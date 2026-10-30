@@ -82,6 +82,9 @@ their naming too. `build_command_invocation()` remains the runtime dispatch seam
 for integrations such as Bob and Copilot whose executable behavior depends on
 the installed layout.
 
+Preset skill registration and restoration surface integration resolver failures
+before writing the affected skill, rather than installing fallback references.
+
 Shared page-template installation and refresh use the active integration's
 `resolve_command_refs_for_mode()` with its resolved output mode, honoring both
 resolver and `build_command_reference()` overrides. Without an active integration,

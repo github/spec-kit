@@ -543,7 +543,7 @@ class _PresetSkillMethods:
         ``invoke_separator_for_mode`` rather than the single static
         ``AGENT_CONFIGS`` value.
         """
-        separator = None
+        integration = None
         if isinstance(selected_ai, str):
             try:
                 from ..integrations import get_integration
@@ -561,16 +561,16 @@ class _PresetSkillMethods:
                         skills_enabled = is_ai_skills_enabled(
                             load_init_options(project_root)
                         )
-                    return integration.resolve_command_refs_for_mode(
-                        body,
-                        skills_enabled=skills_enabled,
-                    )
             except (ImportError, KeyError, OSError, TypeError, ValueError):
-                separator = None
-        if separator is None:
-            separator = registrar.AGENT_CONFIGS.get(selected_ai, {}).get(
-                "invoke_separator", "."
+                integration = None
+        if integration is not None:
+            return integration.resolve_command_refs_for_mode(
+                body,
+                skills_enabled=skills_enabled,
             )
+        separator = registrar.AGENT_CONFIGS.get(selected_ai, {}).get(
+            "invoke_separator", "."
+        )
         return IntegrationBase.resolve_command_refs(body, separator)
 
     def _build_extension_skill_restore_index(self) -> Dict[str, Dict[str, Any]]:
