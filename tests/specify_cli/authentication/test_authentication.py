@@ -992,6 +992,29 @@ class TestAzureDevOpsAuth:
         with patch("specify_cli.authentication.azure_devops.subprocess.run", return_value=result):
             assert AzureDevOpsAuth().resolve_token(entry) == "cli-acquired-token"
 
+    def test_resolve_token_azure_cli_absolute_path_beneath_cwd(
+        self, monkeypatch, tmp_path, az_cli_executable
+    ):
+        from unittest.mock import MagicMock, patch
+
+        install_directory = tmp_path / ".venv" / "bin"
+        install_directory.mkdir(parents=True)
+        executable = az_cli_executable.rename(install_directory / az_cli_executable.name)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("PATH", str(install_directory))
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        result = MagicMock(returncode=0, stdout='{"accessToken": "tok"}')
+
+        with patch(
+            "specify_cli.authentication.azure_devops.subprocess.run", return_value=result
+        ) as run:
+            assert AzureDevOpsAuth().resolve_token(entry) == "tok"
+
+        run.assert_called_once()
+        assert os.path.normcase(run.call_args.args[0][0]) == os.path.normcase(str(executable))
+
     def test_resolve_token_azure_cli_failure_returns_none(self, az_cli_executable):
         """azure-cli returns None when az CLI fails."""
         from unittest.mock import patch, MagicMock
