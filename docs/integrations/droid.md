@@ -34,10 +34,13 @@ specify init my-project --integration droid --integration-options="--no-model-in
 ```
 
 This writes `disable-model-invocation: true` into the core command skills.
-Droid runs them only when the user invokes `/speckit-<command>`. Factory's
+In Droid 1.0.0 the model no longer lists them among its available skills, so it
+does not run them unprompted, while `/speckit-<command>` and workflow dispatch
+still run them. It is not a hard block: a prompt that names a skill (for
+example "use the speckit-specify skill") still lets the model invoke it through
+its `Skill` tool. Factory's
 [skills documentation](https://docs.factory.com/cli/configuration/skills) does
-not say whether a skill with this flag keeps its description out of Droid's
-context.
+not describe this behaviour.
 
 - Extension skills stay model-invocable, because mandatory extension hooks rely
   on the model invoking them. If an extension's mandatory hook runs a core
