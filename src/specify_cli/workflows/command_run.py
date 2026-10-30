@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from . import _command_run_ownership as run_ownership
 from . import _commands as cli
 
@@ -17,10 +19,15 @@ def workflow_run(
         "--json",
         help="Emit the run outcome as a single JSON object instead of formatted text.",
     ),
+    trust_steps: Annotated[
+        bool,
+        cli.typer.Option(
+            "--trust-steps", help="Authorize all custom step Python for this invocation",
+        ),
+    ] = False,
 ):
     """Run a workflow from an installed ID or local YAML path."""
     from ..integrations.installer import IntegrationInstallError
-    from . import load_custom_steps
     from .engine import WorkflowEngine
 
     source_path = cli.Path(source).expanduser()
@@ -50,7 +57,9 @@ def workflow_run(
 
     try:
         with cli._stdout_to_stderr_when(json_output):
-            load_custom_steps(project_root)
+            cli._load_custom_steps(
+                project_root, trust_steps=trust_steps, json_output=json_output,
+            )
             engine = WorkflowEngine(project_root)
             engine._load_integrations()
     except (IntegrationInstallError, OSError) as exc:

@@ -62,6 +62,56 @@ def _fail_integration_load(exc: Exception, *, json_output: bool, run_id: str | N
     raise typer.Exit(1) from exc
 
 
+def _approve_custom_steps(
+    project_root: Path, *, trust_steps: bool = False, json_output: bool = False,
+) -> bool:
+    """Collect consent without importing code; return whether imports are approved."""
+    from . import CustomStepTrustError, load_custom_steps
+
+    if trust_steps:
+        return True
+    try:
+        load_custom_steps(project_root)
+    except CustomStepTrustError:
+        if not sys.stdin.isatty():
+            raise
+        _error_console(json_output).print(
+            "[yellow]Warning:[/yellow] Custom workflow step packages in "
+            f"'{_escape_markup(str(project_root / '.specify' / 'workflows' / 'steps'))}' "
+            "execute Python with your privileges, including packages not referenced "
+            "by the requested workflow. Review all package code before approving."
+        )
+        try:
+            approved = typer.confirm(
+                "Trust all custom workflow step code for this invocation?",
+                default=False,
+                err=json_output,
+            )
+        except (EOFError, typer.Abort) as exc:
+            raise CustomStepTrustError(
+                "Custom workflow step execution was not approved. "
+                "Review the code and approve interactively or pass --trust-steps."
+            ) from exc
+        if not approved:
+            raise CustomStepTrustError(
+                "Custom workflow step execution was not approved."
+            )
+        return True
+    return False
+
+
+def _load_custom_steps(
+    project_root: Path, *, trust_steps: bool = False, json_output: bool = False,
+) -> None:
+    """Collect per-invocation CLI consent before the domain imports step code."""
+    from . import load_custom_steps
+
+    if _approve_custom_steps(
+        project_root, trust_steps=trust_steps, json_output=json_output,
+    ):
+        load_custom_steps(project_root, trusted=True)
+
+
 def _fail_workflow_execution(
     exc: Exception, *, json_output: bool, state: Any, resume: bool = False,
 ):
@@ -454,6 +504,7 @@ def _stage_workflow_file(
             staged_file.unlink()
             flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
             flags |= getattr(os, "O_NOFOLLOW", 0)
+            flags |= getattr(os, "O_BINARY", 0)
             fd = os.open(staged_file, flags, 0o666)
     except OSError:
         if fd >= 0:

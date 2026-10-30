@@ -987,7 +987,7 @@ class TestWorkflowStepAddSources:
         installed = project_dir / ".specify" / "workflows" / "steps" / "dev-load-step"
         assert (installed / "step.yml").is_file()
 
-        loaded = load_custom_steps(project_dir)
+        loaded = load_custom_steps(project_dir, trusted=True)
         assert "dev-load-step" in loaded
         assert "dev-load-step" in STEP_REGISTRY
 
@@ -1647,11 +1647,13 @@ class DevStep(StepBase):
         )
         assert installed.exit_code == 0, installed.output
 
-        assert "dev-step" in load_custom_steps(project_dir)
+        assert "dev-step" in load_custom_steps(project_dir, trusted=True)
 
         workflow_file = tmp_path / "custom-step-wf.yml"
         workflow_file.write_text(self._WORKFLOW_YAML, encoding="utf-8")
-        run = runner.invoke(app, ["workflow", "run", str(workflow_file), "--json"])
+        run = runner.invoke(
+            app, ["workflow", "run", str(workflow_file), "--json", "--trust-steps"]
+        )
         assert run.exit_code == 0, run.output
         assert "completed" in run.output
 

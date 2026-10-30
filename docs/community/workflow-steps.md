@@ -5,9 +5,12 @@
 > their authors. Maintainers verify submission metadata and package shape; they
 > do **not review, audit, endorse, or support the executable Python code**.
 > Installation validates and copies the package without importing its Python
-> code. Later `specify workflow add`, `run`, and `resume` commands load installed
-> step packages, executing import-time code with the user's privileges. Review
-> the source before installation and use.
+> code. Later `specify workflow add`, `update`, `run`, and `resume` commands load
+> installed step packages only after explicit consent for that invocation: a
+> default-No interactive confirmation or `--trust-steps`. Loading executes
+> import-time code with the user's privileges. Review the source before
+> installation and use. See [Custom step trust](../reference/workflows.md#custom-step-trust)
+> for consent scope, bundle delegation, and renewed approval after step changes.
 
 Custom workflow step packages add a `type:` that workflows can use beyond the
 built-in step types. The canonical intake path is the

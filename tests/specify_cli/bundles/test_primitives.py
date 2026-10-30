@@ -449,8 +449,8 @@ def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
     )
     calls: list[tuple] = []
 
-    def _workflow_add(wid, dev=None, from_url=None):
-        calls.append((wid, dev, from_url))
+    def _workflow_add(wid, dev=None, from_url=None, *, trust_steps=False):
+        calls.append((wid, dev, from_url, trust_steps))
 
     monkeypatch.setattr(
         specify_cli,
@@ -461,7 +461,53 @@ def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
     manager = primitive_manager("workflows", tmp_path, allow_network=False)
     manager.install(_component("workflows", "bundled-wf"))
 
-    assert calls == [(str(bundled / "workflow.yml"), True, None)]
+    assert calls == [(str(bundled / "workflow.yml"), True, None, False)]
+
+
+@pytest.mark.parametrize("relative_root", [False, True])
+def test_step_approval_is_shared_only_within_installer_and_project(
+    tmp_path, monkeypatch, relative_root,
+):
+    import specify_cli
+    from specify_cli.workflows import _commands as workflow_cli
+
+    bundled = tmp_path / "bundled"
+    bundled.mkdir()
+    (bundled / "workflow.yml").write_text(
+        "workflow:\n  id: bundled-wf\n  version: 1.0.0\n", encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "specify_cli._assets._locate_bundled_workflow", lambda wid: bundled,
+    )
+    approvals = []
+    forwarded = []
+    monkeypatch.setattr(
+        workflow_cli, "_approve_custom_steps",
+        lambda root: approvals.append(root.resolve()) or True,
+    )
+    monkeypatch.setattr(
+        specify_cli, "workflow_add",
+        lambda *args, **kwargs: forwarded.append(kwargs["trust_steps"]),
+    )
+    project_a = tmp_path / "a"
+    project_b = tmp_path / "b"
+    for project in (project_a, project_b):
+        (project / ".specify").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    root_a = Path("a") if relative_root else project_a
+    root_b = Path("b") if relative_root else project_b
+    installer = DefaultPrimitiveInstaller(allow_network=False)
+    component = _component("workflows", "bundled-wf")
+
+    installer.install(root_a, component)
+    installer.install(root_a, component)
+    installer.install(root_b, component)
+
+    assert approvals == [project_a.resolve(), project_b.resolve()]
+    assert forwarded == [True, True, True]
+
+    DefaultPrimitiveInstaller(allow_network=False).install(root_a, component)
+    assert approvals == [project_a.resolve(), project_b.resolve(), project_a.resolve()]
 
 
 def test_assert_pinned_version_matches_passes():

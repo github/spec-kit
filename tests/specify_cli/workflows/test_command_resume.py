@@ -10,6 +10,53 @@ from pathlib import Path
 import pytest
 
 
+@pytest.mark.parametrize("json_output", [False, True])
+@pytest.mark.parametrize("mode", ["unattended", "decline", "accept", "flag"])
+def test_resume_requires_custom_step_consent(tmp_path, monkeypatch, json_output, mode):
+    from typer.testing import CliRunner
+
+    from specify_cli import app
+    from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+    from tests.specify_cli.workflows.helpers import (
+        force_workflow_stdin,
+        write_step_import_probe,
+    )
+
+    monkeypatch.chdir(tmp_path)
+    state = WorkflowEngine(tmp_path).execute(
+        WorkflowDefinition.from_string(TestWorkflowJsonOutput._WF)
+    )
+    assert state.status.value == "paused"
+    state_path = tmp_path / ".specify" / "workflows" / "runs" / state.run_id / "state.json"
+    saved = state_path.read_bytes()
+    marker = write_step_import_probe(tmp_path)
+    force_workflow_stdin(monkeypatch, tty=mode in {"decline", "accept"})
+    arguments = ["workflow", "resume", state.run_id]
+    if json_output:
+        arguments.append("--json")
+    if mode == "flag":
+        arguments.append("--trust-steps")
+
+    result = CliRunner().invoke(
+        app, arguments, input="n\n" if mode == "decline" else "y\n",
+    )
+
+    approved = mode in {"accept", "flag"}
+    assert result.exit_code == (0 if approved else 1), result.output
+    assert marker.exists() is approved
+    if not approved:
+        assert state_path.read_bytes() == saved
+    if json_output:
+        payload = json.loads(result.stdout)
+        assert payload["run_id"] == state.run_id
+        assert payload["status"] == ("paused" if approved else "failed")
+        if not approved:
+            assert payload["workflow_id"] is None
+            assert payload["error"]
+    if mode in {"decline", "accept"}:
+        assert "Trust all custom workflow step code" in result.output
+
+
 
 class TestWorkflowJsonOutput:
     """Test the --json machine-readable output for run/resume/status."""

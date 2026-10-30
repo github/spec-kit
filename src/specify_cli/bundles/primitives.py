@@ -257,14 +257,19 @@ class _KindManager(Protocol):
 
 
 def primitive_manager(
-    kind: str, project_root: Path, *, allow_network: bool = True
+    kind: str, project_root: Path, *, allow_network: bool = True,
+    trust_steps: bool = False,
+    approved_step_projects: set[Path] | None = None,
 ) -> _KindManager:
     if kind == "presets":
         return _PresetKindManager(project_root, allow_network)
     if kind == "extensions":
         return _ExtensionKindManager(project_root, allow_network)
     if kind == "workflows":
-        return _WorkflowKindManager(project_root, allow_network)
+        return _WorkflowKindManager(
+            project_root, allow_network, trust_steps=trust_steps,
+            approved_step_projects=approved_step_projects,
+        )
     if kind == "steps":
         return _StepKindManager(project_root, allow_network)
     raise BundlerError(f"Unknown component kind '{kind}'.")
@@ -272,16 +277,23 @@ def primitive_manager(
 
 @contextlib.contextmanager
 def _chdir(path: Path):
-    """Temporarily switch the working directory.
+    """Bind delegated CLI project resolution to an absolute root.
 
-    The delegated workflow/step command callables resolve the project via
-    ``Path.cwd()``; this makes that resolution land on *path*.
+    Pin the override too, so a relative SPECIFY_INIT_DIR is not reinterpreted
+    after changing directories. Restore both caller settings on exit.
     """
+    root = path.resolve()
     previous = Path.cwd()
-    os.chdir(path)
+    previous_override = os.environ.get("SPECIFY_INIT_DIR")
+    os.chdir(root)
     try:
+        os.environ["SPECIFY_INIT_DIR"] = str(root)
         yield
     finally:
+        if previous_override is None:
+            os.environ.pop("SPECIFY_INIT_DIR", None)
+        else:
+            os.environ["SPECIFY_INIT_DIR"] = previous_override
         os.chdir(previous)
 
 
@@ -487,12 +499,33 @@ class _ExtensionKindManager:
 
 
 class _WorkflowKindManager:
-    def __init__(self, project_root: Path, allow_network: bool) -> None:
+    def __init__(
+        self, project_root: Path, allow_network: bool, *, trust_steps: bool = False,
+        approved_step_projects: set[Path] | None = None,
+    ) -> None:
         from ..workflows.catalog import WorkflowRegistry
 
-        self._root = project_root
+        self._root = project_root.resolve()
         self._allow_network = allow_network
-        self._registry = WorkflowRegistry(project_root)
+        self._trust_steps = trust_steps
+        self._approved_step_projects = (
+            approved_step_projects if approved_step_projects is not None else set()
+        )
+        self._registry = WorkflowRegistry(self._root)
+
+    def _approve_steps(self) -> bool:
+        from ..workflows import _commands as cli
+
+        project = self._root.resolve()
+        if self._trust_steps or project in self._approved_step_projects:
+            return True
+        try:
+            approved = cli._approve_custom_steps(self._root)
+        except OSError as exc:
+            raise BundlerError(str(exc)) from exc
+        if approved:
+            self._approved_step_projects.add(project)
+        return approved
 
     def is_installed(self, component: ComponentRef) -> bool:
         try:
@@ -537,7 +570,10 @@ class _WorkflowKindManager:
                     _delegate_command(
                         "install",
                         f"workflow '{component.id}'",
-                        lambda: workflow_add(str(workflow_file), dev=True, from_url=None),
+                        lambda: workflow_add(
+                            str(workflow_file), dev=True, from_url=None,
+                            trust_steps=self._approve_steps(),
+                        ),
                     )
                 return warning
             if not self._allow_network:
@@ -564,6 +600,7 @@ class _WorkflowKindManager:
                 "install", f"workflow '{component.id}'",
                 lambda: _install_preselected_workflow(
                     component.id, version=component.version, selected_info=selected,
+                    trust_steps=self._approve_steps(),
                 ),
             )
 

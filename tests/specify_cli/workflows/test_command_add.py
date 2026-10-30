@@ -22,6 +22,70 @@ from specify_cli import app
 runner = CliRunner()
 
 
+@pytest.mark.parametrize("content", [b"one\ntwo\n", b"one\r\ntwo\r\n", bytes(range(256))])
+def test_new_catalog_staging_uses_binary_descriptor(tmp_path, monkeypatch, content):
+    from specify_cli.workflows import _commands as cli
+
+    native_binary = getattr(os, "O_BINARY", 0)
+    binary_flag = native_binary or (1 << 29)
+    real_open = os.open
+    requested_flags = []
+    monkeypatch.setattr(os, "O_BINARY", binary_flag, raising=False)
+
+    def tracked_open(path, flags, mode=0o777, **kwargs):
+        requested_flags.append(flags)
+        if not native_binary:
+            flags &= ~binary_flag
+        return real_open(path, flags, mode, **kwargs)
+
+    monkeypatch.setattr(os, "open", tracked_open)
+    staged = cli._stage_workflow_file(
+        tmp_path / "workflow", use_project_file_mode=True,
+    )
+    try:
+        assert requested_flags[-1] & binary_flag
+        staged.write_bytes(content)
+        staged.close()
+        assert staged.path.read_bytes() == content
+    finally:
+        staged.close()
+        staged.path.unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize("mode", ["unattended", "decline", "accept", "flag"])
+def test_add_requires_custom_step_consent(project_dir, monkeypatch, mode):
+    from tests.specify_cli.workflows.helpers import (
+        force_workflow_stdin,
+        write_step_import_probe,
+    )
+
+    marker = write_step_import_probe(project_dir)
+    source = project_dir / "workflow.yml"
+    source.write_text(
+        'schema_version: "1.0"\n'
+        "workflow:\n  id: trust-add\n  name: Trust add\n  version: 1.0.0\n"
+        "steps:\n  - id: probe\n    type: import-probe\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(project_dir)
+    force_workflow_stdin(monkeypatch, tty=mode in {"decline", "accept"})
+    arguments = ["workflow", "add", str(source), "--dev"]
+    if mode == "flag":
+        arguments.append("--trust-steps")
+
+    result = runner.invoke(
+        app, arguments, input="n\n" if mode == "decline" else "y\n",
+    )
+
+    approved = mode in {"accept", "flag"}
+    assert result.exit_code == (0 if approved else 1), result.output
+    assert marker.exists() is approved
+    installed = project_dir / ".specify" / "workflows" / "trust-add" / "workflow.yml"
+    assert installed.exists() is approved
+    if not approved:
+        assert "custom" in result.output.lower()
+
+
 
 class TestWorkflowAddCaseInsensitiveSuffix:
     """`workflow add` must detect a local YAML file case-insensitively, matching
@@ -128,7 +192,9 @@ class TestAddStep(StepBase):
             encoding="utf-8",
         )
         monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+        result = CliRunner().invoke(
+            app, ["workflow", "add", str(src), "--trust-steps"]
+        )
 
         assert result.exit_code == 0, result.output
         installed_workflow = (

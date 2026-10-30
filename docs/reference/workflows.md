@@ -12,6 +12,7 @@ specify workflow run <source>
 | ------------------- | -------------------------------------------------------- |
 | `-i` / `--input`    | Pass input values as `key=value` (repeatable)            |
 | `--json`            | Emit the run outcome as a single JSON object             |
+| `--trust-steps`     | Authorize all project custom step Python for this invocation |
 
 Runs a workflow from a catalog ID, URL, or local file path. Inputs declared by the workflow can be provided via `--input` or will be prompted interactively.
 
@@ -80,6 +81,7 @@ specify workflow resume <run_id>
 | ------------------- | -------------------------------------------------------- |
 | `-i` / `--input`    | Updated input values as `key=value` (repeatable)         |
 | `--json`            | Emit the resume outcome as a single JSON object          |
+| `--trust-steps`     | Authorize all project custom step Python for this invocation |
 
 Resumes a paused or failed workflow run from its persisted execution state. A
 `running` run is not resumable. Resume replays completed work into its
@@ -128,6 +130,7 @@ specify workflow add <source>
 | `--dev`         | Install from a local YAML file, package directory, or archive |
 | `--from <url>`  | Install from a custom URL (`<source>` names the expected workflow ID) |
 | `--version <version>` | Install an exact advertised catalog release (`<source>` must be a workflow ID) |
+| `--trust-steps` | Authorize all project custom step Python for this invocation |
 
 Installs a workflow from the catalog, an HTTPS URL, a local YAML file, a
 directory containing `workflow.yml`, or a `.zip`, `.tar.gz`, or `.tgz`
@@ -397,6 +400,10 @@ specify workflow update [workflow_id]
 ```
 
 Updates one installed catalog workflow — or all of them when no ID is given — to the latest catalog version. Prompts for confirmation and keeps the installed copy if a download or validation fails.
+
+`--trust-steps` authorizes loading project custom step code for this invocation.
+Without it, custom steps require interactive confirmation as described under
+[Custom step trust](#custom-step-trust).
 
 ## Enable or Disable a Workflow
 
@@ -1018,18 +1025,47 @@ Every source is validated identically before anything is committed:
   validation: at most 512 archive entries, 50 MiB downloaded or extracted, and
   10 MiB per archive member. Catalog files have a 50 MiB per-response bound.
 - Installation validates and copies the package but does **not** import or
-  execute `__init__.py`. Installed custom step modules are loaded during startup
-  of `workflow add`, `workflow run`, and `workflow resume`, before any particular
-  custom step necessarily executes.
+  execute `__init__.py`. With explicit consent, custom step modules are loaded
+  during startup of `workflow add`, `workflow update`, `workflow run`, and
+  `workflow resume`, before any particular custom step necessarily executes.
 
 > **Security note:** Loading a custom step runs its Python with **your**
 > privileges. Only install and retain step packages from sources you trust.
 
+#### Custom step trust
+
+Finding a package on disk does not authorize executing it, even if the project's
+`step-registry.json` says it was installed. Before importing custom step Python,
+`workflow add`, `workflow update`, `workflow run`, and `workflow resume` ask for
+confirmation when stdin is interactive. The default answer is **No**. Declining,
+interrupting the prompt, or running without a terminal blocks loading and fails
+the command before custom step code executes.
+
+After reviewing all packages in `.specify/workflows/steps/`, use `--trust-steps`
+to approve them explicitly, including in unattended scripts:
+
+```bash
+specify workflow run my-workflow --trust-steps
+specify workflow resume <run_id> --trust-steps
+```
+
+Approval applies only to that invocation and includes **all discovered custom
+step packages**, even ones the requested workflow does not reference. It is
+never saved: each invocation requires confirmation or `--trust-steps` again.
+Projects without custom step packages need no approval. Under `--json`, trust
+prompts go to stderr and refusal produces a single JSON failure object on stdout.
+
+The [bundle commands](bundles.md#install-a-bundle) that install or refresh
+workflows (`add`, `install`, `update`, and `init`) accept and forward the same
+`--trust-steps` option for that bundle invocation. Interactive approval is
+renewed if a bundle installs or refreshes a step package during that command;
+the explicit switch authorizes those new or refreshed packages as well.
+
 #### Listing, running, and removing
 
 Installed custom steps appear in `specify workflow step list` and are loaded
-automatically by `workflow add`, `workflow run`, and `workflow resume`. Remove
-one with:
+by `workflow add`, `workflow update`, `workflow run`, and `workflow resume`
+only after the trust approval above. Remove one with:
 
 ```bash
 specify workflow step remove my-step

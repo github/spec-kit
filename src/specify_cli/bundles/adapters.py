@@ -320,10 +320,20 @@ class DefaultPrimitiveInstaller:
     *allow_network* mirrors the bundle command's ``--offline`` flag: when False,
     component kinds that can only be sourced from a remote catalog refuse rather
     than touching the network. Bundled presets/extensions still install offline.
+    *trust_steps* forwards explicit consent for custom step imports during this
+    bundle invocation only; it is never derived from bundle metadata.
+    Interactive approvals are shared across this installer's workflow delegates,
+    scoped to each project and discarded with the bundle invocation's installer.
+    Installing or refreshing a step invalidates that project's interactive
+    approval before the package can change.
     """
 
-    def __init__(self, *, allow_network: bool = True) -> None:
+    def __init__(
+        self, *, allow_network: bool = True, trust_steps: bool = False,
+    ) -> None:
         self._allow_network = allow_network
+        self._trust_steps = trust_steps
+        self._approved_step_projects: set[Path] = set()
 
     def is_installed(self, project_root: Path, component: ComponentRef) -> bool:
         manager = self._manager_for(component, project_root)
@@ -379,12 +389,16 @@ class DefaultPrimitiveInstaller:
         self, project_root: Path, component: ComponentRef,
     ) -> BundledPatchWarning | None:
         manager = self._manager_for(component, project_root)
+        if component.kind == "steps":
+            self._approved_step_projects.discard(project_root.resolve())
         return manager.install(component)
 
     def refresh(
         self, project_root: Path, component: ComponentRef,
     ) -> BundledPatchWarning | None:
         manager = self._manager_for(component, project_root)
+        if component.kind == "steps":
+            self._approved_step_projects.discard(project_root.resolve())
         return manager.refresh(component)
 
     def remove(self, project_root: Path, component: ComponentRef) -> None:
@@ -396,5 +410,7 @@ class DefaultPrimitiveInstaller:
         from .primitives import primitive_manager
 
         return primitive_manager(
-            component.kind, project_root, allow_network=self._allow_network
+            component.kind, project_root, allow_network=self._allow_network,
+            trust_steps=self._trust_steps,
+            approved_step_projects=self._approved_step_projects,
         )

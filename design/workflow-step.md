@@ -12,7 +12,7 @@ see [Workflows](../docs/reference/workflows.md).
 | Route | Source | Registration |
 |---|---|---|
 | Built-in | `src/specify_cli/workflows/step/<package>/__init__.py` | Explicit import and `_register_step()` in `src/specify_cli/workflows/__init__.py` |
-| Installed | Package under `.specify/workflows/steps/<id>/`, containing `step.yml` and `__init__.py` | `load_custom_steps(project_root)` loads a matching `StepBase` subclass at workflow run/resume |
+| Installed | Package under `.specify/workflows/steps/<id>/`, containing `step.yml` and `__init__.py` | After explicit consent, `load_custom_steps(project_root, trusted=True)` loads a matching `StepBase` subclass for workflow add/update/run/resume |
 
 `STEP_REGISTRY` maps each `type_key` to a single step instance. Built-in keys
 are snapshotted in `BUILTIN_STEP_TYPES` before project steps are loaded; do not
@@ -21,6 +21,29 @@ found through step catalogs and added with `specify workflow step add <id>`.
 The default community catalog is discovery-only, not an install or trust
 endorsement. Review external step code before installing it: loading a package
 imports and executes its Python module.
+
+Loading project step code also requires consent for the current invocation.
+`load_custom_steps(project_root, trusted=False)` refuses imports by default;
+neither files on disk nor `step-registry.json` grant trust. CLI commands that
+load custom steps (`workflow add`, `update`, `run`, and `resume`) ask for
+confirmation on interactive stdin, defaulting to refusal. `--trust-steps`
+explicitly authorizes all custom step packages in that project for that
+invocation, including unreferenced packages, and works without a terminal.
+Approval is never persisted or inherited by subsequent invocations.
+Bundle `add`, `install`, `update`, and `init` commands forward the same explicit
+consent through their primitive installer to both bundled and catalog workflow
+delegates. Bundle metadata, offline mode, and refresh do not imply trust.
+An interactive approval is shared by the bundle invocation's primitive
+installer for that project, so subsequent workflow delegates do not prompt
+again while the step packages remain unchanged. A step install or refresh
+invalidates that project's cached interactive approval before mutation; the
+next workflow delegate requires renewed consent. Explicit `--trust-steps`
+continues to authorize all custom step code for the invocation, including
+new or refreshed packages. Approval is discarded with the invocation, never
+stored globally.
+Workflow delegates remain bound to the approved absolute project root. Their
+temporary project override must not reinterpret a relative `SPECIFY_INIT_DIR`
+from a changed working directory, and must restore the caller's override afterward.
 
 ## Step contract
 

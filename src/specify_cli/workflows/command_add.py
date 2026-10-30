@@ -32,10 +32,8 @@ def _workflow_package_has_companions(package_dir: cli.Path) -> bool:
 
 def _prepare_workflow_add(
     project_root: cli.Path, source: str, *, dev: bool, from_url: str | None,
-    version: str | None, selected_catalog: bool = False,
+    version: str | None, selected_catalog: bool = False, trust_steps: bool = False,
 ) -> cli.Path:
-    from . import load_custom_steps
-
     if version is not None and (
         dev or from_url is not None or (
             not selected_catalog and (
@@ -50,7 +48,10 @@ def _prepare_workflow_add(
         raise cli.typer.Exit(1)
     if version is not None or selected_catalog:
         cli._validate_workflow_id_or_exit(source)
-    load_custom_steps(project_root)
+    try:
+        cli._load_custom_steps(project_root, trust_steps=trust_steps)
+    except OSError as exc:
+        cli._fail_integration_load(exc, json_output=False)
     cli._open_workflow_registry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
     if from_url is not None and not dev:
@@ -62,12 +63,13 @@ def _prepare_workflow_add(
 
 def _install_preselected_workflow(
     workflow_id: str, *, version: str | None, selected_info: dict,
+    trust_steps: bool = False,
 ) -> None:
     """Install a bundle-selected release with the normal workflow preflights."""
     project_root = cli._require_specify_project()
     workflows_dir = _prepare_workflow_add(
         project_root, workflow_id, dev=False, from_url=None,
-        version=version, selected_catalog=True,
+        version=version, selected_catalog=True, trust_steps=trust_steps,
     )
     cli._install_workflow_from_catalog(
         project_root, workflows_dir, workflow_id,
@@ -87,6 +89,12 @@ def workflow_add(
     version: Annotated[
         str | None, cli.typer.Option(help="Install an exact catalog release")
     ] = None,
+    trust_steps: Annotated[
+        bool,
+        cli.typer.Option(
+            "--trust-steps", help="Authorize all custom step Python for this invocation",
+        ),
+    ] = False,
 ):
     """Install a workflow from catalog, URL, or local path."""
     from .engine import WorkflowDefinition
@@ -94,6 +102,7 @@ def workflow_add(
     project_root = cli._require_specify_project()
     workflows_dir = _prepare_workflow_add(
         project_root, source, dev=dev, from_url=from_url, version=version,
+        trust_steps=trust_steps,
     )
 
     def _validate_and_install_local(

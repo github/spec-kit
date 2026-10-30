@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import typer
 
 from ._commands import bundle_app
@@ -27,6 +29,12 @@ def bundle_add(
         "--version",
         help="Install an exact bundle release from the catalog",
     ),
+    trust_steps: Annotated[
+        bool,
+        typer.Option(
+            "--trust-steps", help="Authorize all custom step Python for this invocation",
+        ),
+    ] = False,
 ) -> None:
     """Install a bundle's full component set (alias for install)."""
     bundle_install(
@@ -35,4 +43,5 @@ def bundle_add(
         offline=offline,
         refresh=refresh,
         version=version,
+        trust_steps=trust_steps,
     )

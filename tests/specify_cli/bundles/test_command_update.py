@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import io  # noqa: F401
 import json  # noqa: F401
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch  # noqa: F401
 
+import pytest
 import yaml  # noqa: F401
 from typer.testing import CliRunner
 
@@ -21,6 +23,133 @@ from tests.specify_cli.bundles.helpers import (
 )
 
 runner = CliRunner()
+
+
+@pytest.mark.parametrize("mutation", ["install", "refresh"])
+@pytest.mark.parametrize("answer", ["accept", "decline", "eof", "flag"])
+def test_update_all_reapproves_changed_step_code(project, monkeypatch, mutation, answer):
+    from specify_cli.bundles.manifest import BundleManifest, ComponentRef
+    from specify_cli.bundles.records import InstalledBundleRecord, save_records
+    from specify_cli.workflows.catalog import StepCatalog, WorkflowRegistry
+    from specify_cli.workflows.step.installer import install_step_package
+    from tests.specify_cli.workflows.helpers import (
+        force_workflow_stdin,
+        write_step_import_probe,
+    )
+
+    original_marker = write_step_import_probe(project)
+    new_marker = project / "new-step-imported.txt"
+    force_workflow_stdin(monkeypatch, tty=True)
+    step_metadata = yaml.safe_dump({
+        "schema_version": "1.0",
+        "step": {"type_key": "new-step", "name": "New step", "version": "1.0.0"},
+    })
+    original_init = (
+        "from specify_cli.workflows.base import StepBase, StepResult\n"
+        "class NewStep(StepBase):\n"
+        "    type_key = 'new-step'\n"
+        "    def execute(self, config, context):\n"
+        "        return StepResult()\n"
+    )
+    new_init = (
+        f"from pathlib import Path\nPath({str(new_marker)!r}).touch()\n"
+        + original_init
+    )
+    step_files = {"step.yml": step_metadata.encode(), "__init__.py": new_init.encode()}
+    if mutation == "refresh":
+        original_package = project / "original-step"
+        original_package.mkdir()
+        (original_package / "step.yml").write_text(step_metadata, encoding="utf-8")
+        (original_package / "__init__.py").write_text(original_init, encoding="utf-8")
+        install_step_package(project, "new-step", original_package, source="local")
+
+    manifests = {}
+    records = []
+    packaged = {}
+    for bundle_id, workflow_id in (
+        ("first-bundle", "first-workflow"), ("second-bundle", "second-workflow"),
+    ):
+        workflow = {
+            "schema_version": "1.0",
+            "workflow": {"id": workflow_id, "name": workflow_id, "version": "1.0.0"},
+            "steps": [{"id": "probe", "type": "import-probe"}],
+        }
+        packaged[workflow_id] = project / "packaged" / workflow_id
+        packaged[workflow_id].mkdir(parents=True)
+        workflow_text = yaml.safe_dump(workflow)
+        (packaged[workflow_id] / "workflow.yml").write_text(workflow_text, encoding="utf-8")
+        installed_dir = project / ".specify" / "workflows" / workflow_id
+        installed_dir.mkdir(parents=True)
+        (installed_dir / "workflow.yml").write_text(workflow_text, encoding="utf-8")
+        WorkflowRegistry(project).add(workflow_id, {"version": "1.0.0"})
+        components = [ComponentRef("workflows", workflow_id, "1.0.0")]
+        data = valid_manifest_dict(provides={
+            "workflows": [{"id": workflow_id, "version": "1.0.0"}],
+        })
+        data["bundle"]["id"] = bundle_id
+        if bundle_id == "second-bundle":
+            data["provides"]["steps"] = [{"id": "new-step", "version": "1.0.0"}]
+            if mutation == "refresh":
+                components.append(ComponentRef("steps", "new-step", "1.0.0"))
+        manifests[bundle_id] = BundleManifest.from_dict(data)
+        records.append(InstalledBundleRecord.create(bundle_id, "1.2.0", components))
+    save_records(project, records)
+    monkeypatch.setattr(
+        "specify_cli._assets._locate_bundled_workflow", lambda wid: packaged.get(wid),
+    )
+    monkeypatch.setattr(
+        "specify_cli.bundles.command_update._build_stack",
+        lambda *args, **kwargs: SimpleNamespace(resolve=lambda bid: SimpleNamespace(
+            install_allowed=True, entry=SimpleNamespace(id=bid),
+        )),
+    )
+    monkeypatch.setattr(
+        "specify_cli.bundles.command_update._download_manifest",
+        lambda resolved, **kwargs: manifests[resolved.entry.id],
+    )
+    catalog_source = SimpleNamespace(
+        name="test", url="https://example.com/steps.json", install_allowed=True,
+    )
+    monkeypatch.setattr(StepCatalog, "get_active_catalogs", lambda self: [catalog_source])
+    monkeypatch.setattr(
+        StepCatalog, "_fetch_single_catalog",
+        lambda self, entry: {"steps": {"new-step": {
+            "id": "new-step", "version": "1.0.0",
+            "url": "https://example.com/new-step/step.yml",
+            "init_url": "https://example.com/new-step/__init__.py",
+            "sha256": {
+                name: hashlib.sha256(content).hexdigest()
+                for name, content in step_files.items()
+            },
+        }}},
+    )
+
+    class StepResponse(io.BytesIO):
+        def __init__(self, url):
+            super().__init__(step_files[url.rsplit("/", 1)[1]])
+            self.url = url
+
+        def geturl(self):
+            return self.url
+
+    monkeypatch.setattr(
+        "specify_cli.authentication.http.open_url",
+        lambda url, **kwargs: StepResponse(url),
+    )
+    arguments = ["bundle", "update", "--all"]
+    if answer == "flag":
+        arguments.append("--trust-steps")
+    responses = {"accept": "y\ny\n", "decline": "y\nn\n", "eof": "y\n", "flag": ""}
+
+    result = runner.invoke(app, arguments, input=responses[answer])
+
+    approved = answer in {"accept", "flag"}
+    assert new_marker.exists() is approved, result.output
+    assert result.exit_code == (0 if approved else 1), result.output
+    assert original_marker.exists()
+    assert result.output.count("Trust all custom workflow step code") == (
+        0 if answer == "flag" else 2
+    )
 
 
 def test_update_accepts_integration_override():

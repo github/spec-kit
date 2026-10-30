@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import os
 import shutil
@@ -31,6 +33,166 @@ from tests.specify_cli.bundles.helpers import (
 
 runner = CliRunner()
 REPO_ROOT = Path(__file__).parents[3]
+
+
+@pytest.mark.parametrize("project_override", [None, "member"])
+@pytest.mark.parametrize("mode", ["unattended", "flag", "accept", "decline"])
+@pytest.mark.parametrize("source", ["bundled", "catalog", "mixed", "mixed-reversed"])
+@pytest.mark.parametrize("command", ["add", "install", "refresh", "update", "init"])
+def test_bundle_forwards_custom_step_consent(
+    project: Path, monkeypatch, mode: str, source: str, command: str,
+    project_override: str | None,
+):
+    from specify_cli.bundles.manifest import ComponentRef
+    from specify_cli.bundles.records import InstalledBundleRecord, save_records
+    from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+    from tests.specify_cli.workflows.helpers import (
+        force_workflow_stdin,
+        write_step_import_probe,
+    )
+
+    launch_root = Path.cwd()
+    nested_marker = None
+    if project_override is not None:
+        project = project / project_override
+        nested_marker = write_step_import_probe(project / project_override)
+        monkeypatch.setenv("SPECIFY_INIT_DIR", project_override)
+    original_override = os.environ.get("SPECIFY_INIT_DIR")
+    marker = write_step_import_probe(project)
+    force_workflow_stdin(monkeypatch, tty=mode in {"accept", "decline"})
+    workflow_sources = {
+        "bundled": {"trust-workflow": "bundled"},
+        "catalog": {"trust-workflow": "catalog"},
+        "mixed": {"first-workflow": "bundled", "second-workflow": "catalog"},
+        "mixed-reversed": {"first-workflow": "catalog", "second-workflow": "bundled"},
+    }[source]
+    workflow_contents = {}
+    workflow_dirs = {}
+    workflow_urls = {}
+    for wid in workflow_sources:
+        workflow_dirs[wid] = project / "workflow-source" / wid
+        workflow_dirs[wid].mkdir(parents=True)
+        workflow_contents[wid] = (
+            'schema_version: "1.0"\n'
+            f"workflow:\n  id: {wid}\n  name: Trust workflow\n  version: 1.0.0\n"
+            "steps:\n  - id: probe\n    type: import-probe\n"
+        ).encode()
+        (workflow_dirs[wid] / "workflow.yml").write_bytes(workflow_contents[wid])
+        workflow_urls[wid] = f"https://example.com/{wid}.yml"
+    monkeypatch.setattr(
+        "specify_cli._assets._locate_bundled_workflow",
+        lambda wid: workflow_dirs[wid] if workflow_sources.get(wid) == "bundled" else None,
+    )
+    catalog_source = SimpleNamespace(
+        name="test", url="https://example.com/catalog.json", install_allowed=True,
+    )
+    monkeypatch.setattr(WorkflowCatalog, "get_active_catalogs", lambda self: [catalog_source])
+    monkeypatch.setattr(
+        WorkflowCatalog, "_fetch_single_catalog",
+        lambda self, entry: {"workflows": {
+            wid: {
+                "id": wid, "version": "1.0.0", "url": workflow_urls[wid],
+                "sha256": hashlib.sha256(workflow_contents[wid]).hexdigest(),
+            }
+            for wid in workflow_sources
+        }},
+    )
+
+    content_by_url = {
+        workflow_urls[wid]: workflow_contents[wid] for wid in workflow_sources
+    }
+
+    class WorkflowResponse(io.BytesIO):
+        def __init__(self, url):
+            super().__init__(content_by_url[url])
+            self.url = url
+
+        def geturl(self):
+            return self.url
+
+    monkeypatch.setattr(
+        "specify_cli.authentication.http.open_url",
+        lambda url, **kwargs: WorkflowResponse(url),
+    )
+    manifest_data = valid_manifest_dict(provides={"workflows": [
+        {"id": wid, "version": "1.0.0"} for wid in workflow_sources
+    ]})
+    manifest = BundleManifest.from_dict(manifest_data)
+    bundle_path = write_manifest(project / "bundle-source", manifest_data)
+    installed = {
+        wid: project / ".specify" / "workflows" / wid / "workflow.yml"
+        for wid in workflow_sources
+    }
+    original = {
+        wid: content + b"# Previously installed workflow\n"
+        for wid, content in workflow_contents.items()
+    }
+    if command in {"update", "refresh"}:
+        save_records(project, [
+            InstalledBundleRecord.create("demo-bundle", "1.2.0", [
+                ComponentRef("workflows", wid, "1.0.0") for wid in workflow_sources
+            ]),
+        ])
+        for wid, path in installed.items():
+            path.parent.mkdir(parents=True)
+            path.write_bytes(original[wid])
+            WorkflowRegistry(project).add(wid, {"version": "1.0.0"})
+    if command == "update":
+        resolved = SimpleNamespace(install_allowed=True)
+        monkeypatch.setattr(
+            "specify_cli.bundles.command_update._build_stack",
+            lambda *args, **kwargs: SimpleNamespace(resolve=lambda *args: resolved),
+        )
+        monkeypatch.setattr(
+            "specify_cli.bundles.command_update._download_manifest",
+            lambda *args, **kwargs: manifest,
+        )
+        arguments = ["bundle", "update", "demo-bundle"]
+    else:
+        arguments = ["bundle", "install" if command == "refresh" else command, str(bundle_path)]
+        if command == "refresh":
+            arguments.append("--refresh")
+    if source == "bundled":
+        arguments.append("--offline")
+    if mode == "flag":
+        arguments.append("--trust-steps")
+
+    result = runner.invoke(app, arguments, input="n\n" if mode == "decline" else "y\n")
+
+    approved = mode in {"accept", "flag"}
+    assert result.exit_code == (0 if approved else 1), result.output
+    assert nested_marker is None or not nested_marker.exists()
+    assert marker.exists() is approved
+    assert Path.cwd() == launch_root
+    assert os.environ.get("SPECIFY_INIT_DIR") == original_override
+    assert result.output.count("Trust all custom workflow step code") == (
+        1 if mode in {"accept", "decline"} else 0
+    )
+    if approved:
+        for wid, path in installed.items():
+            assert path.read_bytes() == workflow_contents[wid]
+
+        marker.unlink()
+        repeated_args = ["bundle", "install", str(bundle_path), "--refresh"]
+        if source == "bundled":
+            repeated_args.append("--offline")
+        repeated = runner.invoke(app, repeated_args, input="n\n")
+
+        assert repeated.exit_code == 1, repeated.output
+        assert not marker.exists()
+        for wid, path in installed.items():
+            assert path.read_bytes() == workflow_contents[wid]
+    else:
+        expected = "not approved" if mode == "decline" else "--trust-steps"
+        assert expected in " ".join(result.output.split())
+        for wid, path in installed.items():
+            if command in {"update", "refresh"}:
+                assert path.read_bytes() == original[wid]
+            else:
+                assert not path.exists()
+    assert nested_marker is None or not nested_marker.exists()
+    assert Path.cwd() == launch_root
+    assert os.environ.get("SPECIFY_INIT_DIR") == original_override
 
 
 @pytest.mark.parametrize("refresh", [False, True])
