@@ -21,7 +21,9 @@ from tests.parity_helpers import collation_range_locale
 from tests.extensions.git.test_git_extension import (
     _GIT_ENV,
     HAS_PWSH,
+    _add_prompt_probe_remote,
     _init_git,
+    _probe_log,
     _run_bash,
     _run_pwsh,
     _setup_project,
@@ -291,6 +293,27 @@ class TestCreateFeatureBranchParity:
         p = _run_py("create-new-feature-branch", py_proj, "--json", "--dry-run", "next feature")
         _assert_parity(b, p)
         assert json.loads(p.stdout)["FEATURE_NUM"] == "013"
+
+    def test_fetch_disables_terminal_prompt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Both twins fetch with GIT_TERMINAL_PROMPT=0 and survive a failing remote (#5199)."""
+        monkeypatch.delenv("GIT_TERMINAL_PROMPT", raising=False)
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        bash_log = _add_prompt_probe_remote(bash_proj)
+        py_log = _add_prompt_probe_remote(py_proj)
+        b = _run_bash(
+            "create-new-feature-branch.sh", bash_proj, "--json", "--short-name", "probe", "Probe feature"
+        )
+        p = _run_py(
+            "create-new-feature-branch", py_proj, "--json", "--short-name", "probe", "Probe feature"
+        )
+        _assert_parity(b, p)
+        assert json.loads(p.stdout)["BRANCH_NAME"] == "001-probe"
+        for log in (bash_log, py_log):
+            calls = _probe_log(log)
+            assert calls, "the probe remote was never contacted"
+            assert set(calls) == {"0"}
 
     def test_explicit_number(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)

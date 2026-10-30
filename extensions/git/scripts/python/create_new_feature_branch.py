@@ -271,6 +271,7 @@ def check_existing_branches(
             cwd=repo_root,
             capture_output=True,
             text=True,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
         highest_branch = get_highest_from_branches(repo_root, scope_prefix)
 
