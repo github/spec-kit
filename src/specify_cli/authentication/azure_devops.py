@@ -52,7 +52,17 @@ def _find_az_cli() -> str | None:
         except OSError:
             continue
         for name in names:
-            resolved = shutil.which(os.path.join(directory, name))
+            candidate = os.path.join(directory, name)
+            if sys.platform == "win32":
+                # Avoid which() expanding PATHEXT a second time.
+                if not (
+                    os.path.isfile(candidate)
+                    and os.access(candidate, os.F_OK | os.X_OK)
+                ):
+                    continue
+                resolved = candidate
+            else:
+                resolved = shutil.which(candidate)
             if not resolved or not os.path.isabs(resolved):
                 continue
             try:

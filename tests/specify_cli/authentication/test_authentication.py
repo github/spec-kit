@@ -1028,8 +1028,7 @@ class TestAzureDevOpsAuth:
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
     def test_resolve_token_azure_cli_resolves_executable(self, az_cli_executable):
-        """The az executable is resolved via shutil.which before invocation, so
-        the .cmd/.bat shim on Windows (CreateProcess ignores PATHEXT) is used."""
+        """Resolve the installed executable, including Windows command shims."""
         import shutil
         from unittest.mock import call, patch, MagicMock
         entry = AuthConfigEntry(
@@ -1050,8 +1049,7 @@ class TestAzureDevOpsAuth:
         argv = run.call_args.args[0]
         names = ["az"]
         if os.name == "nt":
-            names = ["az.EXE", "az.CMD"]
-            names = names[:names.index("az" + az_cli_executable.suffix.upper()) + 1]
+            names = []
         assert which.call_args_list == [
             call(str(az_cli_executable.parent / name)) for name in names
         ]
@@ -1060,8 +1058,9 @@ class TestAzureDevOpsAuth:
 
     @pytest.mark.parametrize("extension", [".EXE", ".CMD", None])
     @pytest.mark.parametrize("pathext", [".EXE;.CMD", "", None])
-    def test_resolve_token_azure_cli_python311_windows_candidates(
-        self, monkeypatch, tmp_path, extension, pathext
+    @pytest.mark.parametrize("accessible", [False, True])
+    def test_resolve_token_azure_cli_windows_candidates_are_probed_once(
+        self, monkeypatch, tmp_path, extension, pathext, accessible
     ):
         from unittest.mock import MagicMock, call, patch
 
@@ -1080,33 +1079,49 @@ class TestAzureDevOpsAuth:
         )
         result = MagicMock(returncode=0, stdout='{"accessToken": "tok"}')
 
-        def python311_which(candidate):
-            # Python 3.11 checks directory-bearing candidates verbatim,
-            # without appending PATHEXT.
-            return candidate if os.path.isfile(candidate) else None
+        extensions = (pathext or ".COM;.EXE;.BAT;.CMD").split(";")
+
+        def expanding_which(candidate):
+            # Newer Windows which() versions also append PATHEXT to a
+            # candidate that already has an executable extension.
+            for path in [candidate] + [candidate + suffix for suffix in extensions]:
+                if os.path.isfile(path) and os.access(path, os.F_OK | os.X_OK):
+                    return path
+            return None
 
         with patch("sys.platform", "win32"), patch(
             "specify_cli.authentication.azure_devops.shutil.which",
-            side_effect=python311_which,
+            side_effect=expanding_which,
         ) as which, patch(
+            "specify_cli.authentication.azure_devops.os.path.isfile",
+            wraps=os.path.isfile,
+        ) as probe, patch(
+            "specify_cli.authentication.azure_devops.os.access",
+            return_value=accessible,
+        ) as access, patch(
             "specify_cli.authentication.azure_devops.subprocess.run",
             return_value=result,
         ) as run:
             assert AzureDevOpsAuth().resolve_token(entry) == (
-                "tok" if extension is not None else None
+                "tok" if extension is not None and accessible else None
             )
 
-        names = ["az" + suffix for suffix in (pathext or ".COM;.EXE;.BAT;.CMD").split(";")]
-        if extension is not None:
+        names = ["az" + suffix for suffix in extensions]
+        if extension is not None and accessible:
             names = names[:names.index("az" + extension) + 1]
-        assert which.call_args_list == [
+        assert probe.call_args_list == [
             call(str(executable.parent / name)) for name in names
         ]
-        if extension is None:
+        which.assert_not_called()
+        assert access.call_args_list == (
+            [call(str(executable), os.F_OK | os.X_OK)] if extension is not None else []
+        )
+        if extension is None or not accessible:
             run.assert_not_called()
         else:
             assert os.path.normcase(run.call_args.args[0][0]) == os.path.normcase(str(executable))
 
+    @pytest.mark.skipif(os.name == "nt", reason="Only POSIX uses shutil.which results")
     @pytest.mark.parametrize(
         "which_result", [None, r".\az.CMD", r".\az.exe", "az.cmd", "./az", "absolute-cwd"]
     )
@@ -1211,7 +1226,9 @@ class TestAzureDevOpsAuth:
             run.assert_not_called()
 
     @pytest.mark.skipif(os.name == "nt", reason="Executable symlinks require Windows privileges")
-    @pytest.mark.parametrize("target", ["project", "case-alias", "external", "uninspectable"])
+    @pytest.mark.parametrize(
+        "target", ["project", "case-alias", "external", "uninspectable", "project-chain"]
+    )
     @pytest.mark.parametrize("trusted_install", [False, True])
     def test_resolve_token_azure_cli_executable_symlinks(
         self, monkeypatch, tmp_path, az_cli_executable, target, trusted_install
@@ -1233,6 +1250,11 @@ class TestAzureDevOpsAuth:
             if not alias.exists():
                 pytest.skip("Case-sensitive filesystem")
             executable = alias / "az"
+        elif target == "project-chain":
+            intermediate = tmp_path / "intermediate" / "az"
+            intermediate.parent.mkdir()
+            intermediate.symlink_to(executable)
+            executable = intermediate
         link = tmp_path / "shim" / "az"
         link.parent.mkdir()
         link.symlink_to(executable)
