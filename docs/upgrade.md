@@ -43,7 +43,7 @@ specify self upgrade
 specify self upgrade --tag vX.Y.Z[suffix]
 ```
 
-Bare `specify self upgrade` executes immediately, matching the no-prompt behavior of commands like `pip install -U` and `npm update`. The CLI classifies your runtime into one of: `uv tool`, `pipx`, `uvx (ephemeral)`, source checkout, or unsupported. Only `uv tool` and `pipx` are upgraded automatically; for `uv tool` installs, it runs `uv tool install specify-cli --force --from <git ref>` under the hood so pinned release tags work. The other paths print path-specific guidance and exit 0 without touching anything.
+Bare `specify self upgrade` executes immediately, matching the no-prompt behavior of commands like `pip install -U` and `npm update`. The CLI classifies your runtime into one of: `uv tool`, `pipx`, `uvx (ephemeral)`, source checkout, or unsupported. Only `uv tool` and `pipx` are upgraded automatically; for `uv tool` installs, it runs `uv tool install specify-cli --force --from <git ref>` under the hood so pinned release tags work. On Windows, `uv` cannot replace the tool environment `specify` is running from, so for `uv tool` installs `specify self upgrade` prints that command for you to run once it exits, and exits 0 without touching anything. Stop any other process running from that environment first, such as a `specify mcp` server, or uv can still fail partway through. The other paths print path-specific guidance and exit 0 without touching anything.
 
 Pinned tags must start with `vMAJOR.MINOR.PATCH`. Optional suffixes are limited to dev, alpha/beta/rc, and/or build metadata forms such as `v1.0.0-rc1`, `v0.8.0.dev0`, `v0.8.0+build.42`, or the combination `v1.0.0-rc1+build.42`; branch names, hash refs, `latest`, and bare versions without `v` are rejected.
 

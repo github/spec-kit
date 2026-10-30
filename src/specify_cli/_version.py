@@ -748,6 +748,26 @@ def _installer_binary_name(method: _InstallMethod) -> str | None:
     return None
 
 
+def _runs_from_uv_tool_env_on_windows() -> bool:
+    """Return whether this process runs from a uv tool environment on Windows."""
+    return os.name == "nt" and os.path.isfile(
+        os.path.join(sys.prefix, "uv-receipt.toml")
+    )
+
+
+# Another process from the same tool environment, such as an editor's
+# `specify mcp` server, keeps python.exe locked after this command exits.
+_UV_TOOL_MANUAL_INTRO = (
+    "Stop any other specify process (such as `specify mcp`), then run this "
+    "once this command exits:"
+)
+
+
+def _uv_tool_manual_command(target_tag: str | None) -> str:
+    """Return the uv command a Windows uv-tool user runs after specify exits."""
+    return f"uv tool install specify-cli --force --from {_source_spec(target_tag)}"
+
+
 def _is_path_like_command(value: str) -> bool:
     """Return whether an argv[0] names a path rather than a bare command."""
     return Path(value).parent != Path(".") or "/" in value or "\\" in value
@@ -812,6 +832,12 @@ def _build_upgrade_plan(
             "(installer rejected)"
             if installer_rejected
             else f"(installer {_installer_binary_name(method)} not found on PATH)"
+        )
+    elif method == _InstallMethod.UV_TOOL and _runs_from_uv_tool_env_on_windows():
+        # self_upgrade prints the uv command instead of running it.
+        command_preview = (
+            "(none — on Windows, uv cannot replace the tool environment specify "
+            "is running from)"
         )
     else:
         command_preview = (
