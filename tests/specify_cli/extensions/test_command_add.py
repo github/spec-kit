@@ -29,11 +29,13 @@ from specify_cli.extensions import (
 )
 from tests.conftest import strip_ansi
 from tests.specify_cli.extensions._helpers import (
+    LISTED_COMMAND_NAME_CASES,
     MINIMAL_ZIP_BYTES as _MINIMAL_ZIP_BYTES,
     can_create_symlink,
     enable_native_hooks,
     open_test_download_zip as _open_test_download_zip,
     validate_safe_cache_dir as _validate_safe_cache_dir_test_stand_in,
+    write_listing_project_options,
 )
 
 
@@ -290,6 +292,34 @@ class TestExtensionAddCLI:
         assert not (project_dir / ".specify/extensions/test-ext").exists()
         assert not (project_dir / ".specify/extensions.yml").exists()
         assert not (project_dir / ".specify/hook-dispatch").exists()
+
+    @pytest.mark.parametrize("command", [
+        pytest.param(["speckit.test-ext.hello"], id="list"),
+        pytest.param({"name": "speckit.test-ext.hello"}, id="mapping"),
+    ])
+    def test_add_dev_rejects_invalid_hook_command_before_writing_files(
+        self, extension_dir, project_dir, command
+    ):
+        """Malformed hook commands must leave no installed artifacts (#5080)."""
+        manifest_path = extension_dir / "extension.yml"
+        data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        data["hooks"]["after_tasks"]["command"] = command
+        manifest_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        agent_dir = project_dir / ".claude"
+        (agent_dir / "skills").mkdir(parents=True)
+        before = set(agent_dir.rglob("*"))
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(app, ["extension", "add", "--dev", str(extension_dir)])
+
+        assert result.exit_code == 1, result.output
+        assert isinstance(result.exception, SystemExit), repr(result.exception)
+        output = strip_ansi(result.output)
+        assert "after_tasks" in output and "'command'" in output, output
+        assert "Traceback" not in output
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+        assert set(agent_dir.rglob("*")) == before
+        assert ExtensionRegistry(project_dir / ".specify/extensions").get("test-ext") is None
 
     def test_add_dev_links_copilot_agent_when_supported(
         self, extension_dir, project_dir, temp_dir
@@ -623,7 +653,8 @@ class TestExtensionAddCLI:
         # It must not emit the space-containing display name as the command target.
         assert "add Jira Integration --from" not in output
 
-    def test_add_discovery_only_error_neutralizes_unsafe_id(self, tmp_path):
+    @pytest.mark.parametrize("malicious_id", ["foo; rm -rf ~", "foo\n"])
+    def test_add_discovery_only_error_neutralizes_unsafe_id(self, tmp_path, malicious_id):
         """A catalog-controlled ID with shell metacharacters must never be
         interpolated into the suggested command; it is replaced by a literal
         placeholder so copying the command can't execute injected shell text."""
@@ -636,7 +667,6 @@ class TestExtensionAddCLI:
         (project_dir / ".specify").mkdir()
         (project_dir / ".specify" / "extensions").mkdir(parents=True)
 
-        malicious_id = "foo; rm -rf ~"
         mock_catalog = MagicMock()
         mock_catalog.get_extension_info.return_value = {
             "id": malicious_id,
@@ -1521,3 +1551,29 @@ def test_forge_extension_install_listing_hyphenates_command_names(
     # Forge registers hyphenated command names, so the summary must match.
     assert "speckit-test-ext-hello" in result.output
     assert "speckit.test-ext.hello" not in result.output
+
+
+@pytest.mark.parametrize(
+    ("init_options", "listed", "not_listed"), LISTED_COMMAND_NAME_CASES
+)
+def test_extension_install_listing_matches_registered_command_names(
+    extension_dir, project_dir, init_options, listed, not_listed
+):
+    """The post-install 'Provided commands' listing must show each command the
+    way the active agent registers it, for every integration rather than only
+    the agents special-cased by name."""
+    write_listing_project_options(project_dir, init_options)
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        result = CliRunner().invoke(
+            app, ["extension", "add", str(extension_dir), "--dev"]
+        )
+    finally:
+        os.chdir(old_cwd)
+
+    output = strip_ansi(result.output)
+    assert result.exit_code == 0, output
+    assert f"• {listed} - " in output, output
+    assert f"• {not_listed} - " not in output, output

@@ -12,8 +12,10 @@ from ._helpers import (
     _read_integration_json,
     _register_extensions_for_agent,
     _register_presets_for_agent,
+    _resync_manifest_after_registration,
     _resolve_integration_options,
     _set_default_integration_or_exit,
+    _snapshot_manifest_before_registration,
 )
 
 
@@ -58,6 +60,7 @@ def integration_use(
             f"[cyan]specify integration use {key} --force[/cyan]."
         ),
     )
+    manifest, unmodified_files = _snapshot_manifest_before_registration(project_root, key)
     _register_extensions_for_agent(
         project_root,
         key,
@@ -68,4 +71,11 @@ def integration_use(
         key,
         continuing="The integration was selected, but installed presets may need re-registration.",
     )
+    if manifest is not None:
+        _resync_manifest_after_registration(
+            manifest,
+            key,
+            unmodified_files=unmodified_files,
+            continuing="The integration was selected, but its manifest hashes may be stale.",
+        )
     lifecycle_success(f"[green]✓[/green] Default integration set to [bold]{key}[/bold].")

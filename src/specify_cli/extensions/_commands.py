@@ -64,9 +64,9 @@ def _command_safe_id(raw_id: object, placeholder: str = "<extension-id>") -> str
     ``foo; rm -rf ~`` could otherwise be interpolated into a command we
     explicitly encourage the user to copy and run. ``rich.markup.escape`` only
     neutralizes Rich markup, not shell metacharacters, so it is not sufficient
-    here. Only emit the real ID when it matches the same
+    here. Only emit the real ID when its entire value matches the same
     lowercase-alphanumeric-and-hyphen rule ``ExtensionManifest`` enforces
-    (``^[a-z0-9-]+$``); otherwise fall back to a literal placeholder so the
+    (a full match of ``[a-z0-9-]+``); otherwise fall back to a literal placeholder so the
     printed command never carries catalog-controlled shell text.
 
     A leading hyphen is additionally rejected: an ID like ``--force`` satisfies
@@ -78,7 +78,7 @@ def _command_safe_id(raw_id: object, placeholder: str = "<extension-id>") -> str
     text = str(raw_id)
     if text.startswith("-"):
         return placeholder
-    if VALID_EXTENSION_ARTIFACT_NAME_PATTERN.match(text):
+    if VALID_EXTENSION_ARTIFACT_NAME_PATTERN.fullmatch(text):
         return text
     return placeholder
 
@@ -119,6 +119,38 @@ def _refresh_events_and_warn(project_root: Path) -> None:
         )
         for key, detail in exc.failures:
             console.print(f"    {key}: {_escape_markup(detail)}")
+
+
+def _registered_command_name(project_root: Path, command_name: str) -> str:
+    """Return *command_name* the way the project's active agent registers it.
+
+    Skills projects register extension commands as ``speckit-<ext>-<cmd>``
+    skills, which needs no integration lookup, so installed adapters stay
+    unloaded. In command mode, agents whose command references use ``-``
+    (such as Cline, Forge, and Junie) register the same hyphenated name; the
+    others, and agents that are not loaded, keep the manifest's dotted name.
+    Deriving this from the integration keeps command listings in step with
+    registration instead of a list of agents.
+    """
+    from .._init_options import is_ai_skills_enabled
+    from ..integrations import get_integration
+    from . import ExtensionManager
+
+    opts = load_init_options(project_root)
+    selected_ai = opts.get("ai") if isinstance(opts, dict) else None
+    if not isinstance(selected_ai, str) or not selected_ai:
+        return command_name
+    # Check skills mode before the integration: generic's command-mode
+    # separator applies to both of its layouts, and inspection commands such
+    # as `extension info` do not load installed adapters.
+    if is_ai_skills_enabled(opts):
+        return ExtensionManager._skill_name_for_command(command_name)
+    integration = get_integration(selected_ai)
+    if integration is None or (
+        integration.invoke_separator_for_mode(False) != "-"
+    ):
+        return command_name
+    return ExtensionManager._skill_name_for_command(command_name)
 
 
 def install_extension_from_url(

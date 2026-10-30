@@ -16,7 +16,18 @@ from ..integration_state import (
 )
 from ._commands import integration_app
 from ._lifecycle import external_lifecycle, lifecycle_owns_rollback, lifecycle_success
-from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _clear_init_options_for_integration, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _register_extensions_for_agent, _register_presets_for_agent, _remove_integration_json, _resolve_integration_options, _resolve_script_type, _set_default_integration, _set_default_integration_or_exit, _unregister_extensions_for_agent, _unregister_presets_for_agent, _write_integration_json
+from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _clear_init_options_for_integration, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _register_extensions_for_agent, _register_presets_for_agent, _remove_integration_json, _resync_manifest_after_registration, _resolve_integration_options, _resolve_script_type, _set_default_integration, _set_default_integration_or_exit, _snapshot_manifest_before_registration, _unregister_extensions_for_agent, _unregister_presets_for_agent, _write_integration_json
+
+
+def _missing_required_options(integration, parsed_options) -> list[str]:
+    """Return the integration's required options that are absent or blank."""
+    parsed = parsed_options or {}
+    missing = []
+    for option in integration.options():
+        value = parsed.get(option.name.lstrip("-").replace("-", "_"))
+        if option.required and (value is None or (isinstance(value, str) and not value.strip())):
+            missing.append(option.name)
+    return missing
 
 
 @integration_app.command("switch")
@@ -103,6 +114,7 @@ def integration_switch(
             parsed_options=parsed_options,
             refresh_templates_force=force,
         )
+        manifest, unmodified_files = _snapshot_manifest_before_registration(project_root, target)
         _register_extensions_for_agent(
             project_root,
             target,
@@ -119,6 +131,13 @@ def integration_switch(
                 "need re-registration."
             ),
         )
+        if manifest is not None:
+            _resync_manifest_after_registration(
+                manifest,
+                target,
+                unmodified_files=unmodified_files,
+                continuing="The integration switch succeeded, but its manifest hashes may be stale.",
+            )
         lifecycle_success(f"\n[green]✓[/green] Default integration set to [bold]{target}[/bold].")
         raise typer.Exit(0)
 
@@ -131,6 +150,16 @@ def integration_switch(
         target_integration, current, target, integration_options
     )
     target_integration.is_skills_mode(target_parsed_options, project_root)
+    # Required options are otherwise only enforced by setup(), which runs
+    # after Phase 1 has already removed the current integration.
+    missing_options = _missing_required_options(target_integration, target_parsed_options)
+    if missing_options:
+        console.print(
+            f"[red]Error:[/red] Integration '{escape(target)}' requires "
+            f"{', '.join(missing_options)} in --integration-options."
+        )
+        console.print("No files were changed.")
+        raise typer.Exit(1)
 
     # Phase 1: Uninstall current integration (if any)
     if installed_key:
@@ -367,6 +396,16 @@ def integration_switch(
         project_root,
         target,
         continuing="The integration switch succeeded, but installed presets may need re-registration.",
+    )
+
+    # The manifest was saved right before registration, so every tracked
+    # file is unmodified; passing them all keeps recovered markers on files
+    # registration didn't change.
+    _resync_manifest_after_registration(
+        manifest,
+        target,
+        unmodified_files=set(manifest.files),
+        continuing="The integration switch succeeded, but its manifest hashes may be stale.",
     )
 
     name = (target_integration.config or {}).get("name", target)

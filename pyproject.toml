@@ -1,6 +1,6 @@
 [project]
 name = "specify-cli"
-version = "1.2.1.dev0"
+version = "1.2.6.dev0"
 description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -62,6 +62,7 @@ packages = ["src/specify_cli"]
 test = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "pytest-xdist>=3.0",
 ]
 
 [tool.pytest.ini_options]

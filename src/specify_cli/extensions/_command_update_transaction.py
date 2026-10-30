@@ -564,6 +564,10 @@ def run_update_command(extension: str | None) -> None:
                             if cfg_file.is_file():
                                 shutil.copy2(cfg_file, new_extension_dir / cfg_file.name)
 
+                    # Scaffold config templates the new version declares, as
+                    # `extension add` does; the configs restored above are kept.
+                    scaffolded, _, unscaffolded = manager.scaffold_config(extension_id)
+
                     # 9. Restore metadata from backup (installed_at, enabled state)
                     if backup_registry_entry and isinstance(backup_registry_entry, dict):
                         init_options = _commands.load_init_options(project_root)
@@ -630,6 +634,17 @@ def run_update_command(extension: str | None) -> None:
                 console.print(
                     f"   [green]✓[/green] Updated to v{update.available}"
                 )
+                config_home = f".specify/extensions/{_escape_markup(extension_id)}"
+                for cfg in scaffolded:
+                    console.print(
+                        f"   Config scaffolded: {config_home}/{_escape_markup(cfg)}"
+                    )
+                if unscaffolded:
+                    console.print(
+                        "   [yellow]Warning:[/yellow] Config templates not scaffolded: "
+                        f"{_escape_markup(', '.join(unscaffolded))}. "
+                        "Verify the extension manifest and template files."
+                    )
                 if cleanup_error is not None:
                     console.print(
                         "   [yellow]Warning:[/yellow] Could not fully remove "

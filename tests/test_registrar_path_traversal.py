@@ -423,3 +423,39 @@ class TestReadSkipWarning:
             / "group"
             / "run.prompt.md"
         ).is_file()
+
+    def test_copilot_unregister_removes_commands_aliases_and_prompts(self, tmp_path):
+        project, ext_dir = _project_and_source(tmp_path)
+        agents_dir = project / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        registrar = CommandRegistrar()
+        registered = registrar.register_commands(
+            "copilot",
+            [_cmd("speckit.myext.hello", ["group/run"])],
+            "myext",
+            ext_dir,
+            project,
+        )
+
+        expected_commands = ["speckit.myext.hello", "group/run"]
+        assert registered == expected_commands
+        for command_name in expected_commands:
+            assert (agents_dir / f"{command_name}.agent.md").is_file()
+            assert (
+                project
+                / ".github"
+                / "prompts"
+                / f"{command_name}.prompt.md"
+            ).is_file()
+
+        registrar.unregister_commands({"copilot": registered}, project)
+
+        for command_name in expected_commands:
+            assert not (agents_dir / f"{command_name}.agent.md").exists()
+            assert not (
+                project
+                / ".github"
+                / "prompts"
+                / f"{command_name}.prompt.md"
+            ).exists()

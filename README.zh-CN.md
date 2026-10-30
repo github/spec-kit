@@ -55,7 +55,7 @@ CLI 只需安装一次，项目只需初始化一次；以下三种流程共用�
 
 示例采用 **GitHub Copilot 默认的技能（skills）模式**。
 如需使用其他助手，将 `copilot` 替换为对应的
-[集成标识](https://github.github.io/spec-kit/reference/integrations.html)。
+[集成标识](https://github.github.io/spec-kit/integrations/index.html)。
 
 已有代码？请参阅[现有项目指南](https://github.github.io/spec-kit/guides/existing-projects.html)。
 锁定版本、其他安装方式、CI 与故障排查见[安装指南](https://github.github.io/spec-kit/installation.html)；
@@ -63,7 +63,7 @@ CLI 只需安装一次，项目只需初始化一次；以下三种流程共用�
 
 现在，在**项目目录中启动编码助手**，选择以下一种流程。
 在**助手的聊天界面中逐个调用 `/speckit-*` 技能**，检查结果后再继续。
-这些是助手技能，不是终端命令。其他助手或模式可能采用[不同的调用语法](https://github.github.io/spec-kit/reference/integrations.html#command-invocation)。
+这些是助手技能，不是终端命令。其他助手或模式可能采用[不同的调用语法](https://github.github.io/spec-kit/integrations/cli.html#command-invocation)。
 
 <a id="-什么是规范驱动开发"></a>
 <a id="3-确立项目准则"></a>
@@ -177,7 +177,7 @@ specify extension add assess
 
 - [CLI 参考](https://github.github.io/spec-kit/reference/overview.html)与[流程命令](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
 - [SDD 理念](https://github.github.io/spec-kit/concepts/sdd.html)、[完整方法论](./spec-driven.md)与[现有规范演进](https://github.github.io/spec-kit/guides/evolving-specs.html)
-- [视频概览](https://github.github.io/spec-kit/quickstart.html#video-overview)与[项目历史](https://github.github.io/spec-kit/history.html)
+- [项目历史](https://github.github.io/spec-kit/history.html)
 - [Spec Kit 如何使用 Spec Kit](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
 
 <a id="-支持"></a>

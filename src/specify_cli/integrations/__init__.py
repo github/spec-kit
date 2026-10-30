@@ -96,6 +96,7 @@ def _register_builtins() -> None:
     from .lingma import LingmaIntegration
     from .mcode import McodeIntegration
     from .muse import MuseIntegration
+    from .none import NoneIntegration
     from .omp import OmpIntegration
     from .opencode import OpencodeIntegration
     from .pi import PiIntegration
@@ -140,6 +141,7 @@ def _register_builtins() -> None:
     _register(LingmaIntegration())
     _register(McodeIntegration())
     _register(MuseIntegration())
+    _register(NoneIntegration())
     _register(OmpIntegration())
     _register(OpencodeIntegration())
     _register(PiIntegration())

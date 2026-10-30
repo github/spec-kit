@@ -1,6 +1,6 @@
 # Agent Integration Design
 
-Integrations adapt the shared Spec Kit workflows to an AI coding agent. Their
+Integrations adapt the shared Spec Kit processes to an AI coding agent. Their
 **availability** (built-in, generic, or catalog-only) is separate from their
 **output format** (commands, recipes, skills, or a custom layout). The Python
 integration registry owns installation behavior; catalogs provide discovery,
@@ -44,8 +44,9 @@ integration behavior. If the agent supports non-interactive workflows, implement
 `build_exec_args()` with the full base signature; `options()` declares
 install-time `--integration-options`, not per-workflow runtime options.
 Agent-specific native events can be declared on the integration. Set
-`multi_install_safe = True` only for a static, non-overlapping agent root and
-command directory; shared dynamic paths are not safe by default.
+`multi_install_safe = True` only when the integration emits no files or uses a
+static, non-overlapping agent root and command directory; shared dynamic paths
+are not safe by default.
 
 ## Output flavors
 
@@ -66,12 +67,20 @@ agent's configured root.
 `command_filename()` and `setup()` are override points when the native layout
 demands them. Keep mode selection, invocation spelling, and registration in
 sync. Agent-specific layouts and options belong in the integration code and
-the [supported-integrations reference](../docs/reference/integrations.md).
+the agent's [integration guide](../docs/integrations/index.md).
 
 Core templates that call scripts declare `sh`, `ps`, and `py` commands in
 `scripts:` frontmatter; template processing replaces `{SCRIPT}` with the
 selected variant. `py` is opt-in; non-interactive init defaults to `sh` on
 POSIX or `ps` on Windows. Maintain equivalent stdout behavior across all three.
+All PowerShell scripts in the repository and all PowerShell functionality
+generated from repository templates MUST target Windows PowerShell 5.1. All
+such code must use only language features, cmdlets, parameters, and runtime
+APIs available in Windows PowerShell 5.1. Implementations must also account for
+encoding, .NET Framework, and process/runtime differences in Windows
+PowerShell 5.1 while preserving the required Bash and Python behavioral parity.
+Validation evidence for behavioral PowerShell changes must exercise Windows
+PowerShell 5.1 or otherwise demonstrate 5.1 compatibility.
 Bundled extension commands do not yet use this core-template script routing.
 `__AGENT__` and command references are resolved during rendering, not by
 adding per-agent wrapper scripts. For `generic`, extension registration
@@ -359,8 +368,8 @@ warns that manual cleanup may be needed. A newly trusted replacement still
 renders its declared destination under normal `upgrade --force` semantics;
 old-only destinations are not deleted using unverified project metadata.
 
-See the [catalog contract](../integrations/README.md) and
-[user reference](../docs/reference/integrations.md) for public commands.
+See the [catalog contract](../docs/integrations/catalog.md) and
+[user reference](../docs/integrations/cli.md) for public commands.
 
 ## Ownership and lifecycle
 
@@ -375,6 +384,27 @@ partial and shared files are preserved by manifest-only uninstall.
 `teardown()` preserves modified tracked files by default; `--force` can remove
 them. Keep agent-specific settings and events consistent with that lifecycle.
 
+Event cleanup releases only the departing integration's dispatcher claim.
+It deletes `.specify/events.py` only when that integration's current or prior
+manifest records a produced copy and no other installed integration references
+it. Unowned, partial, or merely recovered files are preserved, even with `--force`;
+modified managed dispatchers are preserved with a warning unless forced.
+An exact match with the current generated dispatcher (LF or CRLF) also permits
+last-consumer cleanup when another integration regenerated the file and left
+this integration's recorded hash stale. Matching generated content alone never
+establishes ownership.
+If the prior ownership manifest or non-forced dispatcher content cannot be
+read, cleanup warns and preserves the dispatcher without blocking cleanup of
+other integration-owned files.
+Empty-event upgrades consult the prior manifest so the last managed dispatcher
+is still cleaned up. Event helpers accept keyword-only `force=False`.
+Teardown forwards `force` to `remove_events()` overrides that accept it
+explicitly or via `**kwargs`; legacy `(project_root, manifest)` overrides
+remain supported without that keyword. Signature compatibility is checked
+before invocation, so errors raised inside an override are not retried.
+Custom `setup()` implementations forwarding event emission should pass through
+`opts["force"]` when present.
+
 The integration does **not** own agent context files such as `AGENTS.md` or
 `CLAUDE.md`. The opt-in `extensions/agent-context/` owns their defaults,
 configuration, and managed sections; do not add `context_file` fields or
@@ -388,6 +418,11 @@ Integration-specific behavior belongs in the integration package. Its delivery
 PR may also include registry wiring, catalog metadata, integration-specific
 tests, documentation, and agent-specific devcontainer tooling outside that
 package. File location alone does not determine whether a separate PR is needed.
+
+Every user-visible, agent-specific integration change MUST update
+`docs/integrations/<key>.md` in the same change. Document behavior shared across
+integrations in the [shared CLI reference](../docs/integrations/cli.md),
+not in individual agent pages.
 
 If delivery requires changes to shared runtime behavior, integration base
 classes, rendering, lifecycle management, CLI behavior, or core templates or
@@ -404,17 +439,16 @@ they have merged. See the
 
 ## Adding an agent
 
-1. Run `specify integration scaffold my-agent --type markdown` from this
-   repository (`toml`, `yaml`, and `skills` are also supported), or start with
-   a custom class only when necessary.
-2. Review the generated `config` and `registrar_config`; register the class
-   alphabetically and add a matching entry to `integrations/catalog.json`.
+1. Create the integration subpackage and class using the smallest matching
+   format base. Define `config` and `registrar_config` for the agent's actual
+   output layout.
+2. Register the class alphabetically and add a matching entry to
+   `integrations/catalog.json`.
 3. Add focused coverage in `tests/integrations/test_integration_<package_dir>.py`
    for metadata, generated output, installation, and uninstall (including
    preservation of edited files where applicable).
 4. Exercise `specify init my-project --integration <key>` and the install/uninstall
-   lifecycle; update the [supported agents](../docs/reference/integrations.md)
+   lifecycle; update the [supported agents](../docs/integrations/index.md)
    and devcontainer setup if the agent needs additional tooling.
 
-The scaffold creates a package and test skeleton, **not** registry or catalog
-entries. Prefer existing bases and shared processing over copied setup loops.
+Prefer existing bases and shared processing over copied setup loops.

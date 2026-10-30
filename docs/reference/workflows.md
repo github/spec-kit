@@ -21,6 +21,12 @@ Example:
 specify workflow run speckit -i spec="Build a kanban board with drag-and-drop task management"
 ```
 
+Inputs declared as `type: number` preserve integer values and integer strings
+exactly, including 64-bit identifiers and nanosecond timestamps above `2**53`.
+Decimal and exponent strings continue to use floating-point conversion;
+whole-valued results are stored as integers. Booleans, non-numeric values, and
+non-finite numbers are rejected.
+
 With `--json`, a single machine-readable object is printed instead of formatted text (the default output is unchanged when the flag is omitted):
 
 ```bash
@@ -1054,6 +1060,115 @@ or paused command is resumed, the complete dispatch configuration is re-resolved
 from the current inputs, so values supplied with `workflow resume --input` take
 effect consistently. A resume without updated inputs reproduces the same values.
 
+### Capturing Command and Prompt Output
+
+`command` and `prompt` steps stream the integration CLI's output to the
+terminal, so `steps.<id>.output.stdout` and `steps.<id>.output.stderr` are empty
+strings. Set `capture: true` to retain that output in the step result instead,
+where later steps can read it:
+
+```yaml
+- id: verdict
+  type: prompt
+  prompt: "Reply with exactly READY or BLOCKED for {{ inputs.spec }}"
+  capture: true
+  capture_max_bytes: 4096   # Optional: per-stream limit (default 1048576)
+  timeout: 120              # Optional: seconds before the CLI is killed
+
+- id: branch
+  type: if
+  condition: "{{ steps.verdict.output.stdout | contains('READY') }}"
+  then:
+    - id: plan
+      command: speckit.plan
+```
+
+| Field               | Applies to          | Meaning                                                                                             |
+| ------------------- | ------------------- | --------------------------------------------------------------------------------------------------- |
+| `capture`           | `command`, `prompt` | `true` captures stdout and stderr instead of streaming them. Must be a literal boolean; default `false`. |
+| `capture_max_bytes` | `command`, `prompt` | Limit for each captured stream: a positive integer, or `-1` for no limit. Default `1048576` (1 MiB). Requires `capture: true`. |
+| `timeout`           | `command`, `prompt` | Seconds before the CLI is killed; with `capture: true`, its process group (POSIX) or job object (Windows) is killed, which includes the processes it started unless they detached from it, as a daemonising helper can. For `command` it applies only with `capture: true` (default `600`); a streaming `command` step has no timeout. For `prompt` it always applies (default `300`). |
+
+A captured step prints nothing while it runs. Its output gains these fields:
+
+| Output field       | Meaning                                                                    |
+| ------------------ | -------------------------------------------------------------------------- |
+| `stdout`, `stderr` | The captured text.                                                         |
+| `stdout_truncated` | `true` when stdout exceeded `capture_max_bytes` and the rest was discarded. |
+| `stderr_truncated` | The same for stderr.                                                       |
+| `timed_out`        | `true` when the CLI and its processes were killed at `timeout`; `exit_code` is `-1`. |
+| `interrupted`      | `true` when the run was interrupted (Ctrl+C); `exit_code` is `130`.        |
+
+**What the text is.** Capture requests the integration CLI's normal text
+output, the same output a streaming step prints. It is not a structured format:
+it can include progress or tool-use lines as well as the final answer, it
+differs between integrations, and it is valid JSON only if the agent printed
+nothing but JSON.
+
+**Limits and encoding.** `capture_max_bytes` counts raw bytes on each stream
+before decoding. Bytes past the limit are read and discarded so the CLI is never
+blocked, and the matching `*_truncated` field is set. Output is decoded as
+UTF-8: invalid bytes become U+FFFD, and a character split by the limit, a
+timeout, or an interruption is dropped rather than replaced. Line endings are
+normalised to `\n`.
+
+With `capture_max_bytes: -1` nothing is discarded and both `*_truncated` fields
+stay `false`. The whole output is then held in memory and written to run state,
+so an agent that prints a large amount grows both without bound. Use it only
+for output you know is small.
+
+**Check completeness before using the output.** Filters such as `from_json` do
+not look at these fields; they parse whatever text is there. Output is
+incomplete when `stdout_truncated` is `true`, and also when `timed_out` or
+`interrupted` is `true` — a stopped CLI leaves partial output even with no size
+limit. Guard the use:
+
+```yaml
+- id: parse
+  type: if
+  condition: "{{ steps.verdict.output.exit_code == 0 and not steps.verdict.output.stdout_truncated }}"
+  then:
+    - id: use
+      type: shell
+      run: "echo parsed"
+```
+
+**Failures.** A non-zero exit, a timeout, or an interruption fails the step and
+keeps whatever was captured in `output.stdout` and `output.stderr`. The step's
+error is a short summary (`Command exited with code 2`,
+`Prompt timed out after 120 seconds.`), never the captured text. A failed step
+stops the run, so set `continue_on_error: true` on the capturing step when a
+later step needs to inspect the failure:
+
+```yaml
+- id: verdict
+  type: prompt
+  prompt: "Reply with exactly READY or BLOCKED"
+  capture: true
+  timeout: 120
+  continue_on_error: true
+
+- id: on-timeout
+  type: if
+  condition: "{{ steps.verdict.output.timed_out }}"
+  then:
+    - id: review
+      type: gate
+      message: "The verdict step timed out. Approve to continue without it."
+```
+
+> ⚠️ **Captured output is stored in plain text and is not redacted.** It is
+> written to the run's `state.json` so that `specify workflow resume` can replay
+> it, and it stays there after the run. Anything the agent prints — including
+> secrets it read from files or the environment — is persisted. Captured text is
+> not printed to the terminal and is not written to `log.jsonl`. Do not enable
+> capture on a step whose output may contain credentials unless the run
+> directory is protected accordingly.
+
+Captured text is agent output and therefore untrusted; see
+[Interpolation and shell safety](#interpolation-and-shell-safety) before using
+it in a `shell` step.
+
 ## Expressions
 
 Steps can reference inputs and previous step outputs using `{{ expression }}` syntax:
@@ -1089,7 +1204,13 @@ Notes on the newer filters:
 - **`to_json` output is deterministic.** Object keys are sorted and non-ASCII characters are left as-is rather than escaped, so the same value always serializes to the same bytes. That buys reproducibility only — it does **not** make the result safe to pass through a shell, because [interpolation adds no quoting or escaping](#interpolation-and-shell-safety). Do not interpolate unconstrained JSON into a `run` field.
 - **`to_json` rejects non-finite floats.** `NaN`, `Infinity`, and `-Infinity` raise a `ValueError` naming `to_json` instead of serializing to bare tokens. None of the three is valid JSON, so emitting them would hand a standards-compliant downstream parser a string it must reject.
 - **`to_json` requires string mapping keys.** JSON objects have string keys, so a mapping with any other key type — `{1: "a"}`, `{True: "a"}` — raises a `ValueError` naming the key type instead. Left to `json.dumps`, an integer key would be coerced to `"1"` and collide with an existing `"1"` key, while mixed key types would fail `sort_keys` with an ordering `TypeError` reported only as "not JSON-serializable".
-- **Trailing comparisons after a filter are rejected.** The parser splits on the top-level `|` before looking for operators, so `{{ items | length > 0 }}` raises rather than evaluating. The count does not exist until `length` runs, so there is no way to write that comparison; the supported branching form is the filter's own truthiness in a `condition:`, since `length` returns `0` for an empty input:
+- **Comparing filtered counts requires parentheses.** The parser splits on the top-level `|` before looking for operators, so an unparenthesized trailing comparison such as `{{ inputs.items | length > 0 }}` raises a `ValueError`. Parenthesize the filtered operand to compare its result: `{{ (inputs.items | length) > 0 }}`. For a threshold of at least two:
+
+  ```yaml
+  condition: "{{ (inputs.items | length) >= 2 }}"
+  ```
+
+  For an emptiness check, use the filtered count's truthiness directly:
 
   ```yaml
   condition: "{{ inputs.items | length }}"   # 0 is False, any non-zero count is True
@@ -1114,7 +1235,7 @@ Expressions are resolved by **plain string substitution** — the value of `{{ .
 If an interpolated value can contain characters like `;`, `|`, `&`, `$( )`, backticks, or quotes, it can change or extend the command that actually runs. This matters most when the value is not fully under the workflow author's control:
 
 - **Workflow `inputs.*`** — supplied by whoever runs the workflow.
-- **A prior step's output**, e.g. `{{ steps.plan.output.stdout }}` — for a `prompt` step this is **text produced by the AI agent**, which can in turn be influenced by files, tickets, or web content the agent read. Treat agent output as untrusted when it flows into a `shell` step.
+- **A prior step's output**, e.g. `{{ steps.plan.output.stdout }}` — for a `command` or `prompt` step with [`capture: true`](#capturing-command-and-prompt-output) this is **text produced by the AI agent**, which can in turn be influenced by files, tickets, or web content the agent read. Treat agent output as untrusted when it flows into a `shell` step.
 
 There is **no shell-escaping filter** in the expression language and **no sandbox** around a `shell` step, so none of the practices below can be treated as a guarantee that a hostile value is neutralised. The only reliable control is to constrain what an interpolated value *can* be, and to keep values you cannot constrain out of `run` fields entirely. Scrutinise every `run` field that interpolates a value you do not control, and at minimum:
 
@@ -1153,7 +1274,10 @@ Shell steps automatically receive the following environment variables:
 
 Each workflow run persists its state at `.specify/workflows/runs/<run_id>/`:
 
-- `state.json` — current run state and step progress
+- `state.json` — current run state and step progress, including each step's
+  output. Output captured with
+  [`capture: true`](#capturing-command-and-prompt-output) is stored here in
+  plain text.
 - `inputs.json` — resolved input values
 - `log.jsonl` — step-by-step execution log
 

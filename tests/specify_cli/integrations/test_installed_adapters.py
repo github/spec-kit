@@ -104,7 +104,7 @@ def server(tmp_path):
             pass
 
     http = ThreadingHTTPServer(("127.0.0.1", 0), partial(Handler, directory=str(downloads)))
-    thread = threading.Thread(target=http.serve_forever, daemon=True)
+    thread = threading.Thread(target=http.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     result = SimpleNamespace(
         root=downloads, url=f"http://127.0.0.1:{http.server_port}", requests=requests,
@@ -1695,6 +1695,32 @@ def test_switch_to_and_from_external_adapter_removes_durable_code(tmp_path, serv
     assert not (project / f".specify/integrations/packages/{KEY}").exists()
     assert not (project / ".sample-agent/skills/speckit-plan/SKILL.md").exists()
     assert (project / ".claude/skills/speckit-plan/SKILL.md").is_file()
+
+@pytest.mark.parametrize("operation", ["uninstall", "switch"])
+@pytest.mark.parametrize("force", [False, True])
+def test_legacy_remove_events_adapter_lifecycle(tmp_path, server, operation, force):
+    body = '''    def remove_events(self, project_root, manifest):
+        (project_root / "legacy-cleanup-called").write_text("called", encoding="utf-8")
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    unload_installed_integrations()
+    arguments = ["integration", operation]
+    if operation == "switch":
+        arguments.append("claude")
+    if force:
+        arguments.append("--force")
+
+    result = run(project, arguments)
+
+    assert result.exit_code == 0, result.output
+    assert (project / "legacy-cleanup-called").read_text(encoding="utf-8") == "called"
+    assert not (project / ".sample-agent/skills/speckit-plan/SKILL.md").exists()
+    assert not (project / f".specify/integrations/{KEY}.manifest.json").exists()
+    assert KEY not in read_records(project)
+    if operation == "switch":
+        assert (project / ".claude/skills/speckit-plan/SKILL.md").exists()
 
 
 @pytest.mark.parametrize("step_type", ["command", "prompt"])
@@ -3803,7 +3829,8 @@ def test_check_skips_optional_tools_for_external_ide_adapter(tmp_path, server, m
     assert KEY not in probes
     assert "optional-helper" not in probes
     assert "Sample Agent" in result.output
-    assert "IDE-based, no CLI check" in result.output
+    assert "no CLI required" in result.output
+    assert "IDE-based" not in result.output
 
 
 @pytest.mark.parametrize("error_type", ["ValueError", "OSError", "NotImplementedError"])
@@ -4679,3 +4706,52 @@ def test_forced_package_recovery_still_rejects_symlinked_ancestors(tmp_path, ser
     assert "symlinked" in result.output.lower()
     assert packages.is_symlink()
     assert snapshot(outside) == before
+
+
+@pytest.mark.parametrize(("flavor", "registered", "listed", "not_listed"), [
+    ("skills", ".sample-agent/skills/speckit-sample-ext-hello/SKILL.md",
+     "speckit-sample-ext-hello", "speckit.sample-ext.hello"),
+    ("commands", ".sample-agent/commands/speckit.sample-ext.hello.md",
+     "speckit.sample-ext.hello", "speckit-sample-ext-hello"),
+], ids=["skills", "commands"])
+def test_extension_info_lists_registered_names_without_loading_adapter(
+    tmp_path, server, monkeypatch, flavor, registered, listed, not_listed,
+):
+    """A fresh `extension info` leaves the adapter unloaded, yet must still
+    list the names `extension add` registered for its commands."""
+    from specify_cli.extensions import _commands
+
+    extension = tmp_path / "sample-ext"
+    (extension / "commands").mkdir(parents=True)
+    (extension / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "extension": {
+            "id": "sample-ext", "name": "Sample Extension", "version": "1.0.0",
+            "description": "Sample extension",
+        },
+        "requires": {"speckit_version": ">=0.1"},
+        "provides": {"commands": [{
+            "name": "speckit.sample-ext.hello", "file": "commands/hello.md",
+            "description": "Say hello",
+        }]},
+    }))
+    (extension / "commands" / "hello.md").write_text(
+        "---\ndescription: Say hello\n---\nHello\n"
+    )
+    publish(server, code=implementation(flavor=flavor))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    added = run(project, ["extension", "add", "--dev", str(extension)])
+    assert added.exit_code == 0, added.output
+    assert (project / registered).is_file()
+
+    unload_installed_integrations()
+    monkeypatch.setattr(
+        _commands, "_resolve_catalog_extension", lambda *a, **k: (None, None)
+    )
+    info = run(project, ["extension", "info", "sample-ext"])
+
+    assert info.exit_code == 0, info.output
+    assert f"• {listed}: " in info.output, info.output
+    assert f"• {not_listed}: " not in info.output, info.output
+    assert KEY not in INTEGRATION_REGISTRY

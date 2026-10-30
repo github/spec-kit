@@ -44,6 +44,16 @@ an LLM, read
 Behavioral changes need positive and negative coverage; bug fixes need
 before-and-after regression evidence.
 
+## PowerShell Compatibility
+
+All PowerShell scripts in the repository and all generated PowerShell
+functionality MUST target Windows PowerShell 5.1, the version included with
+Windows. When adding or changing PowerShell code, use only syntax, cmdlets,
+parameters, and .NET APIs available in Windows PowerShell 5.1. Account for
+encoding and other runtime differences, preserve the required behavioral
+parity with Bash and Python implementations, and provide Windows PowerShell
+5.1 validation evidence for behavioral changes.
+
 ## Branches and Agent Contributions
 
 When creating a branch, follow [Branch naming](CONTRIBUTING.md#branch-naming).
