@@ -115,6 +115,128 @@ def test_stat_permission_errors_propagate(root, monkeypatch):
         FileHelper(root).stat(path, missing_ok=True)
 
 
+def test_listdir_reads_names_without_inspecting_children(root, link, tmp_path):
+    directory = root / "directory"
+    directory.mkdir()
+    (directory / "file").write_bytes(b"keep")
+    link(directory / "external", tmp_path / "missing-outside")
+    assert set(FileHelper(root).listdir(directory)) == {"file", "external"}
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_bounded_reads_preserve_full_read_default_and_native_size_errors(root, allow):
+    content = b"#!/bin/sh\n# keep\n"
+    (root / "script").write_bytes(content)
+    files = FileHelper(root, allow_symlinks=allow)
+    assert files.read_bytes("script", size=2) == b"#!"
+    assert files.read_bytes("script", size=0) == b""
+    assert files.read_bytes("script", size=-1) == content
+    assert files.read_bytes("script") == content
+    with pytest.raises(TypeError):
+        files.read_bytes("script", size=1.5)
+
+
+@pytest.mark.parametrize("operation", ["listdir", "chmod"])
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("kind", ["contained", "dangling", "external", "cycle"])
+def test_directory_reads_and_mode_updates_apply_link_policy(root, link, tmp_path, operation, allow, kind):
+    alias = root / "alias"
+    target = tmp_path / "outside" if kind == "external" else root / "target"
+    if kind in {"contained", "external"}:
+        if operation == "listdir":
+            target.mkdir()
+            (target / "file").write_bytes(b"keep")
+        else:
+            target.write_bytes(b"keep")
+            target.chmod(0o600)
+    if kind == "cycle":
+        target = alias
+    link(alias, target)
+    files = FileHelper(root, allow_symlinks=allow)
+    events = []
+
+    def invoke():
+        if operation == "listdir":
+            return files.listdir(alias)
+        return files.chmod(alias, 0o700, observer=lambda *event: events.append(event))
+
+    if allow and kind == "contained":
+        result = invoke()
+        if operation == "listdir":
+            assert result == ["file"]
+        else:
+            assert events == [(target, True, False), (target, False, False)]
+            assert target.read_bytes() == b"keep"
+            if os.name != "nt":
+                assert stat.S_IMODE(target.stat().st_mode) == 0o700
+    else:
+        error = SymlinkDeniedError if not allow else {
+            "dangling": FileNotFoundError, "external": PathEscapeError, "cycle": UnsupportedPathError,
+        }[kind]
+        with pytest.raises(error):
+            invoke()
+        assert events == []
+        if kind in {"contained", "external"} and operation == "chmod" and os.name != "nt":
+            assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert alias.is_symlink()
+
+
+@pytest.mark.parametrize("failure", ["none", "before", "after", "chmod"])
+def test_chmod_observer_and_native_failures_propagate(root, link, monkeypatch, failure):
+    target = root / "target"
+    target.write_bytes(b"keep")
+    target.chmod(0o600)
+    alias = link(root / "alias", target)
+    events = []
+
+    def observer(path, before, removal):
+        events.append((path, before, removal))
+        if failure == ("before" if before else "after"):
+            raise RuntimeError("observer failure")
+
+    if failure == "chmod":
+        def denied(path, mode):
+            raise PermissionError("mode denied")
+        monkeypatch.setattr(Path, "chmod", denied)
+    files = FileHelper(root, allow_symlinks=True)
+    if failure == "none":
+        files.chmod(alias, 0o700, observer=observer)
+    else:
+        error = PermissionError if failure == "chmod" else RuntimeError
+        with pytest.raises(error):
+            files.chmod(alias, 0o700, observer=observer)
+    assert events == [(target, True, False)] + (
+        [(target, False, False)] if failure in {"none", "after"} else []
+    )
+    assert alias.is_symlink()
+    assert target.read_bytes() == b"keep"
+    if os.name != "nt":
+        assert stat.S_IMODE(target.stat().st_mode) == (0o600 if failure in {"before", "chmod"} else 0o700)
+
+
+def test_directory_and_mode_type_and_io_errors_remain_explicit(root, monkeypatch):
+    directory = root / "directory"
+    directory.mkdir()
+    file = root / "file"
+    file.write_bytes(b"keep")
+    files = FileHelper(root)
+    with pytest.raises(NotADirectoryError):
+        files.listdir(file)
+    with pytest.raises(UnsupportedPathError):
+        files.chmod(directory, 0o700)
+    with pytest.raises(FileNotFoundError):
+        files.listdir("missing")
+    with pytest.raises(FileNotFoundError):
+        files.chmod("missing", 0o700)
+
+    def denied(path):
+        raise PermissionError("directory denied")
+
+    monkeypatch.setattr(os, "listdir", denied)
+    with pytest.raises(PermissionError, match="directory denied"):
+        files.listdir(directory)
+
+
 @pytest.mark.parametrize("failure", ["none", "before", "replace", "after"])
 def test_atomic_write_observes_actual_target_and_cleans_temporary(root, link, monkeypatch, failure):
     target = root / "target"
@@ -1087,10 +1209,12 @@ def test_native_windows_extended_symlink_read_update_and_creation(
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows path semantics required")
 @pytest.mark.parametrize("spelling", ["/outside/file", r"\outside\file", "C:outside/file", "C:"])
-@pytest.mark.parametrize("operation", ["read_bytes", "create_bytes", "write_bytes", "mkdir", "delete", "stat"])
+@pytest.mark.parametrize("operation", ["read_bytes", "create_bytes", "write_bytes", "mkdir", "delete", "stat", "listdir", "chmod"])
 @pytest.mark.parametrize("allow", [False, True])
 def test_native_windows_anchored_relative_operations_rejected(root, spelling, operation, allow):
     args = (spelling, b"bad") if operation in ("create_bytes", "write_bytes") else (spelling,)
+    if operation == "chmod":
+        args = (spelling, 0o700)
     with pytest.raises(PathEscapeError):
         getattr(FileHelper(root, allow_symlinks=allow), operation)(*args)
     assert list(root.iterdir()) == []
@@ -1154,6 +1278,8 @@ def test_directory_reparse_entries_rejected_before_traversal_portably(
         lambda: files.overwrite_text(junction / "keep", "bad"),
         lambda: files.create_bytes(junction / "new", b"bad"),
         lambda: files.mkdir(junction / "new-directory"),
+        lambda: files.listdir(junction),
+        lambda: files.chmod(junction / "keep", 0o700),
         lambda: files.delete(junction, recursive=recursive),
         lambda: files.delete("tree", recursive=True),
     ):
@@ -1231,6 +1357,8 @@ def test_native_windows_junctions_never_traversed_or_deleted(root, junction, all
         lambda: files.write_text(alias / "keep", "bad"),
         lambda: files.create_text(alias / "new", "bad"),
         lambda: files.mkdir(alias / "new-directory"),
+        lambda: files.listdir(alias),
+        lambda: files.chmod(alias / "keep", 0o700),
         lambda: files.delete(alias / "keep"),
         lambda: files.delete(alias),
         lambda: files.delete(alias, recursive=True),

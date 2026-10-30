@@ -311,6 +311,12 @@ success. This does not relax adapter-package/registry scope validation, config
 bootstrap, legacy manifest consumers, or uninstall.
 External adapter transactions still reject linked `.specify/integrations` scope
 roots; shared manifest leaf links are supported.
+Without force, a preserved selected shared file protects its file identity
+from writes through another selected alias. Shared-script execute-permission
+repair uses the same helper handoff, including allowed leaf and parent links.
+The host retains directory traversal and executable-bit selection; FileHelper
+only lists names, reads metadata/content and applies the requested mode with
+the existing mutation observer.
 Switch validates the outgoing manifest and refreshes the selected shared
 infrastructure before removing the outgoing integration. Failures in that
 refresh leave the outgoing integration's files and metadata intact. Later

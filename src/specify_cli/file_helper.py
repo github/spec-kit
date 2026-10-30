@@ -176,13 +176,32 @@ class FileHelper:
             directory.mkdir(exist_ok=exist_ok if directory == destination else True)
             observer(directory, False, False)
 
-    def read_bytes(self, path: Path | str) -> bytes:
+    def read_bytes(self, path: Path | str, *, size: int | None = None) -> bytes:
         destination = self._path(path)
         self._require_file(destination)
-        return destination.read_bytes()
+        if size is None:
+            return destination.read_bytes()
+        with destination.open("rb") as stream:
+            return stream.read(size)
 
     def read_text(self, path: Path | str, *, encoding: str = "utf-8") -> str:
         return self.read_bytes(path).decode(encoding)
+
+    def listdir(self, path: Path | str) -> list[str]:
+        """Read directory entry names without resolving or inspecting children."""
+        return os.listdir(self._path(path))
+
+    def chmod(
+        self, path: Path | str, mode: int, *, observer: MutationObserver | None = None,
+    ) -> None:
+        """Update a regular file's mode, preserving allowed links."""
+        destination = self._path(path)
+        self._require_file(destination)
+        if observer is not None:
+            observer(destination, True, False)
+        destination.chmod(mode)
+        if observer is not None:
+            observer(destination, False, False)
 
     def stat(
         self, path: Path | str, *, follow_symlinks: bool = True, missing_ok: bool = False

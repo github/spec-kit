@@ -221,7 +221,7 @@ def integration_upgrade(
     )
     if os.name != "nt":
         from .. import ensure_executable_scripts
-        ensure_executable_scripts(project_root)
+        ensure_executable_scripts(project_root, files=files)
 
     # Phase 1: Install new files (overwrites existing; old-only files remain)
     console.print(f"Upgrading integration: [cyan]{key}[/cyan]")
@@ -274,7 +274,7 @@ def integration_upgrade(
                 ) from exc
             if os.name != "nt":
                 from .. import ensure_executable_scripts
-                ensure_executable_scripts(project_root)
+                ensure_executable_scripts(project_root, files=files)
         new_manifest.save()
         _write_integration_json(project_root, installed_key, installed_keys, settings)
         if installed_key == key:

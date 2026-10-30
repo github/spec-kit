@@ -786,12 +786,13 @@ def register(app: typer.Typer) -> None:
                 )
 
                 tracker.start("shared-infra")
+                shared_files = FileHelper(project_path, allow_symlinks=allow_symlinks)
                 _install_shared_infra_or_exit(
                     project_path,
                     selected_script,
                     tracker=tracker,
                     force=force,
-                    files=FileHelper(project_path, allow_symlinks=allow_symlinks),
+                    files=shared_files,
                     invoke_separator=resolved_integration.effective_invoke_separator(
                         integration_parsed_options, project_root=project_path
                     ),
@@ -867,7 +868,7 @@ def register(app: typer.Typer) -> None:
                     init_opts.pop("ai_skills", None)
                 save_init_options(project_path, init_opts)
 
-                ensure_executable_scripts(project_path, tracker=tracker)
+                ensure_executable_scripts(project_path, tracker=tracker, files=shared_files)
 
                 if preset:
                     try:

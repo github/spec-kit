@@ -150,6 +150,15 @@ helpers for independent project/source/managed boundaries.
 
 - `mkdir(path, parents=False, exist_ok=False)` creates directories.
 - `read_bytes(path)` / `read_text(path, encoding="utf-8")` read regular files.
+  `read_bytes(path, size=N)` reads at most `N` bytes using native stream-read
+  semantics, so a caller can inspect a prefix without reading the whole file.
+- `listdir(path)` reads the names in a policy-checked directory without
+  inspecting its children. The caller chooses which children to access.
+- `chmod(path, mode)` updates a policy-checked regular file's mode without
+  replacing it or its allowed links. An optional mutation observer reports
+  the actual target before and after the mode change; errors propagate.
+  Native chmod semantics apply to all hard links to that inode; this is not
+  hard-link confinement.
 - `stat(path, follow_symlinks=True, missing_ok=False)` returns policy-checked
   metadata. `missing_ok=True` returns `None` only for genuinely absent entries,
   including beneath missing parents. Dangling link targets, invalid parents,
@@ -236,6 +245,11 @@ Written destinations are hashed after the operation's full write phase, so
 overlapping aliases retain hashes for the final bytes on disk rather than an
 earlier write. Existing write order and overwrite decisions are unchanged;
 unselected manifest entries are not rehashed.
+Without force, a preserved selected destination also protects its file identity
+from writes through other selected aliases. This conservatively preserves
+hard-linked selected entries as well. Blocked writers retain their previous
+manifest hashes and ownership markers; unrelated destinations still refresh.
+Force retains the existing overwrite behavior.
 Stale leaf links remain customizations, including dangling/external-target links:
 they are never hash-promoted into managed files or deleted by stale cleanup.
 Eligible stale regular files reached through contained linked parents can be
@@ -244,10 +258,10 @@ preserves entries whose file identity matches a current bundled destination,
 so a stale parent alias cannot delete a live shared script, template or
 `.specify/.gitignore`.
 
-`mkdir`, `write_bytes`/`write_text`, and `delete` accept an optional explicit
+`mkdir`, `write_bytes`/`write_text`, `chmod`, and `delete` accept an optional explicit
 `Callable[[Path, bool, bool], None]` mutation observer (path, before, removal).
 The helper validates before callbacks, reports the actual contained target for
-writes and directory creation, and reports the nonfollow entry for deletion.
+writes, mode updates and directory creation, and reports the nonfollow entry for deletion.
 After callbacks occur only following successful mutations; callback failures
 propagate and atomic-write temporary cleanup remains active. `mkdir` reports
 only genuinely new directories in parent order, never existing directory trees.
@@ -263,6 +277,17 @@ In particular, external integration transactions still reject a linked
 are outside this migration. Shared manifest leaf links are supported; standalone
 shared operations also support contained linked manifest parents. Integration
 uninstall retains its existing scope validation.
+
+Shared-script permission repair receives the same operation helper from init
+and integration lifecycle callers. The caller selects directories and `.sh`
+files, avoids revisiting directory identities, and computes executable bits
+from readable bits only for scripts with a shebang. FileHelper enforces policy
+on directory reads, file reads and mode changes, including allowed leaf and
+parent links. Denied, external, dangling, cyclic and unsupported accessed links
+are reported through the existing permission-repair diagnostics, not traversed
+or modified. Permission repair does not acquire uninstall ownership.
+Extension-script permission scanning retains its existing legacy behavior and
+is not part of this shared-script policy migration.
 
 ## Safety limits and migration
 

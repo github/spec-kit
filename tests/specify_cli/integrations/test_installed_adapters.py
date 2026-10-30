@@ -329,7 +329,7 @@ def test_shared_helper_allowed_links_restore_in_public_external_lifecycle(
         )
     target_file.chmod(0o600)
     permission_target = None
-    if kind == "scripts-root":
+    if kind in {"scripts-root", "nested-parent"}:
         permission_target = target_file.parent / "user.sh"
         permission_target.write_text("#!/bin/sh\n# user script\n", encoding="utf-8")
         permission_target.chmod(0o600)

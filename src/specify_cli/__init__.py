@@ -29,6 +29,7 @@ Or install globally:
 
 import os
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from .file_helper import FileHelper
 
@@ -224,32 +225,85 @@ def _install_shared_infra_or_exit(
         raise typer.Exit(1)
 
 
-def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
+def ensure_executable_scripts(
+    project_path: Path, tracker: StepTracker | None = None, *, files: FileHelper | None = None,
+) -> None:
     """Ensure POSIX .sh scripts under .specify/scripts and .specify/extensions (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
         return  # Windows: skip silently
-    from .integrations._file_changes import changing_file
+    import stat
 
+    from ._file_policy import project_files
+    from .file_helper import FileHelperError
+    from .integrations._file_changes import changing_file, observe_file_change
+
+    files = files if files is not None else project_files(project_path)
     scan_roots = [
         project_path / ".specify" / "scripts",
         project_path / ".specify" / "extensions",
     ]
     failures: list[str] = []
     updated = 0
-    for scripts_root in scan_roots:
-        if not scripts_root.is_dir():
-            continue
-        for script in scripts_root.rglob("*.sh"):
+
+    def shared_scripts(directory: Path) -> Iterator[Path]:
+        pending = [directory]
+        visited: set[tuple[int, int]] = set()
+        while pending:
+            current = pending.pop()
             try:
-                if script.is_symlink() or not script.is_file():
+                entry = files.stat(current, missing_ok=True)
+                if entry is None:
                     continue
+                if not stat.S_ISDIR(entry.st_mode):
+                    raise NotADirectoryError(current)
+                identity = entry.st_dev, entry.st_ino
+                if identity in visited:
+                    continue
+                visited.add(identity)
+                names = files.listdir(current)
+            except (FileHelperError, OSError) as exc:
+                failures.append(f"{_display_project_path(project_path, current)}: {exc}")
+                continue
+            for name in names:
+                child = current / name
                 try:
-                    with script.open("rb") as f:
-                        if f.read(2) != b"#!":
-                            continue
-                except Exception:
+                    entry = files.stat(child)
+                    if entry is None:
+                        raise FileNotFoundError(child)
+                except (FileHelperError, OSError) as exc:
+                    failures.append(f"{_display_project_path(project_path, child)}: {exc}")
                     continue
-                st = script.stat()
+                if stat.S_ISDIR(entry.st_mode):
+                    pending.append(child)
+                elif name.endswith(".sh") and stat.S_ISREG(entry.st_mode):
+                    yield child
+
+    for scripts_root in scan_roots:
+        shared = scripts_root == scan_roots[0]
+        if shared:
+            scripts = shared_scripts(scripts_root)
+        else:
+            if not scripts_root.is_dir():
+                continue
+            scripts = scripts_root.rglob("*.sh")
+        for script in scripts:
+            try:
+                if shared:
+                    st = files.stat(script)
+                    if st is None:
+                        raise FileNotFoundError(script)
+                    if st.st_mode & 0o111 or files.read_bytes(script, size=2) != b"#!":
+                        continue
+                else:
+                    if script.is_symlink() or not script.is_file():
+                        continue
+                    try:
+                        with script.open("rb") as f:
+                            if f.read(2) != b"#!":
+                                continue
+                    except Exception:
+                        continue
+                    st = script.stat()
                 mode = st.st_mode
                 if mode & 0o111:
                     continue
@@ -262,9 +316,12 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                     new_mode |= 0o001
                 if not (new_mode & 0o100):
                     new_mode |= 0o100
-                target = script.resolve(strict=True)
-                with changing_file(target):
-                    os.chmod(target, new_mode)
+                if shared:
+                    files.chmod(script, new_mode, observer=observe_file_change)
+                else:
+                    target = script.resolve(strict=True)
+                    with changing_file(target):
+                        os.chmod(target, new_mode)
                 updated += 1
             except Exception as e:
                 failures.append(f"{_display_project_path(project_path, script)}: {e}")

@@ -182,7 +182,7 @@ def integration_switch(
     )
     if os.name != "nt":
         from .. import ensure_executable_scripts
-        ensure_executable_scripts(project_root)
+        ensure_executable_scripts(project_root, files=files)
 
     # Phase 1: Uninstall current integration (if any)
     if installed_key:

@@ -129,7 +129,7 @@ def integration_install(
     )
     if os.name != "nt":
         from .. import ensure_executable_scripts
-        ensure_executable_scripts(project_root)
+        ensure_executable_scripts(project_root, files=files)
 
     manifest = IntegrationManifest(
         integration.key, project_root, version=_get_speckit_version()

@@ -118,6 +118,13 @@ class SymlinkedSharedPathError(ValueError):
     """
 
 
+def _shared_file_id(files: FileHelper, path: Path | str) -> tuple[int, int] | None:
+    entry = files.stat(path, missing_ok=True)
+    if entry is not None and stat.S_ISREG(entry.st_mode):
+        return entry.st_dev, entry.st_ino
+    return None
+
+
 def load_speckit_manifest(
     project_path: Path,
     *,
@@ -448,6 +455,7 @@ def refresh_shared_templates(
     ))
     skipped_files: list[str] = []
     planned_updates: list[tuple[Path, str, str]] = []
+    preserved_targets: set[tuple[int, int]] = set()
 
     dest_templates = project_path / ".specify" / "templates"
     files.mkdir(dest_templates, parents=True, exist_ok=True, observer=observe_directory_change)
@@ -461,6 +469,8 @@ def refresh_shared_templates(
                 # --force, matching install_shared_infra's is_recovered gate
                 # (#2918). Without this, refresh clobbers user content.
                 skipped_files.append(rel)
+                if stat.S_ISREG(entry.st_mode):
+                    preserved_targets.add((entry.st_dev, entry.st_ino))
                 continue
 
         content = src.read_text(encoding="utf-8")
@@ -469,11 +479,16 @@ def refresh_shared_templates(
         )
         planned_updates.append((dst, rel, content))
 
+    written_rels: list[str] = []
     for dst, rel, content in planned_updates:
+        if preserved_targets and _shared_file_id(files, dst) in preserved_targets:
+            skipped_files.append(rel)
+            continue
         files.write_text(dst, content, observer=observe_file_change)
+        written_rels.append(rel)
 
     # Allowed aliases can share targets; record their final bytes after all writes.
-    for _, rel, _ in planned_updates:
+    for rel in written_rels:
         manifest.record_existing(rel)
 
     manifest.save()
@@ -540,6 +555,7 @@ def install_shared_infra(
     planned_copies: list[tuple[Path, str, bytes, int]] = []
     planned_templates: list[tuple[Path, str, str]] = []
     planned_stale: list[tuple[str, Path]] = []
+    preserved_targets: set[tuple[int, int]] = set()
     # Track every shared path the current bundle produces so we can detect
     # manifest entries the core no longer ships (stale-script cleanup, #3076).
     seen_rels: set[str] = set()
@@ -572,6 +588,9 @@ def install_shared_infra(
         write, bucket = _decide_overwrite(rel, dst)
         if write:
             return True
+        identity = _shared_file_id(files, dst)
+        if identity is not None:
+            preserved_targets.add(identity)
         if bucket == "preserved":
             preserved_user_files.append(rel)
         else:
@@ -682,17 +701,24 @@ def install_shared_infra(
             files.stat(dst, follow_symlinks=False, missing_ok=True)
             planned_stale.append((rel, dst))
 
+    written_rels: list[str] = []
     for dst_path, rel, content, mode in planned_copies:
+        if preserved_targets and _shared_file_id(files, dst_path) in preserved_targets:
+            skipped_files.append(rel)
+            continue
         _ensure_dir(dst_path.parent)
         files.write_bytes(dst_path, content, mode=mode, observer=observe_file_change)
+        written_rels.append(rel)
 
     for dst, rel, content in planned_templates:
+        if preserved_targets and _shared_file_id(files, dst) in preserved_targets:
+            skipped_files.append(rel)
+            continue
         files.write_text(dst, content, observer=observe_file_change)
+        written_rels.append(rel)
 
     # Templates may overwrite a script target through an allowed alias.
-    for _, rel, _, _ in planned_copies:
-        manifest.record_existing(rel)
-    for _, rel, _ in planned_templates:
+    for rel in written_rels:
         manifest.record_existing(rel)
 
     if skipped_files:

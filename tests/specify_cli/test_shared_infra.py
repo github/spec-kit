@@ -237,6 +237,94 @@ def test_overlapping_script_and_template_destinations_record_final_hashes(shared
     assert manifest.check_modified(paths=set(relatives)) == []
 
 
+@pytest.mark.parametrize("operation", ["install", "refresh"])
+@pytest.mark.parametrize("force", [False, True])
+@pytest.mark.parametrize("preservation", ["customized", "recovered", "untracked"])
+@pytest.mark.parametrize("topology", ["symlink", "hardlink"])
+def test_preserved_template_target_cannot_be_overwritten_through_another_alias(
+    shared_project, operation, force, preservation, topology,
+):
+    project, core = shared_project
+    files = allow(project)
+    (core / "templates/tasks-template.md").write_text("# tasks\n", encoding="utf-8")
+    (core / "templates/checklist-template.md").write_text("# checklist\n", encoding="utf-8")
+    install(project, core, files=files)
+    protected_rel = ".specify/templates/plan-template.md"
+    updater_rel = ".specify/templates/tasks-template.md"
+    protected = project / protected_rel
+    updater = project / updater_rel
+    updater.unlink()
+    if topology == "symlink":
+        updater.symlink_to(protected)
+    else:
+        updater.hardlink_to(protected)
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    if preservation == "customized":
+        protected.write_text("# user content\n", encoding="utf-8")
+    elif preservation == "recovered":
+        manifest.record_existing(protected_rel, recovered=True)
+    else:
+        manifest.remove(protected_rel)
+    manifest.record_existing(updater_rel)
+    manifest.save()
+    original = protected.read_bytes()
+    (core / "templates/plan-template.md").write_text("# updated plan\n", encoding="utf-8")
+    (core / "templates/tasks-template.md").write_text("# updated tasks\n", encoding="utf-8")
+    (core / "templates/checklist-template.md").write_text("# updated checklist\n", encoding="utf-8")
+
+    if operation == "install":
+        install(project, core, files=files, force=force, refresh_managed=True)
+    else:
+        refresh_shared_templates(
+            project, version="test", core_pack=core, repo_root=core,
+            console=Console(), invoke_separator=".", files=files, force=force,
+        )
+
+    assert updater.is_symlink() is (topology == "symlink")
+    assert (project / ".specify/templates/checklist-template.md").read_bytes() == b"# updated checklist\n"
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    if force:
+        assert protected.read_bytes() != original
+        assert manifest.check_modified(paths={protected_rel, updater_rel}) == []
+        assert not manifest.is_recovered(protected_rel)
+    else:
+        assert protected.read_bytes() == original
+        assert manifest.files[updater_rel] == hashlib.sha256(original).hexdigest()
+        if preservation == "recovered" or (preservation == "untracked" and operation == "install"):
+            assert manifest.is_recovered(protected_rel)
+        elif preservation == "untracked":
+            assert protected_rel not in manifest.files
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_preserved_template_blocks_script_write_through_shared_parent(shared_project, force):
+    project, core = shared_project
+    files = allow(project)
+    source = core / "scripts/bash/plan-template.md"
+    source.write_text("# script source\n", encoding="utf-8")
+    install(project, core, files=files)
+    templates = project / ".specify/templates"
+    (templates / "plan-template.md").unlink()
+    templates.rmdir()
+    templates.symlink_to(project / ".specify/scripts/bash", target_is_directory=True)
+    protected_rel = ".specify/templates/plan-template.md"
+    updater_rel = ".specify/scripts/bash/plan-template.md"
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    manifest.record_existing(protected_rel, recovered=True)
+    manifest.save()
+    original = files.read_bytes(protected_rel)
+    source.write_text("# updated script\n", encoding="utf-8")
+    (core / "templates/plan-template.md").write_text("# updated template\n", encoding="utf-8")
+
+    install(project, core, files=files, force=force, refresh_managed=True)
+
+    assert templates.is_symlink()
+    assert (files.read_bytes(protected_rel) != original) is force
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    assert manifest.is_recovered(protected_rel) is not force
+    assert manifest.files[updater_rel] == hashlib.sha256(files.read_bytes(updater_rel)).hexdigest()
+
+
 @pytest.mark.parametrize("allow_links", [False, True])
 @pytest.mark.parametrize("force", [False, True])
 @pytest.mark.parametrize("relative", [
@@ -840,7 +928,7 @@ def test_real_lifecycle_rolls_back_allowed_targets(shared_project, tmp_path, mon
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX execute permission bits")
-@pytest.mark.parametrize("linked", [False, True])
+@pytest.mark.parametrize("linked", ["none", "root", "parent", "leaf"])
 @pytest.mark.parametrize("fail", [False, True])
 def test_script_permission_changes_participate_in_lifecycle_rollback(
     shared_project, tmp_path, monkeypatch, linked, fail,
@@ -859,12 +947,23 @@ def test_script_permission_changes_participate_in_lifecycle_rollback(
     install(project, core, files=files)
     scripts = project / ".specify/scripts"
     target = project / "script-target"
-    if linked:
+    if linked == "root":
         scripts.rename(target)
         scripts.symlink_to(target, target_is_directory=True)
+        script = target / "bash/user.sh"
+        link = scripts
+    elif linked == "parent":
+        (scripts / "bash").rename(target)
+        link = scripts / "bash"
+        link.symlink_to(target, target_is_directory=True)
+        script = target / "user.sh"
+    elif linked == "leaf":
+        script = project / "user.sh"
+        link = scripts / "bash/user.sh"
+        link.symlink_to(script)
     else:
-        target = scripts
-    script = target / "bash/user.sh"
+        script = scripts / "bash/user.sh"
+        link = None
     content = b"#!/bin/sh\n# user script\n"
     script.write_bytes(content)
     script.chmod(0o600)
@@ -879,9 +978,75 @@ def test_script_permission_changes_participate_in_lifecycle_rollback(
 
     assert script.read_bytes() == content
     assert script.stat().st_mode & 0o777 == (0o600 if fail else 0o700)
-    assert scripts.is_symlink() is linked
+    if link is not None:
+        assert link.is_symlink()
+    else:
+        assert not scripts.is_symlink()
     manifest = IntegrationManifest.load("speckit", project, files=files)
     assert ".specify/scripts/bash/user.sh" not in manifest.files
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX execute permission bits")
+@pytest.mark.parametrize("kind", ["contained", "external", "dangling", "cycle"])
+@pytest.mark.parametrize("allow_links", [False, True])
+@pytest.mark.parametrize("shape", ["leaf", "parent"])
+def test_script_permission_repair_respects_link_policy(
+    shared_project, tmp_path, capsys, kind, allow_links, shape,
+):
+    from specify_cli import ensure_executable_scripts
+
+    project, core = shared_project
+    files = allow(project) if allow_links else FileHelper(project)
+    install(project, core, files=files)
+    directory = project / ".specify/scripts/bash"
+    link = directory / ("linked.sh" if shape == "leaf" else "linked")
+    target = tmp_path / "outside" if kind == "external" else project / "target"
+    script = target if shape == "leaf" else target / "user.sh"
+    if kind in {"contained", "external"}:
+        if shape == "parent":
+            target.mkdir()
+        script.write_bytes(b"#!/bin/sh\n# keep\n")
+        script.chmod(0o600)
+    if kind == "cycle":
+        target = link
+    link.symlink_to(target, target_is_directory=shape == "parent")
+    identity = os.readlink(link)
+    capsys.readouterr()
+
+    ensure_executable_scripts(project, files=files)
+
+    output = capsys.readouterr().out
+    if allow_links and kind == "contained":
+        assert script.stat().st_mode & 0o777 == 0o700
+        assert "could not be updated" not in output
+    else:
+        assert "Some scripts could not be updated" in output
+        if kind in {"contained", "external"}:
+            assert script.stat().st_mode & 0o777 == 0o600
+    if kind in {"contained", "external"}:
+        assert script.read_bytes() == b"#!/bin/sh\n# keep\n"
+    assert link.is_symlink() and os.readlink(link) == identity
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX execute permission bits")
+def test_script_permission_repair_visits_allowed_directory_aliases_once(shared_project, capsys):
+    from specify_cli import ensure_executable_scripts
+
+    project, core = shared_project
+    files = allow(project)
+    install(project, core, files=files)
+    scripts = project / ".specify/scripts"
+    (scripts / "bash/back").symlink_to(scripts, target_is_directory=True)
+    script = scripts / "bash/user.sh"
+    script.write_bytes(b"#!/bin/sh\n")
+    script.chmod(0o600)
+    capsys.readouterr()
+
+    ensure_executable_scripts(project, files=files)
+
+    assert script.stat().st_mode & 0o777 == 0o700
+    assert "1 script(s)" in capsys.readouterr().out
+    assert (scripts / "bash/back").is_symlink()
 
 
 def test_directory_rollback_preserves_unrelated_new_contents(shared_project, tmp_path, monkeypatch):
