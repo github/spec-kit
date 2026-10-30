@@ -7,7 +7,9 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
+import warnings
 import yaml
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
@@ -19,7 +21,123 @@ CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".b
 DOCKER_AGENT_CHECK_TIMEOUT = 5
 
 
-def docker_agent_command(executable: str | None = None) -> list[str] | None:
+def _docker_project_roots(cwd: Path, project_root: Path | None) -> tuple[Path, ...]:
+    roots = [project_root.resolve()] if project_root is not None else []
+    home = Path.home().resolve()
+    for ancestor in (cwd, *cwd.parents):
+        markers = (".git", ".specify")
+        try:
+            is_home = ancestor.samefile(home)
+        except (FileNotFoundError, NotADirectoryError):
+            is_home = False
+        if is_home:
+            # Home's .specify normally contains user-level state, not a project.
+            markers = (".git", ".specify/init-options.json", ".specify/integration.json")
+        for marker in markers:
+            try:
+                (ancestor / marker).lstat()
+            except FileNotFoundError:
+                continue
+            roots.append(ancestor)
+            break
+    return tuple(dict.fromkeys(roots))
+
+
+def _docker_path_is_excluded(
+    path: Path, roots: tuple[Path, ...], cwd: Path, *, executable: bool = False
+) -> bool:
+    pending = [path]
+    visited: set[Path] = set()
+    while pending:
+        candidate = pending.pop()
+        if candidate in visited:
+            continue
+        visited.add(candidate)
+        if any(candidate.is_relative_to(root) for root in roots):
+            return True
+        try:
+            if candidate.samefile(cwd):
+                return True
+            if executable and candidate.parent.samefile(cwd):
+                return True
+        except (FileNotFoundError, NotADirectoryError):
+            pass
+        # resolve() can retain a different spelling on case-insensitive filesystems.
+        for ancestor in (candidate, *candidate.parents):
+            for root in roots:
+                try:
+                    if ancestor.samefile(root):
+                        return True
+                except (FileNotFoundError, NotADirectoryError):
+                    continue
+            if ancestor.is_symlink():
+                target = ancestor.readlink()
+                if not target.is_absolute():
+                    target = ancestor.parent / target
+                # Check intermediate link targets before their location is lost.
+                pending.append(target / candidate.relative_to(ancestor))
+    return False
+
+
+def _find_docker_executable(
+    name: str, *, project_root: Path | None = None
+) -> str | None:
+    """Search absolute PATH entries outside the launch directory and projects."""
+    cwd = Path.cwd().resolve()
+    roots = _docker_project_roots(cwd, project_root)
+    names = [name]
+    if sys.platform == "win32":
+        # Python 3.11's which() does not expand PATHEXT for qualified names.
+        pathext = os.environ.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD"
+        names = [
+            name + extension
+            for extension in pathext.split(";")
+            if extension
+        ]
+    for entry in os.environ.get("PATH", os.defpath).split(os.pathsep):
+        directory = Path(entry)
+        if not directory.is_absolute():
+            continue
+        try:
+            if _docker_path_is_excluded(directory, roots, cwd):
+                continue
+            directory = directory.resolve()
+            if _docker_path_is_excluded(directory, roots, cwd):
+                continue
+        except (OSError, RuntimeError) as exc:
+            warnings.warn(
+                f"Skipping Docker executable search candidate {directory}: {exc}",
+                stacklevel=2,
+            )
+            continue
+        # A qualified name bypasses Python 3.11's implicit Windows CWD search.
+        for filename in names:
+            candidate = directory / filename
+            try:
+                resolved = shutil.which(str(candidate))
+                if resolved is not None:
+                    executable = Path(resolved)
+                    if (
+                        executable.is_absolute()
+                        and not _docker_path_is_excluded(
+                            executable, roots, cwd, executable=True
+                        )
+                        and not _docker_path_is_excluded(
+                            executable.resolve(), roots, cwd, executable=True
+                        )
+                    ):
+                        return str(executable)
+            except (OSError, RuntimeError) as exc:
+                warnings.warn(
+                    f"Skipping Docker executable search candidate {candidate}: {exc}",
+                    stacklevel=2,
+                )
+    return None
+
+
+def docker_agent_command(
+    executable: str | None = None, *, project_root: Path | None = None
+) -> list[str] | None:
     """Return a runnable Docker Agent command, or ``None`` if unavailable.
 
     Docker Agent is distributed either as the standalone ``docker-agent``
@@ -27,11 +145,11 @@ def docker_agent_command(executable: str | None = None) -> list[str] | None:
     is verified with a bounded, read-only version probe so a plain Docker CLI
     is not mistaken for an installed Docker Agent.
     """
-    resolved_from_path = executable is None
     if executable is None:
-        if shutil.which("docker-agent"):
-            return ["docker-agent", "run"]
-        executable = shutil.which("docker")
+        standalone = _find_docker_executable("docker-agent", project_root=project_root)
+        if standalone is not None:
+            return [standalone, "run"]
+        executable = _find_docker_executable("docker", project_root=project_root)
         if executable is None:
             return None
 
@@ -54,7 +172,7 @@ def docker_agent_command(executable: str | None = None) -> list[str] | None:
         return None
     if result.returncode != 0:
         return None
-    return ["docker", "agent", "run"] if resolved_from_path else run_command
+    return run_command
 
 
 def relative_extension_path_violation(value: Any) -> str | None:
