@@ -10,6 +10,7 @@ from mcp.server import MCPServer
 
 from ._operation_info import ARTIFACT_INFO_OPERATION
 from ._operation_list import ARTIFACT_LIST_OPERATION
+from ._operation_lookup import ARTIFACT_LOOKUP_OPERATION
 from .mcp_info import register as register_info
 from .mcp_list import register as register_list
 
@@ -63,16 +64,17 @@ ARTIFACT_TOOLS = (
         network_access=ARTIFACT_INFO_OPERATION.network_access,
     ),
     ArtifactToolInventory(
-        operation_id="artifact.lookup",
+        operation_id=ARTIFACT_LOOKUP_OPERATION.operation_id,
         cli_path="specify artifact lookup",
         mcp_tool_name="specify_artifact_lookup",
-        contract_version=None,
+        contract_version=ARTIFACT_LOOKUP_OPERATION.contract_version,
         disposition="unavailable",
         disposition_reason=(
-            "The artifact.lookup CLI leaf does not yet have a shared typed operation."
+            "The artifact.lookup shared operation exists, but its first-class "
+            "MCP adapter is not yet implemented."
         ),
-        capabilities=frozenset({"local-read"}),
-        network_access="none",
+        capabilities=ARTIFACT_LOOKUP_OPERATION.capabilities,
+        network_access=ARTIFACT_LOOKUP_OPERATION.network_access,
     ),
 )
 
