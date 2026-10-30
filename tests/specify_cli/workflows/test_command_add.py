@@ -22,6 +22,36 @@ from specify_cli import app
 runner = CliRunner()
 
 
+@pytest.mark.parametrize("content", [b"one\ntwo\n", b"one\r\ntwo\r\n", bytes(range(256))])
+def test_new_catalog_staging_uses_binary_descriptor(tmp_path, monkeypatch, content):
+    from specify_cli.workflows import _commands as cli
+
+    native_binary = getattr(os, "O_BINARY", 0)
+    binary_flag = native_binary or (1 << 29)
+    real_open = os.open
+    requested_flags = []
+    monkeypatch.setattr(os, "O_BINARY", binary_flag, raising=False)
+
+    def tracked_open(path, flags, mode=0o777, **kwargs):
+        requested_flags.append(flags)
+        if not native_binary:
+            flags &= ~binary_flag
+        return real_open(path, flags, mode, **kwargs)
+
+    monkeypatch.setattr(os, "open", tracked_open)
+    staged = cli._stage_workflow_file(
+        tmp_path / "workflow", use_project_file_mode=True,
+    )
+    try:
+        assert requested_flags[-1] & binary_flag
+        staged.write_bytes(content)
+        staged.close()
+        assert staged.path.read_bytes() == content
+    finally:
+        staged.close()
+        staged.path.unlink(missing_ok=True)
+
+
 @pytest.mark.parametrize("mode", ["unattended", "decline", "accept", "flag"])
 def test_add_requires_custom_step_consent(project_dir, monkeypatch, mode):
     from tests.specify_cli.workflows.helpers import (

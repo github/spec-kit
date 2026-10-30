@@ -504,6 +504,7 @@ def _stage_workflow_file(
             staged_file.unlink()
             flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
             flags |= getattr(os, "O_NOFOLLOW", 0)
+            flags |= getattr(os, "O_BINARY", 0)
             fd = os.open(staged_file, flags, 0o666)
     except OSError:
         if fd >= 0:

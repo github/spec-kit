@@ -12,7 +12,7 @@ see [Workflows](../docs/reference/workflows.md).
 | Route | Source | Registration |
 |---|---|---|
 | Built-in | `src/specify_cli/workflows/step/<package>/__init__.py` | Explicit import and `_register_step()` in `src/specify_cli/workflows/__init__.py` |
-| Installed | Package under `.specify/workflows/steps/<id>/`, containing `step.yml` and `__init__.py` | `load_custom_steps(project_root)` loads a matching `StepBase` subclass at workflow run/resume |
+| Installed | Package under `.specify/workflows/steps/<id>/`, containing `step.yml` and `__init__.py` | After explicit consent, `load_custom_steps(project_root, trusted=True)` loads a matching `StepBase` subclass for workflow add/update/run/resume |
 
 `STEP_REGISTRY` maps each `type_key` to a single step instance. Built-in keys
 are snapshotted in `BUILTIN_STEP_TYPES` before project steps are loaded; do not
