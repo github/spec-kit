@@ -45,8 +45,10 @@ skill's `SKILL.md` as an ordinary file, so it is not a hard block. Neither
 source says whether a skill with this flag keeps its description out of the
 model's context.
 
-- The option has no effect with `--commands`: the `.agent.md` and `.prompt.md`
-  files are not skills and no flag is written.
+- The option has no effect in the commands layout, whether selected explicitly
+  with `--commands` or retained from an existing installation when no layout flag
+  is passed: the `.agent.md` and `.prompt.md` files are not skills and no flag is
+  written.
 - Extension skills stay model-invocable, because mandatory extension hooks rely
   on the model invoking them. If an extension's mandatory hook runs a core
   command (its `command:` is a core `speckit.<command>`), leave this option off:
