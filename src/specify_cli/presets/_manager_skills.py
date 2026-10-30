@@ -98,6 +98,7 @@ class _PresetSkillMethods:
             self.registry.update(pack_id, {"registered_skills": merged_skills})
 
     @project_registration
+    @managed_registration
     def _reconcile_skills(
         self,
         command_names: List[str],
@@ -1319,6 +1320,7 @@ class _PresetSkillMethods:
         )
 
     @project_registration
+    @managed_registration
     def _unregister_skills_in_dir(
         self,
         skill_names: List[str],

@@ -845,9 +845,14 @@ class TestPresetSkills(PresetArtifactTestHelpers):
 
     def test_extension_skill_restored_on_preset_remove(self, project_dir, temp_dir):
         """Preset removal should restore an extension-backed skill instead of deleting it."""
+        from specify_cli.integrations.manifest import IntegrationManifest
+
         self._write_init_options(project_dir, ai="codex")
         skills_dir = project_dir / ".agents" / "skills"
         self._create_skill(skills_dir, "speckit-fakeext-cmd", body="original extension skill")
+        manifest = IntegrationManifest("codex", project_dir)
+        manifest.record_existing(".agents/skills/speckit-fakeext-cmd/SKILL.md")
+        manifest.save()
 
         extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
         (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
@@ -936,6 +941,7 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "# Fakeext Cmd Skill" in content
 
         assert yaml.safe_load(content.split("---", 2)[1])["metadata"]["author"] == "acme-corp"
+        assert IntegrationManifest.load("codex", project_dir).check_modified() == []
 
     def test_skill_composed_over_extension_base_rewrites_subdir_paths(
         self, project_dir, temp_dir

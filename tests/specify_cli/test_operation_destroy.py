@@ -1536,3 +1536,45 @@ def test_later_preset_add_refreshes_only_managed_overwrites(tmp_path, monkeypatc
     write(tmp_path, untouched, b"original template")
     destroy_project(DestroyRequest(tmp_path, confirmed=True))
     assert not (tmp_path / ".specify").exists()
+
+
+@pytest.mark.parametrize("integration", ["copilot", "claude", "gemini"])
+@pytest.mark.parametrize("project_override", [False, True])
+@pytest.mark.parametrize("cleanup", ["destroy", "uninstall"])
+def test_preset_add_remove_round_trip_keeps_cleanup_hashes_current(
+    tmp_path, monkeypatch, integration, project_override, cleanup,
+):
+    from specify_cli.integrations._operation_uninstall import (
+        IntegrationUninstallRequest,
+        uninstall_integration,
+    )
+
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    initialized = runner.invoke(app, [
+        "init", "--here", "--force", "--non-interactive", "--ignore-agent-tools",
+        "--integration", integration,
+    ])
+    assert initialized.exit_code == 0, initialized.output
+    added = runner.invoke(app, ["preset", "add", "lean"])
+    assert added.exit_code == 0, added.output
+    if project_override:
+        write(tmp_path, ".specify/templates/commands/specify.md",
+              b"---\ndescription: Project specification override\n---\nProject override body.\n")
+    removed = runner.invoke(app, ["preset", "remove", "lean"])
+    assert removed.exit_code == 0, removed.output
+    assert not plan_destroy(DestroyRequest(tmp_path)).requires_force
+    record = IntegrationManifest.load(integration, tmp_path)
+    assert record.check_modified() == []
+    relative = next(name for name in record.files if "speckit" in name and not name.startswith(".specify/"))
+    original = (tmp_path / relative).read_bytes()
+    write(tmp_path, relative, b"user edit after preset removal")
+    assert relative in plan_destroy(DestroyRequest(tmp_path)).requires_force
+    write(tmp_path, relative, original)
+    if cleanup == "destroy":
+        destroy_project(DestroyRequest(tmp_path, confirmed=True))
+        assert not (tmp_path / ".specify").exists()
+    else:
+        result = uninstall_integration(IntegrationUninstallRequest(tmp_path, integration))
+        assert not result.skipped
+        assert not (tmp_path / relative).exists()

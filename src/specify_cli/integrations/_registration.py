@@ -26,7 +26,7 @@ def project_registration(handler):
 
 
 def managed_registration(handler):
-    """Refresh existing manifest claims only for outputs written by registration."""
+    """Refresh existing claims only after managed output rendering succeeds."""
     @wraps(handler)
     def invoke(self, *args, **kwargs):
         from ._file_changes import registration_changes
@@ -39,24 +39,25 @@ def managed_registration(handler):
         changed: set[Path] = set()
         token = registration_changes.set(changed)
         try:
-            return handler(self, *args, **kwargs)
+            result = handler(self, *args, **kwargs)
         finally:
             registration_changes.reset(token)
-            if changed:
-                root = self.project_root
-                directory = root / ".specify/integrations"
-                _validate_safe_shared_directory(root, directory)
-                metadata = FileHelper(root)
-                for path in sorted(directory.glob("*.manifest.json")):
-                    metadata.read_bytes(path)
-                    manifest = IntegrationManifest.load(path.name.removesuffix(".manifest.json"), root)
-                    refreshed = False
-                    for name in manifest.files:
-                        output = root / name
-                        if output in changed and output.is_file() and not output.is_symlink():
-                            manifest.record_existing(name)
-                            refreshed = True
-                    if refreshed:
-                        manifest.save()
+        if changed:
+            root = self.project_root
+            directory = root / ".specify/integrations"
+            _validate_safe_shared_directory(root, directory)
+            metadata = FileHelper(root)
+            for path in sorted(directory.glob("*.manifest.json")):
+                metadata.read_bytes(path)
+                manifest = IntegrationManifest.load(path.name.removesuffix(".manifest.json"), root)
+                refreshed = False
+                for name in manifest.files:
+                    output = root / name
+                    if output in changed and output.is_file() and not output.is_symlink():
+                        manifest.record_existing(name)
+                        refreshed = True
+                if refreshed:
+                    manifest.save()
+        return result
 
     return invoke

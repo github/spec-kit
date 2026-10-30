@@ -155,8 +155,10 @@ only after the recorded command names, output paths, and ownership hashes have
 passed validation. Incomplete contribution cleanup retains the integration state
 needed to retry.
 Managed preset rendering refreshes hashes only for tracked files it writes,
-both during `init --preset` and a later `preset add`. Unchanged user edits
-are not adopted as generated content.
+after the rendering handler succeeds. This includes `init --preset`, a later
+`preset add`, and skill restoration and reconciliation during `preset remove`.
+Failed handlers leave the previous hashes intact and preserve their original
+errors. Unchanged user edits are not adopted as generated content.
 For example:
 
 ```bash
