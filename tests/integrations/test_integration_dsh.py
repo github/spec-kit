@@ -198,9 +198,7 @@ class TestDshMultiInstallSafe:
 
 
 class TestDshHookInvocations:
-    """DSH is in ALWAYS_SLASH_AGENTS: hook messages and init output must
-    reference slash-invokable skills regardless of the persisted ai_skills
-    flag, because the DSH Web GUI invokes skills as ``/speckit-<command>``."""
+    """DSH owns a mode-independent slash-invocation style for its skills."""
 
     def test_hooks_render_skill_invocation(self, tmp_path):
         from specify_cli.extensions import HookExecutor

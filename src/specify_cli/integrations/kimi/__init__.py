@@ -24,6 +24,7 @@ class KimiIntegration(SkillsIntegration):
     """Integration for Kimi Code CLI (Moonshot AI)."""
 
     key = "kimi"
+    invocation_prefix = "/skill:"
     config = {
         "name": "Kimi Code",
         "folder": ".kimi-code/",
@@ -38,25 +39,6 @@ class KimiIntegration(SkillsIntegration):
         "extension": "/SKILL.md",
     }
     multi_install_safe = False
-
-    def build_command_invocation(self, command_name: str, args: str = "") -> str:
-        """Build Kimi's native skill invocation: ``/skill:speckit-<stem>``.
-
-        Kimi Code CLI invokes installed skills with a ``/skill:<name>``
-        slash command (e.g. ``/skill:speckit-plan``), not the bare
-        ``/speckit-<name>`` form produced by the generic skills base
-        class. Overriding here keeps ``dispatch_command()`` and workflow
-        command steps aligned with the ``/skill:`` guidance shown at init
-        time and in rendered hook invocations.
-        """
-        stem = command_name
-        if stem.startswith("speckit."):
-            stem = stem[len("speckit.") :]
-
-        invocation = "/skill:speckit-" + stem.replace(".", "-")
-        if args:
-            invocation = f"{invocation} {args}"
-        return invocation
 
     def post_process_skill_content(self, content: str) -> str:
         """Ensure in-skill cross-command references use Kimi's `/skill:` syntax."""

@@ -69,6 +69,28 @@ demands them. Keep mode selection, invocation spelling, and registration in
 sync. Agent-specific layouts and options belong in the integration code and
 the agent's [integration guide](../docs/integrations/index.md).
 
+Integration classes are also authoritative for command naming and invocation
+rendering. Shared init, registration, extension, preset, hook, and runtime
+callers resolve the active integration and use its naming and mode hooks rather
+than maintaining agent-name lists. `registrar_config["format_name"]` controls
+registered command names when present; skills otherwise use the shared
+`speckit-<name>` convention. `invocation_prefix_for_mode()`,
+`invoke_separator_for_mode()`, and `build_command_reference()` define displayed
+and embedded command references. `build_hook_invocation()` preserves unrelated
+custom hook commands unless an integration such as Cline, Forge, or Junie owns
+their naming too. `build_command_invocation()` remains the runtime dispatch seam
+for integrations such as Bob and Copilot whose executable behavior depends on
+the installed layout.
+
+Preset skill registration and restoration surface integration resolver failures
+before writing the affected skill, rather than installing fallback references.
+
+Shared page-template installation and refresh use the active integration's
+`resolve_command_refs_for_mode()` with its resolved output mode, honoring both
+resolver and `build_command_reference()` overrides. Without an active integration,
+they retain the static separator/prefix fallback. Shared executable scripts keep
+their existing separator/prefix rendering.
+
 Core templates that call scripts declare `sh`, `ps`, and `py` commands in
 `scripts:` frontmatter; template processing replaces `{SCRIPT}` with the
 selected variant. `py` is opt-in; non-interactive init defaults to `sh` on
@@ -158,9 +180,10 @@ directory must match `folder/commands_subdir`. Output paths
 must be canonical, project-local, and outside `.git` and `.specify`.
 Registration extensions must be plain dotted filename suffixes (such as
 `.md`) or, for Markdown skills, `/SKILL.md`; path traversal is not allowed.
-The public class attribute `invoke_separator` must be a non-empty string;
-`dev_no_symlink` and `multi_install_safe` must be booleans, including when
-registrar configuration supplies its own optional values.
+The public class attributes `invoke_separator` and `invocation_prefix` must be
+non-empty strings. `skills_invocation_only`, `dev_no_symlink`, and
+`multi_install_safe` must be booleans, including when registrar configuration
+supplies its own optional values.
 An explicit `registrar_config.invoke_separator` takes precedence over the class
 default. `dev_no_symlink` is enabled when either the class or registrar
 configuration enables it. Healthy registration and persisted recovery metadata

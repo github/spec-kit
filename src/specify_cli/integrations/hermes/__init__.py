@@ -37,6 +37,7 @@ class HermesIntegration(SkillsIntegration):
     """
 
     key = "hermes"
+    skills_invocation_only = True
     config = {
         "name": "Hermes Agent",
         "folder": ".hermes/",
@@ -156,6 +157,7 @@ class HermesIntegration(SkillsIntegration):
                 arg_placeholder,
                 invoke_separator=self.invoke_separator,
                 project_root=project_root,
+                skills_enabled=True,
             )
             # Strip the processed frontmatter — we rebuild it for skills.
             # Scan for the closing ``---`` on its own line rather than

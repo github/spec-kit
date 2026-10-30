@@ -405,6 +405,31 @@ def _resolve_dynamic_command_refs(
     )
 
 
+def _resolve_template_command_refs(
+    content: str,
+    integration: IntegrationBase | None,
+    skills_enabled: bool,
+    invoke_separator: str,
+    invoke_prefix: str,
+) -> str:
+    if integration is None:
+        return IntegrationBase.resolve_command_refs(
+            content, invoke_separator, invoke_prefix
+        )
+    if (
+        type(integration).resolve_command_refs_for_mode
+        is IntegrationBase.resolve_command_refs_for_mode
+    ):
+        return integration.resolve_command_refs_for_mode(
+            content,
+            skills_enabled=skills_enabled,
+            invoke_separator=invoke_separator,
+        )
+    return integration.resolve_command_refs_for_mode(
+        content, skills_enabled=skills_enabled
+    )
+
+
 def refresh_shared_templates(
     project_path: Path,
     *,
@@ -415,6 +440,8 @@ def refresh_shared_templates(
     invoke_separator: str,
     invoke_prefix: str = "/",
     force: bool = False,
+    integration: IntegrationBase | None = None,
+    skills_enabled: bool = False,
 ) -> None:
     """Refresh default-sensitive shared templates without touching scripts."""
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
@@ -445,8 +472,8 @@ def refresh_shared_templates(
                 continue
 
         content = src.read_text(encoding="utf-8")
-        content = IntegrationBase.resolve_command_refs(
-            content, invoke_separator, invoke_prefix
+        content = _resolve_template_command_refs(
+            content, integration, skills_enabled, invoke_separator, invoke_prefix
         )
         planned_updates.append((dst, rel, content))
 
@@ -477,6 +504,8 @@ def install_shared_infra(
     invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
+    integration: IntegrationBase | None = None,
+    skills_enabled: bool = False,
 ) -> bool:
     """Install shared scripts and templates into *project_path*.
 
@@ -682,8 +711,8 @@ def install_shared_infra(
                     continue
 
                 content = src.read_text(encoding="utf-8")
-                content = IntegrationBase.resolve_command_refs(
-                    content, invoke_separator, invoke_prefix
+                content = _resolve_template_command_refs(
+                    content, integration, skills_enabled, invoke_separator, invoke_prefix
                 )
                 planned_templates.append((dst, rel, content))
 

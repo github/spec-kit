@@ -1414,6 +1414,144 @@ class TestGitExtensionOptIn:
 class TestSharedInfraCommandRefs:
     """Verify _install_shared_infra resolves __SPECKIT_COMMAND_*__ in shared infra."""
 
+    @pytest.mark.parametrize(
+        "operation", ["init", "install", "use", "switch", "upgrade", "upgrade-secondary"]
+    )
+    @pytest.mark.parametrize("override", ["reference", "resolver"])
+    def test_lifecycle_shared_templates_honor_integration_overrides(
+        self, tmp_path, monkeypatch, operation, override
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.integrations import get_integration
+        from specify_cli.integrations.base import IntegrationBase
+
+        def reference(self, command_name, args="", *, skills_enabled):
+            mode = "skill" if skills_enabled else "command"
+            return f"/native-{self.key}-{mode}-{command_name.removeprefix('speckit.')}"
+
+        def resolver(self, content, *, skills_enabled):
+            mode = "skill" if skills_enabled else "command"
+            return IntegrationBase.resolve_command_refs(
+                content, "-", f"/resolved-{self.key}-{mode}-"
+            )
+
+        for key in ("copilot", "claude"):
+            integration = get_integration(key)
+            method = (
+                "build_command_reference"
+                if override == "reference"
+                else "resolve_command_refs_for_mode"
+            )
+            monkeypatch.setattr(
+                type(integration), method,
+                reference if override == "reference" else resolver,
+            )
+
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+        project = tmp_path / "project"
+        initial = "claude" if operation == "upgrade" else "copilot"
+        result = runner.invoke(app, [
+            "init", str(project), "--integration", initial, "--script", "sh",
+            "--ignore-agent-tools",
+        ], catch_exceptions=False)
+        assert result.exit_code == 0, result.output
+
+        if operation != "init":
+            monkeypatch.chdir(project)
+            if operation in ("use", "upgrade-secondary"):
+                result = runner.invoke(
+                    app, ["integration", "install", "claude", "--force"],
+                    catch_exceptions=False,
+                )
+                assert result.exit_code == 0, result.output
+            (project / ".specify/templates/plan-template.md").unlink()
+            command = "upgrade" if operation == "upgrade-secondary" else operation
+            args = ["integration", command, "claude"]
+            if operation == "install":
+                args.append("--force")
+            result = runner.invoke(
+                app, args, catch_exceptions=False
+            )
+            assert result.exit_code == 0, result.output
+
+        active = (
+            "copilot" if operation in ("init", "install", "upgrade-secondary") else "claude"
+        )
+        prefix = "native" if override == "reference" else "resolved"
+        # The static resolver retains its conventional "speckit" stem.
+        stem = "" if override == "reference" else "speckit-"
+        content = (project / ".specify/templates/plan-template.md").read_text(
+            encoding="utf-8"
+        )
+        assert f"/{prefix}-{active}-skill-{stem}plan" in content
+        assert "/speckit-plan" not in content
+
+    @pytest.mark.parametrize("operation", ["install", "refresh"])
+    def test_shared_template_resolver_failure_does_not_write_templates(
+        self, tmp_path, operation
+    ):
+        from specify_cli import _install_shared_infra, _refresh_shared_templates
+        from specify_cli.integrations.base import IntegrationBase
+
+        class BrokenIntegration(IntegrationBase):
+            def resolve_command_refs_for_mode(self, content, *, skills_enabled):
+                raise ValueError("adapter resolver failed")
+
+        kwargs = dict(
+            integration=BrokenIntegration(), skills_enabled=True, invoke_separator="-"
+        )
+        with pytest.raises(ValueError, match="adapter resolver failed"):
+            if operation == "install":
+                _install_shared_infra(tmp_path, "sh", **kwargs)
+            else:
+                _refresh_shared_templates(tmp_path, **kwargs)
+        assert not list((tmp_path / ".specify/templates").glob("*.md"))
+
+    @pytest.mark.parametrize("operation", ["install", "refresh"])
+    @pytest.mark.parametrize("skills_enabled", [False, True])
+    @pytest.mark.parametrize("override", ["reference", "resolver"])
+    def test_shared_templates_honor_integration_overrides(
+        self, tmp_path, operation, skills_enabled, override
+    ):
+        from specify_cli import _install_shared_infra, _refresh_shared_templates
+        from specify_cli.integrations.base import IntegrationBase
+
+        class ReferenceIntegration(IntegrationBase):
+            def build_command_reference(self, command_name, args="", *, skills_enabled):
+                mode = "skill" if skills_enabled else "command"
+                return f"/native-{mode}-{command_name.removeprefix('speckit.')}"
+
+        class ResolverIntegration(IntegrationBase):
+            def resolve_command_refs_for_mode(self, content, *, skills_enabled):
+                mode = "skill" if skills_enabled else "command"
+                return content.replace(
+                    "__SPECKIT_COMMAND_PLAN__", f"/resolved-{mode}-plan"
+                )
+
+        integration = (
+            ReferenceIntegration() if override == "reference" else ResolverIntegration()
+        )
+        kwargs = dict(
+            integration=integration,
+            skills_enabled=skills_enabled,
+            invoke_separator="-",
+        )
+        if operation == "install":
+            _install_shared_infra(tmp_path, "sh", **kwargs)
+        else:
+            _refresh_shared_templates(tmp_path, **kwargs)
+
+        content = (tmp_path / ".specify/templates/plan-template.md").read_text(
+            encoding="utf-8"
+        )
+        prefix = "native" if override == "reference" else "resolved"
+        mode = "skill" if skills_enabled else "command"
+        assert f"/{prefix}-{mode}-plan" in content
+        assert "/speckit-plan" not in content
+        assert "__SPECKIT_COMMAND_PLAN__" not in content
+
     @staticmethod
     def _combined_script_content(project, script_type):
         script_dir = "bash" if script_type == "sh" else "powershell"

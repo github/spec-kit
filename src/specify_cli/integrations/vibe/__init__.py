@@ -60,6 +60,7 @@ class VibeIntegration(SkillsIntegration):
     """Integration for Mistral Vibe skills."""
 
     key = "vibe"
+    skills_invocation_only = True
     config = {
         "name": "Mistral Vibe",
         "folder": ".vibe/",

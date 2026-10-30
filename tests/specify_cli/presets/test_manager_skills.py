@@ -365,6 +365,83 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "$speckit-plan" in content
         assert "/speckit-plan" not in content
 
+    @pytest.mark.parametrize("operation", ["register", "restore-core", "restore-extension"])
+    @pytest.mark.parametrize("error_type", [ValueError, TypeError, OSError, ImportError, KeyError])
+    def test_skill_resolver_failure_preserves_existing_content(
+        self, project_dir, temp_dir, monkeypatch, operation, error_type
+    ):
+        from specify_cli.integrations import get_integration
+        from specify_cli.presets import PresetManifest
+
+        self._write_init_options(project_dir, ai="zcode")
+        skills_dir = project_dir / ".zcode" / "skills"
+        skill_dir = self._create_skill(skills_dir, "speckit-specify")
+        skill_file = skill_dir / "SKILL.md"
+        original = skill_file.read_bytes()
+        preset_dir = self._create_command_preset(
+            temp_dir, "resolver-failure", "speckit.specify", "Override specify",
+            "Run `__SPECKIT_COMMAND_PLAN__`.\n",
+        )
+        source_file = preset_dir / "commands" / "speckit.specify.md"
+        manager = PresetManager(project_dir)
+        if operation == "restore-core":
+            shutil.copy2(
+                source_file,
+                project_dir / ".specify" / "templates" / "commands" / "specify.md",
+            )
+        elif operation == "restore-extension":
+            monkeypatch.setattr(manager, "_build_extension_skill_restore_index", lambda: {
+                "speckit-specify": {
+                    "command_name": "speckit.specify",
+                    "source_file": source_file,
+                    "source": "extension:sample",
+                    "extension_id": "sample",
+                    "extension_dir": preset_dir,
+                }
+            })
+
+        failure = error_type("adapter resolver failed")
+
+        def fail_resolution(body, *, skills_enabled):
+            raise failure
+
+        monkeypatch.setattr(
+            get_integration("zcode"), "resolve_command_refs_for_mode", fail_resolution
+        )
+        with pytest.raises(error_type) as raised:
+            if operation == "register":
+                manager._register_skills(
+                    PresetManifest(preset_dir / "preset.yml"), preset_dir
+                )
+            else:
+                manager._unregister_skills_in_dir(
+                    ["speckit-specify"], skills_dir, "zcode"
+                )
+
+        assert raised.value is failure
+        assert skill_file.read_bytes() == original
+
+    @pytest.mark.parametrize("lookup_error", [False, True])
+    def test_skill_command_refs_keep_unavailable_integration_fallback(
+        self, project_dir, monkeypatch, lookup_error
+    ):
+        import specify_cli.integrations as integrations
+
+        def unavailable(key):
+            if lookup_error:
+                raise ValueError("integration unavailable")
+            return None
+
+        monkeypatch.setattr(integrations, "get_integration", unavailable)
+        manager = PresetManager(project_dir)
+        registrar = manager._command_registrar()
+        monkeypatch.setattr(
+            registrar, "AGENT_CONFIGS", {"unavailable": {"invoke_separator": "_"}}
+        )
+        assert manager._resolve_skill_command_refs(
+            "Run __SPECKIT_COMMAND_PLAN__.", registrar, "unavailable", project_dir
+        ) == "Run /speckit_plan."
+
     def test_reconcile_override_skill_resolves_command_refs(self, project_dir, temp_dir):
         """Reconcile's project-override restore must resolve command tokens (issue #2717).
 
@@ -1484,28 +1561,24 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             "when another agent makes registered_skills globally non-empty"
         )
 
-    def test_skill_switch_then_remove_restores_every_skill_agent_dir(
+    def test_skill_switch_then_command_switch_remove_restores_skill_refs(
         self, project_dir, temp_dir
     ):
-        """Switching between two skill-mode agents before removing a preset
-        must restore both agents' directories, not just the currently
-        active one.
+        """Historical skill restores keep each target integration's references.
 
         ``registered_skills`` records exactly which agent directories the
         preset wrote to (``{agent_name: [skill_name, ...]}``); switching to
         codex and re-registering adds a "codex" entry alongside the
-        original "claude" entry, so removal restores both. Before the
-        provenance fix, ``_unregister_skills`` only restored the currently
-        active agent's skills directory; a preset used first under Claude
-        and later switched to Codex would have its Claude override left
-        behind permanently on removal (#2948).
+        original "claude" entry. A later switch to command-mode Qwen must not
+        make those historical SKILL.md restores use dotted command references.
         """
         self._write_init_options(project_dir, ai="claude", ai_skills=True)
 
         core_cmds = project_dir / ".specify" / "templates" / "commands"
         core_cmds.mkdir(parents=True, exist_ok=True)
         (core_cmds / "specify.md").write_text(
-            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            "---\ndescription: Core specify command\n---\n\n"
+            "Core specify body\nUse __SPECKIT_COMMAND_PLAN__ next.\n",
             encoding="utf-8",
         )
 
@@ -1551,8 +1624,17 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             "preset actually wrote to (#2948)"
         )
 
+        # Switch to a command-mode integration before removal. Historical
+        # skill restoration must use the target registrar's SKILL.md layout,
+        # not Qwen's active project-wide ai_skills=False state.
+        self._write_init_options(project_dir, ai="qwen", ai_skills=False)
+
         assert manager.remove("multi-skill-agent-preset") is True
 
+        expected_references = {
+            "claude": "/speckit-plan",
+            "codex": "$speckit-plan",
+        }
         for skill_file, label in ((claude_skill, "claude"), (codex_skill, "codex")):
             assert skill_file.exists(), f"{label} skill file should still exist after removal"
             content = skill_file.read_text()
@@ -1561,6 +1643,8 @@ class TestPresetSkills(PresetArtifactTestHelpers):
                 "not orphaned permanently (#2948)"
             )
             assert "Core specify body" in content
+            assert expected_references[label] in content
+            assert "/speckit.plan" not in content
 
     def test_infer_legacy_skill_provenance_does_not_falsely_attribute_command_mode_copilot(
         self, project_dir, temp_dir

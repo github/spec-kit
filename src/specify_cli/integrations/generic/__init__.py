@@ -92,6 +92,10 @@ class GenericIntegration(MarkdownIntegration):
         """
         return "-" if self.is_skills_mode(parsed_options, project_root) else "."
 
+    def invoke_separator_for_mode(self, skills_enabled: bool) -> str:
+        """Match command references to the selected generic output layout."""
+        return "-" if skills_enabled else "."
+
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         return [
@@ -188,6 +192,7 @@ class GenericIntegration(MarkdownIntegration):
             raw, self.key, script_type, "$ARGUMENTS",
             project_root=project_root,
             invoke_separator="-",
+            skills_enabled=True,
         )
         if processed_body.startswith("---"):
             body_lines = processed_body.splitlines(keepends=True)
@@ -279,6 +284,7 @@ class GenericIntegration(MarkdownIntegration):
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
                 project_root=project_root,
+                skills_enabled=False,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(

@@ -133,6 +133,15 @@ class ForgeIntegration(MarkdownIntegration):
             invocation = f"{invocation} {args}"
         return invocation
 
+    def build_hook_invocation(
+        self,
+        command_name: str,
+        *,
+        skills_enabled: bool,
+    ) -> str:
+        """Forge formats every hook command through its registered name."""
+        return self.build_command_invocation(command_name)
+
     def setup(
         self,
         project_root: Path,
@@ -177,6 +186,7 @@ class ForgeIntegration(MarkdownIntegration):
                 raw, self.key, script_type, arg_placeholder,
                 invoke_separator=self.invoke_separator,
                 project_root=project_root,
+                skills_enabled=False,
             )
 
             # FORGE-SPECIFIC: Ensure any remaining $ARGUMENTS placeholders are

@@ -116,6 +116,10 @@ def integration_install(
     _install_shared_infra_or_exit(
         project_root,
         selected_script,
+        integration=infra_integration,
+        skills_enabled=infra_integration.is_skills_mode(
+            infra_parsed, project_root=project_root
+        ),
         invoke_separator=_invoke_separator_for_integration(
             infra_integration, current, infra_key, infra_parsed,
             project_root=project_root,
