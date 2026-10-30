@@ -556,6 +556,8 @@ def test_incomplete_operand_covers_every_operator_the_evaluator_splits_on():
         ("inputs.a || inputs.b", True),
         ("inputs.a == == inputs.b", True),
         ("| upper", True),
+        ("inputs.items | length >", True),
+        ("inputs.mode not 'done'", False),
     ],
 )
 def test_incomplete_operand_tells_a_filter_chain_from_a_missing_operand(
@@ -564,6 +566,77 @@ def test_incomplete_operand_tells_a_filter_chain_from_a_missing_operand(
     """An operator token only means a missing operand where an operand was
     expected; after a filter chain it is a filter precedence mistake."""
     assert _has_incomplete_operand(text) is incomplete
+
+
+# Review of #5171: `not` right after an operand was reported as a filter
+# precedence mistake, because the message was inferred from the terminals the
+# parser expected and `|` is expected there too. The grammar now parses filter
+# chains everywhere and the tree names the operator that has one as operand.
+@pytest.mark.parametrize(
+    "expr,near",
+    [
+        ("inputs.mode not 'done'", "unexpected 'not' at column 13"),
+        ("(inputs.a not inputs.b)", "unexpected 'not' at column 11"),
+        ("[1, inputs.a not 2]", "unexpected 'not' at column 14"),
+        ("inputs.a == inputs.b not 'x'", "unexpected 'not' at column 22"),
+    ],
+)
+def test_a_malformed_expression_without_a_filter_gets_no_filter_advice(expr, near):
+    with pytest.raises(ValueError) as info:
+        evaluate_expression("{{ " + expr + " }}", StepContext())
+
+    assert "filter precedence" not in str(info.value)
+    assert near in str(info.value)
+
+
+@pytest.mark.parametrize("step_cls", STEP_CLASSES)
+def test_a_condition_without_a_filter_is_not_told_to_parenthesize_one(step_cls):
+    config = {"id": "s1", "condition": "inputs.mode not 'done'", "then": [], "steps": []}
+    errors = [e for e in step_cls().validate(config) if "'condition'" in e]
+
+    assert len(errors) == 1
+    assert "filter" not in errors[0]
+    assert "unexpected 'not'" in errors[0]
+
+
+@pytest.mark.parametrize(
+    "expr,message",
+    [
+        ("(inputs.items | length > 0)", "'>' follows a filter chain"),
+        ("[inputs.items | length and inputs.ok]", "'and' follows a filter chain"),
+        ("inputs.x | default(inputs.items | length > 0)", "'>' follows a filter chain"),
+        ("(inputs.n > inputs.limit | default(5))", "a filter cannot be an operand"),
+        ("[1, not inputs.x | default(1)]", "a filter cannot be an operand"),
+        ("inputs.a == not inputs.b | default(1)", "a filter cannot be an operand"),
+        # Two misplaced chains: the leftmost operator is named.
+        (
+            "inputs.items | length == inputs.a and inputs.b > inputs.c | length",
+            "'==' follows a filter chain",
+        ),
+    ],
+)
+def test_filter_precedence_is_refused_at_any_nesting_depth(expr, message):
+    with pytest.raises(ValueError, match="ambiguous filter precedence") as info:
+        evaluate_expression("{{ " + expr + " }}", StepContext())
+
+    assert message in str(info.value)
+
+
+@pytest.mark.parametrize(
+    "expr,value",
+    [
+        ("(inputs.items | length) > 1", True),
+        ("1 < (inputs.items | length)", True),
+        ("[inputs.items | length, 1]", [2, 1]),
+        ("inputs.items | join(',') | upper", "A,B"),
+        ("(inputs.items | join(',')) | upper", "A,B"),
+        ("not (inputs.items | length)", False),
+    ],
+)
+def test_a_parenthesized_or_whole_filter_chain_still_evaluates(expr, value):
+    ctx = StepContext(inputs={"items": ["a", "b"]})
+
+    assert evaluate_expression("{{ " + expr + " }}", ctx) == value
 
 
 # Copilot round 3: the first two gates each inspected only one position. These pin

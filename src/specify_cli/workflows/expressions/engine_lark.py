@@ -12,13 +12,15 @@ documented in ``workflows/ARCHITECTURE.md``:
 
 The rest of this docstring describes how the engine is built:
 
-* **The precedence guards are in the grammar, not in a post-check.** A filter
-  chain is only valid where the language allows one: the head is a plain
-  operand, and the chain is a whole expression or sits in parentheses, a list
-  element or a filter argument. ``count > limit | default(5)``, ``not x |
-  default(1)`` and ``x | default(0) > 5`` do not parse at all; the first two
-  keep the "ambiguous filter precedence" message through the offending ``|``
-  token.
+* **The grammar models filter chains everywhere; ``_parse`` rejects the
+  misplaced ones.** ``|`` is a postfix operator that binds tighter than any
+  other, so ``count > limit | default(5)``, ``not x | default(1)`` and
+  ``x | default(0) > 5`` all parse, and the tree shows exactly which operator
+  has a filter chain as its operand. ``_parse`` refuses such a tree before
+  anyone sees it, naming the operator, so the message comes from the tree's
+  structure and not from guessing at the parser's failure state. A chain is
+  valid as a whole expression, in parentheses, as a list element or as a
+  filter argument.
 * **The path terminal is derived from ``namespace``.** ``_PLAIN_SEGMENT`` and
   ``_INDEXED_SEGMENT`` are the one definition of a path segment; widening
   either rebuilds the parser (the cache is keyed on the patterns) and reaches
@@ -42,7 +44,7 @@ import re
 from functools import lru_cache
 from typing import Any
 
-from lark import Lark, Token, Transformer, v_args
+from lark import Lark, Token, Transformer, Tree, v_args
 from lark.exceptions import UnexpectedCharacters, UnexpectedInput, UnexpectedToken
 
 from . import namespace
@@ -103,10 +105,7 @@ def _path_terminal_pattern(plain_pattern: str, indexed_pattern: str) -> str:
 
 def _grammar(path_pattern: str) -> str:
     return r"""
-?start: filtered
-      | expr
-
-filtered: operand ("|" filter)+
+?start: expr
 
 ?expr: or_expr
 
@@ -119,11 +118,14 @@ filtered: operand ("|" filter)+
 ?not_expr: NOT not_expr            -> not_op
          | comparison
 
-?comparison: operand
+?comparison: postfix
            | comparison CMP_OP cmp_rhs  -> cmp
 
-?cmp_rhs: operand
+?cmp_rhs: postfix
         | NOT cmp_rhs              -> not_op
+
+?postfix: operand
+        | postfix "|" filter       -> filtered
 
 ?operand: string
         | number
@@ -214,8 +216,11 @@ class _BuildAst(Transformer):
     def filter_call(self, name: Token, *args: Any) -> tuple[str, str, tuple[Any, ...], bool]:
         return ("filter", str(name), args, True)
 
-    def filtered(self, head: Any, *filters: Any) -> tuple[str, Any, tuple[Any, ...]]:
-        return ("pipe", head, filters)
+    def filtered(self, head: Any, filt: Any) -> tuple[str, Any, tuple[Any, ...]]:
+        # The grammar nests a chain to the left; flatten it into one pipe.
+        if head[0] == "pipe":
+            return ("pipe", head[1], head[2] + (filt,))
+        return ("pipe", head, (filt,))
 
     def cmp(self, left: Any, op: Token, right: Any) -> tuple[str, ...]:
         return ("cmp", " ".join(str(op).split()), left, right)
@@ -230,42 +235,86 @@ class _BuildAst(Transformer):
         return ("not", inner)
 
 
+class _FilterPrecedenceError(Exception):
+    """A filter chain is the operand of an operator.
+
+    ``operator`` is the operator token. ``chain_first`` is true when the chain
+    comes before the operator (``items | length > 0``) and false when the
+    operator comes first (``count > limit | default(5)``, ``not x | f``).
+    """
+
+    def __init__(self, operator: Token, chain_first: bool) -> None:
+        super().__init__(str(operator))
+        self.operator = operator
+        self.chain_first = chain_first
+
+
+_OPERATOR_NODES = frozenset({"cmp", "and_op", "or_op", "not_op"})
+
+
+def _misplaced_filter_chains(tree: Tree) -> list[_FilterPrecedenceError]:
+    """Every operator in *tree* that has a filter chain as a direct operand.
+
+    Parentheses keep their ``group`` node, so ``(items | length) > 0`` has a
+    group operand, not a chain.
+    """
+    found: list[_FilterPrecedenceError] = []
+    for node in tree.iter_subtrees():
+        if node.data not in _OPERATOR_NODES:
+            continue
+        operator = node.children[0] if node.data == "not_op" else node.children[1]
+        for index, child in enumerate(node.children):
+            if isinstance(child, Tree) and child.data == "filtered":
+                chain_first = node.data != "not_op" and index == 0
+                found.append(_FilterPrecedenceError(operator, chain_first))
+    return found
+
+
 def _parse(text: str) -> Any:
-    """Parse one block body into the tuple AST. Raises ``lark`` errors."""
-    return _BuildAst().transform(_parser().parse(text))
+    """Parse one block body into the tuple AST.
+
+    Raises ``lark`` errors for text the grammar does not accept, and
+    ``_FilterPrecedenceError`` for the leftmost operator that has a filter
+    chain as an operand. Every caller parses through here, so no caller sees
+    such a tree.
+    """
+    tree = _parser().parse(text)
+    misplaced = _misplaced_filter_chains(tree)
+    if misplaced:
+        raise min(misplaced, key=lambda err: err.operator.start_pos)
+    return _BuildAst().transform(tree)
 
 
-def _parse_error_message(text: str, exc: UnexpectedInput) -> str:
+# What a failed ``_parse`` raises.
+_PARSE_ERRORS = (UnexpectedInput, _FilterPrecedenceError)
+
+
+def _parse_error_message(
+    text: str, exc: UnexpectedInput | _FilterPrecedenceError
+) -> str:
     """The author-facing message for a parse failure of *text*.
 
     Filter precedence is the one carried-over semantic. A filter chain cannot
-    be an operand of an operator, in either direction: a ``|`` after an
+    be an operand of an operator, in either direction: a ``|`` on an
     operator's operand (``count > limit | default(5)``), or an operator after a
-    filter chain (``items | length > 0``). Both get the same wording. Everything
-    else names the offending character and column.
+    filter chain (``items | length > 0``). Everything else names the offending
+    character and column.
     """
-    token = getattr(exc, "token", None)
-    expected = set(getattr(exc, "expected", ()) or ())
-    expects_operand = bool(expected & _OPERAND_EXPECTED)
-    if token is not None and token.type == "VBAR" and not expects_operand:
-        return (
-            f"ambiguous filter precedence in '{text}': a filter cannot be an "
-            f"operand of an operator. Filter the operand in its own expression "
-            f"instead."
-        )
-    if (
-        token is not None
-        and str(token.type) in _OPERATOR_TOKENS
-        and "VBAR" in expected
-        and not expects_operand
-    ):
-        operator = " ".join(str(token.value).split())
+    if isinstance(exc, _FilterPrecedenceError):
+        if not exc.chain_first:
+            return (
+                f"ambiguous filter precedence in '{text}': a filter cannot be an "
+                f"operand of an operator. Filter the operand in its own expression "
+                f"instead."
+            )
+        operator = " ".join(str(exc.operator).split())
         return (
             f"ambiguous filter precedence in '{text}': '{operator}' follows a "
             f"filter chain, and a filter chain cannot be an operand of an "
             f"operator; parenthesize the filtered operand, as in "
             f"'(inputs.items | length) > 0'"
         )
+    token = getattr(exc, "token", None)
     if token is not None and token.type == "$END":
         return f"invalid expression '{text}': unexpected end of text"
     if isinstance(exc, UnexpectedCharacters):
@@ -290,7 +339,7 @@ def _syntax_error(text: str) -> str | None:
         return None
     try:
         _parse(collapsed)
-    except UnexpectedInput as exc:
+    except _PARSE_ERRORS as exc:
         return _parse_error_message(collapsed, exc)
     return None
 
@@ -405,7 +454,7 @@ def _evaluate_simple_expression(expr: str, namespace_: dict[str, Any]) -> Any:
         return None
     try:
         ast = _parse(collapsed)
-    except UnexpectedInput as exc:
+    except _PARSE_ERRORS as exc:
         raise ValueError(_parse_error_message(collapsed, exc)) from exc
     return _eval(ast, namespace_)
 
@@ -507,7 +556,7 @@ def _collect_leaves(text: str) -> list[str]:
         return []
     try:
         ast = _parse(collapsed)
-    except UnexpectedInput:
+    except _PARSE_ERRORS:
         return []
     leaves: list[str] = []
     _visit(ast, paths=leaves)
@@ -545,7 +594,7 @@ def _evaluator_rejects(text: str) -> str | None:
         return None
     try:
         ast = _parse(collapsed)
-    except UnexpectedInput:
+    except _PARSE_ERRORS:
         return None
     filters: list[Any] = []
     _visit(ast, filters=filters)
@@ -560,9 +609,8 @@ _OPERATOR_TOKENS = frozenset({"CMP_OP", "AND", "OR", "NOT"})
 
 # Terminals the parser expects exactly where an operand (``PATH``) or a filter
 # name (``FILTER_NAME``) is missing. An operator token that fails while one of
-# these is expected lacks an operand; one that fails after a filter chain
-# (where only ``|``, ``(``, ``)`` and the like are expected) is a filter
-# precedence mistake instead.
+# these is expected lacks an operand; one that fails elsewhere (``not`` right
+# after an operand, as in ``inputs.mode not 'done'``) is a plain syntax error.
 _OPERAND_EXPECTED = frozenset({"PATH", "FILTER_NAME"})
 
 # A word operator at the very start of the text. The LALR lexer only offers
@@ -582,9 +630,10 @@ def _has_incomplete_operand(text: str) -> bool:
     operand or a filter name was expected (``inputs.a == == inputs.b``,
     ``inputs.a || inputs.b``) fails on that token; a leading word operator
     (``in inputs.a``, ``and inputs.x``) fails right behind the word. An operator
-    after a filter chain (``inputs.items | length > 0``) has both operands and
-    is a filter precedence mistake, reported by ``_syntax_error``, as is a
-    failure anywhere else (arithmetic, a stray character, a second literal).
+    with a filter chain as an operand (``inputs.items | length > 0``) has both
+    operands and is a filter precedence mistake, and any other failure
+    (arithmetic, a stray character, a second literal) is a syntax error; both
+    are reported by ``_syntax_error``.
     """
     stripped = text.strip()
     if not stripped:
@@ -598,6 +647,6 @@ def _has_incomplete_operand(text: str) -> bool:
         if token_type in _OPERATOR_TOKENS or token_type == "VBAR":
             return bool(set(exc.expected) & _OPERAND_EXPECTED)
         return bool(_LEADING_WORD_OPERATOR.match(stripped))
-    except UnexpectedInput:
+    except _PARSE_ERRORS:
         return False
     return False
