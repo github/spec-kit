@@ -520,15 +520,16 @@ def _find_installer(name: str) -> str | None:
         path.resolve(strict=True)
         if not executable and os.path.samestat(path.stat(), cwd_status):
             return False
-        pending = [(path, executable)]
-        seen: set[tuple[Path, bool]] = set()
+        pending = [(path, executable, True)]
+        seen: set[tuple[Path, bool, bool]] = set()
+        declared_directory_links: set[tuple[int, int]] = set()
         while pending:
-            current, leaf_executable = pending.pop()
+            current, leaf_executable, declared = pending.pop()
             if leaf_executable and os.path.samestat(current.parent.stat(), cwd_status):
                 return False
             for ancestor in (current, *current.parents):
                 is_executable = leaf_executable and ancestor == current
-                key = (ancestor, is_executable)
+                key = (ancestor, is_executable, declared)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -552,7 +553,14 @@ def _find_installer(name: str) -> str | None:
                     return False
                 if is_link or is_junction:
                     if os.path.samestat(ancestor.parent.stat(), cwd_status):
-                        return False
+                        if is_executable:
+                            return False
+                        identity = (entry_status.st_dev, entry_status.st_ino)
+                        if declared:
+                            # Relative installer targets can revisit a PATH-declared directory link.
+                            declared_directory_links.add(identity)
+                        elif identity not in declared_directory_links:
+                            return False
                     target = ancestor.readlink()
                     pending.append(
                         (
@@ -560,12 +568,13 @@ def _find_installer(name: str) -> str | None:
                             if target.is_absolute()
                             else ancestor.parent / target,
                             is_executable,
+                            False,
                         )
                     )
         return True
 
     suffixes = [""]
-    if sys.platform == "win32":
+    if sys.platform == "win32" and sys.version_info < (3, 12):
         # Python 3.11's which() does not expand PATHEXT for absolute commands.
         suffixes = [
             suffix
@@ -579,16 +588,21 @@ def _find_installer(name: str) -> str | None:
         if sys.platform == "win32":
             entry = entry.strip('"')
         directory = Path(entry)
-        if not directory.is_absolute():
-            if entry:
-                for suffix in suffixes:
-                    candidate = str(directory / f"{name}{suffix}")
-                    if os.path.lexists(candidate):
-                        rejections.append(rejected_lookup(candidate))
-            continue
         try:
+            if not directory.is_absolute():
+                if entry:
+                    for suffix in suffixes:
+                        candidate = os.path.join(entry, f"{name}{suffix}")
+                        found = shutil.which(candidate)
+                        if (
+                            found is not None
+                            and Path(found).is_file()
+                            and os.access(found, os.X_OK)
+                        ):
+                            rejections.append(rejected_lookup(candidate))
+                continue
             for suffix in suffixes:
-                found = shutil.which(str(directory / f"{name}{suffix}"))
+                found = shutil.which(os.path.join(entry, f"{name}{suffix}"))
                 if found is not None:
                     executable = Path(found)
                     if (

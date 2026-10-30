@@ -688,6 +688,204 @@ class TestInstallerLookupSecurity:
                 f"Windows junction creation unavailable: {result.stderr or result.stdout}"
             )
 
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("link_name", [".local", ".nix-profile"])
+    @pytest.mark.parametrize("relative", [False, True])
+    @pytest.mark.parametrize("operation", ["lookup", "registry", "upgrade"])
+    def test_declared_external_home_directory_links_are_accepted(
+        self, monkeypatch, tmp_path, name, link_name, relative, operation
+    ):
+        home = tmp_path / "home"
+        home.mkdir()
+        install = tmp_path / "install"
+        install.mkdir()
+        bin_dir = install / "bin"
+        bin_dir.mkdir()
+        cellar = install / "Cellar"
+        cellar.mkdir()
+        dispatcher = self.executable(cellar, "dispatcher")
+        executable = bin_dir / (f"{name}.exe" if os.name == "nt" else name)
+        alias = home / link_name
+        target = os.path.relpath(install, home) if relative else install
+        try:
+            executable.symlink_to(os.path.relpath(dispatcher, bin_dir))
+            alias.symlink_to(target, target_is_directory=True)
+        except OSError:
+            pytest.skip("directory symlinks are unavailable")
+        selected = alias / "bin" / executable.name
+        monkeypatch.chdir(home)
+        monkeypatch.setenv("PATH", str(selected.parent))
+        monkeypatch.setattr("sys.argv", [str(home / "missing" / "specify")])
+        method = _InstallMethod.UV_TOOL if name == "uv" else _InstallMethod.PIPX
+        stdout = (
+            "specify-cli v0.7.6\n" if name == "uv" else '{"venvs":{"specify-cli":{}}}'
+        )
+
+        with (
+            patch("specify_cli._version._editable_marker_seen", return_value=False),
+            patch("specify_cli._version._get_installed_version", return_value="0.7.5"),
+            patch("specify_cli._version._verify_upgrade", return_value="0.7.6"),
+            patch(
+                "specify_cli._version.subprocess.run",
+                return_value=_completed_process(0, stdout=stdout),
+            ) as run,
+        ):
+            if operation == "lookup":
+                found = specify_cli._version._find_installer(name)
+                assert found is not None
+                assert Path(found) == selected
+                run.assert_not_called()
+                return
+            if operation == "registry":
+                assert _detect_install_method() == method
+            else:
+                with patch(
+                    "specify_cli._version._detect_install_method",
+                    return_value=_detection_result(method),
+                ):
+                    result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
+                assert result.exit_code == 0
+        run.assert_called_once()
+        assert Path(run.call_args.args[0][0]) == selected
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("location", ["external", "cwd", "worktree"])
+    def test_relative_installer_links_preserve_trust_boundaries(
+        self, monkeypatch, tmp_path, name, location
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        if location == "worktree":
+            (project / ".git").mkdir()
+        venvs = tmp_path / "venvs"
+        venvs.mkdir()
+        dispatcher = self.executable(venvs, "dispatcher")
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        selected = bin_dir / (f"{name}.exe" if os.name == "nt" else name)
+        try:
+            if location == "external":
+                target = dispatcher
+            elif location == "cwd":
+                target = project / selected.name
+                target.symlink_to(os.path.relpath(dispatcher, project))
+            else:
+                (project / "bin").symlink_to(
+                    os.path.relpath(venvs, project), target_is_directory=True
+                )
+                target = project / "bin" / dispatcher.name
+            selected.symlink_to(os.path.relpath(target, bin_dir))
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+        assert not selected.readlink().is_absolute()
+        assert ".." in selected.readlink().parts
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(bin_dir))
+
+        if location == "external":
+            found = specify_cli._version._find_installer(name)
+            assert found is not None
+            assert Path(found) == selected
+        else:
+            with pytest.raises(specify_cli._version._InstallerRejected):
+                specify_cli._version._find_installer(name)
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("entry", [".", "./bin"])
+    @pytest.mark.parametrize("kind", ["directory", "non-executable", "dangling"])
+    def test_non_executable_relative_matches_do_not_block_registry_detection(
+        self, monkeypatch, tmp_path, name, entry, kind
+    ):
+        if kind == "non-executable" and os.name == "nt":
+            pytest.skip("Windows does not enforce POSIX executable permission bits")
+        project = tmp_path / "project"
+        project.mkdir()
+        relative_dir = project if entry == "." else project / "bin"
+        relative_dir.mkdir(exist_ok=True)
+        decoy = relative_dir / (f"{name}.exe" if os.name == "nt" else name)
+        if kind == "directory":
+            decoy.mkdir()
+        elif kind == "non-executable":
+            decoy.write_bytes(b"not an executable\n")
+            decoy.chmod(0o644)
+        else:
+            try:
+                decoy.symlink_to("../missing")
+            except OSError:
+                pytest.skip("file symlinks are unavailable")
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        other = "pipx" if name == "uv" else "uv"
+        expected = self.executable(trusted, other)
+        method = _InstallMethod.PIPX if other == "pipx" else _InstallMethod.UV_TOOL
+        stdout = (
+            '{"venvs":{"specify-cli":{}}}'
+            if other == "pipx"
+            else "specify-cli v0.7.6\n"
+        )
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", os.pathsep.join([entry, str(trusted)]))
+        monkeypatch.setattr("sys.argv", [str(project / "missing" / "specify")])
+        with (
+            patch("specify_cli._version._editable_marker_seen", return_value=False),
+            patch(
+                "specify_cli._version.subprocess.run",
+                return_value=_completed_process(0, stdout=stdout),
+            ) as run,
+        ):
+            detected, signals = _detect_install_method(include_signals=True)
+
+        assert detected == method
+        assert signals.installer_rejections == ()
+        run.assert_called_once()
+        assert Path(run.call_args.args[0][0]) == expected
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("entry", [".", "bin/../bin"])
+    def test_relative_rejection_preserves_path_entry_spelling(
+        self, monkeypatch, tmp_path, name, entry
+    ):
+        (tmp_path / "bin").mkdir()
+        directory = tmp_path if entry == "." else tmp_path / "bin"
+        self.executable(directory, name)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("PATH", entry)
+
+        with pytest.raises(specify_cli._version._InstallerRejected) as rejection:
+            specify_cli._version._find_installer(name)
+        candidate_prefix = repr(os.path.join(entry, name))[:-1]
+        assert f"lookup returned a relative path {candidate_prefix}" in str(
+            rejection.value
+        )
+
+    @pytest.mark.skipif(
+        os.name != "nt", reason="Native Windows PATHEXT lookup required"
+    )
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("first,second", [(".COM", ".EXE"), (".EXE", ".COM")])
+    def test_native_windows_competing_suffixes_follow_pathext_order(
+        self, monkeypatch, tmp_path, name, first, second
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = trusted / f"{name}{second}"
+        competitor = trusted / f"{name}{first}{second}"
+        for path in (expected, competitor):
+            path.write_bytes(b"installer fixture; never executed\n")
+            path.chmod(0o755)
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(trusted))
+        monkeypatch.setenv("PATHEXT", first + ";" + second)
+
+        normal_lookup = specify_cli._version.shutil.which(name)
+        assert normal_lookup is not None
+        assert Path(normal_lookup) == expected
+        found = specify_cli._version._find_installer(name)
+        assert found is not None
+        assert Path(found) == expected
+
     @pytest.mark.parametrize(
         "method,name",
         [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
@@ -1323,8 +1521,9 @@ class TestInstallerLookupSecurity:
     @pytest.mark.parametrize("name", ["uv", "pipx"])
     @pytest.mark.parametrize("pathext", [None, ".CMD;.EXE"])
     @pytest.mark.parametrize("quoted_path", [False, True])
-    def test_windows_pathext_is_expanded_before_absolute_lookup(
-        self, monkeypatch, tmp_path, name, pathext, quoted_path
+    @pytest.mark.parametrize("version", [(3, 11), (3, 13)])
+    def test_windows_pathext_is_expanded_once(
+        self, monkeypatch, tmp_path, name, pathext, quoted_path, version
     ):
         project = tmp_path / "project"
         project.mkdir()
@@ -1339,22 +1538,29 @@ class TestInstallerLookupSecurity:
             monkeypatch.delenv("PATHEXT", raising=False)
         else:
             monkeypatch.setenv("PATHEXT", pathext)
+        lookup = expected if version < (3, 12) else str(trusted / name)
 
         with (
             patch("specify_cli._version.sys") as platform,
             patch(
                 "specify_cli._version.shutil.which",
-                side_effect=lambda command: expected if command == expected else None,
+                side_effect=lambda command: expected if command == lookup else None,
             ) as which,
         ):
             platform.platform = "win32"
+            platform.version_info = version
             found = specify_cli._version._find_installer(name)
 
         assert found == expected
-        assert [call.args[0] for call in which.call_args_list] == [
-            str(trusted / f"{name}{suffix}")
-            for suffix in ([".COM", ".EXE"] if pathext is None else [".CMD", ".EXE"])
-        ]
+        if version < (3, 12):
+            assert [call.args[0] for call in which.call_args_list] == [
+                str(trusted / f"{name}{suffix}")
+                for suffix in (
+                    [".COM", ".EXE"] if pathext is None else [".CMD", ".EXE"]
+                )
+            ]
+        else:
+            which.assert_called_once_with(str(trusted / name))
 
     @pytest.mark.parametrize(
         "method,name",
