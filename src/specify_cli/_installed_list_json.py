@@ -1,8 +1,8 @@
-"""Private JSON output helpers for installed preset and extension lists.
+"""Private strict-JSON output helpers for installed-resource commands.
 
-This module intentionally serves only the two installed-list commands.  Their
-human-facing renderers retain the legacy manager records, while this adapter
-defines the public machine-readable wire contract.
+Installed preset and extension lists use the item helpers below. The shared
+error renderer and Typer command class also keep `info` and workflow-definition
+commands on the strict JSON contract.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ except ModuleNotFoundError as error:
 
 
 class InstalledListJSONCommand(TyperCommand):
-    """Keep JSON list parse failures on the JSON error contract."""
+    """Keep `--json` parse failures on the JSON error contract."""
 
     def make_context(self, info_name, args, parent=None, **extra):
         json_output = "--json" in args
@@ -78,7 +78,7 @@ def emit_json(value: Any) -> None:
 
 
 def emit_json_error(error: Exception, exit_code: int = 1) -> NoReturn:
-    """Write the list-command error contract and terminate unsuccessfully."""
+    """Write the strict JSON error contract and terminate unsuccessfully."""
     message = str(error).strip() or error.__class__.__name__
     typer.echo(json.dumps({"error": message}, ensure_ascii=False), err=True)
     raise typer.Exit(code=exit_code)
