@@ -7,6 +7,7 @@ import inspect
 import os
 import shutil
 import subprocess
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -78,6 +79,7 @@ def test_docker_discovery_skips_checkout_executables(
 ):
     project = tmp_path / "project"
     project.mkdir()
+    (project / ".git").mkdir()
     local_bin = project / "bin"
     local_bin.mkdir()
     installed = tmp_path / "installed"
@@ -234,6 +236,7 @@ def test_docker_discovery_rejects_case_aliases_of_checkout(
 ):
     project = tmp_path / "project"
     project.mkdir()
+    (project / ".git").mkdir()
     alias = tmp_path / "PROJECT"
     if not alias.exists() or not alias.samefile(project):
         pytest.skip("requires a case-insensitive filesystem")
@@ -353,4 +356,177 @@ def test_docker_discovery_skips_cyclic_directory(tmp_path, monkeypatch, name):
         command = docker_agent_command()
 
     expected = str(executable)
+    assert command == ([expected, "agent", "run"] if name == "docker" else [expected, "run"])
+
+
+@pytest.mark.parametrize("name", ["docker", "docker-agent"])
+@pytest.mark.parametrize(
+    "launch_kind", ["home", "filesystem-root", "plain-directory", "project-subdirectory"]
+)
+@pytest.mark.parametrize("explicit_project", [False, True])
+def test_docker_discovery_keeps_external_installations_available(
+    tmp_path, monkeypatch, name, launch_kind, explicit_project
+):
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".specify").mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    launch = {
+        "home": home,
+        "filesystem-root": Path(tmp_path.anchor),
+        "plain-directory": tmp_path / "launch",
+        "project-subdirectory": home / "project" / "nested",
+    }[launch_kind]
+    if launch_kind in {"plain-directory", "project-subdirectory"}:
+        launch.mkdir(parents=True)
+    installed = (launch if launch_kind == "plain-directory" else home) / ".local" / "bin"
+    installed.mkdir(parents=True)
+    project = home / "project"
+    local_bin = project / "bin"
+    local_bin.mkdir(parents=True)
+    (project / ".git").mkdir()
+    filename = f"{name}.exe" if os.name == "nt" else name
+    for directory in (local_bin, installed):
+        executable = directory / filename
+        executable.touch()
+        executable.chmod(0o755)
+    directories = [str(installed)]
+    if explicit_project or launch_kind == "project-subdirectory":
+        directories.insert(0, str(local_bin))
+    monkeypatch.chdir(launch)
+    monkeypatch.setenv("PATH", os.pathsep.join(directories))
+    monkeypatch.setenv("PATHEXT", ".exe")
+    run = Mock(return_value=subprocess.CompletedProcess([], 0))
+    monkeypatch.setattr(subprocess, "run", run)
+
+    command = docker_agent_command(project_root=project if explicit_project else None)
+
+    expected = str(installed / filename)
+    assert command == ([expected, "agent", "run"] if name == "docker" else [expected, "run"])
+    if name == "docker":
+        run.assert_called_once_with(
+            [expected, "agent", "version"],
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    else:
+        run.assert_not_called()
+
+
+@pytest.mark.parametrize("name", ["docker", "docker-agent"])
+@pytest.mark.parametrize("marker", ["git-directory", "git-file", "specify"])
+@pytest.mark.parametrize("nested_launch", [False, True])
+def test_docker_discovery_excludes_detected_project_subtree(
+    tmp_path, monkeypatch, name, marker, nested_launch
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    if marker == "git-file":
+        (project / ".git").touch()
+    else:
+        (project / (".git" if marker == "git-directory" else ".specify")).mkdir()
+    local_bin = project / "bin"
+    local_bin.mkdir()
+    launch = project
+    if nested_launch:
+        launch = project / "nested"
+        launch.mkdir()
+        (launch / ".git").mkdir()
+    installed = tmp_path / "installed"
+    installed.mkdir()
+    filename = f"{name}.exe" if os.name == "nt" else name
+    for directory in (local_bin, installed):
+        executable = directory / filename
+        executable.touch()
+        executable.chmod(0o755)
+    monkeypatch.chdir(launch)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(local_bin), str(installed)]))
+    monkeypatch.setenv("PATHEXT", ".exe")
+    run = Mock(return_value=subprocess.CompletedProcess([], 0))
+    monkeypatch.setattr(subprocess, "run", run)
+
+    command = docker_agent_command()
+
+    expected = str(installed / filename)
+    assert command == ([expected, "agent", "run"] if name == "docker" else [expected, "run"])
+    if name == "docker":
+        assert run.call_args.args[0] == [expected, "agent", "version"]
+        run.assert_called_once()
+    else:
+        run.assert_not_called()
+
+
+@pytest.mark.parametrize("name", ["docker", "docker-agent"])
+@pytest.mark.parametrize("explicit_project", [False, True])
+@pytest.mark.parametrize("indirect", [False, True])
+def test_docker_discovery_rejects_project_symlinks_to_external_executables(
+    tmp_path, monkeypatch, name, explicit_project, indirect
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".git").mkdir()
+    untrusted = tmp_path / "untrusted"
+    untrusted.mkdir()
+    installed = tmp_path / "installed"
+    installed.mkdir()
+    filename = f"{name}.exe" if os.name == "nt" else name
+    for directory in (untrusted, installed):
+        executable = directory / filename
+        executable.touch()
+        executable.chmod(0o755)
+    link = project / "bin"
+    _symlink_or_skip(link, untrusted, target_is_directory=True)
+    search_entry = link
+    if indirect:
+        search_entry = tmp_path / "alias"
+        _symlink_or_skip(search_entry, link, target_is_directory=True)
+    launch = project
+    if explicit_project:
+        launch = tmp_path / "launch"
+        launch.mkdir()
+    monkeypatch.chdir(launch)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(search_entry), str(installed)]))
+    monkeypatch.setenv("PATHEXT", ".exe")
+    run = Mock(return_value=subprocess.CompletedProcess([], 0))
+    monkeypatch.setattr(subprocess, "run", run)
+
+    command = docker_agent_command(project_root=project if explicit_project else None)
+
+    expected = str(installed / filename)
+    assert command == ([expected, "agent", "run"] if name == "docker" else [expected, "run"])
+    if name == "docker":
+        assert run.call_args.args[0] == [expected, "agent", "version"]
+        run.assert_called_once()
+    else:
+        run.assert_not_called()
+
+
+@pytest.mark.parametrize("name", ["docker", "docker-agent"])
+@pytest.mark.parametrize("metadata", ["init-options.json", "integration.json"])
+def test_docker_discovery_recognizes_an_initialized_home_project(
+    tmp_path, monkeypatch, name, metadata
+):
+    home = tmp_path / "home"
+    marker = home / ".specify"
+    marker.mkdir(parents=True)
+    (marker / metadata).write_text("{}")
+    local_bin = home / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    installed = tmp_path / "installed"
+    installed.mkdir()
+    filename = f"{name}.exe" if os.name == "nt" else name
+    for directory in (local_bin, installed):
+        executable = directory / filename
+        executable.touch()
+        executable.chmod(0o755)
+    monkeypatch.chdir(home)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setenv("PATH", os.pathsep.join([str(local_bin), str(installed)]))
+    monkeypatch.setenv("PATHEXT", ".exe")
+    monkeypatch.setattr(subprocess, "run", Mock(return_value=subprocess.CompletedProcess([], 0)))
+
+    command = docker_agent_command()
+
+    expected = str(installed / filename)
     assert command == ([expected, "agent", "run"] if name == "docker" else [expected, "run"])

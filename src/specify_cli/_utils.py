@@ -21,27 +21,70 @@ CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".b
 DOCKER_AGENT_CHECK_TIMEOUT = 5
 
 
-def _docker_path_is_excluded(path: Path, roots: tuple[Path, ...]) -> bool:
-    if any(path.is_relative_to(root) for root in roots):
-        return True
-    # resolve() can retain a different spelling on case-insensitive filesystems.
-    for ancestor in (path, *path.parents):
-        for root in roots:
+def _docker_project_roots(cwd: Path, project_root: Path | None) -> tuple[Path, ...]:
+    roots = [project_root.resolve()] if project_root is not None else []
+    home = Path.home().resolve()
+    for ancestor in (cwd, *cwd.parents):
+        markers = (".git", ".specify")
+        try:
+            is_home = ancestor.samefile(home)
+        except (FileNotFoundError, NotADirectoryError):
+            is_home = False
+        if is_home:
+            # Home's .specify normally contains user-level state, not a project.
+            markers = (".git", ".specify/init-options.json", ".specify/integration.json")
+        for marker in markers:
             try:
-                if ancestor.samefile(root):
-                    return True
-            except (FileNotFoundError, NotADirectoryError):
+                (ancestor / marker).lstat()
+            except FileNotFoundError:
                 continue
+            roots.append(ancestor)
+            break
+    return tuple(dict.fromkeys(roots))
+
+
+def _docker_path_is_excluded(
+    path: Path, roots: tuple[Path, ...], cwd: Path, *, executable: bool = False
+) -> bool:
+    pending = [path]
+    visited: set[Path] = set()
+    while pending:
+        candidate = pending.pop()
+        if candidate in visited:
+            continue
+        visited.add(candidate)
+        if any(candidate.is_relative_to(root) for root in roots):
+            return True
+        try:
+            if candidate.samefile(cwd):
+                return True
+            if executable and candidate.parent.samefile(cwd):
+                return True
+        except (FileNotFoundError, NotADirectoryError):
+            pass
+        # resolve() can retain a different spelling on case-insensitive filesystems.
+        for ancestor in (candidate, *candidate.parents):
+            for root in roots:
+                try:
+                    if ancestor.samefile(root):
+                        return True
+                except (FileNotFoundError, NotADirectoryError):
+                    continue
+            if ancestor.is_symlink():
+                target = ancestor.readlink()
+                if not target.is_absolute():
+                    target = ancestor.parent / target
+                # Check intermediate link targets before their location is lost.
+                pending.append(target / candidate.relative_to(ancestor))
     return False
 
 
 def _find_docker_executable(
     name: str, *, project_root: Path | None = None
 ) -> str | None:
-    """Search absolute PATH entries outside launch and runtime directories."""
-    roots = (Path.cwd().resolve(),)
-    if project_root is not None:
-        roots += (project_root.resolve(),)
+    """Search absolute PATH entries outside the launch directory and projects."""
+    cwd = Path.cwd().resolve()
+    roots = _docker_project_roots(cwd, project_root)
     names = [name]
     if sys.platform == "win32":
         # Python 3.11's which() does not expand PATHEXT for qualified names.
@@ -56,8 +99,10 @@ def _find_docker_executable(
         if not directory.is_absolute():
             continue
         try:
+            if _docker_path_is_excluded(directory, roots, cwd):
+                continue
             directory = directory.resolve()
-            if _docker_path_is_excluded(directory, roots):
+            if _docker_path_is_excluded(directory, roots, cwd):
                 continue
         except (OSError, RuntimeError) as exc:
             warnings.warn(
@@ -72,8 +117,14 @@ def _find_docker_executable(
                 resolved = shutil.which(str(candidate))
                 if resolved is not None:
                     executable = Path(resolved)
-                    if executable.is_absolute() and not _docker_path_is_excluded(
-                        executable.resolve(), roots
+                    if (
+                        executable.is_absolute()
+                        and not _docker_path_is_excluded(
+                            executable, roots, cwd, executable=True
+                        )
+                        and not _docker_path_is_excluded(
+                            executable.resolve(), roots, cwd, executable=True
+                        )
                     ):
                         return str(executable)
             except (OSError, RuntimeError) as exc:
