@@ -1,13 +1,17 @@
 """Tests for preset layer resolution and composition in specify_cli.presets._resolver."""
 
 import json
+import os
+import stat
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
 
 from specify_cli.extensions import ExtensionRegistry
-from specify_cli.file_helper import SymlinkDeniedError
+from specify_cli.file_helper import SymlinkDeniedError, UnsupportedPathError
 from specify_cli.presets import (
     PresetManager,
     PresetRegistry,
@@ -20,8 +24,146 @@ from tests.specify_cli.presets._helpers import (
 )
 
 
+def _prepare_resolution_registry(project, template_source):
+    presets = project / ".specify" / "presets"
+    presets.mkdir(parents=True, exist_ok=True)
+    (presets / ".registry").write_text('{"presets": {}}', encoding="utf-8")
+    if template_source == "override":
+        overrides = project / ".specify" / "templates" / "overrides"
+        overrides.mkdir()
+        (overrides / "spec-template.md").write_text("# Override\n", encoding="utf-8")
+    elif template_source == "extension":
+        extensions = project / ".specify" / "extensions"
+        templates = extensions / "fallback" / "templates"
+        templates.mkdir(parents=True)
+        (templates / "spec-template.md").write_text("# Extension\n", encoding="utf-8")
+        ExtensionRegistry(extensions).add("fallback", {"enabled": True})
+    return presets
+
+
+def _registry_hierarchy_entry(project, name):
+    return {
+        ".specify": project / ".specify",
+        "presets": project / ".specify" / "presets",
+        ".registry": project / ".specify" / "presets" / ".registry",
+    }[name]
+
+
 class TestPresetResolver:
     """Test PresetResolver priority stack."""
+
+    @pytest.mark.parametrize("entry", [".specify", "presets", ".registry"])
+    @pytest.mark.parametrize("dangling", [False, True])
+    @pytest.mark.parametrize("template_source", ["core", "extension", "override"])
+    @pytest.mark.parametrize(
+        "method", ["resolve", "resolve_with_source", "collect_all_layers", "resolve_content"],
+    )
+    def test_registry_hierarchy_is_validated_before_content_selection(
+        self, project_dir, tmp_path, entry, dangling, template_source, method,
+    ):
+        _prepare_resolution_registry(project_dir, template_source)
+        link = _registry_hierarchy_entry(project_dir, entry)
+        target = tmp_path / "original"
+        link.rename(target)
+        destination = tmp_path / "missing" if dangling else target
+        try:
+            link.symlink_to(destination, target_is_directory=entry != ".registry")
+        except (OSError, NotImplementedError) as error:
+            pytest.skip(f"Symlinks unavailable: {error}")
+
+        with pytest.raises(SymlinkDeniedError):
+            getattr(PresetResolver(project_dir), method)("spec-template")
+
+        assert link.is_symlink()
+        assert not (tmp_path / "missing").exists()
+
+    @pytest.mark.parametrize("entry", [".specify", "presets"])
+    @pytest.mark.parametrize("template_source", ["core", "extension", "override"])
+    @pytest.mark.parametrize(
+        "method", ["resolve", "resolve_with_source", "collect_all_layers", "resolve_content"],
+    )
+    def test_missing_looking_reparse_parent_is_not_skipped(
+        self, project_dir, tmp_path, monkeypatch, entry, template_source, method,
+    ):
+        _prepare_resolution_registry(project_dir, template_source)
+        junction = _registry_hierarchy_entry(project_dir, entry)
+        canonical_junction = project_dir.resolve() / junction.relative_to(project_dir)
+        junction.rename(tmp_path / "original")
+        lstat = Path.lstat
+
+        def reparse(path, **kwargs):
+            if path in (junction, canonical_junction):
+                return SimpleNamespace(
+                    st_mode=stat.S_IFDIR,
+                    st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
+                    st_reparse_tag=0xA0000003,
+                )
+            return lstat(path, **kwargs)
+
+        monkeypatch.setattr(Path, "lstat", reparse)
+        assert not junction.exists()
+        assert not junction.is_symlink()
+
+        with pytest.raises(UnsupportedPathError, match="reparse"):
+            getattr(PresetResolver(project_dir), method)("spec-template")
+
+    @pytest.mark.skipif(os.name != "nt", reason="Native Windows junction required")
+    @pytest.mark.parametrize("entry", [".specify", "presets"])
+    @pytest.mark.parametrize("dangling", [False, True])
+    @pytest.mark.parametrize(
+        "method", ["resolve", "resolve_with_source", "collect_all_layers", "resolve_content"],
+    )
+    def test_native_windows_junction_parent_is_not_skipped(
+        self, project_dir, tmp_path, entry, dangling, method,
+    ):
+        _prepare_resolution_registry(project_dir, "core")
+        junction = _registry_hierarchy_entry(project_dir, entry)
+        junction.rename(tmp_path / "original")
+        target = tmp_path / "junction-target"
+        target.mkdir()
+        result = subprocess.run(
+            ["cmd.exe", "/c", "mklink", "/J", str(junction), str(target)],
+            capture_output=True, text=True, check=False, timeout=30,
+        )
+        if result.returncode:
+            pytest.skip(f"Windows junction unavailable: {result.stderr or result.stdout}")
+        if dangling:
+            target.rmdir()
+            assert not junction.exists()
+        assert not junction.is_symlink()
+
+        with pytest.raises(UnsupportedPathError, match="reparse"):
+            getattr(PresetResolver(project_dir), method)("spec-template")
+
+        assert os.path.lexists(junction)
+        assert target.exists() == (not dangling)
+
+    @pytest.mark.parametrize("entry", [".specify", "presets", ".registry"])
+    @pytest.mark.parametrize(
+        "method", ["resolve", "resolve_with_source", "collect_all_layers", "resolve_content"],
+    )
+    def test_genuinely_missing_registry_still_allows_core_fallback(
+        self, project_dir, tmp_path, entry, method,
+    ):
+        _prepare_resolution_registry(project_dir, "core")
+        _registry_hierarchy_entry(project_dir, entry).rename(tmp_path / "original")
+
+        assert getattr(PresetResolver(project_dir), method)("spec-template")
+
+    def test_core_only_resolution_does_not_inspect_skipped_registry(
+        self, project_dir, tmp_path,
+    ):
+        presets = _prepare_resolution_registry(project_dir, "core")
+        registry = presets / ".registry"
+        registry.unlink()
+        try:
+            registry.symlink_to(tmp_path / "missing")
+        except (OSError, NotImplementedError) as error:
+            pytest.skip(f"Symlinks unavailable: {error}")
+
+        assert PresetResolver(project_dir).resolve_core("spec-template") == (
+            project_dir / ".specify" / "templates" / "spec-template.md"
+        )
 
     @pytest.mark.parametrize(
         "method", ["resolve", "resolve_with_source", "collect_all_layers", "resolve_content"],

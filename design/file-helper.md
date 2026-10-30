@@ -35,6 +35,14 @@ dangling links, and other read/parse failures become
 `_PresetRegistryUnreadableError`, refusing command-root or command/skills
 migrations before mutation while preset ownership is unknown.
 
+Full preset resolution reads the registry through that boundary before any
+override, preset, extension, or core content can be selected. Followed
+`exists()`/`is_symlink()` probes must not decide whether registry validation
+runs: a dangling parent symlink or Windows junction can appear absent through
+those probes. Genuine registry absence still permits the normal fallback
+stack. Explicit core-only resolution continues to skip the preset tier and
+does not inspect its registry.
+
 Only `specify init --allow-symlinks` exposes the setting; init defaults to deny
 and persists the literal JSON boolean `allow_symlinks` in
 `.specify/init-options.json`. Re-init without the flag records `false`.

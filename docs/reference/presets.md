@@ -219,6 +219,12 @@ specify preset resolve <name>
 
 Shows which file will be used for a given name by tracing the full resolution stack. Useful for debugging when multiple presets provide the same file.
 
+The registry hierarchy is validated before selecting content from the stack.
+A genuinely absent registry still permits normal extension/core fallback.
+Symlinked registry entries or parents, dangling links, and unsupported Windows
+junctions are errors, not an empty preset inventory that can silently select
+different content.
+
 ## Enable / Disable a Preset
 
 ```bash
