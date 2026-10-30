@@ -3,9 +3,11 @@
 import importlib.metadata
 import json
 import os
+import stat
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -14,15 +16,36 @@ import specify_cli
 from specify_cli import app
 
 from tests.specify_cli.self_upgrade_helpers import (
+    isolated_installer_path,  # noqa: F401 (autouse fixture)
     route_opener_open_through_urlopen,  # noqa: F401 (autouse fixture)
     _InstallMethod,
     _assemble_installer_argv,
     _completed_process,
     _detect_install_method,
+    _detection_result,
     mock_urlopen_response,
     runner,
     strip_ansi,
 )
+
+
+class TestInstallerLookupEnvironment:
+    def test_default_lookup_path_is_owned(self, request):
+        bin_dir = request.getfixturevalue("isolated_installer_path")
+        assert os.get_exec_path() == [str(bin_dir)]
+        assert list(bin_dir.iterdir()) == []
+        assert os.environ["PATHEXT"] == ".COM;.EXE;.BAT;.CMD"
+        assert "NoDefaultCurrentDirectoryInExePath" not in os.environ
+        assert _assemble_installer_argv(_InstallMethod.UV_TOOL, "v0.7.6") is None
+
+    def test_installer_fixture_owns_its_lookup_directory(self, installer_paths):
+        bin_dir = Path(installer_paths["uv"]).parent
+        assert Path(installer_paths["pipx"]).parent == bin_dir
+        assert os.get_exec_path() == [str(bin_dir)]
+        for name, expected in installer_paths.items():
+            found = specify_cli._version._find_installer(name)
+            assert found is not None
+            assert Path(found) == Path(expected)
 
 
 class TestDetectionUvTool:
@@ -85,16 +108,18 @@ class TestDetectionUvTool:
 
     def test_tier3_uv_tool_when_registry_lists_exact_name(
         self,
+        installer_paths,
         monkeypatch,
         tmp_path,
     ):
         monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
 
         def fake_which(name):
-            return sys.executable if name == "uv" else None
+            name = Path(name).stem if Path(name).is_absolute() else name
+            return installer_paths["uv"] if name == "uv" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == [sys.executable, "tool", "list"]:
+            if argv[:3] == [installer_paths["uv"], "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -113,11 +138,12 @@ class TestDetectionUvTool:
         assert signals.matched_tier == 3
         assert "uv tool list" in signals.installer_registries_consulted
 
-    def test_unresolved_bare_argv0_skips_tier3_registry_detection(self, monkeypatch):
+    def test_unresolved_bare_argv0_skips_tier3_registry_detection(self, installer_paths, monkeypatch):
         monkeypatch.setattr("sys.argv", ["specify"])
 
         def fake_which(name):
-            return sys.executable if name == "uv" else None
+            name = Path(name).stem if Path(name).is_absolute() else name
+            return installer_paths["uv"] if name == "uv" else None
 
         def fake_run(argv, *args, **kwargs):
             return subprocess.CompletedProcess(
@@ -135,20 +161,21 @@ class TestDetectionUvTool:
         assert signals.installer_registries_consulted == ()
 
     def test_bare_argv0_missing_path_resolution_allows_tier3_registry_detection(
-        self, monkeypatch, tmp_path
+        self, installer_paths, monkeypatch, tmp_path
     ):
         missing_specify = tmp_path / "missing" / "specify"
         monkeypatch.setattr("sys.argv", ["specify"])
 
         def fake_which(name):
+            name = Path(name).stem if Path(name).is_absolute() else name
             if name == "specify":
                 return str(missing_specify)
             if name == "uv":
-                return sys.executable
+                return installer_paths["uv"]
             return None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == [sys.executable, "tool", "list"]:
+            if argv[:3] == [installer_paths["uv"], "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -194,13 +221,15 @@ class TestDetectionUvTool:
 
     def test_tier3_uv_tool_ignores_substring_false_positive(
         self,
+        installer_paths,
         unsupported_argv0,
     ):
         def fake_which(name):
-            return sys.executable if name == "uv" else None
+            name = Path(name).stem if Path(name).is_absolute() else name
+            return installer_paths["uv"] if name == "uv" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == [sys.executable, "tool", "list"]:
+            if argv[:3] == [installer_paths["uv"], "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -219,13 +248,15 @@ class TestDetectionUvTool:
 
     def test_tier3_uv_tool_does_not_override_absolute_unsupported_entrypoint(
         self,
+        installer_paths,
         unsupported_argv0,
     ):
         def fake_which(name):
-            return sys.executable if name == "uv" else None
+            name = Path(name).stem if Path(name).is_absolute() else name
+            return installer_paths["uv"] if name == "uv" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == [sys.executable, "tool", "list"]:
+            if argv[:3] == [installer_paths["uv"], "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -244,6 +275,7 @@ class TestDetectionUvTool:
 
     def test_tier3_uv_tool_does_not_override_resolved_bare_unsupported_entrypoint(
         self,
+        installer_paths,
         monkeypatch,
         tmp_path,
     ):
@@ -255,14 +287,15 @@ class TestDetectionUvTool:
         monkeypatch.setattr("sys.argv", ["specify"])
 
         def fake_which(name):
+            name = Path(name).stem if Path(name).is_absolute() else name
             if name == "specify":
                 return str(fake_specify)
             if name == "uv":
-                return sys.executable
+                return installer_paths["uv"]
             return None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == [sys.executable, "tool", "list"]:
+            if argv[:3] == [installer_paths["uv"], "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -377,7 +410,7 @@ class TestInstallerResolution:
         ("operation", "error"),
         [
             ("cwd", FileNotFoundError("working directory was deleted")),
-            ("samefile", PermissionError("cannot stat installer directory")),
+            ("stat", PermissionError("cannot stat installer directory")),
             ("resolve", RuntimeError("symlink loop")),
         ],
     )
@@ -386,7 +419,7 @@ class TestInstallerResolution:
     ):
         with patch(
             "specify_cli._version.shutil.which",
-            side_effect=lambda command: sys.executable if command == name else None,
+            side_effect=lambda command: sys.executable if Path(command).stem == name else None,
         ), patch(
             "specify_cli._version._resolved_argv0_path",
             return_value=tmp_path / "missing" / "specify",
@@ -394,6 +427,8 @@ class TestInstallerResolution:
             "specify_cli._version._expand_prefix", return_value=None
         ), patch(
             "specify_cli._version._editable_marker_seen", return_value=False
+        ), patch(
+            "specify_cli._version._tier3_registry_lookup_allowed", return_value=True
         ), patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch.object(
@@ -455,7 +490,7 @@ class TestInstallerResolution:
 
         with patch(
             "specify_cli._version.shutil.which",
-            side_effect=lambda command: paths[location] if command == name else None,
+            side_effect=lambda command: paths[location] if Path(command).stem == name else None,
         ), patch(
             "specify_cli._version._editable_marker_seen", return_value=False
         ), patch("specify_cli._version.subprocess.run") as mock_run:
@@ -604,11 +639,11 @@ class TestInstallerResolution:
 class TestArgvAssemblyUvTool:
     """uv-tool installer argv shape."""
 
-    def test_stable_tag_produces_expected_argv(self):
-        with patch("specify_cli._version.shutil.which", return_value=sys.executable):
+    def test_stable_tag_produces_expected_argv(self, installer_paths):
+        with patch("specify_cli._version.shutil.which", return_value=installer_paths["uv"]):
             argv = _assemble_installer_argv(_InstallMethod.UV_TOOL, "v0.7.6")
         assert argv == [
-            sys.executable,
+            installer_paths["uv"],
             "tool",
             "install",
             "specify-cli",
@@ -617,8 +652,8 @@ class TestArgvAssemblyUvTool:
             "git+https://github.com/github/spec-kit.git@v0.7.6",
         ]
 
-    def test_dev_suffix_tag_embedded_literally(self):
-        with patch("specify_cli._version.shutil.which", return_value=sys.executable):
+    def test_dev_suffix_tag_embedded_literally(self, installer_paths):
+        with patch("specify_cli._version.shutil.which", return_value=installer_paths["uv"]):
             argv = _assemble_installer_argv(_InstallMethod.UV_TOOL, "v0.8.0.dev0")
         assert "git+https://github.com/github/spec-kit.git@v0.8.0.dev0" in argv
         assert (
@@ -630,12 +665,1089 @@ class TestArgvAssemblyUvTool:
             assert _assemble_installer_argv(_InstallMethod.UV_TOOL, "v0.7.6") is None
 
 
+class TestWindowsPathContainment:
+    @pytest.mark.parametrize("unc", [False, True])
+    @pytest.mark.parametrize("root_extended", [False, True])
+    @pytest.mark.parametrize("target_extended", [False, True])
+    @pytest.mark.parametrize("location", ["root", "child", "sibling"])
+    def test_namespace_spellings_share_containment(
+        self, unc, root_extended, target_extended, location
+    ):
+        plain = r"\\server\share\project" if unc else r"C:\project"
+        extended = r"\\?\UNC\server\share\project" if unc else r"\\?\C:\project"
+        root = PureWindowsPath(extended if root_extended else plain)
+        target = PureWindowsPath(extended if target_extended else plain)
+        if location == "child":
+            target /= "bin"
+        elif location == "sibling":
+            target = target.with_name("project-sibling") / "bin"
+
+        assert specify_cli._version._path_is_within_prefix(target, root) is (
+            location != "sibling"
+        )
+
+
+class TestInstallerLookupSecurity:
+    @staticmethod
+    def executable(directory, name):
+        executable = directory / (f"{name}.exe" if os.name == "nt" else name)
+        executable.write_bytes(b"installer lookup fixture; never executed\n")
+        executable.chmod(0o755)
+        return executable
+
+    @staticmethod
+    def junction(path, target):
+        result = subprocess.run(
+            ["cmd.exe", "/c", "mklink", "/J", str(path), str(target)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            pytest.skip(
+                f"Windows junction creation unavailable: {result.stderr or result.stdout}"
+            )
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    def test_parent_component_does_not_rebase_relative_directory_link(
+        self, monkeypatch, tmp_path, name
+    ):
+        home = tmp_path / "home"
+        home.mkdir()
+        install = tmp_path / "install"
+        install.mkdir()
+        bin_dir = install / "bin"
+        bin_dir.mkdir()
+        cellar = install / "Cellar"
+        cellar.mkdir()
+        dispatcher = self.executable(cellar, "dispatcher")
+        selected_name = f"{name}.exe" if os.name == "nt" else name
+        alias = home / ".local"
+        try:
+            (bin_dir / selected_name).symlink_to(os.path.relpath(dispatcher, bin_dir))
+            alias.symlink_to(os.path.relpath(install, home), target_is_directory=True)
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+        assert (alias / "bin" / selected_name).resolve(strict=True) == dispatcher
+        original_lstat = Path.lstat
+        original_readlink = Path.readlink
+        link_status = original_lstat(alias)
+        read_links = []
+
+        def parent_component(path):
+            return path.name == ".." and path.parent == alias / "bin"
+
+        def lstat(path, *args, **kwargs):
+            return (
+                link_status
+                if parent_component(path)
+                else original_lstat(path, *args, **kwargs)
+            )
+
+        def readlink(path):
+            read_links.append(path)
+            return original_readlink(alias if parent_component(path) else path)
+
+        monkeypatch.setattr(Path, "lstat", lstat)
+        monkeypatch.setattr(Path, "readlink", readlink)
+        monkeypatch.chdir(home)
+        monkeypatch.setenv("PATH", str(alias / "bin"))
+
+        found = specify_cli._version._find_installer(name)
+
+        assert found is not None
+        assert Path(found) == alias / "bin" / selected_name
+        assert all(path.name != ".." for path in read_links)
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("link_name", [".local", ".nix-profile"])
+    @pytest.mark.parametrize("relative", [False, True])
+    @pytest.mark.parametrize("operation", ["lookup", "registry", "upgrade"])
+    def test_declared_external_home_directory_links_are_accepted(
+        self, monkeypatch, tmp_path, name, link_name, relative, operation
+    ):
+        home = tmp_path / "home"
+        home.mkdir()
+        install = tmp_path / "install"
+        install.mkdir()
+        bin_dir = install / "bin"
+        bin_dir.mkdir()
+        cellar = install / "Cellar"
+        cellar.mkdir()
+        dispatcher = self.executable(cellar, "dispatcher")
+        executable = bin_dir / (f"{name}.exe" if os.name == "nt" else name)
+        alias = home / link_name
+        target = os.path.relpath(install, home) if relative else install
+        try:
+            executable.symlink_to(os.path.relpath(dispatcher, bin_dir))
+            alias.symlink_to(target, target_is_directory=True)
+        except OSError:
+            pytest.skip("directory symlinks are unavailable")
+        selected = alias / "bin" / executable.name
+        monkeypatch.chdir(home)
+        monkeypatch.setenv("PATH", str(selected.parent))
+        monkeypatch.setattr("sys.argv", [str(home / "missing" / "specify")])
+        method = _InstallMethod.UV_TOOL if name == "uv" else _InstallMethod.PIPX
+        stdout = (
+            "specify-cli v0.7.6\n" if name == "uv" else '{"venvs":{"specify-cli":{}}}'
+        )
+
+        with (
+            patch("specify_cli._version._editable_marker_seen", return_value=False),
+            patch("specify_cli._version._get_installed_version", return_value="0.7.5"),
+            patch("specify_cli._version._verify_upgrade", return_value="0.7.6"),
+            patch(
+                "specify_cli._version.subprocess.run",
+                return_value=_completed_process(0, stdout=stdout),
+            ) as run,
+        ):
+            if operation == "lookup":
+                found = specify_cli._version._find_installer(name)
+                assert found is not None
+                assert Path(found) == selected
+                run.assert_not_called()
+                return
+            if operation == "registry":
+                assert _detect_install_method() == method
+            else:
+                with patch(
+                    "specify_cli._version._detect_install_method",
+                    return_value=_detection_result(method),
+                ):
+                    result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
+                assert result.exit_code == 0
+        run.assert_called_once()
+        assert Path(run.call_args.args[0][0]) == selected
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("location", ["external", "cwd", "worktree"])
+    def test_relative_installer_links_preserve_trust_boundaries(
+        self, monkeypatch, tmp_path, name, location
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        if location == "worktree":
+            (project / ".git").mkdir()
+        venvs = tmp_path / "venvs"
+        venvs.mkdir()
+        dispatcher = self.executable(venvs, "dispatcher")
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        selected = bin_dir / (f"{name}.exe" if os.name == "nt" else name)
+        try:
+            if location == "external":
+                target = dispatcher
+            elif location == "cwd":
+                target = project / selected.name
+                target.symlink_to(os.path.relpath(dispatcher, project))
+            else:
+                (project / "bin").symlink_to(
+                    os.path.relpath(venvs, project), target_is_directory=True
+                )
+                target = project / "bin" / dispatcher.name
+            selected.symlink_to(os.path.relpath(target, bin_dir))
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+        assert not selected.readlink().is_absolute()
+        assert ".." in selected.readlink().parts
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(bin_dir))
+
+        if location == "external":
+            found = specify_cli._version._find_installer(name)
+            assert found is not None
+            assert Path(found) == selected
+        else:
+            with pytest.raises(specify_cli._version._InstallerRejected):
+                specify_cli._version._find_installer(name)
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("entry", [".", "./bin"])
+    @pytest.mark.parametrize("kind", ["directory", "non-executable", "dangling"])
+    def test_non_executable_relative_matches_do_not_block_registry_detection(
+        self, monkeypatch, tmp_path, name, entry, kind
+    ):
+        if kind == "non-executable" and os.name == "nt":
+            pytest.skip("Windows does not enforce POSIX executable permission bits")
+        project = tmp_path / "project"
+        project.mkdir()
+        relative_dir = project if entry == "." else project / "bin"
+        relative_dir.mkdir(exist_ok=True)
+        decoy = relative_dir / (f"{name}.exe" if os.name == "nt" else name)
+        if kind == "directory":
+            decoy.mkdir()
+        elif kind == "non-executable":
+            decoy.write_bytes(b"not an executable\n")
+            decoy.chmod(0o644)
+        else:
+            try:
+                decoy.symlink_to("../missing")
+            except OSError:
+                pytest.skip("file symlinks are unavailable")
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        other = "pipx" if name == "uv" else "uv"
+        expected = self.executable(trusted, other)
+        method = _InstallMethod.PIPX if other == "pipx" else _InstallMethod.UV_TOOL
+        stdout = (
+            '{"venvs":{"specify-cli":{}}}'
+            if other == "pipx"
+            else "specify-cli v0.7.6\n"
+        )
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", os.pathsep.join([entry, str(trusted)]))
+        monkeypatch.setattr("sys.argv", [str(project / "missing" / "specify")])
+        with (
+            patch("specify_cli._version._editable_marker_seen", return_value=False),
+            patch(
+                "specify_cli._version.subprocess.run",
+                return_value=_completed_process(0, stdout=stdout),
+            ) as run,
+        ):
+            detected, signals = _detect_install_method(include_signals=True)
+
+        assert detected == method
+        assert signals.installer_rejections == ()
+        run.assert_called_once()
+        assert Path(run.call_args.args[0][0]) == expected
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("entry", [".", "bin/../bin"])
+    def test_relative_rejection_preserves_path_entry_spelling(
+        self, monkeypatch, tmp_path, name, entry
+    ):
+        (tmp_path / "bin").mkdir()
+        directory = tmp_path if entry == "." else tmp_path / "bin"
+        self.executable(directory, name)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("PATH", entry)
+
+        with pytest.raises(specify_cli._version._InstallerRejected) as rejection:
+            specify_cli._version._find_installer(name)
+        candidate_prefix = repr(os.path.join(entry, name))[:-1]
+        assert f"lookup returned a relative path {candidate_prefix}" in str(
+            rejection.value
+        )
+
+    @pytest.mark.skipif(
+        os.name != "nt", reason="Native Windows PATHEXT lookup required"
+    )
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("first,second", [(".COM", ".EXE"), (".EXE", ".COM")])
+    def test_native_windows_competing_suffixes_follow_pathext_order(
+        self, monkeypatch, tmp_path, name, first, second
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = trusted / f"{name}{second}"
+        competitor = trusted / f"{name}{first}{second}"
+        for path in (expected, competitor):
+            path.write_bytes(b"installer fixture; never executed\n")
+            path.chmod(0o755)
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(trusted))
+        monkeypatch.setenv("PATHEXT", first + ";" + second)
+
+        normal_lookup = specify_cli._version.shutil.which(name)
+        assert normal_lookup is not None
+        assert Path(normal_lookup) == expected
+        found = specify_cli._version._find_installer(name)
+        assert found is not None
+        assert Path(found) == expected
+
+    @pytest.mark.parametrize(
+        "method,name",
+        [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
+    )
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "aliased-directory",
+            "directory-target",
+            "file",
+            "file-aliased-directory",
+            "cwd-file-chain",
+            "cwd-directory-chain",
+        ],
+    )
+    @pytest.mark.parametrize("operation", ["lookup", "registry", "upgrade"])
+    @pytest.mark.parametrize("fallback", [False, True])
+    def test_symlink_bypasses_are_rejected(
+        self, monkeypatch, tmp_path, method, name, kind, operation, fallback
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        if kind not in {"cwd-file-chain", "cwd-directory-chain"}:
+            (project / ".git").mkdir()
+        external = tmp_path / "external"
+        external.mkdir()
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = self.executable(trusted, name)
+        try:
+            if kind == "cwd-directory-chain":
+                payload_dir = tmp_path / "payload"
+                payload_dir.mkdir()
+                self.executable(payload_dir, name)
+                (project / "bin").symlink_to(payload_dir, target_is_directory=True)
+                unsafe = external / "alias"
+                unsafe.symlink_to(project / "bin", target_is_directory=True)
+            elif kind == "cwd-file-chain":
+                payload_dir = tmp_path / "payload"
+                payload_dir.mkdir()
+                payload = self.executable(payload_dir, name)
+                malicious = project / payload.name
+                malicious.symlink_to(payload)
+                (external / payload.name).symlink_to(malicious)
+                unsafe = external
+            elif kind != "file":
+                self.executable(external, name)
+                (project / "bin").symlink_to(external, target_is_directory=True)
+                alias = tmp_path / "alias"
+                alias.symlink_to(project, target_is_directory=True)
+                if kind == "aliased-directory":
+                    unsafe = alias / "bin"
+                elif kind == "directory-target":
+                    unsafe = tmp_path / "directory-target"
+                    unsafe.symlink_to(project / "bin", target_is_directory=True)
+                else:
+                    unsafe = tmp_path / "file-bin"
+                    unsafe.mkdir()
+                    executable_name = f"{name}.exe" if os.name == "nt" else name
+                    (unsafe / executable_name).symlink_to(
+                        alias / "bin" / executable_name
+                    )
+            else:
+                malicious = self.executable(project, name)
+                (external / malicious.name).symlink_to(malicious)
+                unsafe = external
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+        monkeypatch.chdir(project)
+        monkeypatch.setenv(
+            "PATH",
+            os.pathsep.join([str(unsafe), str(trusted)] if fallback else [str(unsafe)]),
+        )
+        monkeypatch.setattr("sys.argv", [str(project / "missing" / "specify")])
+        stdout = (
+            "specify-cli v0.7.6\n" if name == "uv" else '{"venvs":{"specify-cli":{}}}'
+        )
+
+        with (
+            patch("specify_cli._version._editable_marker_seen", return_value=False),
+            patch("specify_cli._version._get_installed_version", return_value="0.7.5"),
+            patch("specify_cli._version._verify_upgrade", return_value="0.7.6"),
+            patch(
+                "specify_cli._version.subprocess.run",
+                return_value=_completed_process(0, stdout=stdout),
+            ) as run,
+        ):
+            if operation == "lookup":
+                if fallback:
+                    argv = _assemble_installer_argv(method, "v0.7.6")
+                    assert argv is not None
+                    assert Path(argv[0]) == expected
+                else:
+                    with pytest.raises(specify_cli._version._InstallerRejected):
+                        _assemble_installer_argv(method, "v0.7.6")
+                run.assert_not_called()
+                return
+            if operation == "registry":
+                detected = _detect_install_method()
+                assert detected == (method if fallback else _InstallMethod.UNSUPPORTED)
+            else:
+                with patch(
+                    "specify_cli._version._detect_install_method", return_value=_detection_result(method)
+                ):
+                    result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
+                assert result.exit_code == (0 if fallback else 3)
+                if not fallback:
+                    assert f"Installer {name} rejected" in strip_ansi(
+                        result.output
+                    )
+
+        if fallback:
+            run.assert_called_once()
+            assert Path(run.call_args.args[0][0]) == expected
+        else:
+            run.assert_not_called()
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("operation", ["lookup", "upgrade"])
+    def test_external_file_symlink_preserves_dispatch_name(
+        self, monkeypatch, tmp_path, name, operation
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        installed = tmp_path / "installed"
+        installed.mkdir()
+        dispatcher = self.executable(installed, "dispatcher")
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        selected = bin_dir / (f"{name}.exe" if os.name == "nt" else name)
+        try:
+            selected.symlink_to(dispatcher)
+        except OSError:
+            pytest.skip("file symlinks are unavailable")
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(bin_dir))
+
+        if operation == "lookup":
+            found = specify_cli._version._find_installer(name)
+            assert found is not None
+            assert Path(found) == selected
+        else:
+            method = _InstallMethod.UV_TOOL if name == "uv" else _InstallMethod.PIPX
+            with (
+                patch(
+                    "specify_cli._version._detect_install_method", return_value=_detection_result(method)
+                ),
+                patch(
+                    "specify_cli._version._get_installed_version", return_value="0.7.5"
+                ),
+                patch("specify_cli._version._verify_upgrade", return_value="0.7.6"),
+                patch(
+                    "specify_cli._version.subprocess.run",
+                    return_value=_completed_process(0),
+                ) as run,
+            ):
+                result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
+            assert result.exit_code == 0
+            assert Path(run.call_args.args[0][0]) == selected
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("git_project", [False, True])
+    @pytest.mark.parametrize("fallback", [False, True])
+    def test_case_aliases_are_rejected_on_case_insensitive_volumes(
+        self, monkeypatch, tmp_path, name, git_project, fallback
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        alias = project.with_name("PROJECT")
+        if not alias.exists() or not alias.samefile(project):
+            pytest.skip("case-insensitive volume required")
+        unsafe = project
+        if git_project:
+            (project / ".git").mkdir()
+            unsafe = project / "bin"
+            unsafe.mkdir()
+        self.executable(unsafe, name)
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = self.executable(trusted, name)
+        monkeypatch.chdir(project)
+        entry = alias / "bin" if git_project else alias
+        monkeypatch.setenv(
+            "PATH",
+            os.pathsep.join([str(entry), str(trusted)] if fallback else [str(entry)]),
+        )
+
+        if fallback:
+            found = specify_cli._version._find_installer(name)
+            assert found is not None
+            assert Path(found) == expected
+        else:
+            with pytest.raises(specify_cli._version._InstallerRejected):
+                specify_cli._version._find_installer(name)
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("stage", ["resolve", "lstat"])
+    @pytest.mark.parametrize(
+        "error", [PermissionError("denied"), RuntimeError("link loop")]
+    )
+    def test_inspection_failure_warns_and_checks_later_entries(
+        self, monkeypatch, tmp_path, capsys, name, stage, error
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        bad = tmp_path / "bad"
+        bad.mkdir()
+        self.executable(bad, name)
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = self.executable(trusted, name)
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", os.pathsep.join([str(bad), str(trusted)]))
+        original = getattr(Path, stage)
+
+        def inspect(path, *args, **kwargs):
+            if path == bad:
+                raise error
+            return original(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, stage, inspect)
+
+        found = specify_cli._version._find_installer(name)
+        assert found is not None
+        assert Path(found) == expected
+        output = capsys.readouterr().out
+        assert "Skipping installer PATH entry" in output
+        assert str(bad) in output
+        assert str(error) in output
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("tag", [0, 0x8000001B])
+    def test_non_symlink_reparse_entries_are_rejected_portably(
+        self, monkeypatch, tmp_path, name, tag
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        reparse = tmp_path / "reparse"
+        reparse.mkdir()
+        self.executable(reparse, name)
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = self.executable(trusted, name)
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", os.pathsep.join([str(reparse), str(trusted)]))
+        original = Path.lstat
+
+        def lstat(path, *args, **kwargs):
+            result = original(path, *args, **kwargs)
+            if path == reparse:
+                return SimpleNamespace(
+                    st_mode=result.st_mode,
+                    st_file_attributes=0x400,
+                    st_reparse_tag=tag,
+                    st_ino=result.st_ino,
+                    st_dev=result.st_dev,
+                )
+            return result
+
+        monkeypatch.setattr(Path, "lstat", lstat)
+
+        found = specify_cli._version._find_installer(name)
+        assert found is not None
+        assert Path(found) == expected
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("operation", ["lookup", "registry", "upgrade"])
+    @pytest.mark.parametrize(
+        "native",
+        [
+            False,
+            pytest.param(
+                True,
+                marks=pytest.mark.skipif(
+                    os.name != "nt", reason="Native Windows junctions required"
+                ),
+            ),
+        ],
+    )
+    def test_external_junction_preserves_installer_paths(
+        self, monkeypatch, tmp_path, name, operation, native
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        install = tmp_path / "install"
+        install.mkdir()
+        version = install / "version"
+        version.mkdir()
+        scripts = version / "Scripts"
+        scripts.mkdir()
+        executable = self.executable(scripts, name)
+        current = install / "current"
+        if native:
+            self.junction(current, version)
+            assert not current.is_symlink()
+        else:
+            try:
+                current.symlink_to(version, target_is_directory=True)
+            except OSError:
+                pytest.skip("directory symlinks are unavailable")
+            original = Path.lstat
+
+            def lstat(path, *args, **kwargs):
+                result = original(path, *args, **kwargs)
+                if path == current:
+                    return SimpleNamespace(
+                        st_mode=stat.S_IFDIR | 0o755,
+                        st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
+                        st_reparse_tag=0xA0000003,
+                        st_ino=result.st_ino,
+                        st_dev=result.st_dev,
+                    )
+                return result
+
+            monkeypatch.setattr(Path, "lstat", lstat)
+        selected = current / "Scripts" / executable.name
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(selected.parent))
+        monkeypatch.setattr("sys.argv", [str(project / "missing" / "specify")])
+        method = _InstallMethod.UV_TOOL if name == "uv" else _InstallMethod.PIPX
+        stdout = (
+            "specify-cli v0.7.6\n" if name == "uv" else '{"venvs":{"specify-cli":{}}}'
+        )
+
+        with (
+            patch("specify_cli._version._editable_marker_seen", return_value=False),
+            patch("specify_cli._version._get_installed_version", return_value="0.7.5"),
+            patch("specify_cli._version._verify_upgrade", return_value="0.7.6"),
+            patch(
+                "specify_cli._version.subprocess.run",
+                return_value=_completed_process(0, stdout=stdout),
+            ) as run,
+        ):
+            if operation == "lookup":
+                argv = _assemble_installer_argv(method, "v0.7.6")
+                assert argv is not None
+                assert Path(argv[0]) == selected
+                run.assert_not_called()
+                return
+            if operation == "registry":
+                assert _detect_install_method() == method
+            else:
+                with patch(
+                    "specify_cli._version._detect_install_method", return_value=_detection_result(method)
+                ):
+                    result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
+                assert result.exit_code == 0
+        run.assert_called_once()
+        assert Path(run.call_args.args[0][0]) == selected
+
+    @pytest.mark.skipif(
+        os.name != "nt", reason="Native Windows namespace paths required"
+    )
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("git_project", [False, True])
+    @pytest.mark.parametrize("fallback", [False, True])
+    def test_native_windows_extended_path_entries_are_rejected(
+        self, monkeypatch, tmp_path, name, git_project, fallback
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        unsafe = project
+        if git_project:
+            (project / ".git").mkdir()
+            unsafe = project / "bin"
+            unsafe.mkdir()
+        self.executable(unsafe, name)
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = self.executable(trusted, name)
+        raw = str(unsafe)
+        extended = (
+            "\\\\?\\UNC\\" + raw[2:] if raw.startswith("\\\\") else "\\\\?\\" + raw
+        )
+        monkeypatch.chdir(project)
+        monkeypatch.setenv(
+            "PATH",
+            os.pathsep.join([extended, str(trusted)] if fallback else [extended]),
+        )
+
+        if fallback:
+            found = specify_cli._version._find_installer(name)
+            assert found is not None
+            assert Path(found) == expected
+        else:
+            with pytest.raises(specify_cli._version._InstallerRejected):
+                specify_cli._version._find_installer(name)
+
+    @pytest.mark.skipif(os.name != "nt", reason="Native Windows junctions required")
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("fallback", [False, True])
+    @pytest.mark.parametrize("git_project", [False, True])
+    def test_native_windows_junction_chain_is_rejected(
+        self, monkeypatch, tmp_path, name, fallback, git_project
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        if git_project:
+            (project / ".git").mkdir()
+        external = tmp_path / "external"
+        external.mkdir()
+        self.executable(external, name)
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = self.executable(trusted, name)
+        alias = tmp_path / "alias"
+        for path, target in ((project / "bin", external), (alias, project / "bin")):
+            self.junction(path, target)
+        assert not alias.is_symlink()
+        monkeypatch.chdir(project)
+        monkeypatch.setenv(
+            "PATH",
+            os.pathsep.join([str(alias), str(trusted)] if fallback else [str(alias)]),
+        )
+
+        if fallback:
+            found = specify_cli._version._find_installer(name)
+            assert found is not None
+            assert Path(found) == expected
+        else:
+            with pytest.raises(specify_cli._version._InstallerRejected):
+                specify_cli._version._find_installer(name)
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    def test_relative_lookup_result_is_rejected(self, monkeypatch, tmp_path, name):
+        project = tmp_path / "project"
+        project.mkdir()
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(trusted))
+        with patch("specify_cli._version.shutil.which", return_value=name):
+            with pytest.raises(specify_cli._version._InstallerRejected):
+                specify_cli._version._find_installer(name)
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    def test_file_symlink_to_non_project_cwd_is_rejected(
+        self, monkeypatch, tmp_path, name
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        malicious = self.executable(project, name)
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        try:
+            (bin_dir / malicious.name).symlink_to(malicious)
+        except OSError:
+            pytest.skip("file symlinks are unavailable")
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(bin_dir))
+
+        with pytest.raises(specify_cli._version._InstallerRejected):
+            specify_cli._version._find_installer(name)
+
+    @pytest.mark.parametrize(
+        "method,name",
+        [
+            (_InstallMethod.UV_TOOL, "uv"),
+            (_InstallMethod.PIPX, "pipx"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "entry", ["", ".", "bin", "absolute", "symlink", "symlink-out"]
+    )
+    def test_project_path_entries_cannot_override_installer(
+        self, monkeypatch, tmp_path, method, name, entry
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        project_bin = project / "bin"
+        project_bin.mkdir()
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        self.executable(project, name)
+        self.executable(project_bin, name)
+        expected = self.executable(trusted, name)
+        if entry == "absolute":
+            entry = str(project_bin)
+        elif entry in {"symlink", "symlink-out"}:
+            link = tmp_path / "project-bin-link"
+            target = project_bin
+            if entry == "symlink-out":
+                link = project / "external-bin"
+                target = tmp_path / "untrusted"
+                target.mkdir()
+                self.executable(target, name)
+            try:
+                link.symlink_to(target, target_is_directory=True)
+            except OSError:
+                pytest.skip("directory symlinks are unavailable")
+            entry = str(link)
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", os.pathsep.join([entry, str(trusted)]))
+
+        argv = _assemble_installer_argv(method, "v0.7.6")
+
+        assert argv is not None
+        assert Path(argv[0]) == expected
+
+    @pytest.mark.parametrize(
+        "method,name",
+        [
+            (_InstallMethod.UV_TOOL, "uv"),
+            (_InstallMethod.PIPX, "pipx"),
+        ],
+    )
+    def test_implicit_windows_cwd_search_is_bypassed(
+        self, monkeypatch, tmp_path, method, name
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        malicious = self.executable(project, name)
+        expected = self.executable(trusted, name)
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(trusted))
+        real_which = specify_cli._version.shutil.which
+
+        def windows_style_which(command):
+            if not Path(command).is_absolute():
+                return str(malicious)
+            return real_which(command)
+
+        with patch(
+            "specify_cli._version.shutil.which", side_effect=windows_style_which
+        ):
+            argv = _assemble_installer_argv(method, "v0.7.6")
+
+        assert argv is not None
+        assert Path(argv[0]) == expected
+
+    @pytest.mark.parametrize(
+        "method,name",
+        [
+            (_InstallMethod.UV_TOOL, "uv"),
+            (_InstallMethod.PIPX, "pipx"),
+        ],
+    )
+    @pytest.mark.parametrize("path", ["", ".", "bin"])
+    def test_only_project_local_installer_is_not_available(
+        self, monkeypatch, tmp_path, method, name, path
+    ):
+        (tmp_path / "bin").mkdir()
+        self.executable(tmp_path, name)
+        self.executable(tmp_path / "bin", name)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("PATH", path)
+
+        if not path:
+            assert _assemble_installer_argv(method, "v0.7.6") is None
+        else:
+            with pytest.raises(specify_cli._version._InstallerRejected):
+                _assemble_installer_argv(method, "v0.7.6")
+
+    def test_registry_probes_do_not_execute_project_local_installers(
+        self, monkeypatch, tmp_path
+    ):
+        self.executable(tmp_path, "uv")
+        self.executable(tmp_path, "pipx")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("PATH", str(tmp_path))
+        monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
+
+        with (
+            patch("specify_cli._version._editable_marker_seen", return_value=False),
+            patch("specify_cli._version.subprocess.run") as run,
+        ):
+            method, signals = _detect_install_method(include_signals=True)
+
+        assert method == _InstallMethod.UNSUPPORTED
+        assert signals.installer_registries_consulted == ()
+        run.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "method,name",
+        [
+            (_InstallMethod.UV_TOOL, "uv"),
+            (_InstallMethod.PIPX, "pipx"),
+        ],
+    )
+    def test_missing_safe_installer_fails_without_execution(
+        self, monkeypatch, tmp_path, method, name
+    ):
+        self.executable(tmp_path, name)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("PATH", str(tmp_path))
+        with (
+            patch("specify_cli._version._detect_install_method", return_value=_detection_result(method)),
+            patch("specify_cli._version._get_installed_version", return_value="0.7.5"),
+            patch("specify_cli._version.subprocess.run") as run,
+        ):
+            result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
+
+        assert result.exit_code == 3
+        assert f"Installer {name} rejected" in strip_ansi(result.output)
+        run.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "method,name",
+        [
+            (_InstallMethod.UV_TOOL, "uv"),
+            (_InstallMethod.PIPX, "pipx"),
+        ],
+    )
+    def test_absolute_path_order_is_preserved(
+        self, monkeypatch, tmp_path, method, name
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        first = tmp_path / "first"
+        first.mkdir()
+        second = tmp_path / "second"
+        second.mkdir()
+        expected = self.executable(first, name)
+        self.executable(second, name)
+        monkeypatch.chdir(project)
+        monkeypatch.setenv(
+            "PATH",
+            os.pathsep.join([str(tmp_path / "missing"), str(first), str(second)]),
+        )
+
+        argv = _assemble_installer_argv(method, "v0.7.6")
+
+        assert argv is not None
+        assert Path(argv[0]) == expected
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("pathext", [None, ".CMD;.EXE"])
+    @pytest.mark.parametrize("quoted_path", [False, True])
+    @pytest.mark.parametrize("version", [(3, 11), (3, 13)])
+    def test_windows_pathext_is_expanded_once(
+        self, monkeypatch, tmp_path, name, pathext, quoted_path, version
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = str(trusted / f"{name}.EXE")
+        Path(expected).write_bytes(b"installer fixture; never executed\n")
+        Path(expected).chmod(0o755)
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", f'"{trusted}"' if quoted_path else str(trusted))
+        if pathext is None:
+            monkeypatch.delenv("PATHEXT", raising=False)
+        else:
+            monkeypatch.setenv("PATHEXT", pathext)
+        lookup = expected if version < (3, 12) else str(trusted / name)
+
+        with (
+            patch("specify_cli._version.sys") as platform,
+            patch(
+                "specify_cli._version.shutil.which",
+                side_effect=lambda command: expected if command == lookup else None,
+            ) as which,
+        ):
+            platform.platform = "win32"
+            platform.version_info = version
+            found = specify_cli._version._find_installer(name)
+
+        assert found == expected
+        if version < (3, 12):
+            assert [call.args[0] for call in which.call_args_list] == [
+                str(trusted / f"{name}{suffix}")
+                for suffix in (
+                    [".COM", ".EXE"] if pathext is None else [".CMD", ".EXE"]
+                )
+            ]
+        else:
+            which.assert_called_once_with(str(trusted / name))
+
+    @pytest.mark.parametrize(
+        "method,name",
+        [
+            (_InstallMethod.UV_TOOL, "uv"),
+            (_InstallMethod.PIPX, "pipx"),
+        ],
+    )
+    def test_registry_probes_use_absolute_installer_path(
+        self, monkeypatch, tmp_path, method, name
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        self.executable(project, "uv")
+        self.executable(project, "pipx")
+        expected = self.executable(trusted, name)
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", os.pathsep.join([".", str(trusted)]))
+        monkeypatch.setattr("sys.argv", [str(project / "missing" / "specify")])
+        stdout = (
+            "specify-cli v0.7.6\n" if name == "uv" else '{"venvs":{"specify-cli":{}}}'
+        )
+
+        with (
+            patch("specify_cli._version._editable_marker_seen", return_value=False),
+            patch(
+                "specify_cli._version.subprocess.run",
+                return_value=_completed_process(0, stdout=stdout),
+            ) as run,
+        ):
+            detected, signals = _detect_install_method(include_signals=True)
+
+        assert detected == _InstallMethod.UNSUPPORTED
+        assert signals.installer_rejections
+        run.assert_called_once()
+        assert Path(run.call_args.args[0][0]) == expected
+
+    @pytest.mark.parametrize(
+        "method,name",
+        [
+            (_InstallMethod.UV_TOOL, "uv"),
+            (_InstallMethod.PIPX, "pipx"),
+        ],
+    )
+    def test_upgrade_executes_selected_absolute_installer(
+        self, monkeypatch, tmp_path, method, name
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        self.executable(project, name)
+        expected = self.executable(trusted, name)
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", os.pathsep.join([".", str(trusted)]))
+
+        with (
+            patch("specify_cli._version._detect_install_method", return_value=_detection_result(method)),
+            patch("specify_cli._version._get_installed_version", return_value="0.7.5"),
+            patch("specify_cli._version._verify_upgrade", return_value="0.7.6"),
+            patch(
+                "specify_cli._version.subprocess.run",
+                return_value=_completed_process(0),
+            ) as run,
+        ):
+            result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
+
+        assert result.exit_code == 0
+        run.assert_called_once()
+        argv = run.call_args.args[0]
+        assert Path(argv[0]) == expected
+        assert run.call_args.kwargs["shell"] is False
+        assert specify_cli._version._render_argv(argv) in strip_ansi(result.output)
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    def test_user_bin_below_non_project_working_directory_is_allowed(
+        self, monkeypatch, tmp_path, name
+    ):
+        user_bin = tmp_path / ".local" / "bin"
+        user_bin.mkdir(parents=True)
+        expected = self.executable(user_bin, name)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("PATH", str(user_bin))
+
+        found = specify_cli._version._find_installer(name)
+
+        assert found is not None
+        assert Path(found) == expected
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    def test_project_bin_is_rejected_from_nested_working_directory(
+        self, monkeypatch, tmp_path, name
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".git").write_text("gitdir: unused\n")
+        project_bin = project / "bin"
+        project_bin.mkdir()
+        nested = project / "nested"
+        nested.mkdir()
+        self.executable(project_bin, name)
+        monkeypatch.chdir(nested)
+        monkeypatch.setenv("PATH", str(project_bin))
+
+        with pytest.raises(specify_cli._version._InstallerRejected):
+            specify_cli._version._find_installer(name)
+
+
 class TestBareUpgradeUvTool:
     """uv-tool happy path, bare invocation."""
 
-    def test_happy_path_end_to_end(self, uv_tool_argv0, clean_environ):
+    def test_happy_path_end_to_end(self, installer_paths, uv_tool_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -654,11 +1766,11 @@ class TestBareUpgradeUvTool:
         for call in mock_run.call_args_list:
             assert call.kwargs.get("shell", False) is False
 
-    def test_one_user_action_no_prompt(self, uv_tool_argv0, clean_environ):
+    def test_one_user_action_no_prompt(self, installer_paths, uv_tool_argv0, clean_environ):
         # The single `invoke` represents the single user action — no prompt.
         # If a prompt existed, runner.invoke would hang waiting for input.
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -675,12 +1787,12 @@ class TestAlreadyLatestUvTool:
     """already on latest, no installer launched."""
 
     def test_already_latest_exits_zero_no_subprocess(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.6"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -690,7 +1802,7 @@ class TestAlreadyLatestUvTool:
         assert mock_run.call_count == 0
 
     def test_trailing_zero_equivalent_version_reports_latest_not_newer(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         # Version("1.0") == Version("1.0.0") under packaging even though their
         # canonical strings differ. The no-op message must use Version equality
@@ -698,7 +1810,7 @@ class TestAlreadyLatestUvTool:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="1.0"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v1.0.0"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -710,12 +1822,12 @@ class TestAlreadyLatestUvTool:
         assert mock_run.call_count == 0
 
     def test_dev_build_ahead_of_release_reports_newer_noop(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.7.dev0"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -725,12 +1837,12 @@ class TestAlreadyLatestUvTool:
         assert mock_run.call_count == 0
 
     def test_unparseable_current_version_does_not_false_noop(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="release-main"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
@@ -746,12 +1858,12 @@ class TestAlreadyLatestUvTool:
         assert mock_run.call_count == 2
 
     def test_unparseable_resolved_target_fails_before_literal_noop(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="release-main"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "release-main"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -764,9 +1876,9 @@ class TestAlreadyLatestUvTool:
         assert mock_run.call_count == 0
 
     def test_pinned_older_tag_still_runs_installer(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.shutil.which", return_value=sys.executable), patch(
+        with patch("specify_cli._version.shutil.which", return_value=installer_paths["uv"]), patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.6"
@@ -786,9 +1898,9 @@ class TestAlreadyLatestUvTool:
         assert mock_run.call_count == 2
 
     def test_pinned_rc_tag_uses_canonical_version_equality_for_noop(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.shutil.which", return_value=sys.executable), patch(
+        with patch("specify_cli._version.shutil.which", return_value=installer_paths["uv"]), patch(
             "specify_cli._version._get_installed_version", return_value="1.0.0rc1"
         ):
             result = runner.invoke(app, ["self", "upgrade", "--tag", "v1.0.0-rc1"])
@@ -802,13 +1914,14 @@ class TestDryRunUvTool:
 
     def test_dry_run_without_tag_resolves_network_but_no_subprocess(
         self,
+        installer_paths,
         uv_tool_argv0,
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade", "--dry-run"])
@@ -822,11 +1935,11 @@ class TestDryRunUvTool:
         assert "Command that would be executed:" in out
         assert mock_run.call_count == 0
 
-    def test_dry_run_with_tag_skips_network(self, uv_tool_argv0, clean_environ):
+    def test_dry_run_with_tag_skips_network(self, installer_paths, uv_tool_argv0, clean_environ):
         # --dry-run with --tag must NOT hit the network.
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
-        ), patch("specify_cli._version.shutil.which", return_value=sys.executable), patch(
+        ), patch("specify_cli._version.shutil.which", return_value=installer_paths["uv"]), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             result = runner.invoke(
@@ -838,12 +1951,12 @@ class TestDryRunUvTool:
         mock_urlopen.assert_not_called()
 
     def test_dry_run_rejects_unparseable_network_tag_before_preview(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
             mock_urlopen.return_value = mock_urlopen_response(
                 {"tag_name": "v0.9.0;echo unsafe"}
@@ -890,16 +2003,18 @@ class TestDetectionPipx:
 
     def test_tier3_pipx_when_no_prefix_match_but_registry_lists_it(
         self,
+        installer_paths,
         monkeypatch,
         tmp_path,
     ):
         monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
 
         def fake_which(name):
-            return sys.executable if name == "pipx" else None
+            name = Path(name).stem if Path(name).is_absolute() else name
+            return installer_paths["pipx"] if name == "pipx" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == [sys.executable, "list", "--json"]:
+            if argv[:3] == [installer_paths["pipx"], "list", "--json"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -920,13 +2035,15 @@ class TestDetectionPipx:
 
     def test_tier3_pipx_does_not_override_absolute_unsupported_entrypoint(
         self,
+        installer_paths,
         unsupported_argv0,
     ):
         def fake_which(name):
-            return sys.executable if name == "pipx" else None
+            name = Path(name).stem if Path(name).is_absolute() else name
+            return installer_paths["pipx"] if name == "pipx" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == [sys.executable, "list", "--json"]:
+            if argv[:3] == [installer_paths["pipx"], "list", "--json"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -945,13 +2062,15 @@ class TestDetectionPipx:
 
     def test_tier3_pipx_ignores_malformed_json_output(
         self,
+        installer_paths,
         unsupported_argv0,
     ):
         def fake_which(name):
-            return sys.executable if name == "pipx" else None
+            name = Path(name).stem if Path(name).is_absolute() else name
+            return installer_paths["pipx"] if name == "pipx" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == [sys.executable, "list", "--json"]:
+            if argv[:3] == [installer_paths["pipx"], "list", "--json"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -970,27 +2089,29 @@ class TestDetectionPipx:
 
     def test_tier3_both_uv_tool_and_pipx_match_is_treated_as_unsupported(
         self,
+        installer_paths,
         monkeypatch,
         tmp_path,
     ):
         monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
 
         def fake_which(name):
+            name = Path(name).stem if Path(name).is_absolute() else name
             if name == "uv":
-                return sys.executable
+                return installer_paths["uv"]
             if name == "pipx":
-                return sys.executable
+                return installer_paths["pipx"]
             return None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == [sys.executable, "tool", "list"]:
+            if argv[:3] == [installer_paths["uv"], "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
                     stdout="specify-cli v0.7.6\n",
                     stderr="",
                 )
-            if argv[:3] == [sys.executable, "list", "--json"]:
+            if argv[:3] == [installer_paths["pipx"], "list", "--json"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -1013,7 +2134,7 @@ class TestDetectionPipx:
 
     @pytest.mark.parametrize("rejected_name", ["uv", "pipx"])
     def test_tier3_rejected_probe_leaves_ownership_ambiguous(
-        self, monkeypatch, tmp_path, rejected_name
+        self, monkeypatch, tmp_path, rejected_name, installer_paths
     ):
         monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
         other_name = "pipx" if rejected_name == "uv" else "uv"
@@ -1023,10 +2144,11 @@ class TestDetectionPipx:
         )
 
         def fake_which(name):
+            name = Path(name).stem
             if name == rejected_name:
                 return f"./{name}"
             if name == other_name:
-                return sys.executable
+                return installer_paths[other_name]
             return None
 
         with patch(
@@ -1035,7 +2157,7 @@ class TestDetectionPipx:
             "specify_cli._version._editable_marker_seen", return_value=False
         ), patch("specify_cli._version.subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
-                args=[sys.executable, *probe_args],
+                args=[installer_paths[other_name], *probe_args],
                 returncode=0,
                 stdout=probe_output,
                 stderr="",
@@ -1048,7 +2170,7 @@ class TestDetectionPipx:
         assert len(signals.installer_rejections) == 1
         assert f"Installer {rejected_name} rejected" in signals.installer_rejections[0]
         mock_run.assert_called_once()
-        assert mock_run.call_args.args[0] == [sys.executable, *probe_args]
+        assert mock_run.call_args.args[0] == [installer_paths[other_name], *probe_args]
 
 
 class TestEditableInstallMetadata:
@@ -1117,9 +2239,9 @@ class TestEditableInstallMetadata:
 
 
 class TestTagValidationWhitespace:
-    def test_tag_whitespace_is_trimmed_before_validation(self, uv_tool_argv0, clean_environ):
+    def test_tag_whitespace_is_trimmed_before_validation(self, installer_paths, uv_tool_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -1137,11 +2259,11 @@ class TestTagValidationWhitespace:
 class TestArgvAssemblyPipx:
     """pipx installer argv shape — pipx 1.5+ uses positional PACKAGE_SPEC, never `--spec` or `upgrade`."""
 
-    def test_pipx_argv_uses_install_force_positional_not_upgrade(self):
-        with patch("specify_cli._version.shutil.which", return_value=sys.executable):
+    def test_pipx_argv_uses_install_force_positional_not_upgrade(self, installer_paths):
+        with patch("specify_cli._version.shutil.which", return_value=installer_paths["pipx"]):
             argv = _assemble_installer_argv(_InstallMethod.PIPX, "v0.7.6")
         assert argv == [
-            sys.executable,
+            installer_paths["pipx"],
             "install",
             "--force",
             "git+https://github.com/github/spec-kit.git@v0.7.6",
@@ -1157,9 +2279,9 @@ class TestArgvAssemblyPipx:
 class TestBareUpgradePipx:
     """pipx happy path."""
 
-    def test_happy_path(self, pipx_argv0, clean_environ):
+    def test_happy_path(self, installer_paths, pipx_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["pipx"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -1193,9 +2315,9 @@ class TestDetectionShortCircuit:
 
 
 class TestDryRunPipx:
-    def test_dry_run_preview_names_pipx(self, pipx_argv0, clean_environ):
+    def test_dry_run_preview_names_pipx(self, installer_paths, pipx_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["pipx"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):

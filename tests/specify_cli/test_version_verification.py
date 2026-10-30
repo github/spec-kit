@@ -1,6 +1,5 @@
 """Verification, resolution, and validation tests for `specify self upgrade`."""
 
-import sys
 import urllib.error
 from unittest.mock import patch
 
@@ -9,6 +8,7 @@ import specify_cli
 from specify_cli import app
 
 from tests.specify_cli.self_upgrade_helpers import (
+    isolated_installer_path,  # noqa: F401 (autouse fixture)
     route_opener_open_through_urlopen,  # noqa: F401 (autouse fixture)
     SENTINEL_GH_TOKEN,
     SENTINEL_GITHUB_TOKEN,
@@ -31,11 +31,12 @@ class TestVerificationMismatch:
 
     def test_installer_ok_but_verify_returns_old_version(
         self,
+        installer_paths,
         uv_tool_argv0,
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -54,11 +55,12 @@ class TestVerificationMismatch:
 
     def test_verify_nonzero_exit_is_not_treated_as_success(
         self,
+        installer_paths,
         uv_tool_argv0,
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -76,11 +78,12 @@ class TestVerificationMismatch:
 
     def test_verify_accepts_pep440_equivalent_rc_version(
         self,
+        installer_paths,
         uv_tool_argv0,
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.9.0"
         ):
@@ -96,11 +99,12 @@ class TestVerificationMismatch:
 
     def test_verify_accepts_specify_cli_binary_name_in_version_output(
         self,
+        installer_paths,
         uv_tool_argv0,
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -116,11 +120,12 @@ class TestVerificationMismatch:
 
     def test_verify_accepts_capitalized_binary_name_in_version_output(
         self,
+        installer_paths,
         uv_tool_argv0,
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -136,11 +141,12 @@ class TestVerificationMismatch:
 
     def test_verify_rejects_output_without_parseable_version(
         self,
+        installer_paths,
         uv_tool_argv0,
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -345,12 +351,12 @@ class TestResolutionFailures:
         assert expected in strip_ansi(result.output)
 
     def test_unparseable_resolved_release_tag_exits_1_without_traceback(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "release-main"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -368,11 +374,12 @@ class TestUnknownCurrent:
 
     def test_unknown_current_renders_literal_in_notice(
         self,
+        installer_paths,
         uv_tool_argv0,
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="unknown"
         ):
@@ -390,11 +397,12 @@ class TestUnknownCurrent:
 
     def test_unknown_current_rollback_hint_degrades(
         self,
+        installer_paths,
         uv_tool_argv0,
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="unknown"
         ):
@@ -413,6 +421,7 @@ class TestTokenScrubbing:
 
     def test_env_passed_to_subprocess_has_no_github_tokens(
         self,
+        installer_paths,
         uv_tool_argv0,
         monkeypatch,
     ):
@@ -423,7 +432,7 @@ class TestTokenScrubbing:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli.authentication.http.urllib.request.build_opener"
         ) as mock_build_opener, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -446,6 +455,7 @@ class TestTokenScrubbing:
 
     def test_env_scrubbing_is_case_insensitive(
         self,
+        installer_paths,
         uv_tool_argv0,
         monkeypatch,
     ):
@@ -456,7 +466,7 @@ class TestTokenScrubbing:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli.authentication.http.urllib.request.build_opener"
         ) as mock_build_opener, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):

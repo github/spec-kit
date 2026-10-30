@@ -2,12 +2,12 @@
 
 import errno
 import subprocess
-import sys
 from unittest.mock import patch
 
 from specify_cli import app
 
 from tests.specify_cli.self_upgrade_helpers import (
+    isolated_installer_path,  # noqa: F401 (autouse fixture)
     route_opener_open_through_urlopen,  # noqa: F401 (autouse fixture)
     _completed_process,
     mock_urlopen_response,
@@ -151,7 +151,7 @@ class TestInstallerMissing:
             raise FileNotFoundError(str(fake_uv))
 
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which",
+            "specify_cli._version._find_installer",
             side_effect=lambda name: str(fake_uv) if name == "uv" else None,
         ), patch("specify_cli._version.subprocess.run", side_effect=fake_run), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -232,10 +232,10 @@ class TestInstallerMissing:
         assert "Installer ./uv is not executable" not in out
 
     def test_real_installer_exit_126_is_not_treated_as_invalid_path(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -308,10 +308,10 @@ class TestInstallerMissing:
         assert "not found on PATH" not in out
 
     def test_bare_invalid_installer_message_does_not_call_it_a_path(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"), patch(
             "specify_cli._version._assemble_installer_argv",
             return_value=[
@@ -398,9 +398,9 @@ class TestInstallerMissing:
 class TestInstallerFailed:
     """Installer non-zero exit → propagate code, print rollback hint."""
 
-    def test_installer_exit_2_propagates(self, uv_tool_argv0, clean_environ):
+    def test_installer_exit_2_propagates(self, installer_paths, uv_tool_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -421,9 +421,9 @@ class TestInstallerFailed:
         # No verification attempted after a failed installer run.
         assert mock_run.call_count == 1
 
-    def test_installer_exit_127_propagates(self, uv_tool_argv0, clean_environ):
+    def test_installer_exit_127_propagates(self, installer_paths, uv_tool_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -433,17 +433,17 @@ class TestInstallerFailed:
         assert result.exit_code == 127
 
     def test_installer_timeout_prints_timeout_specific_message(
-        self, uv_tool_argv0, clean_environ, monkeypatch
+        self, installer_paths, uv_tool_argv0, clean_environ, monkeypatch
     ):
         monkeypatch.setenv("SPECIFY_UPGRADE_TIMEOUT_SECS", "12")
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
-                subprocess.TimeoutExpired(cmd=["uv"], timeout=12)
+                subprocess.TimeoutExpired(cmd=[installer_paths["uv"]], timeout=12)
             ]
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 124
@@ -452,11 +452,11 @@ class TestInstallerFailed:
         assert "SPECIFY_UPGRADE_TIMEOUT_SECS=12" in out
 
     def test_non_finite_timeout_warns_and_runs_without_timeout(
-        self, uv_tool_argv0, clean_environ, monkeypatch
+        self, installer_paths, uv_tool_argv0, clean_environ, monkeypatch
     ):
         monkeypatch.setenv("SPECIFY_UPGRADE_TIMEOUT_SECS", "nan")
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -474,10 +474,10 @@ class TestInstallerFailed:
         assert mock_run.call_args_list[0].kwargs["timeout"] is None
 
     def test_real_installer_exit_124_is_not_treated_as_timeout(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -489,9 +489,9 @@ class TestInstallerFailed:
         assert "Upgrade failed. Installer exit code: 124." in out
         assert "Upgrade timed out while waiting for the installer subprocess." not in out
 
-    def test_pipx_failure_prints_pipx_rollback_hint(self, pipx_argv0, clean_environ):
+    def test_pipx_failure_prints_pipx_rollback_hint(self, installer_paths, pipx_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["pipx"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -506,10 +506,10 @@ class TestInstallerFailed:
         ) in out
 
     def test_rollback_hint_accepts_normalizable_stable_snapshot(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="v0.7.5"
         ):
@@ -526,10 +526,10 @@ class TestInstallerFailed:
         assert "Previous version was not an exact stable release tag" not in out
 
     def test_prerelease_failure_degrades_rollback_hint_to_releases_page(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value=sys.executable
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="1.0.0rc1"
         ):

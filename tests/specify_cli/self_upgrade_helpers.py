@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 
 from specify_cli._version import (
     _InstallMethod,
+    _DetectionSignals,
     _UpgradePlan,
     _assemble_installer_argv,
     _detect_install_method,
@@ -28,8 +29,10 @@ __all__ = (
     "_assemble_installer_argv",
     "_completed_process",
     "_detect_install_method",
+    "_detection_result",
     "_verify_upgrade",
     "mock_urlopen_response",
+    "isolated_installer_path",
     "requires_posix",
     "route_opener_open_through_urlopen",
     "runner",
@@ -37,6 +40,17 @@ __all__ = (
 )
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def isolated_installer_path(monkeypatch, tmp_path):
+    bin_dir = tmp_path / "lookup-bin"
+    bin_dir.mkdir()
+    monkeypatch.setenv("PATH", str(bin_dir))
+    monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+    monkeypatch.delenv("NoDefaultCurrentDirectoryInExePath", raising=False)
+    return bin_dir
+
 
 # Some installer error-path tests create a relative `./uv` fixture, `chdir`
 # into the tmp dir, and assert POSIX executable-bit semantics (chmod / X_OK).
@@ -51,6 +65,17 @@ requires_posix = pytest.mark.skipif(
 
 SENTINEL_GH_TOKEN = "SENTINEL-GH-TOKEN-VALUE"
 SENTINEL_GITHUB_TOKEN = "SENTINEL-GITHUB-TOKEN-VALUE"
+
+
+def _detection_result(method: _InstallMethod) -> tuple[_InstallMethod, _DetectionSignals]:
+    return method, _DetectionSignals(
+        sys_argv0="",
+        matched_tier=None,
+        matched_prefix=None,
+        editable_marker_seen=False,
+        installer_registries_consulted=(),
+        resolved_method=method,
+    )
 
 
 def _completed_process(

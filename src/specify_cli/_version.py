@@ -17,6 +17,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import urllib.error
@@ -24,13 +25,14 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Literal, overload
 
 import typer
 from packaging.version import InvalidVersion, Version
 from ._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 from ._console import console
+from .file_helper import _strip_extended_length_prefix
 
 GITHUB_API_LATEST = "https://api.github.com/repos/github/spec-kit/releases/latest"
 _RESOLUTION_FAILURE_OFFLINE = "offline or timeout"
@@ -51,6 +53,7 @@ _PRERELEASE_TAG_PATTERN = re.compile(
 )
 _TIER3_REGISTRY_TIMEOUT_SECS = 5
 _VERIFY_TIMEOUT_SECS = 10
+_WINDOWS_MOUNT_POINT_TAG = 0xA0000003  # IO_REPARSE_TAG_MOUNT_POINT
 
 
 def _get_installed_version() -> str:
@@ -367,17 +370,13 @@ def _expand_prefix(prefix: str) -> Path | None:
         return None
 
 
-def _path_is_within_prefix(path: Path, prefix: Path) -> bool:
+def _path_is_within_prefix(path: PurePath, prefix: PurePath) -> bool:
     """Return whether absolute `path` is under absolute `prefix`."""
     if not path.is_absolute() or not prefix.is_absolute():
         return False
-    try:
-        common = os.path.commonpath(
-            [os.path.normcase(str(path)), os.path.normcase(str(prefix))]
-        )
-    except ValueError:
-        return False
-    return common == os.path.normcase(str(prefix))
+    return _strip_extended_length_prefix(path).is_relative_to(
+        _strip_extended_length_prefix(prefix)
+    )
 
 
 def _resolve_path_or_original(path: Path) -> Path:
@@ -490,37 +489,146 @@ def _editable_marker_seen() -> bool:
 
 
 def _find_installer(name: str) -> str | None:
-    """Resolve an installer without trusting working-directory executables."""
-    try:
-        resolved = shutil.which(name)
-        if resolved is None:
-            return None
-        installer = Path(resolved)
-        # Windows lookup may prepend cwd even when PATH is absolute. Check
-        # both the lookup entry and symlink target using filesystem identity.
-        if not installer.is_absolute():
-            raise _InstallerRejected(
+    """Find an installer outside the working directory and current Git tree."""
+    context: tuple[os.stat_result, os.stat_result | None] | None = None
+    rejections: list[str] = []
+
+    def rejected_lookup(resolved: str) -> str:
+        if not Path(resolved).is_absolute():
+            return (
                 f"Installer {name} rejected: lookup returned a relative path {resolved!r}. "
                 "Use an absolute PATH entry for the installed tool. "
                 "Run from a directory without a matching installer executable "
                 "to avoid implicit current-directory matches on Windows, and retry."
             )
-        cwd = Path.cwd()
-        if (
-            installer.parent.samefile(cwd)
-            or installer.resolve(strict=True).parent.samefile(cwd)
-        ):
-            raise _InstallerRejected(
-                f"Installer {name} rejected: lookup or target is in the current "
-                f"working directory ({resolved!r}). Run from another directory "
-                "and ensure PATH points to the installed tool."
+        return (
+            f"Installer {name} rejected: lookup or target is not trusted ({resolved!r}). "
+            "Run from another directory and ensure PATH points to the installed tool."
+        )
+
+    def eligible(path: Path, *, executable: bool) -> bool:
+        nonlocal context
+        if context is None:
+            cwd = Path.cwd().resolve()
+            project_root = _git_ancestor(cwd)
+            context = (
+                cwd.stat(),
+                project_root.stat() if project_root is not None else None,
             )
-    except (OSError, RuntimeError) as exc:
-        raise _InstallerRejected(
-            f"Installer {name} rejected: could not validate its path ({exc}). "
-            "Run from an existing, accessible working directory and check PATH."
-        ) from exc
-    return resolved
+        cwd_status, project_status = context
+        # Check that traversal terminates before inspecting intermediate links.
+        path.resolve(strict=True)
+        if not executable and os.path.samestat(path.stat(), cwd_status):
+            return False
+        pending = [(path, executable, True)]
+        seen: set[tuple[Path, bool, bool]] = set()
+        declared_directory_links: set[tuple[int, int]] = set()
+        while pending:
+            current, leaf_executable, declared = pending.pop()
+            if leaf_executable and os.path.samestat(current.parent.stat(), cwd_status):
+                return False
+            for ancestor in (current, *current.parents):
+                is_executable = leaf_executable and ancestor == current
+                key = (ancestor, is_executable, declared)
+                if key in seen:
+                    continue
+                seen.add(key)
+                # Follow ".." as directory navigation, not as a possible link.
+                entry_status = (
+                    ancestor.stat() if ancestor.name == ".." else ancestor.lstat()
+                )
+                is_link = stat.S_ISLNK(entry_status.st_mode)
+                is_reparse = bool(
+                    getattr(entry_status, "st_file_attributes", 0)
+                    & stat.FILE_ATTRIBUTE_REPARSE_POINT
+                )
+                is_junction = (
+                    is_reparse
+                    and stat.S_ISDIR(entry_status.st_mode)
+                    and getattr(entry_status, "st_reparse_tag", 0)
+                    == _WINDOWS_MOUNT_POINT_TAG
+                )
+                if is_reparse and not (is_link or is_junction):
+                    return False
+                if project_status is not None and os.path.samestat(
+                    entry_status, project_status
+                ):
+                    return False
+                if is_link or is_junction:
+                    if os.path.samestat(ancestor.parent.stat(), cwd_status):
+                        if is_executable:
+                            return False
+                        identity = (entry_status.st_dev, entry_status.st_ino)
+                        if declared:
+                            # Relative installer targets can revisit a PATH-declared directory link.
+                            declared_directory_links.add(identity)
+                        elif identity not in declared_directory_links:
+                            return False
+                    target = ancestor.readlink()
+                    pending.append(
+                        (
+                            target
+                            if target.is_absolute()
+                            else ancestor.parent / target,
+                            is_executable,
+                            False,
+                        )
+                    )
+        return True
+
+    suffixes = [""]
+    if sys.platform == "win32" and sys.version_info < (3, 12):
+        # Python 3.11's which() does not expand PATHEXT for absolute commands.
+        suffixes = [
+            suffix
+            for suffix in (os.environ.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD").split(
+                ";"
+            )
+            if suffix
+        ]
+
+    for entry in os.get_exec_path():
+        if sys.platform == "win32":
+            entry = entry.strip('"')
+        directory = Path(entry)
+        try:
+            if not directory.is_absolute():
+                if entry:
+                    for suffix in suffixes:
+                        candidate = os.path.join(entry, f"{name}{suffix}")
+                        found = shutil.which(candidate)
+                        if (
+                            found is not None
+                            and Path(found).is_file()
+                            and os.access(found, os.X_OK)
+                        ):
+                            rejections.append(rejected_lookup(candidate))
+                continue
+            for suffix in suffixes:
+                found = shutil.which(os.path.join(entry, f"{name}{suffix}"))
+                if found is not None:
+                    executable = Path(found)
+                    if (
+                        executable.is_absolute()
+                        and eligible(directory, executable=False)
+                        and eligible(executable, executable=True)
+                    ):
+                        return str(executable)
+                    rejections.append(rejected_lookup(found))
+        except (OSError, RuntimeError) as exc:
+            rejections.append(
+                f"Installer {name} rejected: could not validate its path ({exc}). "
+                "Run from an existing, accessible working directory and check PATH."
+            )
+            console.print(
+                f"Skipping installer PATH entry {directory} while finding {name}: {exc}",
+                style="yellow",
+                markup=False,
+                soft_wrap=True,
+            )
+    if rejections:
+        raise _InstallerRejected(rejections[0])
+    return None
 
 
 @overload
