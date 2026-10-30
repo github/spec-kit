@@ -594,7 +594,14 @@ class TestCommandBody:
         assert "perPage: 100" in body
         assert "`after` parameter" in body
         assert "endCursor" in body
-        assert "Stop paginating as soon as every task ID has been matched" in body
+        # The early exit, and the condition that makes it safe. "Matched" has two
+        # outcomes now that dedup is feature-scoped -- a scoped match answers the
+        # question, a bare one *is* the question -- so stopping on either ends
+        # pagination while the scoped issue that settles it may sit on a later page.
+        # Both halves are pinned: bounded, and bounded on the right condition.
+        assert "Stop paginating early **only** when every task ID has a scoped match" in body
+        assert "exhaust the pages before classifying any ID as bare-only" in body
+        assert "when the pages run out" in body
         # Four-digit and longer task IDs must still match.
         assert r"\bT\d{3,}\b" in body
 
