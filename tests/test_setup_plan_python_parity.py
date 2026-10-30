@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import os
+import stat
 from pathlib import Path
 
 import pytest
 
+from scripts.python import common as python_common
 from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
     POWERSHELL_EXE,
+    WINDOWS_POWERSHELL,
+    _bash_posix_path,
     bash_cmd,
     break_wrap_layer,
     clean_env,
@@ -17,6 +22,7 @@ from tests.parity_helpers import (
     install_scripts,
     json_stdout,
     make_repo,
+    make_python3_path_shim,
     normalize_repo_paths,
     ps_cmd,
     py_cmd,
@@ -26,17 +32,29 @@ from tests.parity_helpers import (
 
 SCRIPT = "setup-plan"
 TEMPLATE_BODY = "# Plan Template\n\nBody.\n"
-PORTS = [
-    pytest.param("bash", marks=requires_bash),
+POWERSHELL_PORTS = [
     pytest.param(
         "powershell",
         marks=pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available"),
     ),
-    pytest.param("python"),
+    pytest.param(
+        "windows-powershell",
+        marks=pytest.mark.skipif(
+            not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
+        ),
+    ),
 ]
+PORTS = [pytest.param("bash", marks=requires_bash), *POWERSHELL_PORTS, "python"]
 
 
 def _command(repo: Path, port: str, json_mode: bool) -> list[str]:
+    if port == "windows-powershell":
+        assert WINDOWS_POWERSHELL
+        return [
+            WINDOWS_POWERSHELL, "-NoProfile", "-File",
+            str(repo / ".specify" / "scripts" / "powershell" / f"{SCRIPT}.ps1"),
+            *(("-Json",) if json_mode else ()),
+        ]
     if port == "powershell":
         return ps_cmd(repo, SCRIPT, *(("-Json",) if json_mode else ()))
     command = bash_cmd if port == "bash" else py_cmd
@@ -58,6 +76,619 @@ def _setup_repo(tmp_path: Path, name: str = "proj", template: bool = True) -> Pa
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     return _setup_repo(tmp_path)
+
+
+@requires_bash
+@pytest.mark.parametrize("case", ["filesystem-root", "project-root", "outside-project"])
+def test_bash_feature_containment_handles_filesystem_root(
+    repo: Path, case: str
+) -> None:
+    feature = (
+        repo.parent / "outside" / "new-feature"
+        if case == "outside-project" else repo / "specs" / "001-my-feature"
+    )
+    write_feature_json(repo, _bash_posix_path(feature))
+    env = clean_env()
+    env["TEST_REPO"] = _bash_posix_path(repo)
+    env["TEST_COMMON"] = _bash_posix_path(
+        repo / ".specify" / "scripts" / "bash" / "common.sh"
+    )
+    env["TEST_PHYSICAL_ROOT"] = (
+        "/" if case == "filesystem-root" else _bash_posix_path(repo.resolve())
+    )
+    program = r"""
+source "$TEST_COMMON"
+get_repo_root() { printf '%s\n' "$TEST_REPO"; }
+# Simulate a root-mounted project without creating /.specify or writing at /.
+pwd() { printf '%s\n' "$TEST_PHYSICAL_ROOT"; }
+paths=$(get_feature_paths --no-persist) || exit 1
+eval "$paths"
+printf '%s' "$FEATURE_DIR"
+"""
+
+    result = run(["bash", "-c", program], repo, env)
+
+    if case == "outside-project":
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert "outside the project" in result.stderr
+        assert not feature.exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == _bash_posix_path(feature.resolve())
+
+
+@pytest.mark.parametrize("port", PORTS)
+@pytest.mark.parametrize(
+    "kind",
+    ["relative", "absolute", "prefix", "ancestor_link", "dangling_ancestor", "link_parent"],
+)
+def test_stored_feature_cannot_escape_project(
+    repo: Path, port: str, kind: str
+) -> None:
+    outside = repo.parent / ("proj-other" if kind == "prefix" else "outside")
+    if kind in {"ancestor_link", "dangling_ancestor", "link_parent"}:
+        if kind != "dangling_ancestor":
+            outside.mkdir()
+        try:
+            (repo / "linked").symlink_to(outside, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"Cannot create directory symlink: {exc}")
+        value = "linked/new-feature"
+        if kind == "link_parent":
+            value = "linked/../outside/new-feature"
+    elif kind == "relative":
+        value = "../outside/new-feature"
+    else:
+        value = (
+            _bash_posix_path(outside / "new-feature")
+            if port == "bash" else str(outside / "new-feature")
+        )
+    write_feature_json(repo, value)
+    before = (repo / ".specify" / "feature.json").read_bytes()
+
+    result = run(_command(repo, port, True), repo)
+
+    if kind == "link_parent" and os.name == "nt" and port == "python":
+        # Windows normalizes parent components before resolving directory links.
+        assert result.returncode == 0, result.stderr
+        contained = repo / "outside" / "new-feature"
+        assert Path(json_stdout(result)["FEATURE_DIR"]) == contained
+        assert (contained / "plan.md").read_text(encoding="utf-8") == TEMPLATE_BODY
+    else:
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert "outside the project" in result.stderr
+    assert not (outside / "new-feature").exists()
+    assert (repo / ".specify" / "feature.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("port", POWERSHELL_PORTS)
+@pytest.mark.parametrize("absolute", [False, True])
+@pytest.mark.parametrize("escape", [False, True], ids=["contained", "outside"])
+def test_powershell_mixed_separators_are_resolved_before_containment(
+    repo: Path, port: str, absolute: bool, escape: bool
+) -> None:
+    value = r"..\outside/new-feature" if escape else r"specs\new-feature"
+    if absolute:
+        value = str(repo) + "/" + value
+    write_feature_json(repo, value)
+    before = (repo / ".specify" / "feature.json").read_bytes()
+
+    result = run(_command(repo, port, True), repo)
+
+    if escape:
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert "outside the project" in result.stderr
+        assert not (repo.parent / "outside" / "new-feature").exists()
+    else:
+        feature = repo / "specs" / "new-feature"
+        assert result.returncode == 0, result.stderr
+        assert Path(json_stdout(result)["FEATURE_DIR"]) == feature
+        assert (feature / "plan.md").read_text(encoding="utf-8") == TEMPLATE_BODY
+    assert (repo / ".specify" / "feature.json").read_bytes() == before
+
+
+@requires_bash
+@pytest.mark.skipif(os.name == "nt", reason="POSIX filenames containing newlines")
+@pytest.mark.parametrize("parser", ["default", "python"])
+@pytest.mark.parametrize(
+    "kind", ["link-target", "parent-component", "terminal-link", "stored-path", "outside-link"]
+)
+def test_bash_feature_paths_preserve_trailing_newlines(
+    repo: Path, kind: str, parser: str
+) -> None:
+    directory = (repo.parent if kind == "outside-link" else repo) / "feature\n\n"
+    directory.mkdir()
+    expected = directory / "new-feature"
+    if kind == "parent-component":
+        (directory / "child").mkdir()
+        value = "feature\n\n/child/../new-feature"
+    elif kind == "stored-path":
+        value = "feature\n\n"
+        expected = directory
+    else:
+        target = "../feature\n\n" if kind == "outside-link" else "feature\n\n"
+        (repo / "linked").symlink_to(target, target_is_directory=True)
+        value = "linked/new-feature"
+        if kind == "terminal-link":
+            value = "linked"
+            expected = directory
+    write_feature_json(repo, value)
+    env = clean_env()
+    if parser == "python":
+        bin_dir = make_python3_path_shim(repo / "bin")
+        jq = bin_dir / "jq"
+        jq.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        jq.chmod(0o755)
+        env["PATH"] = str(bin_dir) + os.pathsep + env["PATH"]
+
+    result = run(_command(repo, "bash", parser == "default"), repo, env)
+
+    if kind == "outside-link":
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert "outside the project" in result.stderr
+        assert not (directory / "new-feature").exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        if parser == "default":
+            assert Path(json_stdout(result)["FEATURE_DIR"]) == expected
+        else:
+            assert f"FEATURE_DIR: {expected}\n" in result.stdout
+        assert (expected / "plan.md").read_text(encoding="utf-8") == TEMPLATE_BODY
+        assert not (repo / "feature").exists()
+        if kind == "stored-path":
+            feature_json = repo / ".specify" / "feature.json"
+            before = feature_json.stat().st_mtime_ns
+            env["SPECIFY_FEATURE_DIRECTORY"] = value
+            retry = run(_command(repo, "bash", parser == "default"), repo, env)
+            assert retry.returncode == 0, retry.stderr
+            assert feature_json.stat().st_mtime_ns == before
+
+
+@pytest.mark.parametrize("port", POWERSHELL_PORTS)
+@pytest.mark.parametrize("existing", [False, True])
+def test_powershell_plan_alias_uses_filesystem_casing(
+    repo: Path, port: str, existing: bool
+) -> None:
+    feature = repo / "specs" / "001-my-feature"
+    target = repo.parent / "target.md"
+    if existing:
+        target.write_bytes(b"keep")
+    alias = feature / "PLAN.MD"
+    try:
+        alias.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"Cannot create file symlink: {exc}")
+    plan = feature / "plan.md"
+    same_entry = plan.is_symlink()
+
+    result = run(_command(repo, port, True), repo)
+
+    if same_entry:
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert "symbolic link" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
+        assert plan.read_text(encoding="utf-8") == TEMPLATE_BODY
+    assert alias.is_symlink()
+    assert target.exists() == existing
+    if existing:
+        assert target.read_bytes() == b"keep"
+
+
+@pytest.mark.parametrize("port", POWERSHELL_PORTS)
+def test_powershell_preserves_cloud_backed_plan(repo: Path, port: str) -> None:
+    feature = repo / "specs" / "001-my-feature"
+    plan = feature / "plan.md"
+    plan.write_bytes(b"existing cloud plan")
+    before = plan.stat().st_mtime_ns
+    env = clean_env()
+    env["SPECIFY_INIT_DIR"] = str(repo)
+    env["TEST_FEATURE_DIR"] = str(feature)
+    env["TEST_PLAN"] = str(plan)
+    program = r"""
+function Get-CloudPlan {
+    [PSCustomObject]@{
+        Name = 'plan.md'
+        Attributes = [System.IO.FileAttributes]::ReparsePoint
+        PSIsContainer = $false
+        LinkType = $null
+        Target = $null
+    }
+}
+function Get-Item {
+    [CmdletBinding()]
+    param([string]$LiteralPath, [switch]$Force)
+    if ($LiteralPath -ceq $env:TEST_PLAN) { return (Get-CloudPlan) }
+    Microsoft.PowerShell.Management\Get-Item @PSBoundParameters
+}
+function Get-ChildItem {
+    [CmdletBinding()]
+    param([string]$LiteralPath, [switch]$Force)
+    if ($LiteralPath -ceq $env:TEST_FEATURE_DIR) { return (Get-CloudPlan) }
+    Microsoft.PowerShell.Management\Get-ChildItem @PSBoundParameters
+}
+& (Join-Path $env:SPECIFY_INIT_DIR '.specify/scripts/powershell/setup-plan.ps1') -Json
+"""
+
+    result = run(_command(repo, port, False)[:2] + ["-Command", program], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert "already exists" in result.stderr
+    assert plan.read_bytes() == b"existing cloud plan"
+    assert plan.stat().st_mtime_ns == before
+
+
+@pytest.mark.parametrize("port", [pytest.param("bash", marks=requires_bash), "python"])
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX FIFO required")
+def test_plan_fifo_is_rejected_without_writing(repo: Path, port: str) -> None:
+    plan = repo / "specs" / "001-my-feature" / "plan.md"
+    os.mkfifo(plan)
+    # Keep a reader open so the unfixed Bash writer fails the assertion, not a hang.
+    with os.fdopen(os.open(plan, os.O_RDONLY | os.O_NONBLOCK), "rb", buffering=0) as reader:
+        result = run(_command(repo, port, True), repo, timeout=15)
+        written = reader.read()
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert written == b""
+    assert stat.S_ISFIFO(plan.stat().st_mode)
+    assert list(plan.parent.iterdir()) == [plan]
+
+
+@pytest.mark.parametrize("port", PORTS)
+def test_plan_directory_is_rejected_without_modification(repo: Path, port: str) -> None:
+    plan = repo / "specs" / "001-my-feature" / "plan.md"
+    plan.mkdir()
+    sentinel = plan / "keep.md"
+    sentinel.write_bytes(b"keep")
+
+    result = run(_command(repo, port, True), repo, timeout=15)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert list(plan.iterdir()) == [sentinel]
+    assert sentinel.read_bytes() == b"keep"
+    assert list(plan.parent.iterdir()) == [plan]
+
+
+@requires_bash
+def test_bash_plan_publication_failure_is_reported(repo: Path) -> None:
+    bin_dir = repo / "bin"
+    bin_dir.mkdir()
+    link = bin_dir / "link"
+    link.write_text("#!/bin/sh\necho 'Hard links unavailable' >&2\nexit 1\n", encoding="utf-8")
+    link.chmod(0o755)
+    env = clean_env()
+    env["PATH"] = str(bin_dir) + os.pathsep + env["PATH"]
+
+    result = run(bash_cmd(repo, SCRIPT, "--json"), repo, env)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "Cannot create plan" in result.stderr
+    assert "Hard links unavailable" in result.stderr
+    assert list((repo / "specs" / "001-my-feature").iterdir()) == []
+
+
+@pytest.mark.parametrize("port", POWERSHELL_PORTS)
+@pytest.mark.parametrize("count", [40, 41])
+def test_powershell_link_traversal_limit(repo: Path, port: str, count: int) -> None:
+    try:
+        (repo / "link").symlink_to(".", target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Cannot create directory symlink: {exc}")
+    write_feature_json(repo, "link/" * count + "new-feature")
+
+    result = run(_command(repo, port, True), repo, timeout=15)
+
+    if count == 40:
+        assert result.returncode == 0, result.stderr
+        assert (repo / "new-feature" / "plan.md").read_text(encoding="utf-8") == TEMPLATE_BODY
+    else:
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert "outside the project" in result.stderr
+        assert not (repo / "new-feature").exists()
+
+
+@pytest.mark.parametrize("port", POWERSHELL_PORTS)
+@pytest.mark.parametrize("depth", [4, 5], ids=["within-budget", "over-budget"])
+def test_powershell_counts_all_link_traversals(
+    repo: Path, port: str, depth: int
+) -> None:
+    try:
+        (repo / "l0").symlink_to(".", target_is_directory=True)
+        for index in range(1, depth + 1):
+            previous = f"l{index - 1}"
+            (repo / f"l{index}").symlink_to(
+                f"{previous}/{previous}", target_is_directory=True
+            )
+    except OSError as exc:
+        pytest.skip(f"Cannot create directory symlink: {exc}")
+    write_feature_json(repo, f"l{depth}/new-feature")
+
+    result = run(_command(repo, port, True), repo, timeout=15)
+
+    if depth == 4:
+        assert result.returncode == 0, result.stderr
+        assert (repo / "new-feature" / "plan.md").read_text(encoding="utf-8") == TEMPLATE_BODY
+    else:
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert "outside the project" in result.stderr
+        assert not (repo / "new-feature").exists()
+
+
+@pytest.mark.parametrize("port", POWERSHELL_PORTS)
+@pytest.mark.parametrize(
+    ("link_type", "target"),
+    [
+        ("", ""),
+        ("SymbolicLink", ""),
+        ("Junction", ""),
+        ("SymbolicLink", "outside"),
+        ("Junction", "outside"),
+    ],
+    ids=["cloud-placeholder", "unresolved-symlink", "unresolved-junction",
+         "external-symlink", "external-junction"],
+)
+def test_powershell_reparse_directory_types(
+    repo: Path, port: str, link_type: str, target: str
+) -> None:
+    feature = repo / "placeholder" / "new-feature"
+    feature.parent.mkdir()
+    write_feature_json(repo, "placeholder/new-feature")
+    env = clean_env()
+    env["SPECIFY_INIT_DIR"] = str(repo)
+    env["TEST_REPARSE_ENTRY"] = str(feature.parent)
+    env["TEST_LINK_TYPE"] = link_type
+    env["TEST_LINK_TARGET"] = str(repo.parent / target) if target else ""
+    program = r"""
+function Get-Item {
+    [CmdletBinding()]
+    param([string]$LiteralPath, [switch]$Force)
+    if ($LiteralPath -ceq $env:TEST_REPARSE_ENTRY) {
+        return [PSCustomObject]@{
+            Name = 'placeholder'
+            Attributes = [System.IO.FileAttributes]::Directory -bor
+                [System.IO.FileAttributes]::ReparsePoint
+            PSIsContainer = $true
+            LinkType = $env:TEST_LINK_TYPE
+            Target = $env:TEST_LINK_TARGET
+        }
+    }
+    Microsoft.PowerShell.Management\Get-Item @PSBoundParameters
+}
+& (Join-Path $env:SPECIFY_INIT_DIR '.specify/scripts/powershell/setup-plan.ps1') -Json
+"""
+
+    result = run(_command(repo, port, False)[:2] + ["-Command", program], repo, env)
+
+    if not link_type:
+        assert result.returncode == 0, result.stderr
+        assert (feature / "plan.md").read_text(encoding="utf-8") == TEMPLATE_BODY
+    else:
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert "outside the project" in result.stderr
+        assert not feature.exists()
+
+
+@pytest.mark.parametrize("port", POWERSHELL_PORTS)
+@pytest.mark.skipif(os.name == "nt", reason="Non-Windows case-sensitive name matching")
+def test_powershell_missing_directory_does_not_match_case_sibling(
+    repo: Path, port: str
+) -> None:
+    env = clean_env()
+    env["SPECIFY_INIT_DIR"] = str(repo)
+    env["TEST_MISSING_DIR"] = str(repo / "features")
+    env["TEST_OUTSIDE"] = str(repo.parent / "outside")
+    program = r"""
+. (Join-Path $env:SPECIFY_INIT_DIR '.specify/scripts/powershell/common.ps1')
+function Test-Path {
+    [CmdletBinding()]
+    param([string]$LiteralPath, [string]$PathType)
+    if ($LiteralPath -ceq $env:TEST_MISSING_DIR) { return $false }
+    Microsoft.PowerShell.Management\Test-Path @PSBoundParameters
+}
+function Get-ChildItem {
+    [CmdletBinding()]
+    param([string]$LiteralPath, [switch]$Force)
+    Microsoft.PowerShell.Management\Get-ChildItem @PSBoundParameters
+    if ($LiteralPath -ceq $env:SPECIFY_INIT_DIR) {
+        [PSCustomObject]@{
+            Name = 'Features'
+            Attributes = [System.IO.FileAttributes]::Directory -bor
+                [System.IO.FileAttributes]::ReparsePoint
+            PSIsContainer = $true
+            LinkType = 'SymbolicLink'
+            Target = $env:TEST_OUTSIDE
+        }
+    }
+}
+Resolve-FeatureDirectoryPath -Path (Join-Path $env:TEST_MISSING_DIR 'new-feature')
+"""
+
+    result = run(_command(repo, port, False)[:2] + ["-Command", program], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert Path(result.stdout.strip()) == repo / "features" / "new-feature"
+
+
+@pytest.mark.parametrize("port", POWERSHELL_PORTS)
+@pytest.mark.skipif(os.name == "nt", reason="Non-Windows case-sensitive name matching")
+def test_powershell_plan_does_not_match_case_sibling(repo: Path, port: str) -> None:
+    feature = repo / "specs" / "001-my-feature"
+    env = clean_env()
+    env["SPECIFY_INIT_DIR"] = str(repo)
+    env["TEST_FEATURE_DIR"] = str(feature)
+    program = r"""
+function Get-ChildItem {
+    [CmdletBinding()]
+    param([string]$LiteralPath, [switch]$Force)
+    Microsoft.PowerShell.Management\Get-ChildItem @PSBoundParameters
+    if ($LiteralPath -ceq $env:TEST_FEATURE_DIR) {
+        [PSCustomObject]@{
+            Name = 'PLAN.MD'
+            Attributes = [System.IO.FileAttributes]::ReparsePoint
+            LinkType = 'SymbolicLink'
+            Target = 'unrelated'
+        }
+    }
+}
+& (Join-Path $env:SPECIFY_INIT_DIR '.specify/scripts/powershell/setup-plan.ps1') -Json
+"""
+
+    result = run(_command(repo, port, False)[:2] + ["-Command", program], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert (feature / "plan.md").read_text(encoding="utf-8") == TEMPLATE_BODY
+
+
+@pytest.mark.parametrize("port", PORTS)
+def test_stored_feature_link_loop_is_rejected(repo: Path, port: str) -> None:
+    try:
+        (repo / "loop").symlink_to("loop", target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Cannot create directory symlink: {exc}")
+    write_feature_json(repo, "loop/new-feature")
+
+    result = run(_command(repo, port, True), repo, timeout=15)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "outside the project" in result.stderr
+
+
+def test_python_strict_path_resolution_failure_is_reported(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    feature = repo / "specs" / "001-my-feature"
+    original_resolve = Path.resolve
+
+    def resolve(path: Path, strict: bool = False) -> Path:
+        if path == feature:
+            if strict:
+                raise OSError(1921, "The name cannot be resolved by the system")
+            return path
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setenv("SPECIFY_INIT_DIR", str(repo))
+    monkeypatch.delenv("SPECIFY_FEATURE_DIRECTORY", raising=False)
+    monkeypatch.setattr(Path, "resolve", resolve)
+
+    with pytest.raises(SystemExit, match="1"):
+        python_common.get_feature_paths()
+
+    assert "outside the project" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("port", PORTS)
+@pytest.mark.parametrize("absolute", [False, True])
+def test_external_feature_requires_override_on_every_invocation(
+    repo: Path, port: str, absolute: bool
+) -> None:
+    outside = repo.parent / "outside" / "new-feature"
+    env = clean_env()
+    absolute_value = _bash_posix_path(outside) if port == "bash" else str(outside)
+    env["SPECIFY_FEATURE_DIRECTORY"] = absolute_value if absolute else "../outside/new-feature"
+
+    result = run(_command(repo, port, True), repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert (outside / "plan.md").read_text(encoding="utf-8") == TEMPLATE_BODY
+    retry = run(_command(repo, port, True), repo)
+    assert retry.returncode != 0
+    assert "outside the project" in retry.stderr
+
+
+@pytest.mark.parametrize("port", PORTS)
+def test_external_feature_symlink_requires_override_on_every_invocation(
+    repo: Path, port: str
+) -> None:
+    outside = repo.parent / "outside"
+    outside.mkdir()
+    try:
+        (repo / "linked-external").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Cannot create directory symlink: {exc}")
+    env = clean_env()
+    env["SPECIFY_FEATURE_DIRECTORY"] = "linked-external/new-feature"
+
+    result = run(_command(repo, port, True), repo, env)
+
+    assert result.returncode == 0, result.stderr
+    plan = outside / "new-feature" / "plan.md"
+    assert plan.read_text(encoding="utf-8") == TEMPLATE_BODY
+    before = plan.stat().st_mtime_ns
+    retry = run(_command(repo, port, True), repo)
+    assert retry.returncode != 0
+    assert retry.stdout == ""
+    assert "outside the project" in retry.stderr
+    assert plan.stat().st_mtime_ns == before
+    restored = run(_command(repo, port, True), repo, env)
+    assert restored.returncode == 0, restored.stderr
+    assert plan.stat().st_mtime_ns == before
+
+
+@pytest.mark.parametrize("port", PORTS)
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("override", [False, True])
+def test_plan_symlink_is_rejected(
+    repo: Path, port: str, existing: bool, override: bool
+) -> None:
+    target = repo.parent / "target.md"
+    if existing:
+        target.write_bytes(b"preserve me")
+    plan = repo / "specs" / "001-my-feature" / "plan.md"
+    try:
+        plan.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"Cannot create file symlink: {exc}")
+    env = clean_env()
+    if override:
+        env["SPECIFY_FEATURE_DIRECTORY"] = (
+            _bash_posix_path(plan.parent) if port == "bash" else str(plan.parent)
+        )
+
+    result = run(_command(repo, port, True), repo, env)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "symbolic link" in result.stderr
+    assert plan.is_symlink()
+    assert target.exists() == existing
+    if existing:
+        assert target.read_bytes() == b"preserve me"
+
+
+@pytest.mark.parametrize("port", PORTS)
+@pytest.mark.parametrize("kind", ["relative", "absolute", "normalized", "internal_link"])
+def test_contained_stored_feature_is_supported(repo: Path, port: str, kind: str) -> None:
+    feature = repo / "specs" / "new-feature"
+    value = "specs/new-feature"
+    if kind == "absolute":
+        value = _bash_posix_path(feature) if port == "bash" else str(feature)
+    elif kind == "normalized":
+        value = "specs/unused/../new-feature"
+    elif kind == "internal_link":
+        try:
+            (repo / "linked").symlink_to(repo / "specs", target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"Cannot create directory symlink: {exc}")
+        value = "linked/new-feature"
+    write_feature_json(repo, value)
+
+    result = run(_command(repo, port, True), repo)
+
+    assert result.returncode == 0, result.stderr
+    assert (feature / "plan.md").read_text(encoding="utf-8") == TEMPLATE_BODY
+    assert not (repo / "specs" / "unused").exists()
 
 
 def test_python_json_preserves_non_ascii_feature_on_legacy_stdout(repo: Path) -> None:

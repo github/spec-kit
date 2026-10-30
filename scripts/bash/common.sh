@@ -104,16 +104,21 @@ read_feature_json_feature_directory() {
     # an availability-gated `elif` would pick python3, swallow its failure, and
     # never reach the grep/sed fallback -- leaving feature.json unreadable even
     # though it is valid (issue #3304).
+    # A success marker preserves trailing newlines in parsed path values.
     local _fd=''
     if command -v jq >/dev/null 2>&1; then
-        if ! _fd=$(jq -r '.feature_directory // empty' "$fj" 2>/dev/null); then
+        if ! _fd=$(jq -jr '.feature_directory // empty' "$fj" 2>/dev/null && printf '.'); then
             _fd=''
+        else
+            _fd="${_fd%.}"
         fi
     fi
     if [[ -z "$_fd" ]] && command -v python3 >/dev/null 2>&1; then
         # Use Python so pretty-printed/multi-line JSON still parses correctly.
-        if ! _fd=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); v=d.get('feature_directory'); print(v if v else '')" "$fj" 2>/dev/null); then
+        if ! _fd=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); v=d.get('feature_directory'); print(v if v else '', end='')" "$fj" 2>/dev/null && printf '.'); then
             _fd=''
+        else
+            _fd="${_fd%.}"
         fi
     fi
     if [[ -z "$_fd" ]]; then
@@ -144,7 +149,8 @@ _persist_feature_json() {
 
     # Read current value (if any) and skip write when unchanged
     local current_val
-    current_val=$(read_feature_json_feature_directory "$repo_root")
+    current_val=$(read_feature_json_feature_directory "$repo_root" && printf '.')
+    current_val="${current_val%.}"
     if [[ "$current_val" == "$feature_dir_value" ]]; then
         return 0
     fi
@@ -158,6 +164,42 @@ _persist_feature_json() {
     else
         printf '{"feature_directory":"%s"}\n' "$(json_escape "$feature_dir_value")" > "$fj"
     fi
+}
+
+# Resolve existing links and missing directory suffixes without creating anything.
+_resolve_feature_directory() {
+    local remaining="$1" resolved="/" component target links=0
+    while [[ -n "$remaining" ]]; do
+        component="${remaining%%/*}"
+        if [[ "$remaining" == */* ]]; then
+            remaining="${remaining#*/}"
+        else
+            remaining=""
+        fi
+        case "$component" in
+            ""|.) continue ;;
+            ..)
+                resolved="${resolved%/*}"
+                resolved="${resolved:-/}"
+                continue
+                ;;
+        esac
+        target="${resolved%/}/$component"
+        if [[ -L "$target" ]]; then
+            links=$((links + 1))
+            [[ "$links" -le 40 ]] || return 1
+            # The marker retains target newlines across command substitution.
+            target="$(readlink -n -- "$target" && printf '.')" || return 1
+            target="${target%.}"
+            remaining="$target${remaining:+/$remaining}"
+            [[ "$target" != /* ]] || resolved="/"
+        elif [[ -e "$target" && ! -d "$target" ]]; then
+            return 1
+        else
+            resolved="$target"
+        fi
+    done
+    printf '%s' "$resolved"
 }
 
 get_feature_paths() {
@@ -193,18 +235,28 @@ get_feature_paths() {
         feature_dir="$SPECIFY_FEATURE_DIRECTORY"
         # Normalize relative paths to absolute under repo root
         [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
-        # Persist to feature.json so future sessions without the env var still
-        # work — unless the caller opted out for read-only resolution (#3025).
+        # Persist unless read-only resolution was requested (#3025). External
+        # paths still require the explicit override on subsequent invocations.
         if [[ "$no_persist" != true ]]; then
             _persist_feature_json "$repo_root" "$SPECIFY_FEATURE_DIRECTORY"
         fi
     elif [[ -f "$repo_root/.specify/feature.json" ]]; then
         local _fd
-        _fd=$(read_feature_json_feature_directory "$repo_root")
+        _fd=$(read_feature_json_feature_directory "$repo_root" && printf '.')
+        _fd="${_fd%.}"
         if [[ -n "$_fd" ]]; then
             feature_dir="$_fd"
             # Normalize relative paths to absolute under repo root
             [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
+            local physical_root
+            physical_root=$(CDPATH="" cd -- "$repo_root" && pwd -P) || return 1
+            local resolved_feature_dir
+            if ! resolved_feature_dir=$(_resolve_feature_directory "$feature_dir" && printf '.') ||
+                [[ "${resolved_feature_dir%.}" != "$physical_root" && "${resolved_feature_dir%.}" != "${physical_root%/}/"* ]]; then
+                echo "ERROR: Stored feature directory is invalid or outside the project. Set SPECIFY_FEATURE_DIRECTORY explicitly to use an external directory." >&2
+                return 1
+            fi
+            feature_dir="${resolved_feature_dir%.}"
         else
             echo "ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory." >&2
             return 1

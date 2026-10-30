@@ -38,6 +38,22 @@ if (-not $paths) {
 # Ensure the feature directory exists
 New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 
+$pathComparison = [System.StringComparison]::Ordinal
+if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
+    $pathComparison = [System.StringComparison]::OrdinalIgnoreCase
+}
+try {
+    $planEntry = Get-Item -LiteralPath $paths.IMPL_PLAN -Force -ErrorAction Stop
+} catch [System.Management.Automation.ItemNotFoundException] {
+    # Windows PowerShell 5.1 may only expose dangling links through their parent.
+    $planEntry = Get-ChildItem -LiteralPath $paths.FEATURE_DIR -Force -ErrorAction Stop |
+        Where-Object { $_.Name.Equals('plan.md', $pathComparison) } | Select-Object -First 1
+}
+if (Test-NameRedirectingLink -Entry $planEntry) {
+    [Console]::Error.WriteLine("ERROR: Plan destination must not be a symbolic link.")
+    exit 1
+}
+
 # Copy plan template if plan doesn't already exist
 if (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf) {
     if ($Json) {
@@ -56,7 +72,21 @@ if (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf) {
             exit 1
         }
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-        [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
+        try {
+            $plan = [System.IO.File]::Open(
+                $paths.IMPL_PLAN, [System.IO.FileMode]::CreateNew,
+                [System.IO.FileAccess]::Write, [System.IO.FileShare]::None
+            )
+            try {
+                $bytes = $utf8NoBom.GetBytes($content)
+                $plan.Write($bytes, 0, $bytes.Length)
+            } finally {
+                $plan.Dispose()
+            }
+        } catch {
+            [Console]::Error.WriteLine("ERROR: Cannot create plan: $($_.Exception.Message)")
+            exit 1
+        }
         # Emit the copy status like the bash twin (setup-plan.sh); route to stderr
         # in -Json mode so stdout stays pure JSON, matching the sibling messages.
         if ($Json) {

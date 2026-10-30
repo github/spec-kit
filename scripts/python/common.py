@@ -165,6 +165,20 @@ def get_feature_paths(
         feature_dir = Path(stored)
         if not feature_dir.is_absolute():
             feature_dir = repo_root / feature_dir
+        try:
+            try:
+                feature_dir = feature_dir.resolve(strict=True)
+            except FileNotFoundError:
+                # Missing feature directories are valid; other resolution errors are not.
+                feature_dir = feature_dir.resolve()
+            feature_dir.relative_to(repo_root.resolve())
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(
+                "ERROR: Stored feature directory is invalid or outside the project. "
+                "Set SPECIFY_FEATURE_DIRECTORY explicitly to use an external directory.",
+                file=sys.stderr,
+            )
+            raise SystemExit(1) from exc
     else:
         print(
             "ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY "

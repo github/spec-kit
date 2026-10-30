@@ -158,6 +158,61 @@ function Save-FeatureJson {
     [System.IO.File]::WriteAllText($fjPath, $json, $utf8NoBom)
 }
 
+function Test-NameRedirectingLink {
+    param([object]$Entry)
+
+    return ($Entry -and ($Entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -and
+        ($Entry.LinkType -in @('SymbolicLink', 'Junction') -or $Entry.Target))
+}
+
+function Resolve-FeatureDirectoryPath {
+    param([string]$Path, [ref]$LinkCount = ([ref]0))
+
+    $root = [System.IO.Path]::GetPathRoot($Path)
+    if (-not $root) { throw 'Feature directory must be absolute' }
+    $resolved = $root
+    $pathComparison = [System.StringComparison]::Ordinal
+    if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
+        $pathComparison = [System.StringComparison]::OrdinalIgnoreCase
+    }
+    # The PowerShell FileSystem provider recognizes both separators on every OS.
+    foreach ($component in ($Path.Substring($root.Length) -split '[\\/]')) {
+        if (-not $component -or $component -eq '.') { continue }
+        if ($component -eq '..') {
+            $parent = [System.IO.Path]::GetDirectoryName($resolved.TrimEnd('/', '\'))
+            $resolved = if ($parent) { $parent } else { $root }
+            continue
+        }
+        $candidate = Join-Path $resolved $component
+        $entry = $null
+        if (Test-Path -LiteralPath $candidate) {
+            # Get-Item recognizes Windows short-name and trailing-dot aliases too.
+            $entry = Get-Item -LiteralPath $candidate -Force -ErrorAction Stop
+        } elseif (Test-Path -LiteralPath $resolved -PathType Container) {
+            # Parent enumeration also sees dangling links on Windows PowerShell 5.1.
+            $entry = Get-ChildItem -LiteralPath $resolved -Force -ErrorAction Stop |
+                Where-Object { $_.Name.Equals($component, $pathComparison) } |
+                Select-Object -First 1
+        }
+        # Cloud placeholders can be reparse directories without redirecting names.
+        if (Test-NameRedirectingLink -Entry $entry) {
+            $LinkCount.Value += 1
+            if ($LinkCount.Value -gt 40) { throw 'Too many symbolic links in feature directory' }
+            $target = @($entry.Target)[0]
+            if (-not $target) { throw "Cannot resolve reparse point: $candidate" }
+            if (-not [System.IO.Path]::IsPathRooted($target)) {
+                $target = Join-Path $resolved $target
+            }
+            $resolved = Resolve-FeatureDirectoryPath -Path $target -LinkCount $LinkCount
+        } elseif ($entry -and -not $entry.PSIsContainer) {
+            throw "Feature directory component is not a directory: $candidate"
+        } else {
+            $resolved = $candidate
+        }
+    }
+    return $resolved
+}
+
 function Get-FeaturePathsEnv {
     # Read-only callers (e.g. check-prerequisites.ps1 -PathsOnly) pass -NoPersist
     # so pure path resolution never writes .specify/feature.json, which would
@@ -188,8 +243,8 @@ function Get-FeaturePathsEnv {
         if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
             $featureDir = Join-Path $repoRoot $featureDir
         }
-        # Persist to feature.json so future sessions without the env var still
-        # work - unless the caller opted out for read-only resolution (#3025).
+        # Persist unless read-only resolution was requested (#3025). External
+        # paths still require the explicit override on subsequent invocations.
         if (-not $noPersist) {
             Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
         }
@@ -207,6 +262,23 @@ function Get-FeaturePathsEnv {
             # Normalize relative paths to absolute under repo root
             if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
                 $featureDir = Join-Path $repoRoot $featureDir
+            }
+            try {
+                $featureDir = Resolve-FeatureDirectoryPath -Path $featureDir
+                $physicalRoot = Resolve-FeatureDirectoryPath -Path $repoRoot
+                $prefix = $physicalRoot.TrimEnd('/', '\') + [System.IO.Path]::DirectorySeparatorChar
+                $comparison = [System.StringComparison]::Ordinal
+                if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
+                    $comparison = [System.StringComparison]::OrdinalIgnoreCase
+                }
+                if (-not $featureDir.Equals($physicalRoot, $comparison) -and
+                    -not $featureDir.StartsWith($prefix, $comparison)) {
+                    throw 'Feature directory escapes the project'
+                }
+            } catch {
+                [Console]::Error.WriteLine("ERROR: Stored feature directory is invalid or outside the project. Set SPECIFY_FEATURE_DIRECTORY explicitly to use an external directory.")
+                if ($ReturnNullOnError) { return $null }
+                exit 1
             }
         } else {
             [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory.")
