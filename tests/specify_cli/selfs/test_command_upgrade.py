@@ -8,7 +8,11 @@ from unittest.mock import patch
 import pytest
 
 from specify_cli import app
-from tests.specify_cli.self_upgrade_helpers import runner, strip_ansi
+from tests.specify_cli.self_upgrade_helpers import (
+    isolated_installer_path,  # noqa: F401 (autouse fixture)
+    runner,
+    strip_ansi,
+)
 
 
 @pytest.mark.parametrize(("method", "name"), [("uv-tool", "uv"), ("pipx", "pipx")])

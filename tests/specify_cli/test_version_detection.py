@@ -16,6 +16,7 @@ import specify_cli
 from specify_cli import app
 
 from tests.specify_cli.self_upgrade_helpers import (
+    isolated_installer_path,  # noqa: F401 (autouse fixture)
     route_opener_open_through_urlopen,  # noqa: F401 (autouse fixture)
     _InstallMethod,
     _assemble_installer_argv,
@@ -26,6 +27,25 @@ from tests.specify_cli.self_upgrade_helpers import (
     runner,
     strip_ansi,
 )
+
+
+class TestInstallerLookupEnvironment:
+    def test_default_lookup_path_is_owned(self, request):
+        bin_dir = request.getfixturevalue("isolated_installer_path")
+        assert os.get_exec_path() == [str(bin_dir)]
+        assert list(bin_dir.iterdir()) == []
+        assert os.environ["PATHEXT"] == ".COM;.EXE;.BAT;.CMD"
+        assert "NoDefaultCurrentDirectoryInExePath" not in os.environ
+        assert _assemble_installer_argv(_InstallMethod.UV_TOOL, "v0.7.6") is None
+
+    def test_installer_fixture_owns_its_lookup_directory(self, installer_paths):
+        bin_dir = Path(installer_paths["uv"]).parent
+        assert Path(installer_paths["pipx"]).parent == bin_dir
+        assert os.get_exec_path() == [str(bin_dir)]
+        for name, expected in installer_paths.items():
+            found = specify_cli._version._find_installer(name)
+            assert found is not None
+            assert Path(found) == Path(expected)
 
 
 class TestDetectionUvTool:

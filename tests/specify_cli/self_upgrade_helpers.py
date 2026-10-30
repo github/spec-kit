@@ -32,6 +32,7 @@ __all__ = (
     "_detection_result",
     "_verify_upgrade",
     "mock_urlopen_response",
+    "isolated_installer_path",
     "requires_posix",
     "route_opener_open_through_urlopen",
     "runner",
@@ -39,6 +40,17 @@ __all__ = (
 )
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def isolated_installer_path(monkeypatch, tmp_path):
+    bin_dir = tmp_path / "lookup-bin"
+    bin_dir.mkdir()
+    monkeypatch.setenv("PATH", str(bin_dir))
+    monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+    monkeypatch.delenv("NoDefaultCurrentDirectoryInExePath", raising=False)
+    return bin_dir
+
 
 # Some installer error-path tests create a relative `./uv` fixture, `chdir`
 # into the tmp dir, and assert POSIX executable-bit semantics (chmod / X_OK).

@@ -177,7 +177,7 @@ def clean_environ(monkeypatch):
 
 
 @pytest.fixture
-def installer_paths(tmp_path):
+def installer_paths(tmp_path, monkeypatch):
     bin_dir = tmp_path / "installer-bin"
     bin_dir.mkdir()
     paths = {}
@@ -186,6 +186,7 @@ def installer_paths(tmp_path):
         executable.write_bytes(b"installer fixture; never executed\n")
         executable.chmod(0o755)
         paths[name] = str(executable)
+    monkeypatch.setenv("PATH", str(bin_dir))
     return paths
 
 

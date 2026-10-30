@@ -8,6 +8,7 @@ import specify_cli
 from specify_cli import app
 
 from tests.specify_cli.self_upgrade_helpers import (
+    isolated_installer_path,  # noqa: F401 (autouse fixture)
     route_opener_open_through_urlopen,  # noqa: F401 (autouse fixture)
     SENTINEL_GH_TOKEN,
     SENTINEL_GITHUB_TOKEN,
