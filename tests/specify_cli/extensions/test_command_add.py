@@ -51,6 +51,7 @@ class TestExtensionAddCLI:
             ("global-pax", "global PAX metadata"),
             ("metadata-chain", "metadata chain"),
             ("negative-metadata", "negative size"),
+            ("total-metadata", "archive metadata exceeds"),
         ],
     )
     @pytest.mark.parametrize("suffix", ["ext.tar.gz", "assets/42"])

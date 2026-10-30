@@ -10,7 +10,7 @@ def tar_metadata_record(metadata_type: bytes, size: int, key: str = "comment") -
     info.type = metadata_type
     info.size = size
     if metadata_type in (tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK):
-        payload = b"file.txt\0".ljust(size, b"\0")
+        payload = b"file.txt\0"[:size].ljust(size, b"\0")
     elif size:
         prefix = f"{size} {key}=".encode()
         payload = prefix + b"x" * (size - len(prefix) - 1) + b"\n"
@@ -30,8 +30,10 @@ def tar_global_pax_archive(sizes: list[int], *, interleaved: bool) -> bytes:
     return gzip.compress(b"".join(records) + b"\0" * tarfile.BLOCKSIZE)
 
 
-def tar_metadata_chain_archive(count: int, metadata_type: bytes = tarfile.XHDTYPE) -> bytes:
-    plain = tar_metadata_record(metadata_type, 32) * count
+def tar_metadata_chain_archive(
+    count: int, metadata_type: bytes = tarfile.XHDTYPE, *, size: int = 32
+) -> bytes:
+    plain = tar_metadata_record(metadata_type, size) * count
     return gzip.compress(
         plain + tarfile.TarInfo("file.txt").tobuf() + b"\0" * tarfile.BLOCKSIZE
     )
@@ -47,6 +49,8 @@ def tar_negative_metadata_archive(metadata_type: bytes) -> bytes:
 
 
 def tar_safety_archive(kind: str) -> bytes:
+    if kind == "total-metadata":
+        return tar_metadata_chain_archive(17, size=65536)
     if kind == "global-pax":
         return tar_global_pax_archive([1024] * 9, interleaved=False)
     if kind == "metadata-chain":

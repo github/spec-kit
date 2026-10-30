@@ -36,6 +36,8 @@ MAX_ZIP_CENTRAL_DIRECTORY_BYTES = 4 * 1024 * 1024
 # Include tar headers, padding, and GNU/PAX metadata, not just file payloads.
 MAX_TAR_STREAM_BYTES = MAX_ZIP_TOTAL_BYTES + 4 * 1024 * 1024
 MAX_TAR_METADATA_BYTES = 64 * 1024
+# Per-member metadata dictionaries are retained during archive validation.
+MAX_TAR_TOTAL_METADATA_BYTES = 1 * 1024 * 1024
 # Global fields are copied into every retained member.
 MAX_TAR_GLOBAL_PAX_BYTES = 8 * 1024
 MAX_TAR_METADATA_DEPTH = 32
@@ -146,6 +148,7 @@ class _BoundedTarInfo(tarfile.TarInfo):
 
 class _BoundedTarFile(tarfile.TarFile):
     tarinfo = _BoundedTarInfo
+    _metadata_bytes: int = 0
     _global_pax_bytes: int = 0
     _metadata_depth: int = 0
 
@@ -156,6 +159,11 @@ class _BoundedTarFile(tarfile.TarFile):
                 "tar.gz metadata chain exceeds maximum depth "
                 f"of {MAX_TAR_METADATA_DEPTH}"
             )
+        if self._metadata_bytes + member.size > MAX_TAR_TOTAL_METADATA_BYTES:
+            raise _TarLimitError(
+                "tar.gz archive metadata exceeds maximum cumulative size "
+                f"of {MAX_TAR_TOTAL_METADATA_BYTES} bytes"
+            )
         if member.type == tarfile.XGLTYPE:
             if self._global_pax_bytes + member.size > MAX_TAR_GLOBAL_PAX_BYTES:
                 raise _TarLimitError(
@@ -163,6 +171,7 @@ class _BoundedTarFile(tarfile.TarFile):
                     f"of {MAX_TAR_GLOBAL_PAX_BYTES} bytes"
                 )
             self._global_pax_bytes += member.size
+        self._metadata_bytes += member.size
         self._metadata_depth += 1
         try:
             yield

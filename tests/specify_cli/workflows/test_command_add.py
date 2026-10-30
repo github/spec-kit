@@ -1395,6 +1395,7 @@ steps:
             ("global-pax", "global PAX metadata"),
             ("metadata-chain", "metadata chain"),
             ("negative-metadata", "negative size"),
+            ("total-metadata", "archive metadata exceeds"),
         ],
     )
     def test_suffixless_download_preserves_archive_safety_errors(

@@ -112,7 +112,8 @@ installing or running components from an unfamiliar project.
 Shared archive validation limits the decompressed tar.gz stream to 54 MiB,
 including tar headers, padding, and GNU/PAX metadata as well as file contents.
 Each GNU/PAX metadata payload is also capped at 64 KiB before it is read or
-parsed. Global PAX payloads have a tighter cumulative budget of 8 KiB per
+parsed, with a cumulative budget of 1 MiB for all metadata payloads per archive.
+Global PAX payloads have a tighter cumulative budget of 8 KiB per
 archive because their fields are copied into retained members. Metadata chains
 are limited to 32 headers, and negative metadata sizes are rejected.
 These limits apply during format detection and extraction; ordinary member-size

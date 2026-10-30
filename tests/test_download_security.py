@@ -43,6 +43,7 @@ from tests.archive_helpers import (
     [
         ("global-pax", "global PAX.*cumulative size.*8192"),
         ("metadata-chain", "metadata chain.*maximum depth.*32"),
+        ("total-metadata", "archive metadata.*cumulative size.*1048576"),
     ],
 )
 def test_tar_archive_metadata_budgets_reject_before_parsing(
@@ -84,6 +85,73 @@ def test_tar_archive_metadata_budgets_reject_before_parsing(
                 )
         assert not source.closed
     assert not out_dir.exists()
+
+
+@pytest.mark.parametrize("metadata_type", [tarfile.XHDTYPE, tarfile.SOLARIS_XHDTYPE])
+@pytest.mark.parametrize("over_budget", [False, True])
+def test_per_member_metadata_cumulative_boundary(
+    tmp_path, monkeypatch, metadata_type, over_budget
+):
+    plain = b""
+    for index, size in enumerate([65536] * 15 + [65535]):
+        plain += tar_metadata_record(metadata_type, size)
+        plain += tarfile.TarInfo(f"file{index}.txt").tobuf()
+    plain += tar_metadata_record(tarfile.GNUTYPE_LONGLINK, 2 if over_budget else 1)
+    plain += tarfile.TarInfo("last.txt").tobuf()
+    archive_path = tmp_path / "per-member.tar.gz"
+    archive_path.write_bytes(gzip.compress(plain + b"\0" * tarfile.BLOCKSIZE))
+    original_parser = tarfile.TarInfo._proc_member
+    parsed_bytes = {}
+
+    def bounded_parser(member, archive):
+        if member.type in (
+            tarfile.XHDTYPE, tarfile.SOLARIS_XHDTYPE, tarfile.GNUTYPE_LONGLINK
+        ):
+            parsed_bytes[archive] = parsed_bytes.get(archive, 0) + member.size
+            assert parsed_bytes[archive] <= 1048576, "Excess metadata reached parser"
+        return original_parser(member, archive)
+
+    monkeypatch.setattr(tarfile.TarInfo, "_proc_member", bounded_parser)
+    if over_budget:
+        with pytest.raises(_CustomZipError, match="archive metadata.*cumulative size.*1048576"):
+            safe_extract_archive(
+                archive_path, tmp_path / "out", error_type=_CustomZipError
+            )
+        assert not (tmp_path / "out").exists()
+    else:
+        for index in range(2):
+            out_dir = tmp_path / f"out{index}"
+            assert safe_extract_archive(archive_path, out_dir) == "tar.gz"
+            assert len(list(out_dir.iterdir())) == 17
+
+
+@pytest.mark.parametrize(
+    "metadata_type",
+    [tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.SOLARIS_XHDTYPE,
+     tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK],
+)
+@pytest.mark.parametrize("over_budget", [False, True])
+def test_cumulative_metadata_budget_includes_every_header_type(
+    tmp_path, monkeypatch, metadata_type, over_budget
+):
+    monkeypatch.setattr(
+        _download_security, "MAX_TAR_TOTAL_METADATA_BYTES", 64, raising=False
+    )
+    plain = tar_metadata_record(tarfile.XGLTYPE, 32)
+    plain += tarfile.TarInfo("first.txt").tobuf()
+    plain += tar_metadata_record(metadata_type, 33 if over_budget else 32)
+    plain += tarfile.TarInfo("last.txt").tobuf()
+    archive_path = tmp_path / "mixed.tar.gz"
+    archive_path.write_bytes(gzip.compress(plain + b"\0" * tarfile.BLOCKSIZE))
+    if over_budget:
+        with pytest.raises(_CustomZipError, match="archive metadata.*cumulative size.*64"):
+            safe_extract_archive(
+                archive_path, tmp_path / "out", error_type=_CustomZipError
+            )
+        assert not (tmp_path / "out").exists()
+    else:
+        assert safe_extract_archive(archive_path, tmp_path / "out") == "tar.gz"
+        assert len(list((tmp_path / "out").iterdir())) == 2
 
 
 @pytest.mark.parametrize("extractor", [safe_extract_tar, safe_extract_archive])
@@ -368,7 +436,7 @@ def test_tiny_compressed_pax_archive_rejects_large_metadata(tmp_path):
 
 def test_tar_metadata_limit_does_not_limit_regular_file_payload(tmp_path):
     archive_path = tmp_path / "payload.tar.gz"
-    contents = b"x" * 65537
+    contents = b"x" * 1048577
     _write_tar_gz(archive_path, [("file.txt", contents)])
     out_dir = tmp_path / "out"
 
