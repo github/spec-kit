@@ -554,6 +554,9 @@ def run_update_command(extension: str | None) -> None:
                     _ = manager.install_from_zip(
                         archive_path,
                         speckit_version,
+                        register_commands=not is_ai_skills_enabled(
+                            _commands.load_init_options(project_root)
+                        ),
                         catalog_name=update.catalog_name,
                     )
 
