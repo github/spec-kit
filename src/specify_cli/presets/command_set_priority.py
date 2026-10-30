@@ -58,6 +58,31 @@ def preset_set_priority(
 
     # Update priority
     manager.registry.update(preset_id, {"priority": priority})
+
+    # A priority change can change the winning command or skill layer just as
+    # install and removal do, so rematerialize artifacts provided by this
+    # preset from the full priority stack.
+    try:
+        from ._manifest import PresetManifest
+
+        manifest = PresetManifest(manager.presets_dir / preset_id / "preset.yml")
+        command_names = [
+            template["name"]
+            for template in manifest.templates
+            if template.get("type") == "command"
+        ]
+        if command_names:
+            manager._reconcile_composed_commands(command_names)
+            manager._reconcile_skills(command_names)
+    except Exception as exc:  # noqa: BLE001 - lifecycle reconciliation is best-effort
+        import warnings
+
+        warnings.warn(
+            f"Post-priority reconciliation failed for {preset_id}: {exc}. "
+            "Agent command files may not reflect the current priority stack.",
+            stacklevel=2,
+        )
+
     manager.reconcile_constitution(
         f"Failed to reconcile constitution after changing priority for preset {preset_id}"
     )
