@@ -132,6 +132,16 @@ class TestOmpIntegration(MarkdownIntegrationTests):
                 integration_args=integration_args,
             )
 
+    @pytest.mark.parametrize(
+        "integration_args", [["--"], ["--no-session", "--"], ["--", "extra"]]
+    )
+    def test_integration_args_option_terminator_is_rejected(self, integration_args):
+        with pytest.raises(ValueError, match="option terminator"):
+            get_integration(self.KEY).build_exec_args(
+                "prompt",
+                integration_args=integration_args,
+            )
+
     def test_integration_args_allow_models_cycling_flag(self):
         # `--models` only scopes Ctrl+P cycling; it does not select the model.
         get_integration(self.KEY).validate_runtime_config(

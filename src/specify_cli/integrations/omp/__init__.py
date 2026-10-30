@@ -75,6 +75,12 @@ class OmpIntegration(MarkdownIntegration):
             for value in integration_args or ()
         ):
             raise ValueError("OMP 'integration_args' values must be non-empty strings.")
+        if "--" in (integration_args or ()):
+            raise ValueError(
+                "OMP 'integration_args' must not contain the '--' option "
+                "terminator; it would turn generated options and the prompt "
+                "into positional arguments."
+            )
         if any(
             value == "--model" or value.startswith("--model=")
             for value in integration_args or ()
