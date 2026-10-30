@@ -87,6 +87,32 @@ adding per-agent wrapper scripts. For `generic`, extension registration
 resolves the persisted `--commands-dir` rather than the static registry
 placeholder; `--skills` emits skills into that same directory.
 
+Core command templates also use `{PRE_HOOK_SCRIPT}` and `{POST_HOOK_SCRIPT}`.
+Rendering selects the same `sh`, `ps`, or `py` variant as the command's main
+script; extension installation and re-registration provision the native pre/post entry points
+for each hook-bearing command's selected variant, including fallback variants
+when the project preference is unavailable. The CLI validates hook configuration on write and
+materializes ordered per-event JSON with a snapshot of `.specify/extensions.yml`.
+CLI writers serialize publication, invalidate `generation.txt` before changing
+projection files, and publish a fresh UUID generation after the snapshot.
+Each variant captures and rechecks this generation around resolution, rejecting
+changes even when the YAML changes and then reverts to identical bytes.
+Each variant also checks the snapshot,
+event-index digest, and generated response digest after normalizing CRLF line
+endings to LF, so tracked projections survive Git checkout conversion. Each
+reads the projection in its own runtime, without depending on another variant
+or on runtime PyYAML; it rejects stale, corrupt, or missing projections.
+The legacy YAML resolver remains for projects not yet refreshed. The resolver
+returns ordered hook metadata as JSON; agent commands themselves remain the
+responsibility of the agent. The command/skill registrar resolves these
+placeholders too when a preset wraps a core command. Preset installation and
+re-registration provision selected dispatchers when the effective command or
+an independently rendered, surviving alias references hooks. Shadowed primary
+commands and aliases do not require dispatchers for discarded content.
+Removal resolves the surviving command without the removed preset and
+provisions its selected variant before restoring hook-bearing lower layers in
+older projects that lack them.
+
 ## External adapter package contract
 
 A standalone ZIP, tar.gz, or tgz archive needs only these root files (a single

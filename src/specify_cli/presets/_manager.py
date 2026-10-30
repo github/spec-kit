@@ -786,6 +786,10 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 # names from registered_commands are still unregistered.
                 pass
 
+        self._ensure_hook_dispatchers_for_commands(
+            sorted(removed_cmd_names), exclude_preset_id=pack_id
+        )
+
         affected_skill_dirs: Dict[
             Path, tuple[Optional[str], List[str]]
         ] = {}

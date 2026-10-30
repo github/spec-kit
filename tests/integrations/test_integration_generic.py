@@ -2432,10 +2432,8 @@ class TestGenericIntegration:
         )
         assert constitution_skill.exists()
         content = constitution_skill.read_text(encoding="utf-8")
-        assert (
-            "replace dots (`.`) with hyphens (`-`)" in content
-        ), "generic --skills output is missing the hook-invocation note"
-        assert "`speckit.git.commit` → `/speckit-git-commit`" in content
+        assert ".specify/scripts/bash/pre-hooks.sh constitution" in content
+        assert ".specify/scripts/bash/post-hooks.sh constitution" in content
 
     def test_skills_flag_false_keeps_flat_markdown(self, tmp_path):
         """Without --skills, behavior is unchanged: flat speckit.<name>.md files."""
@@ -2615,6 +2613,8 @@ class TestGenericIntegration:
             ".specify/scripts/bash/check-prerequisites.sh",
             ".specify/scripts/bash/common.sh",
             ".specify/scripts/bash/create-new-feature.sh",
+            ".specify/scripts/bash/post-hooks.sh",
+            ".specify/scripts/bash/pre-hooks.sh",
             ".specify/scripts/bash/resolve-template.sh",
             ".specify/scripts/bash/setup-plan.sh",
             ".specify/scripts/bash/setup-tasks.sh",
@@ -2763,6 +2763,8 @@ class TestGenericIntegration:
             ".specify/scripts/powershell/check-prerequisites.ps1",
             ".specify/scripts/powershell/common.ps1",
             ".specify/scripts/powershell/create-new-feature.ps1",
+            ".specify/scripts/powershell/post-hooks.ps1",
+            ".specify/scripts/powershell/pre-hooks.ps1",
             ".specify/scripts/powershell/resolve-template.ps1",
             ".specify/scripts/powershell/setup-plan.ps1",
             ".specify/scripts/powershell/setup-tasks.ps1",

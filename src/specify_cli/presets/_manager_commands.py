@@ -1,6 +1,7 @@
 """Agent command registration and reconciliation for installed presets."""
 
 import copy
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
@@ -15,8 +16,9 @@ from .._init_options import (
     resolve_active_agent_for_registration,
 )
 from ..extensions import ExtensionRegistry
+from ..integrations.base import IntegrationBase
 from ..integrations._file_changes import write_text as _write_text
-from ._manifest import PresetManifest
+from ._manifest import PresetError, PresetManifest, PresetValidationError
 from ._resolver import PresetResolver
 
 
@@ -92,6 +94,102 @@ def _substitute_core_template(
 class _PresetCommandMethods:
     """Command artifact methods shared through PresetManager's lifecycle state."""
 
+    def _ensure_hook_dispatchers_for_commands(
+        self, command_names: List[str], *, exclude_preset_id: str | None = None
+    ) -> None:
+        """Provision dispatchers for the command that will be rendered."""
+        if not command_names:
+            return
+        registrar = self._command_registrar()
+        resolver = PresetResolver(self.project_root)
+        options = load_init_options(self.project_root)
+        requested = options.get("script") or ("ps" if os.name == "nt" else "sh")
+        variants = set()
+        contents = []
+        effective_sources = set()
+        for name in command_names:
+            try:
+                content = resolver.resolve_content(
+                    name, "command", exclude_preset_id=exclude_preset_id
+                )
+            except PresetValidationError:
+                # Registration reports invalid composition through its existing warning path.
+                continue
+            if content is None:
+                continue
+            contents.append((name, content))
+            layers = resolver.collect_all_layers(
+                name, "command", exclude_preset_id=exclude_preset_id
+            )
+            effective_sources.add(layers[0]["path"])
+
+        # A shadowed primary can still emit a live alias from its own source.
+        claimed_aliases = set()
+        for pack_id, _metadata in self.registry.list_by_priority():
+            if pack_id == exclude_preset_id:
+                continue
+            pack_dir = self.presets_dir / pack_id
+            manifest = resolver._get_manifest(pack_dir)
+            if manifest is None:
+                continue
+            for template in manifest.templates:
+                if (
+                    template.get("type") == "command"
+                    and template.get("name") in command_names
+                    and template.get("aliases")
+                ):
+                    aliases = set(template["aliases"])
+                    live_aliases = aliases - claimed_aliases
+                    claimed_aliases.update(aliases)
+                    source_file = pack_dir / template["file"]
+                    if live_aliases and source_file not in effective_sources and source_file.is_file():
+                        contents.append((
+                            template["name"], source_file.read_text(encoding="utf-8")
+                        ))
+
+        for name, content in contents:
+            frontmatter, body = registrar.parse_frontmatter(content)
+            if frontmatter.get("strategy") == "wrap" and "{CORE_TEMPLATE}" in body:
+                body, core_frontmatter = _substitute_core_template(
+                    body, name, self.project_root, registrar
+                )
+                for key in ("scripts", "agent_scripts"):
+                    if key not in frontmatter and key in core_frontmatter:
+                        frontmatter[key] = core_frontmatter[key]
+            if "{PRE_HOOK_SCRIPT}" not in body and "{POST_HOOK_SCRIPT}" not in body:
+                continue
+            scripts = frontmatter.get("scripts")
+            if not isinstance(scripts, dict):
+                scripts = {}
+            try:
+                variant = (
+                    IntegrationBase.select_script_variant(requested, scripts)
+                    if scripts else requested
+                )
+            except ValueError as exc:
+                raise PresetError(f"Cannot select hook dispatcher: {exc}") from exc
+            if variant not in ("sh", "ps", "py"):
+                raise PresetError(f"Unsupported hook dispatcher script type: {variant}")
+            variants.add(variant)
+
+        from .. import _install_shared_infra
+
+        for variant in sorted(variants):
+            directory = {"sh": "bash", "ps": "powershell", "py": "python"}[variant]
+            suffix = {"sh": ".sh", "ps": ".ps1", "py": ".py"}[variant]
+            paths = [
+                self.project_root / ".specify" / "scripts" / directory
+                / (f"{phase}_hooks.py" if variant == "py" else f"{phase}-hooks{suffix}")
+                for phase in ("pre", "post")
+            ]
+            if any(path.is_symlink() or not path.is_file() for path in paths):
+                _install_shared_infra(
+                    self.project_root, variant, hook_dispatchers_only=True,
+                    refresh_managed=True,
+                )
+            if any(path.is_symlink() or not path.is_file() for path in paths):
+                raise PresetError(f"Cannot render preset command: missing hook dispatcher for {variant}")
+
     def _register_commands(
         self,
         manifest: PresetManifest,
@@ -119,6 +217,8 @@ class _PresetCommandMethods:
         ]
         if not command_templates:
             return {}
+
+        self._ensure_hook_dispatchers_for_commands([t["name"] for t in command_templates])
 
         # A preset command template always ships its own body, so it is
         # self-contained and scaffolds regardless of whether any similarly
@@ -931,6 +1031,8 @@ class _PresetCommandMethods:
         """
         if not command_names:
             return set()
+
+        self._ensure_hook_dispatchers_for_commands(command_names)
 
         # Every preset-owned command name flows through unchanged. Names are
         # NOT filtered by the ``speckit.<ns>.<cmd>`` shape: a self-contained

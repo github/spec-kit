@@ -1,5 +1,7 @@
 """Tests for preset command artifacts in specify_cli.presets._manager_commands."""
 
+import json
+import os
 from pathlib import Path
 
 import pytest
@@ -3077,6 +3079,325 @@ def _make_wrap_preset_dir(
 
 class TestRemoveReconciliation:
     """Test that removing a preset re-registers the next layer's command."""
+
+    @pytest.mark.parametrize("upper_owns_alias", [False, True])
+    def test_shadowed_replacement_alias_provisions_its_hook_variant(
+        self, project_dir, temp_dir, upper_owns_alias
+    ):
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        manager = PresetManager(project_dir)
+        upper = _make_wrap_preset_dir(
+            temp_dir, "upper-no-hooks", "speckit.specify", "before", "after",
+            aliases=["speckit.spec"] if upper_owns_alias else None,
+        )
+        (upper / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Upper replacement\nstrategy: replace\n"
+            "---\n\nUpper command without hooks.\n", encoding="utf-8"
+        )
+        manager.install_from_directory(upper, "0.1.5", priority=10)
+        lower = _make_wrap_preset_dir(
+            temp_dir, "lower-with-alias", "speckit.specify", "before", "after",
+            aliases=["speckit.spec"],
+        )
+        (lower / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Lower replacement\nstrategy: replace\n"
+            "scripts:\n  py: .specify/scripts/python/check_prerequisites.py\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n", encoding="utf-8"
+        )
+
+        manager.install_from_directory(lower, "0.1.5", priority=20)
+
+        commands = project_dir / ".gemini/commands"
+        assert "Upper command without hooks." in (
+            commands / "speckit.specify.toml"
+        ).read_text(encoding="utf-8")
+        alias_content = (commands / "speckit.spec.toml").read_text(encoding="utf-8")
+        assert (
+            "Upper command without hooks." if upper_owns_alias
+            else ".specify/scripts/python/pre_hooks.py"
+        ) in alias_content
+        for phase in ("pre", "post"):
+            assert (project_dir / f".specify/scripts/python/{phase}_hooks.py").is_file() is (
+                not upper_owns_alias
+            )
+
+    @pytest.mark.parametrize("ai_skills", [False, True])
+    def test_reregister_provisions_missing_fallback_hook_variant(
+        self, project_dir, temp_dir, ai_skills
+    ):
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        (project_dir / ".specify/init-options.json").write_text(
+            json.dumps({"ai": "gemini", "script": "sh", "ai_skills": ai_skills}),
+            encoding="utf-8",
+        )
+        preset = _make_wrap_preset_dir(
+            temp_dir, "fallback-hooks", "speckit.specify", "before", "after"
+        )
+        (preset / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Python hook replacement\nstrategy: replace\n"
+            "scripts:\n  py: .specify/scripts/python/check_prerequisites.py\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n", encoding="utf-8"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset, "0.1.5")
+        dispatchers = project_dir / ".specify/scripts/python"
+        for phase in ("pre", "post"):
+            (dispatchers / f"{phase}_hooks.py").unlink()
+
+        manager.register_enabled_presets_for_agent("gemini")
+
+        command = (
+            project_dir / ".gemini/skills/speckit-specify/SKILL.md"
+            if ai_skills else project_dir / ".gemini/commands/speckit.specify.toml"
+        )
+        assert ".specify/scripts/python/pre_hooks.py" in command.read_text(encoding="utf-8")
+        for phase in ("pre", "post"):
+            assert (dispatchers / f"{phase}_hooks.py").is_file()
+
+    def test_reregister_preserves_command_when_hook_dispatcher_is_unsafe(
+        self, project_dir, temp_dir
+    ):
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        (project_dir / ".specify/init-options.json").write_text(
+            json.dumps({"ai": "gemini", "script": "py"}), encoding="utf-8"
+        )
+        preset = _make_wrap_preset_dir(
+            temp_dir, "unsafe-hooks", "speckit.specify", "before", "after"
+        )
+        (preset / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Hook replacement\nstrategy: replace\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n", encoding="utf-8"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset, "0.1.5")
+        command = project_dir / ".gemini/commands/speckit.specify.toml"
+        previous = command.read_text(encoding="utf-8") + "\n# Retained existing command\n"
+        command.write_text(previous, encoding="utf-8")
+        dispatcher = project_dir / ".specify/scripts/python/pre_hooks.py"
+        dispatcher.unlink()
+        try:
+            dispatcher.symlink_to(temp_dir / "missing-dispatcher.py")
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"file symlinks unavailable: {exc}")
+
+        with pytest.warns(UserWarning, match="Post-rescaffold reconciliation failed"):
+            manager.register_enabled_presets_for_agent("gemini")
+
+        assert dispatcher.is_symlink()
+        assert command.read_text(encoding="utf-8") == previous
+
+    def test_replace_install_ignores_discarded_core_hook_refs(self, project_dir, temp_dir):
+        core = project_dir / ".specify/templates/commands"
+        core.mkdir(parents=True, exist_ok=True)
+        (core / "specify.md").write_text(
+            "---\nscripts:\n  sh: .specify/scripts/bash/check-prerequisites.sh\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n", encoding="utf-8"
+        )
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        preset = _make_wrap_preset_dir(
+            temp_dir, "replace-no-hooks", "speckit.specify", "before", "after"
+        )
+        (preset / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Independent replacement\nstrategy: replace\n"
+            "---\n\nReplacement without hook references.\n", encoding="utf-8"
+        )
+        scripts = project_dir / ".specify/scripts/bash"
+        scripts.mkdir(parents=True)
+        outside = temp_dir / "missing-hook.sh"
+        try:
+            (scripts / "pre-hooks.sh").symlink_to(outside)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"file symlinks unavailable: {exc}")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset, "0.1.5")
+
+        command = project_dir / ".gemini/commands/speckit.specify.toml"
+        assert manager.registry.is_installed("replace-no-hooks")
+        assert "Replacement without hook references." in command.read_text(encoding="utf-8")
+        assert ".specify/scripts/bash/pre-hooks.sh" not in command.read_text(encoding="utf-8")
+        assert (scripts / "pre-hooks.sh").is_symlink()
+        assert not (scripts / "post-hooks.sh").exists()
+
+    @pytest.mark.parametrize("script", [None, "sh", "ps", "py"])
+    def test_replace_install_provisions_its_own_hook_refs(self, project_dir, temp_dir, script):
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        if script is not None:
+            (project_dir / ".specify/init-options.json").write_text(
+                json.dumps({"ai": "gemini", "script": script}), encoding="utf-8"
+            )
+        preset = _make_wrap_preset_dir(
+            temp_dir, "replace-with-hooks", "speckit.specify", "before", "after"
+        )
+        (preset / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Hook-bearing replacement\nstrategy: replace\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n", encoding="utf-8"
+        )
+        selected_script = script or ("ps" if os.name == "nt" else "sh")
+        variant, pre_name, post_name = {
+            "sh": ("bash", "pre-hooks.sh", "post-hooks.sh"),
+            "ps": ("powershell", "pre-hooks.ps1", "post-hooks.ps1"),
+            "py": ("python", "pre_hooks.py", "post_hooks.py"),
+        }[selected_script]
+        dispatchers = project_dir / ".specify/scripts" / variant
+        assert not (dispatchers / pre_name).exists()
+
+        PresetManager(project_dir).install_from_directory(preset, "0.1.5")
+
+        command = project_dir / ".gemini/commands/speckit.specify.toml"
+        assert f".specify/scripts/{variant}/{pre_name}" in command.read_text(encoding="utf-8")
+        assert (dispatchers / pre_name).is_file()
+        assert (dispatchers / post_name).is_file()
+
+    @pytest.mark.parametrize("lower_hooks", [True, False])
+    def test_remove_provisions_only_surviving_replacement_variant(
+        self, project_dir, temp_dir, lower_hooks
+    ):
+        core = project_dir / ".specify/templates/commands"
+        core.mkdir(parents=True, exist_ok=True)
+        (core / "specify.md").write_text(
+            "---\nscripts:\n  sh: .specify/scripts/bash/check-prerequisites.sh\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n", encoding="utf-8"
+        )
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        manager = PresetManager(project_dir)
+        lower = _make_wrap_preset_dir(
+            temp_dir, "lower-replace", "speckit.specify", "lower", "lower"
+        )
+        lower_body = "{PRE_HOOK_SCRIPT} specify" if lower_hooks else "No hooks here."
+        (lower / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Lower replacement\nstrategy: replace\n"
+            "scripts:\n  py: .specify/scripts/python/check_prerequisites.py\n"
+            f"---\n\n{lower_body}\n", encoding="utf-8"
+        )
+        manager.install_from_directory(lower, "0.1.5", priority=20)
+        upper = _make_wrap_preset_dir(
+            temp_dir, "upper-replace", "speckit.specify", "upper", "upper"
+        )
+        (upper / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Upper replacement\nstrategy: replace\n"
+            "---\n\nUpper command without hooks.\n", encoding="utf-8"
+        )
+        manager.install_from_directory(upper, "0.1.5", priority=10)
+        python_dispatchers = project_dir / ".specify/scripts/python"
+        if lower_hooks:
+            (python_dispatchers / "pre_hooks.py").unlink()
+            (python_dispatchers / "post_hooks.py").unlink()
+
+        assert manager.remove("upper-replace")
+
+        command = project_dir / ".gemini/commands/speckit.specify.toml"
+        text = command.read_text(encoding="utf-8")
+        if lower_hooks:
+            assert ".specify/scripts/python/pre_hooks.py" in text
+            assert (python_dispatchers / "pre_hooks.py").is_file()
+            assert (python_dispatchers / "post_hooks.py").is_file()
+        else:
+            assert "No hooks here." in text
+            assert not (python_dispatchers / "pre_hooks.py").exists()
+            assert not (project_dir / ".specify/scripts/bash/pre-hooks.sh").exists()
+
+    @pytest.mark.parametrize("script,variant,suffix,agent", [
+        ("sh", "bash", ".sh", "gemini"), ("ps", "powershell", ".ps1", "gemini"),
+        ("py", "python", ".py", "gemini"), ("py", "python", ".py", "claude"),
+    ])
+    def test_wrap_install_provisions_missing_hook_dispatchers(
+        self, project_dir, temp_dir, script, variant, suffix, agent
+    ):
+        core = project_dir / ".specify/templates/commands"
+        core.mkdir(parents=True, exist_ok=True)
+        (core / "specify.md").write_text(
+            "---\ndescription: Core specify\nscripts:\n  sh: .specify/scripts/bash/check-prerequisites.sh\n"
+            "  ps: .specify/scripts/powershell/check-prerequisites.ps1\n"
+            "  py: .specify/scripts/python/check_prerequisites.py\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n\nCore work\n\n{POST_HOOK_SCRIPT} specify\n",
+            encoding="utf-8",
+        )
+        (project_dir / ".specify/init-options.json").write_text(
+            json.dumps({"ai": agent, "script": script, "ai_skills": agent == "claude"}),
+            encoding="utf-8",
+        )
+        output_dir = project_dir / (".claude/skills" if agent == "claude" else ".gemini/commands")
+        output_dir.mkdir(parents=True)
+        preset = _make_wrap_preset_dir(
+            temp_dir, "hook-wrap", "speckit.specify", "before", "after"
+        )
+        dispatchers = project_dir / ".specify/scripts" / variant
+        assert not dispatchers.exists()
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset, "0.1.5")
+
+        command = (
+            output_dir / "speckit-specify/SKILL.md"
+            if agent == "claude" else output_dir / "speckit.specify.toml"
+        )
+        assert command.is_file()
+        for phase in ("pre", "post"):
+            name = f"{phase}_hooks.py" if script == "py" else f"{phase}-hooks{suffix}"
+            assert f".specify/scripts/{variant}/{name}" in command.read_text(encoding="utf-8")
+            assert (dispatchers / name).is_file()
+
+    def test_wrap_install_rejects_unavailable_hook_dispatcher(self, project_dir, temp_dir):
+        from specify_cli.presets import PresetError
+
+        core = project_dir / ".specify/templates/commands"
+        core.mkdir(parents=True, exist_ok=True)
+        (core / "specify.md").write_text(
+            "---\nscripts:\n  sh: .specify/scripts/bash/check-prerequisites.sh\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n",
+            encoding="utf-8",
+        )
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        preset = _make_wrap_preset_dir(
+            temp_dir, "blocked-hook-wrap", "speckit.specify", "before", "after"
+        )
+        dispatchers = project_dir / ".specify/scripts/bash"
+        dispatchers.mkdir(parents=True)
+        target = temp_dir / "unavailable-hook.sh"
+        try:
+            (dispatchers / "pre-hooks.sh").symlink_to(target)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"file symlinks unavailable: {exc}")
+
+        manager = PresetManager(project_dir)
+        with pytest.raises(PresetError, match="missing hook dispatcher"):
+            manager.install_from_directory(preset, "0.1.5")
+
+        assert not manager.registry.is_installed("blocked-hook-wrap")
+        assert not (project_dir / ".gemini/commands/speckit.specify.toml").exists()
+        assert (dispatchers / "pre-hooks.sh").is_symlink()
+        assert not target.exists()
+
+    def test_wrap_remove_restores_missing_hook_dispatchers(self, project_dir, temp_dir):
+        core = project_dir / ".specify/templates/commands"
+        core.mkdir(parents=True, exist_ok=True)
+        (core / "specify.md").write_text(
+            "---\nscripts:\n  sh: .specify/scripts/bash/check-prerequisites.sh\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n\n{POST_HOOK_SCRIPT} specify\n",
+            encoding="utf-8",
+        )
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(
+            _make_wrap_preset_dir(temp_dir, "lower-wrap", "speckit.specify", "lower", "lower"),
+            "0.1.5", priority=20,
+        )
+        manager.install_from_directory(
+            _make_wrap_preset_dir(temp_dir, "upper-wrap", "speckit.specify", "upper", "upper"),
+            "0.1.5", priority=10,
+        )
+        dispatchers = project_dir / ".specify/scripts/bash"
+        (dispatchers / "pre-hooks.sh").unlink()
+        (dispatchers / "post-hooks.sh").unlink()
+
+        assert manager.remove("upper-wrap")
+
+        command = project_dir / ".gemini/commands/speckit.specify.toml"
+        assert "lower" in command.read_text(encoding="utf-8")
+        assert ".specify/scripts/bash/pre-hooks.sh" in command.read_text(encoding="utf-8")
+        assert (dispatchers / "pre-hooks.sh").is_file()
+        assert (dispatchers / "post-hooks.sh").is_file()
 
     def test_install_composes_extension_command_and_rewrites_subdir_paths_for_non_skill_agent(
         self, project_dir, temp_dir

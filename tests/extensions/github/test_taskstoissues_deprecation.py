@@ -56,8 +56,10 @@ def test_recommended_extension_is_not_deprecated():
 @pytest.mark.parametrize("command", [CORE, EXTENSION], ids=["core", "github"])
 def test_taskstoissues_hooks_and_safety_contracts_remain(command):
     text = command.read_text(encoding="utf-8")
-    assert "hooks.before_taskstoissues" in text
-    assert "hooks.after_taskstoissues" in text
+    assert "{PRE_HOOK_SCRIPT} taskstoissues" in text
+    assert "{POST_HOOK_SCRIPT} taskstoissues" in text
+    assert text.index("{PRE_HOOK_SCRIPT}") < text.index("{POST_HOOK_SCRIPT}")
+    assert text.count("including mandatory hooks") == 2
     assert "ONLY PROCEED TO NEXT STEPS IF THE REMOTE IS A GITHUB URL" in text
     assert "**Fetch existing issues for deduplication**" in text
     assert "**Skip** any task whose ID is already present" in text
