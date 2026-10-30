@@ -82,6 +82,79 @@ class TestClineIntegration(MarkdownIntegrationTests):
         rewritten = cline._rewrite_handoff_references(content)
         assert rewritten == "---\nagent: speckit-plan\n---\n"
 
+    def test_cline_body_refs_keep_md_file_names(self):
+        """Command references are hyphenated but ``speckit.*.md`` file names keep ``.md``."""
+        from specify_cli.agents import CommandRegistrar
+
+        body = (
+            "Edit `.specify/extensions/git/commands/speckit.git.commit.md`, "
+            "then run /speckit.git.commit."
+        )
+        assert CommandRegistrar._hyphenate_body_refs(body) == (
+            "Edit `.specify/extensions/git/commands/speckit.git.commit.md`, "
+            "then run /speckit-git-commit."
+        )
+
+    def test_cline_body_refs_hyphenate_a_command_named_md(self):
+        """An extension command whose name is ``md`` is still a command reference."""
+        from specify_cli.agents import CommandRegistrar
+
+        body = (
+            "Run /speckit.foo.md, or open commands/speckit.plan.md "
+            "and agents/speckit.foo.md."
+        )
+        assert CommandRegistrar._hyphenate_body_refs(body) == (
+            "Run /speckit-foo-md, or open commands/speckit.plan.md "
+            "and agents/speckit.foo.md."
+        )
+        refs = CommandRegistrar._hyphenate_frontmatter_refs(
+            {"agent": "speckit.foo.md", "next": "/speckit.foo.md"}
+        )
+        assert refs == {"agent": "speckit-foo-md", "next": "/speckit-foo-md"}
+
+    def test_cline_refs_hyphenate_dotted_preset_command_ending_in_md(self):
+        """A dotted preset command name ending in ``md`` is a command, not a file."""
+        from specify_cli.agents import CommandRegistrar
+
+        body = (
+            "Run speckit.foo.bar.md or /speckit.foo.bar.md, "
+            "then edit presets/foo/commands/speckit.foo.bar.md."
+        )
+        assert CommandRegistrar._hyphenate_body_refs(body) == (
+            "Run speckit-foo-bar-md or /speckit-foo-bar-md, "
+            "then edit presets/foo/commands/speckit.foo.bar.md."
+        )
+        refs = CommandRegistrar._hyphenate_frontmatter_refs(
+            {"agent": "speckit.foo.bar.md", "file": "commands/speckit.foo.bar.md"}
+        )
+        assert refs == {"agent": "speckit-foo-bar-md", "file": "commands/speckit.foo.bar.md"}
+
+    def test_cline_refs_hyphenate_bracketed_slash_command_named_md(self):
+        """A slash command after Markdown punctuation is still a command reference."""
+        from specify_cli.agents import CommandRegistrar
+
+        body = (
+            "See [/speckit.foo.md] and {/speckit.foo.md}, "
+            "then edit ~/commands/speckit.foo.md or ${DIR}/speckit.foo.md."
+        )
+        assert CommandRegistrar._hyphenate_body_refs(body) == (
+            "See [/speckit-foo-md] and {/speckit-foo-md}, "
+            "then edit ~/commands/speckit.foo.md or ${DIR}/speckit.foo.md."
+        )
+        refs = CommandRegistrar._hyphenate_frontmatter_refs(
+            {"next": "[/speckit.foo.md]", "file": "[commands/speckit.foo.md]"}
+        )
+        assert refs == {"next": "[/speckit-foo-md]", "file": "[commands/speckit.foo.md]"}
+
+    def test_cline_frontmatter_refs_keep_md_file_names(self):
+        """Frontmatter string values get the same ``.md`` file name protection."""
+        from specify_cli.agents import CommandRegistrar
+
+        refs = CommandRegistrar._hyphenate_frontmatter_refs(
+            {"agent": "speckit.plan", "file": "commands/speckit.git.commit.md"}
+        )
+        assert refs == {"agent": "speckit-plan", "file": "commands/speckit.git.commit.md"}
+
     def test_cline_hook_instruction_injection(self):
         """Verify Cline injects the dot-to-hyphen note for hooks."""
         cline = get_integration("cline")
