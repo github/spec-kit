@@ -232,6 +232,10 @@ preservation and force-overwrite decisions. Policy violations never become a
 recovered-file or replacement-manifest success. Malformed manifest content still
 uses the existing warned recovery behavior. Manifest keys retain their lexical
 project-relative identity even when file bytes are read through allowed aliases.
+Written destinations are hashed after the operation's full write phase, so
+overlapping aliases retain hashes for the final bytes on disk rather than an
+earlier write. Existing write order and overwrite decisions are unchanged;
+unselected manifest entries are not rehashed.
 Stale leaf links remain customizations, including dangling/external-target links:
 they are never hash-promoted into managed files or deleted by stale cleanup.
 Eligible stale regular files reached through contained linked parents can be

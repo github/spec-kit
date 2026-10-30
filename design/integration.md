@@ -293,7 +293,10 @@ paths untouched and retains recovery snapshots, including when a previously
 existing path was deleted. An unchanged pending path needs no restoration.
 Host settings merges, native event updates/removal, legacy migrations, and
 extension/preset rendering caches participate in the journal without becoming
-uninstall-owned files. Existing built-in home-scoped destinations are journaled
+uninstall-owned files. Host execute-bit adjustments also observe the actual
+file target, including preserved user scripts reached through allowed shared
+directory links, so rollback restores their prior permissions without claiming
+uninstall ownership. Existing built-in home-scoped destinations are journaled
 only for participating built-ins; external adapters remain project-local.
 FileHelper-owned shared infrastructure follows the selected symlink setting
 for `.specify/scripts/`, `.specify/templates/`, `.specify/.gitignore`, and the

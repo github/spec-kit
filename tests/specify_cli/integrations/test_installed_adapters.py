@@ -328,6 +328,11 @@ def test_shared_helper_allowed_links_restore_in_public_external_lifecycle(
             "plan-template.md" if kind == "templates-root" else "common.sh"
         )
     target_file.chmod(0o600)
+    permission_target = None
+    if kind == "scripts-root":
+        permission_target = target_file.parent / "user.sh"
+        permission_target.write_text("#!/bin/sh\n# user script\n", encoding="utf-8")
+        permission_target.chmod(0o600)
     core = tmp_path / "replacement-core"
     nested = core / "scripts/bash/new/nested"
     nested.mkdir(parents=True)
@@ -342,6 +347,8 @@ def test_shared_helper_allowed_links_restore_in_public_external_lifecycle(
     link_identity = os.readlink(link)
 
     def late_failure(*args, **kwargs):
+        if permission_target is not None and os.name != "nt":
+            assert permission_target.stat().st_mode & 0o777 == 0o700
         if kind == "gitignore":
             from specify_cli.shared_infra import SPECIFY_GITIGNORE_CONTENT
             assert target_file.read_text(encoding="utf-8") == SPECIFY_GITIGNORE_CONTENT
@@ -350,7 +357,16 @@ def test_shared_helper_allowed_links_restore_in_public_external_lifecycle(
         raise OSError("sample late shared failure")
 
     if operation == "init":
-        monkeypatch.setattr(specify_cli, "save_init_options", late_failure)
+        if permission_target is None:
+            monkeypatch.setattr(specify_cli, "save_init_options", late_failure)
+        else:
+            original_permissions = specify_cli.ensure_executable_scripts
+
+            def late_permission_failure(*args, **kwargs):
+                original_permissions(*args, **kwargs)
+                late_failure()
+
+            monkeypatch.setattr(specify_cli, "ensure_executable_scripts", late_permission_failure)
         arguments = [
             "init", "--here", "--force", "--integration", KEY,
             "--ignore-agent-tools", "--script", "sh", "--allow-symlinks",
@@ -369,6 +385,8 @@ def test_shared_helper_allowed_links_restore_in_public_external_lifecycle(
     assert link.is_symlink() and os.readlink(link) == link_identity
     if os.name != "nt":
         assert target_file.stat().st_mode & 0o777 == 0o600
+        if permission_target is not None:
+            assert permission_target.stat().st_mode & 0o777 == 0o600
 
 
 @pytest.mark.parametrize("kind", ["leaf", "gitignore", "scope", "parent"])

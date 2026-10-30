@@ -167,6 +167,76 @@ def test_template_only_refresh_preserves_allowed_link_and_ownership(shared_proje
     assert manifest.is_recovered(relative) == (mode == "recovered")
 
 
+@pytest.mark.parametrize("operation", ["install", "refresh"])
+@pytest.mark.parametrize("force", [False, True])
+@pytest.mark.parametrize("same_content", [False, True])
+def test_overlapping_template_destinations_record_final_hashes(
+    shared_project, operation, force, same_content,
+):
+    project, core = shared_project
+    files = allow(project)
+    (core / "templates/tasks-template.md").write_text("# original tasks\n", encoding="utf-8")
+    install(project, core, files=files)
+    plan = project / ".specify/templates/plan-template.md"
+    tasks = project / ".specify/templates/tasks-template.md"
+    tasks.unlink()
+    tasks.symlink_to(plan)
+    relatives = [
+        ".specify/templates/plan-template.md",
+        ".specify/templates/tasks-template.md",
+    ]
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    for relative in relatives:
+        manifest.record_existing(relative)
+    manifest.save()
+    (core / "templates/plan-template.md").write_text("# updated plan\n", encoding="utf-8")
+    (core / "templates/tasks-template.md").write_text(
+        "# updated plan\n" if same_content else "# updated tasks\n", encoding="utf-8",
+    )
+
+    if operation == "install":
+        install(project, core, files=files, force=force, refresh_managed=True)
+    else:
+        refresh_shared_templates(
+            project, version="test", core_pack=core, repo_root=core,
+            console=Console(), invoke_separator=".", files=files, force=force,
+        )
+
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    assert tasks.is_symlink()
+    assert plan.read_bytes() == tasks.read_bytes()
+    assert manifest.check_modified(paths=set(relatives)) == []
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_overlapping_script_and_template_destinations_record_final_hashes(shared_project, force):
+    project, core = shared_project
+    files = allow(project)
+    source = core / "scripts/bash/plan-template.md"
+    source.write_text("# script source\n", encoding="utf-8")
+    install(project, core, files=files)
+    templates = project / ".specify/templates"
+    (templates / "plan-template.md").unlink()
+    templates.rmdir()
+    templates.symlink_to(project / ".specify/scripts/bash", target_is_directory=True)
+    relatives = [
+        ".specify/scripts/bash/plan-template.md",
+        ".specify/templates/plan-template.md",
+    ]
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    for relative in relatives:
+        manifest.record_existing(relative)
+    manifest.save()
+    source.write_text("# updated script\n", encoding="utf-8")
+    (core / "templates/plan-template.md").write_text("# updated template\n", encoding="utf-8")
+
+    install(project, core, files=files, force=force, refresh_managed=True)
+
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    assert templates.is_symlink()
+    assert manifest.check_modified(paths=set(relatives)) == []
+
+
 @pytest.mark.parametrize("allow_links", [False, True])
 @pytest.mark.parametrize("force", [False, True])
 @pytest.mark.parametrize("relative", [
@@ -767,6 +837,51 @@ def test_real_lifecycle_rolls_back_allowed_targets(shared_project, tmp_path, mon
     assert {path.relative_to(target) for path in target.rglob("*") if path.is_dir()} == directories
     if os.name != "nt":
         assert target_file.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX execute permission bits")
+@pytest.mark.parametrize("linked", [False, True])
+@pytest.mark.parametrize("fail", [False, True])
+def test_script_permission_changes_participate_in_lifecycle_rollback(
+    shared_project, tmp_path, monkeypatch, linked, fail,
+):
+    from contextlib import ExitStack
+
+    from specify_cli import ensure_executable_scripts
+    from specify_cli.integrations._lifecycle import _transaction
+
+    project, core = shared_project
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    files = allow(project)
+    install(project, core, files=files)
+    scripts = project / ".specify/scripts"
+    target = project / "script-target"
+    if linked:
+        scripts.rename(target)
+        scripts.symlink_to(target, target_is_directory=True)
+    else:
+        target = scripts
+    script = target / "bash/user.sh"
+    content = b"#!/bin/sh\n# user script\n"
+    script.write_bytes(content)
+    script.chmod(0o600)
+    with ExitStack() as stack:
+        if fail:
+            stack.enter_context(pytest.raises(RuntimeError, match="late failure"))
+        stack.enter_context(_transaction(project, None, None, {}, shared_files=files))
+        ensure_executable_scripts(project)
+        assert script.stat().st_mode & 0o777 == 0o700
+        if fail:
+            raise RuntimeError("late failure")
+
+    assert script.read_bytes() == content
+    assert script.stat().st_mode & 0o777 == (0o600 if fail else 0o700)
+    assert scripts.is_symlink() is linked
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    assert ".specify/scripts/bash/user.sh" not in manifest.files
 
 
 def test_directory_rollback_preserves_unrelated_new_contents(shared_project, tmp_path, monkeypatch):

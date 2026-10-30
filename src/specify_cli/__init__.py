@@ -228,6 +228,8 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
     """Ensure POSIX .sh scripts under .specify/scripts and .specify/extensions (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
         return  # Windows: skip silently
+    from .integrations._file_changes import changing_file
+
     scan_roots = [
         project_path / ".specify" / "scripts",
         project_path / ".specify" / "extensions",
@@ -260,7 +262,9 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                     new_mode |= 0o001
                 if not (new_mode & 0o100):
                     new_mode |= 0o100
-                os.chmod(script, new_mode)
+                target = script.resolve(strict=True)
+                with changing_file(target):
+                    os.chmod(target, new_mode)
                 updated += 1
             except Exception as e:
                 failures.append(f"{_display_project_path(project_path, script)}: {e}")

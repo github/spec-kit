@@ -471,6 +471,9 @@ def refresh_shared_templates(
 
     for dst, rel, content in planned_updates:
         files.write_text(dst, content, observer=observe_file_change)
+
+    # Allowed aliases can share targets; record their final bytes after all writes.
+    for _, rel, _ in planned_updates:
         manifest.record_existing(rel)
 
     manifest.save()
@@ -682,10 +685,14 @@ def install_shared_infra(
     for dst_path, rel, content, mode in planned_copies:
         _ensure_dir(dst_path.parent)
         files.write_bytes(dst_path, content, mode=mode, observer=observe_file_change)
-        manifest.record_existing(rel)
 
     for dst, rel, content in planned_templates:
         files.write_text(dst, content, observer=observe_file_change)
+
+    # Templates may overwrite a script target through an allowed alias.
+    for _, rel, _, _ in planned_copies:
+        manifest.record_existing(rel)
+    for _, rel, _ in planned_templates:
         manifest.record_existing(rel)
 
     if skipped_files:
