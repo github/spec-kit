@@ -71,6 +71,7 @@ hook_scalar() {
         HOOK_SCALAR=""
         for ((i=0; i<${#inner}; i++)); do
             c=${inner:i:1}
+            if [[ $c == '"' ]]; then HOOK_ERROR="Unsupported YAML scalar"; return; fi
             if [[ $c != '\' ]]; then HOOK_SCALAR+=$c; continue; fi
             ((i++))
             escaped=${inner:i:1}

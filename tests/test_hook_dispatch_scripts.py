@@ -964,6 +964,49 @@ def test_legacy_yaml_escaped_slash_matches_python(tmp_path, variant):
 
 @pytest.mark.parametrize("variant", ["sh", "ps", "py"])
 @pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("field", ["extension", "command", "prompt"])
+@pytest.mark.parametrize("value", ['"speckit.git.commit" "extra"', '"speckit.git."commit"'])
+def test_legacy_unescaped_double_quotes_rejected(tmp_path, variant, phase, field, value):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    fields = {
+        "extension": "git", "command": "speckit.git.commit",
+        "optional": "false", "prompt": '"Commit changes?"',
+    }
+    fields[field] = value
+    entry = "\n      ".join(f"{key}: {scalar}" for key, scalar in fields.items())
+    write_config(tmp_path, f"hooks:\n  {event}:\n    - {entry}\n")
+
+    code, data = run_hook(tmp_path, phase, variant=variant)
+
+    assert code == 1
+    assert data["event"] == event
+    assert data["hooks"] == []
+    assert data["error"]
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+def test_legacy_escaped_double_quotes_remain_valid(tmp_path, variant, phase):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    prompt = 'Commit "quoted" changes from C:\\workspace?'
+    write_config(tmp_path, f"hooks:\n  {event}:\n    - extension: git\n"
+                           "      command: speckit.git.commit\n      optional: false\n"
+                           f"      prompt: {json.dumps(prompt)}\n")
+
+    code, data = run_hook(tmp_path, phase, variant=variant)
+
+    assert code == 0
+    assert data["hooks"][0]["prompt"] == prompt
+    assert data["hooks"][0]["optional"] is False
+    assert data == run_hook(tmp_path, phase)[1]
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
 @pytest.mark.parametrize("field,value", [
     ("extension", "false"), ("command", "123"), ("extension", "yes"),
     ("command", "0x10"), ("extension", "null"), ("command", "1.2"),
