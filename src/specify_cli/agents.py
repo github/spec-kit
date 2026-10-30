@@ -104,8 +104,11 @@ class CommandRegistrar:
         ``speckit.foo.bar.md`` can both be valid command references.  The
         ``.md`` suffix and the segment count therefore cannot tell a file name
         apart from a command.  A ``.md`` token is kept as a file name only when
-        it sits inside a path (``commands/speckit.git.commit.md``); a bare or
-        slash-prefixed token is treated as a command reference.
+        it sits inside a path (``commands/speckit.git.commit.md``), that is,
+        when the separator before it follows a path-name character.  A bare or
+        slash-prefixed token is treated as a command reference, whatever
+        punctuation precedes the slash (``[/speckit.foo.md]``,
+        ``(/speckit.foo.md)``).
         """
         ref = match.group(0)
         if ref.endswith(".md"):
@@ -114,11 +117,15 @@ class CommandRegistrar:
             if (
                 start >= 2
                 and text[start - 1] in "/\\"
-                and not text[start - 2].isspace()
-                and text[start - 2] not in "`'\"("
+                and CommandRegistrar._is_path_char(text[start - 2])
             ):
                 return ref
         return ref.replace(".", "-")
+
+    @staticmethod
+    def _is_path_char(ch: str) -> bool:
+        """Whether *ch* can end the directory part of a path before a separator."""
+        return ch.isalnum() or ch in "._-~/\\}$"
 
     @staticmethod
     def _hyphenate_frontmatter_refs(val: Any) -> Any:

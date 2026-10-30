@@ -129,6 +129,23 @@ class TestClineIntegration(MarkdownIntegrationTests):
         )
         assert refs == {"agent": "speckit-foo-bar-md", "file": "commands/speckit.foo.bar.md"}
 
+    def test_cline_refs_hyphenate_bracketed_slash_command_named_md(self):
+        """A slash command after Markdown punctuation is still a command reference."""
+        from specify_cli.agents import CommandRegistrar
+
+        body = (
+            "See [/speckit.foo.md] and {/speckit.foo.md}, "
+            "then edit ~/commands/speckit.foo.md or ${DIR}/speckit.foo.md."
+        )
+        assert CommandRegistrar._hyphenate_body_refs(body) == (
+            "See [/speckit-foo-md] and {/speckit-foo-md}, "
+            "then edit ~/commands/speckit.foo.md or ${DIR}/speckit.foo.md."
+        )
+        refs = CommandRegistrar._hyphenate_frontmatter_refs(
+            {"next": "[/speckit.foo.md]", "file": "[commands/speckit.foo.md]"}
+        )
+        assert refs == {"next": "[/speckit-foo-md]", "file": "[commands/speckit.foo.md]"}
+
     def test_cline_frontmatter_refs_keep_md_file_names(self):
         """Frontmatter string values get the same ``.md`` file name protection."""
         from specify_cli.agents import CommandRegistrar
