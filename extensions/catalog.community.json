@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-08T00:00:00Z",
+  "updated_at": "2026-10-28T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -8,8 +8,9 @@
       "id": "adrkit",
       "description": "Pulls the decisions governing this work into agent context, checks produced plans against them, and drafts an ADR from a plan artifact.",
       "author": "Mark Beacom (@mbeacom)",
-      "version": "0.1.4",
-      "download_url": "https://github.com/mbeacom/adrkit/releases/download/spec-kit-v0.1.4/adrkit.zip",
+      "version": "0.1.5",
+      "download_url": "https://github.com/mbeacom/adrkit/releases/download/spec-kit-v0.1.5/adrkit.zip",
+      "sha256": "c6392238470d50ca75153606aea26905c776c339f7ec9da41395671a035e608f",
       "repository": "https://github.com/mbeacom/adrkit",
       "homepage": "https://adrkit.dev",
       "documentation": "https://github.com/mbeacom/adrkit/blob/main/packages/adapters/spec-kit/README.md",
@@ -18,7 +19,7 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.13.0,<1.1.0",
+        "speckit_version": ">=0.13.0,<1.2.0",
         "tools": [
           {
             "name": "adr",
@@ -42,16 +43,16 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-03T00:00:00Z",
-      "updated_at": "2026-09-15T00:00:00Z"
+      "updated_at": "2026-10-12T00:00:00Z"
     },
     "aee": {
       "name": "Applied Epistemic Engineering",
       "id": "aee",
-      "description": "Challenge claims, trace evidence, propagate uncertainty, and route epistemic failures across phases",
+      "description": "Checks the claims in a spec-driven project against their evidence at every stage, and shows plainly what is verified, what is not, and what remains not understood.",
       "author": "ElectroHire",
-      "version": "1.0.1",
-      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.0.1.zip",
-      "sha256": "691d860ffade54e2fb5dd17f34cc72784ad65ca23ff61281313bb4366d46d47b",
+      "version": "1.5.2",
+      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.5.2.zip",
+      "sha256": "d64db9145754cf7ebb623e4630e5e09f37f59da755456160c38379927e6e9515",
       "repository": "https://github.com/electrohire/spec-kit-aee",
       "homepage": "https://github.com/electrohire/spec-kit-aee",
       "documentation": "https://github.com/electrohire/spec-kit-aee#readme",
@@ -60,7 +61,7 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=1.0.0",
+        "speckit_version": ">=1.0.0,<2",
         "tools": [
           {
             "name": "python",
@@ -69,18 +70,34 @@
           },
           {
             "name": "aee",
-            "version": ">=1.0.2,<2",
+            "version": ">=1.5.0,<2",
             "required": true
           },
           {
             "name": "spec-kit-evaluator",
             "version": ">=1.0.0,<2",
             "required": true
+          },
+          {
+            "name": "rtk",
+            "required": false
+          },
+          {
+            "name": "headroom",
+            "required": false
+          },
+          {
+            "name": "token-router",
+            "required": false
+          },
+          {
+            "name": "ollama",
+            "required": false
           }
         ]
       },
       "provides": {
-        "commands": 6,
+        "commands": 10,
         "hooks": 5
       },
       "tags": [
@@ -94,7 +111,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-09-15T00:00:00Z",
-      "updated_at": "2026-09-23T00:00:00Z"
+      "updated_at": "2026-10-16T00:00:00Z"
     },
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
@@ -1689,6 +1706,61 @@
       "created_at": "2026-05-03T00:00:00Z",
       "updated_at": "2026-05-05T00:00:00Z"
     },
+    "csdd": {
+      "name": "CSDD — Controlled Spec-Driven Development",
+      "id": "csdd",
+      "description": "把治理规范、门禁、模板安装到已有仓库；第三方扩展按清单可选安装，默认不装。",
+      "author": "CSDD",
+      "version": "1.2.0",
+      "download_url": "https://github.com/yuansanche/csdd/archive/refs/tags/v1.2.0.zip",
+      "sha256": "ba9230b609739c39d0b4591c5b0875bcd28aff0d35401edb808fdb1815ce1cbd",
+      "repository": "https://github.com/yuansanche/csdd",
+      "homepage": "https://github.com/yuansanche/csdd",
+      "documentation": "https://github.com/yuansanche/csdd/blob/main/README.md",
+      "changelog": "https://github.com/yuansanche/csdd/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.1.3",
+        "tools": [
+          {
+            "name": "bash",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "curl",
+            "required": true
+          },
+          {
+            "name": "unzip",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "governance",
+        "quality-gate",
+        "spec-driven-development"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-22T00:00:00Z",
+      "updated_at": "2026-10-22T00:00:00Z"
+    },
     "data-model-diagram": {
       "name": "Data Model Diagram",
       "id": "data-model-diagram",
@@ -1794,8 +1866,9 @@
       "id": "docguard",
       "description": "Documentation integrity for AI-assisted repositories: lifecycle registry, drift validation, traceability, safe archival, SARIF/JUnit, MCP, GitHub Actions, and Spec Kit hooks.",
       "author": "raccioly",
-      "version": "0.41.6",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.41.6/spec-kit-docguard-v0.41.6.zip",
+      "version": "0.45.1",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.45.1/spec-kit-docguard-v0.45.1.zip",
+      "sha256": "7248256490092dc3ae5d746b8925bfce8b16fd9ac251a7319f9b4665e83b4f95",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -1804,7 +1877,7 @@
       "category": "docs",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0",
+        "speckit_version": ">=0.11.2",
         "tools": [
           {
             "name": "node",
@@ -1822,7 +1895,7 @@
         ]
       },
       "provides": {
-        "commands": 12,
+        "commands": 13,
         "hooks": 5
       },
       "tags": [
@@ -1836,7 +1909,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-09-18T00:00:00Z"
+      "updated_at": "2026-10-16T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -1870,6 +1943,50 @@
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
       "updated_at": "2026-03-13T00:00:00Z"
+    },
+    "domain-spec": {
+      "name": "Domain Spec Maintenance",
+      "id": "domain-spec",
+      "description": "Keeps canonical per-domain specs: read before specify/plan, updated after implement",
+      "author": "Jina Park",
+      "version": "0.1.0",
+      "download_url": "https://github.com/jinaparkdev/spec-kit-domain-spec/archive/refs/tags/v0.1.0.zip",
+      "sha256": "de5909b5eea0c4fef48cebba42e88cfc6cab06ae443a315106dbad51e5c5b6a1",
+      "repository": "https://github.com/jinaparkdev/spec-kit-domain-spec",
+      "homepage": "https://github.com/jinaparkdev/spec-kit-domain-spec",
+      "documentation": "https://github.com/jinaparkdev/spec-kit-domain-spec/blob/main/README.md",
+      "changelog": "https://github.com/jinaparkdev/spec-kit-domain-spec/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.8.5",
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          },
+          {
+            "name": "rg",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 3
+      },
+      "tags": [
+        "documentation",
+        "governance",
+        "specs",
+        "living-docs"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-28T00:00:00Z",
+      "updated_at": "2026-10-28T00:00:00Z"
     },
     "dotdog": {
       "name": "Dotdog",
@@ -2033,13 +2150,54 @@
       "created_at": "2026-07-08T00:00:00Z",
       "updated_at": "2026-07-08T00:00:00Z"
     },
+    "epic": {
+      "name": "Epic",
+      "id": "epic",
+      "description": "Break work too big for one feature into many, delivered in order, with decisions that hold across them.",
+      "author": "Paul McKeown",
+      "version": "0.1.5",
+      "download_url": "https://github.com/pmckeown/spec-kit-epic/archive/refs/tags/v0.1.5.zip",
+      "sha256": "734b9a75671802aa8f768765cba32bd2104fec11863c5621896d2c4eb9cc2f46",
+      "repository": "https://github.com/pmckeown/spec-kit-epic",
+      "homepage": "https://github.com/pmckeown/spec-kit-epic",
+      "documentation": "https://github.com/pmckeown/spec-kit-epic/blob/main/README.md",
+      "changelog": "https://github.com/pmckeown/spec-kit-epic/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.12.9.dev0,<1.2.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 0
+      },
+      "tags": [
+        "epic",
+        "planning",
+        "decisions",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-09T00:00:00Z",
+      "updated_at": "2026-10-09T00:00:00Z"
+    },
     "evaluator": {
       "name": "Evaluator Contract",
       "id": "evaluator",
       "description": "Provider-neutral evaluator contract for evidence, provenance, uncertainty, and recovery across Spec-Driven Development phases.",
       "author": "ElectroHire",
-      "version": "1.0.0",
-      "download_url": "https://github.com/electrohire/spec-kit-evaluator/archive/refs/tags/v1.0.0.zip",
+      "version": "1.1.2",
+      "download_url": "https://github.com/electrohire/spec-kit-evaluator/archive/refs/tags/v1.1.2.zip",
+      "sha256": "f2803c5da687bb4f269b31023983dbe827a7dd36d1cff626afec96b7aed9ff95",
       "repository": "https://github.com/electrohire/spec-kit-evaluator",
       "homepage": "https://github.com/electrohire/spec-kit-evaluator",
       "documentation": "https://github.com/electrohire/spec-kit-evaluator/blob/main/README.md",
@@ -2065,7 +2223,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-09-03T00:00:00Z",
-      "updated_at": "2026-09-03T00:00:00Z"
+      "updated_at": "2026-10-16T00:00:00Z"
     },
     "extensify": {
       "name": "Extensify",
@@ -2343,11 +2501,11 @@
     "gates": {
       "name": "Quality Gates (Enforcement Layer)",
       "id": "gates",
-      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries: the agent boundary (Claude Code PreToolUse/PostToolUse/Stop hooks), the git boundary (pre-commit / pre-merge-commit / commit-msg), and the CI boundary (projected GitHub Actions / GitLab CI / Jenkins pipelines). One policy file, one verify entrypoint, identical results at every boundary.",
+      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries: the agent boundary (Claude Code PreToolUse/PostToolUse/Stop hooks), the git boundary (pre-commit / pre-merge-commit / commit-msg), and the CI boundary (projected GitHub Actions / GitLab CI / Jenkins pipelines). One policy file, one verify entrypoint; CI runs the whole policy, and an earlier boundary skips only what the policy declares, by name.",
       "author": "schwichtgit",
-      "version": "0.4.1",
-      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.4.1/gates-0.4.1.zip",
-      "sha256": "ecf445653d71d96b50480e04b741b142f08f2857f42e915ea76f7d64f1800f80",
+      "version": "0.5.0",
+      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.5.0/gates-0.5.0.zip",
+      "sha256": "f2d6677bed7e038a95092520a03228dbde0b501b14876a582dc8f8d346787893",
       "repository": "https://github.com/schwichtgit/spec-gates",
       "homepage": "https://github.com/schwichtgit/spec-gates",
       "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
@@ -2399,7 +2557,54 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
-      "updated_at": "2026-10-08T00:00:00Z"
+      "updated_at": "2026-10-28T00:00:00Z"
+    },
+    "gh-address-cr": {
+      "name": "gh-address-cr",
+      "id": "gh-address-cr",
+      "description": "Auditable PR review-resolution & trust-gated address engine for Spec Kit workflows.",
+      "author": "RbBtSn0w",
+      "version": "0.1.0",
+      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/gh-address-cr-v0.1.0/gh-address-cr.zip",
+      "sha256": "f9b4d641b2ac4e8466aa184ea8b738e4dee82ba992596dc52a4fd316c78cca1d",
+      "repository": "https://github.com/RbBtSn0w/spec-kit-extensions",
+      "homepage": "https://github.com/RbBtSn0w/gh-address-cr",
+      "documentation": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/gh-address-cr/README.md",
+      "changelog": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/gh-address-cr/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.12.0",
+        "tools": [
+          {
+            "name": "gh-address-cr",
+            "version": ">=3.16.0",
+            "required": false
+          },
+          {
+            "name": "gh",
+            "version": ">=2.0.0",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "code-review",
+        "pull-request",
+        "github",
+        "audit",
+        "verification"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-15T00:00:00Z",
+      "updated_at": "2026-10-15T00:00:00Z"
     },
     "gh-triage": {
       "name": "GitHub Issue Triage",
@@ -2530,8 +2735,9 @@
       "id": "grill",
       "description": "Exhaustively clarify specifications and optionally sync canonical domain knowledge.",
       "author": "yoshi1220",
-      "version": "1.0.1",
-      "download_url": "https://github.com/yoshi1220/speckit-grill-me/releases/download/v1.0.1/speckit-grill-me-extension-v1.0.1.zip",
+      "version": "1.0.2",
+      "download_url": "https://github.com/yoshi1220/speckit-grill-me/releases/download/v1.0.2/speckit-grill-me-extension-v1.0.2.zip",
+      "sha256": "7d01555e2ca2e5f2680aaa076dd7d89b0e364c36facb7fc1b97cc05133067099",
       "repository": "https://github.com/yoshi1220/speckit-grill-me",
       "homepage": "https://github.com/yoshi1220/speckit-grill-me/tree/main/spec-kit-extension",
       "documentation": "https://github.com/yoshi1220/speckit-grill-me/blob/main/spec-kit-extension/README.md",
@@ -2563,7 +2769,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-11T00:00:00Z",
-      "updated_at": "2026-08-25T00:00:00Z"
+      "updated_at": "2026-10-19T00:00:00Z"
     },
     "harness": {
       "name": "Research Harness",
@@ -2957,6 +3163,60 @@
       "created_at": "2026-08-10T00:00:00Z",
       "updated_at": "2026-09-18T00:00:00Z"
     },
+    "knowledge": {
+      "name": "Shared Knowledge",
+      "id": "knowledge",
+      "description": "Inject cross-repo decisions, contracts, and conventions into your spec-kit workflow.",
+      "author": "Raúl Noa Pedroso",
+      "version": "1.10.2",
+      "download_url": "https://github.com/rnoap/spec-kit-shared-knowledge/archive/refs/tags/v1.10.2.zip",
+      "sha256": "aa263c365ec05d444aae33c731992493770d683c96a48dbbef116736cc42d23e",
+      "repository": "https://github.com/rnoap/spec-kit-shared-knowledge",
+      "homepage": "https://github.com/rnoap/spec-kit-shared-knowledge",
+      "documentation": "https://github.com/rnoap/spec-kit-shared-knowledge/blob/main/README.md",
+      "changelog": "https://github.com/rnoap/spec-kit-shared-knowledge/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.15.2",
+        "tools": [
+          {
+            "name": "git",
+            "version": ">=2.25",
+            "required": true
+          },
+          {
+            "name": "timeout",
+            "required": false
+          },
+          {
+            "name": "gtimeout",
+            "required": false
+          },
+          {
+            "name": "perl",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 4
+      },
+      "tags": [
+        "cross-repo",
+        "knowledge",
+        "context",
+        "shared-decisions",
+        "contracts"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-27T00:00:00Z",
+      "updated_at": "2026-10-27T00:00:00Z"
+    },
     "learn": {
       "name": "Learning Extension",
       "id": "learn",
@@ -3030,8 +3290,9 @@
       "id": "linear-weave",
       "description": "Weave Spec Kit into Linear: pull requirements, mirror tasks.md into sub-issues, sync statuses.",
       "author": "Tony Woodhouse",
-      "version": "1.0.1",
-      "download_url": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/archive/refs/tags/v1.0.1.zip",
+      "version": "1.0.2",
+      "download_url": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/archive/refs/tags/v1.0.2.zip",
+      "sha256": "d5e07b1e2897ad357661379b3fb4dd50109c00a351c412fe14db5ef98c2d9a4c",
       "repository": "https://github.com/tonydwoodhouse/spec-kit-linear-weave",
       "homepage": "https://github.com/tonydwoodhouse/spec-kit-linear-weave",
       "documentation": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/blob/main/README.md",
@@ -3062,7 +3323,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-21T00:00:00Z",
-      "updated_at": "2026-07-27T00:00:00Z"
+      "updated_at": "2026-10-21T00:00:00Z"
     },
     "logreduce": {
       "name": "Log Intake (logreduce)",
@@ -3847,6 +4108,46 @@
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
     },
+    "openproject": {
+      "name": "OpenProject Integration",
+      "id": "openproject",
+      "description": "Sync fields, status, docs, versions and time between spec-kit and OpenProject via MCP",
+      "author": "Daniel Ring",
+      "version": "0.2.0",
+      "download_url": "https://github.com/Nachklang-io/speckit-openproject/releases/download/extension-v0.2.0/openproject-extension-0.2.0.zip",
+      "sha256": "252d0d822d76fa8ba942aa3b8078ca074d47ec783b841210b40057e599fbd23f",
+      "repository": "https://github.com/Nachklang-io/speckit-openproject",
+      "homepage": "https://github.com/Nachklang-io/speckit-openproject",
+      "documentation": "https://github.com/Nachklang-io/speckit-openproject/blob/extension-v0.2.0/extension/README.md",
+      "changelog": "https://github.com/Nachklang-io/speckit-openproject/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.1.0",
+        "tools": [
+          {
+            "name": "openproject-ce-mcp",
+            "version": ">=0.4.1",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 1
+      },
+      "tags": [
+        "openproject",
+        "project-management",
+        "mcp"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-09T00:00:00Z",
+      "updated_at": "2026-10-12T00:00:00Z"
+    },
     "openspec": {
       "name": "OpenSpec",
       "id": "openspec",
@@ -4390,8 +4691,9 @@
       "id": "product",
       "description": "Generates PRFAQ, Lean PRD, stakeholder summaries, and technical designs from engineering specs.",
       "author": "d0whc3r",
-      "version": "1.0.1",
-      "download_url": "https://github.com/d0whc3r/spec-kit-product/releases/download/v1.0.1/product-1.0.1.zip",
+      "version": "2.1.0",
+      "download_url": "https://github.com/d0whc3r/spec-kit-product/releases/download/v2.1.0/product-2.1.0.zip",
+      "sha256": "44d51c7b8791648fca5b426692837530a233e7ea0844d73edd0de3b7b9b13c32",
       "repository": "https://github.com/d0whc3r/spec-kit-product",
       "homepage": "https://d0whc3r.github.io/spec-kit-product/",
       "documentation": "https://github.com/d0whc3r/spec-kit-product/wiki",
@@ -4400,14 +4702,13 @@
       "category": "docs",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.2.0"
+        "speckit_version": ">=0.12.17"
       },
       "provides": {
         "commands": 3,
-        "hooks": 3
+        "hooks": 4
       },
       "tags": [
-        "design",
         "documentation",
         "jtbd",
         "lean-prd",
@@ -4416,10 +4717,6 @@
         "prfaq",
         "product",
         "product-management",
-        "requirements",
-        "spec",
-        "spec-kit",
-        "spec-kit-extension",
         "stakeholder",
         "technical-design"
       ],
@@ -4427,7 +4724,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-26T00:00:00Z",
-      "updated_at": "2026-06-29T00:00:00Z"
+      "updated_at": "2026-10-26T00:00:00Z"
     },
     "product-forge": {
       "name": "Product Forge",
@@ -4592,8 +4889,9 @@
       "id": "reconcile",
       "description": "Reconcile implementation drift by surgically updating the feature's own spec, plan, and tasks.",
       "author": "Stanislav Deviatov",
-      "version": "1.2.1",
-      "download_url": "https://github.com/stn1slv/spec-kit-reconcile/archive/refs/tags/v1.2.1.zip",
+      "version": "1.3.1",
+      "download_url": "https://github.com/stn1slv/spec-kit-reconcile/archive/refs/tags/v1.3.1.zip",
+      "sha256": "651537ba453f519b33c61ceb0c63d30bea04bd7fd81b83a4f7bdde86eb39adb5",
       "repository": "https://github.com/stn1slv/spec-kit-reconcile",
       "homepage": "https://github.com/stn1slv/spec-kit-reconcile",
       "documentation": "https://github.com/stn1slv/spec-kit-reconcile/blob/main/README.md",
@@ -4618,7 +4916,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-14T00:00:00Z",
-      "updated_at": "2026-08-24T00:00:00Z"
+      "updated_at": "2026-10-13T00:00:00Z"
     },
     "red-team": {
       "name": "Red Team",
@@ -5105,14 +5403,15 @@
       "name": "SFSpeckit — Salesforce Spec-Driven Development",
       "id": "sf",
       "description": "Enterprise-Grade Spec-Driven Development (SDD) Framework for Salesforce.",
-      "author": "Sumanth Yanamala",
-      "version": "1.0.0",
-      "download_url": "https://github.com/ysumanth06/spec-kit-sf/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/ysumanth06/spec-kit-sf",
-      "homepage": "https://ysumanth06.github.io/spec-kit-sf/",
-      "documentation": "https://ysumanth06.github.io/spec-kit-sf/introduction.html",
-      "changelog": "https://github.com/ysumanth06/spec-kit-sf/blob/main/CHANGELOG.md",
-      "license": "MIT",
+      "author": "Sumanth Yanamala / Evernorth",
+      "version": "2.0.1",
+      "download_url": "https://github.com/Evernorth/spec-kit-sf/archive/refs/tags/v2.0.1.zip",
+      "sha256": "f066096cd556c94f3666167b4e2ae8d49b9bdb6f1577bfa78dfeed2d815e8256",
+      "repository": "https://github.com/Evernorth/spec-kit-sf",
+      "homepage": "https://github.com/Evernorth/spec-kit-sf",
+      "documentation": "https://github.com/Evernorth/spec-kit-sf#readme",
+      "changelog": "https://github.com/Evernorth/spec-kit-sf/blob/main/CHANGELOG.md",
+      "license": "Apache-2.0",
       "category": "process",
       "effect": "read-write",
       "requires": {
@@ -5131,7 +5430,7 @@
         ]
       },
       "provides": {
-        "commands": 18,
+        "commands": 19,
         "hooks": 2
       },
       "tags": [
@@ -5145,7 +5444,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-13T22:11:30Z",
-      "updated_at": "2026-04-13T22:11:30Z"
+      "updated_at": "2026-10-28T00:00:00Z"
     },
     "ship": {
       "name": "Ship Release Extension",

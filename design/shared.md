@@ -8,6 +8,8 @@ outcome into their own output and error conventions.
 [Specify CLI Command Architecture](cli.md) defines the Typer/terminal adapter.
 [Specify MCP Command Architecture](mcp.md) defines MCP tool exposure, protocol
 mapping, and transport. Neither adapter document owns application behavior.
+[Remote Catalog Contracts](catalogs.md) records the behavior-preserving
+boundaries for catalog-backed domain services.
 
 ## Design goals
 

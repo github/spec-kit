@@ -8,6 +8,7 @@ import zipfile
 from unittest.mock import patch
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from specify_cli import app
@@ -257,6 +258,89 @@ def test_exact_add_uses_historical_url_digest_and_requirements(
     assert result.exit_code == 0, result.output
     assert requested == [OLD_URL]
     assert WorkflowRegistry(project_dir).get("history-wf")["version"] == "1.0.0"
+
+
+def test_preselected_workflow_installs_without_reloading_catalog(
+    monkeypatch, project_dir,
+):
+    from specify_cli.authentication import http
+    from specify_cli.workflows.command_add import _install_preselected_workflow
+
+    catalog = _catalog(monkeypatch, project_dir, _entry())
+    selected = catalog.get_workflow_info("history-wf", "1.0.0")
+    assert selected["url"] == OLD_URL
+    monkeypatch.setattr(
+        WorkflowCatalog, "get_workflow_info",
+        lambda *args, **kwargs: pytest.fail("catalog was re-resolved"),
+    )
+    requested = []
+
+    def open_url(url, **kwargs):
+        requested.append(url)
+        return _Response(_archive("1.0.0", requires={"integrations": ["copilot"]}), url)
+
+    monkeypatch.setattr(http, "open_url", open_url)
+    monkeypatch.chdir(project_dir)
+    _install_preselected_workflow(
+        "history-wf", version="1.0.0", selected_info=selected,
+    )
+
+    assert requested == [OLD_URL]
+    assert WorkflowRegistry(project_dir).get("history-wf")["version"] == "1.0.0"
+
+
+def test_preselected_workflow_ignores_same_named_local_path(
+    monkeypatch, project_dir,
+):
+    from specify_cli.authentication import http
+    from specify_cli.workflows.command_add import _install_preselected_workflow
+
+    catalog = _catalog(monkeypatch, project_dir, _entry())
+    selected = catalog.get_workflow_info("history-wf", "1.0.0")
+    shadow = project_dir / "history-wf"
+    shadow.write_text("not a workflow", encoding="utf-8")
+    monkeypatch.setattr(
+        WorkflowCatalog, "get_workflow_info",
+        lambda *args, **kwargs: pytest.fail("catalog was re-resolved"),
+    )
+    monkeypatch.setattr(
+        http, "open_url",
+        lambda url, **kwargs: _Response(
+            _archive("1.0.0", requires={"integrations": ["copilot"]}), url
+        ),
+    )
+    monkeypatch.chdir(project_dir)
+
+    _install_preselected_workflow(
+        "history-wf", version="1.0.0", selected_info=selected,
+    )
+
+    assert WorkflowRegistry(project_dir).get("history-wf")["version"] == "1.0.0"
+    assert shadow.read_text(encoding="utf-8") == "not a workflow"
+
+
+def test_preselected_workflow_rejects_bad_digest_without_reloading_catalog(
+    monkeypatch, project_dir,
+):
+    from specify_cli.authentication import http
+    from specify_cli.workflows.command_add import _install_preselected_workflow
+    catalog = _catalog(monkeypatch, project_dir, _entry())
+    selected = catalog.get_workflow_info("history-wf", "1.0.0")
+    selected["sha256"] = "0" * 64
+    monkeypatch.setattr(
+        WorkflowCatalog, "get_workflow_info",
+        lambda *args, **kwargs: pytest.fail("catalog was re-resolved"),
+    )
+    monkeypatch.setattr(
+        http, "open_url", lambda url, **kwargs: _Response(_archive("1.0.0"), url),
+    )
+    monkeypatch.chdir(project_dir)
+
+    with pytest.raises(typer.Exit):
+        _install_preselected_workflow(
+            "history-wf", version="1.0.0", selected_info=selected,
+        )
+    assert WorkflowRegistry(project_dir).get("history-wf") is None
 
 
 def test_exact_yaml_release_verifies_digest_and_version(monkeypatch, project_dir):

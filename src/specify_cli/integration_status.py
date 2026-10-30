@@ -8,6 +8,7 @@ import stat
 from pathlib import Path
 from typing import Any
 
+from .file_helper import _strip_extended_length_prefix
 from .integration_state import (
     INTEGRATION_JSON,
     INTEGRATION_STATE_SCHEMA,
@@ -93,22 +94,6 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: fh.read(8192), b""):
             h.update(chunk)
     return h.hexdigest()
-
-
-def _strip_extended_length_prefix(path: Path) -> Path:
-    """Drop the Windows ``\\\\?\\`` extended-length prefix for path comparison.
-
-    ``os.readlink`` and ``Path.resolve`` can return extended-length paths on
-    Windows (e.g. ``\\\\?\\C:\\proj``). Comparing such a path against a plain
-    ``C:\\proj`` root via :meth:`Path.relative_to` would spuriously fail, so we
-    normalise both sides through this helper before containment checks.
-    """
-    raw = str(path)
-    if raw.startswith("\\\\?\\UNC\\"):
-        return Path("\\\\" + raw[len("\\\\?\\UNC\\"):])
-    if raw.startswith("\\\\?\\"):
-        return Path(raw[len("\\\\?\\"):])
-    return path
 
 
 def _is_within_project(project_root_resolved: Path, candidate: Path) -> bool:

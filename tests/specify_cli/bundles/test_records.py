@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from specify_cli.bundler import BundlerError
-from specify_cli.bundles.manifest import ComponentRef
+from specify_cli.bundles.manifest import BundleRef, ComponentRef
 from specify_cli.bundles.records import (
     InstalledBundleRecord,
     components_still_needed,
@@ -38,6 +38,215 @@ def test_save_and_load_roundtrip(tmp_path: Path):
         ("presets", "p1"),
         ("steps", "s1"),
     }
+    assert loaded[0].required_components == loaded[0].contributed_components
+
+
+def test_roundtrip_preserves_bundle_references(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    references = [
+        BundleRef("bugfix", "1.0.0", "default"),
+        BundleRef("qa-pack", "2.0.0"),
+    ]
+    record = InstalledBundleRecord.create(
+        bundle_id="team",
+        version="1.0.0",
+        components=[],
+        bundle_references=references,
+    )
+
+    save_records(tmp_path, [record])
+    restored = load_records(tmp_path)[0]
+
+    assert restored.bundle_references == tuple(references)
+    assert restored.to_dict()["bundle_references"] == [
+        {"id": "bugfix", "version": "1.0.0", "source": "default"},
+        {"id": "qa-pack", "version": "2.0.0", "source": None},
+    ]
+
+
+def test_empty_bundle_references_are_omitted_and_flat_records_stay_identical():
+    record = _record("flat", [("extensions", "ext-a")])
+
+    assert record.bundle_references == ()
+    assert "bundle_references" not in record.to_dict()
+    assert record.to_dict() == {
+        "bundle_id": "flat",
+        "version": "1.0.0",
+        "installed_at": record.installed_at,
+        "contributed_components": [{"kind": "extensions", "id": "ext-a"}],
+        "required_components": [{"kind": "extensions", "id": "ext-a"}],
+    }
+
+
+@pytest.mark.parametrize("value", [None, []])
+def test_from_dict_accepts_empty_bundle_references(value):
+    data = {
+        "bundle_id": "team",
+        "version": "1.0.0",
+        "contributed_components": [],
+        "bundle_references": value,
+    }
+    assert InstalledBundleRecord.from_dict(data).bundle_references == ()
+    data.pop("bundle_references")
+    assert InstalledBundleRecord.from_dict(data).bundle_references == ()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        0,
+        False,
+        "not-a-list",
+        {},
+        [{"id": "bugfix"}],
+        [{"version": "1.0.0"}],
+        [{"id": "bugfix", "version": ""}],
+        [{"id": "bugfix", "version": 1}],
+        [{"id": 1, "version": "1.0.0"}],
+        [{"id": "   ", "version": "1.0.0"}],
+        [{"id": "bugfix", "version": "   "}],
+        [{"id": "bugfix", "version": "1.0.0", "source": 1}],
+        ["not-a-mapping"],
+    ],
+)
+def test_from_dict_rejects_corrupt_bundle_references(value):
+    data = {
+        "bundle_id": "team",
+        "version": "1.0.0",
+        "contributed_components": [],
+        "bundle_references": value,
+    }
+    with pytest.raises(BundlerError, match="Corrupt record: 'bundle_references'"):
+        InstalledBundleRecord.from_dict(data)
+
+
+def test_empty_reference_source_normalizes_to_none():
+    data = {
+        "bundle_id": "team",
+        "version": "1.0.0",
+        "contributed_components": [],
+        "bundle_references": [{"id": "child", "version": "1.0.0", "source": ""}],
+    }
+    assert InstalledBundleRecord.from_dict(data).bundle_references[0].source is None
+
+
+def test_roundtrip_retains_unowned_required_pin(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    required = ComponentRef(
+        kind="extensions", id="independent", version="1.0.0", source="trusted"
+    )
+    record = InstalledBundleRecord.create(
+        bundle_id="a", version="1.0.0", components=[], required_components=[required]
+    )
+
+    save_records(tmp_path, [record])
+    restored = load_records(tmp_path)[0]
+
+    assert restored.required_components == (required,)
+    assert restored.contributed_components == ()
+    serialized = json.loads(records_path(tmp_path).read_text())
+    assert serialized["bundles"][0]["required_components"] == [{
+        "kind": "extensions",
+        "id": "independent",
+        "version": "1.0.0",
+        "source": "trusted",
+    }]
+
+
+def test_legacy_record_uses_contributions_as_known_requirements():
+    record = InstalledBundleRecord.create(
+        bundle_id="legacy",
+        version="1.0.0",
+        components=[ComponentRef(kind="extensions", id="ext-a", version="1.0.0")],
+    )
+    data = record.to_dict()
+    data.pop("required_components", None)
+
+    restored = InstalledBundleRecord.from_dict(data)
+
+    assert restored.required_components == record.contributed_components
+
+
+@pytest.mark.parametrize("bad", [None, 0, False, "", {}])
+def test_from_dict_rejects_invalid_required_components(bad):
+    data = {
+        "bundle_id": "a",
+        "version": "1.0.0",
+        "contributed_components": [],
+        "required_components": bad,
+    }
+    with pytest.raises(BundlerError, match="'required_components' must be a list"):
+        InstalledBundleRecord.from_dict(data)
+
+
+@pytest.mark.parametrize(
+    ("component", "error"),
+    [
+        ({"kind": "bogus", "id": "ext-a"}, "kind' must be one of"),
+        ({"kind": "extensions", "id": ""}, "required component is missing its 'id'"),
+    ],
+)
+def test_from_dict_rejects_corrupt_required_component(component, error):
+    data = {
+        "bundle_id": "a",
+        "version": "1.0.0",
+        "contributed_components": [],
+        "required_components": [component],
+    }
+    with pytest.raises(BundlerError, match=error):
+        InstalledBundleRecord.from_dict(data)
+
+
+@pytest.mark.parametrize(
+    "required", [[], [{"kind": "extensions", "id": "ext-a", "version": "2.0.0"}]]
+)
+def test_from_dict_rejects_requirements_missing_contributed_pin(required):
+    data = {
+        "bundle_id": "a",
+        "version": "1.0.0",
+        "contributed_components": [
+            {"kind": "extensions", "id": "ext-a", "version": "1.0.0"}
+        ],
+        "required_components": required,
+    }
+    with pytest.raises(BundlerError, match="must include all"):
+        InstalledBundleRecord.from_dict(data)
+
+
+def test_record_preserves_requested_and_installed_versions(tmp_path: Path):
+    rec = InstalledBundleRecord.create(
+        bundle_id="demo", version="1.0.0",
+        components=[ComponentRef(kind="extensions", id="bug", version="1.0.0")],
+        installed_versions={"extensions:bug": "1.0.1"},
+    )
+    save_records(tmp_path, [rec])
+
+    loaded = load_records(tmp_path)[0]
+    assert loaded.contributed_components[0].version == "1.0.0"
+    assert loaded.installed_versions == {"extensions:bug": "1.0.1"}
+    assert loaded.to_dict()["installed_versions"] == {"extensions:bug": "1.0.1"}
+
+
+def test_legacy_record_has_no_installed_versions():
+    rec = InstalledBundleRecord.from_dict(
+        {"bundle_id": "demo", "version": "1.0.0", "contributed_components": []},
+    )
+    assert rec.installed_versions == {}
+    assert "installed_versions" not in rec.to_dict()
+
+
+@pytest.mark.parametrize("versions", [
+    None, [], "1.0.1", False,
+    {"extensions:bug": ""}, {"extensions:bug": "   "},
+    {"extensions:bug": 1}, {"extensions:other": "1.0.1"},
+])
+def test_record_rejects_invalid_installed_versions(versions):
+    with pytest.raises(BundlerError, match="installed_versions"):
+        InstalledBundleRecord.from_dict({
+            "bundle_id": "demo", "version": "1.0.0",
+            "contributed_components": [{"kind": "extensions", "id": "bug"}],
+            "installed_versions": versions,
+        })
 
 
 def test_load_missing_file_returns_empty(tmp_path: Path):

@@ -132,6 +132,91 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         # Instruction stays on its own line rather than being mashed onto the note.
         assert "\n- For each executable hook, output the following:" in injected
 
+    def test_init_next_steps_show_hyphenated_commands(self, tmp_path):
+        """Next Steps must list the `/speckit-<name>` commands Junie installs."""
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(tmp_path / "junie-next-steps"),
+                "--integration",
+                self.KEY,
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "/speckit-plan" in result.output
+        assert "/speckit.plan" not in result.output
+
+    def test_build_exec_args_passes_prompt_as_task(self):
+        """Junie's `-p` is `--project <path>`; the prompt goes to `--task`."""
+        integration = get_integration(self.KEY)
+
+        args = integration.build_exec_args(
+            "/speckit-specify build a login page",
+            output_json=False,
+        )
+
+        assert args == ["junie", "--task", "/speckit-specify build a login page"]
+        assert "-p" not in args
+
+    def test_build_exec_args_requests_json_output(self):
+        integration = get_integration(self.KEY)
+
+        args = integration.build_exec_args("/speckit-plan add OAuth", output_json=True)
+
+        assert args == [
+            "junie",
+            "--task",
+            "/speckit-plan add OAuth",
+            "--output-format",
+            "json",
+        ]
+
+    def test_build_exec_args_forwards_model(self):
+        integration = get_integration(self.KEY)
+
+        args = integration.build_exec_args(
+            "/speckit-specify build a login page",
+            model="sonnet",
+            output_json=False,
+        )
+
+        assert args == [
+            "junie",
+            "--task",
+            "/speckit-specify build a login page",
+            "--model",
+            "sonnet",
+        ]
+
+    def test_build_exec_args_applies_extra_args(self, monkeypatch):
+        monkeypatch.setenv("SPECKIT_INTEGRATION_JUNIE_EXTRA_ARGS", "--skip-update-check")
+        integration = get_integration(self.KEY)
+
+        args = integration.build_exec_args(
+            "check the build", model="sonnet", output_json=True
+        )
+
+        assert args == [
+            "junie",
+            "--task",
+            "check the build",
+            "--skip-update-check",
+            "--model",
+            "sonnet",
+            "--output-format",
+            "json",
+        ]
+
     # -- Overrides for MarkdownIntegrationTests ---------------------------
 
     def test_setup_creates_files(self, tmp_path):

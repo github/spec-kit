@@ -466,7 +466,7 @@ class PresetResolver:
         resolved_str = str(resolved)
 
         # Determine source attribution
-        if str(self.overrides_dir) in resolved_str:
+        if resolved.is_relative_to(self.overrides_dir):
             return {"path": resolved_str, "source": "project override"}
 
         if str(self.presets_dir) in resolved_str and self.presets_dir.exists():
@@ -924,9 +924,12 @@ class PresetResolver:
                 else:
                     yaml_lines = []
                 try:
-                    return yaml.safe_load("\n".join(yaml_lines)) or {}
+                    parsed = yaml.safe_load("\n".join(yaml_lines)) or {}
                 except yaml.YAMLError:
                     return {}
+                # Valid YAML that is not a mapping is treated like invalid
+                # frontmatter, matching CommandRegistrar.parse_frontmatter.
+                return parsed if isinstance(parsed, dict) else {}
 
             top_fm = _parse_fm_yaml(top_frontmatter_text)
 

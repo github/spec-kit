@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import io  # noqa: F401
 import json  # noqa: F401
+import zipfile
 from pathlib import Path
 from unittest.mock import patch  # noqa: F401
 
+import pytest
 import yaml  # noqa: F401
 from typer.testing import CliRunner
 
@@ -16,6 +18,41 @@ from tests.specify_cli.bundles.helpers import (
 )
 
 runner = CliRunner()
+
+
+def test_build_reference_only_bundle_offline(project: Path, monkeypatch):
+    data = valid_manifest_dict(schema_version="1.1")
+    data["provides"] = {"bundles": [{"id": "child", "version": "1.0.0"}]}
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    (project / "README.md").write_text("# Parent", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "socket.create_connection",
+        lambda *args, **kwargs: pytest.fail("build attempted network access"),
+    )
+    result = runner.invoke(app, ["bundle", "build", "--output", str(project / "dist")])
+
+    assert result.exit_code == 0, result.output
+    artifacts = list((project / "dist").glob("*.zip"))
+    assert artifacts
+    with zipfile.ZipFile(artifacts[0]) as archive:
+        built_manifest = yaml.safe_load(archive.read("bundle.yml"))
+    assert built_manifest["provides"]["bundles"] == [
+        {"id": "child", "version": "1.0.0"}
+    ]
+
+
+def test_build_rejects_reference_with_schema_1_0(project: Path):
+    data = valid_manifest_dict(schema_version="1.0")
+    data["provides"] = {"bundles": [{"id": "child", "version": "1.0.0"}]}
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    (project / "README.md").write_text("# Parent", encoding="utf-8")
+
+    result = runner.invoke(app, ["bundle", "build", "--output", str(project / "dist")])
+
+    assert result.exit_code == 1
+    assert "Bundle references require schema_version" in result.output
+    assert not list((project / "dist").glob("*.zip"))
 
 
 def test_build_produces_artifact(project: Path):

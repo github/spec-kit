@@ -36,6 +36,118 @@
     - name: Enterprise / Air-Gapped
       href: install/air-gapped.md
 
+# Agent integrations
+- name: Integrations
+  href: integrations/index.md
+  items:
+    - name: Overview
+      href: integrations/index.md
+    - name: CLI Reference
+      href: integrations/cli.md
+    - name: Alquimia AI
+      href: integrations/alquimia.md
+    - name: Amp
+      href: integrations/amp.md
+    - name: Antigravity
+      href: integrations/agy.md
+    - name: Auggie CLI
+      href: integrations/auggie.md
+    - name: Claude Code
+      href: integrations/claude.md
+    - name: Cline
+      href: integrations/cline.md
+    - name: CodeBuddy CLI
+      href: integrations/codebuddy.md
+    - name: Codex CLI
+      href: integrations/codex.md
+    - name: Command Code
+      href: integrations/command-code.md
+    - name: Cursor
+      href: integrations/cursor-agent.md
+    - name: DeepSeek Harness
+      href: integrations/dsh.md
+    - name: Devin for Terminal
+      href: integrations/devin.md
+    - name: Docker Agent
+      href: integrations/docker-agent.md
+    - name: Factory Droid
+      href: integrations/droid.md
+    - name: Firebender
+      href: integrations/firebender.md
+    - name: Forge
+      href: integrations/forge.md
+    - name: Gemini CLI
+      href: integrations/gemini.md
+    - name: GitHub Copilot
+      href: integrations/copilot.md
+    - name: Goose
+      href: integrations/goose.md
+    - name: Grok Build
+      href: integrations/grok.md
+    - name: Hermes
+      href: integrations/hermes.md
+    - name: IBM Bob
+      href: integrations/bob.md
+    - name: Junie
+      href: integrations/junie.md
+    - name: Kilo Code
+      href: integrations/kilocode.md
+    - name: Kimi Code
+      href: integrations/kimi.md
+    - name: Kiro CLI
+      href: integrations/kiro-cli.md
+    - name: Lingma
+      href: integrations/lingma.md
+    - name: MiniMax Code
+      href: integrations/mcode.md
+    - name: Mistral Vibe
+      href: integrations/vibe.md
+    - name: Muse Code
+      href: integrations/muse.md
+    - name: None (shared scaffolding only)
+      href: integrations/none.md
+    - name: Oh My Pi
+      href: integrations/omp.md
+    - name: opencode
+      href: integrations/opencode.md
+    - name: Pi Coding Agent
+      href: integrations/pi.md
+    - name: Qoder CLI
+      href: integrations/qodercli.md
+    - name: Qwen Code
+      href: integrations/qwen.md
+    - name: RovoDev
+      href: integrations/rovodev.md
+    - name: SHAI (OVHcloud)
+      href: integrations/shai.md
+    - name: Tabnine CLI
+      href: integrations/tabnine.md
+    - name: Trae
+      href: integrations/trae.md
+    - name: ZCode
+      href: integrations/zcode.md
+    - name: Zed
+      href: integrations/zed.md
+    - name: Generic (bring your own agent)
+      href: integrations/generic.md
+    - name: Catalogs and External Adapters
+      href: integrations/catalog.md
+    - name: Contributing Integrations
+      href: integrations/contributing.md
+
+# Extensions
+- name: Extensions
+  href: extensions/overview.md
+  items:
+    - name: Overview
+      href: extensions/overview.md
+    - name: Developing
+      href: extensions/developing.md
+    - name: API Reference
+      href: extensions/api.md
+    - name: Publishing
+      href: extensions/publishing.md
+
 # Reference
 - name: Reference
   items:
@@ -45,8 +157,10 @@
       href: reference/core.md
     - name: MCP Server
       href: reference/mcp.md
-    - name: Integrations
-      href: reference/integrations.md
+    - name: Integration Management
+      href: integrations/cli.md
+    - name: Catalogs
+      href: reference/catalogs.md
     - name: Extensions
       href: reference/extensions.md
     - name: Presets

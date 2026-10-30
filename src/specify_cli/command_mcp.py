@@ -6,7 +6,7 @@ import typer
 
 
 def mcp() -> None:
-    """Run the experimental version-only MCP server over stdio."""
+    """Run the experimental MCP server over stdio."""
     from .mcp_server import run_stdio_server
 
     run_stdio_server()

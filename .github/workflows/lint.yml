@@ -15,13 +15,14 @@ jobs:
         docs/**/*.md
         README.md
         README.zh-CN.md
+        README.ja.md
+        README.ko.md
         CODE_OF_CONDUCT.md
         CONTRIBUTING.md
         DEVELOPMENT.md
         SECURITY.md
         SUPPORT.md
         spec-driven.md
-        integrations/*.md
         presets/*.md
         workflows/*.md
     steps:
@@ -87,7 +88,7 @@ jobs:
           fi
 
       - name: Run markdownlint-cli2
-        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+        uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34 # v25.0.0
         with:
           globs: ${{ env.DOC_GLOBS }}
 

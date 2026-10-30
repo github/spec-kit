@@ -4,7 +4,7 @@ Covers:
 - Step registry & auto-discovery
 - Base classes (StepBase, StepContext, StepResult)
 - Expression engine
-- All 12 built-in step types
+- All 14 built-in step types
 - Workflow definition loading & validation
 - Workflow engine execution & state persistence
 - Workflow catalog & registry
@@ -106,7 +106,7 @@ class TestStepRegistry:
 
         expected = {
             "command", "shell", "prompt", "gate", "if", "switch",
-            "while", "do-while", "fan-out", "fan-in", "init", "slot",
+            "while", "do-while", "fan-out", "fan-in", "init", "slot", "github", "workflow",
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 
@@ -386,6 +386,35 @@ class TestExpressions:
 
         ctx = StepContext(inputs={"a": False, "b": True})
         assert evaluate_expression("{{ inputs.a or inputs.b }}", ctx) is True
+
+    @pytest.mark.parametrize(("expression", "expected"), [
+        ("inputs.payload != '' and (inputs.payload | from_json | length)", False),
+        ("inputs.payload == '' or (inputs.payload | from_json | length)", True),
+        ("false and true or true", True),
+        ("true or (false and (inputs.payload | from_json))", True),
+    ])
+    def test_boolean_short_circuits(self, expression, expected):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        assert evaluate_expression(
+            "{{ " + expression + " }}", StepContext(inputs={"payload": ""})
+        ) is expected
+
+    @pytest.mark.parametrize("expression", [
+        "true and (inputs.payload | from_json)",
+        "false or (inputs.payload | from_json)",
+        "(inputs.payload | from_json) and false",
+        "(inputs.payload | from_json) or true",
+    ])
+    def test_boolean_required_operand_still_raises(self, expression):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        with pytest.raises(ValueError, match="from_json: invalid JSON"):
+            evaluate_expression(
+                "{{ " + expression + " }}", StepContext(inputs={"payload": ""})
+            )
 
     def test_list_literal_preserves_quoted_commas(self):
         from specify_cli.workflows.expressions import evaluate_expression
@@ -1485,6 +1514,203 @@ class TestExpressions:
         ctx = StepContext(run_id="deadbeef")
         result = evaluate_expression("RUN_ID={{ context.run_id }}", ctx)
         assert result == "RUN_ID=deadbeef"
+
+    def test_comparison_greater_equal_and_less_equal(self):
+        """``>=``/``<=`` evaluate like ``>``/``<``, for every operand shape.
+
+        The operators were in ``_COMPARISON_OPERATORS`` and handed to
+        ``_safe_compare``, but no test evaluated them, so the ``>=``/``<=``
+        branches and their ordering relative to the single-char operators were
+        unpinned.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"n": 5, "s10": "10", "s9": "9", "lo": "alpha", "hi": "beta"})
+        assert evaluate_expression("{{ inputs.n >= 5 }}", ctx) is True
+        assert evaluate_expression("{{ inputs.n <= 5 }}", ctx) is True
+        assert evaluate_expression("{{ inputs.n >= 6 }}", ctx) is False
+        assert evaluate_expression("{{ inputs.n <= 4 }}", ctx) is False
+        # Numeric strings still compare as numbers ("10" >= "9", not lexically).
+        assert evaluate_expression("{{ inputs.s10 >= inputs.s9 }}", ctx) is True
+        assert evaluate_expression("{{ inputs.s9 <= inputs.s10 }}", ctx) is True
+        # Non-numeric strings compare lexicographically.
+        assert evaluate_expression("{{ inputs.hi >= inputs.lo }}", ctx) is True
+        assert evaluate_expression("{{ inputs.lo <= inputs.hi }}", ctx) is True
+        # A number against a non-numeric string is incomparable -> False.
+        assert evaluate_expression("{{ inputs.n >= 'abc' }}", ctx) is False
+        assert evaluate_expression("{{ inputs.n <= 'abc' }}", ctx) is False
+
+    def test_boolean_literals_are_case_insensitive(self):
+        """``{{ True }}``/``{{ TRUE }}`` resolve as booleans, as the ``.lower()``
+        branch intends; only lowercase was pinned before."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext()
+        for literal in ("True", "TRUE"):
+            assert evaluate_expression("{{ " + literal + " }}", ctx) is True, literal
+        for literal in ("False", "FALSE"):
+            assert evaluate_expression("{{ " + literal + " }}", ctx) is False, literal
+
+    def test_null_literals(self):
+        """``none``/``null`` (any case) resolve to ``None``, not to a path."""
+        from specify_cli.workflows.expressions import _collect_leaves, evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext()
+        for literal in ("none", "null", "None", "NULL", "nUlL"):
+            assert evaluate_expression("{{ " + literal + " }}", ctx) is None, literal
+            assert _collect_leaves(literal) == [], literal
+
+    def test_filter_map_dot_path_attribute(self):
+        """``map('a.b')`` walks nested dicts, not just a top-level key."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={"rows": [{"result": {"status": "ok"}}, {"result": {"status": "bad"}}]}
+        )
+        assert evaluate_expression(
+            "{{ inputs.rows | map('result.status') }}", ctx
+        ) == ["ok", "bad"]
+        # A missing branch of the path yields None for that element, as for a
+        # missing top-level key.
+        ctx_missing = StepContext(inputs={"rows": [{"result": {"status": "ok"}}, {}]})
+        assert evaluate_expression(
+            "{{ inputs.rows | map('result.status') }}", ctx_missing
+        ) == ["ok", None]
+
+    def test_filter_default_on_empty_string(self):
+        """``default`` fires for an empty string too, not only for ``None``.
+
+        ``_filter_default`` treats both as absent; only the ``None`` half was
+        covered. Other falsy values (0, False, [], {}) are preserved.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "empty": "",
+                "value": "kept",
+                "missing": None,
+                "zero": 0,
+                "boolean": False,
+                "empty_list": [],
+                "empty_dict": {},
+            }
+        )
+        assert evaluate_expression("{{ inputs.empty | default('fb') }}", ctx) == "fb"
+        assert evaluate_expression("{{ inputs.missing | default('fb') }}", ctx) == "fb"
+        # A non-empty value is passed through unchanged.
+        assert evaluate_expression("{{ inputs.value | default('fb') }}", ctx) == "kept"
+        # Documented falsy values (0, False, [], {}) are passed through unchanged.
+        res_zero = evaluate_expression("{{ inputs.zero | default('fb') }}", ctx)
+        assert res_zero == 0 and res_zero is not False
+        assert evaluate_expression("{{ inputs.boolean | default('fb') }}", ctx) is False
+        assert evaluate_expression("{{ inputs.empty_list | default('fb') }}", ctx) == []
+        assert evaluate_expression("{{ inputs.empty_dict | default('fb') }}", ctx) == {}
+
+    def test_filter_from_json_returns_non_object_types(self):
+        """``from_json`` yields the parsed value for every JSON type, not only
+        objects: arrays, numbers, booleans and ``null``."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={"arr": "[1, 2, 3]", "num": "42", "fnum": "1.5", "t": "true", "nl": "null"}
+        )
+        assert evaluate_expression("{{ inputs.arr | from_json }}", ctx) == [1, 2, 3]
+        assert evaluate_expression("{{ inputs.num | from_json }}", ctx) == 42
+        assert evaluate_expression("{{ inputs.fnum | from_json }}", ctx) == 1.5
+        assert evaluate_expression("{{ inputs.t | from_json }}", ctx) is True
+        assert evaluate_expression("{{ inputs.nl | from_json }}", ctx) is None
+
+    def test_filter_argument_resolved_from_namespace(self):
+        """A filter argument may be a namespace path, not only a literal."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"tags": ["a", "b"], "sep": "-", "missing": None})
+        assert evaluate_expression("{{ inputs.tags | join(inputs.sep) }}", ctx) == "a-b"
+        assert evaluate_expression("{{ inputs.missing | default(inputs.sep) }}", ctx) == "-"
+
+    def test_boolean_precedence_without_parentheses(self):
+        """``and`` binds tighter than ``or``, so grouping is only needed to
+        override it. With a=True, b=False, c=False: ``a or (b and c)`` is True;
+        the wrong left-to-right reading ``(a or b) and c`` would be False."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"a": True, "b": False, "c": False})
+        assert evaluate_expression("{{ inputs.a or inputs.b and inputs.c }}", ctx) is True
+        # Explicit grouping overrides the default and flips the result.
+        assert evaluate_expression("{{ (inputs.a or inputs.b) and inputs.c }}", ctx) is False
+
+    def test_item_and_fan_in_namespace(self):
+        """The ``item`` and ``fan_in`` roots resolve inside fan-out/fan-in, like
+        ``inputs``/``steps``/``context``. Only the diagnostics probed them."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={"x": "y"}, item={"name": "n1"}, fan_in={"results": [1, 2]}
+        )
+        assert evaluate_expression("{{ item.name }}", ctx) == "n1"
+        assert evaluate_expression("{{ item }}", ctx) == {"name": "n1"}
+        assert evaluate_expression("{{ fan_in.results }}", ctx) == [1, 2]
+        assert evaluate_expression("{{ fan_in.results | join(', ') }}", ctx) == "1, 2"
+        # An item that is itself a list indexes like any other list root.
+        list_ctx = StepContext(inputs={"x": 1}, item=["x", "y"])
+        assert evaluate_expression("{{ item[0] }}", list_ctx) == "x"
+        assert evaluate_expression("{{ item[-1] }}", list_ctx) == "y"
+
+    def test_interpolation_with_steps_and_item(self):
+        """Interpolation resolves every root, not only ``inputs``/``context``."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            steps={"emit": {"output": {"file": "a.md"}}}, item="row-1"
+        )
+        assert evaluate_expression("file={{ steps.emit.output.file }}", ctx) == "file=a.md"
+        assert evaluate_expression("item={{ item }}", ctx) == "item=row-1"
+
+    def test_empty_expression_block_is_empty_string(self):
+        """A block with no expression interpolates to ``""`` (and in a condition
+        coerces to False), rather than raising."""
+        from specify_cli.workflows.expressions import (
+            evaluate_condition,
+            evaluate_expression,
+        )
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext()
+        assert evaluate_expression("{{ }}", ctx) == ""
+        assert evaluate_condition("{{ }}", ctx) is False
+
+    def test_missing_intermediate_path_resolves_to_none(self):
+        """A path whose intermediate segment is absent resolves to ``None``
+        rather than raising."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"a": {}})
+        assert evaluate_expression("{{ inputs.a.b }}", ctx) is None
+        assert evaluate_expression("{{ inputs.zzz.deep }}", ctx) is None
+
+    def test_whitespace_inside_and_around_block(self):
+        """Arbitrary whitespace around tokens is insignificant; none inside a
+        quoted operand is not."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"n": 5, "missing": None})
+        assert evaluate_expression("{{inputs.n}}", ctx) == 5
+        assert evaluate_expression("{{   inputs.n   }}", ctx) == 5
+        assert evaluate_expression("{{ inputs.missing | default( 'y' ) }}", ctx) == "y"
+        assert evaluate_expression("{{ inputs.missing|default('y') }}", ctx) == "y"
 
 
 # ===== Integration Dispatch Tests =====
@@ -2778,7 +3004,7 @@ class TestShellStep:
         def fake_run(*args, **kwargs):
             captured["timeout"] = kwargs.get("timeout")
             return subprocess.CompletedProcess(
-                args=args[0] if args else "", returncode=0, stdout="", stderr=""
+                args=args[0] if args else "", returncode=0, stdout=b"", stderr=b""
             )
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -2801,7 +3027,7 @@ class TestShellStep:
         def fake_run(*args, **kwargs):
             captured["timeout"] = kwargs.get("timeout")
             return subprocess.CompletedProcess(
-                args=args[0] if args else "", returncode=0, stdout="", stderr=""
+                args=args[0] if args else "", returncode=0, stdout=b"", stderr=b""
             )
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -3350,6 +3576,23 @@ class TestGateStep:
         assert result.status == StepStatus.PAUSED
         assert result.output["message"] == "Review the spec."
         assert result.output["options"] == ["approve", "reject"]
+
+    def test_message_expression_is_interpolated(self):
+        """A gate ``message`` containing ``{{ }}`` is evaluated against the
+        context before it is persisted, not shown verbatim."""
+        from specify_cli.workflows.step.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        result = GateStep().execute(
+            {
+                "id": "review",
+                "message": "Approve {{ inputs.feature }}?",
+                "options": ["approve", "reject"],
+            },
+            StepContext(inputs={"feature": "login"}),
+        )
+        assert result.status == StepStatus.PAUSED
+        assert result.output["message"] == "Approve login?"
 
     @pytest.mark.parametrize(
         "inputs", [{}, {"spec_verdict": None}, {"spec_verdict": ""}]
@@ -4811,7 +5054,7 @@ class TestFanOutStep:
         ``validate`` rejects a non-dict ``step``, but the engine's ``execute()``
         does not auto-validate (see ``WorkflowEngine.load_workflow``). On a
         COMPLETED fan-out the engine reads ``step_template`` back out and, when
-        it is truthy, calls ``template.get("id", ...)`` in ``_run_fan_out``. A
+        it is truthy, calls ``template.get("id", ...)`` while expanding items. A
         truthy non-mapping ``step`` (a scalar or list authoring mistake) raised
         AttributeError there and took down the whole run. Mirrors the fan-out
         non-list ``items`` guard and the switch non-dict ``cases`` guard.
@@ -5042,24 +5285,16 @@ class TestFanInStep:
 
 
 class TestFanOutConcurrency:
-    """Fan-out honors max_concurrency (WorkflowEngine._run_fan_out)."""
+    """Fan-out honors max_concurrency through WorkflowEngine.execute()."""
 
     @staticmethod
-    def _build(tmp_path, on_item=None):
-        """Wire an engine + run state to a probe step that echoes context.item.
-
-        Per-item output is ``{"seen": <item>}`` so order and per-thread item
-        isolation are checkable. ``on_item(item)`` may run a side effect and
-        optionally return a StepStatus to override COMPLETED (or raise).
-        """
-        from specify_cli.workflows.base import (
-            RunStatus,
-            StepBase,
-            StepContext,
-            StepResult,
-            StepStatus,
-        )
-        from specify_cli.workflows.engine import RunState, WorkflowEngine
+    def _run(
+        tmp_path, monkeypatch, items, max_concurrency, on_item=None, template=None
+    ):
+        """Run a public fan-out workflow with a probe that echoes ``context.item``."""
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult, StepStatus
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
 
         class _ProbeStep(StepBase):
             type_key = "probe"
@@ -5072,35 +5307,41 @@ class TestFanOutConcurrency:
                         status = override
                 return StepResult(status=status, output={"seen": context.item})
 
-        engine = WorkflowEngine(project_root=tmp_path)
-        context = StepContext()
-        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
-        state.status = RunStatus.RUNNING
-        template = {"id": "impl", "type": "probe"}
-        return engine, context, state, {"probe": _ProbeStep()}, template
-
-    def _run(self, tmp_path, items, max_concurrency, on_item=None):
-        engine, context, state, registry, template = self._build(tmp_path, on_item)
-        results = engine._run_fan_out(
-            items, template, "fan", context, state, registry, max_concurrency
+        monkeypatch.setitem(STEP_REGISTRY, "probe", _ProbeStep())
+        template = template or {"id": "impl", "type": "probe"}
+        state = WorkflowEngine(tmp_path).execute(
+            WorkflowDefinition(
+                {
+                    "workflow": {"id": "fan-out-test", "name": "Fan-out Test"},
+                    "steps": [
+                        {
+                            "id": "fan",
+                            "type": "fan-out",
+                            "items": items,
+                            "max_concurrency": max_concurrency,
+                            "step": template,
+                        }
+                    ],
+                }
+            )
         )
-        return results, state
+        return state.step_results["fan"]["output"]["results"], state
 
-    def test_sequential_default_preserves_order(self, tmp_path):
-        results, _ = self._run(tmp_path, list(range(5)), 1)
+    def test_sequential_default_preserves_order(self, tmp_path, monkeypatch):
+        results, _ = self._run(tmp_path, monkeypatch, list(range(5)), 1)
         assert results == [{"seen": i} for i in range(5)]
 
-    def test_concurrent_runs_all_items_in_item_order(self, tmp_path):
-        results, _ = self._run(tmp_path, list(range(10)), 4)
+    def test_concurrent_runs_all_items_in_item_order(self, tmp_path, monkeypatch):
+        results, _ = self._run(tmp_path, monkeypatch, list(range(10)), 4)
         assert results == [{"seen": i} for i in range(10)]
 
-    def test_sequential_and_concurrent_agree(self, tmp_path):
+    def test_sequential_and_concurrent_agree(self, tmp_path, monkeypatch):
         items = [{"n": i} for i in range(8)]
-        seq, _ = self._run(tmp_path, items, 1)
-        con, _ = self._run(tmp_path, items, 4)
+        seq, _ = self._run(tmp_path, monkeypatch, items, 1)
+        con, _ = self._run(tmp_path, monkeypatch, items, 4)
         assert seq == con == [{"seen": {"n": i}} for i in range(8)]
 
-    def test_shuffled_completion_preserves_item_order(self, tmp_path):
+    def test_shuffled_completion_preserves_item_order(self, tmp_path, monkeypatch):
         # Determinism keystone: completion order is forced to the exact REVERSE of
         # item order by an event chain (no sleeps) — item i blocks until item i+1
         # has finished, so item 0 completes LAST — yet results must still be in
@@ -5120,11 +5361,11 @@ class TestFanOutConcurrency:
             done[item].set()
             return None
 
-        results, _ = self._run(tmp_path, list(range(n)), n, on_item)
+        results, _ = self._run(tmp_path, monkeypatch, list(range(n)), n, on_item)
         assert results == [{"seen": i} for i in range(n)]
         assert completion == list(reversed(range(n)))
 
-    def test_concurrency_is_real(self, tmp_path):
+    def test_concurrency_is_real(self, tmp_path, monkeypatch):
         import threading
 
         # Deterministic proof of real parallelism (no wall-clock threshold to
@@ -5138,30 +5379,35 @@ class TestFanOutConcurrency:
             barrier.wait()
             return None
 
-        results, _ = self._run(tmp_path, list(range(n)), n, on_item)
+        results, _ = self._run(tmp_path, monkeypatch, list(range(n)), n, on_item)
         assert results == [{"seen": i} for i in range(n)]
 
     @pytest.mark.parametrize(
         "bad", [0, -1, None, "abc", 1.0, float("inf"), float("nan")]
     )
-    def test_invalid_max_concurrency_coerces_to_sequential(self, tmp_path, bad):
+    def test_invalid_max_concurrency_coerces_to_sequential(
+        self, tmp_path, monkeypatch, bad
+    ):
         # float("inf") -> int() raises OverflowError (not TypeError/ValueError);
         # it must fall back to sequential like any other uncoercible value, not
         # crash the run.
-        results, _ = self._run(tmp_path, list(range(4)), bad)
+        results, _ = self._run(tmp_path, monkeypatch, list(range(4)), bad)
         assert results == [{"seen": i} for i in range(4)]
 
-    def test_string_max_concurrency_is_honored(self, tmp_path):
-        results, _ = self._run(tmp_path, list(range(4)), "2")
+    def test_string_max_concurrency_is_honored(self, tmp_path, monkeypatch):
+        results, _ = self._run(tmp_path, monkeypatch, list(range(4)), "2")
         assert results == [{"seen": i} for i in range(4)]
 
-    def test_context_item_isolation_across_threads(self, tmp_path):
+    def test_context_item_isolation_across_threads(self, tmp_path, monkeypatch):
         items = [{"id": f"x{i}"} for i in range(6)]
-        results, _ = self._run(tmp_path, items, 6)
+        results, _ = self._run(tmp_path, monkeypatch, items, 6)
         assert [r["seen"]["id"] for r in results] == [f"x{i}" for i in range(6)]
 
     @pytest.mark.parametrize("max_concurrency", [1, 2])
-    def test_marks_item_context_as_inside_fan_out(self, tmp_path, max_concurrency):
+    def test_marks_item_context_as_inside_fan_out(
+        self, tmp_path, monkeypatch, max_concurrency
+    ):
+        from specify_cli.workflows import STEP_REGISTRY
         from specify_cli.workflows.base import StepBase, StepResult, StepStatus
 
         class _ContextProbeStep(StepBase):
@@ -5173,28 +5419,27 @@ class TestFanOutConcurrency:
                     output={"inside_fan_out": context.inside_fan_out},
                 )
 
-        engine, context, state, _registry, _template = self._build(tmp_path)
-        results = engine._run_fan_out(
+        monkeypatch.setitem(STEP_REGISTRY, "context-probe", _ContextProbeStep())
+        results, _ = self._run(
+            tmp_path,
+            monkeypatch,
             ["a", "b"],
-            {"id": "probe", "type": "context-probe"},
-            "fan",
-            context,
-            state,
-            {"context-probe": _ContextProbeStep()},
             max_concurrency,
+            template={"id": "probe", "type": "context-probe"},
         )
 
         assert results == [
             {"inside_fan_out": True},
             {"inside_fan_out": True},
         ]
-        assert context.inside_fan_out is False
 
-    def test_empty_items(self, tmp_path):
-        results, _ = self._run(tmp_path, [], 4)
+    def test_empty_items(self, tmp_path, monkeypatch):
+        results, _ = self._run(tmp_path, monkeypatch, [], 4)
         assert results == []
 
-    def test_concurrent_halt_status_not_clobbered_by_later_item(self, tmp_path):
+    def test_concurrent_halt_status_not_clobbered_by_later_item(
+        self, tmp_path, monkeypatch
+    ):
         # Item 1 PAUSES (first halting item in order); item 3 FAILS while in
         # flight. The final run status must be the halting item's (PAUSED), never
         # a later item's (FAILED) that raced after it — matching sequential.
@@ -5207,22 +5452,24 @@ class TestFanOutConcurrency:
                 return StepStatus.FAILED
             return None
 
-        results, state = self._run(tmp_path, list(range(4)), 4, on_item)
+        results, state = self._run(tmp_path, monkeypatch, list(range(4)), 4, on_item)
         assert results == [{"seen": 0}, {"seen": 1}]
         assert state.status == RunStatus.PAUSED
 
-    def test_halt_on_failure_sequential_returns_prefix(self, tmp_path):
+    def test_halt_on_failure_sequential_returns_prefix(self, tmp_path, monkeypatch):
         from specify_cli.workflows.base import RunStatus, StepStatus
 
         def on_item(item):
             return StepStatus.FAILED if item == 2 else None
 
-        results, state = self._run(tmp_path, list(range(5)), 1, on_item)
+        results, state = self._run(tmp_path, monkeypatch, list(range(5)), 1, on_item)
         assert len(results) == 3  # items 0,1,2 ran; 3,4 never dispatched
         assert results[2] == {"seen": 2}
         assert state.status == RunStatus.FAILED
 
-    def test_halt_on_failure_concurrent_includes_halting_item(self, tmp_path):
+    def test_halt_on_failure_concurrent_includes_halting_item(
+        self, tmp_path, monkeypatch
+    ):
         # The concurrent prefix must match the sequential one: items up to and
         # INCLUDING the failing item (2), never a short prefix that drops it just
         # because a later in-flight item flipped the shared run status first.
@@ -5231,11 +5478,11 @@ class TestFanOutConcurrency:
         def on_item(item):
             return StepStatus.FAILED if item == 2 else None
 
-        results, state = self._run(tmp_path, list(range(6)), 4, on_item)
+        results, state = self._run(tmp_path, monkeypatch, list(range(6)), 4, on_item)
         assert results == [{"seen": 0}, {"seen": 1}, {"seen": 2}]
         assert state.status == RunStatus.FAILED
 
-    def test_concurrent_restores_halting_item_error(self, tmp_path):
+    def test_concurrent_restores_halting_item_error(self, tmp_path, monkeypatch):
         # After a concurrent fan-out halts, the run-level error must be the first
         # halting item's own error (parity with the sequential path), even when a
         # later concurrent item failed with a different error AND the halting
@@ -5268,15 +5515,15 @@ class TestFanOutConcurrency:
                     status=StepStatus.COMPLETED, output={"seen": item}
                 )
 
-        engine, context, state, _registry, _template = self._build(tmp_path)
-        engine._run_fan_out(
+        from specify_cli.workflows import STEP_REGISTRY
+
+        monkeypatch.setitem(STEP_REGISTRY, "err-probe", _ErrorProbe())
+        _results, state = self._run(
+            tmp_path,
+            monkeypatch,
             ["ok0", "halt", "ok2", "leak"],
-            {"id": "impl", "type": "err-probe"},
-            "fan",
-            context,
-            state,
-            {"err-probe": _ErrorProbe()},
             4,
+            template={"id": "impl", "type": "err-probe"},
         )
 
         assert state.status == RunStatus.FAILED
@@ -5285,7 +5532,9 @@ class TestFanOutConcurrency:
         # error verbatim, even when falsy.
         assert state.error == ""
 
-    def test_continue_on_error_item_does_not_halt_concurrent(self, tmp_path):
+    def test_continue_on_error_item_does_not_halt_concurrent(
+        self, tmp_path, monkeypatch
+    ):
         # A failing item whose template sets continue_on_error must NOT truncate
         # the fan-out: every item still runs and is returned in order.
         from specify_cli.workflows.base import StepStatus
@@ -5293,41 +5542,38 @@ class TestFanOutConcurrency:
         def on_item(item):
             return StepStatus.FAILED if item == 2 else None
 
-        engine, context, state, registry, template = self._build(tmp_path, on_item)
-        template["continue_on_error"] = True
-        results = engine._run_fan_out(
-            list(range(5)), template, "fan", context, state, registry, 4
+        results, _ = self._run(
+            tmp_path,
+            monkeypatch,
+            list(range(5)),
+            4,
+            on_item,
+            template={"id": "impl", "type": "probe", "continue_on_error": True},
         )
         assert results == [{"seen": i} for i in range(5)]
 
-    def test_unknown_template_type_halts_concurrent_like_sequential(self, tmp_path):
+    def test_unknown_template_type_halts_concurrent_like_sequential(
+        self, tmp_path, monkeypatch
+    ):
         # A template whose type isn't registered fails fast and records no result;
         # the concurrent path must still attribute the halt to the first item and
         # return the same prefix as sequential — never run on as if completed.
-        from specify_cli.workflows.base import RunStatus, StepContext
-        from specify_cli.workflows.engine import RunState, WorkflowEngine
-
-        def fresh():
-            state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
-            state.status = RunStatus.RUNNING
-            return WorkflowEngine(project_root=tmp_path), StepContext(), state
-
         template = {"id": "impl", "type": "does-not-exist"}
-        e1, c1, s1 = fresh()
-        seq = e1._run_fan_out(list(range(5)), template, "fan", c1, s1, {}, 1)
-        e2, c2, s2 = fresh()
-        con = e2._run_fan_out(list(range(5)), template, "fan", c2, s2, {}, 4)
+        seq, s1 = self._run(tmp_path, monkeypatch, list(range(5)), 1, template=template)
+        con, s2 = self._run(tmp_path, monkeypatch, list(range(5)), 4, template=template)
         assert seq == con == [{}]  # halted at the first item; rest never returned
+        from specify_cli.workflows.base import RunStatus
+
         assert s1.status == s2.status == RunStatus.FAILED
 
-    def test_first_exception_cancels_and_reraises(self, tmp_path):
+    def test_first_exception_cancels_and_reraises(self, tmp_path, monkeypatch):
         def on_item(item):
             if item == 0:
                 raise ValueError("boom")
             return None
 
         with pytest.raises(ValueError, match="boom"):
-            self._run(tmp_path, list(range(4)), 2, on_item)
+            self._run(tmp_path, monkeypatch, list(range(4)), 2, on_item)
 
 
 class TestFanInWaitForValidation:
@@ -5450,6 +5696,26 @@ steps:
         assert any(
             "must be step-id strings" in e and "int" in e for e in errors
         )
+
+    def test_non_ascii_fan_out_item_index_is_rejected(self):
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: fan
+    type: fan-out
+    items: [one]
+    step:
+      id: item
+      type: command
+      command: speckit.implement
+  - id: collect
+    type: fan-in
+    wait_for: [fan:item:١]
+""")
+        assert any("unknown or not-yet-declared step id 'fan:item:١'" in e for e in errors)
 
 
 # ===== Workflow Definition Tests =====
@@ -7020,6 +7286,52 @@ steps:
         errors = validate_workflow(definition)
         assert any("invalid default" in e for e in errors), errors
 
+    @pytest.mark.parametrize(
+        "number", [2**53 + 1, 1792234567890123456, 2**63 - 1, -(2**63 - 1)]
+    )
+    @pytest.mark.parametrize("as_string", [False, True])
+    def test_number_input_preserves_integer_precision(self, number, as_string):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        value = str(number) if as_string else number
+        resolved = WorkflowEngine._coerce_input("record_id", value, {"type": "number"})
+
+        assert resolved == number
+        assert isinstance(resolved, int)
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("0", 0), (" +42 ", 42), ("-42", -42),
+            ("3.5", 3.5), ("5.0", 5), ("1e3", 1000),
+        ],
+    )
+    def test_number_input_retains_existing_numeric_forms(self, value, expected):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        resolved = WorkflowEngine._coerce_input("count", value, {"type": "number"})
+
+        assert resolved == expected
+        assert type(resolved) is type(expected)
+
+    @pytest.mark.parametrize(
+        "value", [True, False, None, [], "invalid", "nan", "inf", "-inf"]
+    )
+    def test_number_input_rejects_non_numbers_and_non_finite_values(self, value):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        with pytest.raises(ValueError, match="expected a number"):
+            WorkflowEngine._coerce_input("count", value, {"type": "number"})
+
+    def test_number_input_checks_enum_without_rounding(self):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        number = 2**53 + 1
+        definition = {"type": "number", "enum": [number]}
+        assert WorkflowEngine._coerce_input("record_id", str(number), definition) == number
+        with pytest.raises(ValueError, match="not in allowed values"):
+            WorkflowEngine._coerce_input("record_id", str(number - 1), definition)
+
     def test_coerce_number_input_rejects_infinity_cleanly(self):
         """An infinite float must surface as a clean ValueError (like NaN), not
         let ``int(inf)``'s OverflowError escape: ``int()`` of an infinity raises
@@ -8403,6 +8715,59 @@ steps:
 
         assert state.status == RunStatus.FAILED
         assert state.error == "Unknown step type: 'definitely-not-a-real-step'"
+
+    def test_unknown_step_type_ignores_continue_on_error(self, project_dir):
+        """A missing implementation is terminal even with recovery enabled."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "unknown-type-recovery"
+  name: "Unknown Type Recovery"
+  version: "1.0.0"
+steps:
+  - id: mystery
+    type: definitely-not-a-real-step
+    continue_on_error: true
+  - id: after
+    type: shell
+    run: "echo should-not-run"
+""")
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        assert state.status == RunStatus.FAILED
+        assert state.error == "Unknown step type: 'definitely-not-a-real-step'"
+        assert "after" not in state.step_results
+        events = [entry["event"] for entry in state.log_entries]
+        assert "step_failed" in events
+        assert "step_continue_on_error" not in events
+
+    def test_unknown_step_type_events_match_main(self, project_dir):
+        """Only step_started and step_failed, and no projected step result."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "unknown-type-events"
+  name: "Unknown Type Events"
+  version: "1.0.0"
+steps:
+  - id: mystery
+    type: definitely-not-a-real-step
+""")
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        assert state.status == RunStatus.FAILED
+        assert [
+            entry["event"]
+            for entry in state.log_entries
+            if entry.get("step_id") == "mystery"
+        ] == ["step_started", "step_failed"]
+        assert "mystery" not in state.step_results
 
 
 # ===== State Persistence Tests =====

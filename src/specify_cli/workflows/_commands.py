@@ -79,6 +79,24 @@ def _fail_workflow_execution(
     raise typer.Exit(1) from exc
 
 
+def _fail_recorded_run(
+    exc: Exception, *, json_output: bool, state: Any, resume: bool = False,
+) -> None:
+    """Report *exc* as the run's outcome when the engine recorded it as one.
+
+    ``WorkflowEngine.execute``/``resume`` persist an exception raised while
+    steps run (an expression error, say) as the run's ``failed`` status and
+    error, and mark that exception on the in-memory state, before re-raising
+    it. Errors raised before that point, such as input validation or a refused
+    resume, are not marked even when a loaded failed run carries the same
+    message, so this returns and the caller reports them as before.
+    """
+    if state is not None and getattr(state, "_recorded_exception", None) is exc:
+        _fail_workflow_execution(
+            exc, json_output=json_output, state=state, resume=resume
+        )
+
+
 def _open_workflow_registry(project_root: Path, out=None):
     """Construct a WorkflowRegistry, exiting cleanly on an unreadable file.
 
@@ -165,16 +183,13 @@ def _reject_unsafe_dir(path: Path, label: str) -> None:
 
 def _reject_unsafe_workflow_storage(project_root: Path) -> None:
     """Refuse symlinked workflow storage directories before workflow commands run."""
-    _reject_unsafe_dir(project_root / ".specify", ".specify")
-    _reject_unsafe_dir(project_root / ".specify" / "workflows", ".specify/workflows")
-    _reject_unsafe_dir(
-        project_root / ".specify" / "workflows" / "runs",
-        ".specify/workflows/runs",
-    )
-    _reject_unsafe_dir(
-        project_root / ".specify" / "workflows" / "overlays",
-        ".specify/workflows/overlays",
-    )
+    from ._storage import WorkflowStorageError, validate_workflow_storage
+
+    try:
+        validate_workflow_storage(project_root)
+    except WorkflowStorageError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
 
 
 def _resolve_installed_workflow_ownership(
@@ -710,6 +725,16 @@ def _validate_local_workflow_package(package_dir: Path) -> None:
                 raise ValueError(f"Workflow package contains unsupported file: {path}")
 
 
+def _workflow_versions_match(actual: object, expected: str) -> bool:
+    """Compare workflow versions without treating equivalent spellings as changes."""
+    from packaging import version as pkg_version
+
+    try:
+        return pkg_version.Version(str(actual)) == pkg_version.Version(expected)
+    except pkg_version.InvalidVersion:
+        return str(actual) == expected
+
+
 def _install_workflow_package(
     project_root: Path,
     workflows_dir: Path,
@@ -719,6 +744,7 @@ def _install_workflow_package(
     expected_id: str | None = None,
     expected_version: str | None = None,
     expected_requires: dict[str, Any] | None = None,
+    exact_version: bool = False,
     expected_installed_version: str | None = None,
     catalog_info: dict[str, Any] | None = None,
 ) -> None:
@@ -756,7 +782,11 @@ def _install_workflow_package(
             f"workflow ID ({_escape_markup(repr(expected_id))})."
         )
         raise typer.Exit(1)
-    if expected_version is not None and str(definition.version) != expected_version:
+    if expected_version is not None and not (
+        str(definition.version) == expected_version
+        if exact_version
+        else _workflow_versions_match(definition.version, expected_version)
+    ):
         console.print(
             f"[red]Error:[/red] Downloaded workflow version "
             f"({_escape_markup(str(definition.version))}) does not match the catalog "
@@ -806,7 +836,9 @@ def _install_workflow_package(
             if expected_installed_version is not None and (
                 not isinstance(existing, dict)
                 or existing.get("source") != "catalog"
-                or str(existing.get("version")) != expected_installed_version
+                or not _workflow_versions_match(
+                    existing.get("version"), expected_installed_version
+                )
             ):
                 console.print(
                     f"[yellow]Warning:[/yellow] Workflow "
@@ -941,6 +973,12 @@ def _workflow_run_payload(state: Any) -> dict[str, Any]:
     error = _failed_step_error(state)
     if error is not None:
         payload["error"] = error
+    if getattr(state, "execution", None):
+        from ._execution import scope_summaries
+
+        scopes = scope_summaries(state.execution, state.status.value)
+        if scopes:
+            payload["workflow_scopes"] = scopes
     return payload
 
 
@@ -979,21 +1017,35 @@ def _gate_outcome(state: Any) -> dict[str, Any] | None:
     if getattr(state.status, "value", state.status) not in ("paused", "aborted"):
         return None
     step = (getattr(state, "step_results", None) or {}).get(state.current_step_id)
+    step_id = state.current_step_id
+    scope_path = None
+    if getattr(state, "execution", None):
+        from ._execution import active_step
+
+        active = active_step(state.execution)
+        if active is None:
+            return None
+        path, node, step_id = active
+        scope_path = path[:-1]
+        step = node.get("result")
     if not isinstance(step, dict) or not _is_gate_step(step):
         return None
     output = step.get("output") or {}
-    # `message`, `options`, and `choice` may be non-string YAML literals in an
-    # unvalidated workflow (GateStep coerces none of them for the payload), so
+    # `message`, `options`, and `choice` may be non-string YAML literals in
+    # legacy or synthetic records, so
     # normalise all three for a stable JSON schema: message → str, options →
     # list[str] | None, choice → str | None (None means no decision yet).
     message = output.get("message")
     choice = output.get("choice")
-    return {
-        "step_id": state.current_step_id,
+    detail = {
+        "step_id": step_id,
         "message": None if message is None else str(message),
         "options": _normalize_gate_options(output.get("options")),
         "choice": None if choice is None else str(choice),
     }
+    if scope_path:
+        detail["scope_path"] = scope_path
+    return detail
 
 
 def _normalize_gate_options(options: Any) -> list[str] | None:
@@ -1069,6 +1121,7 @@ def _install_workflow_from_catalog(
     expected_version: str | None = None,
     expected_installed_version: str | None = None,
     requested_version: str | None = None,
+    selected_info: dict | None = None,
 ) -> None:
     """Download, validate, and register a catalog workflow.
 
@@ -1078,32 +1131,27 @@ def _install_workflow_from_catalog(
     version does not match the catalog version that triggered the install.
     ``expected_installed_version``, when given by ``workflow update``, aborts
     if another process changes the installed source or version before commit.
+    ``selected_info`` is a bundle-selected catalog record, used without a
+    second catalog lookup while retaining the same download and commit checks.
     """
     from .catalog import WorkflowCatalog, WorkflowCatalogError
     from .engine import WorkflowDefinition
 
-    def versions_match(actual: object, expected: str) -> bool:
-        from packaging import version as pkg_version
-
-        try:
-            return pkg_version.Version(str(actual)) == pkg_version.Version(
-                expected
-            )
-        except pkg_version.InvalidVersion:
-            return str(actual) == expected
-
     safe_wf_id = _escape_markup(workflow_id)
 
-    catalog = WorkflowCatalog(project_root)
-    try:
-        info = (
-            catalog.get_workflow_info(workflow_id, requested_version)
-            if requested_version is not None
-            else catalog.get_workflow_info(workflow_id)
-        )
-    except WorkflowCatalogError as exc:
-        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
-        raise typer.Exit(1)
+    if selected_info is not None:
+        info = selected_info
+    else:
+        catalog = WorkflowCatalog(project_root)
+        try:
+            info = (
+                catalog.get_workflow_info(workflow_id, requested_version)
+                if requested_version is not None
+                else catalog.get_workflow_info(workflow_id)
+            )
+        except WorkflowCatalogError as exc:
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1)
 
     if not info:
         if requested_version is not None:
@@ -1291,6 +1339,7 @@ def _install_workflow_from_catalog(
                     expected_requires=(
                         info.get("requires") if requested_version is not None else None
                     ),
+                    exact_version=requested_version is not None,
                     expected_installed_version=expected_installed_version,
                     catalog_info={**info, "url": workflow_url},
                 )
@@ -1345,7 +1394,7 @@ def _install_workflow_from_catalog(
     if expected_version is not None and not (
         str(definition.version) == expected_version
         if requested_version is not None
-        else versions_match(definition.version, expected_version)
+        else _workflow_versions_match(definition.version, expected_version)
     ):
         _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
         console.print(
@@ -1380,7 +1429,7 @@ def _install_workflow_from_catalog(
                 if (
                     not isinstance(current, dict)
                     or current.get("source") != "catalog"
-                    or not versions_match(
+                    or not _workflow_versions_match(
                         current.get("version"), expected_installed_version
                     )
                 ):

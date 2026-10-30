@@ -146,6 +146,25 @@ as complete. The
 uses an agent to select relevant tests, but the test commands themselves
 still run deterministically.
 
+&#9733; Maintainers can also request the
+[pr-assess workflow](https://github.com/github/spec-kit/blob/main/.github/workflows/pr-assess.md)
+by applying `pr-assess` to a PR. It compares the description with the cumulative
+diff, reports material omissions or contradictions, and applies one
+`pr-description-aligned`, `pr-description-needs-update`, or
+`pr-description-inconclusive` label. It removes up to two stale outcome labels,
+then adds the selected outcome only when absent. A matching sole outcome leaves
+labels unchanged; conflicting outcomes are cleaned up without changing the
+description verdict solely because of that conflict.
+Every completed assessment posts a new standalone comment, including matching
+reruns. Suggested updates are description-only, not code-change alternatives.
+This MVP uses separate remove/add operations that can partially fail and do not
+make concurrent manual label edits safe. Comment delivery is also separate.
+It reads repository and fork changes
+without executing contributor code. A mislabeled issue or closed PR receives
+an explanatory comment, not a verdict. Reassessment is manual: remove and re-add
+the trigger label. This checks description alignment, not author intent or
+general code quality, and does not replace human review.
+
 Separately, conventional GitHub Actions run
 [Python tests and Ruff](https://github.com/github/spec-kit/blob/main/.github/workflows/test.yml),
 [Markdown linting for documentation and ShellCheck for shell scripts](https://github.com/github/spec-kit/blob/main/.github/workflows/lint.yml),
@@ -220,9 +239,14 @@ not the repository's GitHub Actions workflows.
 &#9733; Beyond core feature delivery, agentic community-submission workflows for
 [extensions](https://github.com/github/spec-kit/blob/main/.github/workflows/add-community-extension.md),
 [presets](https://github.com/github/spec-kit/blob/main/.github/workflows/add-community-preset.md),
-and [bundles](https://github.com/github/spec-kit/blob/main/.github/workflows/add-community-bundle.md)
+[bundles](https://github.com/github/spec-kit/blob/main/.github/workflows/add-community-bundle.md),
+and [workflow steps](https://github.com/github/spec-kit/blob/main/.github/workflows/add-community-workflow-step.md)
 validate submission metadata and propose catalog changes in draft PRs for
 maintainer review.
+
+Extension, preset, and bundle submission titles require the `[Extension]:`,
+`[Preset]:`, and `[Bundle]:` prefixes respectively. A mismatch receives a comment
+and run link, then processing stops without validation or other changes.
 
 Catalog discovery does not audit or endorse community code; users must
 review third-party components before use.
