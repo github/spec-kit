@@ -7,6 +7,7 @@ import typer
 from rich.markup import escape
 
 from .._console import console
+from ..file_helper import FileHelperError
 from ..integration_runtime import invoke_prefix_for_integration as _invoke_prefix_for_integration, invoke_separator_for_integration as _invoke_separator_for_integration
 from ..integration_state import (
     dedupe_integration_keys as _dedupe_integration_keys,
@@ -161,6 +162,23 @@ def integration_switch(
         console.print("No files were changed.")
         raise typer.Exit(1)
 
+    from ..events import resolve_events
+
+    try:
+        events_map = resolve_events(
+            target_integration.key,
+            target_integration.config,
+            project_root,
+            target_parsed_options,
+        )
+    except (OSError, FileHelperError) as exc:
+        console.print(
+            f"[red]Error:[/red] Could not resolve events for integration "
+            f"'{escape(target)}': {_cli_error_detail(exc)}"
+        )
+        console.print("No files were changed.")
+        raise typer.Exit(1) from exc
+
     # Phase 1: Uninstall current integration (if any)
     if installed_key:
         current_integration = get_integration(installed_key)
@@ -292,13 +310,6 @@ def integration_switch(
         target_integration.key, project_root, version=_get_speckit_version()
     )
 
-    from ..events import resolve_events
-    events_map = resolve_events(
-        target_integration.key,
-        target_integration.config,
-        project_root,
-        target_parsed_options,
-    )
     try:
         target_integration.setup(
             project_root, manifest,

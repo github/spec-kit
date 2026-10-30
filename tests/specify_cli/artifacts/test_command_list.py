@@ -19,6 +19,21 @@ from tests.conftest import install_preset
 
 
 class TestCommandList:
+    def test_linked_registry_emits_resolution_error(self, spec_kit_project, tmp_path, monkeypatch):
+        registry = spec_kit_project / ".specify" / "extensions" / ".registry"
+        try:
+            registry.symlink_to(tmp_path / "missing-registry")
+        except OSError:
+            pytest.skip("Symlink creation unavailable")
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(app, ["artifact", "list", "--json"])
+
+        assert result.exit_code == 1
+        assert isinstance(result.exception, SystemExit)
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
+
     def test_list_requires_json_flag(
         self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
     ):

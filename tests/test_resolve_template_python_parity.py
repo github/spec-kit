@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -15,6 +16,8 @@ from scripts.python import common as python_common
 from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
+    WINDOWS_POWERSHELL,
+    _bash_posix_path,
     bash_cmd,
     clean_env,
     install_composition_stack,
@@ -30,6 +33,147 @@ from tests.parity_helpers import (
 
 SCRIPT = "resolve-template"
 TEMPLATE = "constitution-template"
+
+@pytest.mark.parametrize("runtime", [
+    "python",
+    pytest.param("bash", marks=requires_bash),
+    pytest.param("powershell", marks=pytest.mark.skipif(
+        not HAS_POWERSHELL, reason="PowerShell unavailable",
+    )),
+    pytest.param("windows-powershell51", marks=pytest.mark.skipif(
+        not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 required",
+    )),
+])
+@pytest.mark.parametrize("mode", ["path", "content"])
+@pytest.mark.parametrize("storage", [
+    "ordinary", "missing", "registry-live", "registry-dangling",
+    "extensions-live", "extensions-dangling", "specify-live", "extensions-junction",
+])
+def test_template_helpers_reject_linked_registry_storage(tmp_path, runtime, mode, storage):
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    core = repo / ".specify" / "templates" / f"{TEMPLATE}.md"
+    core.parent.mkdir(parents=True)
+    core.write_bytes(b"# Core\n")
+    extensions = repo / ".specify" / "extensions"
+    templates = extensions / "example" / "templates"
+    templates.mkdir(parents=True)
+    (templates / f"{TEMPLATE}.md").write_bytes(b"# External content\n")
+    registry = extensions / ".registry"
+    registry.write_text('{"extensions": {"example": {"enabled": false}}}', encoding="utf-8")
+    external = tmp_path / "external"
+    if storage == "missing":
+        shutil.rmtree(extensions)
+    elif storage.startswith("registry-"):
+        registry.unlink()
+        if storage == "registry-live":
+            external.write_text('{"extensions": {}}', encoding="utf-8")
+        try:
+            registry.symlink_to(external)
+        except OSError:
+            pytest.skip("Symlink creation unavailable")
+    elif storage.startswith("extensions-"):
+        if storage == "extensions-dangling":
+            shutil.rmtree(extensions)
+        else:
+            extensions.rename(external)
+        if storage == "extensions-junction":
+            if os.name != "nt":
+                pytest.skip("Native Windows junction required")
+            created = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(extensions), str(external)],
+                capture_output=True, text=True, check=False,
+            )
+            assert created.returncode == 0, created.stderr
+        else:
+            try:
+                extensions.symlink_to(external, target_is_directory=True)
+            except OSError:
+                pytest.skip("Symlink creation unavailable")
+    elif storage == "specify-live":
+        (repo / ".specify").rename(external)
+        try:
+            (repo / ".specify").symlink_to(external, target_is_directory=True)
+        except OSError:
+            pytest.skip("Symlink creation unavailable")
+
+    if runtime == "python":
+        function = "resolve_template" if mode == "path" else "resolve_template_content"
+        command = [
+            sys.executable, "-c",
+            (
+                "import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); "
+                "import common; print(getattr(common, sys.argv[2])(sys.argv[3], Path(sys.argv[4])))"
+            ),
+            str(repo / ".specify/scripts/python"), function, TEMPLATE, str(repo),
+        ]
+    elif runtime == "bash":
+        function = "resolve_template" if mode == "path" else "resolve_template_content"
+        command = [
+            "bash", "-c", 'source "$1"; "$2" "$3" "$4"', "bash",
+            _bash_posix_path(repo / ".specify/scripts/bash/common.sh"),
+            function, TEMPLATE, _bash_posix_path(repo),
+        ]
+    else:
+        function = "Resolve-Template" if mode == "path" else "Resolve-TemplateContent"
+        common = str(repo / ".specify/scripts/powershell/common.ps1").replace("'", "''")
+        root = str(repo).replace("'", "''")
+        executable = WINDOWS_POWERSHELL if runtime == "windows-powershell51" else ps_cmd(repo, SCRIPT)[0]
+        command = [
+            executable, "-NoProfile", "-Command",
+            (
+                f"$ErrorActionPreference = 'Stop'; . '{common}'; "
+                f"[Console]::Out.Write(({function} -TemplateName '{TEMPLATE}' -RepoRoot '{root}'))"
+            ),
+        ]
+
+    result = run(command, repo, timeout=30)
+    if storage in ("ordinary", "missing"):
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+        assert ("constitution-template.md" if mode == "path" else "# Core") in result.stdout
+    else:
+        assert result.returncode != 0, result.stdout
+        assert result.stdout == ""
+        assert any(word in result.stderr.lower() for word in ("symlink", "reparse", "registry"))
+        from specify_cli.presets import PresetResolver, PresetValidationError
+        with pytest.raises(PresetValidationError):
+            PresetResolver(repo).resolve(TEMPLATE)
+
+@requires_bash
+@pytest.mark.parametrize("function", ["resolve_template", "resolve_template_content"])
+def test_bash_without_python_rejects_linked_extension_storage(tmp_path, function):
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    external = tmp_path / "external"
+    templates = external / "example" / "templates"
+    templates.mkdir(parents=True)
+    (templates / f"{TEMPLATE}.md").write_bytes(b"# External content\n")
+    try:
+        (repo / ".specify" / "extensions").symlink_to(external, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlink creation unavailable")
+
+    result = run([
+        "bash", "-c",
+        'source "$1"; _python3_command() { return 1; }; "$2" "$3" "$4"',
+        "bash", _bash_posix_path(repo / ".specify/scripts/bash/common.sh"),
+        function, TEMPLATE, _bash_posix_path(repo),
+    ], repo)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "symlink" in result.stderr.lower()
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 required")
+def test_native_template_validation_uses_windows_powershell51(tmp_path):
+    result = run(
+        [WINDOWS_POWERSHELL, "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"],
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().startswith("5.1.")
 
 
 def test_python_json_preserves_constitution_on_legacy_stdout(tmp_path: Path) -> None:

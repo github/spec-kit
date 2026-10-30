@@ -366,9 +366,26 @@ function Get-NormalizedPriority {
     return $(if ($parsedPriority -ge 1) { $parsedPriority } else { 10 })
 }
 
+function Assert-ExtensionRegistryHierarchy {
+    param([Parameter(Mandatory=$true)][string]$ExtensionsDir)
+
+    $current = Split-Path -Parent (Split-Path -Parent $ExtensionsDir)
+    foreach ($component in @('.specify', 'extensions', '.registry')) {
+        $entry = Get-ChildItem -LiteralPath $current -Force -ErrorAction Stop |
+            Where-Object { $_.Name -eq $component } |
+            Select-Object -First 1
+        if ($null -eq $entry) { return }
+        if ($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+            throw "Refusing symlink or unsupported reparse point: $(Join-Path $current $component)"
+        }
+        $current = Join-Path $current $component
+    }
+}
+
 function Get-SortedExtensionIds {
     param([Parameter(Mandatory=$true)][string]$ExtensionsDir)
 
+    Assert-ExtensionRegistryHierarchy -ExtensionsDir $ExtensionsDir
     $registeredNames = @()
     $ranked = @()
     $registryFile = Join-Path $ExtensionsDir '.registry'
@@ -509,14 +526,12 @@ function Resolve-Template {
 
     # Priority 3: Extension-provided templates
     $extDir = Join-Path $RepoRoot '.specify/extensions'
-    if (Test-Path $extDir) {
-        foreach ($extensionId in Get-SortedExtensionIds -ExtensionsDir $extDir) {
-            $candidate = Join-Path $extDir "$extensionId/templates/$TemplateName.md"
-            if (-not (Test-Path $candidate)) {
-                $candidate = Join-Path $extDir "$extensionId/$TemplateName.md"
-            }
-            if (Test-Path $candidate) { return $candidate }
+    foreach ($extensionId in Get-SortedExtensionIds -ExtensionsDir $extDir) {
+        $candidate = Join-Path $extDir "$extensionId/templates/$TemplateName.md"
+        if (-not (Test-Path $candidate)) {
+            $candidate = Join-Path $extDir "$extensionId/$TemplateName.md"
         }
+        if (Test-Path $candidate) { return $candidate }
     }
 
     # Priority 4: Core templates
@@ -729,7 +744,7 @@ except Exception as exc:
 
     # Priority 3: Extension-provided templates (always "replace")
     $extDir = Join-Path $RepoRoot '.specify/extensions'
-    if (-not $effectiveBaseFound -and (Test-Path $extDir)) {
+    if (-not $effectiveBaseFound) {
         foreach ($extensionId in Get-SortedExtensionIds -ExtensionsDir $extDir) {
             $candidate = Join-Path $extDir "$extensionId/templates/$TemplateName.md"
             if (-not (Test-Path $candidate)) {

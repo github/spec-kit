@@ -704,6 +704,24 @@ def test_artifact_list_maps_corrupt_registry_error(spec_kit_project: Path):
         details={"project_directory": str(spec_kit_project)},
     )
 
+def test_artifact_list_maps_linked_registry_error(spec_kit_project: Path, tmp_path):
+    registry = spec_kit_project / ".specify" / "extensions" / ".registry"
+    try:
+        registry.symlink_to(tmp_path / "missing-registry")
+    except OSError:
+        pytest.skip("Symlink creation unavailable")
+
+    result = _run(
+        create_server(launch_directory=spec_kit_project).call_tool(TOOL_NAME, {})
+    )
+
+    assert result.is_error is True
+    assert result.structured_content == _expected_error(
+        "artifact_resolution_failed",
+        "artifact resolution failed",
+        details={"project_directory": str(spec_kit_project)},
+    )
+
 
 @pytest.mark.parametrize(
     "operation_failure",

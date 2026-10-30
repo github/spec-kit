@@ -39,7 +39,7 @@ def extension_info(
 
     project_root = _commands._require_specify_project()
     catalog = ExtensionCatalog(project_root)
-    manager = ExtensionManager(project_root)
+    manager = _commands._extension_manager(project_root)
     installed = manager.list_installed()
 
     # Try to resolve from installed extensions first (by ID or name)

@@ -17,10 +17,10 @@ def extension_disable(
     extension: str = typer.Argument(help="Extension ID or name to disable"),
 ):
     """Disable an extension without removing it."""
-    from . import ExtensionManager, HookExecutor
+    from . import HookExecutor
 
     project_root = _commands._require_specify_project()
-    manager = ExtensionManager(project_root)
+    manager = _commands._extension_manager(project_root)
     hook_executor = HookExecutor(project_root)
 
     # Resolve extension ID from argument (handles ambiguous names)

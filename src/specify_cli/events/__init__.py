@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 import typer
 
+from ..file_helper import FileHelperError
 from ..integrations._file_changes import unlink as _unlink_file, write_text as _write_text
 
 if TYPE_CHECKING:
@@ -104,9 +105,26 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
+
+
+def _validate_registry_hierarchy(project_root):
+    """Reject registry links without depending on an installed CLI package."""
+    current = project_root
+    for component in (".specify", "extensions", ".registry"):
+        current = current / component
+        try:
+            entry = current.lstat()
+        except FileNotFoundError:
+            return
+        if (
+            stat.S_ISLNK(entry.st_mode)
+            or getattr(entry, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+        ):
+            raise ValueError(f"Refusing symlink or unsupported reparse point: {current}")
 
 
 def _script_under_base(base, token, project_root):
@@ -416,6 +434,11 @@ def main():
     else:
         payload = "{}"
     project_root = Path(__file__).parent.parent.resolve()
+    try:
+        _validate_registry_hierarchy(project_root)
+    except (OSError, ValueError) as exc:
+        sys.stderr.write(f"Event command {command_name} error: {exc}\\n")
+        sys.exit(2)
 
     # Preferred path: specify_cli is importable (durable install) — delegate to
     # the full resolver, which also handles extension manifests whose file stem
@@ -559,6 +582,8 @@ def _find_command_template(command_name: str, project_root: Path) -> tuple[Path 
                     candidate = exts_dir / ext_id / cmd["file"]
                     if candidate.exists():
                         return candidate, ext_id
+    except FileHelperError:
+        raise
     except Exception:
         # Fall through to the on-disk scan if the registry/manifests can't be
         # read; event dispatch should degrade gracefully, not crash.
@@ -789,7 +814,11 @@ def resolve_and_run_event_command(
     by the Claude Code hooks spec Gemini/Tabnine/Devin derive from). Only
     used when *envelope* is ``hookSpecificOutput``.
     """
-    template_path, ext_id = _find_command_template(command_name, project_root)
+    try:
+        template_path, ext_id = _find_command_template(command_name, project_root)
+    except FileHelperError as exc:
+        sys.stderr.write(f"Event command {command_name} error: {exc}\n")
+        return 2
     if not template_path:
         logger.warning("Event command '%s' not found", command_name)
         return 0
@@ -1060,13 +1089,13 @@ def _disabled_extension_ids(project_root: Path) -> set[str]:
 
     exts_dir = project_root / ".specify" / "extensions"
     disabled_ids: set[str] = set()
-    if not exts_dir.is_dir():
-        return disabled_ids
     try:
         registry = ExtensionRegistry(exts_dir)
         for ext_id, meta in registry.list_by_priority(include_disabled=True):
             if not isinstance(meta, dict) or not meta.get("enabled", True):
                 disabled_ids.add(ext_id)
+    except FileHelperError:
+        raise
     except Exception:
         pass
     return disabled_ids
@@ -1096,10 +1125,9 @@ def collect_extension_events(project_root: Path) -> ResolvedEvents:
 
     events: ResolvedEvents = {}
     exts_dir = project_root / ".specify" / "extensions"
+    manager = ExtensionManager(project_root)
     if not exts_dir.is_dir():
         return events
-
-    manager = ExtensionManager(project_root)
 
     # Build the set of explicitly-disabled extension IDs. Extensions not
     # tracked in the registry are treated as enabled (backward compat).

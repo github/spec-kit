@@ -427,8 +427,21 @@ _python3_command() {
     fi
 }
 
+_validate_extension_registry_hierarchy() {
+    local ext_dir="$1"
+    local specify_dir="${ext_dir%/*}"
+    local path
+    for path in "$specify_dir" "$ext_dir" "$ext_dir/.registry"; do
+        if [ -L "$path" ]; then
+            echo "Error: refusing symlink in extension registry hierarchy: $path" >&2
+            return 1
+        fi
+    done
+}
+
 _sorted_extension_ids() {
     local ext_dir="$1"
+    _validate_extension_registry_hierarchy "$ext_dir" || return 1
     local -a python_cmd=()
     local _python_cmd_line
     while IFS= read -r _python_cmd_line; do
@@ -438,12 +451,23 @@ _sorted_extension_ids() {
         local py_stderr sorted_ids
         py_stderr=$(mktemp)
         if sorted_ids=$(SPECKIT_EXTENSIONS="$ext_dir" "${python_cmd[@]}" -c "
-import json, os, re, sys
+import json, os, re, stat, sys
 from pathlib import Path
 
 root = Path(os.environ['SPECKIT_EXTENSIONS'])
 registered = {}
 registry = root / '.registry'
+for path in (root.parent, root, registry):
+    try:
+        entry = path.lstat()
+    except FileNotFoundError:
+        break
+    except OSError as exc:
+        print('registry_invalid: ' + str(exc), file=sys.stderr)
+        sys.exit(1)
+    if stat.S_ISLNK(entry.st_mode) or getattr(entry, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+        print('registry_invalid: refusing symlink or reparse point', file=sys.stderr)
+        sys.exit(1)
 if os.path.lexists(registry):
     if not registry.is_file():
         print('registry_invalid: not a regular file', file=sys.stderr)
@@ -475,9 +499,10 @@ ranked = []
 for ext_id, meta in registered.items():
     if isinstance(ext_id, str) and re.fullmatch(r'[a-z0-9-]+', ext_id) and isinstance(meta, dict) and bool(meta.get('enabled', True)):
         ranked.append((priority(meta.get('priority')), ext_id))
-for path in root.iterdir():
-    if path.is_dir() and re.fullmatch(r'[a-z0-9-]+', path.name) and path.name not in registered:
-        ranked.append((10, path.name))
+if root.is_dir():
+    for path in root.iterdir():
+        if path.is_dir() and re.fullmatch(r'[a-z0-9-]+', path.name) and path.name not in registered:
+            ranked.append((10, path.name))
 for _, ext_id in sorted(ranked):
     print(ext_id)
 " 2>"$py_stderr"); then
@@ -593,19 +618,17 @@ except Exception:
 
     # Priority 3: Extension-provided templates
     local ext_dir="$repo_root/.specify/extensions"
-    if [ -d "$ext_dir" ]; then
-        local sorted_extensions=""
-        if ! sorted_extensions=$(_sorted_extension_ids "$ext_dir"); then
-            return 2
-        fi
-        while IFS= read -r extension_id; do
-            [ -n "$extension_id" ] || continue
-            local ext="$ext_dir/$extension_id"
-            local candidate="$ext/templates/${template_name}.md"
-            [ -f "$candidate" ] || candidate="$ext/${template_name}.md"
-            [ -f "$candidate" ] && echo "$candidate" && return 0
-        done <<< "$sorted_extensions"
+    local sorted_extensions=""
+    if ! sorted_extensions=$(_sorted_extension_ids "$ext_dir"); then
+        return 2
     fi
+    while IFS= read -r extension_id; do
+        [ -n "$extension_id" ] || continue
+        local ext="$ext_dir/$extension_id"
+        local candidate="$ext/templates/${template_name}.md"
+        [ -f "$candidate" ] || candidate="$ext/${template_name}.md"
+        [ -f "$candidate" ] && echo "$candidate" && return 0
+    done <<< "$sorted_extensions"
 
     # Priority 4: Core templates
     local core="$base/${template_name}.md"
@@ -815,7 +838,7 @@ except Exception as exc:
 
     # Priority 3: Extension-provided templates (always "replace")
     local ext_dir="$repo_root/.specify/extensions"
-    if [ "$effective_base_found" = false ] && [ -d "$ext_dir" ]; then
+    if [ "$effective_base_found" = false ]; then
         local sorted_extensions=""
         if ! sorted_extensions=$(_sorted_extension_ids "$ext_dir"); then
             return 2

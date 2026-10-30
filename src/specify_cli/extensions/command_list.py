@@ -48,7 +48,7 @@ def extension_list(
             emit_json_error(error)
 
     project_root = _commands._require_specify_project()
-    manager = ExtensionManager(project_root)
+    manager = _commands._extension_manager(project_root)
     installed = manager.list_installed()
 
     if not installed and not (available or all_extensions):

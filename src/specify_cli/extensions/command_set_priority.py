@@ -18,7 +18,7 @@ def extension_set_priority(
     priority: int = typer.Argument(help="New priority (lower = higher precedence)"),
 ):
     """Set the resolution priority of an installed extension."""
-    from . import ExtensionManager, normalize_priority
+    from . import normalize_priority
 
     project_root = _commands._require_specify_project()
     # Validate priority
@@ -26,7 +26,7 @@ def extension_set_priority(
         console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
         raise typer.Exit(1)
 
-    manager = ExtensionManager(project_root)
+    manager = _commands._extension_manager(project_root)
 
     # Resolve extension ID from argument (handles ambiguous names)
     installed = manager.list_installed()

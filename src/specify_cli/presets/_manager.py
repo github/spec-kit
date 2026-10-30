@@ -15,6 +15,7 @@ from .._init_options import is_ai_skills_enabled, resolve_active_agent_for_regis
 from .._install_ignore import load_install_ignore
 from .._utils import version_satisfies
 from ..extensions import REINSTALL_COMMAND, normalize_priority
+from ..file_helper import FileHelperError
 from ..shared_infra import (
     _ensure_safe_shared_destination,
     _ensure_safe_shared_directory,
@@ -234,8 +235,8 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             ``"disabled"``, or ``"version"``. Optional dependencies
             (``required: false``) are never reported.
 
-            An unreadable registry yields no results rather than raising, since
-            this runs after the install has already succeeded.
+            An unreadable or forbidden registry yields no results rather than
+            raising, since this runs after the install has already succeeded.
 
             A registry version that cannot be parsed is treated as
             uncomparable, not as a mismatch: the extension is installed and
@@ -273,13 +274,13 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             registry = ExtensionRegistry(extensions_dir)
             registered_ids = registry.keys()
             registry_corrupt = registry.is_corrupt()
-        except OSError:
+        except (OSError, FileHelperError):
             # Both reads can raise: _load() recovers from malformed content but
             # deliberately lets OSError through, and is_corrupt() re-reads the
             # file. This check runs *after* the install has completed, and
             # preset_add only handles preset-domain errors, so letting that
             # escape would turn a finished install into a traceback over a
-            # warning. An unreadable registry simply cannot be inspected.
+            # warning. An unreadable or forbidden registry cannot be inspected.
             return []
 
         unmet: List[Dict[str, Any]] = []

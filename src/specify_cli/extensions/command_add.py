@@ -14,6 +14,7 @@ from rich.markup import escape as _escape_markup
 from rich.panel import Panel
 
 from .._console import console
+from ..file_helper import FileHelperError
 from . import _commands
 
 
@@ -27,7 +28,7 @@ def extension_add(
     version: Optional[str] = typer.Option(None, "--version", help="Install an exact version from a catalog"),
 ):
     """Install an extension."""
-    from . import ExtensionManager, ExtensionCatalog, ExtensionError, ValidationError, CompatibilityError, REINSTALL_COMMAND
+    from . import ExtensionCatalog, ExtensionError, ValidationError, CompatibilityError, REINSTALL_COMMAND
 
     # Compatibility callers invoke this function directly, in which case
     # Typer supplies its OptionInfo object instead of a parsed option value.
@@ -43,7 +44,7 @@ def extension_add(
         console.print("[red]Error:[/red] --version requires a catalog install (without --dev or --from).")
         raise typer.Exit(1)
 
-    manager = ExtensionManager(project_root)
+    manager = _commands._extension_manager(project_root)
     speckit_version = _commands.get_speckit_version()
 
     if force:
@@ -341,6 +342,6 @@ def extension_add(
     except CompatibilityError as e:
         console.print(f"\n[red]Compatibility Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
-    except ExtensionError as e:
+    except (ExtensionError, FileHelperError) as e:
         console.print(f"\n[red]Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
