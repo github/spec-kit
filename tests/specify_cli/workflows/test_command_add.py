@@ -18,6 +18,8 @@ import yaml
 from typer.testing import CliRunner
 
 from specify_cli import app
+from tests.archive_helpers import tar_safety_archive
+from tests.conftest import strip_ansi
 
 runner = CliRunner()
 
@@ -1381,6 +1383,59 @@ steps:
         assert result.exit_code == 0, result.output
         installed = project_dir / ".specify" / "workflows" / "align-wf"
         assert (installed / "assets" / "sniffed.txt").read_text() == "sniffed\n"
+
+    @pytest.mark.parametrize("source", ["url", "catalog"])
+    @pytest.mark.parametrize(
+        "kind, diagnostic",
+        [
+            ("stream", "maximum decompressed"),
+            ("metadata", "metadata payload exceeds"),
+            ("gnu-sparse", "Unsupported GNU sparse"),
+            ("pax-sparse-1.0", "Unsupported GNU sparse"),
+            ("global-pax", "global PAX metadata"),
+            ("metadata-chain", "metadata chain"),
+            ("negative-metadata", "negative size"),
+            ("total-metadata", "archive metadata exceeds"),
+        ],
+    )
+    def test_suffixless_download_preserves_archive_safety_errors(
+        self, project_dir, monkeypatch, source, kind, diagnostic
+    ):
+        from unittest.mock import patch
+        from specify_cli import _download_security
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        if kind == "stream":
+            monkeypatch.setattr(_download_security, "MAX_TAR_STREAM_BYTES", 2048)
+        url = "https://example.com/assets/12345"
+        data = tar_safety_archive(kind)
+        info = {
+            "id": "align-wf", "name": "Align Workflow", "version": "1.0.0",
+            "url": url, "_install_allowed": True, "_catalog_name": "test",
+        }
+        args = ["workflow", "add", "align-wf"]
+        if source == "url":
+            args += ["--from", url]
+        with (
+            patch.object(WorkflowCatalog, "get_workflow_info", return_value=info),
+            patch(
+                "specify_cli.authentication.http.open_url",
+                side_effect=lambda *_args, **_kwargs: self._FakeResponse(
+                    data, url, {"Content-Type": "application/octet-stream"},
+                ),
+            ),
+        ):
+            result = CliRunner().invoke(app, args, input="y\n")
+
+        output = " ".join(strip_ansi(result.output).split())
+        assert result.exit_code == 1, output
+        assert isinstance(result.exception, SystemExit), repr(result.exception)
+        assert diagnostic in output
+        assert "Invalid workflow YAML" not in output
+        assert "Traceback" not in output
+        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
+        assert not (project_dir / ".specify" / "workflows" / "align-wf").exists()
 
     @pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
     def test_add_catalog_installs_complete_archive_package_and_sha(

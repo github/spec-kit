@@ -24,6 +24,7 @@ from .._assets import get_speckit_version as get_speckit_version
 from .._download_security import (
     archive_format_from_name,
     detect_archive_format,
+    is_archive_safety_error,
     is_https_or_localhost_http,
     read_response_limited,
 )
@@ -254,6 +255,8 @@ def install_extension_from_url(
                 error_type=ExtensionError,
             )
         except ExtensionError as exc:
+            if is_archive_safety_error(exc):
+                raise
             raise ExtensionError(
                 f"{url} did not return a ZIP archive or tar.gz/tgz archive "
                 f"(got {len(archive_data)} bytes). This usually means the request "

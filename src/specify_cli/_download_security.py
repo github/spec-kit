@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import io
 import re
 import socket
@@ -32,6 +33,14 @@ MAX_ZIP_COMPONENT_BYTES = 255
 # ``ZipFile`` reads this whole structure into memory. Four MiB leaves roughly
 # 8 KiB of filename/extra/comment metadata for each of the 512 allowed entries.
 MAX_ZIP_CENTRAL_DIRECTORY_BYTES = 4 * 1024 * 1024
+# Include tar headers, padding, and GNU/PAX metadata, not just file payloads.
+MAX_TAR_STREAM_BYTES = MAX_ZIP_TOTAL_BYTES + 4 * 1024 * 1024
+MAX_TAR_METADATA_BYTES = 64 * 1024
+# Per-member metadata dictionaries are retained during archive validation.
+MAX_TAR_TOTAL_METADATA_BYTES = 1 * 1024 * 1024
+# Global fields are copied into every retained member.
+MAX_TAR_GLOBAL_PAX_BYTES = 8 * 1024
+MAX_TAR_METADATA_DEPTH = 32
 READ_CHUNK_SIZE = 64 * 1024
 
 # Tighter ceilings for responses that are read fully into memory and parsed as
@@ -90,6 +99,114 @@ _ARCHIVE_CONTENT_TYPES: dict[str, ArchiveFormat] = {
     "application/zip": "zip",
     "application/x-zip-compressed": "zip",
 }
+
+
+class _TarLimitError(tarfile.ReadError):
+    pass
+
+
+def is_archive_safety_error(exc: Exception) -> bool:
+    """Identify a tar safety signal retained by shared error translation."""
+    return isinstance(exc, _TarLimitError) or isinstance(exc.__cause__, _TarLimitError)
+
+
+class _BoundedTarInfo(tarfile.TarInfo):
+    """Check every metadata header, including headers parsed recursively."""
+
+    def _proc_member(self, archive: tarfile.TarFile) -> tarfile.TarInfo:
+        if self.type == tarfile.GNUTYPE_SPARSE:
+            raise _TarLimitError("Unsupported GNU sparse metadata in tar.gz archive")
+        if self.type in (
+            tarfile.GNUTYPE_LONGNAME,
+            tarfile.GNUTYPE_LONGLINK,
+            tarfile.XHDTYPE,
+            tarfile.XGLTYPE,
+            tarfile.SOLARIS_XHDTYPE,
+        ):
+            if self.size < 0:
+                raise _TarLimitError("tar.gz metadata payload has negative size")
+            if self.size > MAX_TAR_METADATA_BYTES:
+                raise _TarLimitError(
+                    "tar.gz metadata payload exceeds maximum size "
+                    f"of {MAX_TAR_METADATA_BYTES} bytes"
+                )
+            if not isinstance(archive, _BoundedTarFile):
+                raise TypeError("Metadata validation requires a bounded tar archive")
+            with archive._metadata_header(self):
+                return super()._proc_member(archive)
+        return super()._proc_member(archive)
+
+    def _proc_gnusparse_10(
+        self,
+        next_member: tarfile.TarInfo,
+        pax_headers: dict[str, str],
+        archive: tarfile.TarFile,
+    ) -> NoReturn:
+        # This map lives in file data, outside the bounded PAX header payload.
+        raise _TarLimitError("Unsupported GNU sparse metadata in tar.gz archive")
+
+
+class _BoundedTarFile(tarfile.TarFile):
+    tarinfo = _BoundedTarInfo
+    _metadata_bytes: int = 0
+    _global_pax_bytes: int = 0
+    _metadata_depth: int = 0
+
+    @contextmanager
+    def _metadata_header(self, member: tarfile.TarInfo) -> Iterator[None]:
+        if self._metadata_depth >= MAX_TAR_METADATA_DEPTH:
+            raise _TarLimitError(
+                "tar.gz metadata chain exceeds maximum depth "
+                f"of {MAX_TAR_METADATA_DEPTH}"
+            )
+        if self._metadata_bytes + member.size > MAX_TAR_TOTAL_METADATA_BYTES:
+            raise _TarLimitError(
+                "tar.gz archive metadata exceeds maximum cumulative size "
+                f"of {MAX_TAR_TOTAL_METADATA_BYTES} bytes"
+            )
+        if member.type == tarfile.XGLTYPE:
+            if self._global_pax_bytes + member.size > MAX_TAR_GLOBAL_PAX_BYTES:
+                raise _TarLimitError(
+                    "tar.gz global PAX metadata exceeds maximum cumulative size "
+                    f"of {MAX_TAR_GLOBAL_PAX_BYTES} bytes"
+                )
+            self._global_pax_bytes += member.size
+        self._metadata_bytes += member.size
+        self._metadata_depth += 1
+        try:
+            yield
+        finally:
+            self._metadata_depth -= 1
+
+
+class _BoundedTarGzipFile(gzip.GzipFile):
+    """Bound decompressed offsets before tarfile reads metadata or skips data."""
+
+    def _check_position(self, position: int) -> None:
+        if position > MAX_TAR_STREAM_BYTES:
+            raise _TarLimitError(
+                "tar.gz archive exceeds maximum decompressed stream size "
+                f"of {MAX_TAR_STREAM_BYTES} bytes"
+            )
+
+    def read(self, size: int = -1) -> bytes:
+        position = super().seek(0, io.SEEK_CUR)
+        if size >= 0:
+            self._check_position(position + size)
+        else:
+            size = MAX_TAR_STREAM_BYTES - position + 1
+        data = super().read(size)
+        self._check_position(position + len(data))
+        return data
+
+    def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+        if whence == io.SEEK_CUR:
+            offset += super().seek(0, io.SEEK_CUR)
+        elif whence != io.SEEK_SET:
+            # SEEK_END would decompress the whole stream before checking it.
+            raise io.UnsupportedOperation("Unbounded tar.gz seek")
+        self._check_position(offset)
+        return super().seek(offset)
 
 
 def archive_format_from_name(name: str) -> ArchiveFormat | None:
@@ -178,15 +295,22 @@ def detect_archive_format(
             is_tar_gz = False
             if is_gzip:
                 try:
-                    with tarfile.open(fileobj=archive_file, mode="r:gz"):
+                    with (
+                        _BoundedTarGzipFile(fileobj=archive_file, mode="rb") as source,
+                        _BoundedTarFile.open(fileobj=source, mode="r:"),
+                    ):
                         is_tar_gz = True
-                except _TAR_DECOMPRESSION_ERRORS:
+                except _TarLimitError:
+                    raise
+                except (*_TAR_DECOMPRESSION_ERRORS, gzip.BadGzipFile):
                     # A truncated gzip stream raises a bare EOFError here rather
                     # than a TarError, so catching only TarError let it escape
                     # this probe as a raw exception instead of leaving
                     # ``is_tar_gz`` False and reporting the format mismatch.
                     pass
             archive_file.seek(0)
+        except _TarLimitError as exc:
+            _raise_from(error_type, str(exc), exc)
         except OSError as exc:
             _raise_from(error_type, f"Invalid archive: {archive_path}", exc)
 
@@ -1087,18 +1211,23 @@ def safe_extract_tar(
     except OSError as exc:
         _raise_from(error_type, f"Invalid tar extraction target: {target_dir}", exc)
 
-    try:
-        if archive_file is not None:
-            archive_file.seek(0)
-        archive = tarfile.open(
-            archive_path if archive_file is None else None,
-            mode="r:gz",
-            fileobj=archive_file,
-        )
-    except (*_TAR_DECOMPRESSION_ERRORS, OSError) as exc:
-        _raise_from(error_type, f"Invalid tar.gz archive: {archive_path}", exc)
+    with ExitStack() as stack:
+        try:
+            if archive_file is not None:
+                archive_file.seek(0)
+            source = stack.enter_context(
+                _BoundedTarGzipFile(
+                    archive_path if archive_file is None else None,
+                    mode="rb",
+                    fileobj=archive_file,
+                )
+            )
+            archive = stack.enter_context(
+                _BoundedTarFile.open(fileobj=source, mode="r:")
+            )
+        except (*_TAR_DECOMPRESSION_ERRORS, OSError) as exc:
+            _raise_from(error_type, f"Invalid tar.gz archive: {archive_path}: {exc}", exc)
 
-    with archive:
         validated: list[tuple[tarfile.TarInfo, str, bool]] = []
         validated_paths: dict[tuple[str, ...], tuple[str, bool]] = {}
         total_size = 0
@@ -1170,7 +1299,7 @@ def safe_extract_tar(
         except (*_TAR_DECOMPRESSION_ERRORS, OSError) as exc:
             _raise_from(
                 error_type,
-                f"Invalid tar.gz archive: {archive_path}",
+                f"Invalid tar.gz archive: {archive_path}: {exc}",
                 exc,
             )
 

@@ -23,6 +23,7 @@ from .._download_security import (
     archive_format_from_name,
     archive_suffix as archive_suffix,
     detect_archive_format,
+    is_archive_safety_error,
     is_https_or_localhost_http,
     is_safe_download_redirect,
     read_response_limited,
@@ -296,7 +297,9 @@ def _sniff_workflow_archive_format(data: bytes):
             Path("workflow-download"),
             archive_file=BytesIO(data),
         )
-    except ValueError:
+    except ValueError as exc:
+        if is_archive_safety_error(exc):
+            raise
         return None
 
 

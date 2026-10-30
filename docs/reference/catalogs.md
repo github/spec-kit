@@ -109,6 +109,20 @@ configuration does not mean its sources or components were approved. Run the
 relevant `catalog list` command and inspect every install-allowed source before
 installing or running components from an unfamiliar project.
 
+Shared archive validation limits the decompressed tar.gz stream to 54 MiB,
+including tar headers, padding, and GNU/PAX metadata as well as file contents.
+Each GNU/PAX metadata payload is also capped at 64 KiB before it is read or
+parsed, with a cumulative budget of 1 MiB for all metadata payloads per archive.
+Global PAX payloads have a tighter cumulative budget of 8 KiB per
+archive because their fields are copied into retained members. Metadata chains
+are limited to 32 headers, and negative metadata sizes are rejected.
+These limits apply during format detection and extraction; ordinary member-size
+and total-file-size limits still apply. Packages that exceed these limits must
+be reduced before installation.
+Old GNU sparse archives and GNU sparse 1.0 archives are rejected before their
+separately stored maps are parsed; sparse maps contained in bounded PAX 0.0/0.1
+metadata remain supported.
+
 ## Host a private catalog
 
 1. Review and approve the entries and release artifacts before registering an
