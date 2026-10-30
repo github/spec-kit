@@ -875,6 +875,69 @@ class TestExtensionAddCLI:
         assert "exceeds maximum size" in result.output
         install.assert_not_called()
 
+    def test_add_from_url_without_extension_name(self, tmp_path):
+        """``extension add --from <url>`` works with no positional name (#1)."""
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        url = "https://example.com/ext.zip"
+        seen = {}
+
+        def fake_install_from_url(manager, root, from_url, speckit_version, **kwargs):
+            seen["url"] = from_url
+            return SimpleNamespace(
+                id="x", name="X", version="1.0.0", description="",
+                warnings=[], commands=[], hooks=[],
+            )
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=True), \
+             patch("specify_cli.extensions._commands.install_extension_from_url", side_effect=fake_install_from_url):
+            result = CliRunner().invoke(app, ["extension", "add", "--from", url], catch_exceptions=True)
+
+        output = strip_ansi(result.output)
+        assert result.exit_code == 0, output
+        assert "Missing argument" not in output
+        assert seen["url"] == url
+        assert "Extension installed successfully" in output
+
+    def test_add_without_name_or_source_errors_clearly(self, tmp_path):
+        """No name and no --from prints a clear error and installs nothing."""
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionManager, "install_from_zip") as install_zip, \
+             patch.object(ExtensionManager, "install_from_directory") as install_dir:
+            result = CliRunner().invoke(app, ["extension", "add"], catch_exceptions=True)
+
+        output = strip_ansi(result.output)
+        assert result.exit_code == 1, output
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Missing extension name or source" in output
+        assert "--from <url>" in output
+        assert "Traceback" not in output
+        install_zip.assert_not_called()
+        install_dir.assert_not_called()
+
+    def test_add_dev_without_path_errors_clearly(self, tmp_path):
+        """``--dev`` with no path is rejected instead of falling through."""
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app,
+                ["extension", "add", "--dev", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        output = strip_ansi(result.output)
+        assert result.exit_code == 1, output
+        assert "--dev requires the path" in output
+
     def test_add_from_url_resolves_ghes_release_asset(self, tmp_path):
         """A GHES release-download URL resolves to /api/v3 with octet-stream Accept."""
         from types import SimpleNamespace
