@@ -13,7 +13,7 @@ This command is invoked as a hook after (or before) core commands. It:
 1. Determines the event name from the hook context (e.g., if invoked as an `after_specify` hook, the event is `after_specify`; if `before_plan`, the event is `before_plan`)
 2. Checks `.specify/extensions/git/git-config.yml` for the `auto_commit` section
 3. Looks up the specific event key to see if auto-commit is enabled
-4. Falls back to `auto_commit.default` if no event-specific key exists
+4. Falls back to `auto_commit.default` if no section exists for the event
 5. Determines the commit message based on `commit_style` (see below)
 6. If enabled and there are uncommitted changes, runs `git add .` + `git commit`
 
@@ -46,14 +46,23 @@ In `.specify/extensions/git/git-config.yml`:
 commit_style: fixed
 
 auto_commit:
-  default: false          # Global toggle — set true to enable for all commands
+  # Fallback for events without a section
+  default: false
   after_specify:
-    enabled: true          # Override per-command
+    # Override per-command
+    enabled: true
     message: "[Spec Kit] Add specification"
   after_plan:
     enabled: false
     message: "[Spec Kit] Add implementation plan"
 ```
+
+Listed events need `enabled: true` to opt in, even when `default` is `true`.
+Remove an event's entire section to use the default; leaving its `message`
+entry still prevents fallback.
+With `commit_style: fixed`, removing the section also drops its custom message:
+`after_specify` then uses `[Spec Kit] Auto-commit after specify`. Keep the
+section with `enabled: true` to retain its configured message.
 
 ## Graceful Degradation
 
