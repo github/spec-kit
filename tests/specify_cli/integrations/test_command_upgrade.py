@@ -9,6 +9,7 @@ import shutil  # noqa: F401
 from pathlib import Path  # noqa: F401
 
 import pytest  # noqa: F401
+from rich.console import Console
 
 from specify_cli import app  # noqa: F401
 from tests.conftest import strip_ansi  # noqa: F401
@@ -30,8 +31,9 @@ class TestIntegrationUpgradeDetailed:
     @pytest.mark.parametrize("agent", ["bob", "kilocode"])
     @pytest.mark.parametrize("entry", ["presets", ".registry"])
     @pytest.mark.parametrize("dangling", [False, True])
+    @pytest.mark.parametrize("terminal_width", [20, 80])
     def test_layout_migration_rejects_registry_links_before_mutation(
-        self, tmp_path, agent, entry, dangling,
+        self, tmp_path, monkeypatch, agent, entry, dangling, terminal_width,
     ):
         if agent == "bob":
             project = _init_project(
@@ -72,14 +74,19 @@ class TestIntegrationUpgradeDetailed:
         except (OSError, NotImplementedError) as error:
             pytest.skip(f"Symlinks unavailable: {error}")
 
+        monkeypatch.setattr(
+            "specify_cli.integrations.command_upgrade.console",
+            Console(width=terminal_width, highlight=False),
+        )
         result = _run_in_project(
             project, ["integration", "upgrade", agent, *options, "--script", "sh", "--force"],
         )
 
         assert result.exit_code == 1, result.output
-        assert "preset registry" in result.output.lower()
-        assert "Replace linked entries" in result.output
-        assert "explicitly allow symlinks" not in result.output
+        output = " ".join(strip_ansi(result.output).split())
+        assert "preset registry" in output.lower()
+        assert "Replace linked entries" in output
+        assert "explicitly allow symlinks" not in output
         assert not new_root.exists()
         assert manifest.read_bytes() == manifest_before
         assert config.read_bytes() == config_before
