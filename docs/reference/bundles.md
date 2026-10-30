@@ -55,7 +55,7 @@ specify bundle info <bundle_id> --versions
 | `--json`     | Emit machine-readable JSON        |
 | `--versions` | List the current and historical catalog releases |
 
-Shows full metadata for a bundle along with the **fully expanded component set** it installs — every extension, preset, step, and workflow with its pinned version, plus preset priority and strategy. The output also includes a trust indicator (`verified` vs `community`) so you can judge trust before installing. This preview is the same plan `install` applies, so you can see exactly what will be added before committing. Foreseeable overlaps and version conflicts with components already required by installed bundles are surfaced here as well; a bundle can require a component without having installed it.
+Shows full metadata for a bundle along with the **fully expanded component set** it installs — every extension, preset, step, and workflow with its pinned version, plus preset priority and strategy. The output also includes a trust indicator (`verified` vs `community`) so you can judge trust before installing. This preview is the same plan `install` applies, so you can see exactly what will be added before committing. For bundles with references, text output includes a `References` summary, with each referenced bundle's own trust level (`verified` or `community`), and marks referenced components with their shortest origin chain; overridden components show the overridden version and origin. JSON adds `references` entries with `id`, `version`, resolved `source`, `install_policy`, `via`, and the referenced bundle's own `verified` and `trust`; for bundles with references, component entries also include `source` when the manifest declares one (flat bundles omit it), `origin` (the chain of bundles that contributed the component) when it comes from a referenced bundle, and `overrides` whenever the entry replaced other declarations, including a parent's own declaration, which has no `origin`. Each `overrides` item carries the replaced `version` and `origin`, plus any `source`, `priority`, or `strategy`; an override entry names every distinct bundle that declared the replaced value (keeping the shortest route to each), not only the first route. Discovery-only references are marked `discovery-only, not installable`. Foreseeable overlaps and version conflicts with components already required by installed bundles are surfaced here as well; a bundle can require a component without having installed it.
 
 Use `specify bundle info <bundle_id> --versions` to inspect the catalog history without downloading a bundle manifest. With `--json`, it emits the bundle ID, available versions, current version, source, and install policy.
 
@@ -72,7 +72,7 @@ specify bundle install <bundle_id | path>
 | `--refresh`      | Refresh owned components from the supplied bundle source           |
 | `--version`      | Install an exact historical or current catalog release             |
 
-Installs a bundle's full component set through each primitive's machinery. The argument may be a catalog bundle id, or a local path to a built `.zip` artifact, a bundle directory, or a `bundle.yml` file; local sources install directly without consulting the catalog stack.
+Installs a bundle's full component set through each primitive's machinery. The argument may be a catalog bundle id, or a local path to a built `.zip` artifact, a bundle directory, or a `bundle.yml` file; local sources install directly without consulting the catalog stack, unless the manifest declares `provides.bundles`. A local parent with bundle references resolves those children through the catalog stack at command time, so it needs catalog and network access (see [Bundle references](#bundle-references)).
 
 If the current directory is not yet a Spec Kit project, `install` initializes one first so a fresh checkout reaches a working state in a single command. `--integration` selects the integration when initializing a new project, and confirms the target when a bundle pins a specific integration but the project's active integration can't be determined (missing or unreadable `.specify/integration.json`). It does **not** override an already-initialized project's active integration: if a bundle targets a different integration than the project's, install aborts with no changes. Integration-agnostic bundles inherit the project's active integration. Without `--refresh`, installation is idempotent — already-installed components matching their pins are skipped, as are bundle-owned compatible packaged patch releases with a warning (see below). Other differing or missing installed versions cannot satisfy a pin. Only `--refresh` can repair a drifted version owned exclusively by this bundle; independently installed components are skipped and never adopted or replaced. On failure, no provenance record is written (a failed install records nothing), and the components installed during that run are removed on a best-effort basis — removal errors are swallowed, so partial on-disk state may remain.
 
@@ -106,6 +106,94 @@ store actual known installed versions under `installed_versions`, keyed by
 extension versions are not supported.
 
 > **Step payloads resolve through the step catalog only.** A bundle's `provides.steps` entries still resolve exclusively through the active step catalogs. Bundle-local `steps/<id>/` payloads and relative `provides.steps[].source` overrides are **not** resolved in this release, so a step declared that way cannot be installed offline. To ship a step with a bundle today, publish it to a step catalog the bundle's users can reach.
+
+## Bundle References
+
+A bundle can compose other bundles with exact, pinned references in
+`provides.bundles`. A non-empty reference list requires manifest schema `1.1`;
+empty or null lists are treated as no references. Each reference has a bundle
+ID, an exact SemVer `version`, and an optional `source` naming the expected
+winning bundle catalog (not a URL). Reference IDs are safe slugs, must be
+unique within the manifest, and cannot name the parent bundle:
+
+```yaml
+schema_version: "1.1"
+bundle:
+  id: team
+  name: Team setup
+  version: 1.0.0
+  role: developer
+  description: A team bundle
+  author: Example team
+  license: MIT
+requires:
+  speckit_version: ">=0.1.0"
+provides:
+  bundles:
+    - id: bugfix
+      version: 1.0.1
+      source: default
+    - id: qa-pack
+      version: 2.0.0
+```
+
+References resolve at command time through the effective bundle catalog stack.
+The stack's winning entry is selected for each exact pin; an explicit `source`
+is an assertion that this is the winning catalog, not a request to change
+precedence; a mismatch is an error and does not fall through to another
+catalog. A referenced bundle from a discovery-only source can be inspected
+by `info`, but `install`, `update`, and online `validate` reject it as
+non-installable. Every bundle ID may have only one version in an expansion;
+cycles and a second version for the same ID are errors. Resolve a second
+version by choosing releases of the referencing bundles that agree on it.
+
+The expansion is one flat component plan. Referenced bundles are walked
+recursively in declaration order (depth-first), followed by the declaring
+bundle's own components, while preserving the existing extension, preset, step,
+and workflow grouping. A component is installed at most once per `kind:id`.
+Copies agree when their version and `source` match (omitted and set `source`
+values differ); extension and preset copies must also have the same `priority`,
+and preset copies must also have the same `strategy`. Extensions may omit
+`priority`; an omitted value means the default, `10`, so it agrees with an
+explicit `10`. Presets must declare an integer `priority`.
+Other differences between sibling references are conflicts that must be fixed
+in the parent. At every level, a bundle's own declaration wins over its
+references, takes the declaration's position, and emits a warning describing
+the override and its origin chain.
+
+Expansion allows at most 10 levels of reference nesting and 50 distinct
+referenced bundle IDs, excluding the root. A cycle is rejected with its
+reference chain. At install and update time, the Spec Kit version requirement
+is checked for every bundle in the graph, and an incompatible requirement is
+a hard error, while the root bundle remains the only integration gate: a
+referenced bundle's differing or unknown integration is a warning.
+`requires.tools` and `requires.mcp` are unioned across the graph
+and rendered through the existing tool and MCP warnings.
+
+The installed parent record contains the expanded component set and an
+optional `bundle_references` JSON key listing each direct and transitive
+reference once with its resolved catalog source. There are no child-bundle
+records. `bundle update` follows the parent's current manifest and its pinned
+references; remove and refresh retain the existing ownership and component
+lifecycle rules.
+
+Referenced manifests require network access. For a local root manifest,
+`install` can identify the first reference and fail offline with that reference
+named. A catalog-root `install`, `info`, or `update` can instead fail earlier
+while fetching its catalog or root manifest, before any reference can be known.
+`validate --offline` warns once per declared reference that it was not expanded.
+`bundle build` performs only the structural checks for references and does not
+resolve or embed them.
+
+**Known limitations.**
+
+- Offline and local resolution of referenced bundles is not supported; referenced
+  manifests need network-backed catalog downloads.
+- First-party bundle catalogs keep no release history, so an exact pin to a
+  first-party bundle can break when that bundle publishes its next release.
+- A local bundle with references cannot be previewed with `bundle info`; local
+  preview is deferred.
+- Broader schema versioning and CLI compatibility checks/ranges are deferred.
 
 ## Catalog Release History
 
@@ -176,7 +264,7 @@ specify bundle list
 | -------- | ---------------------------- |
 | `--json` | Emit machine-readable JSON   |
 
-Lists the bundles installed in the project with their versions, required component counts (including components supplied independently), and install timestamps.
+Lists the bundles installed in the project with their versions, required component counts (including components supplied independently), and install timestamps. With `--json`, a reference-bearing record also includes `bundle_references`, containing each resolved direct or transitive reference and its winning catalog source.
 
 ## Initialize a Project with a Bundle
 
@@ -204,7 +292,7 @@ specify bundle validate
 | `--path`     | Bundle directory or `bundle.yml` (default: current directory)       |
 | `--offline`  | Verify references against bundled/installed components only          |
 
-Reports whether a `bundle.yml` is well-formed and whether every declared component reference resolves at its pinned version. References are checked against matching bundled or installed components and — when online — the exact release in the winning install-allowed catalog. An explicit `source` is verified against the winning catalog instead of resolving locally. Missing releases, mismatched sources, discovery-only sources, and malformed catalog metadata fail validation; references that cannot be checked offline or because a catalog is unreachable produce warnings. If a higher-priority catalog is unreachable before a match is found, the lookup remains unverified; a lower-priority match cannot settle it. As with installation, legacy extension and preset entries advertising no version are accepted without verifying their pins.
+Reports whether a `bundle.yml` is well-formed and whether every declared component reference resolves at its pinned version. For a reference-bearing manifest, online validation expands the complete reference graph and checks every component in the expanded plan, including structural, cycle, version, source, conflict, and install-policy checks. References are checked against matching bundled or installed components and — when online — the exact release in the winning install-allowed catalog. An explicit `source` is verified against the winning catalog instead of resolving locally. Missing releases, mismatched sources, discovery-only sources, and malformed catalog metadata fail validation; component references that cannot be checked offline or because a catalog is unreachable produce warnings. Bundle-reference fetch failures (such as an unreachable bundle catalog or a failed child-manifest download) fail online validation, while `--offline` keeps the per-reference warning. In `--offline` mode, each declared bundle reference produces a warning that it was not expanded. If a higher-priority catalog is unreachable before a match is found, the lookup remains unverified; a lower-priority match cannot settle it. Validation does not evaluate `requires.speckit_version` against the running CLI; `install` and `update` enforce that runtime compatibility gate. As with installation, legacy extension and preset entries advertising no version are accepted without verifying their pins.
 
 ## Build a Bundle Artifact
 
@@ -246,6 +334,11 @@ installation. Inspect the active stack before installing a bundle from a
 non-default source.
 
 > **Vet both the bundle source and its component catalogs.** A project can supply its own bundle catalog and `install-allowed` component catalogs (extension, preset, workflow, and step) under `.specify/`; that project configuration existing is not evidence anything in it was reviewed. Before installing a bundle from an unfamiliar project, run `specify bundle catalog list` — and the equivalent `extension`/`preset`/`workflow catalog list` and `specify workflow step catalog list` commands for the components it pulls in — and treat any source you didn't add yourself as unvetted until you've reviewed it.
+
+For workflow components, inspect shell `run` and `env` fields and their
+referenced code, including changes introduced by active overlays. This applies
+even to `strict: true` steps: environment bindings can change executable lookup
+or runtime loading. See [Reviewing shell execution](workflows.md#reviewing-shell-execution).
 
 ### List the Catalog Stack
 

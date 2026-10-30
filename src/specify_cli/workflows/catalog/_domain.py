@@ -26,6 +26,7 @@ from ..._download_security import (
     MAX_JSON_CATALOG_BYTES as MAX_JSON_CATALOG_BYTES,
     read_response_limited,
 )
+from ...file_helper import FileHelper, FileHelperError
 from .._catalog_cache import read_cache_json, write_cache_json
 
 logger = logging.getLogger(__name__)
@@ -82,10 +83,15 @@ class WorkflowRegistry:
     REGISTRY_FILE = "workflow-registry.json"
     SCHEMA_VERSION = "1.0"
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(
+        self, project_root: Path, *, read_files: FileHelper | None = None
+    ) -> None:
         self.project_root = project_root
         self.workflows_dir = project_root / ".specify" / "workflows"
         self.registry_path = self.workflows_dir / self.REGISTRY_FILE
+        # Optional read-policy handoff for workflow.list. Existing callers and
+        # all mutation paths retain their established behavior.
+        self._read_files = read_files
         self.data = self._load()
 
     def _has_symlinked_parent(self) -> bool:
@@ -116,14 +122,22 @@ class WorkflowRegistry:
                 f"Refusing to read workflow registry at {self.registry_path}: "
                 "a parent directory or the registry file itself is a symlink"
             )
-        if self.registry_path.exists():
+        if self._read_files is not None or self.registry_path.exists():
             try:
-                with open(self.registry_path, encoding="utf-8") as f:
-                    data = json.load(f)
-            except OSError as exc:
-                # The real data may still be intact on disk. Fail closed at
-                # construction rather than fabricating an empty registry that
-                # a read-only caller could mistake for "nothing installed."
+                if self._read_files is None:
+                    with open(self.registry_path, encoding="utf-8") as f:
+                        data = json.load(f)
+                else:
+                    try:
+                        text = self._read_files.read_text(self.registry_path)
+                    except FileNotFoundError:
+                        return default_registry
+                    # Match the legacy text stream's universal-newline handling,
+                    # including JSON error offsets for malformed CRLF files.
+                    text = text.replace("\r\n", "\n").replace("\r", "\n")
+                    data = json.loads(text)
+            except (OSError, FileHelperError) as exc:
+                # Do not fabricate an empty registry on access/policy failures.
                 raise OSError(
                     f"Failed to read workflow registry at {self.registry_path}: {exc}"
                 ) from exc

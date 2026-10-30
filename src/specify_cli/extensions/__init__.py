@@ -324,7 +324,7 @@ class ExtensionManifest:
                 )
 
         # Validate extension ID format
-        if not re.match(r"^[a-z0-9-]+$", ext["id"]):
+        if not re.fullmatch(r"[a-z0-9-]+", ext["id"]):
             raise ValidationError(
                 f"Invalid extension ID '{ext['id']}': "
                 "must be lowercase alphanumeric with hyphens only"
@@ -432,9 +432,13 @@ class ExtensionManifest:
                             f"Invalid hook '{hook_name}': "
                             "expected a mapping or list of mappings"
                         )
-                    if not entry.get("command"):
+                    command = entry.get("command")
+                    # #5080: same rule as validate_events() in events/__init__.py.
+                    # A truthy non-string (e.g. command: [foo]) passed a bare
+                    # truthiness check and crashed hook registration mid-install.
+                    if not isinstance(command, str) or not command.strip():
                         raise ValidationError(
-                            f"Hook '{hook_name}' missing required 'command' field"
+                            f"Hook '{hook_name}' missing required 'command' string"
                         )
                     if "priority" in entry:
                         priority = entry["priority"]
@@ -5348,6 +5352,11 @@ class ConfigManager:
     def _get_extension_defaults(self) -> Dict[str, Any]:
         """Get default configuration from extension manifest.
 
+        Reads the top-level ``defaults`` key documented in the extension
+        template and API reference, and ``config.defaults`` used by the
+        bundled git extension. When both are present they are merged, with
+        ``config.defaults`` winning on conflicting keys.
+
         Returns:
             Default configuration dictionary
         """
@@ -5356,6 +5365,9 @@ class ConfigManager:
             return {}
 
         manifest_data = self._load_yaml_config(manifest_path)
+        top_level_defaults = manifest_data.get("defaults", {})
+        if not isinstance(top_level_defaults, dict):
+            top_level_defaults = {}
         # _load_yaml_config already coerces a non-mapping *root* to {}, but
         # extension.yml's top-level 'config' key is unvalidated by
         # ExtensionManifest (only 'provides.config' is checked there -- a
@@ -5372,9 +5384,11 @@ class ConfigManager:
         # deeper in the manifest's own 'config' section.
         config_section = manifest_data.get("config", {})
         if not isinstance(config_section, dict):
-            return {}
+            return top_level_defaults
         defaults = config_section.get("defaults", {})
-        return defaults if isinstance(defaults, dict) else {}
+        if not isinstance(defaults, dict):
+            return top_level_defaults
+        return self._merge_configs(top_level_defaults, defaults)
 
     def _get_project_config(self) -> Dict[str, Any]:
         """Get project-level configuration.

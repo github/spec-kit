@@ -25,6 +25,7 @@ read-only, local-only (no network access), and reject unexpected arguments.
 | `specify_version` | Return the installed CLI version, runtime, system, and feature capabilities. Takes no arguments. |
 | `specify_artifact_list` | Return one paginated page of a project's artifact inventory (`command`, `template`, `script`, `hook`) |
 | `specify_artifact_info` | Return one artifact and its complete composition stack |
+| `specify_workflow_list` | List installed workflows and skipped-entry warnings in registry order |
 
 The artifact tools take an optional absolute `project_directory`; it defaults
 to the directory the server was launched from.
@@ -50,7 +51,47 @@ tool error.
 | `specify_run_command` | Run one supported command through the real Specify CLI |
 
 The server does not expose mutations, installation or update operations,
-workflows, confirmations, or access tiers.
+workflow execution, confirmations, or access tiers.
+
+## Installed workflow list
+
+`specify_workflow_list` accepts an optional absolute `project_directory`
+(default: the server launch directory) and `limit` (1–1000, default 100).
+It reads only the installed workflow registry; it never loads custom steps,
+fetches catalogs, repairs files, or executes workflows.
+
+The result has ordered `items` and a `truncated` boolean. Workflow items have
+`kind: "workflow"`, `id`, `name`, `version`, nullable `description`, and `enabled`.
+Malformed individual registry entries produce `kind: "warning"` items with
+`code: "invalid_registry_entry"`, `workflow_id`, and `message` in their original
+positions. The limit counts both workflows and warnings. `truncated: true`
+explicitly indicates omitted entries; increase `limit` to retrieve more, up to
+1000. There is no continuation cursor. The CLI retains its complete listing.
+
+Missing registry files produce an empty list. Corrupt or unreadable registry
+files produce `workflow_registry_read_failed`; unsafe storage produces
+`unsafe_workflow_storage`. Other expected errors are `invalid_project_directory`
+and `not_a_spec_kit_project`. Errors contain `code`, `message`,
+`details`, and `retryable` under `error`, with `isError: true`.
+Unexpected failures use sanitized `internal_error`; invalid operation outcomes
+use `invalid_operation_result`. Responses exceeding 1 MiB produce a retryable
+`response_too_large` error instead of partial success; retry with a smaller
+limit. Registry exception details are not exposed through MCP.
+
+Out-of-range `limit` values are rejected before the operation runs and produce
+text-only input-validation errors with no structured content; see
+[Input validation errors](#input-validation-errors).
+
+Workflow listing reads registry content through the selected project's
+`FileHelper` policy owner, rejecting Windows junctions and unsupported reparse
+points at the read boundary. Ordinary workflow registry symlinks remain
+disallowed. Other workflow registry callers are not migrated by this tool.
+These checks do not provide an OS sandbox or race-free filesystem confinement;
+the registry is still parsed in full before the entry limit is applied.
+
+Operation outcomes exceeding the requested entry limit, or claiming truncation
+without filling that limit, are rejected as `invalid_operation_result`. The
+output schema also caps `items` at 1000.
 
 ## Input validation errors
 

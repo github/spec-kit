@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import io
 import json
+import locale
 import math
 import os
+import re
 import subprocess
 from typing import Any
 
@@ -21,6 +24,13 @@ class ShellStep(StepBase):
     type_key = "shell"
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
+        binding_errors = self._binding_errors(config)
+        if binding_errors:
+            return StepResult(
+                status=StepStatus.FAILED,
+                error="; ".join(binding_errors),
+                output={"exit_code": -1, "stdout": "", "stderr": "invalid shell bindings"},
+            )
         run_cmd = config.get("run", "")
         if isinstance(run_cmd, str) and "{{" in run_cmd:
             run_cmd = evaluate_expression(run_cmd, context)
@@ -43,6 +53,23 @@ class ShellStep(StepBase):
             )
 
         env = {**os.environ}
+        for name, template in config.get("env", {}).items():
+            try:
+                value = evaluate_expression(template, context)
+            except ValueError as exc:
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    error=f"Shell step {config.get('id', '?')!r}: env {name!r}: {exc}",
+                    output={"exit_code": -1, "stdout": "", "stderr": "invalid environment expression"},
+                )
+            value_error = self._environment_value_error(name, value)
+            if value_error is not None:
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    error=f"Shell step {config.get('id', '?')!r}: {value_error}",
+                    output={"exit_code": -1, "stdout": "", "stderr": "invalid environment value"},
+                )
+            env[name.upper() if os.name == "nt" else name] = value
         if context.workflow_dir:
             env["SPECKIT_WORKFLOW_DIR"] = context.workflow_dir
         else:
@@ -50,23 +77,36 @@ class ShellStep(StepBase):
 
         # NOTE: shell=True is required to support pipes, redirects, and
         # multi-command expressions in workflow YAML.  Workflow authors
-        # control commands; catalog-installed workflows should be reviewed
-        # before use (see PUBLISHING.md for security guidance).
+        # control commands. strict=True rejects expression interpolation in
+        # run; dynamic data can instead be bound through env without becoming
+        # shell source. Neither mode sandboxes authored shell commands.
         try:
             proc = subprocess.run(  # noqa: S602 -- intentional shell=True (see NOTE above)
                 run_cmd,
                 shell=True,
                 capture_output=True,
-                text=True,
                 cwd=cwd,
                 env=env,
                 timeout=timeout,
             )
-            output = {
-                "exit_code": proc.returncode,
-                "stdout": proc.stdout,
-                "stderr": proc.stderr,
-            }
+            # Decode in this thread so malformed output becomes a step
+            # failure on Windows too, where subprocess uses reader threads.
+            # Preserve text=True's locale encoding and universal newlines.
+            output = {"exit_code": proc.returncode, "stdout": "", "stderr": ""}
+            encoding = locale.getpreferredencoding(False)
+            decode_errors = []
+            for name in ("stdout", "stderr"):
+                try:
+                    with io.TextIOWrapper(io.BytesIO(getattr(proc, name)), encoding=encoding) as stream:
+                        output[name] = stream.read()
+                except UnicodeDecodeError as exc:
+                    decode_errors.append(f"Shell command {name} could not be decoded: {exc}")
+            if decode_errors:
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    error="; ".join(decode_errors),
+                    output=output,
+                )
             if proc.returncode != 0:
                 return StepResult(
                     status=StepStatus.FAILED,
@@ -79,7 +119,7 @@ class ShellStep(StepBase):
                 # (e.g. a fan-out's ``items:``). A parse failure fails the
                 # step — declaring ``output_format: json`` is a contract.
                 try:
-                    output["data"] = json.loads(proc.stdout)
+                    output["data"] = json.loads(output["stdout"])
                 except json.JSONDecodeError as exc:
                     return StepResult(
                         status=StepStatus.FAILED,
@@ -106,6 +146,51 @@ class ShellStep(StepBase):
                 error=f"Shell command failed: {exc}",
                 output={"exit_code": -1, "stdout": "", "stderr": str(exc)},
             )
+
+    @staticmethod
+    def _environment_value_error(name: str, value: Any) -> str | None:
+        if not isinstance(value, str):
+            return f"env {name!r} must be a string, got {type(value).__name__}."
+        if "\x00" in value:
+            return f"env {name!r} must not contain NUL characters."
+        if os.name == "posix":
+            try:
+                os.fsencode(value)
+            except UnicodeEncodeError:
+                return f"env {name!r} cannot be encoded for the process environment."
+        return None
+
+    @classmethod
+    def _binding_errors(cls, config: dict[str, Any]) -> list[str]:
+        errors: list[str] = []
+        prefix = f"Shell step {config.get('id', '?')!r}: "
+        strict = config.get("strict", False)
+        if not isinstance(strict, bool):
+            errors.append(prefix + "'strict' must be a boolean.")
+        elif strict:
+            run = config.get("run")
+            if not isinstance(run, str):
+                errors.append(prefix + "'run' must be a string in strict mode.")
+            elif "{{" in run:
+                errors.append(
+                    prefix + "strict mode forbids expressions in 'run'; "
+                    "bind dynamic values through 'env' instead."
+                )
+
+        bindings = config.get("env", {})
+        if not isinstance(bindings, dict):
+            errors.append(prefix + "'env' must be a mapping.")
+            return errors
+        for name, template in bindings.items():
+            if not isinstance(name, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
+                errors.append(prefix + f"invalid environment variable name {name!r}.")
+                continue
+            if name.upper() == "SPECKIT_WORKFLOW_DIR":
+                errors.append(prefix + f"environment variable {name!r} is reserved.")
+            value_error = cls._environment_value_error(name, template)
+            if value_error is not None:
+                errors.append(prefix + value_error)
+        return errors
 
     @staticmethod
     def _timeout_error(config: dict[str, Any]) -> str | None:
@@ -143,20 +228,20 @@ class ShellStep(StepBase):
 
     def validate(self, config: dict[str, Any]) -> list[str]:
         errors = super().validate(config)
-        if "run" not in config:
-            errors.append(
-                f"Shell step {config.get('id', '?')!r} is missing 'run' field."
-            )
-        elif not isinstance(config["run"], str):
-            # execute() str()-coerces run and invokes it under shell=True, so a
-            # null or list 'run' would run the Python repr ('None', "['echo']")
-            # as a command. Reject non-strings at validation, mirroring the
-            # command-step input/options and gate options type checks. An
-            # expression like "{{ ... }}" is still a str, so it stays valid.
-            errors.append(
-                f"Shell step {config.get('id', '?')!r}: 'run' must be a string, "
-                f"got {type(config['run']).__name__}."
-            )
+        errors.extend(self._binding_errors(config))
+        # Strict run errors are already reported by _binding_errors().
+        if config.get("strict") is not True:
+            if "run" not in config:
+                errors.append(
+                    f"Shell step {config.get('id', '?')!r} is missing 'run' field."
+                )
+            elif not isinstance(config["run"], str):
+                # Legacy execution coerces run to shell source; validation
+                # must still reject non-strings without changing that path.
+                errors.append(
+                    f"Shell step {config.get('id', '?')!r}: 'run' must be a string, "
+                    f"got {type(config['run']).__name__}."
+                )
         output_format = config.get("output_format")
         if output_format is not None and output_format != "json":
             errors.append(

@@ -17,6 +17,7 @@ escapes user-controlled display values; init.py was the outlier.
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import re
 import subprocess
@@ -91,6 +92,34 @@ def _init(tmp_path: Path, name: str):
         )
     finally:
         os.chdir(previous)
+
+
+@pytest.mark.parametrize("numbering", ["timestamp", "sequential", None])
+def test_reinit_preserves_feature_numbering(tmp_path: Path, monkeypatch, numbering):
+    result = _init(tmp_path, "proj")
+    assert result.exit_code == 0, _strip(result.stdout)
+    project = tmp_path / "proj"
+    options_path = project / ".specify" / "init-options.json"
+    options = json.loads(options_path.read_text(encoding="utf-8"))
+    assert options["feature_numbering"] == "sequential"
+    if numbering is None:
+        options.pop("feature_numbering")
+    else:
+        options["feature_numbering"] = numbering
+    options["custom_setting"] = "keep me"
+    options_path.write_text(json.dumps(options), encoding="utf-8")
+
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, [
+        "init", "--here", "--force", "--integration", "generic",
+        "--integration-options", "--commands-dir .agent/commands",
+        "--script", "sh", "--non-interactive", "--ignore-agent-tools", "--offline",
+    ])
+    assert result.exit_code == 0, _strip(result.stdout)
+    updated = json.loads(options_path.read_text(encoding="utf-8"))
+    assert updated["feature_numbering"] == (numbering or "sequential")
+    assert updated["custom_setting"] == "keep me"
+    assert updated["here"] is True
 
 
 @pytest.mark.parametrize("name", ["proj [v2]", "my[bold]app"])
