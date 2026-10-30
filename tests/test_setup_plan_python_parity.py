@@ -78,6 +78,46 @@ def repo(tmp_path: Path) -> Path:
     return _setup_repo(tmp_path)
 
 
+@requires_bash
+@pytest.mark.parametrize("case", ["filesystem-root", "project-root", "outside-project"])
+def test_bash_feature_containment_handles_filesystem_root(
+    repo: Path, case: str
+) -> None:
+    feature = (
+        repo.parent / "outside" / "new-feature"
+        if case == "outside-project" else repo / "specs" / "001-my-feature"
+    )
+    write_feature_json(repo, _bash_posix_path(feature))
+    env = clean_env()
+    env["TEST_REPO"] = _bash_posix_path(repo)
+    env["TEST_COMMON"] = _bash_posix_path(
+        repo / ".specify" / "scripts" / "bash" / "common.sh"
+    )
+    env["TEST_PHYSICAL_ROOT"] = (
+        "/" if case == "filesystem-root" else _bash_posix_path(repo.resolve())
+    )
+    program = r"""
+source "$TEST_COMMON"
+get_repo_root() { printf '%s\n' "$TEST_REPO"; }
+# Simulate a root-mounted project without creating /.specify or writing at /.
+pwd() { printf '%s\n' "$TEST_PHYSICAL_ROOT"; }
+paths=$(get_feature_paths --no-persist) || exit 1
+eval "$paths"
+printf '%s' "$FEATURE_DIR"
+"""
+
+    result = run(["bash", "-c", program], repo, env)
+
+    if case == "outside-project":
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert "outside the project" in result.stderr
+        assert not feature.exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == _bash_posix_path(feature.resolve())
+
+
 @pytest.mark.parametrize("port", PORTS)
 @pytest.mark.parametrize(
     "kind",
@@ -565,6 +605,35 @@ def test_external_feature_requires_override_on_every_invocation(
     retry = run(_command(repo, port, True), repo)
     assert retry.returncode != 0
     assert "outside the project" in retry.stderr
+
+
+@pytest.mark.parametrize("port", PORTS)
+def test_external_feature_symlink_requires_override_on_every_invocation(
+    repo: Path, port: str
+) -> None:
+    outside = repo.parent / "outside"
+    outside.mkdir()
+    try:
+        (repo / "linked-external").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Cannot create directory symlink: {exc}")
+    env = clean_env()
+    env["SPECIFY_FEATURE_DIRECTORY"] = "linked-external/new-feature"
+
+    result = run(_command(repo, port, True), repo, env)
+
+    assert result.returncode == 0, result.stderr
+    plan = outside / "new-feature" / "plan.md"
+    assert plan.read_text(encoding="utf-8") == TEMPLATE_BODY
+    before = plan.stat().st_mtime_ns
+    retry = run(_command(repo, port, True), repo)
+    assert retry.returncode != 0
+    assert retry.stdout == ""
+    assert "outside the project" in retry.stderr
+    assert plan.stat().st_mtime_ns == before
+    restored = run(_command(repo, port, True), repo, env)
+    assert restored.returncode == 0, restored.stderr
+    assert plan.stat().st_mtime_ns == before
 
 
 @pytest.mark.parametrize("port", PORTS)

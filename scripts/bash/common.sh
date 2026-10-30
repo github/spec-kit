@@ -252,7 +252,7 @@ get_feature_paths() {
             physical_root=$(CDPATH="" cd -- "$repo_root" && pwd -P) || return 1
             local resolved_feature_dir
             if ! resolved_feature_dir=$(_resolve_feature_directory "$feature_dir" && printf '.') ||
-                [[ "${resolved_feature_dir%.}" != "$physical_root" && "${resolved_feature_dir%.}" != "$physical_root/"* ]]; then
+                [[ "${resolved_feature_dir%.}" != "$physical_root" && "${resolved_feature_dir%.}" != "${physical_root%/}/"* ]]; then
                 echo "ERROR: Stored feature directory is invalid or outside the project. Set SPECIFY_FEATURE_DIRECTORY explicitly to use an external directory." >&2
                 return 1
             fi
