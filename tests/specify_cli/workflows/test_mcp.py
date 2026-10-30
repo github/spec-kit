@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import os
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import FrozenInstanceError, replace
@@ -454,6 +455,11 @@ def test_catalog_discovery_effects_include_cache_and_auth_execution(
 
     (tmp_path / ".specify").mkdir()
     monkeypatch.setenv("SPECIFY_INIT_DIR", str(tmp_path))
+    executable = tmp_path / "bin" / ("az.cmd" if os.name == "nt" else "az")
+    executable.parent.mkdir()
+    executable.write_text("test executable", encoding="utf-8")
+    executable.chmod(0o755)
+    monkeypatch.setenv("PATH", str(executable.parent))
     url = "https://inventory.invalid/catalog.json"
     monkeypatch.setenv(
         "SPECKIT_STEP_CATALOG_URL" if step else "SPECKIT_WORKFLOW_CATALOG_URL", url
@@ -497,6 +503,7 @@ def test_catalog_discovery_effects_include_cache_and_auth_execution(
     assert result.exit_code == 0, result.output
     assert requests == [url]
     assert len(processes) == 1
+    assert os.path.normcase(processes[0][0]) == os.path.normcase(str(executable))
     assert processes[0][1:3] == ["account", "get-access-token"]
     cache = tmp_path / ".specify" / "workflows"
     if step:

@@ -7,6 +7,7 @@ import json as _json
 import os
 import shutil
 import subprocess
+import sys
 from typing import TYPE_CHECKING
 
 from .._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
@@ -31,6 +32,46 @@ def _extract_token(payload: object, key: str) -> str | None:
     if not isinstance(token, str):
         return None
     return token.strip() or None
+
+
+def _find_az_cli() -> str | None:
+    """Find Azure CLI without searching the current directory or its aliases."""
+    names = ["az"]
+    if sys.platform == "win32":
+        # Python 3.11's which() does not expand PATHEXT for absolute paths.
+        extensions = (os.environ.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD").split(";")
+        names = ["az" + extension for extension in extensions if extension]
+
+    cwd = os.getcwd()
+    for directory in os.get_exec_path():
+        if not os.path.isabs(directory):
+            continue
+        try:
+            if os.path.samefile(directory, cwd):
+                continue
+        except OSError:
+            continue
+        for name in names:
+            candidate = os.path.join(directory, name)
+            if sys.platform == "win32":
+                # Avoid which() expanding PATHEXT a second time.
+                if not (
+                    os.path.isfile(candidate)
+                    and os.access(candidate, os.F_OK | os.X_OK)
+                ):
+                    continue
+                resolved = candidate
+            else:
+                resolved = shutil.which(candidate)
+            if not resolved or not os.path.isabs(resolved):
+                continue
+            try:
+                if os.path.samefile(os.path.dirname(os.path.realpath(resolved)), cwd):
+                    continue
+            except OSError:
+                continue
+            return resolved
+    return None
 
 
 class AzureDevOpsAuth(AuthProvider):
@@ -72,25 +113,10 @@ class AzureDevOpsAuth(AuthProvider):
     def _acquire_via_az_cli() -> str | None:
         """Run ``az account get-access-token`` and return the access token."""
         try:
-            # Windows: ``subprocess.run`` calls ``CreateProcess``, which does
-            # not consult ``PATHEXT``, so a bare ``"az"`` (installed as
-            # ``az.cmd``) fails with ``WinError 2`` even after ``az login``.
-            # Resolve via ``shutil.which`` (which honors ``PATHEXT``) so the
-            # ``.cmd`` shim works. On POSIX this is a harmless lookup that
-            # returns the same executable.
-            #
-            # Require an ABSOLUTE result: on Windows ``shutil.which`` prepends
-            # the current directory to the search path (unless
-            # ``NoDefaultCurrentDirectoryInExePath`` is set), so a stray
-            # ``.\az.cmd`` in the working directory would otherwise be resolved
-            # ahead of the real Azure CLI and run for a credential operation. A
-            # legitimate install always resolves to an absolute path, so this
-            # costs nothing; falling back to the bare ``"az"`` preserves the
-            # prior behavior (and the existing OSError path) when ``az`` is
-            # absent.
-            resolved = shutil.which("az")
-            az = resolved if resolved and os.path.isabs(resolved) else "az"
-            result = subprocess.run(  # noqa: S603, S607
+            az = _find_az_cli()
+            if az is None:
+                return None
+            result = subprocess.run(  # noqa: S603
                 [
                     az,
                     "account",
