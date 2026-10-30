@@ -108,6 +108,7 @@ hook_scalar() {
         return
     fi
     raw=${raw%%' #'*}
+    [[ $raw == '#'* ]] && raw=""
     while [[ $raw == *' ' ]]; do raw=${raw% }; done
     if [[ $raw == null || $raw == Null || $raw == NULL || $raw == '~' ]]; then raw=""; fi
     case $raw in
@@ -327,6 +328,13 @@ resolve_hooks() {
         fi
     fi
     if [[ -d .specify/hook-dispatch ]]; then
+        local generation current_generation
+        if ! generation=$(cat .specify/hook-dispatch/generation.txt 2>/dev/null) ||
+           [[ ! ${generation%$'\r'} =~ ^[0-9a-f]{32}$ ]]; then
+            hook_error "$event" "Hook projection generation is invalid; reinstall the extension or refresh the project"
+            return 1
+        fi
+        generation=${generation%$'\r'}
         if [[ ! -f $config || ! -f .specify/hook-dispatch/source.yml ||
               ! -f .specify/hook-dispatch/events.txt ]]; then
             hook_error "$event" "Hook projection is stale; reinstall the extension or refresh the project"
@@ -362,7 +370,9 @@ resolve_hooks() {
         else
             result="{\"event\":\"$event\",\"hooks\":[]}"
         fi
-        if [[ ! -f .specify/hook-dispatch/source.yml ]] ||
+        if ! current_generation=$(cat .specify/hook-dispatch/generation.txt 2>/dev/null) ||
+           [[ ${current_generation%$'\r'} != "$generation" ]] ||
+           [[ ! -f .specify/hook-dispatch/source.yml ]] ||
            ! current_digest=$(hook_file_digest "$config") ||
            ! snapshot_digest=$(hook_file_digest .specify/hook-dispatch/source.yml) ||
            [[ $current_digest != "$source_digest" || $snapshot_digest != "$source_digest" ]]; then

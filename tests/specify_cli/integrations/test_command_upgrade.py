@@ -29,6 +29,66 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationUpgradeDetailed:
+    @pytest.mark.parametrize("skills_mode", [False, True])
+    @pytest.mark.parametrize("unsafe_dispatcher", [False, True])
+    def test_upgrade_provisions_extension_fallback_dispatchers_before_reregistration(
+        self, tmp_path, skills_mode, unsafe_dispatcher
+    ):
+        project = _init_project(
+            tmp_path, "copilot", integration_options="--skills" if skills_mode else "--commands"
+        )
+        result = _run_in_project(project, ["integration", "upgrade", "copilot", "--script", "py"])
+        assert result.exit_code == 0, result.output
+        source = tmp_path / "runtime-hooks"
+        (source / "commands").mkdir(parents=True)
+        (source / "extension.yml").write_text(yaml.safe_dump({
+            "schema_version": "1.0",
+            "extension": {
+                "id": "runtime-hooks", "name": "Runtime Hooks", "version": "1.0.0",
+                "description": "Runtime fallback regression",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": [{
+                "name": "speckit.runtime-hooks.run", "file": "commands/run.md",
+            }]},
+        }), encoding="utf-8")
+        (source / "commands/run.md").write_text(
+            "---\ndescription: Runtime fallback\nscripts:\n"
+            "  ps: .specify/scripts/powershell/example.ps1\n"
+            "  py: .specify/scripts/python/example.py\n"
+            "---\n\n{PRE_HOOK_SCRIPT} plan\n{POST_HOOK_SCRIPT} plan\n",
+            encoding="utf-8",
+        )
+        result = _run_in_project(project, ["extension", "add", "--dev", str(source)])
+        assert result.exit_code == 0, result.output
+        command = (
+            project / ".github/skills/speckit-runtime-hooks-run/SKILL.md" if skills_mode
+            else project / ".github/agents/speckit.runtime-hooks.run.agent.md"
+        )
+        before = command.read_bytes()
+        assert b".specify/scripts/python/pre_hooks.py" in before
+        dispatchers = project / ".specify/scripts/powershell"
+        assert not (dispatchers / "pre-hooks.ps1").exists()
+        if unsafe_dispatcher:
+            dispatchers.mkdir(parents=True, exist_ok=True)
+            try:
+                (dispatchers / "pre-hooks.ps1").symlink_to(tmp_path / "missing.ps1")
+            except (OSError, NotImplementedError) as exc:
+                pytest.skip(f"file symlinks unavailable: {exc}")
+
+        result = _run_in_project(project, ["integration", "upgrade", "copilot", "--script", "sh"])
+
+        if unsafe_dispatcher:
+            assert command.read_bytes() == before
+            assert (dispatchers / "pre-hooks.ps1").is_symlink()
+            assert "symlink" in result.output.lower()
+        else:
+            assert result.exit_code == 0, result.output
+            rendered = command.read_text(encoding="utf-8")
+            for phase in ("pre", "post"):
+                assert f".specify/scripts/powershell/{phase}-hooks.ps1" in rendered
+                assert (dispatchers / f"{phase}-hooks.ps1").is_file()
+
     @pytest.mark.parametrize("variant", ["sh", "ps"])
     def test_upgrade_migrates_wrapped_legacy_hook_config(self, tmp_path, variant):
         project = _init_project(tmp_path, "copilot", integration_options="--commands")

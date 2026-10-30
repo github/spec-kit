@@ -26,6 +26,10 @@ def resolve(event: str, project_root: Path) -> dict:
     cache = project_root / ".specify" / "hook-dispatch"
     if cache.is_dir():
         try:
+            generation_file = cache / "generation.txt"
+            generation = generation_file.read_text(encoding="ascii").strip()
+            if not re.fullmatch("[0-9a-f]{32}", generation):
+                raise ValueError("Hook projection generation is invalid; reinstall the extension or refresh the project")
             source = _lf_bytes(config_file.read_bytes())
             if source != _lf_bytes((cache / "source.yml").read_bytes()):
                 raise ValueError("Hook projection is stale; reinstall the extension or refresh the project")
@@ -45,7 +49,9 @@ def resolve(event: str, project_root: Path) -> dict:
                 if not re.fullmatch("[0-9a-f]{64}", expected) or hashlib.sha256(payload).hexdigest() != expected:
                     raise ValueError("Hook projection is invalid; reinstall the extension or refresh the project")
                 result = json.loads(payload.decode("utf-8"))
-            if source != _lf_bytes(config_file.read_bytes()) or source != _lf_bytes((cache / "source.yml").read_bytes()):
+            if (generation != generation_file.read_text(encoding="ascii").strip()
+                or source != _lf_bytes(config_file.read_bytes())
+                or source != _lf_bytes((cache / "source.yml").read_bytes())):
                 raise ValueError("Hook projection changed during resolution; retry the command")
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise ValueError(f"Could not read hook projection: {exc}") from exc

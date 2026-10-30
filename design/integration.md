@@ -89,11 +89,15 @@ placeholder; `--skills` emits skills into that same directory.
 
 Core command templates also use `{PRE_HOOK_SCRIPT}` and `{POST_HOOK_SCRIPT}`.
 Rendering selects the same `sh`, `ps`, or `py` variant as the command's main
-script; extension installation provisions the native pre/post entry points
+script; extension installation and re-registration provision the native pre/post entry points
 for each hook-bearing command's selected variant, including fallback variants
 when the project preference is unavailable. The CLI validates hook configuration on write and
 materializes ordered per-event JSON with a snapshot of `.specify/extensions.yml`.
-CLI writers serialize publication, and each variant checks the snapshot,
+CLI writers serialize publication, invalidate `generation.txt` before changing
+projection files, and publish a fresh UUID generation after the snapshot.
+Each variant captures and rechecks this generation around resolution, rejecting
+changes even when the YAML changes and then reverts to identical bytes.
+Each variant also checks the snapshot,
 event-index digest, and generated response digest after normalizing CRLF line
 endings to LF, so tracked projections survive Git checkout conversion. Each
 reads the projection in its own runtime, without depending on another variant

@@ -22,6 +22,7 @@ import shutil
 import stat
 import sys
 import tempfile
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -2381,6 +2382,67 @@ class ExtensionManager:
 
         return True
 
+    def _ensure_hook_dispatchers_for_commands(
+        self, manifest: ExtensionManifest, source_dir: Path, options: Dict[str, Any]
+    ) -> bool:
+        """Provision each selected hook runtime before rendering extension commands."""
+        from ..integrations.base import IntegrationBase, get_invocation_prefix
+
+        requested_script = options.get("script") or ("ps" if os.name == "nt" else "sh")
+        hook_variants: set[str] = set()
+        source_root = source_dir.resolve()
+        for command in manifest.commands:
+            source_file = (source_root / command["file"]).resolve()
+            if not source_file.is_relative_to(source_root) or not source_file.is_file():
+                continue
+            try:
+                command_source = source_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                raise ExtensionError(f"Cannot read extension command '{command['file']}': {exc}") from exc
+            if "{PRE_HOOK_SCRIPT}" not in command_source and "{POST_HOOK_SCRIPT}" not in command_source:
+                continue
+            if requested_script not in ("sh", "ps", "py"):
+                raise ExtensionError(f"Unsupported hook dispatcher script type: {requested_script}")
+            frontmatter, _ = CommandRegistrar.parse_frontmatter(command_source)
+            scripts = frontmatter.get("scripts") or {}
+            if not isinstance(scripts, dict):
+                scripts = {}
+            try:
+                selected = (
+                    IntegrationBase.select_script_variant(requested_script, scripts)
+                    if scripts else requested_script
+                )
+            except ValueError as exc:
+                raise ExtensionError(f"Cannot select hook dispatcher: {exc}") from exc
+            if selected not in ("sh", "ps", "py"):
+                raise ExtensionError(f"Unsupported hook dispatcher script type: {selected}")
+            hook_variants.add(selected)
+
+        from .. import _install_shared_infra
+
+        skills = is_ai_skills_enabled(options)
+        for script in sorted(hook_variants):
+            try:
+                _install_shared_infra(
+                    self.project_root,
+                    script,
+                    invoke_separator="-" if skills else ".",
+                    invoke_prefix=get_invocation_prefix(options.get("ai"), skills),
+                    refresh_managed=True,
+                    hook_dispatchers_only=True,
+                )
+            except (OSError, ValueError) as exc:
+                raise ExtensionError(f"Cannot install hook dispatchers: {exc}") from exc
+            variant = {"sh": "bash", "ps": "powershell", "py": "python"}[script]
+            for phase in ("pre", "post"):
+                name = f"{phase}_hooks.py" if script == "py" else f"{phase}-hooks.{script if script == 'sh' else 'ps1'}"
+                dispatcher = self.project_root / ".specify" / "scripts" / variant / name
+                if dispatcher.is_symlink() or not dispatcher.is_file():
+                    raise ExtensionError(
+                        f"Cannot register extension commands: missing hook dispatcher '{dispatcher}'"
+                    )
+        return bool(hook_variants)
+
     def install_from_directory(
         self,
         source_dir: Path,
@@ -2541,73 +2603,13 @@ class ExtensionManager:
                 f"extension. Install from a copy in a different location instead."
             )
 
-        from ..integrations.base import IntegrationBase
-
-        requested_script = (
-            active_options.get("script") if isinstance(active_options, dict) else None
-        ) or ("ps" if os.name == "nt" else "sh")
-        hook_variants: set[str] = set()
-        for command in manifest.commands:
-            source_file = (source_dir / command["file"]).resolve()
-            if not source_file.is_relative_to(source_dir.resolve()) or not source_file.is_file():
-                continue
-            try:
-                command_source = source_file.read_text(encoding="utf-8")
-            except (OSError, UnicodeError) as exc:
-                raise ExtensionError(f"Cannot read extension command '{command['file']}': {exc}") from exc
-            if "{PRE_HOOK_SCRIPT}" not in command_source and "{POST_HOOK_SCRIPT}" not in command_source:
-                continue
-            if requested_script not in ("sh", "ps", "py"):
-                raise ExtensionError(
-                    f"Unsupported hook dispatcher script type: {requested_script}"
-                )
-            frontmatter, _ = CommandRegistrar.parse_frontmatter(command_source)
-            scripts = frontmatter.get("scripts") or {}
-            if not isinstance(scripts, dict):
-                scripts = {}
-            try:
-                selected = (
-                    IntegrationBase.select_script_variant(requested_script, scripts)
-                    if scripts else requested_script
-                )
-            except ValueError as exc:
-                raise ExtensionError(f"Cannot select hook dispatcher: {exc}") from exc
-            if selected not in ("sh", "ps", "py"):
-                raise ExtensionError(f"Unsupported hook dispatcher script type: {selected}")
-            hook_variants.add(selected)
-
-        if not hook_variants:
+        if not self._ensure_hook_dispatchers_for_commands(
+            manifest, source_dir, active_options if isinstance(active_options, dict) else {}
+        ):
             try:
                 HookExecutor(self.project_root).migrate_project_config()
             except (OSError, ValueError) as exc:
                 raise ExtensionError(f"Cannot install extension with invalid hooks: {exc}") from exc
-
-        if hook_variants:
-            from .. import _install_shared_infra
-            from ..integrations.base import get_invocation_prefix
-
-            options = active_options if isinstance(active_options, dict) else {}
-            skills = is_ai_skills_enabled(options)
-            for script in sorted(hook_variants):
-                try:
-                    _install_shared_infra(
-                        self.project_root,
-                        script,
-                        invoke_separator="-" if skills else ".",
-                        invoke_prefix=get_invocation_prefix(options.get("ai"), skills),
-                        refresh_managed=True,
-                        hook_dispatchers_only=True,
-                    )
-                except (OSError, ValueError) as exc:
-                    raise ExtensionError(f"Cannot install hook dispatchers: {exc}") from exc
-                variant = {"sh": "bash", "ps": "powershell", "py": "python"}[script]
-                for phase in ("pre", "post"):
-                    name = f"{phase}_hooks.py" if script == "py" else f"{phase}-hooks.{script if script == 'sh' else 'ps1'}"
-                    dispatcher = self.project_root / ".specify" / "scripts" / variant / name
-                    if dispatcher.is_symlink() or not dispatcher.is_file():
-                        raise ExtensionError(
-                            f"Cannot register extension commands: missing hook dispatcher '{dispatcher}'"
-                        )
         from ..integrations._file_changes import after_file_change, before_file_change, changing_file
 
         package_paths = (
@@ -4016,6 +4018,7 @@ class ExtensionManager:
             generic_snapshot = None
             registry_update_started = False
             try:
+                self._ensure_hook_dispatchers_for_commands(manifest, ext_dir, init_options)
                 if agent_name == "generic":
                     generic_snapshot = self._snapshot_generic_refresh_artifacts(
                         ext_id, manifest, metadata,
@@ -5915,6 +5918,8 @@ class HookExecutor:
                     with changing_file(cache):
                         cache.mkdir(parents=True)
                 snapshot = cache / "source.yml"
+                generation = cache / "generation.txt"
+                unlink(generation, missing_ok=True)
                 unlink(snapshot, missing_ok=True)
                 for pattern in ("*.json", "*.sha256"):
                     for path in cache.glob(pattern):
@@ -5933,6 +5938,7 @@ class HookExecutor:
                 )
                 write_text(self.config_file, rendered, encoding="utf-8")
                 write_bytes(snapshot, self.config_file.read_bytes())
+                write_bytes(generation, (uuid.uuid4().hex + "\n").encode("ascii"))
 
     def migrate_project_config(self) -> None:
         """Validate and project existing hook configuration during project refresh."""

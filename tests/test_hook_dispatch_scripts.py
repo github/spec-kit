@@ -33,6 +33,10 @@ def bash_script(path):
 
 
 def run_hook(tmp_path, phase="pre", name="plan", variant="py", extra_env=None, ps_executable="pwsh"):
+    if variant == "ps51":
+        if os.name != "nt" or not shutil.which("powershell.exe"):
+            pytest.skip("Windows PowerShell 5.1 is available only on Windows")
+        variant, ps_executable = "ps", "powershell.exe"
     scripts = {
         "py": [sys.executable, str(PYTHON / f"{phase}_hooks.py")],
         "sh": [str(ROOT / "scripts" / "bash" / f"{phase}-hooks.sh")],
@@ -756,6 +760,127 @@ def test_python_reader_rejects_save_after_reading_old_projection(tmp_path, monke
     assert replaced
 
 
+@pytest.mark.parametrize("variant", ["sh", "ps", "py", "ps51"])
+def test_projection_rejects_configuration_that_changes_and_reverts(tmp_path, monkeypatch, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    if variant == "ps51" and (os.name != "nt" or not shutil.which("powershell.exe")):
+        pytest.skip("Windows PowerShell 5.1 is available only on Windows")
+    from specify_cli.extensions import HookExecutor
+
+    executor = HookExecutor(tmp_path)
+    config = {"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit", "optional": False, "enabled": True},
+    ]}}
+    for stage, enabled in (("stage-a", True), ("stage-b", False), ("stage-c", True)):
+        config["hooks"]["before_plan"][0]["enabled"] = enabled
+        executor.save_project_config(config)
+        shutil.copytree(tmp_path / ".specify", tmp_path / stage)
+
+    def restore(stage):
+        shutil.copytree(tmp_path / stage, tmp_path / ".specify", dirs_exist_ok=True)
+
+    restore("stage-a")
+    if variant == "py":
+        from scripts.python import pre_hooks
+
+        original_read = Path.read_bytes
+        transitions = []
+
+        def read_with_changes(path):
+            if path.name == "events.txt":
+                restore("stage-b")
+                transitions.append("disabled")
+            payload = original_read(path)
+            if path.name == "before_plan.json":
+                restore("stage-c")
+                transitions.append("restored")
+            return payload
+
+        monkeypatch.setattr(Path, "read_bytes", read_with_changes)
+        with pytest.raises(ValueError, match="changed during resolution"):
+            pre_hooks.resolve("before_plan", tmp_path)
+        assert transitions == ["disabled", "restored"]
+        return
+
+    if variant == "sh":
+        source = (ROOT / "scripts/bash/pre-hooks.sh").read_text(encoding="utf-8")
+        anchors = [
+            '        if [[ -f .specify/hook-dispatch/$event.json ]]; then',
+            "            result=${response%$'\\r'}",
+        ]
+        for anchor, stage in zip(anchors, ("stage-b", "stage-c")):
+            assert source.count(anchor) == 1
+            copy = (
+                f"        cp {stage}/extensions.yml .specify/extensions.yml\n"
+                f"        cp {stage}/hook-dispatch/* .specify/hook-dispatch/\n"
+            )
+            source = source.replace(anchor, copy + anchor if stage == "stage-b" else anchor + "\n" + copy)
+        script = tmp_path / "racing-hooks.sh"
+        script.write_text(source, encoding="utf-8")
+        command = bash_script(script) if os.name == "nt" else ["/bin/bash", str(script)]
+    else:
+        source = (ROOT / "scripts/powershell/pre-hooks.ps1").read_text(encoding="utf-8")
+        anchors = [
+            '            $projected = Join-Path $cache "$event.json"',
+            '                $result = $text.TrimEnd("`r", "`n")',
+        ]
+        for anchor, stage in zip(anchors, ("stage-b", "stage-c")):
+            assert source.count(anchor) == 1
+            copy = (
+                f"            Copy-Item -LiteralPath '{stage}/extensions.yml' "
+                "-Destination '.specify/extensions.yml' -Force -ErrorAction Stop\n"
+                f"            Get-ChildItem -LiteralPath '{stage}/hook-dispatch' | "
+                "Copy-Item -Destination '.specify/hook-dispatch' -Force -ErrorAction Stop\n"
+            )
+            source = source.replace(anchor, copy + anchor if stage == "stage-b" else anchor + "\n" + copy)
+        script = tmp_path / "racing-hooks.ps1"
+        script.write_text(source, encoding="utf-8")
+        command = ["powershell.exe" if variant == "ps51" else "pwsh", "-NoProfile", "-File", str(script)]
+
+    result = subprocess.run(command + ["plan"], cwd=tmp_path, capture_output=True, text=True, encoding="utf-8")
+    data = json.loads(result.stdout)
+    assert result.returncode == 1, data
+    assert data["hooks"] == []
+    assert "changed during resolution" in data["error"]
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py", "ps51"])
+@pytest.mark.parametrize("generation", [None, "", "invalid"])
+def test_projection_requires_valid_generation(tmp_path, variant, generation):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    HookExecutor(tmp_path).save_project_config({"hooks": {}})
+    path = tmp_path / ".specify/hook-dispatch/generation.txt"
+    if generation is None:
+        path.unlink(missing_ok=True)
+    else:
+        path.write_text(generation, encoding="ascii")
+
+    code, data = run_hook(tmp_path, variant=variant)
+
+    assert code == 1
+    assert data["hooks"] == []
+    assert "generation" in data["error"]
+
+
+def test_projection_generation_changes_even_for_identical_configuration(tmp_path):
+    from specify_cli.extensions import HookExecutor
+
+    executor = HookExecutor(tmp_path)
+    executor.save_project_config({"hooks": {}})
+    cache = tmp_path / ".specify/hook-dispatch"
+    generation = (cache / "generation.txt").read_bytes()
+    snapshot = (cache / "source.yml").read_bytes()
+
+    executor.save_project_config({"hooks": {}})
+
+    assert (cache / "source.yml").read_bytes() == snapshot
+    assert (cache / "generation.txt").read_bytes() != generation
+
+
 def test_concurrent_projection_saves_publish_matching_configuration(tmp_path, monkeypatch):
     from specify_cli.extensions import HookExecutor
     from specify_cli.integrations import _file_changes
@@ -1090,6 +1215,53 @@ def test_null_condition_allows_hook(tmp_path, variant, value):
     assert code == 0
     assert data == run_hook(tmp_path)[1]
     assert len(data["hooks"]) == 1
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py", "ps51"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("value,expected_count", [
+    ("# no condition", 1), ("#no condition", 1), ("  # spaced comment", 1),
+    ("'# no condition'", 0), ('"# no condition"', 0),
+])
+def test_legacy_comment_conditions_match_yaml_null(tmp_path, variant, phase, value, expected_count):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    write_config(tmp_path, f"hooks:\n  {event}:\n    - extension: git\n"
+                           "      command: speckit.git.commit\n      optional: false\n"
+                           f"      condition: {value}\n")
+
+    code, data = run_hook(tmp_path, phase, variant=variant)
+
+    assert code == 0, data
+    assert data == run_hook(tmp_path, phase)[1]
+    assert len(data["hooks"]) == expected_count
+    if expected_count:
+        assert data["hooks"][0]["optional"] is False
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py", "ps51"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("target_event", [True, False])
+@pytest.mark.parametrize("field", [
+    "target: false", "hook_event: before_wrong", "priority_quoted: true",
+])
+def test_legacy_extra_fields_cannot_override_resolver_metadata(tmp_path, variant, phase, target_event, field):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    event = f"{'before' if phase == 'pre' else 'after'}_{'plan' if target_event else 'tasks'}"
+    write_config(tmp_path, f"hooks:\n  {event}:\n    - extension: git\n"
+                           "      command: speckit.git.commit\n      optional: false\n"
+                           f"      priority: 0x14\n      {field}\n")
+
+    code, data = run_hook(tmp_path, phase, variant=variant)
+
+    assert code == 0, data
+    assert data == run_hook(tmp_path, phase)[1]
+    assert len(data["hooks"]) == int(target_event)
+    if target_event:
+        assert data["hooks"][0]["priority"] == 20
+        assert data["hooks"][0]["optional"] is False
 
 
 @pytest.mark.parametrize("variant", ["sh", "ps", "py"])

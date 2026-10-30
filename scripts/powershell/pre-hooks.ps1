@@ -65,7 +65,7 @@ function Convert-HookScalar {
         if ($value.Contains([char]0)) { throw "Unsupported YAML NUL character" }
         return @{ Value = $value; Quoted = $true }
     }
-    $raw = ($raw -replace '\s+#.*$', '').TrimEnd()
+    $raw = ($raw -replace '(^|\s+)#.*$', '').TrimEnd()
     if ($raw -cmatch '^(~|null|Null|NULL)$') { $raw = '' }
     if ($raw -match '[\[\]{}]|: |^[&*!|>]') { throw "Unsupported YAML scalar" }
     return @{ Value = $raw; Quoted = $false }
@@ -91,7 +91,9 @@ function Add-HookField {
         (Test-HookTypedScalar $value)) {
         throw "$key must be a string"
     }
-    $Hook[$key] = $value
+    if ($key -in @('extension', 'command', 'enabled', 'optional', 'condition', 'priority', 'description', 'prompt')) {
+        $Hook[$key] = $value
+    }
     if ($key -eq 'priority') { $Hook.priority_quoted = $parsed.Quoted }
 }
 
@@ -312,6 +314,14 @@ function Invoke-HookResolver {
             }
         }
         if (Test-Path -LiteralPath $cache -PathType Container) {
+            $generationFile = Join-Path $cache 'generation.txt'
+            if (-not (Test-Path -LiteralPath $generationFile -PathType Leaf)) {
+                throw "Hook projection generation is missing; reinstall the extension or refresh the project"
+            }
+            $generation = [IO.File]::ReadAllText($generationFile, [Text.Encoding]::UTF8).Trim()
+            if ($generation -cnotmatch '^[0-9a-f]{32}$') {
+                throw "Hook projection generation is invalid; reinstall the extension or refresh the project"
+            }
             $snapshot = Join-Path $cache 'source.yml'
             $events = Join-Path $cache 'events.txt'
             if (-not (Test-Path -LiteralPath $config -PathType Leaf) -or
@@ -370,7 +380,8 @@ function Invoke-HookResolver {
             } else {
                 $result = @{ event = $event; hooks = @() } | ConvertTo-Json -Depth 5 -Compress
             }
-            if ($source -cne [Convert]::ToBase64String((ConvertTo-HookLfBytes ([IO.File]::ReadAllBytes($config)))) -or
+            if ($generation -cne [IO.File]::ReadAllText($generationFile, [Text.Encoding]::UTF8).Trim() -or
+                $source -cne [Convert]::ToBase64String((ConvertTo-HookLfBytes ([IO.File]::ReadAllBytes($config)))) -or
                 $source -cne [Convert]::ToBase64String((ConvertTo-HookLfBytes ([IO.File]::ReadAllBytes($snapshot))))) {
                 throw "Hook projection changed during resolution; retry the command"
             }
