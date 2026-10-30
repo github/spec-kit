@@ -33,11 +33,7 @@ After resolution, set `BUG_SLUG` and `BUG_DIR = .specify/bugs/<BUG_SLUG>`.
 ## Prerequisites
 
 - Ensure the directory `.specify/bugs/<BUG_SLUG>/` (i.e., `BUG_DIR`) exists, creating it (including any missing parents) if necessary. Use whatever mechanism is appropriate for the current environment.
-- If `BUG_DIR/assessment.md` already exists, ask the user whether to overwrite it before continuing (in interactive mode); in automated mode, refuse and pick a new unique slug instead.
-- If an overwrite is confirmed (interactive mode) and `BUG_DIR` also contains `fix.md` or `test.md` from an earlier run of this workflow, those reports describe the superseded assessment. After writing the new `assessment.md`, ask the user what to do with them:
-  - Offer to rename the older reports to `fix.stale.md` and `test.stale.md` so `__SPECKIT_COMMAND_BUG_TEST__` cannot mistake them for reports of the current assessment. If a `.stale.md` name is already taken, disambiguate with a short suffix instead of overwriting it. Renaming preserves the history — never delete the files.
-  - If the user declines the rename, leave the files untouched and call them out as stale in the Completion Report.
-  - In automated mode nothing changes: the overwrite is refused and a new unique slug is chosen instead, so the existing reports are never left inconsistent with `assessment.md`.
+- **Stop on existing reports; never overwrite.** If `BUG_DIR` already contains `assessment.md`, `fix.md`, or `test.md`, inform the user and stop without creating or changing anything; the existing reports stay exactly as they are. A fresh assessment uses a new slug instead — invoke `__SPECKIT_COMMAND_BUG_ASSESS__` again with a new `slug=` (user-provided) or let the slug-resolution step above generate a unique unused slug, then continue.
 
 ## Safety When Fetching URLs
 

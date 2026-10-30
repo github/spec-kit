@@ -62,12 +62,14 @@ class TestExtensionLayout:
         for installed in ("speckit-bug-assess", "speckit-bug-fix", "speckit-bug-test"):
             assert installed in text
 
-    def test_readme_documents_per_agent_invocation_spellings(self):
-        """The README distinguishes slash, dollar, and skill-colon invocations."""
+    def test_readme_uses_default_skills_syntax(self):
+        """The README uses GitHub Copilot's default skills syntax throughout."""
         text = (EXT_DIR / "README.md").read_text(encoding="utf-8")
         assert "/speckit-bug-assess" in text
-        assert "$speckit-bug-assess" in text
-        assert "/skill:speckit-bug-assess" in text
+        assert "/speckit-bug-fix" in text
+        assert "/speckit-bug-test" in text
+        assert "$speckit-bug-" not in text
+        assert "/skill:speckit-bug-" not in text
 
     def test_command_files_exist(self):
         for name in EXPECTED_COMMANDS:
@@ -130,45 +132,3 @@ class TestExtensionInstall:
         assert names == EXPECTED_COMMANDS
 
 
-# ── Stale-report guardrails ──────────────────────────────────────────────────
-
-
-class TestStaleReportGuardrails:
-    """Static checks for the re-assessment flow (stale fix/test reports).
-
-    Re-assessing a bug that already has ``fix.md`` / ``test.md`` must offer to
-    rename the older reports instead of deleting them, and validation must
-    refuse a fix report that predates the current assessment.
-    """
-
-    def test_assess_template_offers_stale_rename(self):
-        text = (EXT_DIR / "commands" / "speckit.bug.assess.md").read_text(
-            encoding="utf-8"
-        )
-        assert "fix.stale.md" in text
-        assert "test.stale.md" in text
-        assert "never delete" in text.lower()
-
-    def test_assess_template_flags_declined_reports_as_stale(self):
-        text = (EXT_DIR / "commands" / "speckit.bug.assess.md").read_text(
-            encoding="utf-8"
-        )
-        assert "stale" in text
-
-    def test_test_template_refuses_fix_older_than_assessment(self):
-        text = (EXT_DIR / "commands" / "speckit.bug.test.md").read_text(
-            encoding="utf-8"
-        )
-        assert "Staleness check" in text
-        assert "__SPECKIT_COMMAND_BUG_FIX__ slug=" in text
-
-    def test_test_template_falls_back_to_modification_times(self):
-        text = (EXT_DIR / "commands" / "speckit.bug.test.md").read_text(
-            encoding="utf-8"
-        )
-        assert "modification times" in text
-
-    def test_readme_describes_stale_report_behavior(self):
-        text = (EXT_DIR / "README.md").read_text(encoding="utf-8")
-        assert "fix.stale.md" in text
-        assert "predates the current" in text

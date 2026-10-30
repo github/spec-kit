@@ -35,9 +35,6 @@ Once resolved, set `BUG_SLUG` and `BUG_DIR = .specify/bugs/<BUG_SLUG>`, and brie
 
 - `BUG_DIR/assessment.md` MUST exist.
 - `BUG_DIR/fix.md` MUST exist. If not, stop and instruct the user to run `__SPECKIT_COMMAND_BUG_FIX__` first.
-- **Staleness check** — a `fix.md` older than the current `assessment.md` describes a superseded bug (it can happen when the bug is re-assessed after the fix was applied, leaving the old fix and test reports in place). Compare the **Created** date in `assessment.md` with the **Fixed** date in `fix.md`, falling back to the files' modification times if a header date is missing:
-  - If the assessment was written after the fix, stop. Do not validate; tell the user to first re-run `__SPECKIT_COMMAND_BUG_FIX__ slug=<BUG_SLUG>` against the current assessment, then re-run this command.
-  - If the dates cannot be compared in this environment, ask the user to confirm that `fix.md` still corresponds to the current `assessment.md` (interactive mode) or refuse with the same instruction (automated mode).
 - If `BUG_DIR/test.md` already exists, ask the user whether to overwrite it (interactive mode) or refuse (automated mode).
 - Read both `assessment.md` and `fix.md` in full so you know:
   - The original symptom and reproduction steps (from `assessment.md`).
