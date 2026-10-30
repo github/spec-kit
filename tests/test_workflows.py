@@ -2352,6 +2352,49 @@ class TestCommandStep:
         # Claude is a SkillsIntegration so uses /speckit-specify
         assert "/speckit-specify login" in call_args[0][0][2]
 
+    @pytest.mark.parametrize(
+        ("args", "expected_prompt"),
+        [
+            # A lone expression that resolves to None (an optional input that
+            # was not supplied, an output key the earlier step does not
+            # produce) means no arguments, as a missing 'args' key does.
+            ("{{ inputs.feature }}", "/speckit-plan"),
+            ("{{ steps.specify.output.file }}", "/speckit-plan"),
+            # Values that are only falsy are still dispatched.
+            ("{{ inputs.count }}", "/speckit-plan 0"),
+            ("{{ inputs.flag }}", "/speckit-plan False"),
+            ("{{ inputs.empty }}", "/speckit-plan"),
+            ("Feature: {{ inputs.name }}", "/speckit-plan Feature: login"),
+        ],
+    )
+    def test_dispatch_args_resolving_to_null_send_no_arguments(
+        self, tmp_path, args, expected_prompt
+    ):
+        from unittest.mock import patch, MagicMock
+        from specify_cli.workflows.step.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        ctx = StepContext(
+            inputs={"count": 0, "flag": False, "empty": "", "name": "login"},
+            steps={"specify": {"output": {"exit_code": 0}}},
+            default_integration="claude",
+            project_root=str(tmp_path),
+        )
+        config = {"id": "plan", "command": "speckit.plan", "input": {"args": args}}
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with patch("specify_cli.workflows.step.command.shutil.which", return_value="/usr/local/bin/claude"), \
+             patch("specify_cli.integrations.base.shutil.which", return_value="/usr/local/bin/claude"), \
+             patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = CommandStep().execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert mock_run.call_args[0][0][2] == expected_prompt
+
     def test_dispatch_uses_executable_override_for_fallback_preflight(self, tmp_path, monkeypatch):
         """Command preflight falls back to build_exec_args() argv[0]."""
         from unittest.mock import MagicMock, patch
