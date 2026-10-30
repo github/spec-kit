@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from .._file_policy import ProjectPolicyError, project_files
+from ..file_helper import FileHelperError
 from ..presets import PresetError
 from . import (
     AmbiguousArtifactError,
@@ -536,7 +537,7 @@ def get_artifact_info(request: ArtifactInfoRequest) -> ArtifactInfoResult:
         raise ArtifactInfoResolutionError(
             project_directory, request.identifier, message=exc.message,
         ) from exc
-    except (OSError, PresetError) as exc:
+    except (FileHelperError, OSError, PresetError) as exc:
         raise ArtifactInfoResolutionError(
             project_directory,
             request.identifier,

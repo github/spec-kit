@@ -8,6 +8,41 @@ enforce symlink behavior on those operations. Shared infrastructure, registratio
 managed storage, catalogs, scripts and runtime operations retain their existing
 behavior until their dependent migration stages.
 
+Preset registry reads and writes use a project-root-scoped deny-mode helper.
+For the documented `.specify/presets` registry location, the root is two
+parents above that directory, never the preset
+storage directory itself. Registry metadata and its parent hierarchy must
+not be links, independently of the operational `allow_symlinks` setting. Saves
+validate the destination before file-change observers or directory creation
+and preserve the existing registry text I/O and metadata behavior. This
+migration covers registry persistence only, not the remaining preset lifecycle
+filesystem operations. Shared artifact list/info operations translate registry
+`FileHelperError` failures into their existing resolution errors, preserving
+the CLI JSON envelope and MCP `artifact_resolution_failed` code. Contribution
+lookup likewise translates registry failures into an artifact resolution error.
+Registry reads and writes translate `SymlinkDeniedError` at the persistence
+boundary, preserving the registry path and directing users to replace linked
+entries with regular files/directories, not enable operational symlinks.
+The preset CLI renders that diagnostic without rewriting it, including for
+manager/resolver construction failures; integration registration warnings and
+bundle errors receive the same guidance. JSON list/info retain a single error
+envelope with no stdout output.
+
+Integration upgrade layout guards reuse the same deny-mode registry text
+reader, while retaining their stricter ownership/JSON validation. Only genuine
+absence means no installed presets. Symlinked files or parents, including
+dangling links, and other read/parse failures become
+`_PresetRegistryUnreadableError`, refusing command-root or command/skills
+migrations before mutation while preset ownership is unknown.
+
+Full preset resolution reads the registry through that boundary before any
+override, preset, extension, or core content can be selected. Followed
+`exists()`/`is_symlink()` probes must not decide whether registry validation
+runs: a dangling parent symlink or Windows junction can appear absent through
+those probes. Genuine registry absence still permits the normal fallback
+stack. Explicit core-only resolution continues to skip the preset tier and
+does not inspect its registry.
+
 Only `specify init --allow-symlinks` exposes the setting; init defaults to deny
 and persists the literal JSON boolean `allow_symlinks` in
 `.specify/init-options.json`. Re-init without the flag records `false`.

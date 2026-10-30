@@ -32,6 +32,7 @@ from specify_cli.artifacts._operation_info import (
     get_artifact_info,
 )
 from specify_cli.extensions import ExtensionRegistry
+from specify_cli.file_helper import SymlinkDeniedError
 from specify_cli.presets import PresetError
 from tests.conftest import install_preset
 from tests.specify_cli.artifacts.helpers import install_extension_with_hooks
@@ -502,6 +503,24 @@ def test_info_maps_corrupt_registry_to_resolution_error(
 
     assert exc_info.value.code == "artifact_resolution_failed"
     assert exc_info.value.message == "artifact resolution failed"
+
+
+def test_info_maps_symlinked_registry_to_resolution_error(
+    symlinked_preset_registry: Path,
+):
+    with pytest.raises(ArtifactInfoResolutionError) as exc_info:
+        get_artifact_info(
+            ArtifactInfoRequest(symlinked_preset_registry, "speckit.plan")
+        )
+
+    assert exc_info.value.code == "artifact_resolution_failed"
+    assert exc_info.value.message == "artifact resolution failed"
+    assert exc_info.value.details == {
+        "project_directory": str(symlinked_preset_registry),
+        "identifier": "speckit.plan",
+    }
+    assert exc_info.value.retryable is False
+    assert isinstance(exc_info.value.__cause__, SymlinkDeniedError)
 
 
 @pytest.mark.parametrize(

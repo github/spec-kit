@@ -239,6 +239,8 @@ class PresetResolver:
         Returns:
             Path to the resolved template file, or None if not found
         """
+        presets = [] if skip_presets else self._get_all_presets_by_priority()
+
         # Determine subdirectory based on template type
         if template_type == "template":
             subdirs = ["templates", ""]
@@ -263,8 +265,8 @@ class PresetResolver:
             return override
 
         # Priority 2: Installed presets (sorted by priority — lower number wins)
-        if not skip_presets and self.presets_dir.exists():
-            for pack_id, _metadata in self._get_all_presets_by_priority():
+        if not skip_presets:
+            for pack_id, _metadata in presets:
                 pack_dir = self.presets_dir / pack_id
                 # The preset manifest is authoritative: if it declares this
                 # template with an explicit ``file:``, resolve to that path —
@@ -469,7 +471,7 @@ class PresetResolver:
         if resolved.is_relative_to(self.overrides_dir):
             return {"path": resolved_str, "source": "project override"}
 
-        if str(self.presets_dir) in resolved_str and self.presets_dir.exists():
+        if str(self.presets_dir) in resolved_str:
             for pack_id, metadata in self._get_all_presets_by_priority():
                 pack_dir = self.presets_dir / pack_id
                 try:
@@ -521,6 +523,8 @@ class PresetResolver:
         Returns:
             List of layer dicts ordered highest-to-lowest priority.
         """
+        presets = self._get_all_presets_by_priority()
+
         if template_type == "template":
             subdirs = ["templates", ""]
         elif template_type == "command":
@@ -559,8 +563,8 @@ class PresetResolver:
             })
 
         # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
-        if self.presets_dir.exists():
-            for pack_id, metadata in self._get_all_presets_by_priority():
+        if presets:
+            for pack_id, metadata in presets:
                 pack_dir = self.presets_dir / pack_id
                 # Read strategy and manifest file path from preset manifest
                 strategy = "replace"

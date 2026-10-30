@@ -237,6 +237,20 @@ class TestCommandInfo:
         assert result.stdout == ""
         assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
 
+    def test_info_symlinked_registry_uses_json_error_envelope(
+        self, symlinked_preset_registry: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.chdir(symlinked_preset_registry)
+
+        result = CliRunner().invoke(
+            app, ["artifact", "info", "speckit.plan", "--json"],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert result.stderr == '{"error": "artifact resolution failed"}\n'
+
     def test_stdout_empty_on_error(
         self, non_project: Path, monkeypatch: pytest.MonkeyPatch
     ):

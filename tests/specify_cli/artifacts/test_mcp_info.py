@@ -728,6 +728,29 @@ def test_artifact_info_maps_corrupt_registry_error(spec_kit_project: Path):
     )
 
 
+def test_artifact_info_maps_symlinked_registry_error(
+    symlinked_preset_registry: Path,
+):
+    result = _run(
+        create_server(launch_directory=symlinked_preset_registry).call_tool(
+            TOOL_NAME, {"identifier": "speckit.plan"},
+        )
+    )
+
+    assert result.is_error is True
+    assert result.structured_content == _expected_error(
+        "artifact_resolution_failed",
+        "artifact resolution failed",
+        details={
+            "project_directory": str(symlinked_preset_registry),
+            "identifier": "speckit.plan",
+        },
+    )
+    assert result.content[0].text == (
+        "artifact_resolution_failed: artifact resolution failed"
+    )
+
+
 @pytest.mark.parametrize(
     "failure",
     [

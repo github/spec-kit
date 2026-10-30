@@ -3,16 +3,34 @@
 from __future__ import annotations
 
 import typer
+from rich.markup import escape as _escape_markup
+from typer.core import TyperGroup
 
 from .._console import console
 from .._download_security import read_response_limited as _read_response_limited
+from ..file_helper import FileHelperError
 
 read_response_limited = _read_response_limited
+
+
+class _PresetGroup(TyperGroup):
+    """Report filesystem policy failures across the entire preset invocation."""
+
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except FileHelperError as error:
+            console.print(
+                f"[red]Error:[/red] {_escape_markup(str(error))}", soft_wrap=True,
+            )
+            raise typer.Exit(1) from error
+
 
 preset_app = typer.Typer(
     name="preset",
     help="Manage spec-kit presets",
     add_completion=False,
+    cls=_PresetGroup,
 )
 
 # Lowest priority a user may request. Lower numbers win resolution, so the

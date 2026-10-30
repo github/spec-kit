@@ -112,19 +112,17 @@ def _installed_presets_affecting_agent(
     preset-overridden files while their registry state can't be reconciled —
     the exact inconsistency the guard exists to prevent.
     """
+    from ..file_helper import FileHelper
     from ..presets import PresetRegistry
+    from ..presets._registry import _read_registry_text
 
     registry_path = (
-        Path(project_root) / ".specify" / "presets" / PresetRegistry.REGISTRY_FILE
+        Path(project_root).absolute() / ".specify" / "presets" / PresetRegistry.REGISTRY_FILE
     )
-    # Genuinely absent registry → no presets installed → safe to proceed.
-    if not registry_path.exists():
-        return []
-
-    # The registry exists: any failure to read or parse it must surface as an
-    # error, not be swallowed into an empty ("no presets") result.
     try:
-        data = json.loads(registry_path.read_text(encoding="utf-8"))
+        data = json.loads(_read_registry_text(FileHelper(project_root), registry_path))
+    except FileNotFoundError:
+        return []
     except (OSError, ValueError) as exc:
         raise _PresetRegistryUnreadableError(str(exc)) from exc
     if not isinstance(data, dict) or not isinstance(data.get("presets", {}), dict):

@@ -22,6 +22,7 @@ from specify_cli.artifacts._operation_list import (
     list_artifacts,
 )
 from specify_cli.extensions import ExtensionRegistry
+from specify_cli.file_helper import SymlinkDeniedError
 from specify_cli.presets import PresetError
 
 
@@ -267,6 +268,21 @@ def test_list_artifacts_maps_corrupt_registry_to_resolution_error(
     assert exc_info.value.message == "artifact resolution failed"
     assert exc_info.value.details == {"project_directory": str(spec_kit_project)}
     assert exc_info.value.retryable is False
+
+
+def test_list_artifacts_maps_symlinked_registry_to_resolution_error(
+    symlinked_preset_registry: Path,
+):
+    with pytest.raises(ArtifactListResolutionError) as exc_info:
+        list_artifacts(ArtifactListRequest(symlinked_preset_registry))
+
+    assert exc_info.value.code == "artifact_resolution_failed"
+    assert exc_info.value.message == "artifact resolution failed"
+    assert exc_info.value.details == {
+        "project_directory": str(symlinked_preset_registry),
+    }
+    assert exc_info.value.retryable is False
+    assert isinstance(exc_info.value.__cause__, SymlinkDeniedError)
 
 
 def test_list_artifacts_maps_preset_failures_to_resolution_error(

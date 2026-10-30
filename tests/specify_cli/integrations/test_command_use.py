@@ -23,6 +23,32 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationUse:
+    def test_preset_registration_warning_preserves_registry_path_and_guidance(
+        self, tmp_path, capsys,
+    ):
+        from specify_cli.integrations._helpers import _register_presets_for_agent
+
+        project = tmp_path / "project"
+        presets = project / ".specify" / "presets"
+        presets.mkdir(parents=True)
+        target = tmp_path / "missing-registry"
+        registry = presets / ".registry"
+        try:
+            registry.symlink_to(target)
+        except (OSError, NotImplementedError) as error:
+            pytest.skip(f"Symlinks unavailable: {error}")
+
+        _register_presets_for_agent(project, "copilot", continuing="continuing")
+
+        captured = capsys.readouterr()
+        output = strip_ansi(captured.out + captured.err)
+        assert str(registry) in "".join(output.split())
+        plain = " ".join(output.split())
+        assert "Replace linked entries" in plain
+        assert "explicitly allow symlinks" not in plain
+        assert registry.is_symlink()
+        assert not target.exists()
+
     @pytest.mark.parametrize("edited_command", [None, "plan", "tasks"])
     def test_use_syncs_manifest_without_blessing_user_edits(
         self, tmp_path, tasks_preset_src, edited_command

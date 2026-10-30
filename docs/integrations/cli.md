@@ -275,6 +275,14 @@ persisted only after the upgrade regenerates the managed files successfully.
 
 If an upgrade would change an integration between command and skills layouts while preset artifacts are registered for it, the upgrade is rejected before changing files. Remove the affected presets, run the layout-changing upgrade, then reinstall them.
 
+Command-root and command/skills migrations also refuse to proceed when preset
+ownership cannot be determined. A symlinked `.specify/presets/.registry` or
+parent directory, including a dangling link, is an unreadable registry rather
+than evidence that no presets are installed. This restriction applies even
+with `--force` and `allow_symlinks` enabled. Replace linked entries with regular
+files or directories and restore a readable, valid registry before retrying.
+A genuinely absent registry or a valid empty registry does not block migration.
+
 For external adapters, forced upgrade or uninstall can recover damaged or
 unloadable packages using user-local ownership records. Without that proof,
 old-only generated files are preserved with a manual-cleanup warning. Recovery

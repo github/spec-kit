@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
 from .._file_policy import ProjectPolicyError, project_files
+from ..file_helper import FileHelperError
 from ..presets import PresetError
 from . import (
     ArtifactCatalog,
@@ -245,7 +246,7 @@ def list_artifacts(request: ArtifactListRequest) -> ArtifactListResult:
         raise ArtifactListResolutionError(project_directory, message=str(exc)) from exc
     except NotASpecKitProjectError as exc:
         raise ArtifactListProjectError(project_directory) from exc
-    except (ArtifactResolutionError, OSError, PresetError) as exc:
+    except (ArtifactResolutionError, FileHelperError, OSError, PresetError) as exc:
         raise ArtifactListResolutionError(project_directory) from exc
 
     all_rows = tuple(cast(ArtifactListItem, row) for row in rows)

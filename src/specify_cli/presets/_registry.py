@@ -7,6 +7,23 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from ..extensions import normalize_priority
+from ..file_helper import FileHelper, SymlinkDeniedError
+
+
+def _registry_symlink_error(registry_path: Path) -> SymlinkDeniedError:
+    return SymlinkDeniedError(
+        f"Cannot access preset registry {registry_path}: registry files and parent "
+        "directories must not be symlinks. Replace linked entries with regular "
+        "files or directories; allow_symlinks does not apply to preset registry metadata."
+    )
+
+
+def _read_registry_text(files: FileHelper, registry_path: Path) -> str:
+    """Read registry text under the caller's root without following links."""
+    try:
+        return files.read_text(registry_path, encoding="utf-8")
+    except SymlinkDeniedError as error:
+        raise _registry_symlink_error(registry_path) from error
 
 
 class PresetRegistry:
@@ -23,19 +40,16 @@ class PresetRegistry:
         """
         self.packs_dir = packs_dir
         self.registry_path = packs_dir / self.REGISTRY_FILE
+        # Scope above .specify so neither it nor presets becomes a trusted alias.
+        self._files = FileHelper(packs_dir.absolute().parent.parent)
         self.data = self._load()
 
     def _load(self) -> dict:
         """Load registry from disk."""
-        if not self.registry_path.exists():
-            return {
-                "schema_version": self.SCHEMA_VERSION,
-                "presets": {}
-            }
-
         try:
-            with open(self.registry_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            data = json.loads(
+                _read_registry_text(self._files, self.registry_path.absolute())
+            )
             # Validate loaded data is a dict (handles corrupted registry files)
             if not isinstance(data, dict):
                 return {
@@ -61,11 +75,18 @@ class PresetRegistry:
         """Save registry to disk."""
         from ..integrations._file_changes import after_file_change, before_file_change
 
-        before_file_change(self.registry_path)
-        self.packs_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.registry_path, 'w', encoding='utf-8') as f:
-            json.dump(self.data, f, indent=2)
-        after_file_change(self.registry_path)
+        path = self.registry_path.absolute()
+        try:
+            try:
+                self._files.read_bytes(path)
+            except FileNotFoundError:
+                pass
+            before_file_change(self.registry_path)
+            self._files.mkdir(self.packs_dir.absolute(), parents=True, exist_ok=True)
+            self._files.overwrite_text(path, json.dumps(self.data, indent=2), encoding="utf-8")
+            after_file_change(self.registry_path)
+        except SymlinkDeniedError as error:
+            raise _registry_symlink_error(path) from error
 
     def add(self, pack_id: str, metadata: dict):
         """Add preset to registry.

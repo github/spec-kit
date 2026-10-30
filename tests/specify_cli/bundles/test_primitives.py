@@ -23,6 +23,7 @@ from specify_cli.bundles.primitives import (
     primitive_manager,
 )
 from specify_cli.extensions import ExtensionRegistry
+from specify_cli.file_helper import SymlinkDeniedError
 from specify_cli.presets import PresetRegistry
 from specify_cli.workflows.catalog import StepRegistry, WorkflowRegistry
 from tests.specify_cli.bundles.helpers import valid_manifest_dict
@@ -83,6 +84,26 @@ def test_primitive_manager_routes_each_kind(tmp_path: Path):
 def test_primitive_manager_rejects_unknown_kind(tmp_path: Path):
     with pytest.raises(BundlerError, match="Unknown component kind"):
         primitive_manager("bogus", tmp_path)
+
+
+def test_preset_manager_error_preserves_registry_path_and_guidance(tmp_path: Path):
+    presets = tmp_path / ".specify" / "presets"
+    presets.mkdir(parents=True)
+    registry = presets / ".registry"
+    target = tmp_path / "missing-registry"
+    try:
+        registry.symlink_to(target)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"Symlinks unavailable: {error}")
+
+    with pytest.raises(SymlinkDeniedError) as exc_info:
+        primitive_manager("presets", tmp_path)
+
+    assert str(registry) in str(exc_info.value)
+    assert "Replace linked entries" in str(exc_info.value)
+    assert "explicitly allow symlinks" not in str(exc_info.value)
+    assert registry.is_symlink()
+    assert not target.exists()
 
 
 def test_offline_preset_not_bundled_refuses(tmp_path: Path):
