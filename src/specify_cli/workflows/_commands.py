@@ -1088,13 +1088,34 @@ _MAX_JSON_NODES = 100000
 # enforced on the encoded output itself rather than estimated per value type.
 _MAX_JSON_BYTES = 5 * 1024 * 1024
 
+# Response-wide cap across all definitions of one response. Generous on
+# purpose: many small bound workflow calls must pass, while a loop or fan-out
+# repeating a near-limit definition must not multiply into gigabytes.
+_MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 
-def _check_json_byte_budget(plain: Any) -> None:
+# Character cap on a non-string mapping key once stringified. Aliases rebuild
+# every mapping, so an oversized key would otherwise be re-created per alias
+# before the byte budget runs.
+_MAX_JSON_KEY_CHARS = 256
+
+
+class _ResponseBudget:
+    """Bytes a whole response may use across several converted payloads."""
+
+    def __init__(self, max_bytes: int | None = None) -> None:
+        self.max_bytes = _MAX_RESPONSE_BYTES if max_bytes is None else max_bytes
+        self.used = 0
+
+
+def _check_json_byte_budget(
+    plain: Any, response: _ResponseBudget | None = None
+) -> None:
     """Raise ``ValueError`` once *plain* encodes to more than the byte cap.
 
     The encoding is streamed and discarded, so memory stays bounded even when
     aliases expand a small input into a huge document, and no value type can
-    escape the budget.
+    escape the budget. When *response* is given, the encoded size also counts
+    against that shared response-wide budget.
     """
     total = 0
     for chunk in json.JSONEncoder(indent=2).iterencode(plain):
@@ -1104,9 +1125,21 @@ def _check_json_byte_budget(plain: Any) -> None:
                 "Workflow JSON output is too large to represent: it "
                 f"exceeds {_MAX_JSON_BYTES} bytes"
             )
+    if response is not None:
+        response.used += total
+        if response.used > response.max_bytes:
+            raise ValueError(
+                "Workflow JSON output is too large to represent: the "
+                f"response exceeds {response.max_bytes} bytes"
+            )
 
 
-def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
+def _plain_workflow_json(
+    payload: Any,
+    *,
+    max_nodes: int | None = None,
+    response: _ResponseBudget | None = None,
+) -> Any:
     """Convert *payload* to plain JSON-representable values.
 
     YAML-native scalars that JSON cannot represent (e.g. dates), mapping
@@ -1122,12 +1155,15 @@ def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
     ``max_nodes`` to bound the expansion instead of rejecting every reused
     alias. The byte budget is measured by streaming the encoded output, so it
     covers every value type. Each call has its own node and byte budget, so
-    independent definitions can be budgeted separately. The budget is opt-in:
+    independent definitions can be budgeted separately; an optional shared
+    ``response`` budget additionally caps their combined encoded size. The budget is opt-in:
     payloads such as ``workflow status --json`` grow with the number of runs
     and must not be capped. Excessive nesting depth is always reported as
     ``ValueError``.
     """
     remaining_nodes = max_nodes
+    # Set members are encoded once as sort keys; this total spans alias visits.
+    set_key_bytes = 0
 
     def json_key(key: Any) -> str:
         """Canonicalize a mapping key to the property name json.dumps emits."""
@@ -1136,11 +1172,18 @@ def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
         if isinstance(key, (bytes, bytearray)):
             return f"<binary: {len(key)} bytes>"
         if isinstance(key, (int, float, bool)) or key is None:
-            return json.dumps(key)
-        return str(key)
+            text = json.dumps(key)
+        else:
+            text = str(key)
+        if max_nodes is not None and len(text) > _MAX_JSON_KEY_CHARS:
+            raise ValueError(
+                "Workflow JSON output is too large to represent: a mapping "
+                f"key exceeds {_MAX_JSON_KEY_CHARS} characters"
+            )
+        return text
 
     def plain_json(value: Any, active_containers: set[int]) -> Any:
-        nonlocal remaining_nodes
+        nonlocal remaining_nodes, set_key_bytes
         if remaining_nodes is not None:
             remaining_nodes -= 1
             if remaining_nodes < 0:
@@ -1185,7 +1228,19 @@ def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
             return f"<binary: {len(value)} bytes>"
         if isinstance(value, (set, frozenset)):
             items = [plain_json(item, active_containers) for item in value]
-            return sorted(items, key=json.dumps)
+            keyed = []
+            for item in items:
+                encoded = json.dumps(item)
+                if max_nodes is not None:
+                    set_key_bytes += len(encoded)
+                    if set_key_bytes > _MAX_JSON_BYTES:
+                        raise ValueError(
+                            "Workflow JSON output is too large to represent: "
+                            f"it exceeds {_MAX_JSON_BYTES} bytes"
+                        )
+                keyed.append((encoded, item))
+            keyed.sort(key=lambda pair: pair[0])
+            return [item for _, item in keyed]
         if isinstance(value, (str, int, float)) or value is None:
             return value
         return str(value)
@@ -1193,7 +1248,7 @@ def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
     try:
         plain = plain_json(payload, set())
         if max_nodes is not None:
-            _check_json_byte_budget(plain)
+            _check_json_byte_budget(plain, response)
         return plain
     except RecursionError:
         raise ValueError(

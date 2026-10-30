@@ -547,6 +547,55 @@ class TestComposition:
         payload = json.loads(_definition(project_dir, run["run_id"]).stdout)
         assert [s["scope_path"] for s in payload["workflow_scopes"]] == [["loop", "0", "call"]]
 
+    def test_response_budget_caps_repeated_near_limit_definitions(self):
+        from specify_cli.workflows import _commands
+
+        # Each definition is ~2 MiB: under the per-definition cap.
+        definition = {"text": "x" * 2_000_000}
+        response = _commands._ResponseBudget()
+        converted = 0
+        with pytest.raises(ValueError, match="the response exceeds"):
+            for _ in range(100):
+                _commands._plain_workflow_json(
+                    definition, max_nodes=10**6, response=response
+                )
+                converted += 1
+        assert 10 <= converted < 20
+
+    def test_response_budget_allows_many_small_definitions(self):
+        from specify_cli.workflows import _commands
+
+        response = _commands._ResponseBudget()
+        for _ in range(1000):
+            _commands._plain_workflow_json(
+                {"id": "child"}, max_nodes=10**6, response=response
+            )
+
+    def test_many_bound_calls_exceeding_response_budget_return_json_error(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows import _commands
+
+        _install(project_dir, "child", CHILD)
+        parent = (
+            "workflow: {id: parent, name: Parent}\n"
+            "inputs:\n  verdict: {type: string, default: ''}\n"
+            "steps:\n  - id: loop\n    type: do-while\n    condition: '{{ false }}'\n"
+            "    max_iterations: 1\n"
+            "    steps:\n"
+            "      - {id: a, type: workflow, workflow: child, input: {verdict: x}}\n"
+        )
+        run = _run(project_dir, parent, "parent")
+        ok = _definition(project_dir, run["run_id"])
+        assert ok.exit_code == 0, ok.output
+        assert len(json.loads(ok.stdout)["workflow_scopes"]) == 1
+
+        # The root alone fits; root plus the bound child does not.
+        monkeypatch.setattr(_commands, "_MAX_RESPONSE_BYTES", 600)
+        _assert_json_error(
+            _definition(project_dir, run["run_id"]), "the response exceeds"
+        )
+
     def test_callee_drift_frozen(self, project_dir):
         run = self._call_run(project_dir)
         before = _definition(project_dir, run["run_id"]).stdout
@@ -800,6 +849,42 @@ class TestNegative:
         payload = {"refs": [big] * 100_000}
         with pytest.raises(ValueError, match="exceeds 5242880 bytes"):
             _commands._plain_workflow_json(payload, max_nodes=10**6)
+
+    def test_aliased_set_member_encoding_is_budgeted(self, monkeypatch):
+        from specify_cli.workflows import _commands
+
+        member = "x" * 65_536
+        shared = {member}
+        calls = 0
+        real_dumps = json.dumps
+
+        def counting_dumps(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return real_dumps(*args, **kwargs)
+
+        monkeypatch.setattr(_commands.json, "dumps", counting_dumps)
+        with pytest.raises(ValueError, match="exceeds 5242880 bytes"):
+            _commands._plain_workflow_json(
+                {"refs": [shared] * 2048}, max_nodes=10**6
+            )
+        # Aborts after ~80 members instead of encoding every alias visit.
+        assert calls < 100
+
+    def test_set_members_are_sorted_deterministically(self):
+        from specify_cli.workflows import _commands
+
+        assert _commands._plain_workflow_json({"b", "a", "c"}) == ["a", "b", "c"]
+
+    def test_oversized_mapping_key_is_rejected(self):
+        from specify_cli.workflows import _commands
+
+        with pytest.raises(ValueError, match="mapping key exceeds 256"):
+            _commands._plain_workflow_json({10 ** 4000: 1}, max_nodes=10**6)
+
+        assert _commands._plain_workflow_json(
+            {10 ** 100: 1}, max_nodes=10**6
+        ) == {str(10 ** 100): 1}
 
     def test_aliased_large_integer_returns_json_error(self, project_dir):
         run = _run(project_dir, GATE_WF)
