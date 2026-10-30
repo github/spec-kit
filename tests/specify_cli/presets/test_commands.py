@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -12,6 +14,7 @@ from typer.testing import CliRunner
 from specify_cli import app
 from specify_cli.file_helper import FileHelperError, SymlinkDeniedError
 from specify_cli.presets import PresetManager, PresetRegistry, PresetResolver
+from specify_cli.presets._commands import _render_powershell_argv
 from tests.conftest import strip_ansi
 
 
@@ -22,6 +25,14 @@ def _registry_error(project: Path) -> str:
         "directories must not be symlinks. Replace linked entries with regular "
         "files or directories; allow_symlinks does not apply to preset registry metadata."
     )
+
+
+def _invoke(
+    project: Path, arguments: list[str], monkeypatch: pytest.MonkeyPatch,
+):
+    with monkeypatch.context() as invocation:
+        invocation.chdir(project)
+        return CliRunner().invoke(app, arguments, catch_exceptions=False)
 
 
 @pytest.fixture(params=["directory", "file", "dangling-directory", "dangling-file"])
@@ -76,11 +87,7 @@ def test_text_commands_report_registry_specific_symlink_error(
     (linked_registry / ".specify" / "init-options.json").write_text(
         json.dumps({"allow_symlinks": allow_symlinks}), encoding="utf-8",
     )
-    monkeypatch.chdir(linked_registry)
-
-    result = CliRunner().invoke(
-        app, ["preset", *arguments], catch_exceptions=False,
-    )
+    result = _invoke(linked_registry, ["preset", *arguments], monkeypatch)
 
     assert result.exit_code == 1
     assert " ".join(strip_ansi(result.stdout).split()) == (
@@ -100,11 +107,7 @@ def test_json_commands_report_registry_specific_symlink_error(
     (linked_registry / ".specify" / "init-options.json").write_text(
         json.dumps({"allow_symlinks": allow_symlinks}), encoding="utf-8",
     )
-    monkeypatch.chdir(linked_registry)
-
-    result = CliRunner().invoke(
-        app, ["preset", *arguments, "--json"], catch_exceptions=False,
-    )
+    result = _invoke(linked_registry, ["preset", *arguments, "--json"], monkeypatch)
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -128,15 +131,16 @@ def test_mutating_commands_handle_registry_save_errors(
         raise SymlinkDeniedError(_registry_error(project_dir))
 
     monkeypatch.setattr(PresetRegistry, "_save", fail_save)
-    monkeypatch.chdir(project_dir)
     arguments = ["preset", command, "test-pack"]
     if command == "add":
         arguments = ["preset", "add", "--dev", str(pack_dir)]
     elif command == "set-priority":
         arguments.append("5")
 
-    result = CliRunner().invoke(app, arguments, catch_exceptions=False)
+    original_directory = Path.cwd()
+    result = _invoke(project_dir, arguments, monkeypatch)
 
+    assert Path.cwd() == original_directory
     assert result.exit_code == 1
     output = " ".join(strip_ansi(result.stdout).split())
     assert _registry_error(project_dir) in output
@@ -161,11 +165,7 @@ def test_resolve_handles_filesystem_errors_at_each_phase(
             ],
         )
         monkeypatch.setattr(PresetResolver, "resolve_content", fail)
-    monkeypatch.chdir(project_dir)
-
-    result = CliRunner().invoke(
-        app, ["preset", "resolve", "spec-template"], catch_exceptions=False,
-    )
+    result = _invoke(project_dir, ["preset", "resolve", "spec-template"], monkeypatch)
 
     assert result.exit_code == 1
     assert _registry_error(project_dir) in " ".join(strip_ansi(result.stdout).split())
@@ -187,16 +187,18 @@ def test_update_replacement_policy_error_preserves_removal_context(
         "specify_cli.presets._commands.preset_remove", lambda preset_id: None,
     )
     monkeypatch.setattr("specify_cli.presets._commands.preset_add", fail_add)
-    monkeypatch.chdir(project_dir)
-
-    result = CliRunner().invoke(
-        app, ["preset", "update", "example"], catch_exceptions=False,
-    )
+    result = _invoke(project_dir, ["preset", "update", "example"], monkeypatch)
 
     assert result.exit_code == 1
     output = " ".join(strip_ansi(result.stdout).split())
     assert "previous preset was removed" in output
-    assert "specify preset add" in output
+    retry_args = ["specify", "preset", "add", "example", "--priority", "10"]
+    expected_retry = (
+        _render_powershell_argv(retry_args)
+        if os.name == "nt"
+        else shlex.join(retry_args)
+    )
+    assert expected_retry in output
     assert _registry_error(project_dir) in output
     assert "explicitly allow symlinks" not in output
 
@@ -209,12 +211,11 @@ def test_other_file_helper_errors_keep_their_diagnostics(
         raise FileHelperError("unsupported registry path [red]")
 
     monkeypatch.setattr("specify_cli.presets.PresetManager", fail)
-    monkeypatch.chdir(project_dir)
     arguments = ["preset", "list"]
     if json_output:
         arguments.append("--json")
 
-    result = CliRunner().invoke(app, arguments, catch_exceptions=False)
+    result = _invoke(project_dir, arguments, monkeypatch)
 
     assert result.exit_code == 1
     message = "unsupported registry path [red]"
@@ -233,7 +234,8 @@ def test_preset_error_boundary_does_not_hide_unexpected_errors(
         raise RuntimeError("unexpected failure")
 
     monkeypatch.setattr("specify_cli.presets.PresetManager", fail)
-    monkeypatch.chdir(project_dir)
+    original_directory = Path.cwd()
 
     with pytest.raises(RuntimeError, match="unexpected failure"):
-        CliRunner().invoke(app, ["preset", "list"], catch_exceptions=False)
+        _invoke(project_dir, ["preset", "list"], monkeypatch)
+    assert Path.cwd() == original_directory
