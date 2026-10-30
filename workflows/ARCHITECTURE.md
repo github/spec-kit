@@ -287,6 +287,23 @@ When `specify workflow add <id>` installs from catalog, it downloads the workflo
 | Project catalogs | `.specify/workflow-catalogs.yml` | YAML | Project-level catalog sources |
 | User catalogs | `~/.specify/workflow-catalogs.yml` | YAML | User-level catalog sources |
 
+### Persisted-run storage boundary
+
+The `.specify/workflows/runs` tree is a project-owned persistence boundary.
+Accessed storage ancestors, run directories, and persisted artifacts must be
+real filesystem objects rather than symlinks. `RunState` checks these paths
+before reading or writing `state.json`, `inputs.json`, `workflow.yml`, or `log.jsonl`; artifact
+opens also use no-follow flags and directory descriptors where supported.
+The descriptor-backed path opens the project root and walks `.specify`,
+`workflows`, and `runs` one component at a time with no-follow directory opens.
+Directory creation and run enumeration use those descriptors too, preventing
+an ancestor replacement from redirecting access outside the project.
+Other platforms recheck path components before access and use atomic replacement
+for state writes; that fallback rejects existing symlinks but cannot prevent
+concurrent path replacement.
+Both write paths create state and input temporary files with owner-only
+permissions (`0600` on POSIX), retained when atomically replacing the artifacts.
+
 ## Module Structure
 
 ```text
