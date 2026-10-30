@@ -83,8 +83,13 @@ workflow installers. Without the switch, interactive invocations ask for
 approval and unattended invocations refuse to load custom steps. Neither
 `--offline` nor `--refresh` implies approval, and consent is never persisted.
 One interactive approval covers subsequent workflow delegates in the same
-bundle command, including a mix of bundled and catalog workflows. Later
-commands require approval again.
+bundle command, including a mix of bundled and catalog workflows, while the
+custom step packages remain unchanged. Installing or refreshing a step package
+invalidates that interactive approval, including during `bundle update --all`;
+the next workflow delegate asks again before importing the new code.
+`--trust-steps` explicitly authorizes all custom step code for that invocation,
+including newly installed or refreshed packages. Later commands require
+approval again.
 Delegated operations remain bound to the approved project, including when
 `SPECIFY_INIT_DIR` was relative to the bundle command's starting directory.
 

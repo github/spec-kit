@@ -324,6 +324,8 @@ class DefaultPrimitiveInstaller:
     bundle invocation only; it is never derived from bundle metadata.
     Interactive approvals are shared across this installer's workflow delegates,
     scoped to each project and discarded with the bundle invocation's installer.
+    Installing or refreshing a step invalidates that project's interactive
+    approval before the package can change.
     """
 
     def __init__(
@@ -387,12 +389,16 @@ class DefaultPrimitiveInstaller:
         self, project_root: Path, component: ComponentRef,
     ) -> BundledPatchWarning | None:
         manager = self._manager_for(component, project_root)
+        if component.kind == "steps":
+            self._approved_step_projects.discard(project_root.resolve())
         return manager.install(component)
 
     def refresh(
         self, project_root: Path, component: ComponentRef,
     ) -> BundledPatchWarning | None:
         manager = self._manager_for(component, project_root)
+        if component.kind == "steps":
+            self._approved_step_projects.discard(project_root.resolve())
         return manager.refresh(component)
 
     def remove(self, project_root: Path, component: ComponentRef) -> None:

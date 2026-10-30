@@ -1031,7 +1031,9 @@ prompts go to stderr and refusal produces a single JSON failure object on stdout
 
 The [bundle commands](bundles.md#install-a-bundle) that install or refresh
 workflows (`add`, `install`, `update`, and `init`) accept and forward the same
-`--trust-steps` option for that bundle invocation.
+`--trust-steps` option for that bundle invocation. Interactive approval is
+renewed if a bundle installs or refreshes a step package during that command;
+the explicit switch authorizes those new or refreshed packages as well.
 
 #### Listing, running, and removing
 
