@@ -632,8 +632,6 @@ Standard events (defined by core):
 - `after_clarify` - After spec clarification
 - `before_constitution` - Before constitution update
 - `after_constitution` - After constitution update
-- `before_taskstoissues` - Before tasks-to-issues conversion
-- `after_taskstoissues` - After tasks-to-issues conversion
 
 #### Bundled `bug` extension events (available when the extension is installed)
 

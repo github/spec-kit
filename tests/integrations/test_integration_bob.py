@@ -246,7 +246,7 @@ class TestBobDefaultSkillsMode:
 
         expected_commands = {
             "analyze", "clarify", "constitution", "converge", "implement",
-            "plan", "checklist", "specify", "tasks", "taskstoissues",
+            "plan", "checklist", "specify", "tasks",
         }
         actual_commands = {f.parent.name.removeprefix("speckit-") for f in created}
         assert actual_commands == expected_commands
@@ -411,7 +411,7 @@ class TestBobInitFlowDefault:
 
         commands = [
             "analyze", "clarify", "constitution", "converge", "implement",
-            "plan", "checklist", "specify", "tasks", "taskstoissues",
+            "plan", "checklist", "specify", "tasks",
         ]
         for cmd in commands:
             assert (project / ".bob" / "skills" / f"speckit-{cmd}" / "SKILL.md").exists(), (

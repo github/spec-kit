@@ -67,7 +67,6 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
         "plan",
         "specify",
         "tasks",
-        "taskstoissues",
     }
 )
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
@@ -1209,10 +1208,8 @@ class ExtensionManager:
 
         Agent integrations (Cline, Forge, Junie) and the SKILL.md output-name
         computation (``CommandRegistrar._compute_output_name``) all collapse
-        dots to hyphens and prefix a bare name with ``speckit-``, so
-        ``speckit.taskstoissues``, ``taskstoissues``, and
-        ``speckit-taskstoissues`` are distinct alias spellings that land on
-        the same on-disk command name. Normalize before comparing so all of
+        dots to hyphens and prefix a bare name with ``speckit-``.
+        Normalize before comparing so all of
         them are caught, not just the exact dotted spelling.
         """
         hyphenated = name.replace(".", "-")

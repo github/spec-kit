@@ -23,10 +23,8 @@ specify extension add github
 The `generic` (bring your own agent) integration registers this command under
 its configured `--commands-dir` in both commands and skills layouts. Installing
 `github` creates `speckit.github.taskstoissues.md` in commands mode or
-`speckit-github-taskstoissues/SKILL.md` in skills mode. The core
-`speckit.taskstoissues` command is deprecated but remains available during migration.
-Use this extension's recommended command instead. See
-[integration-specific options](../../docs/integrations/cli.md#integration-specific-options).
+`speckit-github-taskstoissues/SKILL.md` in skills mode. See
+[integration-specific options](https://github.github.io/spec-kit/integrations/cli.html#integration-specific-options).
 
 ## Removal
 
@@ -74,56 +72,66 @@ The extension ships its own feature-resolution script in all three supported run
 | PowerShell | `scripts/powershell/resolve-tasks.ps1`   |
 | Python     | `scripts/python/resolve_tasks.py`        |
 
-Once installed they live under `.specify/extensions/github/scripts/`. The script is a trimmed twin of core's `check-prerequisites`: it resolves the project root and active feature directory, requires `plan.md` and `tasks.md`, and reports the design docs alongside them. It matches the invocation the core command makes (`--require-tasks --include-tasks`), so `spec.md` stays optional. By default, a `SPECIFY_FEATURE_DIRECTORY` override is persisted to `.specify/feature.json` so a later run without the variable resolves to the same feature. When `SPECIFY_FEATURE_NO_PERSIST=1` or `true`, the override still selects the feature for this run, but the script does not create or modify `feature.json`.
+Once installed they live under `.specify/extensions/github/scripts/`. The script is a trimmed twin of core's `check-prerequisites`: it resolves the project root and active feature directory, requires `plan.md` and `tasks.md`, and reports the design docs alongside them. `spec.md` stays optional. By default, a `SPECIFY_FEATURE_DIRECTORY` override is persisted to `.specify/feature.json` so a later run without the variable resolves to the same feature. When `SPECIFY_FEATURE_NO_PERSIST=1` or `true`, the override still selects the feature for this run, but the script does not create or modify `feature.json`.
 
 Prerequisite errors name the Spec Kit command without assuming an integration's invocation syntax. Use the syntax described under [Commands](#commands) for your integration.
 
 ## Migrating from the core `taskstoissues` command
 
-Spec Kit is moving GitHub issue tracking out of core in three stages:
-
-1. **Initial stage (completed)** — this extension shipped with the core `/speckit.taskstoissues` command still available.
-2. **Next (current stage)** — the replacement has been available for at least one release, so the core command is now deprecated. It displays a migration warning and continues its existing workflow. It does not install or enable the extension automatically or run the replacement command.
-3. **Later** — the core command will be removed in a future minor release.
+**Breaking change:** the core command has been removed. Integration upgrades
+delete old manifest-tracked `taskstoissues` command and skill files, rather than
+replacing them with an updated prompt. Back up customized legacy and extension
+command or skill files outside the generated directories **before** upgrading;
+forcing the upgrade with `--force` also authorizes deletion of customized legacy
+files. Reapply customizations only after the migration steps below, because the
+upgrade can overwrite generated extension files. Installing this extension does
+not restore the old invocation or provide a compatibility alias.
 
 For existing projects, upgrading the CLI alone does not refresh the generated
 core command files. After upgrading the CLI, run this from the project root:
 
 ```bash
-specify integration upgrade <key>
+specify integration upgrade <integration>
 ```
 
-Replace `<key>` with the installed integration key, or omit it to upgrade the
-default integration. This refreshes the core command with the deprecation
-warning. If locally modified files block the upgrade, inspect those changes
-before deciding whether to overwrite them. See [Upgrade an Integration](../../docs/integrations/cli.md#upgrade-an-integration).
+Replace `<integration>` with the installed integration key, or omit it to upgrade
+the default integration. Repeat for each installed integration. If locally
+modified files block the upgrade, back them up before deciding whether to
+delete the legacy files with `--force`. See
+[Upgrade an Integration](https://github.github.io/spec-kit/integrations/cli.html#upgrade-an-integration).
 
-To migrate, install the extension and use the namespaced command instead:
+Then install the extension, **skipping this step if `github` is already
+installed**, and use the namespaced command instead:
 
 ```bash
 specify extension add github
 ```
 
-The `generic` integration supports this migration in both commands and skills
-layouts under its configured `--commands-dir`. The core command remains
-available during this deprecation period until the removal stage.
+An already-installed, enabled extension is re-registered when upgrading the
+default integration only. Before using the replacement in a non-default
+integration, run `specify integration use <integration>` to select it and register
+the extension there. After upgrading, installing if needed, and selecting the
+integration, reapply customizations from your separate backup to the namespaced
+extension command.
 
-| Deprecated core command   | Recommended extension command     |
+The `generic` integration supports this migration in both commands and skills
+layouts under its configured `--commands-dir`.
+
+| Core command              | Recommended extension command     |
 | ------------------------- | --------------------------------- |
 | `/speckit.taskstoissues`  | `/speckit.github.taskstoissues`   |
 
-Apart from the core command's deprecation warning, conversion behavior is unchanged: the same feature resolution, the same `plan.md` and `tasks.md` prerequisites, the same remote validation, the same deduplication across open and closed issues, the same issue titles, and the same hook contract. The extension command and deprecated core command coexist without shadowing each other while the core command still exists.
+Conversion behavior is unchanged: the same feature resolution, the same `plan.md` and `tasks.md` prerequisites, the same remote validation, the same deduplication across open and closed issues, the same issue titles, and the same hook contract. This extension does **not** register `speckit.taskstoissues` as an alias.
 
 ### Presets and dependent extensions
 
-Before the core command is removed, audit references to `speckit.taskstoissues`
+Audit references to `speckit.taskstoissues`
 in presets, extension prompts, workflow steps, handoffs, and project automation.
 For GitHub issue conversion, use the canonical `speckit.github.taskstoissues`
 command ID and render it with the agent-specific syntax under [Commands](#commands).
 Replace `__SPECKIT_COMMAND_TASKSTOISSUES__` cross-command references with
 `__SPECKIT_COMMAND_GITHUB_TASKSTOISSUES__` where template rendering is supported.
-Document `specify extension add github` as a setup prerequisite; the deprecation
-warning does not install this dependency.
+Document `specify extension add github` as a setup prerequisite.
 
 If an extension proposal or external dependency declaration uses
 `requires.commands: [speckit.taskstoissues]`, update its target to
@@ -137,11 +145,4 @@ Preset command overrides are separate from command references: an override of
 command. Review and port any needed customization, then verify the installed
 command in a sample project before retiring the old override. A preset that
 uses another issue tracker should retain its own provider-specific workflow
-rather than redirecting it to the GitHub command. Existing overrides may also
-hide the core deprecation warning, so communicate the migration to their users.
-
-Keep the `before_taskstoissues` and `after_taskstoissues` hook keys unchanged;
-both commands consume them. Only update a hook's command reference if it invokes
-the deprecated command. Do not invoke both core and replacement commands for
-the same conversion, since that also runs their hooks twice. Publish and test
-updated preset/extension versions before the later core-removal release.
+rather than redirecting it to the GitHub command.

@@ -53,7 +53,6 @@ _CORE_COMMAND_TEMPLATE_ORDER = (
     "checklist",
     "specify",
     "tasks",
-    "taskstoissues",
 )
 _CORE_COMMAND_TEMPLATE_RANK = {
     command: index for index, command in enumerate(_CORE_COMMAND_TEMPLATE_ORDER)
