@@ -7,6 +7,10 @@ Validates:
 - Install via ``ExtensionManager.install_from_directory`` copies the three
   command files and records them in the installed manifest (command
   registration with AI agents is exercised separately and not asserted here)
+- Command-template guardrails for re-assessed bugs: the README documents the
+  installed (hyphenated) skill names, re-assessment offers to rename the old
+  fix/test reports instead of deleting them, and validation refuses a fix
+  report older than the current assessment
 """
 
 from __future__ import annotations
@@ -51,6 +55,21 @@ class TestExtensionLayout:
         assert readme.is_file()
         text = readme.read_text(encoding="utf-8")
         assert "Bug Triage Workflow Extension" in text
+
+    def test_readme_documents_installed_skill_names(self):
+        """The README shows the hyphenated names agents install the commands as."""
+        text = (EXT_DIR / "README.md").read_text(encoding="utf-8")
+        for installed in ("speckit-bug-assess", "speckit-bug-fix", "speckit-bug-test"):
+            assert installed in text
+
+    def test_readme_uses_default_skills_syntax(self):
+        """The README uses GitHub Copilot's default skills syntax throughout."""
+        text = (EXT_DIR / "README.md").read_text(encoding="utf-8")
+        assert "/speckit-bug-assess" in text
+        assert "/speckit-bug-fix" in text
+        assert "/speckit-bug-test" in text
+        assert "$speckit-bug-" not in text
+        assert "/skill:speckit-bug-" not in text
 
     def test_command_files_exist(self):
         for name in EXPECTED_COMMANDS:
@@ -111,3 +130,5 @@ class TestExtensionInstall:
 
         names = {c["name"] for c in manifest.commands}
         assert names == EXPECTED_COMMANDS
+
+

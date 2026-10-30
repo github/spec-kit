@@ -14,26 +14,27 @@ The three stages communicate through three Markdown files in a single per-bug di
 
 ```
 .specify/bugs/<slug>/
-├── assessment.md   # written by speckit.bug.assess
-├── fix.md          # written by speckit.bug.fix
-└── test.md         # written by speckit.bug.test
+├── assessment.md   # written by speckit-bug-assess
+├── fix.md          # written by speckit-bug-fix
+└── test.md         # written by speckit-bug-test
 ```
 
 ## Commands
 
 | Command | Description | Output |
 |---------|-------------|--------|
-| `speckit.bug.assess` | Triages a bug report (pasted text or URL) against the codebase. | `.specify/bugs/<slug>/assessment.md` |
-| `speckit.bug.fix` | Applies the remediation from the assessment. | `.specify/bugs/<slug>/fix.md` |
-| `speckit.bug.test` | Validates the fix and records the verification report. | `.specify/bugs/<slug>/test.md` |
+| `/speckit-bug-assess` | Triages a bug report (pasted text or URL) against the codebase. | `.specify/bugs/<slug>/assessment.md` |
+| `/speckit-bug-fix` | Applies the remediation from the assessment. | `.specify/bugs/<slug>/fix.md` |
+| `/speckit-bug-test` | Validates the fix and records the verification report. | `.specify/bugs/<slug>/test.md` |
 
 ## Slug Conventions
 
 A *slug* is the per-bug directory name under `.specify/bugs/`. It is the only handle the three commands share.
 
 - **User-provided**: any shape the user wants, normalized to lowercase kebab-case (e.g. `login-timeout`, `cve-2026-001`, `oauth-redirect-500`). The slug is preserved verbatim after normalization — no timestamps or numbers are appended automatically.
-- **Asked for**: in interactive use, `speckit.bug.assess` asks for a slug when none is supplied, suggesting a kebab-case default derived from the bug summary.
+- **Asked for**: in interactive use, `/speckit-bug-assess` asks for a slug when none is supplied, suggesting a kebab-case default derived from the bug summary.
 - **Automated**: when no human is available to answer, the agent generates a slug itself. The generated slug **MUST** produce a unique directory — if `.specify/bugs/<slug>/` already exists, the agent appends the shortest disambiguating suffix needed (`-2`, `-3`, …) or a short date (`-20260605`). Existing bug directories are never overwritten.
+
 
 ## Installation
 
@@ -54,25 +55,31 @@ specify extension enable bug
 
 ## Typical Flow
 
-```bash
+Run these skills in your agent's chat, not your terminal, one at a time,
+reviewing each result before continuing.
+
+This example uses GitHub Copilot's default skills syntax. For another agent,
+use its [equivalent invocation syntax](https://github.github.io/spec-kit/integrations/cli.html#command-invocation).
+
+```text
 # 1. Triage a bug from a pasted stack trace
-/speckit.bug.assess "TypeError: cannot read properties of undefined (reading 'token') at /auth/callback"
+/speckit-bug-assess "TypeError: cannot read properties of undefined (reading 'token') at /auth/callback"
 
 # 2. Triage a bug from a GitHub issue URL
-/speckit.bug.assess https://github.com/example/repo/issues/1234 slug=callback-token
+/speckit-bug-assess https://github.com/example/repo/issues/1234 slug=callback-token
 
 # 3. Apply the proposed fix
-/speckit.bug.fix slug=callback-token
+/speckit-bug-fix slug=callback-token
 
 # 4. Validate the fix
-/speckit.bug.test slug=callback-token
+/speckit-bug-test slug=callback-token
 ```
 
 ## Guardrails
 
-- `speckit.bug.assess` and `speckit.bug.test` **never modify source code**. They read the repository and write only inside `.specify/bugs/<slug>/`.
-- `speckit.bug.fix` is the only command that edits source code, and it stays within the files listed in the assessment unless new evidence requires expanding scope (which is logged in `fix.md` under **Deviations from Assessment**).
-- None of the commands overwrite an existing report file without explicit confirmation; in automated mode they refuse and pick a new unique slug instead.
+- `/speckit-bug-assess` and `/speckit-bug-test` **never modify source code**. They read the repository and write only inside `.specify/bugs/<slug>/`.
+- `/speckit-bug-fix` is the only command that edits source code, and it stays within the files listed in the assessment unless new evidence requires expanding scope (which is logged in `fix.md` under **Deviations from Assessment**).
+- None of the commands modify an existing report. When the selected bug directory already contains `assessment.md`, `fix.md`, or `test.md`, the assessment informs the user and stops without changing anything; a fresh assessment uses a new slug.
 - Verdicts and verification results are never over-claimed: a reproduction that was not actually performed is reported as `partial` or `not-run`, not `verified`.
 
 ## Hooks
@@ -81,9 +88,9 @@ This extension registers no hooks of its own. The three commands are always invo
 
 | Command | Before event | After event |
 |---------|--------------|-------------|
-| `speckit.bug.assess` | `before_bug_assess` | `after_bug_assess` |
-| `speckit.bug.fix` | `before_bug_fix` | `after_bug_fix` |
-| `speckit.bug.test` | `before_bug_test` | `after_bug_test` |
+| `/speckit-bug-assess` | `before_bug_assess` | `after_bug_assess` |
+| `/speckit-bug-fix` | `before_bug_fix` | `after_bug_fix` |
+| `/speckit-bug-test` | `before_bug_test` | `after_bug_test` |
 
 Pre-hooks run after slug resolution and prerequisites, before execution. For assessment, the bug directory already exists before the pre-hook runs. Post-hooks run after `assessment.md`, `fix.md`, or `test.md` is written and before reporting completion. An unintelligible pasted report keeps the existing early stop: no assessment report, post-hooks, or completion report. Before-hooks run before ingestion, so they can already have run when a report is rejected; the prerequisite bug directory is not removed. Hooks are prompts run in the same session; they reuse the resolved `BUG_SLUG` and `BUG_DIR` (and, for post-hooks, the written report) from the conversation, and no variables are injected.
 

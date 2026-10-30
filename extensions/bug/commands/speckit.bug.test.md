@@ -190,4 +190,5 @@ Check if `.specify/extensions.yml` exists in the project root.
 
 - This command MUST NOT modify source code. It only runs checks and writes inside `.specify/bugs/<slug>/`.
 - Never overwrite an existing `test.md` without confirmation.
+- Never validate a `fix.md` that predates the current `assessment.md`; require a fresh `__SPECKIT_COMMAND_BUG_FIX__` run first.
 - Never mark a fix as `verified` based on tests alone if the original assessment listed a reproduction that you did not actually exercise — downgrade to `partial` and say so.

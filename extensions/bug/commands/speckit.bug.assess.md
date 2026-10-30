@@ -33,7 +33,7 @@ After resolution, set `BUG_SLUG` and `BUG_DIR = .specify/bugs/<BUG_SLUG>`.
 ## Prerequisites
 
 - Ensure the directory `.specify/bugs/<BUG_SLUG>/` (i.e., `BUG_DIR`) exists, creating it (including any missing parents) if necessary. Use whatever mechanism is appropriate for the current environment.
-- If `BUG_DIR/assessment.md` already exists, ask the user whether to overwrite it before continuing (in interactive mode); in automated mode, refuse and pick a new unique slug instead.
+- **Stop on existing reports; never overwrite.** If `BUG_DIR` already contains `assessment.md`, `fix.md`, or `test.md`, inform the user and stop without creating or changing anything; the existing reports stay exactly as they are. A fresh assessment uses a new slug instead — invoke `__SPECKIT_COMMAND_BUG_ASSESS__` again with a new `slug=` (user-provided) or let the slug-resolution step above generate a unique unused slug, then continue.
 
 ## Safety When Fetching URLs
 
@@ -250,4 +250,5 @@ Check if `.specify/extensions.yml` exists in the project root.
 - Never modify source files during assessment — this command only reads and writes inside `.specify/bugs/<slug>/`.
 - Never invent reproduction steps or file paths that are not supported by either the report or the codebase.
 - Never overwrite an existing `assessment.md` without confirmation.
+- Never delete sibling reports left by an earlier triage: when re-assessing, offer to rename them to `fix.stale.md` / `test.stale.md` or flag them as stale in the Completion Report.
 - If the bug report cannot be understood at all (empty, unrelated, spam), set verdict to `invalid` with a clear reason and stop.
