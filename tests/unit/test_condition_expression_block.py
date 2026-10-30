@@ -26,6 +26,7 @@ from specify_cli.workflows.expressions import (
     _WORD_OPERATORS,
     format_condition_remediation,
 )
+from specify_cli.workflows.expressions import engine_current, namespace
 from specify_cli.workflows.step.do_while import DoWhileStep
 from specify_cli.workflows.step.if_then import IfThenStep
 from specify_cli.workflows.step.while_loop import WhileStep
@@ -888,14 +889,19 @@ def test_the_sink_is_cleared_even_when_the_probe_raises():
 
 
 def test_both_sides_of_a_boolean_are_reported():
-    """The load-bearing property: `_evaluate_simple_expression` evaluates both
-    operands of `and`/`or` and only then combines them. If it ever
-    short-circuits, the gate would stop seeing the right-hand operand and go
-    quietly blind -- so assert it here rather than rely on it silently.
-    """
+    """Probes must visit both operands even when runtime short-circuits."""
     assert _collect_leaves("inputs.a or bogus") == ["inputs.a", "bogus"]
+    assert _collect_leaves("true or bogus") == ["bogus"]
     assert _collect_leaves("false and bogus") == ["bogus"]
     assert _unresolvable_term("false and bogus") is not None
+
+
+@pytest.mark.parametrize("template", ["true or ({})", "false and ({})", "true or (false and ({}))"])
+@pytest.mark.parametrize("filtered", ["inputs.x | nosuchfilter", "inputs.x | join", "inputs.x | length(1)"])
+def test_filter_probe_checks_short_circuited_operands(template, filtered):
+    expression = template.format(filtered)
+    assert _evaluator_rejects(expression) is not None
+    assert "evaluator rejects" in format_condition_remediation(expression)
 
 
 def test_leaves_seen_before_a_probe_error_are_kept():
@@ -981,7 +987,7 @@ def test_gate_reads_the_shared_indexed_segment_definition(monkeypatch):
     assert expressions._unresolvable_term(path) is not None
 
     monkeypatch.setattr(
-        expressions, "_INDEXED_SEGMENT", re.compile(r"^([\w-]+)\[([+-]?\d+)\]$")
+        namespace, "_INDEXED_SEGMENT", re.compile(r"^([\w-]+)\[([+-]?\d+)\]$")
     )
     assert expressions._unresolvable_term(path) is None
 
@@ -998,5 +1004,5 @@ def test_gate_reports_the_leaves_the_evaluator_actually_reached(monkeypatch):
 
     # Stop the evaluator unwrapping the group and it becomes a leaf again, so
     # the gate goes back to reporting it as a name it cannot resolve.
-    monkeypatch.setattr(expressions, "_is_wrapped_in_parens", lambda text: False)
+    monkeypatch.setattr(engine_current, "_is_wrapped_in_parens", lambda text: False)
     assert expressions._unresolvable_term(grouped) is not None

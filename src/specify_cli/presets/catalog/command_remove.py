@@ -44,11 +44,18 @@ def preset_catalog_remove(
             "[red]Error:[/red] Invalid catalog config: 'catalogs' must be a list."
         )
         raise typer.Exit(1)
+    for index, entry in enumerate(catalogs):
+        if not isinstance(entry, dict):
+            console.print(
+                f"[red]Error:[/red] Invalid catalog entry at index {index}: "
+                f"expected a mapping, got {type(entry).__name__}"
+            )
+            raise typer.Exit(1)
     # Rendering only — the raw name drives the comparison below.
     safe_name = _escape_markup(str(name))
 
     original_count = len(catalogs)
-    catalogs = [c for c in catalogs if isinstance(c, dict) and c.get("name") != name]
+    catalogs = [c for c in catalogs if c.get("name") != name]
 
     if len(catalogs) == original_count:
         console.print(f"[red]Error:[/red] Catalog '{safe_name}' not found.")

@@ -324,7 +324,7 @@ def test_load_source_stack_refuses_symlinked_specify_dir(tmp_path: Path):
         load_source_stack(project)
 
 
-def test_find_project_root_ignores_symlinked_specify(tmp_path: Path):
+def test_find_project_root_rejects_symlinked_specify(tmp_path: Path):
     from specify_cli.bundles.project import find_project_root
 
     real = tmp_path / "real-specify"
@@ -335,8 +335,83 @@ def test_find_project_root_ignores_symlinked_specify(tmp_path: Path):
         (project / ".specify").symlink_to(real, target_is_directory=True)
     except (OSError, NotImplementedError):
         pytest.skip("symlinks not supported on this platform")
-    # A symlinked .specify must not be accepted as a project root.
-    assert find_project_root(project) is None
+    # A forbidden present marker must not trigger projectless/ancestor fallback.
+    with pytest.raises(BundlerError, match="symlink"):
+        find_project_root(project)
+
+
+@pytest.mark.parametrize("parent_project", [False, True])
+@pytest.mark.parametrize("dangling", [False, True])
+@pytest.mark.parametrize("explicit_start", [False, True])
+def test_nearer_linked_marker_never_falls_back(
+    tmp_path, monkeypatch, parent_project, dangling, explicit_start,
+):
+    from specify_cli.bundles.project import find_project_root
+
+    if parent_project:
+        (tmp_path / ".specify").mkdir()
+        (tmp_path / ".specify/init-options.json").write_text("{}")
+    member = tmp_path / "member"
+    member.mkdir()
+    target = tmp_path / "linked-config"
+    if not dangling:
+        target.mkdir()
+        (target / "init-options.json").write_text('{"allow_symlinks": true}')
+    try:
+        (member / ".specify").symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"Symlinks unavailable: {exc}")
+    monkeypatch.chdir(member)
+    monkeypatch.delenv("SPECIFY_INIT_DIR", raising=False)
+    with pytest.raises(BundlerError, match="symlink"):
+        find_project_root(member if explicit_start else None)
+
+
+@pytest.mark.parametrize("explicit_start", [False, True])
+def test_absent_nearer_marker_preserves_ancestor_discovery(tmp_path, monkeypatch, explicit_start):
+    from specify_cli.bundles.project import find_project_root
+
+    (tmp_path / ".specify").mkdir()
+    member = tmp_path / "member"
+    member.mkdir()
+    monkeypatch.chdir(member)
+    monkeypatch.delenv("SPECIFY_INIT_DIR", raising=False)
+    assert find_project_root(member if explicit_start else None) == tmp_path.resolve()
+
+
+@pytest.mark.parametrize("explicit_start", [False, True])
+def test_nearer_non_directory_marker_is_a_boundary_error(tmp_path, monkeypatch, explicit_start):
+    from specify_cli.bundles.project import find_project_root
+
+    (tmp_path / ".specify").mkdir()
+    member = tmp_path / "member"
+    member.mkdir()
+    (member / ".specify").write_text("not a project directory")
+    monkeypatch.chdir(member)
+    with pytest.raises(BundlerError, match="init-options.json"):
+        find_project_root(member if explicit_start else None)
+
+
+def test_nearer_non_symlink_reparse_marker_is_rejected(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from specify_cli.bundles.project import find_project_root
+
+    (tmp_path / ".specify").mkdir()
+    member = tmp_path / "member"
+    member.mkdir()
+    marker = member / ".specify"
+    marker.mkdir()
+    original = Path.lstat
+
+    def reparse(path, *args, **kwargs):
+        result = original(path, *args, **kwargs)
+        if path == marker:
+            return SimpleNamespace(st_mode=result.st_mode, st_file_attributes=0x400)
+        return result
+
+    monkeypatch.setattr(Path, "lstat", reparse)
+    with pytest.raises(BundlerError, match="reparse"):
+        find_project_root(member)
 
 
 def test_find_project_root_override_errors_on_symlinked_specify(tmp_path: Path, monkeypatch):

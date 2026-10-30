@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import locale
 import math
 import os
 import subprocess
@@ -57,16 +59,28 @@ class ShellStep(StepBase):
                 run_cmd,
                 shell=True,
                 capture_output=True,
-                text=True,
                 cwd=cwd,
                 env=env,
                 timeout=timeout,
             )
-            output = {
-                "exit_code": proc.returncode,
-                "stdout": proc.stdout,
-                "stderr": proc.stderr,
-            }
+            # Decode in this thread so malformed output becomes a step
+            # failure on Windows too, where subprocess uses reader threads.
+            # Preserve text=True's locale encoding and universal newlines.
+            output = {"exit_code": proc.returncode, "stdout": "", "stderr": ""}
+            encoding = locale.getpreferredencoding(False)
+            decode_errors = []
+            for name in ("stdout", "stderr"):
+                try:
+                    with io.TextIOWrapper(io.BytesIO(getattr(proc, name)), encoding=encoding) as stream:
+                        output[name] = stream.read()
+                except UnicodeDecodeError as exc:
+                    decode_errors.append(f"Shell command {name} could not be decoded: {exc}")
+            if decode_errors:
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    error="; ".join(decode_errors),
+                    output=output,
+                )
             if proc.returncode != 0:
                 return StepResult(
                     status=StepStatus.FAILED,
@@ -79,7 +93,7 @@ class ShellStep(StepBase):
                 # (e.g. a fan-out's ``items:``). A parse failure fails the
                 # step — declaring ``output_format: json`` is a contract.
                 try:
-                    output["data"] = json.loads(proc.stdout)
+                    output["data"] = json.loads(output["stdout"])
                 except json.JSONDecodeError as exc:
                     return StepResult(
                         status=StepStatus.FAILED,

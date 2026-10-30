@@ -14,6 +14,7 @@ API, Typer application, and registration.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -29,7 +30,11 @@ from typing import TYPE_CHECKING, Any
 import yaml
 import typer
 
+from ..integrations._file_changes import unlink as _unlink_file, write_text as _write_text
+
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from ..integrations.base import IntegrationBase
     from ..integrations.manifest import IntegrationManifest
 
@@ -870,12 +875,12 @@ ResolvedEvents = dict[str, list[dict[str, Any]]]
 
 
 def _normalize_handlers(value: Any) -> list[dict[str, Any]]:
-    """Coerce a single handler config or a list of them into a validated list.
+    """Coerce a single handler config or a list of them into a list of mappings.
 
     Accepts both the legacy single-mapping shape (``{command: ...}``) and the
-    explicit list shape (``[{command: ...}, ...]``). Drops any entry that is
-    not a mapping or lacks a ``command`` with a warning, so a malformed user
-    override never reaches installation and crashes on ``cfg.get(...)`` (#21).
+    explicit list shape (``[{command: ...}, ...]``). Drops entries that are
+    not mappings with a warning. The remaining handlers require validation by
+    the caller before installation.
     """
     if isinstance(value, dict):
         value = [value]
@@ -911,16 +916,15 @@ def _validate_resolved_event(event_name: str, handlers: list[dict[str, Any]]) ->
                 f"Event '{event_name}' handler missing required non-empty 'command' string"
             )
         # C10: matcher must be a string (or absent). A non-string matcher such
-        # as `matcher: []` passes extension validation but later crashes
-        # by_matcher.setdefault(matcher, ...) with TypeError: unhashable type.
+        # as `matcher: []` later crashes by_matcher.setdefault with TypeError.
         matcher = handler.get("matcher")
-        if matcher is not None and not isinstance(matcher, str):
+        if "matcher" in handler and not isinstance(matcher, str):
             raise ValidationError(
                 f"Event '{event_name}' handler has invalid 'matcher': "
                 "must be a string"
             )
         timeout = handler.get("timeout")
-        if timeout is not None:
+        if "timeout" in handler:
             if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
                 raise ValidationError(
                     f"Event '{event_name}' handler has invalid 'timeout': must be a positive integer"
@@ -992,7 +996,7 @@ def resolve_events(
                     override_file, integration_key,
                 )
             else:
-                key_events = key_data.get("events", {})
+                key_events = key_data.get("events")
                 if not isinstance(key_events, dict):
                     logger.warning(
                         "Override %s: 'events' for '%s' is not a mapping; ignoring override",
@@ -1088,7 +1092,7 @@ def collect_extension_events(project_root: Path) -> ResolvedEvents:
     obsolete name and ``_find_command_template`` could not match it, leaving
     the hook silently inert.
     """
-    from ..extensions import ExtensionManager
+    from ..extensions import ExtensionManager, ValidationError
 
     events: ResolvedEvents = {}
     exts_dir = project_root / ".specify" / "extensions"
@@ -1142,8 +1146,18 @@ def collect_extension_events(project_root: Path) -> ResolvedEvents:
             continue
         for event, config in runtime.items():
             handlers = _normalize_handlers(config)
-            if handlers:
-                events.setdefault(event, []).extend(handlers)
+            for handler in handlers:
+                try:
+                    _validate_resolved_event(event, [handler])
+                except ValidationError as exc:
+                    logger.warning(
+                        "Extension %s: skipping invalid event handler for '%s': %s",
+                        ext_id,
+                        event,
+                        exc,
+                    )
+                    continue
+                events.setdefault(event, []).append(handler)
     return events
 
 
@@ -1226,17 +1240,6 @@ def _shell_quote(value: str, target_os: str) -> str:
     # Git Bash or the agent's POSIX-ish shell, so POSIX quoting is correct and
     # avoids emitting 'python' (which PowerShell wouldn't invoke without &).
     return shlex.quote(value)
-
-
-def _vibe_target_os() -> str:
-    """Quoting target for Vibe hook commands.
-
-    Vibe launches hooks with ``asyncio.create_subprocess_shell`` — the host's
-    native shell: POSIX ``sh`` on Unix, ``cmd.exe`` (%COMSPEC%) on Windows,
-    where POSIX single-quoting is not quoting at all and an interpreter or
-    dispatcher path containing spaces would split.
-    """
-    return "cmd" if os.name == "nt" else "host"
 
 
 def _dispatcher_command(
@@ -1352,6 +1355,8 @@ def install_integration_events(
     project_root: Path,
     manifest: IntegrationManifest,
     events: ResolvedEvents,
+    *,
+    force: bool = False,
 ) -> list[Path]:
     """Generate dispatcher, merge native config, return created files.
 
@@ -1384,7 +1389,7 @@ def install_integration_events(
     # new manifest no longer claims it and stale cleanup excludes it).
     if not filtered:
         _remove_native_event_hooks(integration, project_root, manifest)
-        _cleanup_shared_dispatcher(integration, project_root, manifest)
+        _cleanup_shared_dispatcher(integration, project_root, manifest, force=force)
         return []
 
     created: list[Path] = []
@@ -1394,11 +1399,12 @@ def install_integration_events(
     dispatcher_path = dispatcher_dir / EVENTS_DISPATCHER_FILENAME
     _ensure_safe_destination(dispatcher_path)
     dispatcher_dir.mkdir(parents=True, exist_ok=True)
-    dispatcher_path.write_text(_EVENTS_DISPATCHER_TEMPLATE, encoding="utf-8")
+    _write_text(dispatcher_path, _EVENTS_DISPATCHER_TEMPLATE, encoding="utf-8")
     dispatcher_path.chmod(0o755)
     manifest.record_file(
         str(dispatcher_path.relative_to(project_root)),
         dispatcher_path.read_bytes(),
+        ownership="shared",
     )
     created.append(dispatcher_path)
 
@@ -1409,6 +1415,7 @@ def install_integration_events(
         return created
 
     config_path = project_root / config_file
+    manifest.set_ownership(config_file, "partial")
 
     if fmt == "ts-plugin":
         # Opencode TS plugin custom merge
@@ -1416,7 +1423,8 @@ def install_integration_events(
         plugin_path = project_root / plugin_rel
         _ensure_safe_destination(plugin_path)
         plugin_path.parent.mkdir(parents=True, exist_ok=True)
-        plugin_path.write_text(
+        _write_text(
+            plugin_path,
             _build_opencode_plugin(filtered, canonical_to_native),
             encoding="utf-8",
         )
@@ -1432,8 +1440,7 @@ def install_integration_events(
         # user's untouched file.
         if _merge_opencode_plugin_ref(config_path, f"./{plugin_rel}"):
             rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+            manifest.record_existing(rel, ownership="partial")
             created.append(config_path)
 
     elif fmt == "copilot-json":
@@ -1472,8 +1479,7 @@ def install_integration_events(
         # S5: only track when the merge wrote (skips on JSONC/malformed).
         if _merge_copilot_json(config_path, copilot_hooks):
             rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+            manifest.record_existing(rel, ownership="partial")
             created.append(config_path)
 
     elif fmt == "toml":
@@ -1497,57 +1503,33 @@ def install_integration_events(
         # S5: only track when the merge wrote (skips on unreadable file).
         if _merge_toml_fragment(config_path, "\n".join(lines)):
             rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+            manifest.record_existing(rel, ownership="partial")
             created.append(config_path)
 
     elif fmt == "toml-vibe":
-        # Vibe hooks.toml custom merge. Flat [[hooks]] array; Vibe's
-        # HookConfig schema is name/type/command/match/timeout, with type
-        # limited to "pre_tool" | "post_tool" | "post_agent". Hook names must
-        # be unique (Vibe silently drops duplicates by name), so a per-file
-        # counter suffix disambiguates handlers whose commands share a final
-        # segment (e.g. speckit.a.validate vs speckit.b.validate).
-        lines: list[str] = []
-        used_names: set[str] = set()
-        for ev, handlers in filtered.items():
-            native = canonical_to_native[ev]
-            for cfg in handlers:
-                command = cfg.get("command", "")
-                dispatcher_cmd = _dispatcher_command(
-                    integration, project_root, command, ev,
-                    target_os=_vibe_target_os(),
-                    timeout_seconds=cfg.get("timeout", 60),
-                )
-                command_stem = command.split('.')[-1] if command else "unknown"
-                command_stem = re.sub(r'[^A-Za-z0-9_-]+', '-', command_stem) or "unknown"
-                base_name = f"speckit-{native}-{command_stem}"
-                hook_name = base_name
-                suffix = 2
-                while hook_name in used_names:
-                    hook_name = f"{base_name}-{suffix}"
-                    suffix += 1
-                used_names.add(hook_name)
-                lines.append("[[hooks]]")
-                lines.append(f'name = {_toml_quote(hook_name)}')
-                lines.append(f'type = {_toml_quote(native)}')
-                # Vibe's field is `match` (fnmatch glob, or `re:`-prefixed
-                # regex, case-insensitive) and it is only valid on tool
-                # hooks — HookConfig rejects `match` on post_agent. Canonical
-                # matchers are Claude-style regexes ("Edit|Write"), so
-                # non-wildcard matchers are emitted as `re:` patterns.
-                matcher = cfg.get("matcher", "*")
-                if matcher and matcher != "*" and native in ("pre_tool", "post_tool"):
-                    lines.append(f'match = {_toml_quote("re:" + matcher)}')
-                lines.append(f'command = {_toml_quote(dispatcher_cmd)}')
-                lines.append(f'timeout = {_native_timeout(integration, cfg.get("timeout", 60) + EVENT_TIMEOUT_BUFFER)}')
-                lines.append('speckit_marker = true')
-                lines.append('')
-        # S5: only track when the merge wrote (skips on unreadable file).
-        if _merge_vibe_toml_fragment(config_path, "\n".join(lines)):
-            rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+        # Vibe owns its native TOML schema and its managed-entry boundaries.
+        # Shared events deliberately supplies only dispatcher construction and
+        # manifest handling, keeping this a narrow integration-specific seam.
+        merge_vibe_hooks = getattr(integration, "merge_vibe_event_hooks", None)
+        if not callable(merge_vibe_hooks):
+            raise TypeError("toml-vibe integrations must implement merge_vibe_event_hooks")
+        if merge_vibe_hooks(
+            project_root,
+            filtered,
+            build_dispatcher_command=lambda command, event, target_os, timeout: _dispatcher_command(
+                integration,
+                project_root,
+                command,
+                event,
+                target_os=target_os,
+                timeout_seconds=timeout,
+            ),
+            native_timeout=lambda seconds: _native_timeout(integration, seconds),
+            ensure_safe_destination=_ensure_safe_destination,
+        ):
+            rel = config_path.relative_to(project_root).as_posix()
+            manifest.record_existing(rel)
+            manifest.set_ownership(rel, "partial")
             created.append(config_path)
 
     elif fmt == "json-flat":
@@ -1575,8 +1557,7 @@ def install_integration_events(
         # S5: only track when the merge wrote (skips on JSONC/malformed).
         if _merge_json_fragment(config_path, cursor_hooks, version=1):
             rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+            manifest.record_existing(rel, ownership="partial")
             created.append(config_path)
 
     elif fmt == "json-nested":
@@ -1612,8 +1593,7 @@ def install_integration_events(
         # S5: only track when the merge wrote (skips on JSONC/malformed).
         if _merge_json_fragment(config_path, nested_hooks):
             rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+            manifest.record_existing(rel, ownership="partial")
             created.append(config_path)
 
     elif fmt == "json-root-nested":
@@ -1642,8 +1622,7 @@ def install_integration_events(
             ]
         if _merge_json_root(config_path, root_hooks):
             rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+            manifest.record_existing(rel, ownership="partial")
             created.append(config_path)
 
     return created
@@ -1673,7 +1652,13 @@ def _remove_native_event_hooks(
     elif fmt == "toml":
         _remove_toml_entries(config_path)
     elif fmt == "toml-vibe":
-        _remove_vibe_toml_entries(config_path)
+        remove_vibe_hooks = getattr(integration, "remove_vibe_event_hooks", None)
+        if not callable(remove_vibe_hooks):
+            raise TypeError("toml-vibe integrations must implement remove_vibe_event_hooks")
+        remove_vibe_hooks(
+            project_root,
+            ensure_safe_destination=_ensure_safe_destination,
+        )
     elif fmt in ("json-nested", "json-flat"):
         _remove_json_entries(config_path)
     elif fmt == "json-root-nested":
@@ -1717,51 +1702,74 @@ def _other_event_integrations_reference_dispatcher(
 
 
 def _cleanup_shared_dispatcher(
-    integration: IntegrationBase, project_root: Path, manifest: IntegrationManifest
+    integration: IntegrationBase, project_root: Path, manifest: IntegrationManifest,
+    *,
+    force: bool = False,
 ) -> None:
-    """Drop this integration's manifest claim on the shared dispatcher and
-    delete the file only when no other installed event-capable integration
-    still references it (#10, S3).
+    """Release this integration's claim; delete only its last managed copy."""
+    from ..integrations.manifest import IntegrationManifest
 
-    The manifest.remove() runs in both branches (S1): if we retain the file
-    but leave it tracked, the subsequent manifest.uninstall() in teardown()
-    sees the matching hash and deletes the file another integration still
-    depends on. Used by full teardown and by the empty-resolved-map install
-    path so an ``--events false`` upgrade of the last event integration
-    doesn't orphan ``.specify/events.py`` permanently (S3).
-    """
     dispatcher_rel = EVENTS_DISPATCHER_REL
-    # Drop this integration's manifest claim if present. The remove() is
-    # conditional (S1): an upgrade passes a *fresh* manifest that may never
-    # have claimed the dispatcher, so the key may be absent — that's a no-op.
+    owner = manifest
+    # Upgrades emit into a fresh manifest before replacing the installed one.
+    # Only this integration's prior manifest can supply its missing claim.
+    if dispatcher_rel not in owner.files:
+        try:
+            owner = IntegrationManifest.load(integration.key, project_root)
+        except FileNotFoundError:
+            owner = manifest
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "Could not read prior dispatcher manifest for '%s'; preserving %s: %s",
+                integration.key, project_root / dispatcher_rel, exc,
+            )
+            return
+    expected_hash = owner.files.get(dispatcher_rel)
+    recovered = owner.is_recovered(dispatcher_rel)
+    partial = owner.ownership_modes.get(dispatcher_rel) == "partial"
+
+    # Release even retained claims so manifest-only teardown cannot delete a
+    # user-owned copy or a dispatcher still used by another integration.
     if dispatcher_rel in manifest.files:
         manifest.remove(dispatcher_rel)
-    # S2: run the no-other-references deletion independently of whether the
-    # new manifest currently contains the key. An ``integration upgrade
-    # --events false`` passes a fresh manifest that never recorded the
-    # dispatcher, so gating the deletion on its presence orphans the file the
-    # old on-disk manifest owned — and stale cleanup excludes it (C3). If no
-    # other installed event-capable integration references the dispatcher,
-    # delete it; otherwise leave it for them.
-    if not _other_event_integrations_reference_dispatcher(project_root, integration.key):
-        dispatcher_path = project_root / dispatcher_rel
-        if dispatcher_path.exists():
-            _ensure_safe_destination(dispatcher_path)
-            dispatcher_path.unlink(missing_ok=True)
+    if not expected_hash or recovered or partial:
+        return
+    if _other_event_integrations_reference_dispatcher(project_root, integration.key):
+        return
+    dispatcher_path = project_root / dispatcher_rel
+    if dispatcher_path.exists():
+        _ensure_safe_destination(dispatcher_path)
+        if not force:
+            try:
+                content = dispatcher_path.read_bytes()
+            except OSError as exc:
+                logger.warning("Preserving unreadable dispatcher %s: %s", dispatcher_path, exc)
+                return
+            # Another integration may have regenerated the shared file since
+            # this manifest recorded it. Accept only exact generated LF/CRLF.
+            matches = hashlib.sha256(content).hexdigest() == expected_hash or content in (
+                _EVENTS_DISPATCHER_TEMPLATE.encode("utf-8"),
+                _EVENTS_DISPATCHER_TEMPLATE.replace("\n", "\r\n").encode("utf-8"),
+            )
+            if not matches:
+                logger.warning("Preserving modified dispatcher: %s", dispatcher_path)
+                return
+        _unlink_file(dispatcher_path, missing_ok=True)
 
 
 def remove_integration_events(
-    integration: IntegrationBase, project_root: Path, manifest: IntegrationManifest
+    integration: IntegrationBase, project_root: Path, manifest: IntegrationManifest,
+    *,
+    force: bool = False,
 ) -> None:
     """Remove Specify-authored event entries from native config.
 
-    The shared ``.specify/events.py`` dispatcher is deleted only when no other
-    installed event-capable integration still references it (#10); otherwise
-    it is left in place so multi-install setups don't lose the dispatcher
-    mid-stream.
+    The shared dispatcher is deleted only if this integration owns it and no
+    other installed integration references it. Modified copies require force;
+    unowned or recovered copies are always retained.
     """
     _remove_native_event_hooks(integration, project_root, manifest)
-    _cleanup_shared_dispatcher(integration, project_root, manifest)
+    _cleanup_shared_dispatcher(integration, project_root, manifest, force=force)
 
     # Clean up opencode TS plugin (owned solely by the opencode integration).
     if integration.key == "opencode":
@@ -1770,7 +1778,7 @@ def remove_integration_events(
             plugin_path = project_root / plugin_rel
             if plugin_path.exists():
                 _ensure_safe_destination(plugin_path)
-                plugin_path.unlink(missing_ok=True)
+                _unlink_file(plugin_path, missing_ok=True)
             manifest.remove(plugin_rel)
 
 
@@ -1826,6 +1834,17 @@ def refresh_integration_events(project_root: Path) -> None:
     the lifecycle command can't claim the extension was fully deactivated
     while a stale native hook may still be active (R3).
     """
+    from ..integrations.installer import IntegrationInstallError, project_integrations
+
+    try:
+        with project_integrations(project_root):
+            _refresh_loaded_integration_events(project_root)
+    except (IntegrationInstallError, OSError) as exc:
+        raise EventRefreshError([("installed adapters", str(exc))]) from exc
+
+
+def _refresh_loaded_integration_events(project_root: Path) -> None:
+    """Refresh against the pinned project registry."""
     from ..integrations import get_integration
     from ..integrations._helpers import _read_integration_json, _resolve_integration_options
     from ..integrations.manifest import IntegrationManifest
@@ -1874,8 +1893,15 @@ def refresh_integration_events(project_root: Path) -> None:
             # install_integration_events handles both the populated case
             # (writes new config, stripping stale owned entries) and the empty
             # case (strips prior hooks for --events false / disabled override).
-            install_integration_events(integration, project_root, manifest, events_map)
+            written = install_integration_events(integration, project_root, manifest, events_map)
             manifest.save()
+            from ..integrations.installer import update_event_recovery_ownership
+
+            touched = {path.relative_to(project_root).as_posix() for path in written}
+            config = getattr(integration, "events_config_file", None)
+            if config and config in manifest.files:
+                touched.add(config)
+            update_event_recovery_ownership(project_root, key, manifest, touched)
         except Exception as exc:
             logger.warning("Failed to refresh events for '%s': %s", key, exc)
             failures.append((key, str(exc)))
@@ -1915,12 +1941,12 @@ def validate_events(data: dict[str, Any]) -> None:
             # C10: matcher must be a string (or absent). A non-string matcher
             # such as `matcher: []` would later crash by_matcher.setdefault.
             matcher = event_config.get("matcher")
-            if matcher is not None and not isinstance(matcher, str):
+            if "matcher" in event_config and not isinstance(matcher, str):
                 raise ValidationError(
                     f"Event '{event_name}' has invalid 'matcher': must be a string"
                 )
             timeout = event_config.get("timeout")
-            if timeout is not None:
+            if "timeout" in event_config:
                 if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
                     raise ValidationError(
                         f"Event '{event_name}' has invalid 'timeout': must be a positive integer"
@@ -2137,15 +2163,17 @@ def _remove_opencode_entries(config_path: Path) -> bool:
     if existing is None:
         return False
     plugins = existing.get("plugin", [])
-    if isinstance(plugins, list):
-        ref = "./.opencode/plugin/speckit-events.ts"
-        plugins = [p for p in plugins if p != ref]
-        if plugins:
-            existing["plugin"] = plugins
-        else:
-            existing.pop("plugin", None)
+    ref = "./.opencode/plugin/speckit-events.ts"
+    # No Spec Kit plugin ref to strip: leave the user's file untouched.
+    if not isinstance(plugins, list) or ref not in plugins:
+        return False
+    plugins = [p for p in plugins if p != ref]
+    if plugins:
+        existing["plugin"] = plugins
+    else:
+        existing.pop("plugin", None)
     if not existing:
-        config_path.unlink(missing_ok=True)
+        _unlink_file(config_path, missing_ok=True)
         return True
     _safe_write_json(config_path, existing)
     return False
@@ -2184,43 +2212,7 @@ def _merge_toml_fragment(dst: Path, fragment: str) -> bool:
     if not fragment and stripped == existing:
         return False
     dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(stripped.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
-    return True
-
-
-def _merge_vibe_toml_fragment(dst: Path, fragment: str) -> bool:
-    """Merge Specify-owned Vibe TOML hook entries into *dst*, regenerating the file.
-
-    Vibe uses a flat [[hooks]] array with type/matcher/command fields.
-    This removes any existing Specify-marked hooks and appends the new fragment.
-    An unreadable or undecodable pre-existing file aborts the merge instead
-    of discarding the user's bytes, mirroring ``_load_user_json`` (#22).
-    Returns False when skipped so callers avoid tracking the untouched file
-    (S5).
-    """
-    _ensure_safe_destination(dst)
-    existing = ""
-    if dst.exists():
-        try:
-            existing = dst.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            logger.warning(
-                "Could not read %s (it may be unreadable or not UTF-8); "
-                "skipping event-config merge to preserve user content.",
-                dst,
-            )
-            logger.debug("Read error detail: %s", exc)
-            return False
-    # Remove existing Specify-marked [[hooks]] blocks
-    # Match [[hooks]] ... speckit_marker = true (with any content in between)
-    existing = re.sub(
-        r'\[\[hooks\]\]\n(?:(?!\[\[hooks\]\]).)*?speckit_marker = true\n*',
-        "",
-        existing,
-        flags=re.DOTALL,
-    )
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(existing.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
+    _write_text(dst, stripped.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
     return True
 
 
@@ -2269,46 +2261,9 @@ def _remove_toml_entries(dst: Path) -> bool:
         if line.strip() and not line.strip().startswith("#")
     )
     if not stripped:
-        dst.unlink(missing_ok=True)
+        _unlink_file(dst, missing_ok=True)
         return True
-    dst.write_text(cleaned, encoding="utf-8")
-    return False
-
-
-def _remove_vibe_toml_entries(dst: Path) -> bool:
-    """Remove Specify-marked Vibe TOML hook entries; delete the file if now empty.
-
-    Returns True if the file was deleted (no user content remained).
-    """
-    if not dst.exists():
-        return False
-    _ensure_safe_destination(dst)
-    try:
-        existing = dst.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        logger.warning(
-            "Could not read %s (it may be unreadable or not UTF-8); "
-            "skipping event-config cleanup to preserve user content.",
-            dst,
-        )
-        logger.debug("Read error detail: %s", exc)
-        return False
-    # Remove Specify-marked [[hooks]] blocks
-    cleaned = re.sub(
-        r'\[\[hooks\]\]\n(?:(?!\[\[hooks\]\]).)*?speckit_marker = true\n*',
-        "",
-        existing,
-        flags=re.DOTALL,
-    )
-    # If only whitespace/comments remain, the file had no user content
-    stripped = "\n".join(
-        line for line in cleaned.splitlines()
-        if line.strip() and not line.strip().startswith("#")
-    )
-    if not stripped:
-        dst.unlink(missing_ok=True)
-        return True
-    dst.write_text(cleaned, encoding="utf-8")
+    _write_text(dst, cleaned, encoding="utf-8")
     return False
 
 
@@ -2360,8 +2315,9 @@ def _remove_copilot_entries(dst: Path) -> bool:
     if not isinstance(existing, dict):
         return False
     hooks = existing.get("hooks", {})
-    if not isinstance(hooks, dict):
-        hooks = {}
+    # Nothing Specify-owned to strip: leave the user's file untouched.
+    if not isinstance(hooks, dict) or not _has_marked_entry(hooks.values()):
+        return False
     cleaned: dict[str, list] = {}
     for event, entries in hooks.items():
         if not isinstance(entries, list):
@@ -2377,7 +2333,7 @@ def _remove_copilot_entries(dst: Path) -> bool:
     # ``version`` key would remain — no user content to preserve.
     user_keys = {k for k in existing if k != "version"}
     if not user_keys:
-        dst.unlink(missing_ok=True)
+        _unlink_file(dst, missing_ok=True)
         return True
     _safe_write_json(dst, existing)
     return False
@@ -2474,7 +2430,7 @@ def _merge_json_root(dst: Path, new_hooks: dict) -> bool:
     else:
         existing = {}
     if not existing:
-        dst.unlink(missing_ok=True)
+        _unlink_file(dst, missing_ok=True)
         return True
     _safe_write_json(dst, existing)
     return True
@@ -2489,7 +2445,8 @@ def _remove_json_root_entries(dst: Path) -> bool:
     existing = _load_user_json(dst)
     if existing is None:
         return False
-    if not isinstance(existing, dict):
+    # Nothing Specify-owned to strip: leave the user's file untouched.
+    if not isinstance(existing, dict) or not _has_marked_entry(existing.values()):
         return False
     cleaned: dict[str, Any] = {}
     for event, entries in existing.items():
@@ -2500,7 +2457,7 @@ def _remove_json_root_entries(dst: Path) -> bool:
         if kept_entries:
             cleaned[event] = kept_entries
     if not cleaned:
-        dst.unlink(missing_ok=True)
+        _unlink_file(dst, missing_ok=True)
         return True
     _safe_write_json(dst, cleaned)
     return False
@@ -2565,7 +2522,8 @@ def _safe_write_json(dst: Path, data: dict) -> None:
     _ensure_safe_destination(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
     # A lone surrogate (\ud800) can't be UTF-8 encoded; write it back as its JSON escape.
-    dst.write_text(
+    _write_text(
+        dst,
         json.dumps(data, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
         errors="backslashreplace",
@@ -2610,7 +2568,10 @@ def _remove_json_entries(dst: Path) -> bool:
     if existing is None:
         return False
     hooks = existing.get("hooks", {})
-    if not isinstance(hooks, dict):
+    # Nothing Specify-owned to strip: leave the user's file untouched, so a
+    # no-op event refresh neither reformats nor deletes it (the JSON
+    # counterpart of the TOML guard added for #4563).
+    if not isinstance(hooks, dict) or not _has_marked_entry(hooks.values()):
         return False
     cleaned: dict[str, list] = {}
     for event, entries in hooks.items():
@@ -2631,7 +2592,7 @@ def _remove_json_entries(dst: Path) -> bool:
     # doesn't leave a generated stub behind.
     user_keys = {k for k in existing if k != "version"}
     if not user_keys:
-        dst.unlink(missing_ok=True)
+        _unlink_file(dst, missing_ok=True)
         return True
     _safe_write_json(dst, existing)
     return False
@@ -2652,6 +2613,16 @@ def _has_marker(entry: Any) -> bool:
     if isinstance(inner, list):
         return any(_has_marker(h) for h in inner)
     return False
+
+
+def _has_marked_entry(groups: Iterable[Any]) -> bool:
+    """Return True if any list among *groups* holds a Specify-marked entry."""
+    return any(
+        _has_marker(entry)
+        for entries in groups
+        if isinstance(entries, list)
+        for entry in entries
+    )
 
 
 def register(app: typer.Typer) -> None:

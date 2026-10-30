@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Protocol
 
 from . import BundlerError
-from .manifest import BundleManifest, ComponentRef
+from .conflict import component_setting_differences, detect_conflicts, same_requirement
+from .manifest import BundleManifest, BundleRef, ComponentRef
+from .primitives import BundledPatchWarning
 from .records import (
     InstalledBundleRecord,
     components_still_needed,
@@ -24,9 +26,9 @@ from .records import (
     load_records,
     remove_record,
     save_records,
+    transfer_contributions,
     upsert_record,
 )
-from .conflict import detect_conflicts
 from .resolver import InstallPlan
 from .versioning import same_version
 
@@ -36,18 +38,29 @@ class PrimitiveInstaller(Protocol):
 
     def is_installed(self, project_root: Path, component: ComponentRef) -> bool: ...
 
-    def install(self, project_root: Path, component: ComponentRef) -> None: ...
+    def installed_version(
+        self, project_root: Path, component: ComponentRef
+    ) -> str | None: ...
+
+    def validate_source(self, project_root: Path, component: ComponentRef) -> None: ...
+
+    def install(
+        self, project_root: Path, component: ComponentRef,
+    ) -> BundledPatchWarning | None: ...
 
     def remove(self, project_root: Path, component: ComponentRef) -> None: ...
 
 
 @dataclass
 class InstallResult:
+    """Bundle changes and structured warnings for presentation by the caller."""
+
     bundle_id: str
     installed: list[ComponentRef] = field(default_factory=list)
     skipped: list[ComponentRef] = field(default_factory=list)
     refreshed: list[ComponentRef] = field(default_factory=list)
     uninstalled: list[ComponentRef] = field(default_factory=list)
+    warnings: list[BundledPatchWarning] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
@@ -74,39 +87,60 @@ def install_bundle(
 
     When *refresh* is True (used by ``specify bundle update``), components that
     are already installed are re-applied through the primitive machinery so they
-    are brought up to the plan's pinned versions, rather than skipped. Primitive
-    config (e.g. preset priority overrides) is preserved by the underlying
-    machinery.
+    are brought up to the plan's pinned versions, or compatible newer packaged
+    patches with a warning, rather than skipped. Primitive config (e.g. preset
+    priority overrides) is preserved by the underlying machinery.
 
-    Version-pin enforcement is install-time only. The primitive ``is_installed``
-    checks are id-based (they do not compare versions), so when a component is
-    already present and *refresh* is False it is skipped without verifying that
-    the on-disk version matches the manifest pin. Changes to a recorded bundle's
-    version or owned component metadata, including removals, are rejected unless
-    *refresh* is True, preventing stale or orphaned components. Pins are only
-    guaranteed to be applied when the bundler actually performs an install or a
-    refresh; running ``specify bundle update`` re-applies every owned component
-    at its pinned version.
-
-    The exception is a component installed independently of any bundle: it is
-    never installed or refreshed here, so its installed version must already
-    match the pin, or the call fails before changing anything.
+    Already-installed components must match their pins before they can be
+    skipped. A refresh may repair drift in components owned exclusively by
+    this bundle, but cannot change a version required by another bundle or an
+    independently installed component. Changes to owned component metadata
+    still require refresh. Other bundles' source and preset settings cannot be
+    changed by sharing or refreshing a component.
+    Compatible packaged patch substitutions are accepted for bundle-owned
+    components, with requested and installed versions recorded separately.
     """
     records = load_records(project_root)
 
     if manifest is not None:
-        report = detect_conflicts(manifest, plan.effective_integration, records)
+        report = detect_conflicts(
+            manifest,
+            plan.effective_integration,
+            records,
+            components=plan.components,
+        )
         if report.has_blocking_conflict:
-            raise BundlerError(report.integration_clash)
+            raise BundlerError(
+                "; ".join(
+                    [*([report.integration_clash] if report.integration_clash else []),
+                     *report.version_clashes]
+                )
+            )
 
     result = InstallResult(bundle_id=plan.bundle_id)
     existing = find_record(records, plan.bundle_id)
+    # Index the plan by (kind, id) so an unchanged reinstall compares each owned
+    # component against its candidate instead of scanning the whole plan. Plan
+    # components are unique per key (structural_errors rejects duplicates), and
+    # same_requirement still applies the expansion normalization; the per-key
+    # list keeps `any` semantics if a plan ever repeats a key.
+    planned_by_key: dict[tuple[str, str], list[ComponentRef]] = {}
+    for planned in plan.components:
+        planned_by_key.setdefault((planned.kind, planned.id), []).append(planned)
     if (
         existing is not None
         and not refresh
         and (
             existing.version != plan.version
-            or not set(existing.contributed_components).issubset(plan.components)
+            or not all(
+                any(
+                    same_requirement(component, candidate)
+                    for candidate in planned_by_key.get(
+                        (component.kind, component.id), ()
+                    )
+                )
+                for component in existing.contributed_components
+            )
         )
     ):
         raise BundlerError(
@@ -132,10 +166,24 @@ def install_bundle(
         if r.bundle_id != plan.bundle_id
         for c in r.contributed_components
     }
+    other_pins: dict[tuple[str, str], set[str]] = {}
+    other_requirements: dict[tuple[str, str], list[tuple[str, ComponentRef]]] = {}
+    for record in records:
+        if record.bundle_id == plan.bundle_id:
+            continue
+        for component in record.required_components:
+            key = component.kind, component.id
+            other_requirements.setdefault(key, []).append((record.bundle_id, component))
+            if component.version:
+                other_pins.setdefault(key, set()).add(component.version)
     contributed: list[ComponentRef] = []
     done: list[ComponentRef] = []
+    installed_versions: dict[str, str] = {}
     try:
-        _check_unowned_pins(project_root, plan, installer, prior_ours | other_tracked)
+        result.warnings.extend(_check_installed_pins(
+            project_root, plan, installer, prior_ours, other_tracked,
+            other_pins, other_requirements, refresh=refresh,
+        ))
         for component in plan.components:
             key = (component.kind, component.id)
             if installer.is_installed(project_root, component):
@@ -146,14 +194,18 @@ def install_bundle(
                 # does not own (FR-022).
                 owned = key in prior_ours or key in other_tracked
                 if refresh and owned:
-                    _refresh_component(project_root, installer, component)
+                    warning = _refresh_component(project_root, installer, component)
+                    if warning is not None:
+                        result.warnings.append(warning)
                     result.refreshed.append(component)
                 else:
                     result.skipped.append(component)
                 if owned:
                     contributed.append(component)
                 continue
-            installer.install(project_root, component)
+            warning = installer.install(project_root, component)
+            if warning is not None:
+                result.warnings.append(warning)
             done.append(component)
             result.installed.append(component)
             contributed.append(component)
@@ -179,10 +231,16 @@ def install_bundle(
                 if installer.is_installed(project_root, component):
                     installer.remove(project_root, component)
                     result.uninstalled.append(component)
+        version_reader = getattr(installer, "installed_version", None)
+        if callable(version_reader):
+            for component in plan.components:
+                actual = version_reader(project_root, component)
+                if actual is not None:
+                    installed_versions[f"{component.kind}:{component.id}"] = actual
     except BundlerError:
         _rollback(project_root, installer, done)
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _rollback(project_root, installer, done)
         raise BundlerError(
             f"Failed to install bundle '{plan.bundle_id}': {exc}. "
@@ -193,11 +251,27 @@ def install_bundle(
         bundle_id=plan.bundle_id,
         version=plan.version,
         components=contributed,
+        required_components=plan.components,
         # Preserve the original install time across refresh/update so
         # ``bundle list`` keeps reporting when the bundle was first installed.
         installed_at=existing.installed_at if existing is not None else None,
+        installed_versions=installed_versions,
+        bundle_references=[
+            BundleRef(reference.id, reference.version, reference.source_id)
+            for reference in plan.references
+        ],
     )
-    save_records(project_root, upsert_record(records, record))
+    updated = upsert_record(records, record)
+    if refresh and existing is not None:
+        planned = {(c.kind, c.id) for c in plan.components}
+        updated = transfer_contributions(
+            updated,
+            [
+                component for component in existing.contributed_components
+                if (component.kind, component.id) not in planned
+            ],
+        )
+    save_records(project_root, updated)
     return result
 
 
@@ -226,8 +300,11 @@ def remove_bundle(
                 remove_attempted = True
                 installer.remove(project_root, component)
                 result.uninstalled.append(component)
-        save_records(project_root, remove_record(records, bundle_id))
-    except Exception as exc:  # noqa: BLE001
+        remaining = transfer_contributions(
+            remove_record(records, bundle_id), target.contributed_components
+        )
+        save_records(project_root, remaining)
+    except Exception as exc:
         if result.uninstalled:
             detail = (
                 f"{len(result.uninstalled)} component(s) were already removed "
@@ -252,49 +329,99 @@ def remove_bundle(
     return result
 
 
-def _check_unowned_pins(
+def _check_installed_pins(
     project_root: Path,
     plan: InstallPlan,
     installer: PrimitiveInstaller,
-    owned: set[tuple[str, str]],
-) -> None:
-    """Refuse to skip an independently installed component that misses its pin.
-
-    A component tracked by no bundle is skipped and never refreshed (FR-022), so
-    skipping it is only correct when it already has the pinned version.
-    Otherwise the bundle record would advance while the project keeps running a
-    different version (#4434). Runs before any primitive is touched. A component
-    whose installed version can't be read fails too, since it can't be shown to
-    match. Installers without an ``installed_version`` hook are not checked.
-    """
-    installed_version = getattr(installer, "installed_version", None)
-    if not callable(installed_version):
-        return
+    prior_ours: set[tuple[str, str]],
+    other_tracked: set[tuple[str, str]],
+    other_pins: dict[tuple[str, str], set[str]],
+    other_requirements: dict[tuple[str, str], list[tuple[str, ComponentRef]]],
+    *,
+    refresh: bool,
+) -> list[BundledPatchWarning]:
+    """Check installed pins and other bundles' requirements before mutation."""
     mismatches = []
+    warnings: list[BundledPatchWarning] = []
     for component in plan.components:
-        if not component.version or (component.kind, component.id) in owned:
+        key = component.kind, component.id
+        for bundle_id, required in other_requirements.get(key, []):
+            # Installed bundles keep the flat-bundle rule: extension priority
+            # is never compared, including explicit values such as 5 and 10.
+            # Only preset priority is. This differs from sibling references in
+            # one expansion, which compare extension priority after applying
+            # the default.
+            different = component_setting_differences(
+                component, required, extension_priority=False
+            )
+            if different:
+                raise BundlerError(
+                    f"Cannot install or refresh shared {component.kind[:-1]} "
+                    f"'{component.id}': bundle '{bundle_id}' requires different "
+                    f"{', '.join(different)}. Shared components must agree on "
+                    "install-affecting requirements."
+                )
+        if component.source:
+            installer.validate_source(project_root, component)
+        if refresh and not component.version and key in other_tracked:
+            raise BundlerError(
+                f"Cannot refresh unpinned shared {component.kind[:-1]} "
+                f"'{component.id}': another bundle may require its installed "
+                "version. Pin this component before refreshing."
+            )
+        if not component.version:
+            pins = other_pins.get(key)
+            if pins:
+                installed = installer.is_installed(project_root, component)
+                actual = (
+                    installer.installed_version(project_root, component)
+                    if installed else None
+                )
+                if (
+                    (refresh and key in prior_ours)
+                    or not actual
+                    or any(not same_version(actual, pin) for pin in pins)
+                ):
+                    raise BundlerError(
+                        f"Cannot install or refresh unpinned {component.kind[:-1]} "
+                        f"'{component.id}': another bundle requires version "
+                        f"{', '.join(sorted(pins))}. Pin this component to a "
+                        "compatible version before installing or refreshing."
+                    )
             continue
         if not installer.is_installed(project_root, component):
             continue
-        actual = installed_version(project_root, component)
+        actual = installer.installed_version(project_root, component)
+        if actual and same_version(actual, component.version):
+            continue
+        patch_warning = getattr(installer, "bundled_patch_warning", None)
+        if actual and key in prior_ours | other_tracked and callable(patch_warning):
+            warning = patch_warning(component, actual)
+            if warning:
+                if not refresh:
+                    warnings.append(warning)
+                continue
+        if refresh and key in prior_ours and key not in other_tracked:
+            continue
         pinned = f"{component.kind[:-1]} '{component.id}' to {component.version}"
-        if actual is None:
+        if not actual:
             mismatches.append(f"{pinned}, but its installed version is unknown")
-        elif not same_version(actual, component.version):
+        else:
             mismatches.append(f"{pinned}, but {actual} is installed")
     if mismatches:
         raise BundlerError(
-            f"Bundle '{plan.bundle_id}' pins {'; '.join(mismatches)}. Bundles "
-            "leave components installed outside any bundle unchanged, so remove "
-            "the installed version or install the pinned one yourself, then re-run."
+            f"Bundle '{plan.bundle_id}' pins {'; '.join(mismatches)}. Only one "
+            "version can be installed per ID; independently installed and "
+            "other bundles' components cannot be replaced by this bundle."
         )
+    return warnings
 
 
 def _refresh_component(
     project_root: Path,
     installer: PrimitiveInstaller,
     component: ComponentRef,
-) -> None:
+) -> BundledPatchWarning | None:
     """Re-apply an already-installed component to bring it up to its pinned version.
 
     Prefers a primitive-provided ``refresh`` hook when available; otherwise falls
@@ -302,9 +429,8 @@ def _refresh_component(
     """
     op = getattr(installer, "refresh", None)
     if callable(op):
-        op(project_root, component)
-    else:
-        installer.install(project_root, component)
+        return op(project_root, component)
+    return installer.install(project_root, component)
 
 
 def _rollback(
@@ -315,5 +441,5 @@ def _rollback(
     for component in reversed(done):
         try:
             installer.remove(project_root, component)
-        except Exception:  # noqa: BLE001 - best-effort rollback
+        except Exception:  # noqa: BLE001, S112 - rollback cannot mask the original failure
             continue

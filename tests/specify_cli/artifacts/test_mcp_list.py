@@ -16,7 +16,13 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.memory import create_client_server_memory_streams
 from mcp.types import CallToolResult
 
-from specify_cli.artifacts import _commands, _mcp, _operation_list, mcp_list
+from specify_cli.artifacts import (
+    _commands,
+    _mcp,
+    _operation_info,
+    _operation_list,
+    mcp_list,
+)
 from specify_cli.artifacts._operation_list import (
     ARTIFACT_LIST_OPERATION,
     ArtifactListRequest,
@@ -848,16 +854,39 @@ def test_artifact_inventory_matches_cli_leaves_and_operation_contract(
     assert list_tool.network_access == ARTIFACT_LIST_OPERATION.network_access
     assert list_tool.mcp_tool_name in registered_tool_names
 
+    available = [
+        item for item in _mcp.ARTIFACT_TOOLS if item.disposition == "available"
+    ]
+    assert {item.operation_id for item in available} == {
+        "artifact.list",
+        "artifact.info",
+    }
+    assert all(item.disposition_reason is None for item in available)
+    assert all(item.mcp_tool_name in registered_tool_names for item in available)
+
     unavailable = [
         item for item in _mcp.ARTIFACT_TOOLS if item.disposition == "unavailable"
     ]
-    assert {item.operation_id for item in unavailable} == {
-        "artifact.info",
-        "artifact.lookup",
-    }
-    assert all(item.contract_version is None for item in unavailable)
+    assert {item.operation_id for item in unavailable} == {"artifact.lookup"}
     assert all(item.disposition_reason for item in unavailable)
     assert all(item.mcp_tool_name not in registered_tool_names for item in unavailable)
+
+    info_tool = next(item for item in available if item.operation_id == "artifact.info")
+    assert info_tool.contract_version == (
+        _operation_info.ARTIFACT_INFO_OPERATION.contract_version
+    )
+    assert info_tool.capabilities == (
+        _operation_info.ARTIFACT_INFO_OPERATION.capabilities
+    )
+    assert info_tool.network_access == (
+        _operation_info.ARTIFACT_INFO_OPERATION.network_access
+    )
+    assert info_tool.disposition_reason is None
+
+    lookup_tool = next(
+        item for item in unavailable if item.operation_id == "artifact.lookup"
+    )
+    assert lookup_tool.contract_version is None
 
 
 def test_artifact_registration_adds_available_tool_once_and_rejects_collision(

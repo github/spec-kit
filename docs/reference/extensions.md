@@ -2,6 +2,13 @@
 
 Extensions add new capabilities to Spec Kit — domain-specific commands, external tool integrations, quality gates, and more. They introduce new commands and templates that go beyond the built-in Spec-Driven Development workflow.
 
+An extension can define commands or hooks that reconcile `spec.md`, `plan.md`,
+and `tasks.md` during or after feature delivery. Any such edits follow the
+extension's documented behavior and the project's governance; they are not
+performed by, or added to the responsibilities of, the core Spec Kit commands.
+The team's persistence model separately determines how artifacts are maintained
+after delivery.
+
 ## Search Available Extensions
 
 ```bash
@@ -30,7 +37,7 @@ specify extension add <name>
 | `--force`       | Overwrite if the extension is already installed          |
 | `--priority <N>`| Resolution priority (default: 10; lower = higher precedence) |
 
-Installs an extension from the catalog, a URL, or a local directory. Extension commands are registered with the active AI coding agent integration. For `generic`, invocations use the configured `--commands-dir`: flat command files by default, or `speckit-<name>/SKILL.md` with `--skills`. The core `speckit.taskstoissues` command remains available alongside the GitHub extension's namespaced replacement during migration.
+Installs an extension from the catalog, a URL, or a local directory. Extension commands are registered with the active AI coding agent integration. For `generic`, invocations use the configured `--commands-dir`: flat command files by default, or `speckit-<name>/SKILL.md` with `--skills`. The deprecated core `speckit.taskstoissues` command remains available during migration and will be removed in a future minor release. It warns on invocation and continues its existing workflow without installing or enabling the extension automatically. For GitHub issue tracking, run `specify extension add github` and use the recommended `/speckit.github.taskstoissues` command (slash-hyphen integrations: `/speckit-github-taskstoissues`; Codex, ZCode, and Command Code skills: `$speckit-github-taskstoissues`; Kimi: `/skill:speckit-github-taskstoissues`).
 
 If a generic integration refresh cannot produce every extension invocation (for example, because a command or skill is user-modified or its source is missing), it warns and restores that extension's prior registered artifacts. Other extensions can still refresh.
 
@@ -286,6 +293,33 @@ To set up configuration for a newly installed extension, copy the template:
 cp .specify/extensions/<ext>/<ext>-config.template.yml \
    .specify/extensions/<ext>/<ext>-config.yml
 ```
+
+## Extension Runtime Events
+
+Extensions can react to coding-agent lifecycle events by declaring a top-level
+`events` mapping in `extension.yml`:
+
+```yaml
+events:
+  session_start:
+    command: speckit.my-extension.initialize
+  pre_tool_use:
+    command: speckit.my-extension.validate
+```
+
+Event declarations are integration-agnostic. Spec Kit refreshes every installed
+event-capable integration, and each integration translates the canonical event
+names into its coding agent's native event configuration. Supported canonical
+events are `session_start`, `pre_tool_use`, `post_tool_use`,
+`user_prompt_submit`, `stop`, and `session_end`; each integration may support
+only a subset.
+
+Runtime events are distinct from extension hooks. Events react to the coding
+agent's lifecycle and execute the referenced command template's `scripts`
+entry directly. The referenced command must therefore provide a runnable
+script; its Markdown instructions are not sent to the coding agent. Hooks
+instead surface extension commands before or after Spec Kit commands such as
+`plan`, `tasks`, and `implement`.
 
 ## Project Extension and Hook Configuration
 

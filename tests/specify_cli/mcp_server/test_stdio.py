@@ -11,7 +11,9 @@ _READ_TIMEOUT_SECONDS = 10
 _TEST_TIMEOUT_SECONDS = 30
 
 
-def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools():
+def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools(tmp_path):
+    (tmp_path / ".specify").mkdir()
+
     async def exercise() -> None:
         repo_root = Path(__file__).resolve().parents[3]
         parameters = StdioServerParameters(
@@ -34,10 +36,23 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools():
                     tools = await session.list_tools()
                     listed = await session.call_tool("specify_list_commands", {})
                     version = await session.call_tool("specify_version", {})
+                    workflows = await session.call_tool(
+                        "specify_workflow_list", {"project_directory": str(tmp_path)}
+                    )
+                    workflow_failure = await session.call_tool(
+                        "specify_workflow_list", {"project_directory": "relative"}
+                    )
                     artifacts = await session.call_tool("specify_artifact_list", {})
+                    artifact = await session.call_tool(
+                        "specify_artifact_info",
+                        {"identifier": "command:speckit.plan"},
+                    )
                     artifact_failure = await session.call_tool(
-                        "specify_artifact_list",
-                        {"project_directory": str(repo_root / "tests")},
+                        "specify_artifact_info",
+                        {
+                            "identifier": "missing",
+                            "project_directory": str(repo_root),
+                        },
                     )
                     ran = await session.call_tool(
                         "specify_run_command",
@@ -57,6 +72,8 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools():
             "specify_run_command",
             "specify_version",
             "specify_artifact_list",
+            "specify_artifact_info",
+            "specify_workflow_list",
         ]
         assert listed.structured_content["commands"][0]["command"] == "version"
         assert set(version.structured_content) == {
@@ -66,17 +83,28 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools():
             "features",
         }
         assert version.is_error is False
+        assert workflows.is_error is False
+        assert workflows.structured_content == {"items": [], "truncated": False}
+        assert workflow_failure.is_error is True
+        assert (
+            workflow_failure.structured_content["error"]["code"]
+            == "invalid_project_directory"
+        )
         assert artifacts.is_error is False
         assert isinstance(artifacts.structured_content["rows"], list)
         assert artifacts.structured_content["rows"]
         assert artifacts.structured_content["next_cursor"] is None
         assert artifacts.structured_content["truncated"] is False
+        assert artifact.is_error is False
+        assert artifact.structured_content["id"] == "command:speckit.plan"
+        assert artifact.structured_content["kind"] == "command"
+        assert artifact.structured_content["stack"]
         assert artifact_failure.is_error is True
         assert artifact_failure.structured_content == {
             "error": {
-                "code": "not_a_spec_kit_project",
-                "message": "not a Spec Kit project: no .specify/ directory found",
-                "details": {"project_directory": str(repo_root / "tests")},
+                "code": "unknown_artifact",
+                "message": "unknown artifact missing",
+                "details": {"identifier": "missing"},
                 "retryable": False,
             }
         }

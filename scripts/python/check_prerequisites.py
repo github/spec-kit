@@ -28,7 +28,8 @@ except ImportError:  # pragma: no cover - direct execution from unusual cwd
 
 
 def _json_line(payload: object) -> str:
-    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+    # ASCII escapes keep the JSON intact on a legacy Windows stdout code page.
+    return json.dumps(payload, ensure_ascii=True, separators=(",", ":")) + "\n"
 
 
 HELP_TEXT = """Usage: check_prerequisites.py [OPTIONS]
@@ -232,6 +233,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: plan.md not found in {paths.feature_dir}", file=sys.stderr)
         print(
             f"Run {format_speckit_command('plan', paths.repo_root)} first to create the implementation plan.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if paths.impl_plan.stat().st_size == 0:
+        print(f"ERROR: plan.md is empty in {paths.feature_dir}", file=sys.stderr)
+        print(
+            "Populate it, or remove the empty file and rerun "
+            f"{format_speckit_command('plan', paths.repo_root)} "
+            "with a valid plan template.",
             file=sys.stderr,
         )
         return 1

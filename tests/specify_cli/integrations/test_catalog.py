@@ -678,8 +678,9 @@ class TestIntegrationDescriptor:
     def test_no_commands_or_scripts(self, tmp_path):
         data = {**VALID_DESCRIPTOR, "provides": {}}
         p = self._write(tmp_path, data)
-        with pytest.raises(IntegrationDescriptorError, match="at least one command or script"):
-            IntegrationDescriptor(p)
+        descriptor = IntegrationDescriptor(p)
+        assert descriptor.commands == []
+        assert descriptor.scripts == []
 
     def test_command_missing_name(self, tmp_path):
         data = {**VALID_DESCRIPTOR, "provides": {"commands": [{"file": "x.md"}]}}

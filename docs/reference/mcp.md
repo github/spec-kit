@@ -17,20 +17,110 @@ Kit banner, Rich output, startup messages, warnings, or logs there.
 
 ## Tools
 
-The server exposes three generic tools:
+The server exposes first-class tools with typed inputs and results. All are
+read-only, local-only (no network access), and reject unexpected arguments.
 
 | Tool | Purpose |
 | --- | --- |
-| `specify_list_commands` | List CLI commands currently supported through MCP |
+| `specify_version` | Return the installed CLI version, runtime, system, and feature capabilities. Takes no arguments. |
+| `specify_artifact_list` | Return one paginated page of a project's artifact inventory (`command`, `template`, `script`, `hook`) |
+| `specify_artifact_info` | Return one artifact and its complete composition stack |
+| `specify_workflow_list` | List installed workflows and skipped-entry warnings in registry order |
+
+The artifact tools take an optional absolute `project_directory`; it defaults
+to the directory the server was launched from.
+
+`specify_artifact_list` also takes `limit` (1-1000, default 100) and `cursor`.
+Its result has `rows`, `next_cursor`, and `truncated`; while `truncated` is
+true, pass `next_cursor` as `cursor` to get the next page.
+
+`specify_artifact_info` takes `identifier` (bare name or `kind:name`) and an
+optional `kind` (`command`, `template`, `script`, or `hook`).
+
+`specify artifact lookup` is not available through MCP: it does not yet have a
+shared typed operation, so no `specify_artifact_lookup` tool is registered.
+
+Three generic tools are also registered, and support only the dotted command
+`version`; every other command name is rejected with an `unavailable_command`
+tool error.
+
+| Tool | Purpose |
+| --- | --- |
+| `specify_list_commands` | List CLI commands supported by the generic tools |
 | `specify_describe_command` | Describe one supported dotted CLI command |
 | `specify_run_command` | Run one supported command through the real Specify CLI |
 
-This first experimental release supports only the dotted command `version`.
-Every other command name is rejected with an `unavailable_command` tool error.
-The server does not expose project discovery, artifacts, mutations,
-installation or update operations, workflows, confirmations, or access tiers.
+The server does not expose mutations, installation or update operations,
+workflow execution, confirmations, or access tiers.
 
-## Version result and errors
+## Installed workflow list
+
+`specify_workflow_list` accepts an optional absolute `project_directory`
+(default: the server launch directory) and `limit` (1–1000, default 100).
+It reads only the installed workflow registry; it never loads custom steps,
+fetches catalogs, repairs files, or executes workflows.
+
+The result has ordered `items` and a `truncated` boolean. Workflow items have
+`kind: "workflow"`, `id`, `name`, `version`, nullable `description`, and `enabled`.
+Malformed individual registry entries produce `kind: "warning"` items with
+`code: "invalid_registry_entry"`, `workflow_id`, and `message` in their original
+positions. The limit counts both workflows and warnings. `truncated: true`
+explicitly indicates omitted entries; increase `limit` to retrieve more, up to
+1000. There is no continuation cursor. The CLI retains its complete listing.
+
+Missing registry files produce an empty list. Corrupt or unreadable registry
+files produce `workflow_registry_read_failed`; unsafe storage produces
+`unsafe_workflow_storage`. Other expected errors are `invalid_project_directory`
+and `not_a_spec_kit_project`. Errors contain `code`, `message`,
+`details`, and `retryable` under `error`, with `isError: true`.
+Unexpected failures use sanitized `internal_error`; invalid operation outcomes
+use `invalid_operation_result`. Responses exceeding 1 MiB produce a retryable
+`response_too_large` error instead of partial success; retry with a smaller
+limit. Registry exception details are not exposed through MCP.
+
+Out-of-range `limit` values are rejected before the operation runs and produce
+text-only input-validation errors with no structured content; see
+[Input validation errors](#input-validation-errors).
+
+Workflow listing reads registry content through the selected project's
+`FileHelper` policy owner, rejecting Windows junctions and unsupported reparse
+points at the read boundary. Ordinary workflow registry symlinks remain
+disallowed. Other workflow registry callers are not migrated by this tool.
+These checks do not provide an OS sandbox or race-free filesystem confinement;
+the registry is still parsed in full before the entry limit is applied.
+
+Operation outcomes exceeding the requested entry limit, or claiming truncation
+without filling that limit, are rejected as `invalid_operation_result`. The
+output schema also caps `items` at 1000.
+
+## Input validation errors
+
+The first-class tools validate arguments against their input schema before
+running. Unexpected arguments, an out-of-range `limit`, a malformed `cursor`,
+or an unsupported `kind` are rejected as a text-only MCP tool error with no
+structured content, so clients cannot read an `error.code` from it.
+
+## Version tool result and errors
+
+`specify_version` returns the result object directly. If the operation fails,
+it returns an MCP tool error whose structured content has `error.code`
+(`invalid_operation_result` or `internal_error`), `error.message`, and
+`error.details`.
+
+## Artifact results and errors
+
+Artifact tools return their result as structured content. Operation failures
+are MCP tool errors whose structured content has `error.code`,
+`error.message`, `error.details`, and `error.retryable`.
+Both artifact tools can return `invalid_project_directory`,
+`not_a_spec_kit_project`, `artifact_resolution_failed`,
+`invalid_operation_result`, and `internal_error`.
+`specify_artifact_info` can also return `invalid_artifact_identifier`,
+`unknown_artifact`, `unknown_hook`, and `ambiguous_artifact`. Results larger
+than 1 MiB return a retryable `response_too_large` error; for the list tool,
+retry with a smaller `limit`.
+
+## Generic tool result and errors
 
 `specify_run_command` invokes the canonical command below in an isolated child
 process using the same Python environment as the running CLI:

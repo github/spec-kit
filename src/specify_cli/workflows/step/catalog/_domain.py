@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import stat
 import tempfile
@@ -18,6 +19,9 @@ import yaml
 from ...._download_security import (
     read_response_limited,
 )
+from ..._catalog_cache import read_cache_json, write_cache_json
+
+logger = logging.getLogger(__name__)
 
 
 def _max_json_catalog_bytes() -> int:
@@ -270,15 +274,6 @@ class StepCatalog:
         self.steps_dir = project_root / ".specify" / "workflows" / "steps"
         self.cache_dir = self.steps_dir / ".cache"
 
-    def _is_cache_path_safe(self) -> bool:
-        """Return False if any component of the cache path is a symlink."""
-        current = self.project_root
-        for part in (".specify", "workflows", "steps", ".cache"):
-            current = current / part
-            if current.is_symlink():
-                return False
-        return True
-
     # -- Catalog resolution -----------------------------------------------
 
     def _validate_catalog_url(self, url: str) -> None:
@@ -473,29 +468,26 @@ class StepCatalog:
     def _is_url_cache_valid(self, url: str) -> bool:
         """Check if cached data for a URL is still fresh."""
         _, meta_file = self._get_cache_paths(url)
-        if not meta_file.exists():
-            return False
         try:
-            with open(meta_file, encoding="utf-8") as f:
-                meta = json.load(f)
+            meta = read_cache_json(self.project_root, meta_file)
             if not isinstance(meta, dict):
                 return False
             fetched_at = float(meta.get("fetched_at", 0))
             return (time.time() - fetched_at) < self.CACHE_DURATION
-        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        except (UnicodeError, json.JSONDecodeError, OSError, TypeError, ValueError):
             return False
 
     def _fetch_single_catalog(
         self, entry: StepCatalogEntry, force_refresh: bool = False
     ) -> dict[str, Any]:
         """Fetch a single catalog, using cache when possible."""
-        cache_safe = self._is_cache_path_safe()
         cache_file, meta_file = self._get_cache_paths(entry.url)
 
-        if cache_safe and not force_refresh and self._is_url_cache_valid(entry.url):
+        if not force_refresh and self._is_url_cache_valid(entry.url):
             try:
-                with open(cache_file, encoding="utf-8") as f:
-                    cached = json.load(f, object_pairs_hook=_unique_json_fields)
+                cached = read_cache_json(
+                    self.project_root, cache_file, object_pairs_hook=_unique_json_fields,
+                )
                 if isinstance(cached, dict):
                     return cached
             except _DuplicateCatalogField:
@@ -563,17 +555,17 @@ class StepCatalog:
         except _DuplicateCatalogField:
             raise
         except Exception as exc:
-            if cache_safe and cache_file.exists():
-                try:
-                    with open(cache_file, encoding="utf-8") as f:
-                        cached = json.load(f, object_pairs_hook=_unique_json_fields)
-                    if isinstance(cached, dict):
-                        return cached
-                except _DuplicateCatalogField:
-                    raise
-                except (json.JSONDecodeError, ValueError, OSError):
-                    # Stale-cache read failed; let the original fetch error propagate.
-                    pass
+            try:
+                cached = read_cache_json(
+                    self.project_root, cache_file, object_pairs_hook=_unique_json_fields,
+                )
+                if isinstance(cached, dict):
+                    return cached
+            except _DuplicateCatalogField:
+                raise
+            except (UnicodeError, json.JSONDecodeError, ValueError, OSError):
+                # Stale-cache read failed; let the original fetch error propagate.
+                pass
             raise StepCatalogError(
                 f"Failed to fetch catalog from {entry.url}: {exc}"
             ) from exc
@@ -583,15 +575,14 @@ class StepCatalog:
                 f"Catalog from {entry.url} is not a valid JSON object."
             )
 
-        if cache_safe:
-            try:
-                self.cache_dir.mkdir(parents=True, exist_ok=True)
-                with open(cache_file, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2)
-                with open(meta_file, "w", encoding="utf-8") as f:
-                    json.dump({"url": entry.url, "fetched_at": time.time()}, f)
-            except OSError:
-                pass  # Proceed without caching if disk write fails
+        try:
+            write_cache_json(self.project_root, cache_file, data, indent=2)
+            write_cache_json(
+                self.project_root, meta_file,
+                {"url": entry.url, "fetched_at": time.time()},
+            )
+        except OSError as exc:
+            logger.warning("Could not safely cache step catalog %s: %s", entry.url, exc)
 
         return data
 

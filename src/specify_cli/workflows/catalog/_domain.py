@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import stat
 import tempfile
@@ -25,6 +26,10 @@ from ..._download_security import (
     MAX_JSON_CATALOG_BYTES as MAX_JSON_CATALOG_BYTES,
     read_response_limited,
 )
+from ...file_helper import FileHelper, FileHelperError
+from .._catalog_cache import read_cache_json, write_cache_json
+
+logger = logging.getLogger(__name__)
 
 
 def _max_json_catalog_bytes() -> int:
@@ -78,10 +83,15 @@ class WorkflowRegistry:
     REGISTRY_FILE = "workflow-registry.json"
     SCHEMA_VERSION = "1.0"
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(
+        self, project_root: Path, *, read_files: FileHelper | None = None
+    ) -> None:
         self.project_root = project_root
         self.workflows_dir = project_root / ".specify" / "workflows"
         self.registry_path = self.workflows_dir / self.REGISTRY_FILE
+        # Optional read-policy handoff for workflow.list. Existing callers and
+        # all mutation paths retain their established behavior.
+        self._read_files = read_files
         self.data = self._load()
 
     def _has_symlinked_parent(self) -> bool:
@@ -112,14 +122,22 @@ class WorkflowRegistry:
                 f"Refusing to read workflow registry at {self.registry_path}: "
                 "a parent directory or the registry file itself is a symlink"
             )
-        if self.registry_path.exists():
+        if self._read_files is not None or self.registry_path.exists():
             try:
-                with open(self.registry_path, encoding="utf-8") as f:
-                    data = json.load(f)
-            except OSError as exc:
-                # The real data may still be intact on disk. Fail closed at
-                # construction rather than fabricating an empty registry that
-                # a read-only caller could mistake for "nothing installed."
+                if self._read_files is None:
+                    with open(self.registry_path, encoding="utf-8") as f:
+                        data = json.load(f)
+                else:
+                    try:
+                        text = self._read_files.read_text(self.registry_path)
+                    except FileNotFoundError:
+                        return default_registry
+                    # Match the legacy text stream's universal-newline handling,
+                    # including JSON error offsets for malformed CRLF files.
+                    text = text.replace("\r\n", "\n").replace("\r", "\n")
+                    data = json.loads(text)
+            except (OSError, FileHelperError) as exc:
+                # Do not fabricate an empty registry on access/policy failures.
                 raise OSError(
                     f"Failed to read workflow registry at {self.registry_path}: {exc}"
                 ) from exc
@@ -148,6 +166,9 @@ class WorkflowRegistry:
 
     def save(self) -> None:
         """Persist registry to disk atomically."""
+        from ...integrations._file_changes import after_file_change, before_file_change
+
+        before_file_change(self.registry_path)
         # Refuse to write through symlinked parents (mirrors StepRegistry.save
         # and the CLI-level _reject_unsafe_dir guard).
         if self._has_symlinked_parent() or self.registry_path.is_symlink():
@@ -209,6 +230,7 @@ class WorkflowRegistry:
             os.close(fd)
             fd = -1
             os.replace(tmp, self.registry_path)
+            after_file_change(self.registry_path)
         except BaseException:
             if fd >= 0:
                 try:
@@ -511,16 +533,13 @@ class WorkflowCatalog:
     def _is_url_cache_valid(self, url: str) -> bool:
         """Check if cached data for a URL is still fresh."""
         _, meta_file = self._get_cache_paths(url)
-        if not meta_file.exists():
-            return False
         try:
-            with open(meta_file, encoding="utf-8") as f:
-                meta = json.load(f)
+            meta = read_cache_json(self.project_root, meta_file)
             if not isinstance(meta, dict):
                 return False
             fetched_at = float(meta.get("fetched_at", 0))
             return (time.time() - fetched_at) < self.CACHE_DURATION
-        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        except (UnicodeError, json.JSONDecodeError, OSError, TypeError, ValueError):
             return False
 
     def _fetch_single_catalog(
@@ -531,8 +550,7 @@ class WorkflowCatalog:
 
         if not force_refresh and self._is_url_cache_valid(entry.url):
             try:
-                with open(cache_file, encoding="utf-8") as f:
-                    cached = json.load(f)
+                cached = read_cache_json(self.project_root, cache_file)
                 if isinstance(cached, dict):
                     return cached
             except (UnicodeDecodeError, json.JSONDecodeError, OSError):
@@ -596,15 +614,13 @@ class WorkflowCatalog:
                 )
         except Exception as exc:
             # Fall back to cache if available
-            if cache_file.exists():
-                try:
-                    with open(cache_file, encoding="utf-8") as f:
-                        cached = json.load(f)
-                    if isinstance(cached, dict):
-                        return cached
-                except (json.JSONDecodeError, ValueError, OSError):
-                    # Stale-cache read failed; let the original fetch error propagate.
-                    pass
+            try:
+                cached = read_cache_json(self.project_root, cache_file)
+                if isinstance(cached, dict):
+                    return cached
+            except (UnicodeError, json.JSONDecodeError, ValueError, OSError):
+                # Stale-cache read failed; let the original fetch error propagate.
+                pass
             raise WorkflowCatalogError(
                 f"Failed to fetch catalog from {entry.url}: {exc}"
             ) from exc
@@ -616,13 +632,13 @@ class WorkflowCatalog:
 
         # Write cache
         try:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-            with open(meta_file, "w", encoding="utf-8") as f:
-                json.dump({"url": entry.url, "fetched_at": time.time()}, f)
-        except OSError:
-            pass  # Proceed without caching if disk write fails
+            write_cache_json(self.project_root, cache_file, data, indent=2)
+            write_cache_json(
+                self.project_root, meta_file,
+                {"url": entry.url, "fetched_at": time.time()},
+            )
+        except OSError as exc:
+            logger.warning("Could not safely cache workflow catalog %s: %s", entry.url, exc)
 
         return data
 

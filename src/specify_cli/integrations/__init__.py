@@ -45,6 +45,11 @@ def _register(integration: IntegrationBase) -> None:
 
 def get_integration(key: str) -> IntegrationBase | None:
     """Return the integration for *key*, or ``None`` if not registered."""
+    from .installer import dispatch_registry
+
+    scoped = dispatch_registry.get()
+    if scoped is not None:
+        return scoped.get(key)
     return INTEGRATION_REGISTRY.get(key)
 
 
@@ -91,6 +96,7 @@ def _register_builtins() -> None:
     from .lingma import LingmaIntegration
     from .mcode import McodeIntegration
     from .muse import MuseIntegration
+    from .none import NoneIntegration
     from .omp import OmpIntegration
     from .opencode import OpencodeIntegration
     from .pi import PiIntegration
@@ -135,6 +141,7 @@ def _register_builtins() -> None:
     _register(LingmaIntegration())
     _register(McodeIntegration())
     _register(MuseIntegration())
+    _register(NoneIntegration())
     _register(OmpIntegration())
     _register(OpencodeIntegration())
     _register(PiIntegration())
@@ -150,6 +157,14 @@ def _register_builtins() -> None:
 
 
 _register_builtins()
+BUILTIN_INTEGRATION_KEYS: frozenset[str] = frozenset(INTEGRATION_REGISTRY)
+
+
+def load_installed_integrations(project_root: Path) -> list[str]:
+    """Load trusted project adapters, refreshing derived agent configuration."""
+    from .installer import load_installed_integrations as load
+
+    return load(project_root)
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +181,15 @@ class IntegrationValidationError(IntegrationCatalogError):
 
 class IntegrationDescriptorError(Exception):
     """Raised when an integration.yml descriptor is invalid."""
+
+
+def _optional_metadata_error(metadata: dict[str, Any]) -> str | None:
+    for field in ("author", "repository", "license"):
+        if field in metadata and (
+            not isinstance(metadata[field], str) or not metadata[field].strip()
+        ):
+            return f"{field} must be a non-empty string"
+    return None
 
 
 def _catalog_shape_error(payload: Any) -> Optional[str]:
@@ -422,6 +446,7 @@ class IntegrationCatalog(CatalogStackBase):
                     merged[integ_id] = {
                         **integ_data,
                         "id": integ_id,
+                        "_declared_id": integ_data.get("id", integ_id),
                         "_catalog_name": entry.name,
                         "_install_allowed": entry.install_allowed,
                     }
@@ -809,13 +834,13 @@ class IntegrationDescriptor:
         requires:
           speckit_version: ">=0.6.0"
           tools: [...]
-        provides:
-          commands: [...]
-          scripts: [...]
+
+    Optional legacy ``provides`` metadata is validated but is not an adapter
+    command inventory. Commands are rendered from the host's shared templates.
     """
 
     SCHEMA_VERSION = "1.0"
-    REQUIRED_TOP_LEVEL = ["schema_version", "integration", "requires", "provides"]
+    REQUIRED_TOP_LEVEL = ["schema_version", "integration", "requires"]
 
     def __init__(self, descriptor_path: Path) -> None:
         self.path = descriptor_path
@@ -893,6 +918,10 @@ class IntegrationDescriptor:
                     f"integration.{field} must be a string, got {type(integ[field]).__name__}"
                 )
 
+        optional_error = _optional_metadata_error(integ)
+        if optional_error:
+            raise IntegrationDescriptorError(f"integration.{optional_error}")
+
         if not re.match(r"^[a-z0-9-]+$", integ["id"]):
             raise IntegrationDescriptorError(
                 f"Invalid integration ID '{integ['id']}': "
@@ -919,6 +948,14 @@ class IntegrationDescriptor:
             raise IntegrationDescriptorError(
                 "requires.speckit_version must be a non-empty string"
             )
+        from packaging.specifiers import InvalidSpecifier, SpecifierSet
+
+        try:
+            SpecifierSet(requires["speckit_version"])
+        except InvalidSpecifier as exc:
+            raise IntegrationDescriptorError(
+                f"Invalid requires.speckit_version: {exc}"
+            ) from exc
         tools = requires.get("tools")
         if tools is not None:
             if not isinstance(tools, list):
@@ -935,8 +972,23 @@ class IntegrationDescriptor:
                     raise IntegrationDescriptorError(
                         "requires.tools entry 'name' must be a non-empty string"
                     )
+                if "required" in tool and not isinstance(tool["required"], bool):
+                    raise IntegrationDescriptorError(
+                        "requires.tools entry 'required' must be a boolean"
+                    )
+                if "version" in tool:
+                    if not isinstance(tool["version"], str):
+                        raise IntegrationDescriptorError(
+                            "requires.tools entry 'version' must be a string"
+                        )
+                    try:
+                        SpecifierSet(tool["version"])
+                    except InvalidSpecifier as exc:
+                        raise IntegrationDescriptorError(
+                            f"Invalid requires.tools version: {exc}"
+                        ) from exc
 
-        provides = self.data["provides"]
+        provides = self.data.get("provides", {})
         if not isinstance(provides, dict):
             raise IntegrationDescriptorError(
                 "'provides' must be a mapping"
@@ -950,10 +1002,6 @@ class IntegrationDescriptor:
         if "scripts" in provides and not isinstance(scripts, list):
             raise IntegrationDescriptorError(
                 "Invalid provides.scripts: expected a list"
-            )
-        if not commands and not scripts:
-            raise IntegrationDescriptorError(
-                "Integration must provide at least one command or script"
             )
         for cmd in commands:
             if not isinstance(cmd, dict):

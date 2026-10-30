@@ -4,7 +4,11 @@ Workflows are multi-step, resumable automation pipelines defined in YAML. They o
 
 ## How It Works
 
-A workflow definition declares a sequence of steps. The engine executes them in order, dispatching commands to AI integrations, running shell commands, evaluating conditions for branching, and pausing at gates for human review. State is persisted after each step, so workflows can be resumed after interruption.
+A workflow definition declares a sequence of steps. The engine executes them in
+order, dispatching commands to AI integrations, running shell commands,
+evaluating conditions for branching, and pausing at gates for human review.
+Persisted execution transitions let workflows resume after interruption without
+re-running completed work.
 
 ```yaml
 steps:
@@ -85,7 +89,10 @@ The bundled `speckit` workflow only declares `spec` (and optional
 
 ## Step Types
 
-Workflows support 12 built-in step types:
+Workflows support 14 built-in step types, including `workflow` for calling an
+installed workflow with private inputs and declared outputs. See
+[workflow composition and resume](../docs/reference/workflows.md#workflow-composition)
+for the scope and execution identity contracts.
 
 ### Command Steps (default)
 
@@ -144,6 +151,32 @@ Send an arbitrary inline prompt to an integration CLI (no command file needed):
   integration: claude
 ```
 
+### Capturing Command and Prompt Output
+
+Command and prompt steps stream the CLI's output to the terminal, so their
+`output.stdout` and `output.stderr` are empty. Set `capture: true` to retain the
+output for later steps instead:
+
+```yaml
+- id: verdict
+  type: prompt
+  prompt: "Reply with exactly READY or BLOCKED for {{ inputs.spec }}"
+  capture: true
+  capture_max_bytes: 4096   # Optional: per-stream limit (default 1 MiB, -1 = no limit)
+  timeout: 120              # Optional: seconds before the CLI is killed
+```
+
+A captured step prints nothing while it runs. Output past the limit is
+discarded and reported in `output.stdout_truncated` / `output.stderr_truncated`;
+a timeout or interruption fails the step, sets `output.timed_out` or
+`output.interrupted`, and keeps the partial output. Check those fields before
+parsing the text.
+
+> ⚠️ Captured output is stored unredacted in the run's `state.json`, and it is
+> untrusted agent text. See
+> [Capturing Command and Prompt Output](../docs/reference/workflows.md#capturing-command-and-prompt-output)
+> for the full contract.
+
 ### Shell Steps
 
 Run a shell command and capture output:
@@ -171,6 +204,14 @@ Run a shell command and capture output:
 killed and the step fails; it must be a positive number and defaults to
 `300` (five minutes) when omitted. Raise it for long-running gates such as
 full builds, linter aggregators, or integration-test targets.
+
+### GitHub Steps
+
+The built-in `github` step adds an explicitly configured issue or pull-request
+label when a workflow uses `type: github`. It does not install or invoke the
+opt-in GitHub agent-command extension. See the
+[GitHub step reference](../docs/reference/workflows.md#github-step) for
+configuration, credentials, and retry behavior.
 
 ### Init Steps
 
@@ -312,6 +353,11 @@ Aggregate results from fan-out steps:
   wait_for: [parallel-impl]
   output: {}
 ```
+
+`wait_for` references declared step IDs. For a fan-out, use the fan-out step's
+own `id` (`parallel-impl` above); its ordered item results are available as
+`steps.<fan-out-id>.output.results`. Generated item aliases such as
+`fan:template:0` are reporting-only and are not valid `wait_for` targets.
 
 ## Error Handling
 
