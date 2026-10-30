@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -8,10 +9,45 @@ import yaml
 from typer.testing import CliRunner
 
 from specify_cli import app
-from tests.specify_cli.bundles.helpers import write_manifest
+from tests.specify_cli.bundles.helpers import valid_manifest_dict, write_manifest
 
 runner = CliRunner()
 REPO_ROOT = Path(__file__).parents[3]
+
+
+def test_bundle_init_uses_declared_integration_in_new_project(tmp_path, monkeypatch):
+    bundle = write_manifest(
+        tmp_path / "claude-bundle",
+        valid_manifest_dict(provides={}, integration={"id": "claude"}),
+    )
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["bundle", "init", str(bundle), "--offline"])
+
+    assert result.exit_code == 0, result.output
+    state = json.loads((project / ".specify/integration.json").read_text())
+    assert state["default_integration"] == "claude"
+    assert (project / ".specify/bundle-records.json").is_file()
+
+
+def test_bundle_init_rejects_incompatible_bundle_before_initializing(
+    tmp_path,
+    monkeypatch,
+):
+    bundle = write_manifest(
+        tmp_path / "incompatible-bundle",
+        valid_manifest_dict(provides={}, requires={"speckit_version": ">=9999.0.0"}),
+    )
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["bundle", "init", str(bundle), "--offline"])
+
+    assert result.exit_code == 1, result.output
+    assert not (project / ".specify").exists()
 
 
 def _make_project(tmp_path: Path, name: str) -> Path:
@@ -33,7 +69,10 @@ def test_bundle_init_delegates_without_refresh(project, monkeypatch, bundle):
         install.assert_not_called()
     else:
         install.assert_called_once_with(
-            bundle, integration=None, offline=True, refresh=False,
+            bundle,
+            integration=None,
+            offline=True,
+            refresh=False,
         )
 
 
@@ -42,7 +81,9 @@ def test_bundle_init_delegates_without_refresh(project, monkeypatch, bundle):
     [("init", False), ("install", False), ("install", True)],
 )
 def test_bundle_init_preserves_workflow_unless_explicitly_refreshed(
-    project, command, refresh,
+    project,
+    command,
+    refresh,
 ):
     bundle = REPO_ROOT / "bundles" / "bugfix"
     initial = runner.invoke(app, ["bundle", "init", str(bundle), "--offline"])
