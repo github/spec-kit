@@ -411,6 +411,7 @@ semantics, examples, and migration caveats live in the relevant agent guide:
 | GitHub Copilot | [Skills and commands layouts](copilot.md#commands-layout) |
 | IBM Bob | [Legacy commands and migration](bob.md#legacy-commands-and-migration) |
 | Kimi Code | [Legacy migration](kimi.md#legacy-migration) |
+| opencode | [Hidden Spec Kit files](opencode.md#hidden-spec-kit-files) |
 
 Other agent-specific details are listed in the
 [integration directory](index.md).
