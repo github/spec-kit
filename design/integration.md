@@ -261,6 +261,11 @@ metadata; they do not copy agent trees, user data, or the installed package
 store. Content snapshots are created lazily before the first observed mutation,
 with an aggregate limit of 128 MiB of file content and 4,096 entries per
 transaction. Exceeding either limit fails before the affected write or removal.
+Switch resolves the target's event configuration before removing the current
+integration or its metadata. When events are enabled, this validates extension
+registry storage even if a linked parent appears absent. A rejected hierarchy
+leaves the current installation unchanged, including built-in-only switches
+that do not use the external-adapter lifecycle journal.
 Preset and extension package installation/replacement, configuration rescue
 directories, and project extension configuration participate in the journal.
 Package replacements keep one bounded directory snapshot rather than duplicate

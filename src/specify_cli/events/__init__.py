@@ -1125,10 +1125,9 @@ def collect_extension_events(project_root: Path) -> ResolvedEvents:
 
     events: ResolvedEvents = {}
     exts_dir = project_root / ".specify" / "extensions"
+    manager = ExtensionManager(project_root)
     if not exts_dir.is_dir():
         return events
-
-    manager = ExtensionManager(project_root)
 
     # Build the set of explicitly-disabled extension IDs. Extensions not
     # tracked in the registry are treated as enabled (backward compat).

@@ -27,6 +27,98 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationSwitch:
+    def test_switch_event_read_error_preserves_current(self, tmp_path, monkeypatch):
+        project = _init_project(tmp_path, "claude", "--events true")
+        before = {
+            path: path.read_bytes()
+            for path in (
+                project / ".claude/skills/speckit-plan/SKILL.md",
+                project / ".specify/integration.json",
+                project / ".specify/init-options.json",
+                project / ".specify/integrations/claude.manifest.json",
+            )
+        }
+
+        def denied(*args, **kwargs):
+            raise PermissionError("event registry read denied")
+
+        monkeypatch.setattr("specify_cli.events.resolve_events", denied)
+        result = _run_in_project(project, ["integration", "switch", "copilot"])
+
+        assert result.exit_code == 1, result.output
+        assert {path: path.read_bytes() for path in before} == before
+        assert not (project / ".github").exists()
+        output = " ".join(strip_ansi(result.output).split())
+        assert "event registry read denied" in output
+        assert "No files were changed." in output
+        assert "Uninstalling current integration" not in output
+
+    @pytest.mark.parametrize("linked_entry", ["extensions", ".registry"])
+    @pytest.mark.parametrize("target_exists", [False, True])
+    @pytest.mark.parametrize("force", [False, True])
+    def test_switch_rejects_linked_registry_before_removing_current(
+        self, tmp_path, monkeypatch, linked_entry, target_exists, force
+    ):
+        project = _init_project(tmp_path, "claude", "--events true")
+        extensions_dir = project / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True, exist_ok=True)
+        external = tmp_path / "external"
+        link = extensions_dir if linked_entry == "extensions" else extensions_dir / ".registry"
+        if linked_entry == "extensions":
+            shutil.rmtree(extensions_dir)
+            if target_exists:
+                external.mkdir()
+                (external / "sentinel").write_bytes(b"unchanged")
+        else:
+            link.unlink(missing_ok=True)
+            if target_exists:
+                external.write_text('{"extensions": {}}', encoding="utf-8")
+        try:
+            link.symlink_to(external, target_is_directory=linked_entry == "extensions")
+        except OSError:
+            pytest.skip("Symlink creation unavailable")
+
+        def snapshot(root):
+            entries = {}
+            for path in root.rglob("*"):
+                relative = path.relative_to(root).as_posix()
+                if path.is_symlink():
+                    entries[relative] = ("link", os.readlink(path))
+                elif path.is_dir():
+                    entries[relative] = ("directory", None)
+                else:
+                    entries[relative] = ("file", path.read_bytes())
+            return entries
+
+        before = snapshot(project)
+        external_before = (
+            snapshot(external) if external.is_dir()
+            else external.read_bytes() if external.exists() else None
+        )
+        monkeypatch.chdir(project)
+        arguments = [
+            "integration", "switch", "copilot", "--script", "sh",
+            "--integration-options", "--events true",
+        ]
+        if force:
+            arguments.append("--force")
+
+        result = runner.invoke(app, arguments, catch_exceptions=True)
+
+        assert snapshot(project) == before, "Rejected switch changed files or metadata"
+        assert result.exit_code == 1, result.output
+        assert isinstance(result.exception, SystemExit), repr(result.exception)
+        output = strip_ansi(result.output)
+        assert "Error:" in output and "symlink" in output
+        assert "No files were changed." in output
+        assert "Uninstalling current integration" not in output
+        assert "Installing integration:" not in output
+        external_after = (
+            snapshot(external) if external.is_dir()
+            else external.read_bytes() if external.exists() else None
+        )
+        assert external_after == external_before
+
     @pytest.mark.parametrize("installed", [False, True])
     def test_switch_syncs_manifest_hash_for_preset_override(
         self, tmp_path, tasks_preset_src, installed
