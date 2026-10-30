@@ -853,7 +853,7 @@ def register(app: typer.Typer) -> None:
                     "integration": resolved_integration.key,
                     "here": here,
                     "script": selected_script,
-                    "feature_numbering": "sequential",
+                    "feature_numbering": previous_init_options.get("feature_numbering", "sequential"),
                     "speckit_version": get_speckit_version(),
                     "allow_symlinks": allow_symlinks,
                 }
@@ -1056,6 +1056,24 @@ def register(app: typer.Typer) -> None:
         else:
             steps_lines.append("1. You're already in the project directory!")
             step_num = 2
+
+        if not resolved_integration.list_command_templates():
+            steps_lines.append(
+                f"{step_num}. Choose an integration: [cyan]specify integration list[/cyan]"
+            )
+            steps_lines.append(
+                f"{step_num + 1}. Switch this project to it: [cyan]specify integration switch <key>[/cyan]"
+            )
+            console.print()
+            console.print(
+                Panel(
+                    "\n".join(steps_lines),
+                    title="Next Steps",
+                    border_style="cyan",
+                    padding=(1, 2),
+                )
+            )
+            return
 
         _is_skills_integration = resolved_integration.is_skills_mode(
             integration_parsed_options or None, project_root=project_path

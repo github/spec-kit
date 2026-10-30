@@ -32,14 +32,14 @@ if (-not $paths) {
     exit 1
 }
 
-if (-not (Test-Path $paths.IMPL_PLAN -PathType Leaf)) {
+if (-not (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf)) {
     [Console]::Error.WriteLine("ERROR: plan.md not found in $($paths.FEATURE_DIR)")
     $planCommand = Format-SpecKitCommand -CommandName 'plan' -RepoRoot $paths.REPO_ROOT
     [Console]::Error.WriteLine("Run $planCommand first to create the implementation plan.")
     exit 1
 }
 
-if (-not (Test-Path $paths.FEATURE_SPEC -PathType Leaf)) {
+if (-not (Test-Path -LiteralPath $paths.FEATURE_SPEC -PathType Leaf)) {
     [Console]::Error.WriteLine("ERROR: spec.md not found in $($paths.FEATURE_DIR)")
     $specifyCommand = Format-SpecKitCommand -CommandName 'specify' -RepoRoot $paths.REPO_ROOT
     [Console]::Error.WriteLine("Run $specifyCommand first to create the feature structure.")
@@ -48,12 +48,12 @@ if (-not (Test-Path $paths.FEATURE_SPEC -PathType Leaf)) {
 
 # Build available docs list
 $docs = @()
-if (Test-Path $paths.RESEARCH) { $docs += 'research.md' }
-if (Test-Path $paths.DATA_MODEL) { $docs += 'data-model.md' }
-if ((Test-Path $paths.CONTRACTS_DIR) -and (Get-ChildItem -Path $paths.CONTRACTS_DIR -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+if (Test-Path -LiteralPath $paths.RESEARCH) { $docs += 'research.md' }
+if (Test-Path -LiteralPath $paths.DATA_MODEL) { $docs += 'data-model.md' }
+if ((Test-Path -LiteralPath $paths.CONTRACTS_DIR) -and (Get-ChildItem -LiteralPath $paths.CONTRACTS_DIR -ErrorAction SilentlyContinue | Select-Object -First 1)) {
     $docs += 'contracts/'
 }
-if (Test-Path $paths.QUICKSTART) { $docs += 'quickstart.md' }
+if (Test-Path -LiteralPath $paths.QUICKSTART) { $docs += 'quickstart.md' }
 
 # Resolve tasks template through override stack
 $tasksTemplate = Resolve-Template -TemplateName 'tasks-template' -RepoRoot $paths.REPO_ROOT

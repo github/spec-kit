@@ -13,6 +13,65 @@ import yaml
 from tests.specify_cli.workflows.helpers import force_gate_stdin as _force_gate_stdin
 
 
+class TestWorkflowRunNumberInputs:
+    @pytest.mark.parametrize("source", ["cli", "default", "enum-default"])
+    def test_run_preserves_integer_input_in_file_and_state(
+        self, tmp_path, monkeypatch, source
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        number = 1792234567890123456
+        input_definition = {"type": "number"}
+        arguments = []
+        if source == "cli":
+            input_definition["required"] = True
+            arguments = ["--input", f"record_id={number}"]
+        else:
+            input_definition["default"] = number
+            if source == "enum-default":
+                input_definition["enum"] = [number]
+        workflow = tmp_path / "workflow.yml"
+        workflow.write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "workflow": {
+                        "id": "number-input",
+                        "name": "Number input",
+                        "version": "1.0.0",
+                    },
+                    "inputs": {"record_id": input_definition},
+                    "steps": [
+                        {
+                            "id": "write",
+                            "type": "shell",
+                            "run": "echo {{ inputs.record_id }} > record-id.txt",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp_path)
+
+        result = CliRunner().invoke(
+            app, ["workflow", "run", str(workflow), "--json", *arguments]
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["status"] == "completed"
+        assert (tmp_path / "record-id.txt").read_text().strip() == str(number)
+        state_path = (
+            tmp_path / ".specify" / "workflows" / "runs" / payload["run_id"] / "state.json"
+        )
+        state = json.loads(state_path.read_text())
+        assert state["inputs"]["record_id"] == number
+        assert isinstance(state["inputs"]["record_id"], int)
+
+
 class TestWorkflowRunGateOutcomeJson:
     """CLI-level tests: the --json payload surfaces gate pauses."""
 
@@ -288,6 +347,42 @@ steps:
     run: "exit 3"
 """
 
+    _WF_RAISE = """
+schema_version: "1.0"
+workflow:
+  id: "json-raise"
+  name: "JSON Raise"
+  version: "1.0.0"
+inputs:
+  payload:
+    type: string
+    default: "not json"
+steps:
+  - id: parse
+    type: if
+    condition: "{{ inputs.payload | from_json | length }}"
+    then:
+      - id: after
+        type: shell
+        run: "echo parsed"
+"""
+
+    _WF_REQUIRED = """
+schema_version: "1.0"
+workflow:
+  id: "json-required"
+  name: "JSON Required"
+  version: "1.0.0"
+inputs:
+  spec:
+    type: string
+    required: true
+steps:
+  - id: only
+    type: shell
+    run: "echo done"
+"""
+
     def _write_wf(self, project_dir, text, name):
         path = project_dir / f"{name}.yml"
         path.write_text(text, encoding="utf-8")
@@ -330,6 +425,65 @@ steps:
         payload = json.loads(result.stdout)
         assert payload["status"] == "failed"
         assert payload.get("error")
+
+    def test_run_json_step_exception_reports_failed_run(self, project_dir):
+        # A step that raises (here `from_json` on invalid JSON) also fails the
+        # run: the engine persists `failed` and the error before re-raising, so
+        # stdout must carry that run's payload rather than nothing at all.
+        wf = self._write_wf(project_dir, self._WF_RAISE, "raise")
+        result = self._invoke(project_dir, ["workflow", "run", str(wf), "--json"])
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["workflow_id"] == "json-raise"
+        assert payload["status"] == "failed"
+        assert payload["current_step_id"] == "parse"
+        assert payload["error"].startswith("from_json: invalid JSON")
+        assert result.stderr == ""
+        state_file = (
+            project_dir / ".specify" / "workflows" / "runs"
+            / payload["run_id"] / "state.json"
+        )
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        assert state["status"] == "failed"
+        assert state["error"] == payload["error"]
+
+    def test_run_json_non_value_error_reports_failed_run(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows.step.shell import ShellStep
+
+        def crash(self, config, context):
+            raise RuntimeError("shell step crashed")
+
+        monkeypatch.setattr(ShellStep, "execute", crash)
+        wf = self._write_wf(project_dir, self._WF_DONE, "crash")
+        result = self._invoke(project_dir, ["workflow", "run", str(wf), "--json"])
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["status"] == "failed"
+        assert payload["current_step_id"] == "only"
+        assert payload["error"] == "shell step crashed"
+        assert result.stderr == ""
+
+    def test_run_step_exception_reports_failed_run_in_text(self, project_dir):
+        wf = self._write_wf(project_dir, self._WF_RAISE, "raise-text")
+        result = self._invoke(project_dir, ["workflow", "run", str(wf)])
+        assert result.exit_code == 1
+        assert "Workflow failed:" in result.stdout
+        assert "from_json: invalid JSON" in result.stdout
+
+    def test_run_json_missing_required_input_is_not_a_run_outcome(
+        self, project_dir
+    ):
+        # Input resolution fails before any run state is saved, so there is no
+        # run to report: stdout stays empty and the error goes to stderr.
+        wf = self._write_wf(project_dir, self._WF_REQUIRED, "required")
+        result = self._invoke(project_dir, ["workflow", "run", str(wf), "--json"])
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert "Required input 'spec' not provided." in result.stderr
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        assert list(runs_dir.glob("*/state.json")) == []
 
     def test_run_json_completed_omits_error(self, project_dir):
         # Successful runs must not carry an `error` key at all.

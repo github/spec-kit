@@ -36,6 +36,70 @@ class TestKimiIntegration(SkillsIntegrationTests):
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".kimi-code/skills"
 
+    def test_build_exec_args_uses_prompt_flag(self):
+        integration = get_integration("kimi")
+
+        args = integration.build_exec_args(
+            "/skill:speckit-specify build a login page",
+            output_json=False,
+        )
+
+        assert args == ["kimi", "-p", "/skill:speckit-specify build a login page"]
+
+    def test_build_exec_args_requests_stream_json(self):
+        """Kimi only accepts `text` and `stream-json`; `json` exits 1 before the prompt runs."""
+        integration = get_integration("kimi")
+
+        args = integration.build_exec_args(
+            "/skill:speckit-plan add OAuth", output_json=True
+        )
+
+        assert args == [
+            "kimi",
+            "-p",
+            "/skill:speckit-plan add OAuth",
+            "--output-format",
+            "stream-json",
+        ]
+        assert "json" not in args
+
+    def test_build_exec_args_forwards_model(self):
+        integration = get_integration("kimi")
+
+        args = integration.build_exec_args(
+            "/skill:speckit-specify build a login page",
+            model="kimi-code/k3",
+            output_json=False,
+        )
+
+        assert args == [
+            "kimi",
+            "-p",
+            "/skill:speckit-specify build a login page",
+            "--model",
+            "kimi-code/k3",
+        ]
+
+    def test_build_exec_args_applies_extra_args(self, monkeypatch):
+        monkeypatch.setenv("SPECKIT_INTEGRATION_KIMI_EXTRA_ARGS", "--add-dir ../shared")
+        integration = get_integration("kimi")
+
+        args = integration.build_exec_args(
+            "check the build", model="kimi-code/k3", output_json=True
+        )
+
+        assert args == [
+            "kimi",
+            "-p",
+            "check the build",
+            "--add-dir",
+            "../shared",
+            "--model",
+            "kimi-code/k3",
+            "--output-format",
+            "stream-json",
+        ]
+
 
 class TestKimiOptions:
     """Kimi declares --skills and --migrate-legacy options."""

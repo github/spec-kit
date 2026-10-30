@@ -21,6 +21,12 @@ Example:
 specify workflow run speckit -i spec="Build a kanban board with drag-and-drop task management"
 ```
 
+Inputs declared as `type: number` preserve integer values and integer strings
+exactly, including 64-bit identifiers and nanosecond timestamps above `2**53`.
+Decimal and exponent strings continue to use floating-point conversion;
+whole-valued results are stored as integers. Booleans, non-numeric values, and
+non-finite numbers are rejected.
+
 With `--json`, a single machine-readable object is printed instead of formatted text (the default output is unchanged when the flag is omitted):
 
 ```bash
@@ -447,7 +453,7 @@ referents, so a pre-existing cache-file symlink can be replaced without changing
 its target. If a cache cannot be safely written, a warning is logged and
 discovery continues using the fetched catalog.
 
-> **A project's `.specify/workflow-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before running a workflow from an unfamiliar project, run `specify workflow catalog list` (and `specify workflow step catalog list` for the step catalogs its steps can pull in) — a project supplying that config is not evidence its workflows or steps were vetted. Maintainers do not audit `run` fields; read a workflow's shell steps yourself before running it (see [Who maintains workflows?](#who-maintains-workflows)).
+> **A project's `.specify/workflow-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before running a workflow from an unfamiliar project, run `specify workflow catalog list` (and `specify workflow step catalog list` for the step catalogs its steps can pull in) — a project supplying that config is not evidence its workflows or steps were vetted. Maintainers do not audit workflow code; review both `run` and `env` in its shell steps yourself, including strict steps (see [Reviewing shell execution](#reviewing-shell-execution) and [Who maintains workflows?](#who-maintains-workflows)).
 
 ### List Catalogs
 
@@ -775,6 +781,32 @@ summaries when calls exist and reports an active nested gate with its
 qualified `step_id`. A step emits completion after its checkpoint; containers
 emit before their children, while replayed completed occurrences emit no step
 events.
+
+### Shell step
+
+`type: shell` executes `run` through the platform shell, retaining support for
+pipes, redirects, and multiple commands. Set `strict: true` to reject `{{`
+expression markers anywhere in `run`, including inside quotes. This is checked
+both during validation and immediately before execution. `strict` must be a
+boolean; omitted or `false` preserves existing raw interpolation behavior.
+
+Use an `env` mapping to bind dynamic values without inserting them into shell
+source. For example, on POSIX:
+
+```yaml
+- id: display-result
+  type: shell
+  strict: true
+  env:
+    RESULT: "{{ steps.plan.output.stdout }}"
+  run: 'printf "%s\n" "$RESULT"'
+```
+
+For cross-platform scripts, read the environment in the program itself, such
+as `os.environ["RESULT"]` in Python. See
+[Shell Step Environment Variables](#shell-step-environment-variables) for the
+binding contract and [Interpolation and shell safety](#interpolation-and-shell-safety)
+for the remaining trust boundary.
 
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
 
@@ -1198,7 +1230,13 @@ Notes on the newer filters:
 - **`to_json` output is deterministic.** Object keys are sorted and non-ASCII characters are left as-is rather than escaped, so the same value always serializes to the same bytes. That buys reproducibility only — it does **not** make the result safe to pass through a shell, because [interpolation adds no quoting or escaping](#interpolation-and-shell-safety). Do not interpolate unconstrained JSON into a `run` field.
 - **`to_json` rejects non-finite floats.** `NaN`, `Infinity`, and `-Infinity` raise a `ValueError` naming `to_json` instead of serializing to bare tokens. None of the three is valid JSON, so emitting them would hand a standards-compliant downstream parser a string it must reject.
 - **`to_json` requires string mapping keys.** JSON objects have string keys, so a mapping with any other key type — `{1: "a"}`, `{True: "a"}` — raises a `ValueError` naming the key type instead. Left to `json.dumps`, an integer key would be coerced to `"1"` and collide with an existing `"1"` key, while mixed key types would fail `sort_keys` with an ordering `TypeError` reported only as "not JSON-serializable".
-- **Trailing comparisons after a filter are rejected.** The parser splits on the top-level `|` before looking for operators, so `{{ items | length > 0 }}` raises rather than evaluating. The count does not exist until `length` runs, so there is no way to write that comparison; the supported branching form is the filter's own truthiness in a `condition:`, since `length` returns `0` for an empty input:
+- **Comparing filtered counts requires parentheses.** The parser splits on the top-level `|` before looking for operators, so an unparenthesized trailing comparison such as `{{ inputs.items | length > 0 }}` raises a `ValueError`. Parenthesize the filtered operand to compare its result: `{{ (inputs.items | length) > 0 }}`. For a threshold of at least two:
+
+  ```yaml
+  condition: "{{ (inputs.items | length) >= 2 }}"
+  ```
+
+  For an emptiness check, use the filtered count's truthiness directly:
 
   ```yaml
   condition: "{{ inputs.items | length }}"   # 0 is False, any non-zero count is True
@@ -1225,9 +1263,11 @@ If an interpolated value can contain characters like `;`, `|`, `&`, `$( )`, back
 - **Workflow `inputs.*`** — supplied by whoever runs the workflow.
 - **A prior step's output**, e.g. `{{ steps.plan.output.stdout }}` — for a `command` or `prompt` step with [`capture: true`](#capturing-command-and-prompt-output) this is **text produced by the AI agent**, which can in turn be influenced by files, tickets, or web content the agent read. Treat agent output as untrusted when it flows into a `shell` step.
 
-There is **no shell-escaping filter** in the expression language and **no sandbox** around a `shell` step, so none of the practices below can be treated as a guarantee that a hostile value is neutralised. The only reliable control is to constrain what an interpolated value *can* be, and to keep values you cannot constrain out of `run` fields entirely. Scrutinise every `run` field that interpolates a value you do not control, and at minimum:
+There is **no shell-escaping filter** in the expression language and **no sandbox** around a `shell` step. Prefer [`strict: true`](#shell-step) with `env` bindings to keep dynamic values out of shell source. Strict mode does not sanitise data, inspect commands, or prevent an authored script from interpreting data as code. Do not use `eval`, build another `sh -c` command from a variable, or pass untrusted values through shell startup variables such as `BASH_ENV`. On Windows, `cmd.exe` expansion of `%VALUE%` can introduce shell syntax; read untrusted values inside a program instead. On POSIX, quote variable expansions and use the target program's argument validation or `--` where appropriate to prevent option injection.
 
-- **Constrain the value at the source with `enum`/an allowlist.** When `inputs.*` feeds a `run` field, restrict it to a fixed set of known-safe values so a caller cannot supply arbitrary shell text at all. This is the strongest control the engine offers — prefer it over any downstream mitigation.
+For compatibility, raw interpolation remains enabled when `strict` is omitted or `false`. Its injection risk remains unchanged. Keep values you cannot constrain out of `run` fields entirely. Scrutinise every non-strict `run` field that interpolates a value you do not control, and at minimum:
+
+- **Constrain the value at the source with `enum`/an allowlist.** When `inputs.*` feeds a non-strict `run` field, restrict it to a fixed set of known-safe values so a caller cannot supply arbitrary shell text at all.
 
   ```yaml
   inputs:
@@ -1249,6 +1289,60 @@ Shell steps automatically receive the following environment variables:
 | Variable | Description |
 | -------- | ----------- |
 | `SPECKIT_WORKFLOW_DIR` | Resolved absolute path to the workflow source directory (same value as `{{ context.workflow_dir }}`). Not set when the workflow has no source path. |
+
+An optional per-step `env` mapping is available in both strict and non-strict
+mode. Names must match `[A-Za-z_][A-Za-z0-9_]*`; names are literal, not
+expressions. Values must be strings and may contain workflow expressions.
+Each value is evaluated once and must resolve to a string without NUL
+characters. On POSIX, the string must also be encodable for the process
+environment using the filesystem encoding and its error handler.
+Invalid bindings fail the step before launching a process.
+
+Single-expression bindings preserve the expression's result type:
+`COUNT: "{{ inputs.count }}"` rejects a number, boolean, null, list, or mapping
+instead of converting it to text. Mixed templates use standard expression
+interpolation: `COUNT: "n={{ inputs.count }}"` produces `n=42` for integer
+`42`; embedded null becomes empty text, and other values use their string
+representation. To serialize structured data explicitly, use `to_json`.
+
+Bindings override inherited environment values for that subprocess only;
+they do not modify the parent process or subsequent steps. An empty string is
+valid. `SPECKIT_WORKFLOW_DIR` is reserved (case-insensitively) and cannot be
+overridden. Keep environment names and executable-loading settings under the
+workflow author's control: environment binding is a data channel, not a sandbox.
+
+### Reviewing shell execution
+
+Before installing or running an unfamiliar workflow, audit each shell step's
+`run` **and** `env`, including nested branches and fan-out templates. Review
+referenced scripts and resources, called workflows, and active overlay YAML
+that can replace or insert steps. Apply the same review to workflow components
+of bundles, and repeat it when definitions, overlays, or referenced code change.
+Custom step packages require their own source review because loading them
+executes Python code.
+
+An environment value can control execution rather than merely supply data.
+For example, `PATH` selects executables, `PYTHONPATH` affects Python imports,
+`BASH_ENV` can select Bash startup code, and `NODE_OPTIONS` can change Node.js
+startup behavior. Native loaders and other programs have their own settings;
+these examples are not an exhaustive list. A fixed `run` can therefore execute
+different code even with `strict: true` and no `eval`. Strict mode neither
+filters execution-controlling bindings nor cleans the inherited environment.
+Keep those settings literal and author-vetted, or constrain dynamic values to
+an approved set of trusted paths/options. Use unconstrained input or agent
+output only for application-data variables whose consumers handle it as data.
+
+When a shell step invokes Specify itself, catalog overrides such as
+`SPECKIT_WORKFLOW_CATALOG_URL` can also change where child commands discover
+or install components. Vet those bindings alongside the
+[active catalog sources](catalogs.md#discovery-and-trust).
+
+Workflow validation checks configuration, not whether environment settings or
+commands are safe. `specify workflow info` shows metadata and step identities;
+`specify workflow resolve` shows layer and step attribution. Neither displays
+the complete `run`/`env` configuration or replaces reading the contributing
+source files. Catalog install permission, bundle installation, and strict mode
+are not security endorsements.
 
 ## Input Types
 

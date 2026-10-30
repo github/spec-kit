@@ -10,9 +10,12 @@ operation defined by
 CLI surface; it does not redefine semantic validation, orchestration, results,
 warnings, errors, or side effects.
 
-The extension hierarchy supplies the reference command-group shape used in
-this document. Do not create extra modules merely to make a small command
-conform visually.
+The extension command hierarchy under
+[Nested command groups](#nested-command-groups) supplies the reference shape
+used in this document. The separate
+[Extension Architecture](extension.md) defines extension-domain behavior and
+boundaries. Do not create extra modules merely to make a small command conform
+visually.
 
 ## Design goals
 

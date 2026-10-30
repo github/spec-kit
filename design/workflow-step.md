@@ -11,7 +11,7 @@ see [Workflows](../docs/reference/workflows.md).
 
 | Route | Source | Registration |
 |---|---|---|
-| Built-in | `src/specify_cli/workflows/steps/<package>/__init__.py` | Explicit import and `_register_step()` in `src/specify_cli/workflows/__init__.py` |
+| Built-in | `src/specify_cli/workflows/step/<package>/__init__.py` | Explicit import and `_register_step()` in `src/specify_cli/workflows/__init__.py` |
 | Installed | Package under `.specify/workflows/steps/<id>/`, containing `step.yml` and `__init__.py` | `load_custom_steps(project_root)` loads a matching `StepBase` subclass at workflow run/resume |
 
 `STEP_REGISTRY` maps each `type_key` to a single step instance. Built-in keys
@@ -43,6 +43,18 @@ automatically validate a definition passed to `execute()`. Guard invalid
 configurations in `execute()` too, returning a failed result rather than a
 successful default or an unhandled exception.
 
+The built-in shell step preserves raw `run` interpolation by default.
+Per-step `strict: true` rejects expression markers in `run` during validation
+and execution. Its optional `env` mapping evaluates string templates separately,
+requires NUL-free string results encodable for the process environment on
+POSIX, and overrides only the child environment.
+`SPECKIT_WORKFLOW_DIR` remains engine-owned. This prevents workflow expression
+values from becoming shell source in strict mode; it is not a sandbox or a
+guarantee that an authored script handles environment data safely.
+Environment bindings and inherited settings can intentionally affect executable
+lookup, module loading, and runtime startup. Strict mode does not filter them;
+workflow source review must cover both `run` and `env` and referenced code.
+
 New runs persist an execution tree. Resume replays completed occurrences into
 their expression contexts without calling their implementations, then continues
 at the unfinished occurrence. Selected branches, custom expansions, loop
@@ -72,7 +84,7 @@ thread-safe, with per-run data in `config` and `context`, not on `self`.
 
 ## Adding a step type
 
-1. Implement the step in its own `steps/<package>/` subpackage and register
+1. Implement the step in its own `step/<package>/` subpackage and register
    it explicitly with a unique `type_key`. For an external package, provide
    `step.yml` with a matching `step.type_key` and a matching subclass in
    `__init__.py`; catalog discovery alone does not register the code.
