@@ -147,9 +147,8 @@ class IntegrationBase(ABC):
     multi_install_safe: bool = False
     """Whether this integration is declared safe to install alongside others.
 
-    Safe integrations must use a static, unique agent root and command
-    directory. Registry tests enforce those invariants for every
-    integration that sets this flag.
+    Safe integrations must emit no files or use a static, unique agent root
+    and command directory. Registry tests enforce these invariants.
     """
 
     legacy_flat_command_dir: str | None = None

@@ -26,16 +26,21 @@ restore the old invocation or create a compatibility alias.
 
 After upgrading the CLI, migrate from the project root in this order:
 
-1. Review and port any customizations in the old command or skill to the
-   namespaced extension command before forcing an integration upgrade. The
-   upgrade deletes old manifest-tracked `taskstoissues` artifacts; `--force`
-   authorizes deletion even when those files were locally customized.
+1. Back up customized legacy and extension command or skill files outside the
+   generated directories before upgrading. The upgrade deletes old
+   manifest-tracked `taskstoissues` artifacts; `--force` authorizes deletion even
+   when those files were locally customized. Generated extension files can also
+   be overwritten, so do not port edits into them before the upgrade.
 2. Run `specify integration upgrade <integration>` for each installed integration.
    Replace `<integration>` with its key, such as `copilot` or `claude`.
 3. Run `specify extension add github` only if `github` is not already installed.
-   An already-installed, enabled extension is re-registered during the integration
-   upgrade; it does not need to be reinstalled.
-4. Invoke `speckit.github.taskstoissues` using your integration's syntax and update
+   An already-installed, enabled extension is re-registered when upgrading the
+   default integration only; it does not need to be reinstalled.
+4. Before using the replacement in a non-default integration, run
+   `specify integration use <integration>` to select it and register the extension.
+5. After upgrade, extension setup, and integration selection, reapply saved
+   customizations to the namespaced extension command. Invoke
+   `speckit.github.taskstoissues` using your integration's syntax and update
    references in presets, handoffs, extension prompts, and automation.
 
 See the [extension migration guide](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#migrating-from-the-core-taskstoissues-command)
@@ -175,7 +180,7 @@ specify integration upgrade claude
 specify integration upgrade codex
 ```
 
-See the [integration reference](reference/integrations.md#upgrade-an-integration) for options such as `--script`, `--integration-options`, and `--force`.
+See the [integration reference](integrations/cli.md#upgrade-an-integration) for options such as `--script`, `--integration-options`, and `--force`.
 
 ### 3. Update installed extensions
 

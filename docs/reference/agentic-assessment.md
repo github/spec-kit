@@ -14,7 +14,7 @@ specify extension add assess
 
 Commands below use `/speckit.assess.*` notation. GitHub Copilot's default skills
 mode uses `/speckit-assess-*`; other integrations may use a different prefix.
-See [Command invocation](integrations.md#command-invocation).
+See [Command invocation](../integrations/cli.md#command-invocation).
 
 ## Commands and artifacts
 

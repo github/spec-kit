@@ -24,7 +24,7 @@ The `generic` (bring your own agent) integration registers this command under
 its configured `--commands-dir` in both commands and skills layouts. Installing
 `github` creates `speckit.github.taskstoissues.md` in commands mode or
 `speckit-github-taskstoissues/SKILL.md` in skills mode. See
-[integration-specific options](../../docs/reference/integrations.md#integration-specific-options).
+[integration-specific options](https://github.github.io/spec-kit/integrations/cli.html#integration-specific-options).
 
 ## Removal
 
@@ -80,10 +80,12 @@ Prerequisite errors name the Spec Kit command without assuming an integration's 
 
 **Breaking change:** the core command has been removed. Integration upgrades
 delete old manifest-tracked `taskstoissues` command and skill files, rather than
-replacing them with an updated prompt. Review and port local customizations to
-the namespaced extension command **before** using `--force`; forcing the upgrade
-also authorizes deletion of customized legacy files. Installing this extension
-does not restore the old invocation or provide a compatibility alias.
+replacing them with an updated prompt. Back up customized legacy and extension
+command or skill files outside the generated directories **before** upgrading;
+forcing the upgrade with `--force` also authorizes deletion of customized legacy
+files. Reapply customizations only after the migration steps below, because the
+upgrade can overwrite generated extension files. Installing this extension does
+not restore the old invocation or provide a compatibility alias.
 
 For existing projects, upgrading the CLI alone does not refresh the generated
 core command files. After upgrading the CLI, run this from the project root:
@@ -94,9 +96,9 @@ specify integration upgrade <integration>
 
 Replace `<integration>` with the installed integration key, or omit it to upgrade
 the default integration. Repeat for each installed integration. If locally
-modified files block the upgrade, port those changes before deciding whether to
+modified files block the upgrade, back them up before deciding whether to
 delete the legacy files with `--force`. See
-[Upgrade an Integration](https://github.github.io/spec-kit/reference/integrations/#upgrade-an-integration).
+[Upgrade an Integration](https://github.github.io/spec-kit/integrations/cli.html#upgrade-an-integration).
 
 Then install the extension, **skipping this step if `github` is already
 installed**, and use the namespaced command instead:
@@ -105,8 +107,12 @@ installed**, and use the namespaced command instead:
 specify extension add github
 ```
 
-An already-installed, enabled extension is re-registered during the integration
-upgrade. See the [public upgrade guide](https://github.github.io/spec-kit/upgrade/#breaking-core-taskstoissues-removal)
+An already-installed, enabled extension is re-registered when upgrading the
+default integration only. Before using the replacement in a non-default
+integration, run `specify integration use <integration>` to select it and register
+the extension there. After upgrading, installing if needed, and selecting the
+integration, reapply customizations from your separate backup to the namespaced
+extension command. See the [public upgrade guide](https://github.github.io/spec-kit/upgrade.html#breaking-core-taskstoissues-removal)
 for the complete migration sequence.
 
 The `generic` integration supports this migration in both commands and skills

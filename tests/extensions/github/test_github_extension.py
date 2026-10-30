@@ -3,7 +3,7 @@
 Validates:
 - Bundled layout (manifest, README, command file, script twins)
 - Catalog registration and wheel/source resolution via ``_locate_bundled_extension``
-- Manifest validation
+- Manifest validation, including no legacy compatibility aliases
 - Install/uninstall through ``ExtensionManager``
 - Rendered command artifacts across command mode and skills mode, and in
   particular that ``{SCRIPT}`` resolves to a script the extension actually
@@ -157,7 +157,7 @@ class TestManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "github"
-        assert m.version == "1.0.3"
+        assert m.version == "1.0.4"
         assert [c["name"] for c in m.commands] == [COMMAND_NAME]
 
     def test_manifest_does_not_restore_legacy_alias(self):
@@ -166,7 +166,7 @@ class TestManifest:
         manifest = ExtensionManifest(EXT_DIR / "extension.yml")
         for command in manifest.commands:
             assert command["name"] != "speckit.taskstoissues"
-            assert "speckit.taskstoissues" not in command.get("aliases", [])
+            assert not command.get("aliases")
 
     def test_manifest_command_files_exist(self):
         from specify_cli.extensions import ExtensionManifest
@@ -353,11 +353,11 @@ class TestExtensionInstall:
 
 
 class TestScriptPathResolution:
-    def test_extension_registrar_scope_excludes_generic(self):
+    def test_extension_registrar_scope_excludes_generic_and_none(self):
         from specify_cli.integrations import INTEGRATION_REGISTRY
 
         assert set(EXTENSION_REGISTRAR_AGENTS) == set(INTEGRATION_REGISTRY) - {
-            "generic"
+            "generic", "none"
         }
 
     def test_frontmatter_uses_plain_extension_local_spelling(self):

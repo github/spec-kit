@@ -11,9 +11,10 @@
   canonical `speckit.github.taskstoissues` command; no legacy alias is provided.
   Upgrade each installed integration with `specify integration upgrade <integration>`
   before running `specify extension add github` (skip installation if already
-  installed). Port customizations before forcing the upgrade: old manifest-tracked
-  command and skill artifacts are deleted, not replaced. See the
-  [migration guide](https://github.github.io/spec-kit/upgrade/#breaking-core-taskstoissues-removal).
+  installed). Back up customizations before forcing the upgrade and reapply them
+  after migration: old manifest-tracked command and skill artifacts are deleted,
+  not replaced. See the
+  [migration guide](https://github.github.io/spec-kit/upgrade.html#breaking-core-taskstoissues-removal).
   Per [#4423](https://github.com/github/spec-kit/issues/4423), ship this removal
   only in a later minor release, after the extension and core deprecation from
   #4421 and #4422 have shipped in earlier minor releases. This entry does not
