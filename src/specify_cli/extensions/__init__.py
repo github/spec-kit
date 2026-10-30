@@ -2405,6 +2405,12 @@ class ExtensionManager:
         # Load and validate manifest
         manifest_path = source_dir / "extension.yml"
         manifest = ExtensionManifest(manifest_path)
+        from ._hook_projection import projection_enabled, validate_manifest_hooks
+
+        native_hooks = projection_enabled(self.project_root)
+        if native_hooks:
+            validate_manifest_hooks(manifest)
+        HookExecutor(self.project_root).load_project_config_for_update()
 
         # Check compatibility
         self.check_compatibility(manifest, speckit_version)
@@ -2999,33 +3005,34 @@ class ExtensionManager:
         # the restored user config with packaged defaults.  Cleanup is deferred
         # until after registry.add() succeeds (see post-commit cleanup below).
 
-        def rollback_generic_registration() -> None:
+        def rollback_installation_files() -> None:
             from ..shared_infra import _validate_safe_shared_directory
 
-            root = self.project_root.resolve()
-            installed_root = dest_dir.resolve()
-            for name in names:
-                path = output_dir / name / "SKILL.md" if skills else output_dir / f"{name}.md"
-                try:
-                    _validate_safe_shared_directory(root, path.parent)
-                except (OSError, ValueError):
-                    continue
-                if path.is_symlink():
-                    if not path.resolve().is_relative_to(installed_root):
+            if register_commands and generic_active and manifest.commands:
+                root = self.project_root.resolve()
+                installed_root = dest_dir.resolve()
+                for name in names:
+                    path = output_dir / name / "SKILL.md" if skills else output_dir / f"{name}.md"
+                    try:
+                        _validate_safe_shared_directory(root, path.parent)
+                    except (OSError, ValueError):
                         continue
-                elif not path.is_file():
-                    if skills and path.parent.is_dir():
+                    if path.is_symlink():
+                        if not path.resolve().is_relative_to(installed_root):
+                            continue
+                    elif not path.is_file():
+                        if skills and path.parent.is_dir():
+                            try:
+                                path.parent.rmdir()
+                            except OSError:
+                                pass
+                        continue
+                    path.unlink()
+                    if skills:
                         try:
                             path.parent.rmdir()
                         except OSError:
                             pass
-                    continue
-                path.unlink()
-                if skills:
-                    try:
-                        path.parent.rmdir()
-                    except OSError:
-                        pass
 
             preserved = set(stranded_configs)
             if did_remove:
@@ -3052,10 +3059,12 @@ class ExtensionManager:
                 shutil.rmtree(dest_dir)
 
         hooks_started = False
+        hooks_finished = False
         registry_started = False
+        registered_commands = {}
+        registered_skills = []
         try:
             # Register commands with AI agents (active integration only, #2948)
-            registered_commands = {}
             if register_commands:
                 registered_commands = self._register_commands_for_active_agent(
                     manifest, dest_dir, link_outputs=link_commands
@@ -3086,6 +3095,7 @@ class ExtensionManager:
             hook_executor = HookExecutor(self.project_root)
             hooks_started = True
             hook_executor.register_hooks(manifest)
+            hooks_finished = True
 
             # Restore config files from backup when --force triggered a removal.
             # Only restore *.yml config files to match what remove() backs up,
@@ -3131,28 +3141,48 @@ class ExtensionManager:
                 registry_entry["generic_artifact_hashes"] = generic_hashes
             self.registry.add(manifest.id, registry_entry)
         except Exception as exc:
-            # Any failed commit must retire outputs before the original error
-            # is re-raised, including errors from hook serialization.
-            if register_commands and generic_active and manifest.commands:
+            # Retire invocation artifacts after a failed publication, but do
+            # not unregister pre-existing same-ID hooks from a partial write.
+            rollback_installation = (
+                register_commands and generic_active and bool(manifest.commands)
+            ) or (hooks_started and not hooks_finished)
+            if rollback_installation:
                 rollback_errors = []
                 if registry_started:
                     try:
                         self.registry.remove(manifest.id)
                     except Exception as error:
                         rollback_errors.append(f"registry: {error}")
-                if hooks_started:
+                if hooks_started and (hooks_finished or not native_hooks):
                     try:
                         hook_executor.unregister_hooks(manifest.id)
                     except Exception as error:
                         rollback_errors.append(f"hooks: {error}")
+                if registered_commands:
+                    try:
+                        non_generic = {
+                            agent: commands for agent, commands in registered_commands.items()
+                            if agent != "generic"
+                        }
+                        if non_generic:
+                            CommandRegistrar(self.project_root, include_generic=False).unregister_commands(
+                                non_generic, self.project_root
+                            )
+                    except Exception as error:
+                        rollback_errors.append(f"commands: {error}")
+                if registered_skills:
+                    try:
+                        self._unregister_extension_skills(registered_skills, manifest.id)
+                    except Exception as error:
+                        rollback_errors.append(f"skills: {error}")
                 try:
                     with changing_file(dest_dir, removal=True):
-                        rollback_generic_registration()
+                        rollback_installation_files()
                 except Exception as error:
                     rollback_errors.append(f"artifacts: {error}")
                 if rollback_errors:
                     raise ExtensionError(
-                        f"Generic registration failed ({exc}); rollback failed: "
+                        f"Extension installation failed ({exc}); rollback failed: "
                         + "; ".join(rollback_errors)
                     ) from exc
             raise
@@ -3487,6 +3517,9 @@ class ExtensionManager:
         if not self.registry.is_installed(extension_id):
             return False
 
+        hook_executor = HookExecutor(self.project_root)
+        hook_executor.load_project_config_for_update()
+
         # Get registered commands and skills before removal
         metadata = self.registry.get(extension_id)
         registered_commands = (
@@ -3560,14 +3593,245 @@ class ExtensionManager:
             if extension_dir.exists():
                 shutil.rmtree(extension_dir)
 
-        # Unregister hooks
-        hook_executor = HookExecutor(self.project_root)
         hook_executor.unregister_hooks(extension_id)
 
         # Update registry
         self.registry.remove(extension_id)
 
         return True
+
+    def disable(self, extension_id: str) -> bool:
+        """Disable an installed extension and its hooks, restoring invocations on failure.
+
+        Returns False when the extension is already disabled.
+        """
+        from .. import load_init_options
+        from ._hook_projection import projection_enabled
+
+        hook_executor = HookExecutor(self.project_root)
+        config = hook_executor.load_project_config_for_update()
+        metadata = self.registry.get(extension_id)
+        if not isinstance(metadata, dict):
+            raise ExtensionError(
+                f"Extension '{extension_id}' not found in registry (corrupted state)"
+            )
+        if not metadata.get("enabled", True):
+            return False
+
+        native_hooks = projection_enabled(self.project_root)
+        previous_hook_states = [
+            {"event": event, "command": hook["command"], "enabled": hook.get("enabled", True)}
+            for event, hooks in config.get("hooks", {}).items()
+            for hook in hooks
+            if hook.get("extension") == extension_id
+        ] if native_hooks else []
+        generic = load_init_options(self.project_root).get("ai") == "generic"
+        if generic:
+            self.disable_generic_extension_artifacts(extension_id)
+        else:
+            self.registry.update(extension_id, {"enabled": False})
+
+        try:
+            if native_hooks:
+                self.registry.update(extension_id, {"disabled_hook_states": previous_hook_states})
+            if "hooks" in config:
+                for hooks in config["hooks"].values():
+                    for hook in hooks:
+                        if hook.get("extension") == extension_id:
+                            hook["enabled"] = False
+                hook_executor.save_project_config(config)
+        except (ValueError, OSError, ExtensionError) as exc:
+            try:
+                if generic:
+                    self.restore_generic_extension_after_failed_disable(
+                        extension_id, metadata
+                    )
+                if native_hooks:
+                    self.registry.restore(extension_id, metadata)
+                elif not generic:
+                    self.registry.update(extension_id, {"enabled": True})
+            except (ExtensionError, ValueError, OSError) as rollback_exc:
+                raise ExtensionError(
+                    f"{exc}; rollback failed: {rollback_exc}"
+                ) from exc
+            raise
+        return True
+
+    def enable(self, extension_id: str) -> bool:
+        """Enable an installed extension, its generic invocations, and prior hooks.
+
+        Returns False when the extension is already enabled.
+        """
+        from .. import load_init_options
+        from .._init_options import is_ai_skills_enabled
+        from ._hook_projection import projection_enabled
+
+        hook_executor = HookExecutor(self.project_root)
+        config = hook_executor.load_project_config_for_update()
+        metadata = self.registry.get(extension_id)
+        if not isinstance(metadata, dict):
+            raise ExtensionError(
+                f"Extension '{extension_id}' not found in registry (corrupted state)"
+            )
+        if metadata.get("enabled", True):
+            return False
+
+        native_hooks = projection_enabled(self.project_root)
+        if native_hooks:
+            previous = metadata.get("disabled_hook_states")
+            if previous is None:
+                manifest = self.get_extension(extension_id)
+                if manifest is None:
+                    raise ExtensionError(f"Cannot read manifest for '{extension_id}'")
+                previous = []
+                for event, entries in manifest.hooks.items():
+                    # Match registration's last-write-wins values and order.
+                    states = {}
+                    for entry in coerce_hook_entries(entries):
+                        if not isinstance(entry, dict) or not entry.get("command"):
+                            continue
+                        command = entry["command"]
+                        if command in states:
+                            del states[command]
+                        states[command] = {
+                            "event": event, "command": command,
+                            "enabled": entry.get("enabled", True),
+                        }
+                    previous.extend(states.values())
+            owned = [
+                (event, hook)
+                for event, hooks in config.get("hooks", {}).items()
+                for hook in hooks
+                if hook.get("extension") == extension_id
+            ]
+            if (
+                not isinstance(previous, list)
+                or len(previous) != len(owned)
+                or any(
+                    not isinstance(state, dict)
+                    or state.get("event") != event
+                    or state.get("command") != hook.get("command")
+                    or not isinstance(state.get("enabled"), bool)
+                    for state, (event, hook) in zip(previous, owned)
+                )
+            ):
+                raise ExtensionError(
+                    f"Cannot enable '{extension_id}': owned hooks changed since disable; "
+                    "review the hook configuration before enabling"
+                )
+
+        init_options = load_init_options(self.project_root)
+        generic = init_options.get("ai") == "generic"
+        self.registry.update(extension_id, {"enabled": True})
+        if generic:
+            try:
+                manifest = self.get_extension(extension_id)
+                if manifest is None:
+                    raise ExtensionError(f"Cannot read manifest for '{extension_id}'")
+                if manifest.commands:
+                    self.register_enabled_extensions_for_agent("generic")
+                    refreshed = self.registry.get(extension_id) or {}
+                    skills = is_ai_skills_enabled(init_options)
+                    expected = (
+                        {self._skill_name_for_command(command["name"]) for command in manifest.commands}
+                        if skills else set(self._collect_manifest_command_names(manifest))
+                    )
+                    owned_names = set(self._generic_owned_names(
+                        refreshed, list(expected), skills=skills, extension_id=extension_id,
+                    ))
+                    missing = expected - owned_names
+                    if missing:
+                        self.disable_generic_extension_artifacts(extension_id)
+                        raise ExtensionError(
+                            "Missing invocation artifacts: " + ", ".join(sorted(missing))
+                        )
+            except (ExtensionError, OSError, ValueError) as exc:
+                try:
+                    self.registry.update(extension_id, {"enabled": False})
+                except (ExtensionError, OSError, ValueError) as rollback_exc:
+                    raise ExtensionError(
+                        f"Could not register generic invocations for '{extension_id}': "
+                        f"{exc}; rollback failed: {rollback_exc}"
+                    ) from exc
+                raise ExtensionError(
+                    f"Could not register generic invocations for '{extension_id}': {exc}"
+                ) from exc
+
+        if "hooks" in config:
+            if native_hooks:
+                for state, (_, hook) in zip(previous, owned):
+                    hook["enabled"] = state["enabled"]
+            else:
+                for hooks in config["hooks"].values():
+                    for hook in hooks:
+                        if hook.get("extension") == extension_id:
+                            hook["enabled"] = True
+            try:
+                hook_executor.save_project_config(config)
+            except (ValueError, OSError) as exc:
+                try:
+                    if generic:
+                        self.disable_generic_extension_artifacts(extension_id)
+                    if native_hooks:
+                        self.registry.restore(extension_id, metadata)
+                    elif not generic:
+                        self.registry.update(extension_id, {"enabled": False})
+                except (ExtensionError, ValueError, OSError) as rollback_exc:
+                    raise ExtensionError(
+                        f"{exc}; rollback failed: {rollback_exc}"
+                    ) from exc
+                raise
+        if native_hooks:
+            updated = self.registry.get(extension_id) or {}
+            if "disabled_hook_states" in updated:
+                updated.pop("disabled_hook_states")
+                self.registry.restore(extension_id, updated)
+        return True
+
+    def restore_generic_extension_after_failed_disable(
+        self, extension_id: str, previous: Dict[str, Any]
+    ) -> None:
+        """Restore generic invocations and verify the registry and owned files."""
+        self.registry.update(extension_id, {"enabled": True})
+        self.register_enabled_extensions_for_agent("generic")
+        restored = self.registry.get(extension_id) or {}
+        if restored.get("enabled") is not True:
+            raise ExtensionError("Rollback did not restore enabled registry state")
+        previous_commands = previous.get("registered_commands", {})
+        commands = (
+            previous_commands.get("generic", [])
+            if isinstance(previous_commands, dict) else []
+        )
+        for names, skills in (
+            (commands, False), (previous.get("registered_skills", []), True)
+        ):
+            if not isinstance(names, list) or any(
+                not isinstance(name, str) for name in names
+            ):
+                raise ExtensionError("Invalid generic artifact metadata during rollback")
+            restored_commands = restored.get("registered_commands", {})
+            registered = (
+                restored.get("registered_skills", [])
+                if skills else (
+                    restored_commands.get("generic", [])
+                    if isinstance(restored_commands, dict) else None
+                )
+            )
+            if (
+                not isinstance(registered, list)
+                or any(not isinstance(name, str) for name in registered)
+                or set(names) - set(registered)
+            ):
+                raise ExtensionError("Rollback did not restore generic artifact registry")
+            owned = self._generic_owned_names(
+                restored, names, skills=skills, extension_id=extension_id
+            )
+            missing = set(names) - set(owned)
+            if missing:
+                raise ExtensionError(
+                    "Rollback did not restore generic invocation artifacts: "
+                    + ", ".join(sorted(missing))
+                )
 
     def disable_generic_extension_artifacts(self, extension_id: str) -> None:
         """Disable and retire generic invocations without removing sources."""
@@ -5713,16 +5977,42 @@ class HookExecutor:
         Args:
             config: Configuration dictionary to save
         """
-        from ..integrations._file_changes import write_text
+        from ._hook_projection import projection_enabled, publish, retire
 
-        self.config_file.parent.mkdir(parents=True, exist_ok=True)
-        write_text(
-            self.config_file,
-            yaml.dump(
-                config, default_flow_style=False, sort_keys=False, allow_unicode=True
-            ),
-            encoding="utf-8",
+        if projection_enabled(self.project_root):
+            publish(self.config_file, config)
+        else:
+            from ..integrations._file_changes import write_text
+
+            retire(self.config_file)
+            self.config_file.parent.mkdir(parents=True, exist_ok=True)
+            write_text(
+                self.config_file,
+                yaml.dump(
+                    config, default_flow_style=False, sort_keys=False, allow_unicode=True
+                ),
+                encoding="utf-8",
+            )
+
+    def load_project_config_for_update(self) -> Dict[str, Any]:
+        from ._hook_projection import load_for_update, projection_enabled
+
+        return (
+            load_for_update(self.config_file)
+            if projection_enabled(self.project_root) else self.get_project_config()
         )
+
+    def migrate_project_config(self) -> None:
+        """Refresh the projection of an existing configuration without rewriting it."""
+        from ._hook_projection import projection_enabled, publish, retire
+
+        if projection_enabled(self.project_root) and (
+            self.config_file.exists() or self.config_file.is_symlink()
+        ):
+            config = self.load_project_config_for_update()
+            publish(self.config_file, config, preserve_source=True)
+        else:
+            retire(self.config_file)
 
     def register_extension(self, extension_id: str):
         """Add extension to the installed list in project config.
@@ -5730,7 +6020,7 @@ class HookExecutor:
         Args:
             extension_id: ID of extension to register
         """
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         # Ensure config is a dict (defensive)
         if not isinstance(config, dict):
@@ -5749,7 +6039,7 @@ class HookExecutor:
         Args:
             extension_id: ID of extension to unregister
         """
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         if not isinstance(config, dict):
             config = {}
@@ -5823,16 +6113,23 @@ class HookExecutor:
         Args:
             manifest: Extension manifest with hooks to register
         """
-        # Always ensure the extension is in the installed list
-        self.register_extension(manifest.id)
+        from ._hook_projection import projection_enabled
 
-        config = self.get_project_config()
+        native_hooks = projection_enabled(self.project_root)
+        if not native_hooks:
+            self.register_extension(manifest.id)
+        config = self.load_project_config_for_update()
 
         # Ensure config is a dict (defensive)
         changed = False
         if not isinstance(config, dict):
             config = {}
             changed = True
+        if native_hooks:
+            installed = self._sanitize_installed_list(config.get("installed"), add_id=manifest.id)
+            if installed != config.get("installed"):
+                config["installed"] = installed
+                changed = True
 
         # Ensure hooks dict exists and is a mapping
         if "hooks" not in config or not isinstance(config["hooks"], dict):
@@ -5888,7 +6185,7 @@ class HookExecutor:
                 new_entries[command] = {
                     "extension": manifest.id,
                     "command": command,
-                    "enabled": True,
+                    "enabled": entry.get("enabled", True) if native_hooks else True,
                     "optional": entry.get("optional", True),
                     "priority": normalize_priority(
                         entry.get("priority"), DEFAULT_HOOK_PRIORITY
@@ -5919,6 +6216,8 @@ class HookExecutor:
 
         if changed:
             self.save_project_config(config)
+        elif native_hooks:
+            self.migrate_project_config()
 
     def unregister_hooks(self, extension_id: str):
         """Remove extension hooks from project config.
@@ -5926,18 +6225,25 @@ class HookExecutor:
         Args:
             extension_id: ID of extension to unregister
         """
-        # Always remove from installed list (Feedback from review)
-        self.unregister_extension(extension_id)
+        from ._hook_projection import projection_enabled
 
-        config = self.get_project_config()
+        native_hooks = projection_enabled(self.project_root)
+        if not native_hooks:
+            self.unregister_extension(extension_id)
+        config = self.load_project_config_for_update()
 
         if not isinstance(config, dict):
             config = {}
-            # We don't save yet, as there are no hooks to unregister,
-            # but unregister_extension above might have already saved a normalized config.
-            return
+        installed_changed = False
+        if native_hooks:
+            installed = self._sanitize_installed_list(config.get("installed"), remove_id=extension_id)
+            installed_changed = installed != config.get("installed")
+            if installed_changed:
+                config["installed"] = installed
 
         if "hooks" not in config or not isinstance(config["hooks"], dict):
+            if installed_changed:
+                self.save_project_config(config)
             return
 
         # Remove hooks for this extension
@@ -6205,7 +6511,7 @@ class HookExecutor:
         Args:
             extension_id: Extension ID
         """
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         if "hooks" not in config:
             return
@@ -6224,7 +6530,7 @@ class HookExecutor:
         Args:
             extension_id: Extension ID
         """
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         if "hooks" not in config:
             return

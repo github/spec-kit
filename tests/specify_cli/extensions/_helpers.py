@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 import pytest
+import yaml
 
 from specify_cli.integration_state import write_integration_json
 from specify_cli.integrations import get_integration
@@ -67,6 +68,14 @@ def write_listing_project_options(project_dir, init_options):
         )
 
 
+def enable_native_hooks(project: Path) -> None:
+    from specify_cli import load_init_options, save_init_options
+
+    save_init_options(
+        project, {**load_init_options(project), "native_extension_hooks": True}
+    )
+
+
 def open_test_download_zip(project_root, download_dir, zip_filename):
     """Create a transient download file using platform-appropriate semantics."""
     target = download_dir / zip_filename
@@ -103,3 +112,38 @@ def can_create_symlink(tmp_path: Path) -> bool:
     except OSError:
         return False
     return link.is_symlink()
+
+
+def installed_generic_hook_extension(
+    tmp_path: Path, extension_dir: Path, *, native_hooks: bool = False
+):
+    """Install a hook-bearing extension with a real generic invocation artifact."""
+    from specify_cli import save_init_options
+    from specify_cli.extensions import ExtensionManager
+    from specify_cli.integration_state import write_integration_json
+    from specify_cli.integrations import get_integration
+    from specify_cli.integrations.manifest import IntegrationManifest
+
+    manifest_path = extension_dir / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["hooks"] = {"before_plan": {"command": "speckit.test-ext.hello"}}
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    project = tmp_path / "generic-project"
+    project.mkdir()
+    options = {"commands_dir": ".custom/commands", "skills": False}
+    installation = IntegrationManifest("generic", project)
+    get_integration("generic").setup(project, installation, parsed_options=options)
+    installation.save()
+    write_integration_json(
+        project, version="1.0.0", integration_key="generic",
+        settings={"generic": {"parsed_options": options}},
+    )
+    save_init_options(project, {
+        "ai": "generic", "ai_skills": False, "script": "sh",
+        "native_extension_hooks": native_hooks,
+    })
+    manager = ExtensionManager(project)
+    manager.install_from_directory(extension_dir, "1.0.0")
+    artifact = project / ".custom/commands/speckit.test-ext.hello.md"
+    assert artifact.is_file()
+    return project, manager, artifact

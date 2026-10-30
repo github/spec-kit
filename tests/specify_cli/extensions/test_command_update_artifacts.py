@@ -16,7 +16,7 @@ import pytest
 import yaml
 from pathlib import Path
 
-from specify_cli.extensions import ExtensionManager
+from specify_cli.extensions import ExtensionManager, ValidationError
 
 
 def _create_extension_source(
@@ -63,6 +63,68 @@ def _make_project(tmp_path: Path) -> Path:
     (project_dir / ".specify").mkdir()
     (project_dir / ".claude" / "skills").mkdir(parents=True)
     return project_dir
+
+
+@pytest.mark.parametrize("field,value", [
+    ("optional", "yes"), ("enabled", "yes"), ("condition", 42),
+    ("description", False), ("prompt", []), ("command", "speckit.test-ext.hello\0"),
+])
+def test_archive_preflight_rejects_invalid_native_hook_metadata(tmp_path, field, value):
+    from specify_cli.extensions._command_update_artifacts import (
+        _archive_extension_directory,
+        preflight_update_archive,
+    )
+    from tests.specify_cli.extensions._helpers import enable_native_hooks
+
+    project = _make_project(tmp_path)
+    enable_native_hooks(project)
+    source = _create_extension_source(tmp_path)
+    manifest_path = source / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["hooks"] = {"after_tasks": {
+        "command": "speckit.test-ext.hello", "enabled": False, field: value,
+    }}
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    archive_path = _archive_extension_directory(source)
+    try:
+        with pytest.raises(ValidationError, match="Invalid manifest hooks"):
+            preflight_update_archive(
+                ExtensionManager(project), archive_path, "test-ext", "1.0.0", "0.1.0"
+            )
+    finally:
+        archive_path.unlink()
+    assert not (project / ".specify/extensions/test-ext").exists()
+    assert not (project / ".specify/hook-dispatch").exists()
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_archive_preflight_accepts_valid_native_hooks_without_publication(tmp_path, enabled):
+    from specify_cli.extensions._command_update_artifacts import (
+        _archive_extension_directory,
+        preflight_update_archive,
+    )
+    from tests.specify_cli.extensions._helpers import enable_native_hooks
+
+    project = _make_project(tmp_path)
+    enable_native_hooks(project)
+    source = _create_extension_source(tmp_path)
+    manifest_path = source / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["hooks"] = {"after_tasks": [{
+        "command": "speckit.test-ext.hello", "enabled": enabled, "optional": False,
+    }]}
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    archive_path = _archive_extension_directory(source)
+    try:
+        result = preflight_update_archive(
+            ExtensionManager(project), archive_path, "test-ext", "1.0.0", "0.1.0"
+        )
+    finally:
+        archive_path.unlink()
+    assert result.command_names == ["speckit.test-ext.hello"]
+    assert result.skill_names == ["speckit-test-ext-hello"]
+    assert not (project / ".specify/extensions.yml").exists()
+    assert not (project / ".specify/hook-dispatch").exists()
 
 
 class TestArchiveExtensionDirectory:

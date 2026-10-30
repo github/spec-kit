@@ -20,6 +20,7 @@ from specify_cli.extensions import (
     ExtensionManager,
     HookExecutor,
 )
+from tests.specify_cli.extensions._helpers import enable_native_hooks
 
 
 class TestExtensionUpdateCLI:
@@ -93,6 +94,76 @@ class TestExtensionUpdateCLI:
             zf.writestr(manifest_path, manifest_text)
             if extra_manifest_path is not None:
                 zf.writestr(extra_manifest_path, manifest_text)
+
+    @pytest.mark.parametrize("native_hooks", [False, True])
+    @pytest.mark.parametrize("event", ["custom:after", "before_my-extension_assess"])
+    def test_update_legacy_event_follows_opt_in_mode(self, tmp_path, native_hooks, event):
+        from specify_cli.extensions._command_update_artifacts import _archive_extension_directory
+
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        (project / ".claude/skills").mkdir(parents=True)
+        if native_hooks:
+            enable_native_hooks(project)
+        manager = ExtensionManager(project)
+        original_source = self._create_extension_source(tmp_path, "1.0.0")
+        manager.install_from_directory(
+            original_source, "0.1.0", catalog_name="original-catalog"
+        )
+        executor = HookExecutor(project)
+        config = executor.load_project_config_for_update()
+        config["hooks"]["after_tasks"].append({
+            "extension": "other-ext", "command": "speckit.other-ext.run",
+        })
+        executor.save_project_config(config)
+        executor.config_file.write_bytes(
+            b"# Preserve hook order and formatting\r\n"
+            + executor.config_file.read_bytes().replace(b"\n", b"\r\n")
+        )
+        executor.migrate_project_config()
+        original_files = {
+            path.relative_to(project): path.read_bytes()
+            for path in project.rglob("*") if path.is_file()
+        }
+        updated_source = self._create_extension_source(tmp_path, "2.0.0")
+        manifest_path = updated_source / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        manifest["hooks"] = {event: {"command": "speckit.test-ext.hello"}}
+        manifest_path.write_text(yaml.safe_dump(manifest))
+        zip_path = _archive_extension_directory(updated_source)
+
+        with patch.object(Path, "cwd", return_value=project), \
+             patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                 "id": "test-ext", "name": "Test Extension", "version": "2.0.0",
+                 "_install_allowed": True,
+             }), \
+             patch.object(ExtensionCatalog, "download_extension", return_value=zip_path), \
+             patch.object(
+                 ExtensionManager, "remove", autospec=True,
+                 side_effect=ExtensionManager.remove,
+             ) as remove:
+            result = CliRunner().invoke(
+                app, ["extension", "update", "test-ext"], input="y\n"
+            )
+        assert not zip_path.exists()
+        if native_hooks:
+            assert result.exit_code == 1, result.output
+            assert "Rename legacy events" in result.output
+            remove.assert_not_called()
+            assert "Rolling back" not in result.output
+            assert {
+                path.relative_to(project): path.read_bytes()
+                for path in project.rglob("*") if path.is_file()
+            } == original_files
+        else:
+            assert result.exit_code == 0, result.output
+            remove.assert_called_once()
+            assert ExtensionManager(project).registry.get("test-ext")["version"] == "2.0.0"
+            assert event in yaml.safe_load(
+                (project / ".specify/extensions.yml").read_text()
+            )["hooks"]
+            assert not (project / ".specify/hook-dispatch").exists()
 
     @pytest.mark.parametrize(
         "manifest_path",

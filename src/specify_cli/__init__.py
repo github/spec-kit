@@ -172,7 +172,13 @@ def _install_shared_infra(
 
     Returns ``True`` on success.
     """
-    return _install_shared_infra_impl(
+    config_file = project_path / ".specify" / "extensions.yml"
+    if config_file.exists() or config_file.is_symlink():
+        from .extensions import HookExecutor
+
+        hook_executor = HookExecutor(project_path)
+        hook_executor.load_project_config_for_update()
+    result = _install_shared_infra_impl(
         project_path,
         script_type,
         version=get_speckit_version(),
@@ -185,6 +191,15 @@ def _install_shared_infra(
         refresh_managed=refresh_managed,
         refresh_hint=refresh_hint,
     )
+    projection_dir = config_file.parent / "hook-dispatch"
+    if (
+        config_file.exists() or config_file.is_symlink()
+        or projection_dir.exists() or projection_dir.is_symlink()
+    ):
+        from .extensions import HookExecutor
+
+        HookExecutor(project_path).migrate_project_config()
+    return result
 
 
 def _install_shared_infra_or_exit(

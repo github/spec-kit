@@ -1,0 +1,515 @@
+"""Projection contract and publication failures without changing hook reads."""
+
+import hashlib
+import json
+from pathlib import Path
+
+import pytest
+import yaml
+
+from specify_cli import save_init_options
+from specify_cli.extensions import ExtensionManifest, HookExecutor
+from specify_cli.extensions._hook_projection import project_hooks
+
+
+def _config() -> dict:
+    return {
+        "installed": ["example"],
+        "settings": {"auto_execute_hooks": True},
+        "hooks": {
+            "before_plan": [
+                {"extension": "example", "command": "speckit.example.first", "priority": 90, "optional": False},
+                {"extension": "example", "command": "speckit.example.skipped", "enabled": False},
+                {"extension": "example", "command": "speckit.example.dynamic", "condition": "env.RUN is set"},
+                {"extension": "example", "command": "speckit.example.last", "priority": 1, "prompt": "Proceed?"},
+            ],
+            "after_plan": [],
+        },
+    }
+
+
+def _enabled_executor(root: Path) -> HookExecutor:
+    save_init_options(root, {"native_extension_hooks": True})
+    return HookExecutor(root)
+
+
+def _assert_snapshot(root: Path, event: str = "before_plan") -> dict:
+    cache = root / ".specify" / "hook-dispatch"
+    source = (root / ".specify" / "extensions.yml").read_bytes()
+    assert (cache / "source.yml").read_bytes() == source
+    index = (cache / "events.txt").read_bytes()
+    assert index == b"before_plan\nafter_plan\n"
+    assert (cache / "events.txt.sha256").read_text().strip() == hashlib.sha256(index).hexdigest()
+    payload = (cache / f"{event}.json").read_bytes()
+    assert (cache / f"{event}.json.sha256").read_text().strip() == hashlib.sha256(payload).hexdigest()
+    return json.loads(payload)
+
+
+def test_default_save_and_refresh_preserve_legacy_hooks_without_projection(tmp_path):
+    executor = HookExecutor(tmp_path)
+    config = {"installed": ["example"], "hooks": {"custom:after": [
+        {"extension": "example", "command": "speckit.example.legacy"}
+    ]}}
+    executor.save_project_config(config)
+    source = executor.config_file.read_bytes()
+    executor.migrate_project_config()
+    assert executor.config_file.read_bytes() == source
+    assert executor.get_hooks_for_event("custom:after")[0]["command"] == (
+        "speckit.example.legacy"
+    )
+    assert not (tmp_path / ".specify/hook-dispatch").exists()
+
+
+def test_default_hook_lifecycle_keeps_legacy_event_without_projection(tmp_path):
+    executor = HookExecutor(tmp_path)
+    config = {"installed": ["example"], "hooks": {"custom:after": [
+        {"extension": "example", "command": "speckit.example.legacy"}
+    ]}}
+    executor.save_project_config(config)
+    executor.disable_hooks("example")
+    assert not executor.get_hooks_for_event("custom:after")
+    executor.enable_hooks("example")
+    assert executor.get_hooks_for_event("custom:after")
+    executor.unregister_hooks("example")
+    assert not executor.get_hooks_for_event("custom:after")
+    assert not (tmp_path / ".specify/hook-dispatch").exists()
+
+
+@pytest.mark.parametrize("invalid", ["true", 1, None, []])
+def test_non_boolean_opt_in_is_rejected_without_writing_projection(tmp_path, invalid):
+    save_init_options(tmp_path, {"native_extension_hooks": invalid})
+    executor = HookExecutor(tmp_path)
+    with pytest.raises(ValueError, match="native_extension_hooks.*expected true or false"):
+        executor.save_project_config(_config())
+    assert not executor.config_file.exists()
+    assert not (tmp_path / ".specify/hook-dispatch").exists()
+
+
+def test_opt_out_retires_prior_projection_and_restores_legacy_writes(tmp_path):
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    cache = tmp_path / ".specify/hook-dispatch"
+    assert cache.exists()
+    save_init_options(tmp_path, {"native_extension_hooks": False})
+    legacy = {"hooks": {"custom:after": [
+        {"extension": "example", "command": "speckit.example.legacy"}
+    ]}}
+    executor.save_project_config(legacy)
+    executor.migrate_project_config()
+    assert not cache.exists()
+    assert executor.get_hooks_for_event("custom:after")[0]["command"] == (
+        "speckit.example.legacy"
+    )
+    save_init_options(tmp_path, {"native_extension_hooks": True})
+    with pytest.raises(ValueError, match="Rename legacy events"):
+        executor.migrate_project_config()
+    assert not cache.exists()
+
+
+def test_save_projects_only_unconditional_enabled_hooks_in_yaml_order(tmp_path):
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    result = _assert_snapshot(tmp_path)
+    assert result == {
+        "event": "before_plan",
+        "hooks": [
+            {"extension": "example", "command": "speckit.example.first", "optional": False,
+             "description": "", "prompt": "", "priority": 90},
+            {"extension": "example", "command": "speckit.example.last", "optional": True,
+             "description": "", "prompt": "Proceed?", "priority": 1},
+        ],
+    }
+    assert json.loads((tmp_path / ".specify/hook-dispatch/after_plan.json").read_text()) == {
+        "event": "after_plan", "hooks": []
+    }
+    assert [hook["command"] for hook in executor.get_hooks_for_event("before_plan")] == [
+        "speckit.example.last", "speckit.example.dynamic",
+        "speckit.example.first",
+    ]
+
+
+@pytest.mark.parametrize("bad", [
+    {"hooks": {42: []}},
+    {"hooks": {"custom:after": []}},
+    {"hooks": {"../before_plan": []}},
+    {"hooks": {"before_speckit.bug.assess": []}},
+    {"hooks": {"before_my-extension_assess": []}},
+    {"hooks": {"after_bug-assess": []}},
+    {"hooks": {"before_": []}},
+    {"hooks": {"after_Bug": []}},
+    {"hooks": {"before_" + "a" * 250: []}},
+    {"hooks": {"before_plan": [None]}},
+    {"hooks": {"before_plan": [{"extension": "a", "command": "b", "optional": "yes"}]}},
+    {"hooks": {"before_plan": [{"extension": "a", "command": "b", "condition": 7}]}},
+    {"hooks": {"before_plan": [{"extension": "a", "command": "b\0"}]}},
+])
+def test_invalid_inputs_leave_existing_config_and_projection_unchanged(tmp_path, bad):
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    old_source = executor.config_file.read_bytes()
+    old_projection = (tmp_path / ".specify/hook-dispatch/before_plan.json").read_bytes()
+    with pytest.raises(ValueError):
+        executor.save_project_config(bad)
+    assert executor.config_file.read_bytes() == old_source
+    assert (tmp_path / ".specify/hook-dispatch/before_plan.json").read_bytes() == old_projection
+
+
+def test_update_and_refresh_retire_stale_events_and_preserve_crlf(tmp_path):
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    updated = _config()
+    updated["hooks"] = {"after_tasks": []}
+    executor.save_project_config(updated)
+    assert not (tmp_path / ".specify/hook-dispatch/before_plan.json").exists()
+    assert (tmp_path / ".specify/hook-dispatch/events.txt").read_bytes() == b"after_tasks\n"
+    executor.config_file.write_bytes(executor.config_file.read_bytes().replace(b"\n", b"\r\n"))
+    executor.migrate_project_config()
+    assert (tmp_path / ".specify/hook-dispatch/source.yml").read_bytes() == executor.config_file.read_bytes()
+    assert b"\r\n" in executor.config_file.read_bytes()
+
+
+def test_refresh_replaces_stale_cache_after_manual_yaml_edit(tmp_path):
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    updated = {"installed": ["example"], "hooks": {"after_tasks": []}}
+    cache = tmp_path / ".specify/hook-dispatch"
+    executor.config_file.write_text(
+        yaml.safe_dump(updated, sort_keys=False), encoding="utf-8"
+    )
+    assert (cache / "source.yml").read_bytes() != executor.config_file.read_bytes()
+    assert (cache / "before_plan.json").exists()
+    executor.migrate_project_config()
+    assert (cache / "source.yml").read_bytes() == executor.config_file.read_bytes()
+    assert (cache / "events.txt").read_bytes() == b"after_tasks\n"
+    assert (cache / "events.txt.sha256").read_text().strip() == hashlib.sha256(
+        b"after_tasks\n"
+    ).hexdigest()
+    assert json.loads((cache / "after_tasks.json").read_text())["hooks"] == []
+    assert not (cache / "before_plan.json").exists()
+    assert not (tmp_path / ".specify/.hook-dispatch.lock").exists()
+
+
+def test_refuse_unsafe_cache_and_invalid_existing_config(tmp_path):
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    cache = tmp_path / ".specify/hook-dispatch"
+    (cache / "unexpected").mkdir()
+    original = executor.config_file.read_bytes()
+    with pytest.raises(ValueError, match="non-file"):
+        executor.load_project_config_for_update()
+    with pytest.raises(ValueError, match="non-file"):
+        executor.save_project_config(_config())
+    assert executor.config_file.read_bytes() == original
+    (cache / "unexpected").rmdir()
+    executor.config_file.write_text("hooks:\n  before_plan: invalid\n")
+    with pytest.raises(ValueError, match="expected a list"):
+        executor.load_project_config_for_update()
+
+
+def test_refuse_symlinked_config_and_cache_before_mutation(tmp_path):
+    executor = _enabled_executor(tmp_path)
+    executor.config_file.parent.mkdir(exist_ok=True)
+    external = tmp_path / "external.yml"
+    external.write_text("hooks: {}\n", encoding="utf-8")
+    try:
+        executor.config_file.symlink_to(external)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+    with pytest.raises(ValueError, match="symlinked"):
+        executor.save_project_config(_config())
+    assert external.read_text() == "hooks: {}\n"
+    executor.config_file.unlink()
+    executor.config_file.write_text("hooks: {}\n")
+    (tmp_path / ".specify/hook-dispatch").symlink_to(tmp_path, target_is_directory=True)
+    with pytest.raises(ValueError, match="symlinked"):
+        executor.load_project_config_for_update()
+    assert executor.config_file.read_text() == "hooks: {}\n"
+
+
+def test_partial_direct_config_write_requires_manual_repair_and_refresh(tmp_path, monkeypatch):
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    source = executor.config_file.read_bytes()
+    payload = (tmp_path / ".specify/hook-dispatch/before_plan.json").read_bytes()
+    real_write = Path.write_bytes
+
+    def fail_config_write(path, content):
+        if path == executor.config_file:
+            real_write(path, b"hooks:\n  before_plan: [\n")
+            raise OSError("simulated config write failure")
+        return real_write(path, content)
+
+    monkeypatch.setattr(Path, "write_bytes", fail_config_write)
+    with pytest.raises(OSError, match="simulated config write failure.*refresh-shared-infra"):
+        executor.save_project_config({"installed": [], "hooks": {}})
+    assert executor.config_file.read_bytes() != source
+    assert (tmp_path / ".specify/hook-dispatch/before_plan.json").read_bytes() == payload
+    with pytest.raises(ValueError, match="Invalid extension configuration"):
+        executor.migrate_project_config()
+    monkeypatch.setattr(Path, "write_bytes", real_write)
+    executor.config_file.write_bytes(source)
+    executor.migrate_project_config()
+    _assert_snapshot(tmp_path)
+
+
+def test_direct_cache_write_failure_leaves_partial_state_then_refresh_repairs(tmp_path, monkeypatch):
+    import specify_cli.extensions._hook_projection as projection
+
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    cache = tmp_path / ".specify/hook-dispatch"
+    old_source = executor.config_file.read_bytes()
+    old_index = (cache / "events.txt").read_bytes()
+    updated = {"installed": ["example"], "hooks": {"after_tasks": []}}
+    real_write = projection.write_bytes
+
+    def fail_index(path, content):
+        if path == cache / "events.txt":
+            raise OSError("disk full")
+        return real_write(path, content)
+
+    monkeypatch.setattr(projection, "write_bytes", fail_index)
+    with pytest.raises(OSError, match="disk full.*refresh-shared-infra"):
+        executor.save_project_config(updated)
+    assert executor.config_file.read_bytes() != old_source
+    assert (cache / "source.yml").read_bytes() == old_source
+    assert (cache / "events.txt").read_bytes() == old_index
+    monkeypatch.setattr(projection, "write_bytes", real_write)
+    executor.migrate_project_config()
+    assert (cache / "source.yml").read_bytes() == executor.config_file.read_bytes()
+    assert (cache / "events.txt").read_bytes() == b"after_tasks\n"
+    assert not (cache / "before_plan.json").exists()
+
+
+def test_unreadable_existing_config_does_not_create_projection(tmp_path):
+    executor = _enabled_executor(tmp_path)
+    executor.config_file.parent.mkdir(exist_ok=True)
+    executor.config_file.mkdir()
+    with pytest.raises(OSError):
+        executor.save_project_config(_config())
+    assert not (tmp_path / ".specify/hook-dispatch").exists()
+
+
+def test_direct_stale_event_cleanup_failure_reports_and_refresh_repairs(tmp_path, monkeypatch):
+    import specify_cli.extensions._hook_projection as projection
+
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    cache = tmp_path / ".specify/hook-dispatch"
+    real_unlink = projection.unlink
+
+    def fail_stale_cleanup(path):
+        if path == cache / "before_plan.json":
+            raise OSError("cannot remove stale event")
+        return real_unlink(path)
+
+    monkeypatch.setattr(projection, "unlink", fail_stale_cleanup)
+    updated = {"installed": ["example"], "hooks": {"after_plan": []}}
+    with pytest.raises(OSError, match="cannot remove stale event.*refresh-shared-infra"):
+        executor.save_project_config(updated)
+    assert yaml.safe_load(executor.config_file.read_text(encoding="utf-8")) == updated
+    assert (tmp_path / ".specify/hook-dispatch/source.yml").read_bytes() == executor.config_file.read_bytes()
+    assert (tmp_path / ".specify/hook-dispatch/events.txt").read_bytes() == b"after_plan\n"
+    assert (cache / "before_plan.json").exists()
+    monkeypatch.setattr(projection, "unlink", real_unlink)
+    executor.migrate_project_config()
+    assert not (tmp_path / ".specify/hook-dispatch/before_plan.json").exists()
+
+
+def test_existing_yaml_refresh_keeps_legacy_read_semantics(tmp_path):
+    executor = _enabled_executor(tmp_path)
+    executor.config_file.parent.mkdir(exist_ok=True)
+    existing = _config()
+    executor.config_file.write_text(yaml.safe_dump(existing, sort_keys=False))
+    old = executor.check_hooks_for_event("before_plan")
+    executor.migrate_project_config()
+    assert executor.check_hooks_for_event("before_plan") == old
+    _assert_snapshot(tmp_path)
+
+
+def test_enable_disable_remove_republish_without_stale_hooks(tmp_path):
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    executor.disable_hooks("example")
+    assert _assert_snapshot(tmp_path)["hooks"] == []
+    executor.enable_hooks("example")
+    assert [hook["command"] for hook in _assert_snapshot(tmp_path)["hooks"]] == [
+        "speckit.example.first", "speckit.example.skipped", "speckit.example.last"
+    ]
+    executor.unregister_hooks("example")
+    assert not (tmp_path / ".specify/hook-dispatch/before_plan.json").exists()
+    assert (tmp_path / ".specify/hook-dispatch/events.txt").read_bytes() == b""
+
+
+def test_shared_infrastructure_refresh_projects_existing_config(tmp_path, monkeypatch):
+    import specify_cli
+
+    executor = _enabled_executor(tmp_path)
+    executor.config_file.parent.mkdir(exist_ok=True)
+    executor.config_file.write_text(yaml.safe_dump(_config(), sort_keys=False), encoding="utf-8")
+    monkeypatch.setattr(specify_cli, "_install_shared_infra_impl", lambda *args, **kwargs: True)
+    assert specify_cli._install_shared_infra(tmp_path, "sh", refresh_managed=True)
+    _assert_snapshot(tmp_path)
+
+
+@pytest.mark.parametrize("opt_in", [False, True])
+def test_shared_infrastructure_refresh_retires_projection_without_config(
+    tmp_path, monkeypatch, opt_in
+):
+    import specify_cli
+
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    executor.config_file.unlink()
+    save_init_options(tmp_path, {"native_extension_hooks": opt_in})
+    monkeypatch.setattr(specify_cli, "_install_shared_infra_impl", lambda *args, **kwargs: True)
+
+    assert specify_cli._install_shared_infra(tmp_path, "sh", refresh_managed=True)
+    assert not (tmp_path / ".specify/hook-dispatch").exists()
+    assert not executor.config_file.exists()
+
+
+def test_shared_infrastructure_refresh_rejects_symlinked_projection_without_config(
+    tmp_path, monkeypatch
+):
+    import specify_cli
+
+    root = tmp_path / ".specify"
+    root.mkdir()
+    target = tmp_path / "external"
+    target.mkdir()
+    marker = target / "before_plan.json"
+    marker.write_bytes(b"untouched")
+    cache = root / "hook-dispatch"
+    cache.symlink_to(target, target_is_directory=True)
+    monkeypatch.setattr(specify_cli, "_install_shared_infra_impl", lambda *args, **kwargs: True)
+
+    with pytest.raises(ValueError, match="symlinked hook projection"):
+        specify_cli._install_shared_infra(tmp_path, "sh", refresh_managed=True)
+    assert cache.is_symlink()
+    assert marker.read_bytes() == b"untouched"
+    assert not (root / "extensions.yml").exists()
+
+
+@pytest.mark.parametrize("cache_state", ["missing", "stale"])
+@pytest.mark.parametrize("has_hooks", [False, True])
+def test_unchanged_native_registration_refreshes_projection_without_rewriting_yaml(
+    tmp_path, extension_dir, cache_state, has_hooks
+):
+    if not has_hooks:
+        manifest_path = extension_dir / "extension.yml"
+        data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        data["hooks"] = {}
+        manifest_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    manifest = ExtensionManifest(extension_dir / "extension.yml")
+    executor = _enabled_executor(tmp_path)
+    executor.register_hooks(manifest)
+    original = b"# Preserve this comment\r\n" + executor.config_file.read_bytes().replace(
+        b"\n", b"\r\n"
+    )
+    executor.config_file.write_bytes(original)
+    cache = tmp_path / ".specify/hook-dispatch"
+    if cache_state == "missing":
+        for child in cache.iterdir():
+            child.unlink()
+        cache.rmdir()
+    else:
+        (cache / "events.txt").write_bytes(b"before_plan\n")
+        (cache / "before_plan.json").write_bytes(b"stale")
+
+    executor.register_hooks(manifest)
+
+    assert executor.config_file.read_bytes() == original
+    assert (cache / "source.yml").read_bytes() == original
+    expected = project_hooks(yaml.safe_load(original))
+    index = "".join(f"{event}\n" for event in expected).encode("utf-8")
+    assert (cache / "events.txt").read_bytes() == index
+    assert (cache / "events.txt.sha256").read_text().strip() == hashlib.sha256(index).hexdigest()
+    for event, payload in expected.items():
+        assert (cache / f"{event}.json").read_bytes() == payload
+        assert (cache / f"{event}.json.sha256").read_text().strip() == hashlib.sha256(payload).hexdigest()
+    assert not (cache / "before_plan.json").exists()
+
+
+def test_unchanged_native_registration_reports_projection_failure(
+    tmp_path, extension_dir, monkeypatch
+):
+    import specify_cli.extensions._hook_projection as projection
+
+    manifest = ExtensionManifest(extension_dir / "extension.yml")
+    executor = _enabled_executor(tmp_path)
+    executor.register_hooks(manifest)
+    original = executor.config_file.read_bytes()
+    real_write = projection.write_bytes
+
+    def fail_index(path, content):
+        if path.name == "events.txt":
+            raise OSError("disk full")
+        return real_write(path, content)
+
+    monkeypatch.setattr(projection, "write_bytes", fail_index)
+    with pytest.raises(OSError, match="disk full.*refresh-shared-infra"):
+        executor.register_hooks(manifest)
+    assert executor.config_file.read_bytes() == original
+
+
+def test_project_hooks_is_pure():
+    config = _config()
+    original = yaml.safe_dump(config)
+    project_hooks(config)
+    assert yaml.safe_dump(config) == original
+
+
+def test_arbitrary_command_event_refresh_preserves_hook_reader_behavior(tmp_path):
+    executor = _enabled_executor(tmp_path)
+    executor.config_file.parent.mkdir(exist_ok=True)
+    existing = {"hooks": {
+        "before_my_command": [
+            {"extension": "example", "command": "speckit.example.one", "priority": 30},
+            {"extension": "example", "command": "speckit.example.two", "priority": 2},
+        ],
+        "after_bug_assess": [
+            {"extension": "example", "command": "speckit.example.extension"}
+        ],
+        "before_my_extension_assess": [],
+        "before_2fa_assess": [],
+    }}
+    executor.config_file.write_text(yaml.safe_dump(existing, sort_keys=False))
+    before = {
+        event: executor.get_hooks_for_event(event)
+        for event in existing["hooks"]
+    }
+    executor.migrate_project_config()
+    assert {
+        event: executor.get_hooks_for_event(event)
+        for event in existing["hooks"]
+    } == before
+    cache = tmp_path / ".specify/hook-dispatch"
+    assert json.loads((cache / "before_my_command.json").read_text())["event"] == "before_my_command"
+    assert (cache / "events.txt").read_bytes() == (
+        b"before_my_command\nafter_bug_assess\nbefore_my_extension_assess\nbefore_2fa_assess\n"
+    )
+    assert json.loads((cache / "after_bug_assess.json").read_text())["event"] == "after_bug_assess"
+
+
+def test_refresh_rejects_legacy_event_with_actionable_error(tmp_path):
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    cache = tmp_path / ".specify/hook-dispatch"
+    old_index = (cache / "events.txt").read_bytes()
+    executor.config_file.write_text("hooks:\n  custom:after: []\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Rename legacy events"):
+        executor.migrate_project_config()
+    assert executor.config_file.read_text() == "hooks:\n  custom:after: []\n"
+    assert (cache / "events.txt").read_bytes() == old_index
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("7", 7), (False, 10), ("invalid", 10), (-1, 10),
+    (2147483648, 10), (float("inf"), 10),
+])
+def test_project_hooks_normalizes_legacy_priorities(value, expected):
+    config = {"hooks": {"after_plan": [
+        {"extension": "example", "command": "speckit.example.run", "priority": value}
+    ]}}
+    assert json.loads(project_hooks(config)["after_plan"])["hooks"][0]["priority"] == expected
