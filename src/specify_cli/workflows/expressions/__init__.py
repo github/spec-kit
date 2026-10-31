@@ -7,7 +7,7 @@ the evaluator only walks the namespace and applies a fixed set of filters.
 This package is split by responsibility:
 
 - ``namespace``/``filters``/``operators``/``template`` — shared leaves;
-- ``engine_current`` — the hand-written evaluator behind the contract;
+- ``engine_lark`` — the Lark (LALR) evaluator behind the contract;
 - ``engine`` — the selection point (the one line that swaps the engine);
 - ``api`` — the public evaluation entry points;
 - ``diagnostics`` — condition validation and remediation.
@@ -36,7 +36,6 @@ from .engine import (
     _collect_leaves,
     _evaluator_rejects,
     _has_incomplete_operand,
-    _leaf_sink,
 )
 from .filters import _REGISTERED_FILTERS
 from .template import _strip_stray_delimiters
@@ -57,7 +56,6 @@ __all__ = [
     "_has_incomplete_operand",
     "_has_unbalanced_bracket",
     "_has_unbalanced_quote",
-    "_leaf_sink",
     "_strip_stray_delimiters",
     "_unresolvable_term",
 ]

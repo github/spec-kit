@@ -7,10 +7,6 @@ substitution it is predicting.
 
 from __future__ import annotations
 
-import re
-
-
-_EXPR_PATTERN = re.compile(r"\{\{(.+?)\}\}")
 
 
 def _is_single_expression(stripped: str) -> bool:
@@ -21,8 +17,7 @@ def _is_single_expression(stripped: str) -> bool:
     argument contains a literal ``{{`` or ``}}`` (e.g.
     ``{{ inputs.text | contains('}}') }}``) on the typed fast path, while
     ``{{ a }} {{ b }}`` and ``{{ a }}{{ b }}`` are correctly seen as
-    multi-expression. Mirrors the quote handling in
-    ``_split_top_level_commas``.
+    multi-expression.
 
     A regex span check cannot decide this: the pattern's non-greedy body stops
     at the first ``}}``, so a literal ``}}`` inside a string argument would be
@@ -123,40 +118,6 @@ def _split_top_level(text: str, sep: str) -> list[str]:
         start += idx + len(sep)
 
 
-def _split_top_level_commas(text: str) -> list[str]:
-    """Split *text* on commas that are not inside quotes or nested brackets.
-
-    Used for list-literal elements so a quoted element containing a comma
-    (e.g. ``["a, b", "c"]``) is not split mid-string, and nested lists/calls
-    (e.g. ``[[1, 2], 3]``) are kept intact.
-    """
-    parts: list[str] = []
-    buf: list[str] = []
-    quote: str | None = None
-    depth = 0
-    for ch in text:
-        if quote is not None:
-            buf.append(ch)
-            if ch == quote:
-                quote = None
-        elif ch in ("'", '"'):
-            quote = ch
-            buf.append(ch)
-        elif ch in "([{":
-            depth += 1
-            buf.append(ch)
-        elif ch in ")]}":
-            depth = max(0, depth - 1)
-            buf.append(ch)
-        elif ch == "," and depth == 0:
-            parts.append("".join(buf))
-            buf = []
-        else:
-            buf.append(ch)
-    parts.append("".join(buf))
-    return parts
-
-
 def _find_top_level(text: str, token: str) -> int:
     """Return the index of the first occurrence of *token* in *text* that lies
     outside any quoted string or nested bracket, or ``-1`` if there is none.
@@ -184,66 +145,6 @@ def _find_top_level(text: str, token: str) -> int:
             return i
         i += 1
     return -1
-
-
-def _is_single_list_literal(expr: str) -> bool:
-    """Return ``True`` only when *expr* is exactly one bracketed list
-    literal -- the opening ``[`` closes at the FINAL character, not partway
-    through the string.
-
-    ``expr.startswith("[") and expr.endswith("]")`` alone also matches a
-    list literal immediately followed by an index suffix, e.g.
-    ``[1,2,3][1]`` (meant as "index 1 of [1,2,3]", i.e. 2). Naively
-    stripping the outer brackets from that string yields the garbage
-    ``1,2,3][1``, which then silently evaluates to ``[1, 2, None]`` instead
-    of raising or resolving the index -- the same "grabs the wrong span"
-    failure mode the string-literal check above guards against, just never
-    given the same treatment for brackets.
-    """
-    if not (expr.startswith("[") and expr.endswith("]")):
-        return False
-    quote: str | None = None
-    depth = 0
-    n = len(expr)
-    for i, ch in enumerate(expr):
-        if quote is not None:
-            if ch == quote:
-                quote = None
-            continue
-        if ch in ("'", '"'):
-            quote = ch
-        elif ch in "([{":
-            depth += 1
-        elif ch in ")]}":
-            depth -= 1
-            if depth == 0:
-                return i == n - 1
-    return False
-
-
-def _is_wrapped_in_parens(text: str) -> bool:
-    """True when *text* is one parenthesised group, brackets and all.
-
-    ``(a or b)`` is; ``(a) and (b)`` is not, because the opening paren closes
-    before the end. Quote-aware, so ``('(')`` does not count its own literal.
-    """
-    if not (text.startswith("(") and text.endswith(")")):
-        return False
-    quote: str | None = None
-    depth = 0
-    for index, ch in enumerate(text):
-        if quote is not None:
-            if ch == quote:
-                quote = None
-        elif ch in ("'", '"'):
-            quote = ch
-        elif ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-            if depth == 0:
-                return index == len(text) - 1
-    return False
 
 
 def _collapse_whitespace(text: str) -> str:

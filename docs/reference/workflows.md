@@ -1280,7 +1280,7 @@ Notes on the newer filters:
 - **`to_json` output is deterministic.** Object keys are sorted and non-ASCII characters are left as-is rather than escaped, so the same value always serializes to the same bytes. That buys reproducibility only — it does **not** make the result safe to pass through a shell, because [interpolation adds no quoting or escaping](#interpolation-and-shell-safety). Do not interpolate unconstrained JSON into a `run` field.
 - **`to_json` rejects non-finite floats.** `NaN`, `Infinity`, and `-Infinity` raise a `ValueError` naming `to_json` instead of serializing to bare tokens. None of the three is valid JSON, so emitting them would hand a standards-compliant downstream parser a string it must reject.
 - **`to_json` requires string mapping keys.** JSON objects have string keys, so a mapping with any other key type — `{1: "a"}`, `{True: "a"}` — raises a `ValueError` naming the key type instead. Left to `json.dumps`, an integer key would be coerced to `"1"` and collide with an existing `"1"` key, while mixed key types would fail `sort_keys` with an ordering `TypeError` reported only as "not JSON-serializable".
-- **Comparing filtered counts requires parentheses.** The parser splits on the top-level `|` before looking for operators, so an unparenthesized trailing comparison such as `{{ inputs.items | length > 0 }}` raises a `ValueError`. Parenthesize the filtered operand to compare its result: `{{ (inputs.items | length) > 0 }}`. For a threshold of at least two:
+- **Comparing filtered counts requires parentheses.** A filter chain cannot be an operand of an operator, so an unparenthesized trailing comparison such as `{{ inputs.items | length > 0 }}` raises an "ambiguous filter precedence" `ValueError`. Parenthesize the filtered operand to compare its result: `{{ (inputs.items | length) > 0 }}`. For a threshold of at least two:
 
   ```yaml
   condition: "{{ (inputs.items | length) >= 2 }}"
@@ -1293,6 +1293,10 @@ Notes on the newer filters:
   ```
 
 `and` and `or` return `true` or `false` and evaluate their right side only when the left side does not decide the result: `and` skips it when the left side is false, and `or` skips it when the left side is true. A condition can therefore guard a filter that would fail on an empty value. `{{ inputs.payload != '' and (inputs.payload | from_json | length) }}` is false for an empty optional `payload` instead of failing the run on invalid JSON. When the right side is evaluated, its errors still fail the run.
+
+Operators bind from loosest to tightest as `or`, `and`, `not`, then the comparisons. All comparisons (`==`, `!=`, `>`, `<`, `>=`, `<=`, `in`, `not in`) share one level and are evaluated left to right; none has priority over another. `{{ a == b > 0 }}` therefore means `{{ (a == b) > 0 }}`. To combine comparisons, use parentheses or `and`/`or`.
+
+The body of every `{{ }}` block must be a valid expression. Text that is not one, such as prose (`{{ some text }}`), a key with characters other than letters, digits, `_` and `-` (`{{ inputs.weird:key }}`), or arithmetic (`{{ count + 1 }}`), raises a `ValueError` naming the offending token. Numbers may be written as `5`, `-5`, `+5`, `1_000`, `0.5`, `.5`, `5.`, or `1.5e3`.
 
 Example:
 

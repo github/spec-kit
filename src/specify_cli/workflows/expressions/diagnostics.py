@@ -18,6 +18,7 @@ from .engine import (
     _first_unclosable_block,
     _has_incomplete_operand,
     _is_single_expression,
+    _syntax_error,
 )
 from .template import _split_top_level, _strip_stray_delimiters
 
@@ -261,6 +262,15 @@ def _unresolvable_term(text: str) -> str | None:
     if not stripped:
         return "an operand is empty"
 
+    # A grammar-based engine can name the parse fault directly, position and
+    # character included. Prefer that over the leaf walk: text that does not
+    # parse has no leaves, and reporting "no unresolvable term" for it would
+    # tell the author their expression is fine. ``None`` for the hand-written
+    # engine, which resolves unknown shapes to ``None`` instead.
+    syntax = _syntax_error(stripped)
+    if syntax is not None:
+        return syntax
+
     for leaf in _collect_leaves(stripped):
         reason = _unresolvable_leaf(leaf)
         if reason is not None:
@@ -285,6 +295,13 @@ def _wrapping_would_not_repair(core: str) -> str | None:
         return "its brackets do not balance"
     if _has_incomplete_operand(core):
         return "an operator in it is missing an operand"
+    # After the incomplete-operand check, not before: the four "missing an
+    # operand" shapes are also parse failures, and the specific message is the
+    # better one for them. Everything left that does not parse (arithmetic,
+    # stray characters, a second literal) gets the engine's own message.
+    syntax = _syntax_error(core)
+    if syntax is not None:
+        return syntax
     unresolvable = _unresolvable_term(core)
     if unresolvable is not None:
         return unresolvable

@@ -1,8 +1,8 @@
 """Boundary test: only ``engine.py`` and the package facade see an engine.
 
 Runtime and validation must reach the evaluator through the ``engine`` contract,
-never by importing ``engine_current`` (or a future ``engine_lark``) directly, or
-a swapped engine would leave one of them on the old implementation. This pins
+never by importing ``engine_lark`` (or any future engine) directly, or a
+swapped engine would leave one of them on the old implementation. This pins
 the import boundary the package layout is built around.
 """
 
@@ -57,5 +57,5 @@ def test_the_engine_module_really_is_the_selection_point():
 
 
 def test_the_boundary_check_detects_a_direct_engine_import():
-    direct = "from .engine_current import _evaluate_template\n"
+    direct = "from .engine_lark import _evaluate_template\n"
     assert _imports_engine_implementation(direct, filename="diagnostics.py")

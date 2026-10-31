@@ -9,7 +9,7 @@ them, not just ``_evaluate_template``.
 
 from __future__ import annotations
 
-from .engine_current import (
+from .engine_lark import (
     _COMPARISON_OPERATORS,
     _WORD_OPERATORS,
     _collect_leaves,
@@ -18,7 +18,7 @@ from .engine_current import (
     _first_unclosable_block,
     _has_incomplete_operand,
     _is_single_expression,
-    _leaf_sink,
+    _syntax_error,
 )
 
 __all__ = [
@@ -30,5 +30,5 @@ __all__ = [
     "_first_unclosable_block",
     "_has_incomplete_operand",
     "_is_single_expression",
-    "_leaf_sink",
+    "_syntax_error",
 ]
