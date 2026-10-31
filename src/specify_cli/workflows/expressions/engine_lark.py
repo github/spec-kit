@@ -301,13 +301,13 @@ def _parse_error_message(
     character and column.
     """
     if isinstance(exc, _FilterPrecedenceError):
+        operator = " ".join(str(exc.operator).split())
         if not exc.chain_first:
             return (
                 f"ambiguous filter precedence in '{text}': a filter cannot be an "
-                f"operand of an operator. Filter the operand in its own expression "
-                f"instead."
+                f"operand of '{operator}'; parenthesize the filtered operand, "
+                f"as in '(inputs.limit | default(5))'"
             )
-        operator = " ".join(str(exc.operator).split())
         return (
             f"ambiguous filter precedence in '{text}': '{operator}' follows a "
             f"filter chain, and a filter chain cannot be an operand of an "

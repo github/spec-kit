@@ -605,9 +605,10 @@ def test_a_condition_without_a_filter_is_not_told_to_parenthesize_one(step_cls):
         ("(inputs.items | length > 0)", "'>' follows a filter chain"),
         ("[inputs.items | length and inputs.ok]", "'and' follows a filter chain"),
         ("inputs.x | default(inputs.items | length > 0)", "'>' follows a filter chain"),
-        ("(inputs.n > inputs.limit | default(5))", "a filter cannot be an operand"),
-        ("[1, not inputs.x | default(1)]", "a filter cannot be an operand"),
-        ("inputs.a == not inputs.b | default(1)", "a filter cannot be an operand"),
+        ("(inputs.n > inputs.limit | default(5))", "an operand of '>'"),
+        ("[1, not inputs.x | default(1)]", "an operand of 'not'"),
+        ("inputs.a == not inputs.b | default(1)", "an operand of 'not'"),
+        ("inputs.count > inputs.limit | default(5)", "an operand of '>'; parenthesize"),
         # Two misplaced chains: the leftmost operator is named.
         (
             "inputs.items | length == inputs.a and inputs.b > inputs.c | length",
