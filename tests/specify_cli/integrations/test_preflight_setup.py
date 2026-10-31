@@ -79,14 +79,14 @@ def test_hook_receives_options_and_script_type(tmp_path, monkeypatch, command):
         calls.append((self.key, project_root, parsed_options, script_type))
 
     monkeypatch.setattr(cls, "preflight_setup", preflight_setup)
-    result = _run_in_project(project, args)
+    result = _run_in_project(project, [*args, "--integration-options=--events false"])
 
     assert result.exit_code == 0, result.output
     assert len(calls) == 1
     key, root, parsed, script_type = calls[0]
     assert key == cls.key
     assert root.resolve() == project.resolve()
-    assert parsed is None or isinstance(parsed, dict)
+    assert parsed == {"events": "false"}
     assert script_type == "sh"
 
 
