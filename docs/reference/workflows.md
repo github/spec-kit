@@ -1292,6 +1292,8 @@ Notes on the newer filters:
   condition: "{{ inputs.items | length }}"   # 0 is False, any non-zero count is True
   ```
 
+- **Unsupported syntax raises, it does not resolve to `None`.** Text the evaluator cannot parse — a backslash-escaped quote in a string literal (`'it\'s'`; quote such a literal with the other quote type, `"it's"`), or a word operator without a space on both sides (`'x'and inputs.b`) — raises a `ValueError` naming the unsupported syntax at run time, instead of being looked up as a variable, resolving to `None`, and silently steering a condition. A well-formed path that merely finds nothing (`inputs.missing`) still resolves to `None`: missing data is not a syntax fault. Numeric literals accept the exponent form (`1e3`), both as literals and when a numeric string is coerced in a comparison, and indexed paths may chain (`matrix[0][1]`).
+
 `and` and `or` return `true` or `false` and evaluate their right side only when the left side does not decide the result: `and` skips it when the left side is false, and `or` skips it when the left side is true. A condition can therefore guard a filter that would fail on an empty value. `{{ inputs.payload != '' and (inputs.payload | from_json | length) }}` is false for an empty optional `payload` instead of failing the run on invalid JSON. When the right side is evaluated, its errors still fail the run.
 
 Example:

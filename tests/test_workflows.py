@@ -452,15 +452,19 @@ class TestExpressions:
         outer brackets from ``[1,2,3][1]`` yields ``1,2,3][1``, which then
         silently evaluates to ``[1, 2, None]`` instead of raising or
         resolving the index. It must not be misclassified as one literal;
-        falling through to unresolvable (``None``) is safe, unlike silently
-        returning a wrong-looking list.
+        since #5073 the fall-through raises as unsupported syntax, which is
+        safe, unlike silently returning a wrong-looking list.
         """
+        import pytest
+
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext()
-        assert evaluate_expression("{{ [1,2,3][1] }}", ctx) is None
-        assert evaluate_expression("{{ [1,2][0] }}", ctx) is None
+        with pytest.raises(ValueError, match="unsupported expression syntax"):
+            evaluate_expression("{{ [1,2,3][1] }}", ctx)
+        with pytest.raises(ValueError, match="unsupported expression syntax"):
+            evaluate_expression("{{ [1,2][0] }}", ctx)
         # Genuine list literals -- including ones a bracket-depth scan must
         # still recognize as ending exactly at the final character -- are
         # unaffected.
@@ -503,6 +507,78 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.a == 1 and inputs.b == 2 }}", plain) is True
         assert evaluate_expression("{{ inputs.a == 9 or inputs.b == 2 }}", plain) is True
         assert evaluate_expression("{{ inputs.missing | default('a and b') }}", plain) == "a and b"
+
+    def test_exponent_numeric_literals_evaluate_as_numbers(self):
+        """#5073 case 1: `1e3` is a number, as in Python/Jinja2 and as workflow
+        input coercion already accepts. It used to be looked up as a variable
+        and become None, and the numeric string "1e3" stayed a string in
+        comparisons while coercing to 1000 as an input."""
+        from specify_cli.workflows.expressions import (
+            evaluate_condition,
+            evaluate_expression,
+        )
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"n": 5, "s": "1e3"})
+        assert evaluate_expression("{{ 1e3 }}", ctx) == 1000.0
+        assert evaluate_expression("{{ 2.5e-1 }}", ctx) == 0.25
+        assert evaluate_condition("{{ inputs.n < 1e3 }}", ctx) is True
+        # A numeric string in the exponent form coerces in comparisons the way
+        # plain "10" already does (_coerce_number).
+        assert evaluate_condition("{{ inputs.s > 100 }}", ctx) is True
+        # The words float() also accepts are still variable names, not numbers.
+        assert evaluate_expression("{{ inf }}", ctx) is None
+        assert evaluate_expression("{{ nan }}", ctx) is None
+        # Plain integers stay ints.
+        assert evaluate_expression("{{ 10 }}", ctx) == 10
+        assert isinstance(evaluate_expression("{{ 10 }}", ctx), int)
+
+    def test_chained_indexing_resolves_like_jinja(self):
+        """#5073 case 3: `matrix[0][1]` walks both indices. It used to fall
+        outside the one-index segment pattern and be looked up as the literal
+        key "matrix[0][1]", returning None."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            steps={"plan": {"output": {"matrix": [["a", "b"], ["c", "d"]]}}}
+        )
+        assert evaluate_expression("{{ steps.plan.output.matrix[0] }}", ctx) == ["a", "b"]
+        assert evaluate_expression("{{ steps.plan.output.matrix[0][1] }}", ctx) == "b"
+        assert evaluate_expression("{{ steps.plan.output.matrix[-1][0] }}", ctx) == "c"
+        # An out-of-range index is missing data, not syntax: still None.
+        assert evaluate_expression("{{ steps.plan.output.matrix[0][9] }}", ctx) is None
+        assert evaluate_expression("{{ steps.plan.output.matrix[9][0] }}", ctx) is None
+
+    def test_unsupported_syntax_raises_instead_of_silent_none(self):
+        """#5073 cases 2 and 4: text the evaluator does not parse used to be
+        looked up as a variable path, resolve to None, and silently give a
+        condition the wrong answer. It now raises a ValueError naming the
+        unsupported syntax, the way mis-wired filters already do."""
+        import pytest
+
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"name": "it's", "a": "x", "b": True})
+        for template in (
+            r"{{ 'it\'s' }}",                     # escaped quote in a literal
+            r"{{ inputs.name == 'it\'s' }}",
+            "{{ inputs.a=='x'and inputs.b }}",    # word operator without spaces
+            "{{ 'x'in inputs.a }}",
+        ):
+            with pytest.raises(ValueError, match="unsupported expression syntax"):
+                evaluate_expression(template, ctx)
+
+        # The error's advice works: the other quote type spells the literal.
+        assert evaluate_expression("{{ \"it's\" }}", ctx) == "it's"
+        assert evaluate_expression("{{ inputs.name == \"it's\" }}", ctx) is True
+        # Properly spaced operators are untouched...
+        assert evaluate_expression("{{ inputs.a == 'x' and inputs.b }}", ctx) is True
+        # ...and an unknown but well-formed name still resolves to None, not an
+        # error: missing data is not a syntax fault.
+        assert evaluate_expression("{{ inputs.missing }}", ctx) is None
+        assert evaluate_expression("{{ bogus.path[3] }}", ctx) is None
 
     def test_pipe_detection_is_quote_aware(self):
         from specify_cli.workflows.expressions import evaluate_expression

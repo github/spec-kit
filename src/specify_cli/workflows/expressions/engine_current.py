@@ -23,7 +23,7 @@ from .filters import (
     _filter_map,
     _filter_split,
 )
-from .namespace import _NAMESPACE_ROOTS, _resolve_dot_path
+from .namespace import _NAMESPACE_ROOTS, _is_path_segment, _resolve_dot_path
 from .operators import _safe_compare, _safe_membership
 from .template import (
     _collapse_whitespace,
@@ -168,7 +168,11 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     - Boolean operators: ``and``, ``or``, ``not``
     - ``in``, ``not in``
     - Pipe filters: ``| default('...')``, ``| join(', ')``, ``| contains('...')``, ``| from_json``, ``| map('...')``, ``| split(',')``, ``| upper``, ``| lower``, ``| length``, ``| to_json``
-    - String and numeric literals
+    - String and numeric literals (including the exponent form ``1e3``)
+
+    Text that is none of the above and is not a resolvable variable path
+    raises ``ValueError`` naming the unsupported syntax, rather than silently
+    resolving to ``None``.
     """
     expr = _collapse_whitespace(expr)
 
@@ -307,13 +311,20 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
             if op == " not in ":
                 return _safe_membership(left, right, negate=True)
 
-    # Numeric literal
+    # Numeric literal. int() first so integer text stays an int; float() then
+    # admits the decimal and exponent forms ("1.5", "1e3"), which the previous
+    # "." check missed -- `1e3` was looked up as a variable and became None
+    # (#5073). Only digit-bearing text may become a float, so the words
+    # float() also accepts ("inf", "nan") keep resolving as variable names.
     try:
-        if "." in expr:
-            return float(expr)
         return int(expr)
     except (ValueError, TypeError):
         pass
+    if any(ch.isdigit() for ch in expr):
+        try:
+            return float(expr)
+        except (ValueError, TypeError):
+            pass
 
     # Boolean literal
     if expr.lower() == "true":
@@ -346,6 +357,34 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     sink = _leaf_sink.get()
     if sink is not None:
         sink.append(expr)
+    # Text that is not a resolvable variable path used to be looked up as a
+    # name anyway, resolve to None, and silently hand a condition the wrong
+    # answer -- `'it\'s'`, `'x'and inputs.b` (#5073). Raise at run time
+    # instead, naming the text, the way mis-wired filters already do. Probe
+    # runs are exempt: the leaf is recorded above, and the validation gate
+    # owns the authoring diagnostics (`_unresolvable_leaf`), so validation
+    # messages do not change.
+    if (
+        expr
+        and not isinstance(namespace, _ProbeNamespace)
+        and not all(_is_path_segment(seg.strip()) for seg in expr.split("."))
+    ):
+        hint = ""
+        if re.search(r"['\"](?:and|or|in|not)\b|\b(?:and|or|in|not)['\"]", expr):
+            hint = (
+                "; the word operators and/or/in/not need a space on both "
+                "sides to be recognized"
+            )
+        elif "'" in expr or '"' in expr:
+            hint = (
+                "; a string literal must be one wholly quoted string -- "
+                "backslash-escaped quotes are not supported, so quote a "
+                "literal containing a quote with the other quote type"
+            )
+        raise ValueError(
+            f"unsupported expression syntax: {expr!r} is not a supported "
+            f"literal, operator expression, or variable path{hint}"
+        )
     return _resolve_dot_path(namespace, expr)
 
 

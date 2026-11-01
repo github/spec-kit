@@ -16,7 +16,12 @@ from typing import Any
 # against it, and the condition gate below reuses it rather than describing the
 # same shape a second time, so widening what indexing accepts cannot leave the
 # evaluator and the gate disagreeing.
-_INDEXED_SEGMENT = re.compile(r"^([\w-]+)\[(-?\d+)\]$")
+_INDEXED_SEGMENT = re.compile(r"^([\w-]+)((?:\[-?\d+\])+)$")
+
+# The integer tokens inside an indexed segment's bracket suffix. Parsed from the
+# matched text rather than a capture group so a widened _INDEXED_SEGMENT (the
+# wiring test swaps in one with a different group shape) still yields indices.
+_INDEX_TOKEN = re.compile(r"-?\d+")
 
 _PLAIN_SEGMENT = re.compile(r"^[\w-]+$")
 
@@ -25,23 +30,28 @@ def _resolve_dot_path(obj: Any, path: str) -> Any:
     """Resolve a dotted path like ``steps.specify.output.file`` against *obj*.
 
     Supports dict key access and list indexing, including the negative form
-    Python and Jinja2 both accept (e.g., ``task_list[0]``, ``task_list[-1]``).
+    Python and Jinja2 both accept (e.g., ``task_list[0]``, ``task_list[-1]``)
+    and the chained form (``matrix[0][1]``), which used to fall outside
+    ``_INDEXED_SEGMENT`` and be looked up as the literal key ``"matrix[0][1]"``
+    (#5073).
     """
     parts = path.split(".")
     current = obj
     for part in parts:
-        # Handle list indexing: name[0], name[-1]
+        # Handle list indexing: name[0], name[-1], name[0][1]
         idx_match = _INDEXED_SEGMENT.match(part)
         if idx_match:
-            key, idx = idx_match.group(1), int(idx_match.group(2))
+            key = idx_match.group(1)
             if isinstance(current, dict):
                 current = current.get(key)
             else:
                 return None
-            if isinstance(current, list) and -len(current) <= idx < len(current):
-                current = current[idx]
-            else:
-                return None
+            for token in _INDEX_TOKEN.findall(part[len(key):]):
+                idx = int(token)
+                if isinstance(current, list) and -len(current) <= idx < len(current):
+                    current = current[idx]
+                else:
+                    return None
         elif isinstance(current, dict):
             current = current.get(part)
         else:
