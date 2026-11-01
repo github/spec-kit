@@ -83,7 +83,9 @@ it directly in a prompt.
 
 Use `--integration-options="--skills"` to explicitly select the default skills
 layout when migrating an existing commands installation with
-`specify integration upgrade copilot`. See the
+`specify integration upgrade copilot`. Passing it replaces all stored options,
+so include any you want to keep: without `--no-model-invocation` in that value,
+for example, the migrated skills are written as model-invocable. See the
 [shared upgrade rules](cli.md#upgrade-an-integration),
 including the restriction on changing layouts while preset artifacts are
 registered.
