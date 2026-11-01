@@ -7,8 +7,7 @@ the evaluator only walks the namespace and applies a fixed set of filters.
 This package is split by responsibility:
 
 - ``namespace``/``filters``/``operators``/``template`` — shared leaves;
-- ``engine_lark`` — the Lark (LALR) evaluator behind the contract;
-- ``engine`` — the selection point (the one line that swaps the engine);
+- ``engine`` — the Lark (LALR) expression parser and evaluator;
 - ``api`` — the public evaluation entry points;
 - ``diagnostics`` — condition validation and remediation.
 

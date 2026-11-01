@@ -555,9 +555,17 @@ def test_incomplete_operand_covers_every_operator_the_evaluator_splits_on():
         ("(inputs.x | upper) | lower == 'x'", False),
         ("inputs.a || inputs.b", True),
         ("inputs.a == == inputs.b", True),
+        ("inputs.a == and", True),
+        ("inputs.a and or inputs.b", True),
+        ("and", True),
+        ("or", True),
+        ("in", True),
+        ("not in", True),
+        ("not", True),
         ("| upper", True),
         ("inputs.items | length >", True),
         ("inputs.mode not 'done'", False),
+        ("9" * 5000, False),
     ],
 )
 def test_incomplete_operand_tells_a_filter_chain_from_a_missing_operand(

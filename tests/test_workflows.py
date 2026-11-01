@@ -1729,7 +1729,7 @@ class TestExpressions:
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
-        for text in ("1__0", "1_", "1e3", "5..", "."):
+        for text in ("1__0", "1_", "1e3", "5..", ".", "9" * 5000):
             with pytest.raises(ValueError, match="invalid expression"):
                 evaluate_expression("{{ " + text + " }}", StepContext(inputs={}))
 
@@ -1807,6 +1807,9 @@ class TestExpressions:
         with pytest.raises(ValueError, match="unexpected character ':'"):
             evaluate_expression("{{ inputs.weird:key }}", ctx)
         assert evaluate_expression("{{ inputs.ok-key }}", ctx) == "v"
+        for text in ("and", "or", "in", "not in", "inputs.a == and", "inputs.a and or inputs.b"):
+            with pytest.raises(ValueError, match="invalid expression"):
+                evaluate_expression("{{ " + text + " }}", ctx)
 
     def test_item_and_fan_in_namespace(self):
         """The ``item`` and ``fan_in`` roots resolve inside fan-out/fan-in, like
