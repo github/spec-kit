@@ -416,6 +416,38 @@ class TestExpressions:
                 "{{ " + expression + " }}", StepContext(inputs={"payload": ""})
             )
 
+    def test_long_boolean_chains_and_deep_parentheses_evaluate(self):
+        """A long ``and``/``or`` chain or deep parentheses must not exhaust the
+        call stack. A chain stops at the first deciding operand, so the failing
+        operands after it are never evaluated."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"flag": True, "payload": ""})
+        count = 1000
+        failing = "(inputs.payload | from_json)"
+        assert evaluate_expression(
+            "{{ true or " + " or ".join([failing] * count) + " }}", ctx
+        ) is True
+        assert evaluate_expression(
+            "{{ false and " + " and ".join([failing] * count) + " }}", ctx
+        ) is False
+        assert evaluate_expression(
+            "{{ " + " or ".join(["false"] * count) + " or inputs.flag }}", ctx
+        ) is True
+        assert evaluate_expression(
+            "{{ " + " and ".join(["inputs.flag"] * count) + " }}", ctx
+        ) is True
+        assert evaluate_expression(
+            "{{ " + "(" * count + "inputs.flag" + ")" * count + " }}", ctx
+        ) is True
+        # An operand the chain reaches still fails the evaluation.
+        with pytest.raises(ValueError, match="from_json: invalid JSON"):
+            evaluate_expression(
+                "{{ " + " or ".join(["false"] * count) + " or " + failing + " }}",
+                ctx,
+            )
+
     def test_list_literal_preserves_quoted_commas(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext

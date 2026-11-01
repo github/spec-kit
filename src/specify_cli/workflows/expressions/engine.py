@@ -44,7 +44,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
-from lark import Lark, Token, Transformer, Tree, v_args
+from lark import Lark, Token, Transformer_NonRecursive, Tree, v_args
 from lark.exceptions import UnexpectedCharacters, UnexpectedInput, UnexpectedToken, VisitError
 
 from . import namespace
@@ -185,12 +185,15 @@ def _parser() -> Lark:
 
 
 @v_args(inline=True)
-class _BuildAst(Transformer):
-    """Turn the parse tree into the same kind of tuples the other engines walk.
+class _BuildAst(Transformer_NonRecursive):
+    """Turn the parse tree into the tuple AST that ``_eval`` and ``_visit`` walk.
 
-    One small method per grammar rule; aliases (``-> cmp``, ``-> filter_call``)
-    name the shape, and anonymous terminals (``"|"``, ``"("``, ``","``) are
-    filtered out by Lark, so the children are exactly the operands.
+    Non-recursive, and each ``and``/``or`` chain becomes one node, so a long
+    chain or deep parentheses do not exhaust Python's call stack while the tree
+    is built, evaluated or validated. One small method per grammar rule;
+    aliases (``-> cmp``, ``-> filter_call``) name the shape, and anonymous
+    terminals (``"|"``, ``"("``, ``","``) are filtered out by Lark, so the
+    children are exactly the operands.
     """
 
     def string(self, token: Token) -> tuple[str, str]:
@@ -227,11 +230,15 @@ class _BuildAst(Transformer):
     def cmp(self, left: Any, op: Token, right: Any) -> tuple[str, ...]:
         return ("cmp", " ".join(str(op).split()), left, right)
 
-    def or_op(self, left: Any, _op: Token, right: Any) -> tuple[str, Any, Any]:
-        return ("or", left, right)
+    def or_op(self, left: Any, _op: Token, right: Any) -> tuple[str, tuple[Any, ...]]:
+        # As for ``filtered``: the grammar nests a chain to the left; flatten it
+        # so ``_eval`` loops over the operands instead of recursing per operator.
+        operands = left[1] if left[0] == "or" else (left,)
+        return ("or", operands + (right,))
 
-    def and_op(self, left: Any, _op: Token, right: Any) -> tuple[str, Any, Any]:
-        return ("and", left, right)
+    def and_op(self, left: Any, _op: Token, right: Any) -> tuple[str, tuple[Any, ...]]:
+        operands = left[1] if left[0] == "and" else (left,)
+        return ("and", operands + (right,))
 
     def not_op(self, _op: Token, inner: Any) -> tuple[str, Any]:
         return ("not", inner)
@@ -433,18 +440,16 @@ def _eval(node: Any, namespace_: dict[str, Any]) -> Any:
             return _safe_membership(left, right, negate=True)
         return _safe_compare(left, right, op)
 
-    left = _eval(node[1], namespace_)
-    # Skip the right operand when the left one decides, so a guard protects it.
-    # Validation walks the parse tree instead, so it still visits both sides.
-    if tag == "or" and bool(left):
-        return True
-    if tag == "and" and not bool(left):
-        return False
-    right = _eval(node[2], namespace_)
-    if tag == "or":
-        return bool(left) or bool(right)
-    if tag == "and":
-        return bool(left) and bool(right)
+    if tag in ("and", "or"):
+        # Left to right, stopping at the first operand that decides the result,
+        # so a guard protects the rest: a true operand decides `or`, a false one
+        # `and`. Validation walks the parse tree instead, so it still visits
+        # every operand.
+        decides = tag == "or"
+        for operand in node[1]:
+            if bool(_eval(operand, namespace_)) is decides:
+                return decides
+        return not decides
     raise ValueError(f"unsupported expression node {tag!r}")
 
 
@@ -521,7 +526,7 @@ def _visit(node: Any, paths: list[str] | None = None, filters: list[Any] | None 
 
     One traversal serves both contract primitives: ``_collect_leaves`` asks for
     the names (``paths``), ``_evaluator_rejects`` asks for the filters to check
-    against the table (``filters``). Parents are transparent -- both sides of
+    against the table (``filters``). Parents are transparent -- every operand of
     ``and``/``or``, every list element and every filter argument is reached.
     Text that does not parse has neither names nor filters; ``_syntax_error``
     explains why separately.
@@ -544,8 +549,8 @@ def _visit(node: Any, paths: list[str] | None = None, filters: list[Any] | None 
     elif tag == "not":
         _visit(node[1], paths, filters)
     elif tag in ("and", "or"):
-        _visit(node[1], paths, filters)
-        _visit(node[2], paths, filters)
+        for operand in node[1]:
+            _visit(operand, paths, filters)
     elif tag == "cmp":
         _visit(node[2], paths, filters)
         _visit(node[3], paths, filters)

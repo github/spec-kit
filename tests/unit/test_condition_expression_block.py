@@ -1007,6 +1007,16 @@ def test_both_sides_of_a_boolean_are_reported():
     assert _unresolvable_term("false and bogus") is not None
 
 
+def test_a_long_boolean_chain_is_validated_without_exhausting_the_stack():
+    """Validation walks every operand of a long chain, the last one included."""
+    chain = " or ".join(["inputs.flag"] * 1000)
+    assert len(_collect_leaves(chain)) == 1000
+    assert _unresolvable_term(chain + " or bogus") is not None
+    errors = IfThenStep().validate({"id": "s1", "condition": chain, "then": []})
+    assert len(errors) == 1
+    assert "Wrap the expression" in errors[0]
+
+
 @pytest.mark.parametrize("template", ["true or ({})", "false and ({})", "true or (false and ({}))"])
 @pytest.mark.parametrize("filtered", ["inputs.x | nosuchfilter", "inputs.x | join", "inputs.x | length(1)"])
 def test_filter_probe_checks_short_circuited_operands(template, filtered):
