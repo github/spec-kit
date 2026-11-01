@@ -1795,8 +1795,8 @@ class TestExpressions:
 
     def test_text_that_is_not_an_expression_is_refused(self):
         """Prose inside ``{{ }}`` and path keys outside ``[\\w-]`` are syntax
-        errors. The former engine looked them up as paths and rendered the
-        miss as an empty string or ``None``."""
+        errors. The former engine looked them up as paths and could resolve an
+        existing key."""
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext

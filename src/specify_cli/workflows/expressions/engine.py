@@ -8,7 +8,8 @@ documented in ``workflows/ARCHITECTURE.md``:
   (``a == b > 0`` is ``(a == b) > 0``). The former engine's operator scan order
   gave them accidental priorities; parenthesize to combine comparisons.
 * Text that is not an expression -- prose inside ``{{ }}``, path keys with
-  characters outside ``[\\w-]`` -- is a syntax error instead of a ``None`` lookup.
+  characters outside ``[\\w-]`` -- is a syntax error instead of a path lookup,
+  which could resolve an existing key.
 
 The rest of this docstring describes how the engine is built:
 
