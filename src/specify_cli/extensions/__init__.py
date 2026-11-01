@@ -324,7 +324,7 @@ class ExtensionManifest:
                 )
 
         # Validate extension ID format
-        if not re.match(r"^[a-z0-9-]+$", ext["id"]):
+        if not re.fullmatch(r"[a-z0-9-]+", ext["id"]):
             raise ValidationError(
                 f"Invalid extension ID '{ext['id']}': "
                 "must be lowercase alphanumeric with hyphens only"
@@ -4782,7 +4782,7 @@ class ExtensionCatalog(CatalogStackBase):
 
         except urllib.error.URLError as e:
             raise ExtensionError(f"Failed to fetch catalog from {entry.url}: {e}")
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
             raise ExtensionError(f"Invalid JSON in catalog from {entry.url}: {e}")
 
     def _get_merged_extensions(

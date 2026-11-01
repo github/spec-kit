@@ -81,7 +81,7 @@ def test_assess_ensures_bug_directory_before_hook_checks():
 
 
 @pytest.mark.parametrize("path", [
-    ROOT / "extensions/EXTENSION-API-REFERENCE.md",
+    ROOT / "docs/extensions/api.md",
     ROOT / "docs/extensions/developing.md",
     ROOT / "docs/extensions/overview.md",
     EXT_DIR / "README.md",

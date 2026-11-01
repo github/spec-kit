@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-28T00:00:00Z",
+  "updated_at": "2026-10-29T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -584,13 +584,14 @@
     "isaqb-architecture-governance": {
       "name": "iSAQB Architecture Governance",
       "id": "isaqb-architecture-governance",
-      "version": "0.2.2",
-      "description": "Adds iSAQB/CPSA-F and arc42 architecture governance, architecture views, quality scenarios, ADRs, risks, technical-debt evidence, and provider-neutral model routing.",
+      "version": "0.2.5",
+      "description": "Adds iSAQB/CPSA-F and arc42 architecture governance with Spec-Kit evidence for goals, views, quality scenarios, ADRs, risks, and technical debt.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/archive/refs/tags/v0.2.2.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/archive/refs/tags/v0.2.5.zip",
+      "sha256": "03f1a946994ece3c30b0da3a733eb7c5eb88c8a65021831e75cf5543fed65d58",
       "homepage": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/blob/v0.2.2/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/blob/v0.2.5/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
@@ -604,10 +605,10 @@
         "governance",
         "isaqb",
         "arc42",
-        "model-routing"
+        "adr"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-08-11T00:00:00Z"
+      "updated_at": "2026-10-29T00:00:00Z"
     },
     "jira": {
       "name": "Jira Issue Tracking",

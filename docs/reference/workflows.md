@@ -109,6 +109,56 @@ specify workflow status [<run_id>]
 
 Shows the status of a specific run, or lists all runs if no ID is given. Run states: `created`, `running`, `completed`, `paused`, `failed`, `aborted`.
 
+## Workflow Definition
+
+```bash
+specify workflow definition <run_id> --json
+```
+
+| Option   | Description                                                      |
+| -------- | ---------------------------------------------------------------- |
+| `--json` | Required. Emit the run's workflow definition as a JSON object    |
+
+Returns the workflow definition a run was **started with**, so an integration can render a run (for example the gates it declares and their messages) without drifting from what the engine actually executes. It reads only the run's own persisted data and never the installed workflow: editing or removing the installed workflow does not change the output. Runtime progress and the active gate come from [`specify workflow status --json`](#workflow-status).
+
+Omitting `--json` exits with code `2` and prints a usage message on stderr; no stdout is produced. A text renderer is deferred, so the JSON shape below is the only contract.
+
+```json
+{
+  "run_id": "662bf791",
+  "definition": {
+    "schema_version": "1.0",
+    "workflow": { "id": "spec-review", "name": "Spec review", "version": "1.0.0" },
+    "steps": [
+      { "id": "draft", "type": "command", "command": "speckit.specify" },
+      { "id": "approve", "type": "gate", "message": "Review the specification." }
+    ]
+  },
+  "workflow_scopes": []
+}
+```
+
+- **`definition`** is the workflow as persisted for the run, verbatim and with overlays already applied, so it reflects the steps as executed. Every key is passed through (including `requires`, `outputs` and unknown keys). Nothing is added, renamed or filled in: an omitted field, such as a gate's `options`, means the engine default applies at run time. Expressions (`{{ ... }}`) are not evaluated. The structure follows the [workflow YAML schema](#workflow-yaml-schema), so `schema_version` is the version of this interface and a schema change is a change to it; because `definition` is emitted as authored, an omitted `schema_version` defaults to `"1.0"` and the engine compares `str(schema_version)` (so unquoted `schema_version: 1.0` in YAML appears as the JSON number `1.0`). Keys may be added to the top-level response envelope (`run_id`, `definition`, `workflow_scopes`) in future versions, but existing envelope keys are never removed or renamed.
+- **Plain JSON.** YAML-native values that JSON cannot represent, such as an unquoted date, appear as strings. Binary values (`!!binary`) are not emitted: each appears as a `"<binary: N bytes>"` placeholder, and the value itself stays in the run's snapshot. A set (`!!set`) appears as a list sorted by its JSON form, so the output does not depend on hash randomization. Non-string mapping keys and non-finite numbers are stringified too. Two mapping keys that collapse to the same JSON property name (for example `1` and `"1"`) make the command fail rather than emit lossy JSON. JSON cannot share a reference, so a reused YAML alias (anchor) is duplicated; a recursive alias, or a non-recursive alias graph that expands past a fixed node or output-size budget, fails instead of consuming unbounded CPU, memory and stdout. The budget applies to each definition separately (the root and every entry in `workflow_scopes`), so a run with many bound workflow calls is not rejected for its total size. A separate, much larger limit (32 MiB) caps the whole response, so a loop or fan-out that repeats a large definition fails instead of multiplying it. A non-string mapping key longer than 256 characters once stringified is rejected for the same reason.
+- **`workflow_scopes`** (always present) holds the frozen definition of every [workflow call](#workflow-composition) that has been reached, in execution order. Each entry is `{ "scope_path", "workflow_id", "definition" }`, with `scope_path` and `workflow_id` identical to the values in `status --json`. A call step inside `definition` stays as authored; the callee is never expanded in place. A call that has not been reached yet, or whose target could not be resolved, has no entry, and its definition is never read from the installed workflow. The list grows as calls are reached, and a call inside a loop or fan-out has one entry per iteration or item.
+- **Not included: dynamically generated steps.** The output contains the authored root definition and the frozen definitions of bound workflow calls. Steps that a custom step type generates at run time through `StepResult.next_steps` are persisted in the run's execution state but are not exported, so a gate created that way has no definition in this output. The built-in `if`, `switch`, `while`, `do-while` and `fan-out` steps take their steps from the authored definition and are covered.
+- **`scope_path`** is a list of strings from the root: the authored `id` of every enclosing step (`step-<index>` for a step without an `id`). Containers such as `if`, `switch`, loops and fan-out are elements; each loop iteration and fan-out item adds its index as a string, including the first (`["loop", "0", "call"]`). `workflow_scopes` is always present here, while `status --json` includes it only when the run has workflow calls.
+
+### Matching a gate to its definition
+
+`status --json` reports an active gate as `gate.step_id` and `gate.scope_path`. To find the gate's definition:
+
+1. Read `gate.scope_path` as `[]` when it is missing: `status --json` omits it for a gate directly in the root workflow. Then take the `workflow_scopes` entry with the longest `scope_path` that is a prefix of `gate.scope_path`. If there is none, use the root `definition`. Do not require an exact match: `gate.scope_path` lists every enclosing step, including `if`, `switch`, loops and fan-out containers, while an entry's `scope_path` ends at the call step. A gate in an `if` named `wrap` inside a workflow called by `call`, itself in an `if` named `route`, reports `["route", "call", "wrap"]`, and its entry has `["route", "call"]`.
+2. In that definition, find the step whose `id` equals the authored step ID. In later loop iterations and in fan-out items `step_id` is qualified as `<container>:<id>:<n>` (for example `fan:g:0`); the authored ID is the second-to-last `:`-separated segment, because `:` is not allowed in authored step IDs. Step IDs are unique within a definition except across fan-out templates, which have their own ID namespace: a root step and a fan-out template step may share an ID. If `gate.scope_path` runs through a fan-out step, look only inside that step's `step` template; otherwise ignore fan-out templates. For example, a root shell `g` and a gate `g` in the template of fan-out `fan` both exist, and `fan:g:0` with `scope_path` `["fan", "0"]` is the template's gate, not the root shell.
+
+A gate generated at run time by a custom step has no definition to match; see the note on dynamically generated steps above.
+
+`status --json` does not report per-step status for steps inside called workflows.
+
+### Errors
+
+Failures write a single `{"error": "<message>"}` object to stderr, leave stdout empty and exit with code `1`: not a Spec Kit project, an invalid `SPECIFY_INIT_DIR`, unsafe (including symlinked) workflow storage, an invalid or unknown run ID, an unreadable or too deeply nested run state, a run with no persisted definition (for example one created before definitions were persisted), a corrupt definition or execution state, a definition whose mapping keys collapse to the same JSON property name, and a definition with recursive or too-large-to-expand YAML aliases. Usage errors with `--json` also use this JSON error contract and exit with code `2`.
+
 ## List Installed Workflows
 
 ```bash
@@ -453,7 +503,7 @@ referents, so a pre-existing cache-file symlink can be replaced without changing
 its target. If a cache cannot be safely written, a warning is logged and
 discovery continues using the fetched catalog.
 
-> **A project's `.specify/workflow-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before running a workflow from an unfamiliar project, run `specify workflow catalog list` (and `specify workflow step catalog list` for the step catalogs its steps can pull in) — a project supplying that config is not evidence its workflows or steps were vetted. Maintainers do not audit `run` fields; read a workflow's shell steps yourself before running it (see [Who maintains workflows?](#who-maintains-workflows)).
+> **A project's `.specify/workflow-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before running a workflow from an unfamiliar project, run `specify workflow catalog list` (and `specify workflow step catalog list` for the step catalogs its steps can pull in) — a project supplying that config is not evidence its workflows or steps were vetted. Maintainers do not audit workflow code; review both `run` and `env` in its shell steps yourself, including strict steps (see [Reviewing shell execution](#reviewing-shell-execution) and [Who maintains workflows?](#who-maintains-workflows)).
 
 ### List Catalogs
 
@@ -496,7 +546,7 @@ Catalogs are resolved in this order (first match wins):
 3. **User config** — `~/.specify/workflow-catalogs.yml`
 4. **Built-in defaults** — official catalog + community catalog
 
-## Workflow Definition
+## Workflow YAML Schema
 
 Workflows are defined in YAML files. Here is the built-in **Full SDD Cycle** workflow that ships with Spec Kit:
 
@@ -781,6 +831,32 @@ summaries when calls exist and reports an active nested gate with its
 qualified `step_id`. A step emits completion after its checkpoint; containers
 emit before their children, while replayed completed occurrences emit no step
 events.
+
+### Shell step
+
+`type: shell` executes `run` through the platform shell, retaining support for
+pipes, redirects, and multiple commands. Set `strict: true` to reject `{{`
+expression markers anywhere in `run`, including inside quotes. This is checked
+both during validation and immediately before execution. `strict` must be a
+boolean; omitted or `false` preserves existing raw interpolation behavior.
+
+Use an `env` mapping to bind dynamic values without inserting them into shell
+source. For example, on POSIX:
+
+```yaml
+- id: display-result
+  type: shell
+  strict: true
+  env:
+    RESULT: "{{ steps.plan.output.stdout }}"
+  run: 'printf "%s\n" "$RESULT"'
+```
+
+For cross-platform scripts, read the environment in the program itself, such
+as `os.environ["RESULT"]` in Python. See
+[Shell Step Environment Variables](#shell-step-environment-variables) for the
+binding contract and [Interpolation and shell safety](#interpolation-and-shell-safety)
+for the remaining trust boundary.
 
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
 
@@ -1241,9 +1317,11 @@ If an interpolated value can contain characters like `;`, `|`, `&`, `$( )`, back
 - **Workflow `inputs.*`** — supplied by whoever runs the workflow.
 - **A prior step's output**, e.g. `{{ steps.plan.output.stdout }}` — for a `command` or `prompt` step with [`capture: true`](#capturing-command-and-prompt-output) this is **text produced by the AI agent**, which can in turn be influenced by files, tickets, or web content the agent read. Treat agent output as untrusted when it flows into a `shell` step.
 
-There is **no shell-escaping filter** in the expression language and **no sandbox** around a `shell` step, so none of the practices below can be treated as a guarantee that a hostile value is neutralised. The only reliable control is to constrain what an interpolated value *can* be, and to keep values you cannot constrain out of `run` fields entirely. Scrutinise every `run` field that interpolates a value you do not control, and at minimum:
+There is **no shell-escaping filter** in the expression language and **no sandbox** around a `shell` step. Prefer [`strict: true`](#shell-step) with `env` bindings to keep dynamic values out of shell source. Strict mode does not sanitise data, inspect commands, or prevent an authored script from interpreting data as code. Do not use `eval`, build another `sh -c` command from a variable, or pass untrusted values through shell startup variables such as `BASH_ENV`. On Windows, `cmd.exe` expansion of `%VALUE%` can introduce shell syntax; read untrusted values inside a program instead. On POSIX, quote variable expansions and use the target program's argument validation or `--` where appropriate to prevent option injection.
 
-- **Constrain the value at the source with `enum`/an allowlist.** When `inputs.*` feeds a `run` field, restrict it to a fixed set of known-safe values so a caller cannot supply arbitrary shell text at all. This is the strongest control the engine offers — prefer it over any downstream mitigation.
+For compatibility, raw interpolation remains enabled when `strict` is omitted or `false`. Its injection risk remains unchanged. Keep values you cannot constrain out of `run` fields entirely. Scrutinise every non-strict `run` field that interpolates a value you do not control, and at minimum:
+
+- **Constrain the value at the source with `enum`/an allowlist.** When `inputs.*` feeds a non-strict `run` field, restrict it to a fixed set of known-safe values so a caller cannot supply arbitrary shell text at all.
 
   ```yaml
   inputs:
@@ -1265,6 +1343,60 @@ Shell steps automatically receive the following environment variables:
 | Variable | Description |
 | -------- | ----------- |
 | `SPECKIT_WORKFLOW_DIR` | Resolved absolute path to the workflow source directory (same value as `{{ context.workflow_dir }}`). Not set when the workflow has no source path. |
+
+An optional per-step `env` mapping is available in both strict and non-strict
+mode. Names must match `[A-Za-z_][A-Za-z0-9_]*`; names are literal, not
+expressions. Values must be strings and may contain workflow expressions.
+Each value is evaluated once and must resolve to a string without NUL
+characters. On POSIX, the string must also be encodable for the process
+environment using the filesystem encoding and its error handler.
+Invalid bindings fail the step before launching a process.
+
+Single-expression bindings preserve the expression's result type:
+`COUNT: "{{ inputs.count }}"` rejects a number, boolean, null, list, or mapping
+instead of converting it to text. Mixed templates use standard expression
+interpolation: `COUNT: "n={{ inputs.count }}"` produces `n=42` for integer
+`42`; embedded null becomes empty text, and other values use their string
+representation. To serialize structured data explicitly, use `to_json`.
+
+Bindings override inherited environment values for that subprocess only;
+they do not modify the parent process or subsequent steps. An empty string is
+valid. `SPECKIT_WORKFLOW_DIR` is reserved (case-insensitively) and cannot be
+overridden. Keep environment names and executable-loading settings under the
+workflow author's control: environment binding is a data channel, not a sandbox.
+
+### Reviewing shell execution
+
+Before installing or running an unfamiliar workflow, audit each shell step's
+`run` **and** `env`, including nested branches and fan-out templates. Review
+referenced scripts and resources, called workflows, and active overlay YAML
+that can replace or insert steps. Apply the same review to workflow components
+of bundles, and repeat it when definitions, overlays, or referenced code change.
+Custom step packages require their own source review because loading them
+executes Python code.
+
+An environment value can control execution rather than merely supply data.
+For example, `PATH` selects executables, `PYTHONPATH` affects Python imports,
+`BASH_ENV` can select Bash startup code, and `NODE_OPTIONS` can change Node.js
+startup behavior. Native loaders and other programs have their own settings;
+these examples are not an exhaustive list. A fixed `run` can therefore execute
+different code even with `strict: true` and no `eval`. Strict mode neither
+filters execution-controlling bindings nor cleans the inherited environment.
+Keep those settings literal and author-vetted, or constrain dynamic values to
+an approved set of trusted paths/options. Use unconstrained input or agent
+output only for application-data variables whose consumers handle it as data.
+
+When a shell step invokes Specify itself, catalog overrides such as
+`SPECKIT_WORKFLOW_CATALOG_URL` can also change where child commands discover
+or install components. Vet those bindings alongside the
+[active catalog sources](catalogs.md#discovery-and-trust).
+
+Workflow validation checks configuration, not whether environment settings or
+commands are safe. `specify workflow info` shows metadata and step identities;
+`specify workflow resolve` shows layer and step attribution. Neither displays
+the complete `run`/`env` configuration or replaces reading the contributing
+source files. Catalog install permission, bundle installation, and strict mode
+are not security endorsements.
 
 ## Input Types
 

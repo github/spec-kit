@@ -16,6 +16,7 @@ escapes user-controlled display values; init.py was the outlier.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import os
@@ -301,3 +302,77 @@ def test_rendering_init_preserves_skill_guidance(tmp_path, monkeypatch):
                     "clarify", "analyze", "checklist"):
         assert f"/speckit-{command}" in output
         assert (tmp_path / "proj" / ".github" / "skills" / f"speckit-{command}" / "SKILL.md").is_file()
+
+
+def test_init_force_syncs_manifest_hash_for_preset_override(tmp_path, monkeypatch):
+    """Re-init must record preset bytes and retain setup's other files (#5078)."""
+    from specify_cli.integrations.manifest import IntegrationManifest
+
+    monkeypatch.chdir(tmp_path)
+    args = ["--integration", "codex", "--script", "sh", "--ignore-agent-tools", "--non-interactive"]
+    result = CliRunner().invoke(app, ["init", "proj", *args])
+    assert result.exit_code == 0, result.output
+    project = tmp_path / "proj"
+    preset = tmp_path / "tasks-preset"
+    (preset / "commands").mkdir(parents=True)
+    (preset / "commands/speckit.tasks.md").write_bytes(
+        b"---\ndescription: Tasks override\n---\nPreset tasks body\n"
+    )
+    (preset / "preset.yml").write_bytes(b"""schema_version: '1.0'
+preset: {id: tasks-preset, name: Tasks Preset, version: 1.0.0, description: x}
+requires: {speckit_version: '>=0.1.0'}
+provides:
+  templates:
+  - {type: command, name: speckit.tasks, file: commands/speckit.tasks.md}
+""")
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, ["preset", "add", "--dev", str(preset)])
+    assert result.exit_code == 0, result.output
+    plan_rel = ".agents/skills/speckit-plan/SKILL.md"
+    original_plan = (project / plan_rel).read_bytes()
+    (project / plan_rel).write_bytes(b"User-edited skill\n")
+
+    result = CliRunner().invoke(app, ["init", "--here", "--force", *args])
+    assert result.exit_code == 0, result.output
+
+    manifest = IntegrationManifest.load("codex", project)
+    rel = ".agents/skills/speckit-tasks/SKILL.md"
+    content = (project / rel).read_bytes()
+    assert b"Preset tasks body" in content
+    assert manifest.files[rel] == hashlib.sha256(content).hexdigest(), (
+        "manifest hash must match the preset-overridden skill (#5078)"
+    )
+    assert (project / plan_rel).read_bytes() == original_plan, "force re-init still replaces user edits"
+    assert manifest.files[plan_rel] == hashlib.sha256(original_plan).hexdigest()
+    result = CliRunner().invoke(app, ["integration", "status", "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["modified_managed_files"] == 0
+    result = CliRunner().invoke(app, ["integration", "upgrade", "codex", "--script", "sh"])
+    assert result.exit_code == 0, result.output
+
+
+def test_init_force_keeps_recovered_markers(tmp_path, monkeypatch):
+    """Re-init resync must not re-record files registration left unchanged (#5078)."""
+    from specify_cli.integrations import get_integration
+    from specify_cli.integrations.manifest import IntegrationManifest
+
+    monkeypatch.chdir(tmp_path)
+    args = ["--integration", "codex", "--script", "sh", "--ignore-agent-tools", "--non-interactive"]
+    result = CliRunner().invoke(app, ["init", "proj", *args])
+    assert result.exit_code == 0, result.output
+    project = tmp_path / "proj"
+    integration_class = type(get_integration("codex"))
+    original_setup = integration_class.setup
+    rel = ".agents/skills/speckit-plan/SKILL.md"
+
+    def setup_with_recovered_file(self, project_root, manifest, *args, **kwargs):
+        created = original_setup(self, project_root, manifest, *args, **kwargs)
+        manifest.record_existing(rel, recovered=True)
+        return created
+
+    monkeypatch.setattr(integration_class, "setup", setup_with_recovered_file)
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, ["init", "--here", "--force", *args])
+
+    assert result.exit_code == 0, result.output
+    assert IntegrationManifest.load("codex", project).is_recovered(rel)

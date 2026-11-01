@@ -130,7 +130,7 @@ If an extension proposal or external dependency declaration uses
 `speckit.github.taskstoissues`. `requires.commands` is not an enforced dependency
 field in the current extension manifest API, so do not rely on that declaration
 to install or check the GitHub extension. Follow the supported requirements in
-the [extension API reference](../EXTENSION-API-REFERENCE.md#extension-manifest).
+the [extension API reference](https://github.github.io/spec-kit/extensions/api.html#extension-manifest).
 
 Preset command overrides are separate from command references: an override of
 `speckit.taskstoissues` does not automatically customize the namespaced GitHub

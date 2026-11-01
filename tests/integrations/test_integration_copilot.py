@@ -208,8 +208,11 @@ class TestCopilotCommandsMode:
         specify_file = tmp_path / ".github" / "agents" / "speckit.specify.agent.md"
         content = specify_file.read_text(encoding="utf-8")
 
-        assert "specify preset resolve spec-template" in content
-        assert "resolved active `spec-template`" in content
+        assert "resolve-template" in content
+        assert "{SCRIPT}" not in content
+        assert "parse `TEMPLATE_CONTENT` as the active `spec-template`" in content
+        assert "Write `TEMPLATE_CONTENT` to `SPECIFY_FEATURE_DIRECTORY/spec.md`" in content
+        assert "Copy the resolved `spec-template` file" not in content
         assert "Copy `.specify/templates/spec-template.md`" not in content
         assert "Load `.specify/templates/spec-template.md`" not in content
 

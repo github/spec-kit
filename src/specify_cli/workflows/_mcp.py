@@ -71,6 +71,18 @@ WORKFLOW_TOOLS = (
         network_access="optional",
     ),
     WorkflowToolInventory(
+        operation_id="workflow.definition",
+        cli_path="specify workflow definition",
+        mcp_tool_name="specify_workflow_definition",
+        disposition_reason=(
+            "Run-scoped root and bound-definition export, per-definition JSON "
+            "budgeting and CLI error mapping stay in command_definition; no shared "
+            "typed definition operation or MCP adapter."
+        ),
+        capabilities=_LOCAL_READ,
+        network_access="none",
+    ),
+    WorkflowToolInventory(
         operation_id="workflow.disable",
         cli_path="specify workflow disable",
         mcp_tool_name="specify_workflow_disable",
