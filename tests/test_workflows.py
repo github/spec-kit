@@ -1729,9 +1729,28 @@ class TestExpressions:
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
-        for text in ("1__0", "1_", "1e3", "5..", ".", "9" * 5000):
+        for text in ("1__0", "1_", "1e3", "5..", "."):
             with pytest.raises(ValueError, match="invalid expression"):
                 evaluate_expression("{{ " + text + " }}", StepContext(inputs={}))
+
+    def test_integer_conversion_error_is_reported_as_invalid_expression(self):
+        """The integer conversion limit is reported as an expression error."""
+        import sys
+
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        previous_limit = sys.get_int_max_str_digits()
+        limit = sys.int_info.str_digits_check_threshold
+        try:
+            sys.set_int_max_str_digits(limit)
+            with pytest.raises(ValueError, match="invalid expression"):
+                evaluate_expression(
+                    "{{ " + "9" * (limit + 1) + " }}", StepContext(inputs={})
+                )
+        finally:
+            sys.set_int_max_str_digits(previous_limit)
 
     def test_not_on_the_right_of_a_comparison(self):
         """``a == not b`` compares against the negation, as before."""
