@@ -738,6 +738,7 @@ class CommandRegistrar:
         # ``.bob/commands``.
         _sep = agent_config.get("invoke_separator", ".")
         registrar_writes_skills = agent_config.get("extension") == "/SKILL.md"
+        _integ = None
         try:
             from specify_cli.integrations import get_integration  # noqa: PLC0415
 
@@ -831,6 +832,11 @@ class CommandRegistrar:
             if is_cline_ext:
                 frontmatter = self._hyphenate_frontmatter_refs(frontmatter)
                 body = self._hyphenate_body_refs(body)
+
+            if _integ is not None:
+                frontmatter, body = _integ.process_registered_command(
+                    frontmatter, body, source_id=source_id
+                )
 
             body = self._convert_argument_placeholder(
                 body, "$ARGUMENTS", agent_config["args"]
