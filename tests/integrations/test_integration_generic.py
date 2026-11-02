@@ -71,7 +71,7 @@ def test_generic_extension_lifecycle(tmp_path, generic_extension, skills):
         commands_dir=".custom/skills" if skills else ".custom/commands",
     )
     output_dir = project / ".custom" / ("skills" if skills else "commands")
-    core = output_dir / ("speckit-taskstoissues/SKILL.md" if skills else "speckit.taskstoissues.md")
+    core = output_dir / ("speckit-tasks/SKILL.md" if skills else "speckit.tasks.md")
     core_content = core.read_bytes()
     unrelated = output_dir / ("user-skill/SKILL.md" if skills else "user.md")
     unrelated.parent.mkdir(parents=True, exist_ok=True)
@@ -2535,7 +2535,6 @@ class TestGenericIntegration:
             "checklist",
             "specify",
             "tasks",
-            "taskstoissues",
         ],
     )
     def test_command_loads_constitution_context(self, tmp_path, command_stem):
@@ -2604,7 +2603,6 @@ class TestGenericIntegration:
             ".myagent/commands/speckit.plan.md",
             ".myagent/commands/speckit.specify.md",
             ".myagent/commands/speckit.tasks.md",
-            ".myagent/commands/speckit.taskstoissues.md",
             ".specify/init-options.json",
             ".specify/integration.json",
             ".specify/integrations/generic.manifest.json",
@@ -2752,7 +2750,6 @@ class TestGenericIntegration:
             ".myagent/commands/speckit.plan.md",
             ".myagent/commands/speckit.specify.md",
             ".myagent/commands/speckit.tasks.md",
-            ".myagent/commands/speckit.taskstoissues.md",
             ".specify/init-options.json",
             ".specify/integration.json",
             ".specify/integrations/generic.manifest.json",

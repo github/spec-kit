@@ -1,18 +1,19 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-29T00:00:00Z",
+  "updated_at": "2026-11-02T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
       "name": "A11Y Governance",
       "id": "a11y-governance",
-      "version": "0.4.3",
-      "description": "Adds WCAG 2.2 AA, accessible status output, bilingual CEFR-B2 delivery, inclusive-content and didactic-comment governance, and provider-neutral model routing.",
+      "version": "0.4.6",
+      "description": "Adds accessibility (WCAG 2.2 AA), accessible text and JSON status parity, bilingual DE/EN delivery, CEFR-B2 readability, inclusive-content governance, didactic inline-code-comment review, and audit-ready Spec-Kit run evidence to Spec Kit.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-a11y-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-a11y-governance/archive/refs/tags/v0.4.3.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-a11y-governance/archive/refs/tags/v0.4.6.zip",
+      "sha256": "150cc5c1709d0bc6e9f682badb510922595cd784299ff3d9a9c17389919ec89f",
       "homepage": "https://github.com/hindermath/spec-kit-preset-a11y-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-a11y-governance/blob/v0.4.3/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-a11y-governance/blob/v0.4.6/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
@@ -25,11 +26,11 @@
         "a11y",
         "accessibility",
         "wcag",
-        "inclusion",
-        "model-routing"
+        "bilingual",
+        "inclusion"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-08-12T00:00:00Z"
+      "updated_at": "2026-11-02T00:00:00Z"
     },
     "agent-parity-governance": {
       "name": "Agent Parity Governance",

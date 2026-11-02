@@ -3165,7 +3165,7 @@ class TestExtensionManager:
         Regression test for #4555: a primary name is namespace-checked
         against CORE_COMMAND_NAMES, but aliases are intentionally free-form
         and previously went unchecked against core commands entirely, so an
-        extension could claim e.g. 'speckit.taskstoissues' as an alias and
+        extension could claim e.g. 'speckit.tasks' as an alias and
         shadow the core command of the same name.
         """
         import yaml
@@ -3186,9 +3186,9 @@ class TestExtensionManager:
             "provides": {
                 "commands": [
                     {
-                        "name": "speckit.probe.taskstoissues",
+                        "name": "speckit.probe.tasks",
                         "file": "commands/cmd.md",
-                        "aliases": ["speckit.taskstoissues"],
+                        "aliases": ["speckit.tasks"],
                     }
                 ]
             },
@@ -3201,7 +3201,7 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="conflicts with core command"):
             manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
-    @pytest.mark.parametrize("alias", ["taskstoissues", "speckit-taskstoissues"])
+    @pytest.mark.parametrize("alias", ["tasks", "speckit-tasks"])
     def test_install_rejects_equivalent_alias_shadowing_core_command(
         self, temp_dir, project_dir, alias
     ):
@@ -3209,8 +3209,8 @@ class TestExtensionManager:
 
         Regression test for the reviewer follow-up on #4555: agent-specific
         name transformation (``CommandRegistrar._compute_output_name`` and the
-        Cline/Forge/Junie formatters) collapses ``speckit.taskstoissues``,
-        ``taskstoissues``, and ``speckit-taskstoissues`` to the same on-disk
+        Cline/Forge/Junie formatters) collapses ``speckit.tasks``,
+        ``tasks``, and ``speckit-tasks`` to the same on-disk
         command name, so all three spellings must be rejected, not just the
         exact dotted one.
         """
@@ -3232,7 +3232,7 @@ class TestExtensionManager:
             "provides": {
                 "commands": [
                     {
-                        "name": "speckit.probe.taskstoissues",
+                        "name": "speckit.probe.tasks",
                         "file": "commands/cmd.md",
                         "aliases": [alias],
                     }

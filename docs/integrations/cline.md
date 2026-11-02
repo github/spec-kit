@@ -25,7 +25,14 @@ Invoke them in Cline's chat as `/speckit-specify` or
 `/speckit-bug-assess` for the installed bug extension, not dotted commands.
 
 Handoff references and extension/preset command content are also normalized
-to hyphenated command names.
+to hyphenated command names, so `/speckit.git.commit` in an extension command
+becomes `/speckit-git-commit`. A `speckit.*.md` file name inside a path, such
+as `.specify/extensions/git/commands/speckit.git.commit.md`,
+`C:\speckit.foo.md`, `C:\Program Files (x86)\speckit.foo.md`,
+`%TEMP%\speckit.foo.md`, or `./commands[old]/speckit.foo.md`, keeps its dots
+and `.md` extension. A bare or
+slash-prefixed token such as `/speckit.foo.md` is treated as a command
+reference and hyphenated. Core command content is not rewritten this way.
 
 ## Workflow Limitation
 
