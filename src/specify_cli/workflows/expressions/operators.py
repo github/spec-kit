@@ -10,12 +10,25 @@ from typing import Any
 
 
 def _coerce_number(value: Any) -> Any:
-    """Return *value* as int/float if it is a numeric string, else unchanged."""
+    """Return *value* as int/float if it is a numeric string, else unchanged.
+
+    ``int()`` first so integer text stays an int; ``float()`` then admits the
+    decimal and exponent forms (``"1.5"``, ``"1e3"``), matching what workflow
+    input coercion accepts as a number (``WorkflowEngine._coerce_input``), so
+    the same text cannot be a number as an input but a string in a comparison
+    (#5073). ``float()`` also accepts the words ``"inf"``/``"nan"``; those
+    carry no digit and stay ordinary strings here.
+    """
     if isinstance(value, str):
         try:
-            return float(value) if "." in value else int(value)
+            return int(value)
         except ValueError:
-            return value
+            pass
+        if any(ch.isdigit() for ch in value):
+            try:
+                return float(value)
+            except ValueError:
+                return value
     return value
 
 

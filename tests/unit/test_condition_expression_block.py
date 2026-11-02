@@ -421,13 +421,18 @@ def test_wrapping_whitespace_would_invert_the_condition():
 def test_wrapping_an_open_quote_inverts_the_condition():
     """Why the unbalanced-quote case gets advice instead of a suggestion.
 
-    The raw-close fallback evaluates a truncated comparison and yields the string
-    "False", which evaluate_condition then reads as the `false` keyword. Pasting
-    the "correction" flips the condition rather than repairing it.
+    The raw-close fallback evaluates a truncated comparison, whose dangling
+    `'abc` operand used to resolve to None and yield the string "False", which
+    evaluate_condition then read as the `false` keyword -- pasting the
+    "correction" flipped the condition rather than repairing it. Since #5073
+    the truncated operand raises as unsupported syntax instead of silently
+    inverting; the advice (rather than a paste-ready suggestion) is still
+    right, because wrapping the text as written cannot repair it.
     """
     ctx = StepContext(inputs={"name": "Bob"})
     assert evaluate_condition("{{ inputs.name == 'abc", ctx) is True
-    assert evaluate_condition("{{ inputs.name == 'abc }}", ctx) is False
+    with pytest.raises(ValueError, match="unsupported expression syntax"):
+        evaluate_condition("{{ inputs.name == 'abc }}", ctx)
 
 
 @pytest.mark.parametrize(
@@ -655,7 +660,8 @@ def test_the_probe_reports_what_the_evaluator_reports():
         # _resolve_dot_path keys on [w-]+, so a key literally named "2bad" resolves.
         ("inputs.2bad", False),
         ("inputs.tags[foo]", True),
-        ("inputs.matrix[0][1]", True),
+        # Chained indexing is part of the indexed-segment shape since #5073.
+        ("inputs.matrix[0][1]", False),
         # Round 7: an operand one level down, which the single-term gate never saw.
         ("inputs.a === inputs.b", True),
         ("bogus", True),
@@ -711,12 +717,10 @@ def test_filter_wiring_errors_are_still_rejections(condition):
         ("42", True),
         ("3.14", True),
         ("-7", True),
-        # `1e3` has no "." so the evaluator calls int() on it, which fails; it then
-        # falls through to a path lookup and resolves to None. The gate used to
-        # decide this for itself with a float() test that accepted `1e3`, and the
-        # correction turned a truthy condition false. Now the evaluator reaches the
-        # dot-path resolution with `1e3` and reports it, so the two cannot disagree.
-        ("1e3", False),
+        # `1e3` is a numeric literal since #5073 -- the evaluator's float()
+        # branch accepts the exponent form, and the gate reads that straight
+        # off the evaluator's walk, so the two cannot disagree.
+        ("1e3", True),
         ("'one'", True),
         ('"one"', True),
         # Two literals, not one: the evaluator requires the opening quote's match to
@@ -745,7 +749,6 @@ def test_literal_handling_comes_from_the_evaluator(condition, resolvable):
         # to None however the index is written.
         "inputs[0]",
         "steps[1]",
-        "1e3",
         "'a' 'b'",
     ],
 )
