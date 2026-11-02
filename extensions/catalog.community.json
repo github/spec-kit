@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-28T00:00:00Z",
+  "updated_at": "2026-11-02T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -2770,6 +2770,41 @@
       "stars": 0,
       "created_at": "2026-08-11T00:00:00Z",
       "updated_at": "2026-10-19T00:00:00Z"
+    },
+    "guildwork": {
+      "name": "Guildwork: request, verdict, register",
+      "id": "guildwork",
+      "description": "No code is written until a named human approves a written request, and every verdict is kept.",
+      "author": "Simon Dupont (@Simon-Pacifae-Dupont)",
+      "version": "0.1.0",
+      "download_url": "https://github.com/Simon-Pacifae-Dupont/Guildwork/releases/download/guildwork-v0.1.0/guildwork.zip",
+      "sha256": "f5793fe480f3a607cdab0debe483e8f3a7aa936fff4efec7200f728d5023bd72",
+      "repository": "https://github.com/Simon-Pacifae-Dupont/Guildwork",
+      "homepage": "https://github.com/Simon-Pacifae-Dupont/Guildwork/tree/main/integrations/spec-kit",
+      "documentation": "https://github.com/Simon-Pacifae-Dupont/Guildwork/blob/main/integrations/spec-kit/README.md",
+      "changelog": "https://github.com/Simon-Pacifae-Dupont/Guildwork/blob/main/integrations/spec-kit/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 3
+      },
+      "tags": [
+        "governance",
+        "human-in-the-loop",
+        "approval",
+        "audit-trail",
+        "multi-agent"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-02T00:00:00Z",
+      "updated_at": "2026-11-02T00:00:00Z"
     },
     "harness": {
       "name": "Research Harness",
