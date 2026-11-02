@@ -88,12 +88,23 @@ resolves the persisted `--commands-dir` rather than the static registry
 placeholder; `--skills` emits skills into that same directory.
 
 Core command templates also use `{PRE_HOOK_SCRIPT}` and `{POST_HOOK_SCRIPT}`.
+Hook resolution is model-led by default: agents read current YAML at each
+boundary and resolve conditions in context. Deterministic dispatch and its
+projection are enabled only by `settings.deterministic_hooks: true` in
+`.specify/extensions.yml`; an absent setting or `false` keeps model-led
+resolution. Command templates must check this setting before calling a
+dispatcher and must not consult projections in model-led mode.
 Rendering selects the same `sh`, `ps`, or `py` variant as the command's main
 script; extension installation and re-registration provision the native pre/post entry points
 for each hook-bearing command's selected variant, including fallback variants
-when the project preference is unavailable. The CLI validates hook configuration on write and
+when the project preference is unavailable. Dispatcher paths are validated
+through their entire project-relative parent chain, even for existing files.
+The CLI validates hook configuration on write and, only in deterministic mode,
 materializes ordered per-event JSON with a snapshot of `.specify/extensions.yml`.
-CLI writers serialize publication, invalidate `generation.txt` before changing
+Disabling deterministic mode on save retires the managed projection. Refreshes
+leave model-led YAML formatting and comments unchanged.
+CLI writers preflight cache and writer-lock paths before extension state
+mutations, serialize publication, invalidate `generation.txt` before changing
 projection files, and publish a fresh UUID generation after the snapshot.
 Each variant captures and rechecks this generation around resolution, rejecting
 changes even when the YAML changes and then reverts to identical bytes.

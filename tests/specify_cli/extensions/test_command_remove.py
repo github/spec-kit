@@ -22,6 +22,40 @@ from specify_cli.extensions import (
 
 
 @pytest.mark.parametrize("command", ["enable", "disable", "remove"])
+@pytest.mark.parametrize("collision", ["directory", "symlink"])
+def test_mutations_reject_unsafe_projection_lock_before_state_changes(
+    project_dir, extension_dir, tmp_path, command, collision
+):
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+    manager.registry.update("test-ext", {"enabled": command == "disable"})
+    executor = HookExecutor(project_dir)
+    config = executor.load_project_config_for_update()
+    config.setdefault("settings", {})["deterministic_hooks"] = True
+    executor.save_project_config(config)
+    lock = project_dir / ".specify/.hook-dispatch.lock"
+    lock.unlink()
+    if collision == "directory":
+        lock.mkdir()
+    else:
+        try:
+            lock.symlink_to(tmp_path / "external-lock")
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"file symlinks unavailable: {exc}")
+    before = {p.relative_to(project_dir): p.read_bytes()
+              for p in project_dir.rglob("*") if not p.is_symlink() and p.is_file()}
+
+    args = ["extension", command, "test-ext"] + (["--force"] if command == "remove" else [])
+    with patch.object(Path, "cwd", return_value=project_dir):
+        result = CliRunner().invoke(app, args, catch_exceptions=True)
+
+    assert result.exit_code == 1, result.output
+    assert "writer lock" in result.output
+    assert {p.relative_to(project_dir): p.read_bytes()
+            for p in project_dir.rglob("*") if not p.is_symlink() and p.is_file()} == before
+
+
+@pytest.mark.parametrize("command", ["enable", "disable", "remove"])
 @pytest.mark.parametrize("invalid", [
     "hooks: [broken]\n",
     "hooks:\n  before_plan: [broken]\n",
@@ -33,6 +67,7 @@ def test_mutations_preserve_state_on_invalid_hook_config(
     project = tmp_path / "project"
     project.mkdir()
     (project / ".specify").mkdir()
+    HookExecutor(project).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {}})
     manager = ExtensionManager(project)
     manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
     manager.registry.update("test-ext", {"enabled": command == "disable"})
@@ -68,6 +103,7 @@ def test_mutations_preserve_state_on_hook_cache_file_collision(
     project = tmp_path / "project"
     project.mkdir()
     (project / ".specify").mkdir()
+    HookExecutor(project).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {}})
     manager = ExtensionManager(project)
     manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
     manager.registry.update("test-ext", {"enabled": command == "disable"})
@@ -104,6 +140,7 @@ def test_mutations_preserve_projection_on_cache_directory_entry(
     project = tmp_path / "project"
     project.mkdir()
     (project / ".specify").mkdir()
+    HookExecutor(project).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {}})
     manager = ExtensionManager(project)
     manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
     manager.registry.update("test-ext", {"enabled": command == "disable"})
@@ -141,6 +178,7 @@ def test_mutations_preserve_state_on_dangling_config_symlink(
     project = tmp_path / "project"
     project.mkdir()
     (project / ".specify").mkdir()
+    HookExecutor(project).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {}})
     manager = ExtensionManager(project)
     manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
     manager.registry.update("test-ext", {"enabled": command == "disable"})

@@ -2422,7 +2422,13 @@ class ExtensionManager:
 
         skills = is_ai_skills_enabled(options)
         for script in sorted(hook_variants):
+            from ..shared_infra import _validate_safe_shared_directory
+
+            variant = {"sh": "bash", "ps": "powershell", "py": "python"}[script]
             try:
+                _validate_safe_shared_directory(
+                    self.project_root, self.project_root / ".specify" / "scripts" / variant
+                )
                 _install_shared_infra(
                     self.project_root,
                     script,
@@ -5798,7 +5804,7 @@ class HookExecutor:
             }
 
     @staticmethod
-    def _validate_hook_dispatch_cache(cache: Path) -> None:
+    def _validate_hook_dispatch_cache(cache: Path, *, retiring: bool = False) -> None:
         """Reject cache paths that cannot be safely replaced by regular files."""
         try:
             if cache.is_symlink():
@@ -5811,6 +5817,11 @@ class HookExecutor:
                         raise ValueError("Refusing to use symlinked hook dispatch cache entry")
                     if not path.is_file():
                         raise ValueError(f"Refusing to use non-file hook dispatch cache entry: {path.name}")
+                    if retiring and not (
+                        path.name in ("source.yml", "generation.txt", "events.txt", "events.txt.sha256")
+                        or re.fullmatch(r"(before|after)_[a-z][a-z0-9_]*\.(json|sha256)", path.name)
+                    ):
+                        raise ValueError("Cannot retire hook projection with unrecognized cache entries")
         except OSError as exc:
             raise ValueError(f"Cannot inspect hook dispatch cache: {exc}") from exc
 
@@ -5820,6 +5831,9 @@ class HookExecutor:
             raise ValueError("Refusing to load symlinked .specify/extensions.yml")
         cache = self.config_file.parent / "hook-dispatch"
         self._validate_hook_dispatch_cache(cache)
+        lock = self.config_file.parent / ".hook-dispatch.lock"
+        if lock.is_symlink() or (lock.exists() and not lock.is_file()):
+            raise ValueError("Refusing to use unsafe hook dispatch writer lock")
         if self.config_file.is_symlink():
             raise ValueError("Refusing to load symlinked .specify/extensions.yml")
         if not self.config_file.exists():
@@ -5831,6 +5845,8 @@ class HookExecutor:
         if not isinstance(config, dict):
             raise ValueError("Invalid .specify/extensions.yml: expected a mapping")
         self.save_project_config(config, validate_only=True)
+        if not config.get("settings", {}).get("deterministic_hooks", False):
+            self._validate_hook_dispatch_cache(cache, retiring=True)
         return config
 
     def save_project_config(self, config: Dict[str, Any], *, validate_only: bool = False):
@@ -5851,6 +5867,12 @@ class HookExecutor:
         CanonicalHookDumper.add_representer(str, represent_string)
         from ..integrations._file_changes import changing_file, unlink, write_bytes, write_text
 
+        settings = config.get("settings", {})
+        if not isinstance(settings, dict):
+            raise ValueError("Invalid .specify/extensions.yml: settings must be a mapping")
+        deterministic = settings.get("deterministic_hooks", False)
+        if not isinstance(deterministic, bool):
+            raise ValueError("settings.deterministic_hooks must be a boolean")
         hooks = config.get("hooks", {})
         if not isinstance(hooks, dict):
             raise ValueError("Invalid .specify/extensions.yml: expected a hooks mapping")
@@ -5899,12 +5921,33 @@ class HookExecutor:
                 ) + "\n"
             ).encode("utf-8")
 
-        rendered = "# Hook projection: .specify/hook-dispatch\n" + yaml.dump(
+        rendered = yaml.dump(
             config, default_flow_style=False, sort_keys=False,
             allow_unicode=True, width=sys.maxsize, Dumper=CanonicalHookDumper,
         )
         if validate_only:
             return
+        lock = self.config_file.parent / ".hook-dispatch.lock"
+        if lock.is_symlink() or (lock.exists() and not lock.is_file()):
+            raise ValueError("Refusing to use unsafe hook dispatch writer lock")
+        if not deterministic:
+            if self.config_file.parent.is_symlink() or self.config_file.is_symlink():
+                raise ValueError("Refusing to save symlinked .specify/extensions.yml")
+            cache = self.config_file.parent / "hook-dispatch"
+            self._validate_hook_dispatch_cache(cache, retiring=True)
+            # Retire an earlier opt-in projection so direct scripts read current YAML.
+            if cache.is_dir():
+                paths = list(cache.iterdir())
+                for path in paths:
+                    unlink(path)
+                with changing_file(cache, removal=True):
+                    cache.rmdir()
+            if not self.config_file.parent.exists():
+                with changing_file(self.config_file.parent):
+                    self.config_file.parent.mkdir(parents=True)
+            write_text(self.config_file, rendered, encoding="utf-8")
+            return
+        rendered = "# Hook projection: .specify/hook-dispatch\n" + rendered
         from ..shared_infra import _exclusive_project_lock
 
         lock = self.config_file.parent / ".hook-dispatch.lock"
@@ -5942,16 +5985,13 @@ class HookExecutor:
 
     def migrate_project_config(self) -> None:
         """Validate and project existing hook configuration during project refresh."""
-        if self.config_file.parent.is_symlink() or self.config_file.is_symlink():
-            raise ValueError("Refusing to migrate symlinked .specify/extensions.yml")
+        config = self.load_project_config_for_update()
         if not self.config_file.exists():
             return
-        try:
-            config = yaml.safe_load(self.config_file.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, yaml.YAMLError) as exc:
-            raise ValueError(f"Could not read .specify/extensions.yml: {exc}") from exc
-        if not isinstance(config, dict) or not isinstance(config.get("hooks", {}), dict):
-            raise ValueError("Invalid .specify/extensions.yml: expected a hooks mapping")
+        if not config.get("settings", {}).get("deterministic_hooks", False) and not (
+            self.config_file.parent / "hook-dispatch"
+        ).exists():
+            return
         config.setdefault("hooks", {})
         self.save_project_config(config)
 

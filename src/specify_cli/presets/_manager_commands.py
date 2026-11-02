@@ -173,9 +173,16 @@ class _PresetCommandMethods:
             variants.add(variant)
 
         from .. import _install_shared_infra
+        from ..shared_infra import _validate_safe_shared_directory
 
         for variant in sorted(variants):
             directory = {"sh": "bash", "ps": "powershell", "py": "python"}[variant]
+            try:
+                _validate_safe_shared_directory(
+                    self.project_root, self.project_root / ".specify" / "scripts" / directory
+                )
+            except ValueError as exc:
+                raise PresetError(f"Cannot provision hook dispatchers: {exc}") from exc
             suffix = {"sh": ".sh", "ps": ".ps1", "py": ".py"}[variant]
             paths = [
                 self.project_root / ".specify" / "scripts" / directory

@@ -98,7 +98,7 @@ class TestIntegrationUpgradeDetailed:
         config_file = project / ".specify" / "extensions.yml"
         legacy = {
             "installed": ["git"],
-            "settings": {"auto_execute_hooks": True},
+            "settings": {"auto_execute_hooks": True, "deterministic_hooks": True},
             "hooks": {"before_plan": [
                 {"extension": "git", "command": "speckit.git.commit",
                  "prompt": "A long legacy hook prompt containing multiple words " * 5}

@@ -3080,6 +3080,42 @@ def _make_wrap_preset_dir(
 class TestRemoveReconciliation:
     """Test that removing a preset re-registers the next layer's command."""
 
+    @pytest.mark.parametrize("parent", [".specify/scripts", ".specify/scripts/python"])
+    def test_preset_rejects_external_dispatcher_parent(self, project_dir, temp_dir, parent):
+        from specify_cli.presets import PresetError
+
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        (project_dir / ".specify/init-options.json").write_text(
+            json.dumps({"ai": "gemini", "script": "py"}), encoding="utf-8"
+        )
+        preset = _make_wrap_preset_dir(
+            temp_dir, "external-hooks", "speckit.specify", "before", "after"
+        )
+        (preset / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Hook replacement\nstrategy: replace\n---\n"
+            "{PRE_HOOK_SCRIPT}\n{POST_HOOK_SCRIPT}\n", encoding="utf-8"
+        )
+        outside = temp_dir / "external-scripts"
+        outside.mkdir()
+        destination = outside / "python" if parent.endswith("/scripts") else outside
+        destination.mkdir(exist_ok=True)
+        for phase in ("pre", "post"):
+            (destination / f"{phase}_hooks.py").write_text("external", encoding="utf-8")
+        link = project_dir / parent
+        link.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"directory symlinks unavailable: {exc}")
+
+        manager = PresetManager(project_dir)
+        with pytest.raises((PresetError, ValueError), match="symlink"):
+            manager.install_from_directory(preset, "0.1.5")
+
+        assert not manager.registry.is_installed("external-hooks")
+        assert not list((project_dir / ".gemini/commands").iterdir())
+        assert all(p.read_text(encoding="utf-8") == "external" for p in destination.glob("*.py"))
+
     @pytest.mark.parametrize("upper_owns_alias", [False, True])
     def test_shadowed_replacement_alias_provisions_its_hook_variant(
         self, project_dir, temp_dir, upper_owns_alias

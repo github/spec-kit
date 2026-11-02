@@ -479,6 +479,9 @@ resolve_hooks() {
             continue
         fi
         if [[ $text == '- '* && ( $indent == 2 || $indent == 4 ) && $empty == false ]]; then
+            if (( item_indent >= 0 && item_indent != indent )); then
+                HOOK_ERROR="Inconsistent YAML hook list indentation"; break
+            fi
             pending_event=""
             item_indent=$indent
             index=$((index+1))

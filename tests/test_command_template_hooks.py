@@ -47,10 +47,12 @@ def test_hook_scripts_render_and_exist(name, variant, dir, ext):
 
 
 @pytest.mark.parametrize("name", NAMES)
-def test_no_repeated_yaml_hook_instructions(name):
+def test_model_led_resolution_precedes_opt_in_dispatch(name):
     text = (TEMPLATES / f"{name}.md").read_text(encoding="utf-8")
-    assert "hooks.before_" not in text
-    assert "hooks.after_" not in text
+    for phase, script in (("before", "PRE_HOOK_SCRIPT"), ("after", "POST_HOOK_SCRIPT")):
+        assert text.index(f"hooks.{phase}_{name}") < text.index("{" + script + "}")
+    assert text.count("Unless `settings.deterministic_hooks`") == 2
+    assert text.count("Do not use cached projections") == 2
     assert "If the YAML cannot be parsed" not in text
 
 

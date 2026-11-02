@@ -16,7 +16,9 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Pre-Execution Checks
 
-Run `{PRE_HOOK_SCRIPT} analyze` from the project root and read its JSON result. If it fails or returns `error`, tell the user why no hooks were checked (including mandatory hooks), then continue the core command. For each returned hook in order: invoke mandatory commands in this agent and wait for completion before proceeding; surface optional commands with their prompt and description without executing them automatically. Use the invocation syntax for the installed agent/skills mode. If `hooks` is empty, continue silently.
+Read `.specify/extensions.yml` at this boundary. Unless `settings.deterministic_hooks` is explicitly the YAML boolean `true`, use model-led resolution: read `hooks.before_analyze` directly, consider enabled entries and their conditions in the current context, and resolve their order according to the configuration and user instructions. Honor mandatory hooks and present optional hooks with their prompt and description. Do not use cached projections or run the deterministic dispatcher in this default mode. If the file or event is absent, continue silently; report unreadable or invalid configuration rather than claiming hooks were checked.
+
+**Deterministic mode (explicit opt-in only):** Run `{PRE_HOOK_SCRIPT} analyze` from the project root and read its JSON result. If it fails or returns `error`, tell the user why no hooks were checked (including mandatory hooks), then continue the core command. For each returned hook in order: invoke mandatory commands in this agent and wait for completion before proceeding; surface optional commands with their prompt and description without executing them automatically. Use the invocation syntax for the installed agent/skills mode. If `hooks` is empty, continue silently.
 
 ## Goal
 
@@ -172,7 +174,9 @@ Ask the user: "Would you like me to suggest concrete remediation edits for the t
 
 ### 9. Check for extension hooks
 
-Run `{POST_HOOK_SCRIPT} analyze` from the project root before ending the command and read its JSON result. If it fails or returns `error`, tell the user why no hooks were checked (including mandatory hooks), then continue reporting completion. For each returned hook in order: invoke mandatory commands in this agent and wait for completion before ending; surface optional commands with their prompt and description without executing them automatically. Use the invocation syntax for the installed agent/skills mode. If `hooks` is empty, continue silently.
+Read `.specify/extensions.yml` at this boundary. Unless `settings.deterministic_hooks` is explicitly the YAML boolean `true`, use model-led resolution: read `hooks.after_analyze` directly, consider enabled entries and their conditions in the current context, and resolve their order according to the configuration and user instructions. Honor mandatory hooks and present optional hooks with their prompt and description. Do not use cached projections or run the deterministic dispatcher in this default mode. If the file or event is absent, continue silently; report unreadable or invalid configuration rather than claiming hooks were checked.
+
+**Deterministic mode (explicit opt-in only):** Run `{POST_HOOK_SCRIPT} analyze` from the project root before ending the command and read its JSON result. If it fails or returns `error`, tell the user why no hooks were checked (including mandatory hooks), then continue reporting completion. For each returned hook in order: invoke mandatory commands in this agent and wait for completion before ending; surface optional commands with their prompt and description without executing them automatically. Use the invocation syntax for the installed agent/skills mode. If `hooks` is empty, continue silently.
 
 ## Operating Principles
 

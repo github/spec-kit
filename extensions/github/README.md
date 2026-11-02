@@ -53,6 +53,12 @@ specify extension remove github
 
 This extension consumes the existing `before_taskstoissues` and `after_taskstoissues` hook points, which are read from `.specify/extensions.yml` at run time. The hook keys are unchanged from the core command, so hooks registered by other extensions — for example the `git` extension's auto-commit hooks — keep firing exactly as before.
 
+Resolution is model-led by default. Set the YAML boolean
+`settings.deterministic_hooks: true` in `.specify/extensions.yml` and refresh
+the integration to opt into deterministic dispatch and its generated projection.
+Without that opt-in, the agent reads current hook conditions in context and
+does not use the projection.
+
 Installing or updating the extension also installs the selected shared pre/post
 hook dispatchers under `.specify/scripts/` if an older project lacks them.
 Unmodified managed copies are refreshed; customized scripts are preserved.

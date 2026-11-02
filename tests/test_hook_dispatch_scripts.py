@@ -19,6 +19,114 @@ ROOT = Path(__file__).parent.parent
 PYTHON = ROOT / "scripts" / "python"
 
 
+@pytest.mark.parametrize("settings", [{}, {"deterministic_hooks": False}])
+def test_model_led_resolution_is_default_without_projection(tmp_path, settings):
+    from specify_cli.extensions import HookExecutor
+
+    config = {"settings": settings, "hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit", "optional": False,
+         "condition": "Decide whether a commit is useful in this context"},
+    ]}}
+    executor = HookExecutor(tmp_path)
+    executor.save_project_config(config)
+    executor.migrate_project_config()
+
+    assert yaml.safe_load(executor.config_file.read_text(encoding="utf-8")) == config
+    assert not (tmp_path / ".specify/hook-dispatch").exists()
+    assert not (tmp_path / ".specify/.hook-dispatch.lock").exists()
+    assert not executor.config_file.read_text(encoding="utf-8").startswith("# Hook projection:")
+
+
+def test_model_led_refresh_preserves_comments_and_general_yaml(tmp_path):
+    from specify_cli.extensions import HookExecutor
+
+    original = (
+        "# User-maintained model-led conditions\nhooks:\n  before_plan:\n"
+        "  - extension: git\n    command: speckit.git.commit\n"
+        "    condition: >\n      Decide from the current conversation\n"
+        "      whether these changes are ready to commit.\n"
+    )
+    config = write_config(tmp_path, original)
+
+    HookExecutor(tmp_path).migrate_project_config()
+
+    assert config.read_text(encoding="utf-8") == original
+    assert not (tmp_path / ".specify/hook-dispatch").exists()
+
+
+@pytest.mark.parametrize("invalid", ["true", 1, None, [], {}])
+def test_deterministic_resolution_requires_boolean_opt_in(tmp_path, invalid):
+    from specify_cli.extensions import HookExecutor
+
+    with pytest.raises(ValueError, match="deterministic_hooks must be a boolean"):
+        HookExecutor(tmp_path).save_project_config({
+            "settings": {"deterministic_hooks": invalid}, "hooks": {},
+        })
+    assert not (tmp_path / ".specify").exists()
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py", "ps51"])
+def test_disabling_deterministic_resolution_retires_projection(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    executor = HookExecutor(tmp_path)
+    config = {"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit", "optional": False},
+    ]}}
+    executor.save_project_config(config)
+    assert (tmp_path / ".specify/hook-dispatch").is_dir()
+    config["settings"]["deterministic_hooks"] = False
+    executor.save_project_config(config)
+
+    assert not (tmp_path / ".specify/hook-dispatch").exists()
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0, data
+    assert data["hooks"][0]["command"] == "speckit.git.commit"
+
+
+def test_all_hook_templates_default_to_model_led_resolution():
+    paths = list((ROOT / "templates/commands").glob("*.md"))
+    paths += list((ROOT / "extensions/github/commands").glob("*.md"))
+    checked = 0
+    for path in paths:
+        content = path.read_text(encoding="utf-8")
+        if "{PRE_HOOK_SCRIPT}" not in content:
+            continue
+        checked += 1
+        assert content.count("Unless `settings.deterministic_hooks`") == 2, path
+        assert content.count("**Deterministic mode (explicit opt-in only):**") == 2, path
+        for phase in ("before", "after"):
+            assert f"read `hooks.{phase}_" in content, path
+    assert checked == 11
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py", "ps51"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("indents", [(4, 2), (2, 4), (2, 2), (4, 4)])
+def test_legacy_hook_list_requires_consistent_indentation(tmp_path, variant, phase, indents):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    text = f"hooks:\n  {event}:\n"
+    for indent in indents:
+        text += (" " * indent + "- extension: git\n" + " " * (indent + 2)
+                 + "command: speckit.git.commit\n" + " " * (indent + 2) + "optional: false\n")
+    write_config(tmp_path, text)
+
+    code, data = run_hook(tmp_path, phase, variant=variant)
+
+    if indents[0] != indents[1]:
+        assert code == 1, data
+        assert data["error"]
+        assert data["hooks"] == []
+    else:
+        assert code == 0, data
+        assert len(data["hooks"]) == 2
+        assert all(not hook["optional"] for hook in data["hooks"])
+
+
 @lru_cache(maxsize=1)
 def _bash_available():
     return _has_working_bash()
@@ -68,7 +176,7 @@ def test_windows_powershell_51_projection_and_failures(tmp_path, phase):
     assert version.stdout.strip().startswith("5.1.")
 
     event = f"{'before' if phase == 'pre' else 'after'}_plan"
-    HookExecutor(tmp_path).save_project_config({"hooks": {event: [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {event: [
         {"extension": "éxtension", "command": "speckit.git.配置", "optional": False},
     ]}})
 
@@ -308,7 +416,7 @@ def test_installed_mapping_metadata_does_not_hide_hooks(tmp_path, variant, phase
     from specify_cli.extensions import HookExecutor
 
     event = f"{'before' if phase == 'pre' else 'after'}_plan"
-    HookExecutor(tmp_path).save_project_config({
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True},
         "installed": [{"id": "git", "version": "1.0.0"}, "agent-context"],
         "hooks": {event: [{"extension": "git", "command": "speckit.git.commit"}]},
     })
@@ -386,7 +494,7 @@ def test_materialized_projection_resolves_without_yaml_or_native_parsing(tmp_pat
         pytest.skip("PowerShell not installed")
     from specify_cli.extensions import HookExecutor
 
-    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "late", "command": "speckit.late.run", "priority": 20, "prompt": "😀"},
         {"extension": "first", "command": "speckit.first.run", "priority": 5},
     ]}})
@@ -420,7 +528,7 @@ def test_projection_accepts_git_crlf_checkout(tmp_path, variant, phase, conversi
     from specify_cli.extensions import HookExecutor
 
     event = f"{'before' if phase == 'pre' else 'after'}_plan"
-    HookExecutor(tmp_path).save_project_config({"hooks": {event: [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {event: [
         {"extension": "git", "command": "speckit.git.commit", "optional": False},
     ]}})
     cache = tmp_path / ".specify/hook-dispatch"
@@ -453,7 +561,7 @@ def test_crlf_projection_still_rejects_corrupt_content(tmp_path, variant, corrup
         pytest.skip("PowerShell not installed")
     from specify_cli.extensions import HookExecutor
 
-    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "git", "command": "speckit.git.commit"},
     ]}})
     cache = tmp_path / ".specify/hook-dispatch"
@@ -481,7 +589,7 @@ def test_projection_rejects_stale_yaml_and_recovers_after_refresh(tmp_path, vari
     from specify_cli.extensions import HookExecutor
 
     executor = HookExecutor(tmp_path)
-    executor.save_project_config({"hooks": {"before_plan": [
+    executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "old", "command": "speckit.old.run"},
     ]}})
     config = tmp_path / ".specify/extensions.yml"
@@ -505,7 +613,7 @@ def test_projection_missing_entry_fails_instead_of_skipping_hook(tmp_path, varia
         pytest.skip("PowerShell not installed")
     from specify_cli.extensions import HookExecutor
 
-    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "git", "command": "speckit.git.commit"},
     ]}})
     (tmp_path / ".specify/hook-dispatch/before_plan.json").unlink()
@@ -530,7 +638,7 @@ def test_projection_priority_bounds_match_across_runtimes(
     from specify_cli.extensions import HookExecutor
 
     event = f"{'before' if phase == 'pre' else 'after'}_plan"
-    HookExecutor(tmp_path).save_project_config({"hooks": {event: [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {event: [
         {"extension": "git", "command": "speckit.git.commit"},
     ]}})
     cache = tmp_path / ".specify/hook-dispatch"
@@ -558,7 +666,7 @@ def test_projection_missing_cache_fails_instead_of_using_legacy_yaml(tmp_path, v
         pytest.skip("PowerShell not installed")
     from specify_cli.extensions import HookExecutor
 
-    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "git", "command": "speckit.git.commit"},
     ]}})
     (tmp_path / ".specify/hook-dispatch").rename(tmp_path / "removed-cache")
@@ -575,10 +683,10 @@ def test_projection_removes_old_event_after_config_save(tmp_path, variant):
     from specify_cli.extensions import HookExecutor
 
     executor = HookExecutor(tmp_path)
-    executor.save_project_config({"hooks": {"before_plan": [
+    executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "git", "command": "speckit.git.commit"},
     ]}})
-    executor.save_project_config({"hooks": {}})
+    executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {}})
     assert not (tmp_path / ".specify/hook-dispatch/before_plan.json").exists()
     code, data = run_hook(tmp_path, variant=variant)
     assert code == 0
@@ -589,12 +697,12 @@ def test_invalid_projected_hook_cannot_replace_existing_projection(tmp_path):
     from specify_cli.extensions import HookExecutor
 
     executor = HookExecutor(tmp_path)
-    executor.save_project_config({"hooks": {"before_plan": [
+    executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "git", "command": "speckit.git.commit"},
     ]}})
     before = (tmp_path / ".specify/extensions.yml").read_bytes()
     with pytest.raises(ValueError, match="condition must be a string or null"):
-        executor.save_project_config({"hooks": {"after_plan": [
+        executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"after_plan": [
             {"extension": "other", "command": "speckit.other.run", "condition": False},
         ]}})
     assert (tmp_path / ".specify/extensions.yml").read_bytes() == before
@@ -612,7 +720,7 @@ def test_corrupt_projection_reports_error(tmp_path, variant, replacement):
         pytest.skip("PowerShell not installed")
     from specify_cli.extensions import HookExecutor
 
-    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "git", "command": "speckit.git.commit"},
     ]}})
     cache = tmp_path / ".specify/hook-dispatch"
@@ -632,7 +740,7 @@ def test_projection_modified_without_new_digest_is_rejected(tmp_path, variant):
         pytest.skip("PowerShell not installed")
     from specify_cli.extensions import HookExecutor
 
-    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "git", "command": "speckit.git.commit"},
     ]}})
     (tmp_path / ".specify/hook-dispatch/before_plan.json").write_text(
@@ -650,7 +758,7 @@ def test_truncated_event_index_cannot_hide_mandatory_hooks(tmp_path, variant):
         pytest.skip("PowerShell not installed")
     from specify_cli.extensions import HookExecutor
 
-    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "git", "command": "speckit.git.commit", "optional": False},
     ]}})
     cache = tmp_path / ".specify/hook-dispatch"
@@ -668,7 +776,7 @@ def test_semantically_invalid_projected_hook_is_rejected(tmp_path, variant):
         pytest.skip("PowerShell not installed")
     from specify_cli.extensions import HookExecutor
 
-    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "git", "command": "speckit.git.commit"},
     ]}})
     cache = tmp_path / ".specify/hook-dispatch"
@@ -691,7 +799,7 @@ def test_read_during_projection_save_fails_then_recovers(tmp_path, monkeypatch, 
     from specify_cli.integrations import _file_changes
 
     executor = HookExecutor(tmp_path)
-    executor.save_project_config({"hooks": {"before_plan": [
+    executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "old", "command": "speckit.old.run"},
     ]}})
     writing = threading.Event()
@@ -710,7 +818,7 @@ def test_read_during_projection_save_fails_then_recovers(tmp_path, monkeypatch, 
 
     def save():
         try:
-            executor.save_project_config({"hooks": {"before_plan": [
+            executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
                 {"extension": "new", "command": "speckit.new.run"},
             ]}})
         except (OSError, ValueError, RuntimeError) as exc:
@@ -738,7 +846,7 @@ def test_python_reader_rejects_save_after_reading_old_projection(tmp_path, monke
     from specify_cli.extensions import HookExecutor
 
     executor = HookExecutor(tmp_path)
-    executor.save_project_config({"hooks": {"before_plan": [
+    executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "old", "command": "speckit.old.run"},
     ]}})
     original_read = Path.read_bytes
@@ -749,7 +857,7 @@ def test_python_reader_rejects_save_after_reading_old_projection(tmp_path, monke
         payload = original_read(path)
         if path.name == "before_plan.json" and not replaced:
             replaced = True
-            executor.save_project_config({"hooks": {"before_plan": [
+            executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
                 {"extension": "new", "command": "speckit.new.run"},
             ]}})
         return payload
@@ -769,7 +877,7 @@ def test_projection_rejects_configuration_that_changes_and_reverts(tmp_path, mon
     from specify_cli.extensions import HookExecutor
 
     executor = HookExecutor(tmp_path)
-    config = {"hooks": {"before_plan": [
+    config = {"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "git", "command": "speckit.git.commit", "optional": False, "enabled": True},
     ]}}
     for stage, enabled in (("stage-a", True), ("stage-b", False), ("stage-c", True)):
@@ -852,7 +960,7 @@ def test_projection_requires_valid_generation(tmp_path, variant, generation):
         pytest.skip("PowerShell not installed")
     from specify_cli.extensions import HookExecutor
 
-    HookExecutor(tmp_path).save_project_config({"hooks": {}})
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {}})
     path = tmp_path / ".specify/hook-dispatch/generation.txt"
     if generation is None:
         path.unlink(missing_ok=True)
@@ -870,12 +978,12 @@ def test_projection_generation_changes_even_for_identical_configuration(tmp_path
     from specify_cli.extensions import HookExecutor
 
     executor = HookExecutor(tmp_path)
-    executor.save_project_config({"hooks": {}})
+    executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {}})
     cache = tmp_path / ".specify/hook-dispatch"
     generation = (cache / "generation.txt").read_bytes()
     snapshot = (cache / "source.yml").read_bytes()
 
-    executor.save_project_config({"hooks": {}})
+    executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {}})
 
     assert (cache / "source.yml").read_bytes() == snapshot
     assert (cache / "generation.txt").read_bytes() != generation
@@ -913,7 +1021,7 @@ def test_concurrent_projection_saves_publish_matching_configuration(tmp_path, mo
 
     def save(name):
         try:
-            HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+            HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
                 {"extension": name, "command": f"speckit.{name}.run"},
             ]}})
         except Exception as exc:
@@ -1013,7 +1121,7 @@ def test_canonical_cli_output_has_identical_order_and_metadata(tmp_path, variant
     event = f"{'before' if phase == 'pre' else 'after'}_plan"
     HookExecutor(tmp_path).save_project_config({
         "installed": ["git", "agent-context"],
-        "settings": {"auto_execute_hooks": True},
+        "settings": {"auto_execute_hooks": True, "deterministic_hooks": True},
         "hooks": {
             "before_tasks": [{"extension": "elsewhere", "command": "speckit.elsewhere.run"}],
             event: [
@@ -1042,7 +1150,7 @@ def test_canonical_cli_writer_keeps_multiline_prompt_on_one_yaml_line(tmp_path, 
         pytest.skip("PowerShell not installed")
     from specify_cli.extensions import HookExecutor
 
-    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "git", "command": "speckit.git.commit", "prompt": "first\nsecond"}
     ]}})
     config = (tmp_path / ".specify/extensions.yml").read_text(encoding="utf-8")
@@ -1061,7 +1169,7 @@ def test_canonical_backslash_escape_matches_python(tmp_path, variant, phase):
 
     event = f"{'before' if phase == 'pre' else 'after'}_plan"
     prompt = "Path C:\\workspace\nkeep \\ literal"
-    HookExecutor(tmp_path).save_project_config({
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True},
         "hooks": {event: [
             {"extension": "git", "command": "speckit.git.commit", "prompt": prompt}
         ]}
@@ -1457,7 +1565,7 @@ def test_canonical_writer_control_escape_parity(tmp_path, variant, value):
         pytest.skip("PowerShell not installed")
     from specify_cli.extensions import HookExecutor
 
-    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "git", "command": "speckit.git.commit", "prompt": f"before{value}after"},
     ]}})
     code, data = run_hook(tmp_path, variant=variant)
@@ -1487,7 +1595,7 @@ def test_canonical_writer_rejects_nul_without_touching_config(tmp_path):
     executor = HookExecutor(tmp_path)
     config = write_config(tmp_path, "hooks: {}\n")
     with pytest.raises(ValueError, match="NUL"):
-        executor.save_project_config({"hooks": {"before_plan": [
+        executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
             {"extension": "git", "command": "speckit.git.commit", "prompt": "before\0after"}
         ]}})
     assert config.read_text(encoding="utf-8") == "hooks: {}\n"
@@ -1516,7 +1624,7 @@ def test_direct_save_rejects_symlinks_without_writing_outside_project(
         pytest.skip("Symlinks are unavailable")
 
     with pytest.raises((ValueError, OSError), match="symlink"):
-        HookExecutor(project).save_project_config({"hooks": {"before_plan": [
+        HookExecutor(project).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
             {"extension": "git", "command": "speckit.git.commit"},
         ]}})
 
@@ -1534,7 +1642,7 @@ def test_direct_save_symlink_preserves_existing_projection(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     executor = HookExecutor(project)
-    executor.save_project_config({"hooks": {"before_plan": [
+    executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "old", "command": "speckit.old.run"},
     ]}})
     cache = project / ".specify/hook-dispatch"
@@ -1548,7 +1656,7 @@ def test_direct_save_symlink_preserves_existing_projection(tmp_path):
         pytest.skip("Symlinks are unavailable")
 
     with pytest.raises(ValueError, match="symlinked"):
-        executor.save_project_config({"hooks": {"before_plan": [
+        executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
             {"extension": "new", "command": "speckit.new.run"},
         ]}})
 
@@ -1562,7 +1670,7 @@ def test_direct_save_rejects_cache_directory_without_touching_projection(tmp_pat
     from specify_cli.extensions import HookExecutor
 
     executor = HookExecutor(tmp_path)
-    executor.save_project_config({"hooks": {"before_plan": [
+    executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "old", "command": "speckit.old.run"},
     ]}})
     cache = tmp_path / ".specify/hook-dispatch"
@@ -1571,7 +1679,7 @@ def test_direct_save_rejects_cache_directory_without_touching_projection(tmp_pat
     config = executor.config_file.read_bytes()
 
     with pytest.raises(ValueError, match="non-file hook dispatch cache entry"):
-        executor.save_project_config({"hooks": {"before_plan": [
+        executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
             {"extension": "new", "command": "speckit.new.run"},
         ]}})
 
@@ -1589,7 +1697,7 @@ def test_canonical_writer_quotes_native_reserved_scalar_chars(tmp_path, variant,
         pytest.skip("PowerShell not installed")
     from specify_cli.extensions import HookExecutor
 
-    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+    HookExecutor(tmp_path).save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
         {"extension": "git", "command": "speckit.git.commit", "prompt": value},
     ]}})
     code, data = run_hook(tmp_path, variant=variant)

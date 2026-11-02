@@ -241,6 +241,9 @@ function Resolve-HookConfig {
             continue
         }
         if ($indent -in @(2, 4) -and $body.StartsWith('- ') -and -not $empty) {
+            if ($itemIndent -ge 0 -and $itemIndent -ne $indent) {
+                throw "Inconsistent YAML hook list indentation"
+            }
             $pendingEvent = ''
             $itemIndent = $indent
             $hook = @{ enabled = 'true'; optional = 'true'; priority = '10'; priority_quoted = $false

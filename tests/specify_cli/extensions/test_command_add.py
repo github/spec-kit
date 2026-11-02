@@ -41,7 +41,66 @@ from tests.specify_cli.extensions._helpers import (
 class TestExtensionAddCLI:
     """CLI tests for ``specify extension add``."""
 
+    @pytest.mark.parametrize("collision", ["file", "symlink"])
+    def test_add_without_config_preflights_projection_cache(
+        self, project_dir, extension_dir, tmp_path, collision
+    ):
+        cache = project_dir / ".specify/hook-dispatch"
+        if collision == "file":
+            cache.write_text("unchanged", encoding="utf-8")
+        else:
+            external = tmp_path / "external-cache"
+            external.mkdir()
+            try:
+                cache.symlink_to(external, target_is_directory=True)
+            except (OSError, NotImplementedError) as exc:
+                pytest.skip(f"directory symlinks unavailable: {exc}")
+        (project_dir / ".github/agents").mkdir(parents=True)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(app, ["extension", "add", str(extension_dir), "--dev"])
+
+        assert result.exit_code != 0, result.output
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+        assert not (project_dir / ".specify/extensions.yml").exists()
+        assert not list((project_dir / ".github/agents").iterdir())
+
+    @pytest.mark.parametrize("parent", [".specify/scripts", ".specify/scripts/python"])
+    def test_add_rejects_external_dispatcher_parent(self, project_dir, extension_dir, tmp_path, parent):
+        (project_dir / ".specify/init-options.json").write_text(
+            json.dumps({"ai": "copilot", "script": "py"}), encoding="utf-8"
+        )
+        (project_dir / ".github/agents").mkdir(parents=True)
+        (extension_dir / "commands/hello.md").write_text(
+            "---\ndescription: Hook command\n---\n{PRE_HOOK_SCRIPT}\n{POST_HOOK_SCRIPT}\n",
+            encoding="utf-8",
+        )
+        outside = tmp_path / "external-scripts"
+        outside.mkdir()
+        destination = outside / "python" if parent.endswith("/scripts") else outside
+        destination.mkdir(exist_ok=True)
+        for phase in ("pre", "post"):
+            (destination / f"{phase}_hooks.py").write_text("external", encoding="utf-8")
+        link = project_dir / parent
+        link.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"directory symlinks unavailable: {exc}")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(app, ["extension", "add", str(extension_dir), "--dev"])
+
+        assert result.exit_code != 0, result.output
+        assert "symlink" in result.output.lower()
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+        assert not list((project_dir / ".github/agents").iterdir())
+        assert all(p.read_text(encoding="utf-8") == "external" for p in destination.glob("*.py"))
+
     def test_add_git_materializes_hook_projection(self, project_dir):
+        (project_dir / ".specify/extensions.yml").write_text(
+            "settings:\n  deterministic_hooks: true\nhooks: {}\n", encoding="utf-8"
+        )
         git_source = Path(__file__).parents[3] / "extensions" / "git"
         with patch.object(Path, "cwd", return_value=project_dir):
             result = CliRunner().invoke(
@@ -187,7 +246,7 @@ class TestExtensionAddCLI:
         from specify_cli.extensions import HookExecutor
 
         executor = HookExecutor(project_dir)
-        executor.save_project_config({"hooks": {"before_plan": [
+        executor.save_project_config({"settings": {"deterministic_hooks": True}, "hooks": {"before_plan": [
             {"extension": "existing", "command": "speckit.existing.run"},
         ]}})
         existing = executor.config_file.read_bytes()
