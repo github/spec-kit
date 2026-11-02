@@ -123,6 +123,3 @@ def test_powershell_fetch_disables_terminal_prompt(tmp_path):
     _run(["pwsh", "-NoProfile", "-File", str(harness)], cwd=tmp_path, log=log)
 
     assert log.read_text(encoding="utf-8") == "0"
-
-
-
