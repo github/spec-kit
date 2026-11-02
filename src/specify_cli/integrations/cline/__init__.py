@@ -59,6 +59,40 @@ def _is_path_char(ch: str) -> bool:
     return ch.isalnum() or ch in "._-~/\\}$"
 
 
+# A ``%VAR%`` environment variable reference ending a directory name
+# (``%TEMP%``, ``%ProgramFiles(x86)%``).
+_ENV_VAR_DIR = re.compile(r"%[A-Za-z_][A-Za-z0-9_()]*%\Z")
+
+_BRACKET_OPENERS = {")": "(", "]": "["}
+
+
+def _ends_directory(text: str, sep: int) -> bool:
+    """Whether the text before the separator at *sep* ends a directory name.
+
+    Besides plain path-name characters this accepts a closing bracket that
+    closes a whitespace-free group (``Program Files (x86)``,
+    ``commands[old]``) and a ``%VAR%`` environment variable reference
+    (``%TEMP%``).  An opening bracket, or a closing one around prose such as
+    ``(see docs)``, does not end a directory, so ``[/speckit.foo.md]`` and
+    ``(/speckit.foo.md)`` stay command references.
+    """
+    ch = text[sep - 1]
+    if _is_path_char(ch):
+        return True
+    if ch in _BRACKET_OPENERS:
+        opener = text.rfind(_BRACKET_OPENERS[ch], 0, sep - 1)
+        group = text[opener + 1 : sep - 1]
+        return (
+            opener >= 0
+            and bool(group)
+            and ch not in group
+            and not any(c.isspace() for c in group)
+        )
+    if ch == "%":
+        return _ENV_VAR_DIR.search(text, 0, sep) is not None
+    return False
+
+
 def _is_drive_prefix(text: str, sep: int) -> bool:
     """Whether a Windows drive (``C:``) ends right before the separator at *sep*.
 
@@ -85,10 +119,12 @@ def _hyphenate_ref_match(match: re.Match[str]) -> str:
     ``.md`` suffix and the segment count therefore cannot tell a file name
     apart from a command.  A ``.md`` token is kept as a file name only when
     it sits inside a path (``commands/speckit.git.commit.md``), that is,
-    when the separator before it follows a path-name character or a Windows
-    drive (``C:\\speckit.foo.md``, ``C:/speckit.foo.md``).  A bare or
-    slash-prefixed token is treated as a command reference, whatever
-    punctuation precedes the slash (``[/speckit.foo.md]``,
+    when the separator before it ends a directory name (see
+    ``_ends_directory``: ``commands/``, ``C:\\Program Files (x86)\\``,
+    ``%TEMP%\\``, ``commands[old]/``) or follows a Windows drive
+    (``C:\\speckit.foo.md``, ``C:/speckit.foo.md``).  A bare or
+    slash-prefixed token is treated as a command reference, including after
+    an opening bracket or other punctuation (``[/speckit.foo.md]``,
     ``(/speckit.foo.md)``).
     """
     ref = match.group(0)
@@ -96,7 +132,7 @@ def _hyphenate_ref_match(match: re.Match[str]) -> str:
         start = match.start()
         text = match.string
         if start >= 2 and text[start - 1] in "/\\" and (
-            _is_path_char(text[start - 2]) or _is_drive_prefix(text, start - 1)
+            _ends_directory(text, start - 1) or _is_drive_prefix(text, start - 1)
         ):
             return ref
     return ref.replace(".", "-")

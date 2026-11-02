@@ -157,6 +157,37 @@ class TestClineIntegration(MarkdownIntegrationTests):
         )
         assert refs == {"file": "C:\\speckit.foo.md", "other": "C:/speckit.foo.md"}
 
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "C:\\Program Files (x86)\\speckit.git.commit.md",
+            "C:/Program Files (x86)/speckit.git.commit.md",
+            "%TEMP%\\speckit.git.commit.md",
+            "%ProgramFiles(x86)%\\speckit.git.commit.md",
+            "./commands[old]/speckit.git.commit.md",
+            "commands(1)/speckit.git.commit.md",
+        ],
+    )
+    def test_cline_refs_keep_md_file_names_after_bracket_or_env_var(self, path):
+        """A directory may end in ``)``, ``]`` or a ``%VAR%`` reference."""
+        body = f"Edit {path}, then run /speckit.git.status."
+        assert hyphenate_command_refs(body) == (
+            f"Edit {path}, then run /speckit-git-status."
+        )
+        assert _hyphenate_frontmatter_refs({"file": path}) == {"file": path}
+
+    def test_cline_refs_hyphenate_commands_after_closing_punctuation(self):
+        """A closing bracket or ``%`` only counts as a directory ending when it
+        closes a bracketed or ``%VAR%`` name; other prose stays a command."""
+        body = (
+            "Run (see docs)/speckit.foo.md, 100%/speckit.foo.md, "
+            "[/speckit.foo.md], ([/speckit.foo.md]) or [Run](/speckit.foo.md)."
+        )
+        assert hyphenate_command_refs(body) == (
+            "Run (see docs)/speckit-foo-md, 100%/speckit-foo-md, "
+            "[/speckit-foo-md], ([/speckit-foo-md]) or [Run](/speckit-foo-md)."
+        )
+
     def test_cline_frontmatter_refs_keep_md_file_names(self):
         """Frontmatter string values get the same ``.md`` file name protection."""
         refs = _hyphenate_frontmatter_refs(
@@ -199,6 +230,22 @@ class TestClineIntegration(MarkdownIntegrationTests):
         assert "then run /speckit-git-status." in text
         assert "handoff: speckit-git-status" in text
         assert "source_file: commands/speckit.git.commit.md" in text
+        assert "speckit-git-commit-md" not in text
+
+    def test_registered_extension_command_keeps_bracketed_and_env_paths(self, tmp_path):
+        """Registration keeps ``.md`` file names under ``(x86)``, ``[old]`` and
+        ``%TEMP%`` directories in the body and frontmatter."""
+        text = self._register_cline_command(
+            tmp_path,
+            "git",
+            "Copy C:\\Program Files (x86)\\speckit.git.commit.md and "
+            "./commands[old]/speckit.git.commit.md, then run /speckit.git.status.\n",
+            frontmatter="source_file: '%TEMP%\\speckit.git.commit.md'\n",
+        )
+        assert "C:\\Program Files (x86)\\speckit.git.commit.md" in text
+        assert "./commands[old]/speckit.git.commit.md" in text
+        assert "%TEMP%\\speckit.git.commit.md" in text
+        assert "then run /speckit-git-status." in text
         assert "speckit-git-commit-md" not in text
 
     def test_registered_core_command_is_not_rewritten(self, tmp_path):
