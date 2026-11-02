@@ -69,7 +69,8 @@ class TestRegistrationUsesHook:
         frontmatter, body, source_id = calls[0]
         assert source_id == "test-ext"
         assert frontmatter["description"] == "Review the code"
-        # The hook runs before $ARGUMENTS is converted for the agent.
+        # OpenCode keeps $ARGUMENTS unchanged, so ordering against placeholder
+        # conversion is asserted by the Gemini case below.
         assert "Review $ARGUMENTS now." in body
 
         out = tmp_path / ".opencode" / "commands" / "speckit.test.review.md"
@@ -79,6 +80,45 @@ class TestRegistrationUsesHook:
         )
         assert "Inspect" in text
         assert "Review $ARGUMENTS" not in text
+
+    def test_hook_runs_before_placeholder_resolution(self, tmp_path, monkeypatch):
+        """Gemini rewrites ``$ARGUMENTS`` to ``{{args}}`` and resolves
+        ``__SPECKIT_COMMAND_*__`` tokens, so this case fails if the hook runs
+        after either conversion."""
+        ext = tmp_path / "extension"
+        (ext / "commands").mkdir(parents=True)
+        (ext / "commands" / "review.md").write_text(
+            "---\ndescription: Review the code\n---\n\n"
+            "Review $ARGUMENTS, then run __SPECKIT_COMMAND_PLAN__.\n",
+            encoding="utf-8",
+        )
+        calls = []
+
+        def hook(self, frontmatter, body, *, source_id):
+            calls.append(body)
+            return frontmatter, body + "Next: __SPECKIT_COMMAND_TASKS__ $ARGUMENTS\n"
+
+        monkeypatch.setattr(
+            get_integration("gemini").__class__, "process_registered_command", hook
+        )
+        project = tmp_path / "project"
+        project.mkdir()
+        CommandRegistrar().register_commands(
+            "gemini", COMMANDS, "test-ext", ext, project
+        )
+
+        assert len(calls) == 1
+        assert "$ARGUMENTS" in calls[0]
+        assert "__SPECKIT_COMMAND_PLAN__" in calls[0]
+        assert "{{args}}" not in calls[0]
+        assert "/speckit.plan" not in calls[0]
+
+        out = project / ".gemini" / "commands" / "speckit.test.review.toml"
+        text = out.read_text(encoding="utf-8")
+        assert "Review {{args}}, then run /speckit.plan." in text
+        assert "Next: /speckit.tasks {{args}}" in text
+        assert "$ARGUMENTS" not in text
+        assert "__SPECKIT_COMMAND_" not in text
 
     def test_hook_sees_core_source_id(self, tmp_path, ext_dir, monkeypatch):
         seen = []
