@@ -1,18 +1,19 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-28T00:00:00Z",
+  "updated_at": "2026-11-02T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
       "name": "A11Y Governance",
       "id": "a11y-governance",
-      "version": "0.4.3",
-      "description": "Adds WCAG 2.2 AA, accessible status output, bilingual CEFR-B2 delivery, inclusive-content and didactic-comment governance, and provider-neutral model routing.",
+      "version": "0.4.6",
+      "description": "Adds accessibility (WCAG 2.2 AA), accessible text and JSON status parity, bilingual DE/EN delivery, CEFR-B2 readability, inclusive-content governance, didactic inline-code-comment review, and audit-ready Spec-Kit run evidence to Spec Kit.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-a11y-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-a11y-governance/archive/refs/tags/v0.4.3.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-a11y-governance/archive/refs/tags/v0.4.6.zip",
+      "sha256": "150cc5c1709d0bc6e9f682badb510922595cd784299ff3d9a9c17389919ec89f",
       "homepage": "https://github.com/hindermath/spec-kit-preset-a11y-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-a11y-governance/blob/v0.4.3/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-a11y-governance/blob/v0.4.6/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
@@ -25,11 +26,11 @@
         "a11y",
         "accessibility",
         "wcag",
-        "inclusion",
-        "model-routing"
+        "bilingual",
+        "inclusion"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-08-12T00:00:00Z"
+      "updated_at": "2026-11-02T00:00:00Z"
     },
     "agent-parity-governance": {
       "name": "Agent Parity Governance",
@@ -584,13 +585,14 @@
     "isaqb-architecture-governance": {
       "name": "iSAQB Architecture Governance",
       "id": "isaqb-architecture-governance",
-      "version": "0.2.2",
-      "description": "Adds iSAQB/CPSA-F and arc42 architecture governance, architecture views, quality scenarios, ADRs, risks, technical-debt evidence, and provider-neutral model routing.",
+      "version": "0.2.5",
+      "description": "Adds iSAQB/CPSA-F and arc42 architecture governance with Spec-Kit evidence for goals, views, quality scenarios, ADRs, risks, and technical debt.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/archive/refs/tags/v0.2.2.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/archive/refs/tags/v0.2.5.zip",
+      "sha256": "03f1a946994ece3c30b0da3a733eb7c5eb88c8a65021831e75cf5543fed65d58",
       "homepage": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/blob/v0.2.2/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/blob/v0.2.5/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
@@ -604,10 +606,10 @@
         "governance",
         "isaqb",
         "arc42",
-        "model-routing"
+        "adr"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-08-11T00:00:00Z"
+      "updated_at": "2026-10-29T00:00:00Z"
     },
     "jira": {
       "name": "Jira Issue Tracking",

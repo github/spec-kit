@@ -384,11 +384,25 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="not valid UTF-8"):
             ExtensionManifest(manifest_path)
 
-    def test_invalid_extension_id(self, temp_dir, valid_manifest_data):
+    @pytest.mark.parametrize(
+        "extension_id",
+        [
+            "Invalid_ID",
+            "",
+            "../test-ext",
+            "test-ext\n",
+            "test-ext\r\n",
+            "test\next",
+            "test-ext ",
+            " test-ext",
+        ],
+    )
+    def test_invalid_extension_id(self, temp_dir, valid_manifest_data, extension_id):
         """Test manifest with invalid extension ID format."""
         import yaml
 
-        valid_manifest_data["extension"]["id"] = "Invalid_ID"  # Uppercase not allowed
+        valid_manifest_data["extension"]["id"] = extension_id
+        valid_manifest_data["provides"]["commands"] = []
 
         manifest_path = temp_dir / "extension.yml"
         with open(manifest_path, 'w') as f:
@@ -3151,7 +3165,7 @@ class TestExtensionManager:
         Regression test for #4555: a primary name is namespace-checked
         against CORE_COMMAND_NAMES, but aliases are intentionally free-form
         and previously went unchecked against core commands entirely, so an
-        extension could claim e.g. 'speckit.taskstoissues' as an alias and
+        extension could claim e.g. 'speckit.tasks' as an alias and
         shadow the core command of the same name.
         """
         import yaml
@@ -3172,9 +3186,9 @@ class TestExtensionManager:
             "provides": {
                 "commands": [
                     {
-                        "name": "speckit.probe.taskstoissues",
+                        "name": "speckit.probe.tasks",
                         "file": "commands/cmd.md",
-                        "aliases": ["speckit.taskstoissues"],
+                        "aliases": ["speckit.tasks"],
                     }
                 ]
             },
@@ -3187,7 +3201,7 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="conflicts with core command"):
             manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
-    @pytest.mark.parametrize("alias", ["taskstoissues", "speckit-taskstoissues"])
+    @pytest.mark.parametrize("alias", ["tasks", "speckit-tasks"])
     def test_install_rejects_equivalent_alias_shadowing_core_command(
         self, temp_dir, project_dir, alias
     ):
@@ -3195,8 +3209,8 @@ class TestExtensionManager:
 
         Regression test for the reviewer follow-up on #4555: agent-specific
         name transformation (``CommandRegistrar._compute_output_name`` and the
-        Cline/Forge/Junie formatters) collapses ``speckit.taskstoissues``,
-        ``taskstoissues``, and ``speckit-taskstoissues`` to the same on-disk
+        Cline/Forge/Junie formatters) collapses ``speckit.tasks``,
+        ``tasks``, and ``speckit-tasks`` to the same on-disk
         command name, so all three spellings must be rejected, not just the
         exact dotted one.
         """
@@ -3218,7 +3232,7 @@ class TestExtensionManager:
             "provides": {
                 "commands": [
                     {
-                        "name": "speckit.probe.taskstoissues",
+                        "name": "speckit.probe.tasks",
                         "file": "commands/cmd.md",
                         "aliases": [alias],
                     }
@@ -6349,6 +6363,42 @@ class TestExtensionCatalog:
         # silently dropped rather than raising or crashing.
         assert [ext["id"] for ext in merged] == ["good"]
 
+    @pytest.mark.parametrize("bad_body", [b"\xff", b"not json"])
+    def test_merged_extensions_skips_invalid_catalog_response(
+        self, temp_dir, capsys, bad_body
+    ):
+        """A broken source must not hide extensions from a healthy source."""
+        from unittest.mock import patch
+
+        catalog = self._make_catalog(temp_dir)
+        bad = CatalogEntry("https://example.com/bad.json", "bad", 1, True)
+        good = CatalogEntry("https://example.com/good.json", "good", 2, True)
+        good_body = json.dumps({
+            "schema_version": "1.0",
+            "extensions": {"healthy": {"name": "Healthy", "version": "1.0.0"}},
+        }).encode()
+
+        def open_catalog(url, **_kwargs):
+            response = MagicMock()
+            body = bad_body if url == bad.url else good_body
+            response.read.side_effect = io.BytesIO(body).read
+            response.geturl.return_value = url
+            response.__enter__.return_value = response
+            return response
+
+        with patch.object(catalog, "get_active_catalogs", return_value=[bad, good]), \
+             patch.object(catalog, "_open_url", side_effect=open_catalog):
+            merged = catalog._get_merged_extensions(force_refresh=True)
+
+        assert [ext["id"] for ext in merged] == ["healthy"]
+        assert merged[0]["_catalog_name"] == "good"
+        assert "Could not fetch catalog 'bad'" in capsys.readouterr().err
+
+        with patch.object(catalog, "get_active_catalogs", return_value=[bad]), \
+             patch.object(catalog, "_open_url", side_effect=open_catalog), \
+             pytest.raises(ExtensionError, match="Failed to fetch any extension catalog"):
+            catalog._get_merged_extensions(force_refresh=True)
+
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
         """download_extension passes Authorization header when a provider is configured."""
         from unittest.mock import patch, MagicMock
@@ -8777,7 +8827,7 @@ class TestConfigManagerNonMappingManifestConfigSection:
 class TestConfigManagerTopLevelManifestDefaults:
     """A top-level `defaults:` in extension.yml must be loaded (#5084).
 
-    The extension template and EXTENSION-API-REFERENCE.md put defaults under a
+    The extension template and docs/extensions/api.md put defaults under a
     top-level ``defaults:`` key, but ``_get_extension_defaults`` only read
     ``config.defaults``, so an extension built from the template silently had
     no defaults at runtime.

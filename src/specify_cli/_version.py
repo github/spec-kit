@@ -25,6 +25,7 @@ import urllib.request
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import Literal, overload
 
 import typer
 from packaging.version import InvalidVersion, Version
@@ -230,6 +231,10 @@ class _InstallerResult:
     returncode: int | None = None
 
 
+class _InstallerRejected(ValueError):
+    """Installer lookup succeeded but its path could not be trusted."""
+
+
 @dataclass(frozen=True)
 class _UpgradePlan:
     """Resolved upgrade decision shared by preview and apply paths."""
@@ -240,6 +245,8 @@ class _UpgradePlan:
     installer_argv: list[str] | None
     preview_summary: str
     pre_upgrade_snapshot: str
+    installer_rejections: tuple[str, ...] = ()
+    installer_rejected: bool = False
 
 
 @dataclass(frozen=True)
@@ -252,6 +259,7 @@ class _DetectionSignals:
     editable_marker_seen: bool
     installer_registries_consulted: tuple[str, ...]
     resolved_method: _InstallMethod
+    installer_rejections: tuple[str, ...] = ()
 
 
 _GITHUB_CREDENTIAL_SUFFIXES = (
@@ -481,6 +489,62 @@ def _editable_marker_seen() -> bool:
     return editable_root is not None and _git_ancestor(editable_root) is not None
 
 
+def _find_installer(name: str) -> str | None:
+    """Resolve an installer without trusting working-directory executables."""
+    try:
+        resolved = shutil.which(name)
+        if resolved is None:
+            return None
+        installer = Path(resolved)
+        # Windows lookup may prepend cwd even when PATH is absolute. Check
+        # both the lookup entry and symlink target using filesystem identity.
+        if not installer.is_absolute():
+            raise _InstallerRejected(
+                f"Installer {name} rejected: lookup returned a relative path {resolved!r}. "
+                "Use an absolute PATH entry for the installed tool. "
+                "Run from a directory without a matching installer executable "
+                "to avoid implicit current-directory matches on Windows, and retry."
+            )
+        cwd = Path.cwd()
+        if (
+            installer.parent.samefile(cwd)
+            or installer.resolve(strict=True).parent.samefile(cwd)
+        ):
+            raise _InstallerRejected(
+                f"Installer {name} rejected: lookup or target is in the current "
+                f"working directory ({resolved!r}). Run from another directory "
+                "and ensure PATH points to the installed tool."
+            )
+    except (OSError, RuntimeError) as exc:
+        raise _InstallerRejected(
+            f"Installer {name} rejected: could not validate its path ({exc}). "
+            "Run from an existing, accessible working directory and check PATH."
+        ) from exc
+    return resolved
+
+
+@overload
+def _detect_install_method(
+    argv0: str | None = None,
+    include_signals: Literal[False] = False,
+) -> _InstallMethod: ...
+
+
+@overload
+def _detect_install_method(
+    argv0: str | None = None,
+    *,
+    include_signals: Literal[True],
+) -> tuple[_InstallMethod, _DetectionSignals]: ...
+
+
+@overload
+def _detect_install_method(
+    argv0: str | None = None,
+    include_signals: bool = False,
+) -> _InstallMethod | tuple[_InstallMethod, _DetectionSignals]: ...
+
+
 def _detect_install_method(
     argv0: str | None = None,
     include_signals: bool = False,
@@ -532,9 +596,14 @@ def _detect_install_method(
 
     # --- Tier 3: PATH + registry reconciliation ---
     consulted: list[str] = []
+    rejections: list[str] = []
     if _tier3_registry_lookup_allowed(argv0_path):
         uv_tool_match = False
-        uv_bin = shutil.which("uv")
+        try:
+            uv_bin = _find_installer("uv")
+        except _InstallerRejected as exc:
+            rejections.append(str(exc))
+            uv_bin = None
         if uv_bin is not None:
             consulted.append("uv tool list")
             try:
@@ -554,7 +623,11 @@ def _detect_install_method(
                 pass
 
         pipx_match = False
-        pipx_bin = shutil.which("pipx")
+        try:
+            pipx_bin = _find_installer("pipx")
+        except _InstallerRejected as exc:
+            rejections.append(str(exc))
+            pipx_bin = None
         if pipx_bin is not None:
             consulted.append("pipx list --json")
             try:
@@ -574,10 +647,10 @@ def _detect_install_method(
             except (subprocess.TimeoutExpired, OSError, ValueError):
                 pass
 
-        # If both registries claim ownership, the active entrypoint is ambiguous.
-        # Treat it as unsupported rather than guessing and upgrading the wrong install.
+        # Both matches or a rejected probe leave ownership ambiguous.
+        # Never guess and risk upgrading the wrong installation.
         exactly_one_match = uv_tool_match != pipx_match
-        if exactly_one_match:
+        if exactly_one_match and not rejections:
             method = _InstallMethod.UV_TOOL if uv_tool_match else _InstallMethod.PIPX
             if include_signals:
                 return method, _DetectionSignals(
@@ -587,6 +660,7 @@ def _detect_install_method(
                     editable_marker_seen=False,
                     installer_registries_consulted=tuple(consulted),
                     resolved_method=method,
+                    installer_rejections=tuple(rejections),
                 )
             return method
 
@@ -600,6 +674,7 @@ def _detect_install_method(
             editable_marker_seen=False,
             installer_registries_consulted=tuple(consulted),
             resolved_method=method,
+            installer_rejections=tuple(rejections),
         )
     return method
 
@@ -635,7 +710,7 @@ def _assemble_installer_argv(
     source_spec = _source_spec(target_tag)
 
     if method == _InstallMethod.UV_TOOL:
-        uv_bin = shutil.which("uv")
+        uv_bin = _find_installer("uv")
         if uv_bin is None:
             return None
         return [
@@ -651,7 +726,7 @@ def _assemble_installer_argv(
     if method == _InstallMethod.PIPX:
         # pipx 1.5+ removed `--spec`; PACKAGE_SPEC is now positional and the
         # package name is auto-detected from the source's pyproject.toml.
-        pipx_bin = shutil.which("pipx")
+        pipx_bin = _find_installer("pipx")
         if pipx_bin is None:
             return None
         return [
@@ -697,7 +772,8 @@ def _build_upgrade_plan(
     A valid `target_tag_override` skips network resolution entirely.
     A fetched target tag is validated before installer argv construction.
     """
-    method = _detect_install_method()
+    method, signals = _detect_install_method(include_signals=True)
+    rejections = list(signals.installer_rejections)
 
     if target_tag_override is not None:
         target_tag = target_tag_override
@@ -724,10 +800,18 @@ def _build_upgrade_plan(
         target_tag = None
 
     current = _get_installed_version()
-    argv = _assemble_installer_argv(method, target_tag)
+    installer_rejected = False
+    try:
+        argv = _assemble_installer_argv(method, target_tag)
+    except _InstallerRejected as exc:
+        rejections.append(str(exc))
+        installer_rejected = True
+        argv = None
     if argv is None and method in (_InstallMethod.UV_TOOL, _InstallMethod.PIPX):
         command_preview = (
-            f"(installer {_installer_binary_name(method)} not found on PATH)"
+            "(installer rejected)"
+            if installer_rejected
+            else f"(installer {_installer_binary_name(method)} not found on PATH)"
         )
     else:
         command_preview = (
@@ -748,6 +832,8 @@ def _build_upgrade_plan(
         installer_argv=argv,
         preview_summary=preview,
         pre_upgrade_snapshot=current,
+        installer_rejections=tuple(rejections),
+        installer_rejected=installer_rejected,
     )
     return plan, None
 

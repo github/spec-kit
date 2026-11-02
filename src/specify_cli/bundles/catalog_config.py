@@ -110,7 +110,10 @@ def _canonicalize_url(url: str) -> str:
 
     Remote URLs (``http(s)://``, ``file://``, ``builtin://``) are returned
     unchanged; only bare/relative local paths are resolved to an absolute path.
+    Foreign Windows drive paths stay unchanged rather than becoming POSIX paths.
     """
+    if _WINDOWS_DRIVE_RE.match(url) and not Path(url).is_absolute():
+        return url
     if _is_local_path(url):
         return str(Path(url).expanduser().resolve())
     return url

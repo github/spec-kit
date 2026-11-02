@@ -43,6 +43,18 @@ automatically validate a definition passed to `execute()`. Guard invalid
 configurations in `execute()` too, returning a failed result rather than a
 successful default or an unhandled exception.
 
+The built-in shell step preserves raw `run` interpolation by default.
+Per-step `strict: true` rejects expression markers in `run` during validation
+and execution. Its optional `env` mapping evaluates string templates separately,
+requires NUL-free string results encodable for the process environment on
+POSIX, and overrides only the child environment.
+`SPECKIT_WORKFLOW_DIR` remains engine-owned. This prevents workflow expression
+values from becoming shell source in strict mode; it is not a sandbox or a
+guarantee that an authored script handles environment data safely.
+Environment bindings and inherited settings can intentionally affect executable
+lookup, module loading, and runtime startup. Strict mode does not filter them;
+workflow source review must cover both `run` and `env` and referenced code.
+
 New runs persist an execution tree. Resume replays completed occurrences into
 their expression contexts without calling their implementations, then continues
 at the unfinished occurrence. Selected branches, custom expansions, loop
