@@ -178,6 +178,14 @@ class CopilotIntegration(IntegrationBase):
     # Mutable flag set by setup() — indicates the active scaffolding mode.
     _skills_mode: bool = True
 
+    # Set by ``setup()`` from ``--no-model-invocation`` (skills layout only);
+    # applies to core command skills only, since mandatory extension hooks rely
+    # on the model invoking the hook skill. Integrations are process-wide
+    # singletons, so preset overrides re-registered later in the same run see
+    # the same value. Commands that rewrite skills without calling ``setup()``
+    # (e.g. ``preset add``, ``integration use``) get the default.
+    _disable_model_invocation: bool = False
+
     def effective_invoke_separator(
         self,
         parsed_options: dict[str, Any] | None = None,
@@ -296,6 +304,17 @@ class CopilotIntegration(IntegrationBase):
                     "Scaffold .github/agents/*.agent.md commands with companion "
                     ".github/prompts/*.prompt.md files instead of the default "
                     "skills layout"
+                ),
+            ),
+        )
+        opts.append(
+            IntegrationOption(
+                "--no-model-invocation",
+                is_flag=True,
+                default=False,
+                help=(
+                    "Install core command skills as user-invocable only "
+                    "(disable-model-invocation: true); skills layout only, documented for VS Code"
                 ),
             ),
         )
@@ -482,14 +501,78 @@ class CopilotIntegration(IntegrationBase):
         exclusions.add(".vscode/settings.json")
         return exclusions
 
+    @staticmethod
+    def _inject_frontmatter_flag(content: str, key: str, value: str = "true") -> str:
+        """Insert ``key: value`` before the closing ``---`` if not already present."""
+        lines = content.splitlines(keepends=True)
+        dash_count = 0
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith(f"{key}:"):
+                return content
+
+        out: list[str] = []
+        dash_count = 0
+        injected = False
+        for line in lines:
+            if line.rstrip("\n\r") == "---":
+                dash_count += 1
+                if dash_count == 2 and not injected:
+                    eol = "\r\n" if line.endswith("\r\n") else "\n"
+                    out.append(f"{key}: {value}{eol}")
+                    injected = True
+            out.append(line)
+        return "".join(out)
+
+    @staticmethod
+    def _skill_name_from_content(content: str) -> str | None:
+        """Return the ``name:`` field of a skill's first frontmatter block."""
+        dash_count = 0
+        for line in content.splitlines():
+            stripped = line.rstrip("\r\n")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith("name:"):
+                name = stripped[len("name:"):].strip().strip('"').strip("'")
+                return name or None
+        return None
+
+    @staticmethod
+    def _is_core_command_skill(name: str | None) -> bool:
+        from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+
+        return bool(name) and name.startswith("speckit-") and (
+            name.removeprefix("speckit-") in CORE_COMMAND_NAMES
+        )
+
     def post_process_skill_content(self, content: str) -> str:
         """Inject shared hook guidance into Copilot skill content.
 
         Delegates to :class:`_CopilotSkillsHelper` for shared post-processing.
         The ``mode:`` frontmatter field is intentionally omitted: VS Code
         Copilot Agent Skills do not support it (see issue #2799).
+
+        ``disable-model-invocation: true`` is added to core command skills
+        when the last ``setup()`` in this process was given
+        ``--no-model-invocation`` in the skills layout. Otherwise the key is
+        omitted, which VS Code treats as ``false``.
         """
-        return _CopilotSkillsHelper().post_process_skill_content(content)
+        updated = _CopilotSkillsHelper().post_process_skill_content(content)
+        if self._disable_model_invocation and self._is_core_command_skill(
+            self._skill_name_from_content(updated)
+        ):
+            updated = self._inject_frontmatter_flag(
+                updated, "disable-model-invocation"
+            )
+        return updated
 
     def setup(
         self,
@@ -506,16 +589,24 @@ class CopilotIntegration(IntegrationBase):
         """
         parsed_options = parsed_options or {}
         self._skills_mode = self.is_skills_mode(parsed_options, project_root)
-        if self._skills_mode:
-            created = self._setup_skills(project_root, manifest, parsed_options, **opts)
-        else:
-            created = self._setup_commands(project_root, manifest, parsed_options, **opts)
-
-        # Install agent runtime events
-        event_files = self.emit_events(
-            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options,
-            force=opts.get("force", False),
+        self._disable_model_invocation = (
+            self._skills_mode and parsed_options.get("no_model_invocation") is True
         )
+        try:
+            if self._skills_mode:
+                created = self._setup_skills(project_root, manifest, parsed_options, **opts)
+            else:
+                created = self._setup_commands(project_root, manifest, parsed_options, **opts)
+
+            # Install agent runtime events
+            event_files = self.emit_events(
+                project_root, manifest, events=opts.get("events"), parsed_options=parsed_options,
+                force=opts.get("force", False),
+            )
+        except BaseException:
+            self._disable_model_invocation = False
+            raise
+
         created.extend(event_files)
         return created
 

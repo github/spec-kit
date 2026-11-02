@@ -2,13 +2,33 @@
 
 import json
 import os
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import typer
 import yaml
 
 from specify_cli.integrations import get_integration
+from specify_cli.integrations.base import SkillsIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def _reset_copilot_model_invocation():
+    """``setup()`` stores ``--no-model-invocation`` on the process-wide Copilot
+    singleton; keep it from leaking between tests."""
+    copilot = get_integration("copilot")
+    copilot._disable_model_invocation = False
+    yield
+    copilot._disable_model_invocation = False
+
+
+def _skill_frontmatter(skill_file: Path) -> dict:
+    content = skill_file.read_text(encoding="utf-8")
+    return yaml.safe_load(content.split("---", 2)[1])
 
 
 class TestCopilotCommandsMode:
@@ -984,3 +1004,260 @@ class TestCopilotSkillsMode:
             assert "my args" in prompt, (
                 f"Skills mode prompt should preserve user args, got: {prompt}"
             )
+
+
+class TestCopilotNoModelInvocationOption:
+    """``--integration-options="--no-model-invocation"`` opts out of model invocation (#2654)."""
+
+    def test_options_include_no_model_invocation_flag(self):
+        opts = get_integration("copilot").options()
+        matching = [o for o in opts if o.name == "--no-model-invocation"]
+        assert len(matching) == 1
+        assert matching[0].is_flag is True
+        # Opt-in: skills stay model-invocable unless the flag is passed.
+        assert matching[0].default is False
+
+    def test_default_skills_omit_disable_model_invocation(self, tmp_path):
+        i = get_integration("copilot")
+        created = i.setup(tmp_path, IntegrationManifest("copilot", tmp_path), script_type="sh")
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            assert "disable-model-invocation" not in f.read_text(encoding="utf-8")
+
+    def test_setup_with_option_sets_disable_model_invocation_true(self, tmp_path):
+        i = get_integration("copilot")
+        m = IntegrationManifest("copilot", tmp_path)
+        created = i.setup(
+            tmp_path, m, parsed_options={"no_model_invocation": True}, script_type="sh"
+        )
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            fm = _skill_frontmatter(f)
+            assert fm["disable-model-invocation"] is True, f.parent.name
+            assert f.read_text(encoding="utf-8").count("disable-model-invocation:") == 1
+
+    def test_post_process_follows_option_from_setup(self, tmp_path):
+        """Preset overrides of core commands re-registered in the same run as
+        ``setup()`` (init, upgrade) get the same value."""
+        i = get_integration("copilot")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("copilot", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation: true" in result
+
+    def test_extension_skills_stay_model_invocable(self, tmp_path):
+        """Mandatory extension hooks rely on the model invoking the hook skill,
+        so the option never applies to extension commands."""
+        i = get_integration("copilot")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("copilot", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content(
+            "---\nname: speckit-git-feature\n---\n\nBody\n"
+        )
+        assert "disable-model-invocation" not in result
+
+    def test_option_requires_speckit_prefixed_core_name(self, tmp_path):
+        """A skill merely named like a core stem is not a core command skill."""
+        i = get_integration("copilot")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("copilot", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content("---\nname: tasks\n---\n\nBody\n")
+        assert "disable-model-invocation" not in result
+
+    def test_injection_preserves_crlf(self, tmp_path):
+        i = get_integration("copilot")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("copilot", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content("---\r\nname: speckit-plan\r\n---\r\nBody\r\n")
+        assert "disable-model-invocation: true\r\n---" in result
+        assert "true\n---" not in result.replace("\r\n", "")
+
+    def test_commands_layout_ignores_option(self, tmp_path):
+        i = get_integration("copilot")
+        created = i.setup(
+            tmp_path,
+            IntegrationManifest("copilot", tmp_path),
+            parsed_options={"commands": True, "no_model_invocation": True},
+            script_type="sh",
+        )
+        assert not (tmp_path / ".github" / "skills").exists()
+        for f in created:
+            if f.suffix == ".md":
+                assert "disable-model-invocation" not in f.read_text(encoding="utf-8")
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation" not in result
+
+    @pytest.mark.parametrize("failing", ["setup", "emit_events"])
+    def test_failed_setup_does_not_leave_option_set(self, tmp_path, failing):
+        i = get_integration("copilot")
+        target = SkillsIntegration if failing == "setup" else type(i)
+        with patch.object(target, failing, side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError):
+                i.setup(
+                    tmp_path,
+                    IntegrationManifest("copilot", tmp_path),
+                    parsed_options={"no_model_invocation": True},
+                    script_type="sh",
+                )
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation" not in result
+
+    def test_setup_without_option_resets(self, tmp_path):
+        i = get_integration("copilot")
+        first = tmp_path / "first"
+        first.mkdir()
+        i.setup(
+            first,
+            IntegrationManifest("copilot", first),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        second = tmp_path / "second"
+        second.mkdir()
+        created = i.setup(second, IntegrationManifest("copilot", second), script_type="sh")
+        for f in (f for f in created if f.name == "SKILL.md"):
+            assert "disable-model-invocation" not in f.read_text(encoding="utf-8")
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation" not in result
+
+    def test_cli_rejects_value_for_flag(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "copilot-bad-option"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    "copilot",
+                    "--integration-options",
+                    "--no-model-invocation=yes",
+                    "--script",
+                    "sh",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code != 0
+        assert "does not accept a value" in result.output
+        assert not (project / ".github" / "skills").exists()
+
+    def test_option_persists_across_upgrade_and_can_be_cleared(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "copilot", "--no-model-invocation")
+        skills_dir = project / ".github" / "skills"
+        skill_files = sorted(skills_dir.glob("speckit-*/SKILL.md"))
+        assert len(skill_files) > 0
+        for f in skill_files:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is True, f.parent.name
+
+        state = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        settings = state["integration_settings"]["copilot"]
+        assert settings["raw_options"] == "--no-model-invocation"
+        assert settings["parsed_options"] == {"no_model_invocation": True}
+
+        # A later ``specify integration upgrade`` is a new process: drop the
+        # in-memory value so only the persisted options can supply it.
+        get_integration("copilot")._disable_model_invocation = False
+        result = _run_in_project(project, ["integration", "upgrade", "copilot", "--force"])
+        assert result.exit_code == 0, result.output
+        for f in skill_files:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is True, f.parent.name
+
+        # Passing replacement options (here: none) clears it.
+        result = _run_in_project(
+            project,
+            ["integration", "upgrade", "copilot", "--force", "--integration-options", ""],
+        )
+        assert result.exit_code == 0, result.output
+        for f in skill_files:
+            assert "disable-model-invocation" not in f.read_text(encoding="utf-8"), f.parent.name
+        state = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert "parsed_options" not in state["integration_settings"]["copilot"]
+
+    def test_upgrade_reapplies_option_to_preset_overrides(self, tmp_path):
+        """``preset add`` runs without ``setup()`` (documented limitation);
+        ``integration upgrade copilot --force`` reapplies the option to the
+        core-command skills a preset overrides."""
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "copilot", "--no-model-invocation")
+        skill_file = project / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+        assert _skill_frontmatter(skill_file)["disable-model-invocation"] is True
+
+        get_integration("copilot")._disable_model_invocation = False
+        result = _run_in_project(
+            project, ["preset", "add", "--dev", str(REPO_ROOT / "presets" / "lean")]
+        )
+        assert result.exit_code == 0, result.output
+        fm = _skill_frontmatter(skill_file)
+        assert fm["metadata"]["source"] == "preset:lean"
+        # Documented in docs/integrations/copilot.md; update the docs if
+        # preset commands start honouring the option.
+        assert "disable-model-invocation" not in fm
+
+        # The docs say ``--force`` is needed here: preset add modified
+        # installed skill files, so a plain upgrade refuses.
+        result = _run_in_project(project, ["integration", "upgrade", "copilot"])
+        assert result.exit_code != 0
+        assert "modified since installation" in result.output
+        assert "disable-model-invocation" not in _skill_frontmatter(skill_file)
+
+        get_integration("copilot")._disable_model_invocation = False
+        result = _run_in_project(project, ["integration", "upgrade", "copilot", "--force"])
+        assert result.exit_code == 0, result.output
+        fm = _skill_frontmatter(skill_file)
+        assert fm["metadata"]["source"] == "preset:lean"
+        assert fm["disable-model-invocation"] is True
+
+    def test_extension_hook_skills_stay_model_invocable_after_upgrade(self, tmp_path):
+        """``integration upgrade`` re-registers extension skills in the same
+        process as ``setup()``; they must stay model-invocable so mandatory
+        hooks (e.g. ``speckit.git.feature``) can still be invoked by the model."""
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "copilot", "--no-model-invocation")
+        result = _run_in_project(
+            project, ["extension", "add", "--dev", str(REPO_ROOT / "extensions" / "git")]
+        )
+        assert result.exit_code == 0, result.output
+        get_integration("copilot")._disable_model_invocation = False
+        result = _run_in_project(project, ["integration", "upgrade", "copilot", "--force"])
+        assert result.exit_code == 0, result.output
+
+        skills_dir = project / ".github" / "skills"
+        git_skills = sorted(skills_dir.glob("speckit-git-*/SKILL.md"))
+        assert git_skills, "git extension skills were not generated"
+        for f in git_skills:
+            assert "disable-model-invocation" not in f.read_text(encoding="utf-8"), f.parent.name
+        assert _skill_frontmatter(skills_dir / "speckit-specify" / "SKILL.md")[
+            "disable-model-invocation"
+        ] is True
