@@ -504,6 +504,44 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.a == 9 or inputs.b == 2 }}", plain) is True
         assert evaluate_expression("{{ inputs.missing | default('a and b') }}", plain) == "a and b"
 
+    def test_chained_comparisons_evaluate_like_python(self):
+        """A chained comparison such as `0 <= n <= 10` evaluates pairwise with
+        an implicit `and`, as Python and Jinja2 chain comparisons. Splitting at
+        the first operator in table order instead evaluated `0 <= (n <= 10)` —
+        a number compared against a boolean — so a range check silently took
+        the wrong branch (#5071)."""
+        from specify_cli.workflows.expressions import (
+            evaluate_condition,
+            evaluate_expression,
+        )
+        from specify_cli.workflows.base import StepContext
+
+        inside = StepContext(inputs={"n": 5})
+        outside = StepContext(inputs={"n": 50})
+        for cond in ("{{ 0 <= inputs.n <= 10 }}", "{{ 1 < inputs.n < 10 }}"):
+            assert evaluate_condition(cond, inside) is True, cond
+            assert evaluate_condition(cond, outside) is False, cond
+
+        # Mixed operators chain pairwise too: `a < b == c` is
+        # `a < b and b == c`, membership included.
+        ctx = StepContext(inputs={"a": 1, "b": 5, "c": 5, "items": [5, 9]})
+        assert evaluate_expression("{{ inputs.a < inputs.b == inputs.c }}", ctx) is True
+        assert evaluate_expression("{{ inputs.a < inputs.b == 6 }}", ctx) is False
+        assert evaluate_expression("{{ inputs.a < inputs.b in inputs.items }}", ctx) is True
+
+        # A chain inside a boolean expression binds tighter than and/or.
+        assert evaluate_condition("{{ 0 <= inputs.n <= 10 and inputs.n == 5 }}", inside) is True
+        assert evaluate_condition("{{ 0 <= inputs.n <= 10 or inputs.n == 50 }}", outside) is True
+
+        # Regression: single comparisons and operator text inside quoted
+        # operands are untouched.
+        assert evaluate_expression("{{ inputs.a < inputs.b }}", ctx) is True
+        assert evaluate_expression("{{ inputs.b < inputs.a }}", ctx) is False
+        assert evaluate_expression("{{ '<=' == '<=' }}", StepContext()) is True
+        assert evaluate_expression(
+            "{{ inputs.x == 'a <= b' }}", StepContext(inputs={"x": "a <= b"})
+        ) is True
+
     def test_pipe_detection_is_quote_aware(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext

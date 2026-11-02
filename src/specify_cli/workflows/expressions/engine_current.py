@@ -153,6 +153,57 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
 # evaluator will actually split on.
 _COMPARISON_OPERATORS = ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ")
 
+# The chain scan tries operators at one position, not across the whole string,
+# so at a given index the longest operator must win: "<=" is one operator, not
+# "<" followed by a dangling "=". Derived from _COMPARISON_OPERATORS so the two
+# tables cannot drift.
+_CHAIN_SCAN_OPERATORS = tuple(sorted(_COMPARISON_OPERATORS, key=len, reverse=True))
+
+
+def _split_comparison_chain(expr: str) -> tuple[list[str], list[str]] | None:
+    """Split *expr* at every top-level comparison operator, left to right.
+
+    Returns ``(operands, ops)`` with ``len(operands) == len(ops) + 1``, or
+    ``None`` when *expr* holds no top-level comparison operator. Occurrences
+    inside quoted strings or brackets are skipped with the same scanning rules
+    as ``_find_top_level``, so this never splits where the single-operator
+    search would not have.
+    """
+    operands: list[str] = []
+    ops: list[str] = []
+    start = 0
+    quote: str | None = None
+    depth = 0
+    i = 0
+    n = len(expr)
+    while i < n:
+        ch = expr[i]
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            matched = next(
+                (op for op in _CHAIN_SCAN_OPERATORS if expr.startswith(op, i)), None
+            )
+            if matched is not None:
+                operands.append(expr[start:i])
+                ops.append(matched)
+                i += len(matched)
+                start = i
+                continue
+        i += 1
+    if not ops:
+        return None
+    operands.append(expr[start:])
+    return operands, ops
+
+
 # Set only while `_collect_leaves` probes an expression; None everywhere else, so
 # a normal evaluation costs one `.get()`. A ContextVar rather than a module global
 # so concurrent probes cannot append into each other's list.
@@ -164,7 +215,8 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
 
     Supports:
     - Dot-path access: ``steps.specify.output.file``
-    - Comparisons: ``==``, ``!=``, ``>``, ``<``, ``>=``, ``<=``
+    - Comparisons: ``==``, ``!=``, ``>``, ``<``, ``>=``, ``<=``, chained
+      pairwise as in Python/Jinja2 (``0 <= inputs.n <= 10``)
     - Boolean operators: ``and``, ``or``, ``not``
     - ``in``, ``not in``
     - Pipe filters: ``| default('...')``, ``| join(', ')``, ``| contains('...')``, ``| from_json``, ``| map('...')``, ``| split(',')``, ``| upper``, ``| lower``, ``| length``, ``| to_json``
@@ -282,30 +334,37 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         inner = _evaluate_simple_expression(expr[4:].strip(), namespace)
         return not bool(inner)
 
-    # Comparison operators (order matters — check multi-char ops first). Split at
-    # the first top-level occurrence so an operator inside a quoted operand is
-    # ignored.
-    for op in _COMPARISON_OPERATORS:
-        op_idx = _find_top_level(expr, op)
-        if op_idx != -1:
-            left = _evaluate_simple_expression(expr[:op_idx].strip(), namespace)
-            right = _evaluate_simple_expression(expr[op_idx + len(op):].strip(), namespace)
+    # Comparison operators. Scan left to right for EVERY top-level occurrence
+    # (longest operator first at each position, so "<=" is not read as "<"),
+    # then evaluate pairwise with an implicit `and`, the way Python and Jinja2
+    # chain comparisons: `0 <= n <= 10` is `0 <= n and n <= 10`. Splitting at
+    # the first operator in _COMPARISON_OPERATORS order instead evaluated
+    # `0 <= (n <= 10)` — a number compared against a boolean — so a range
+    # check silently took the wrong branch (#5071). Operators inside quoted or
+    # bracketed operands are still ignored. Every operand is evaluated before
+    # any pair is compared, so a validation probe visits the same leaves
+    # whichever pair fails first.
+    chain = _split_comparison_chain(expr)
+    if chain is not None:
+        operands, ops = chain
+        values = [
+            _evaluate_simple_expression(operand.strip(), namespace)
+            for operand in operands
+        ]
+        for left, op, right in zip(values, ops, values[1:]):
             if op == "==":
-                return left == right
-            if op == "!=":
-                return left != right
-            if op == ">":
-                return _safe_compare(left, right, ">")
-            if op == "<":
-                return _safe_compare(left, right, "<")
-            if op == ">=":
-                return _safe_compare(left, right, ">=")
-            if op == "<=":
-                return _safe_compare(left, right, "<=")
-            if op == " in ":
-                return _safe_membership(left, right, negate=False)
-            if op == " not in ":
-                return _safe_membership(left, right, negate=True)
+                ok = left == right
+            elif op == "!=":
+                ok = left != right
+            elif op == " in ":
+                ok = _safe_membership(left, right, negate=False)
+            elif op == " not in ":
+                ok = _safe_membership(left, right, negate=True)
+            else:
+                ok = _safe_compare(left, right, op)
+            if not ok:
+                return False
+        return True
 
     # Numeric literal
     try:
