@@ -266,11 +266,15 @@ def check_existing_branches(
             get_highest_from_branches(repo_root, scope_prefix),
         )
     else:
+        # The dry-run path already passes GIT_TERMINAL_PROMPT=0 to ls-remote.
+        # Without it here, an HTTPS remote with no usable credential helper
+        # prompts on the tty and /speckit.specify hangs instead of continuing.
         subprocess.run(
             ["git", "fetch", "--all", "--prune"],
             cwd=repo_root,
             capture_output=True,
             text=True,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
         highest_branch = get_highest_from_branches(repo_root, scope_prefix)
 

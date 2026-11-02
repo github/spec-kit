@@ -162,9 +162,13 @@ function Get-NextBranchNumber {
         $highestRemote = Get-HighestNumberFromRemoteRefs -ScopePrefix $ScopePrefix
         $highestBranch = [Math]::Max($highestBranch, $highestRemote)
     } else {
+        # Mirror the ls-remote guard: an HTTPS remote without a credential
+        # helper would otherwise prompt on the tty and block the caller.
+        $env:GIT_TERMINAL_PROMPT = '0'
         try {
             git fetch --all --prune 2>$null | Out-Null
         } catch { }
+        $env:GIT_TERMINAL_PROMPT = $null
         $highestBranch = Get-HighestNumberFromBranches -ScopePrefix $ScopePrefix
     }
 

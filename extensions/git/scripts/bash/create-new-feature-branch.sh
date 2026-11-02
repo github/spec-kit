@@ -191,7 +191,10 @@ check_existing_branches() {
             highest_branch=$highest_remote
         fi
     else
-        git fetch --all --prune >/dev/null 2>&1 || true
+        # The dry-run path already sets this for `git ls-remote`. Without it,
+        # an HTTPS remote with no usable credential helper makes git prompt on
+        # the tty, and /speckit.specify hangs instead of continuing.
+        GIT_TERMINAL_PROMPT=0 git fetch --all --prune >/dev/null 2>&1 || true
         local highest_branch=$(get_highest_from_branches "$scope_prefix")
     fi
 
