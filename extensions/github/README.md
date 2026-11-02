@@ -126,12 +126,18 @@ Conversion behavior is unchanged: the same feature resolution, the same `plan.md
 ### Presets and dependent extensions
 
 Audit references to `speckit.taskstoissues`
-in presets, extension prompts, workflow steps, handoffs, and project automation.
+in presets, extension prompts, workflow steps, handoffs, hook `command` bindings,
+and project automation.
 For GitHub issue conversion, use the canonical `speckit.github.taskstoissues`
 command ID and render it with the agent-specific syntax under [Commands](#commands).
 Replace `__SPECKIT_COMMAND_TASKSTOISSUES__` cross-command references with
 `__SPECKIT_COMMAND_GITHUB_TASKSTOISSUES__` where template rendering is supported.
 Document `specify extension add github` as a setup prerequisite.
+
+Keep the `before_taskstoissues` and `after_taskstoissues` event keys unchanged;
+the extension still consumes them. Update a hook's `command` binding only if it
+invokes the removed `speckit.taskstoissues` command, not merely because the hook
+uses one of those event keys.
 
 If an extension proposal or external dependency declaration uses
 `requires.commands: [speckit.taskstoissues]`, update its target to
