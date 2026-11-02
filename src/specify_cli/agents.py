@@ -806,11 +806,6 @@ class CommandRegistrar:
                     frontmatter, body, source_id=source_id
                 )
 
-            if _integ is not None:
-                frontmatter, body = _integ.process_registered_command(
-                    frontmatter, body, source_id=source_id
-                )
-
             body = self._convert_argument_placeholder(
                 body, "$ARGUMENTS", agent_config["args"]
             )
