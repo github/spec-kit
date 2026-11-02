@@ -2035,6 +2035,88 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
         return manager
 
+    _ALIAS = "speckit.custom-short"
+
+    def _alias_skill(self, project_dir):
+        return project_dir / ".claude" / "skills" / "speckit-custom-short" / "SKILL.md"
+
+    def test_remove_sole_base_retires_composer_alias_skill(self, project_dir, temp_dir):
+        """A composer's native alias goes with its primary when no base is left,
+        and a rescaffold does not render the removed base's text back into it."""
+        from specify_cli.integrations._file_changes import file_change_observer
+
+        manager = self._install_custom_layers(project_dir, temp_dir, alias=self._ALIAS)
+        alias_file = self._alias_skill(project_dir)
+        assert "Base preset body" in alias_file.read_text(encoding="utf-8")
+        events = []
+        token = file_change_observer.set(
+            lambda path, before, removal: events.append((path, before, removal))
+        )
+        try:
+            with pytest.warns(UserWarning, match="no base layer"):
+                assert manager.remove("base-preset") is True
+        finally:
+            file_change_observer.reset(token)
+
+        assert not alias_file.parent.exists()
+        assert (alias_file.parent, True, True) in events
+        with pytest.warns(UserWarning, match="no base layer"):
+            manager.register_enabled_presets_for_agent("claude")
+        assert not alias_file.parent.exists()
+
+    def test_remove_base_recomposes_composer_alias_skill(self, project_dir, temp_dir):
+        """With a core fallback, the alias is recomposed on removal exactly as a
+        rescaffold would render it."""
+        manager = self._install_custom_layers(
+            project_dir, temp_dir, core=True, alias=self._ALIAS
+        )
+        alias_file = self._alias_skill(project_dir)
+
+        assert manager.remove("base-preset") is True
+
+        after_remove = alias_file.read_text(encoding="utf-8")
+        assert "Base preset body" not in after_remove
+        assert "Core custom body" in after_remove
+        assert "Appended body" in after_remove
+        manager.register_enabled_presets_for_agent("claude")
+        assert alias_file.read_text(encoding="utf-8") == after_remove
+
+        # The alias stays tracked as the composer's command output, so
+        # removing the composer after the rescaffold still cleans it up.
+        assert manager.remove("append-preset") is True
+        assert not alias_file.parent.exists()
+
+    def test_new_base_restores_retired_composer_alias_skill(self, project_dir, temp_dir):
+        """An alias retired with its base comes back with its primary once a new
+        base makes the command composable again."""
+        manager = self._install_custom_layers(project_dir, temp_dir, alias=self._ALIAS)
+        alias_file = self._alias_skill(project_dir)
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+        assert not alias_file.parent.exists()
+
+        new_base = self._create_command_preset(
+            temp_dir, "new-base", "speckit.custom", "new-base", "New base body"
+        )
+        manager.install_from_directory(new_base, "0.1.5", priority=10)
+
+        restored = alias_file.read_text(encoding="utf-8")
+        assert "New base body" in restored and "Appended body" in restored
+        assert "Base preset body" not in restored
+        assert "source: append-preset:" in restored
+
+    def test_remove_sole_base_keeps_hand_edited_alias_skill(self, project_dir, temp_dir):
+        manager = self._install_custom_layers(project_dir, temp_dir, alias=self._ALIAS)
+        alias_file = self._alias_skill(project_dir)
+        edited = "---\nname: speckit-custom-short\n---\n\nUser-owned body\n"
+        alias_file.write_text(edited, encoding="utf-8")
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+
+        assert alias_file.read_text(encoding="utf-8") == edited
+
+
     @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
     def test_remove_base_reconciles_skill_owned_by_lower_survivor_in_historical_dir(
         self, project_dir, temp_dir, core
