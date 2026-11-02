@@ -162,9 +162,14 @@ function Get-NextBranchNumber {
         $highestRemote = Get-HighestNumberFromRemoteRefs -ScopePrefix $ScopePrefix
         $highestBranch = [Math]::Max($highestBranch, $highestRemote)
     } else {
+        $previousTerminalPrompt = $env:GIT_TERMINAL_PROMPT
         try {
+            $env:GIT_TERMINAL_PROMPT = '0'
             git fetch --all --prune 2>$null | Out-Null
-        } catch { }
+        } catch {
+        } finally {
+            $env:GIT_TERMINAL_PROMPT = $previousTerminalPrompt
+        }
         $highestBranch = Get-HighestNumberFromBranches -ScopePrefix $ScopePrefix
     }
 

@@ -3,7 +3,7 @@
 Validates:
 - Bundled layout (manifest, README, command file, script twins)
 - Catalog registration and wheel/source resolution via ``_locate_bundled_extension``
-- Manifest validation, including that no alias claims the core command name
+- Manifest validation, including no legacy compatibility aliases
 - Install/uninstall through ``ExtensionManager``
 - Rendered command artifacts across command mode and skills mode, and in
   particular that ``{SCRIPT}`` resolves to a script the extension actually
@@ -36,13 +36,12 @@ from tests.parity_helpers import (
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "github"
-CORE_COMMAND = PROJECT_ROOT / "templates" / "commands" / "taskstoissues.md"
 
 # A Spec Kit version that satisfies the manifest floor. Installs are
 # refused below it, so this cannot be an arbitrary synthetic value.
-INSTALL_SPECKIT_VERSION = "1.2.6.dev0"
+INSTALL_SPECKIT_VERSION = "1.2.7.dev0"
 # Hook placeholders and dispatcher installation first ship with this CLI release.
-MIN_SPECKIT_VERSION = "1.2.6.dev0"
+MIN_SPECKIT_VERSION = "1.2.7.dev0"
 
 COMMAND_NAME = "speckit.github.taskstoissues"
 COMMAND_FILE = EXT_DIR / "commands" / f"{COMMAND_NAME}.md"
@@ -160,25 +159,20 @@ class TestManifest:
         assert m.version == "1.0.5"
         assert [c["name"] for c in m.commands] == [COMMAND_NAME]
 
+    def test_manifest_does_not_restore_legacy_alias(self):
+        from specify_cli.extensions import ExtensionManifest
+
+        manifest = ExtensionManifest(EXT_DIR / "extension.yml")
+        for command in manifest.commands:
+            assert command["name"] != "speckit.taskstoissues"
+            assert not command.get("aliases")
+
     def test_manifest_command_files_exist(self):
         from specify_cli.extensions import ExtensionManifest
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         for cmd in m.commands:
             assert (EXT_DIR / cmd["file"]).is_file()
-
-    def test_no_alias_claims_the_core_command(self):
-        """Stage 1 keeps the core command; nothing here may shadow it.
-
-        Alias names are not pattern-checked and the core-namespace guard
-        applies to primary names only, so this is author discipline that a
-        test has to hold in place.
-        """
-        from specify_cli.extensions import ExtensionManifest
-
-        m = ExtensionManifest(EXT_DIR / "extension.yml")
-        aliases = [a for cmd in m.commands for a in cmd.get("aliases", []) or []]
-        assert aliases == []
 
     def test_declares_its_mandatory_external_tools(self):
         """The command runs ``git config`` and needs the GitHub MCP tools."""
@@ -193,8 +187,8 @@ class TestManifest:
         but auto-registered skills did not resolve ``__SPECKIT_COMMAND_*__``
         tokens until 0.12.17 (#3544). Versions through 0.12.16 therefore
         accept the extension but leak a raw command token in skills mode.
-        Hook placeholders and dispatcher installation require 1.2.6 or later;
-        released clients through 1.2.5 cannot run its hook commands.
+        Hook placeholders and dispatcher installation require 1.2.7 or later;
+        released clients through 1.2.6 cannot run its hook commands.
         """
         from packaging.specifiers import SpecifierSet
 
@@ -204,14 +198,10 @@ class TestManifest:
         assert "0.12.16" not in spec, floor
         assert "1.1.2" not in spec, floor
         assert "1.2.5" not in spec, floor
+        assert "1.2.6" not in spec, floor
         assert MIN_SPECKIT_VERSION in spec, floor
         # And the version the install tests use must satisfy it.
         assert INSTALL_SPECKIT_VERSION in spec, floor
-
-    def test_core_command_remains_unchanged(self):
-        """Stage 1 is additive: the core command still ships."""
-        assert CORE_COMMAND.is_file()
-
 
 # -- Install / uninstall ------------------------------------------------------
 
@@ -252,8 +242,8 @@ class TestExtensionInstall:
         commands_dir = project / ".myagent" / "commands"
         commands_dir.mkdir(parents=True)
         core = commands_dir / (
-            "speckit-taskstoissues/SKILL.md"
-            if skills_mode else "speckit.taskstoissues.md"
+            "speckit-tasks/SKILL.md"
+            if skills_mode else "speckit.tasks.md"
         )
         core.parent.mkdir(parents=True, exist_ok=True)
         core.write_text("core command remains unchanged\n", encoding="utf-8")
@@ -394,12 +384,12 @@ class TestExtensionInstall:
                     f".github/agents/{COMMAND_NAME}.agent.md",
                     f".github/prompts/{COMMAND_NAME}.prompt.md",
                 ],
-                ".github/agents/speckit.taskstoissues.agent.md",
+                ".github/agents/speckit.tasks.agent.md",
             ),
             (
                 "claude",
                 [".claude/skills/speckit-github-taskstoissues/SKILL.md"],
-                ".claude/skills/speckit-taskstoissues/SKILL.md",
+                ".claude/skills/speckit-tasks/SKILL.md",
             ),
         ],
         ids=["command-mode", "skills-mode"],
@@ -419,7 +409,7 @@ class TestExtensionInstall:
         )
         core = tmp_path / core_artifact
         core.parent.mkdir(parents=True)
-        core.write_text("core taskstoissues\n", encoding="utf-8")
+        core.write_text("core tasks\n", encoding="utf-8")
 
         manager = ExtensionManager(tmp_path)
         manager.install_from_directory(
@@ -432,7 +422,7 @@ class TestExtensionInstall:
 
         for rel_path in extension_artifacts:
             assert not (tmp_path / rel_path).exists(), f"Left behind: {rel_path}"
-        assert core.read_text(encoding="utf-8") == "core taskstoissues\n"
+        assert core.read_text(encoding="utf-8") == "core tasks\n"
 
 
 # -- Rendered command artifacts -----------------------------------------------
@@ -609,7 +599,7 @@ class TestScriptPathResolution:
             assert f".specify/extensions/github/scripts/bash/{phase}-hooks.sh" not in content
 
 
-# -- Behaviour parity with the core command -----------------------------------
+# -- Preserved conversion contracts ------------------------------------------
 
 
 class TestCommandBody:
@@ -682,45 +672,6 @@ class TestCommandBody:
         assert "Stop paginating as soon as every task ID has been matched" in body
         # Four-digit and longer task IDs must still match.
         assert r"\bT\d{3,}\b" in body
-
-    def test_body_differs_from_core_only_in_deprecation_and_script_invocation(self):
-        """Behaviour parity, enforced as a diff rather than as spot checks.
-
-        Apart from core-only deprecation metadata and notice, everything except
-        the ``scripts:`` frontmatter and the two lines that read the new ``TASKS``
-        value must match verbatim, so the two cannot silently drift while both exist.
-        """
-        import difflib
-
-        core_text = CORE_COMMAND.read_text(encoding="utf-8")
-        before_notice, notice_and_workflow = core_text.split("## Deprecation Notice\n", 1)
-        _, workflow = notice_and_workflow.split("## User Input", 1)
-        core = (before_notice + "## User Input" + workflow).splitlines()
-        ext = COMMAND_FILE.read_text(encoding="utf-8").splitlines()
-        core_description = yaml.safe_load(core[1])["description"]
-        ext_description = yaml.safe_load(ext[1])["description"]
-        assert core_description == "Deprecated: " + ext_description
-        core[1] = ext[1]
-        changed = [
-            line
-            for line in difflib.unified_diff(core, ext, n=0)
-            if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
-        ]
-
-        # 3 script lines + 2 outline lines, each as one removal and one addition.
-        assert len(changed) == 10, "\n".join(changed)
-
-        markers = (
-            "check-prerequisites",
-            "check_prerequisites",
-            "resolve-tasks",
-            "resolve_tasks",
-            "AVAILABLE_DOCS",
-            "path to **tasks**",
-        )
-        assert all(
-            any(marker in line for marker in markers) for line in changed
-        ), "\n".join(changed)
 
     def test_uses_the_portable_command_reference_token(self):
         """A literal invocation would be correct for exactly one agent."""

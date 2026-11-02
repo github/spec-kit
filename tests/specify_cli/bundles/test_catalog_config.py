@@ -1,6 +1,7 @@
 """Unit tests for project catalog-config id derivation and url canonicalization."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -70,6 +71,28 @@ def test_add_source_persists_absolute_local_path(tmp_path: Path, monkeypatch):
     assert status == "added"
     assert Path(source.url).is_absolute()
     assert Path(source.url) == catalog.resolve()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX path rewriting regression")
+@pytest.mark.parametrize("url", [r"C:\catalog.json", "C:/catalog.json"])
+def test_add_source_preserves_foreign_windows_drive_path(tmp_path: Path, url: str):
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    source, status = cc.add_source(
+        project, url, policy="install-allowed", priority=50
+    )
+
+    assert status == "added"
+    assert source.url == url
+    assert cc._read(project)[0]["url"] == url
+    repeated, status = cc.add_source(
+        project, url, policy="install-allowed", priority=50
+    )
+    assert status == "unchanged"
+    assert repeated.url == url
+    cc.remove_source(project, url)
+    assert cc._read(project) == []
 
 
 def test_add_source_normalizes_existing_entry_for_idempotency(tmp_path: Path):

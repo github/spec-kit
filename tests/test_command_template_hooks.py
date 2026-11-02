@@ -11,7 +11,7 @@ ROOT = Path(__file__).parent.parent
 TEMPLATES = ROOT / "templates" / "commands"
 NAMES = (
     "analyze", "checklist", "clarify", "constitution", "converge",
-    "implement", "plan", "specify", "tasks", "taskstoissues",
+    "implement", "plan", "specify", "tasks",
 )
 
 

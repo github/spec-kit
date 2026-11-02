@@ -99,7 +99,7 @@ def test_all_hook_templates_default_to_model_led_resolution():
         assert content.count("**Deterministic mode (explicit opt-in only):**") == 2, path
         for phase in ("before", "after"):
             assert f"read `hooks.{phase}_" in content, path
-    assert checked == 11
+    assert checked == 10
 
 
 @pytest.mark.parametrize("variant", ["sh", "ps", "py", "ps51"])
