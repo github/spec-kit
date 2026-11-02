@@ -107,6 +107,9 @@ installed**, and use the namespaced command instead:
 specify extension add github
 ```
 
+If `github` is already installed but disabled, run `specify extension enable github`
+before selecting the intended integration below.
+
 An already-installed, enabled extension is re-registered when upgrading the
 default integration only. Before using the replacement in a non-default
 integration, run `specify integration use <integration>` to select it and register
