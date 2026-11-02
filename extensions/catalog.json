@@ -51,7 +51,7 @@
     "git": {
       "name": "Git Branching Workflow",
       "id": "git",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "description": "Feature branch creation, numbering (sequential/timestamp), validation, and Git remote detection",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
