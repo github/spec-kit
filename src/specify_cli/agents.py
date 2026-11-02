@@ -92,80 +92,6 @@ class CommandRegistrar:
             except ImportError:
                 pass  # Circular import during module init; retry on next access
 
-    _SPECKIT_DOTTED_REF = re.compile(r"\bspeckit\.[A-Za-z0-9-_]+(?:\.[A-Za-z0-9-_]+)*\b")
-
-    @staticmethod
-    def _hyphenate_ref_match(match: "re.Match[str]") -> str:
-        """Hyphenate one dotted speckit reference, leaving ``.md`` file names alone.
-
-        Command names may themselves end in an ``md`` segment: extension
-        commands are ``speckit.<extension>.<command>`` and preset command names
-        may contain further dots, so ``/speckit.foo.md`` and
-        ``speckit.foo.bar.md`` can both be valid command references.  The
-        ``.md`` suffix and the segment count therefore cannot tell a file name
-        apart from a command.  A ``.md`` token is kept as a file name only when
-        it sits inside a path (``commands/speckit.git.commit.md``), that is,
-        when the separator before it follows a path-name character or a Windows
-        drive (``C:\\speckit.foo.md``, ``C:/speckit.foo.md``).  A bare or
-        slash-prefixed token is treated as a command reference, whatever
-        punctuation precedes the slash (``[/speckit.foo.md]``,
-        ``(/speckit.foo.md)``).
-        """
-        ref = match.group(0)
-        if ref.endswith(".md"):
-            start = match.start()
-            text = match.string
-            if start >= 2 and text[start - 1] in "/\\" and (
-                CommandRegistrar._is_path_char(text[start - 2])
-                or CommandRegistrar._is_drive_prefix(text, start - 1)
-            ):
-                return ref
-        return ref.replace(".", "-")
-
-    @staticmethod
-    def _is_drive_prefix(text: str, sep: int) -> bool:
-        """Whether a Windows drive (``C:``) ends right before the separator at *sep*.
-
-        The drive letter must stand alone, so ``C:\\speckit.foo.md`` and
-        ``C:/speckit.foo.md`` count as root-level paths while ``ab:/speckit.foo.md``
-        does not.
-        """
-        return (
-            sep >= 2
-            and text[sep - 1] == ":"
-            and text[sep - 2].isascii()
-            and text[sep - 2].isalpha()
-            and (sep == 2 or not CommandRegistrar._is_path_char(text[sep - 3]))
-        )
-
-    @staticmethod
-    def _is_path_char(ch: str) -> bool:
-        """Whether *ch* can end the directory part of a path before a separator."""
-        return ch.isalnum() or ch in "._-~/\\}$"
-
-    @staticmethod
-    def _hyphenate_frontmatter_refs(val: Any) -> Any:
-        """Recursively find any dotted references starting with speckit. and hyphenate them."""
-        if isinstance(val, dict):
-            return {
-                k: CommandRegistrar._hyphenate_frontmatter_refs(v)
-                for k, v in val.items()
-            }
-        elif isinstance(val, list):
-            return [CommandRegistrar._hyphenate_frontmatter_refs(x) for x in val]
-        elif isinstance(val, str):
-            return CommandRegistrar._SPECKIT_DOTTED_REF.sub(
-                CommandRegistrar._hyphenate_ref_match, val
-            )
-        return val
-
-    @staticmethod
-    def _hyphenate_body_refs(body: str) -> str:
-        """Hyphenate dotted speckit references in command body text."""
-        return CommandRegistrar._SPECKIT_DOTTED_REF.sub(
-            CommandRegistrar._hyphenate_ref_match, body
-        )
-
     @staticmethod
     def parse_frontmatter(content: str) -> tuple[dict, str]:
         """Parse YAML frontmatter from Markdown content.
@@ -762,7 +688,6 @@ class CommandRegistrar:
         commands_dir.mkdir(parents=True, exist_ok=True)
 
         registered = []
-        is_cline_ext = agent_name == "cline" and source_id != "core"
         source_root = source_dir.resolve()
 
         # Resolve the command-reference separator for the file THIS registrar
@@ -875,10 +800,6 @@ class CommandRegistrar:
                 # Use custom name formatter if provided (e.g., Forge's hyphenated format)
                 format_name = agent_config.get("format_name")
                 frontmatter["name"] = format_name(cmd_name) if format_name else cmd_name
-
-            if is_cline_ext:
-                frontmatter = self._hyphenate_frontmatter_refs(frontmatter)
-                body = self._hyphenate_body_refs(body)
 
             if _integ is not None:
                 frontmatter, body = _integ.process_registered_command(

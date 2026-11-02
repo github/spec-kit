@@ -50,6 +50,74 @@ def format_cline_command_name(cmd_name: str) -> str:
     return cmd_name
 
 
+# Dotted ``speckit.*`` references in extension and preset command content.
+_SPECKIT_DOTTED_REF = re.compile(r"\bspeckit\.[A-Za-z0-9-_]+(?:\.[A-Za-z0-9-_]+)*\b")
+
+
+def _is_path_char(ch: str) -> bool:
+    """Whether *ch* can end the directory part of a path before a separator."""
+    return ch.isalnum() or ch in "._-~/\\}$"
+
+
+def _is_drive_prefix(text: str, sep: int) -> bool:
+    """Whether a Windows drive (``C:``) ends right before the separator at *sep*.
+
+    The drive letter must stand alone, so ``C:\\speckit.foo.md`` and
+    ``C:/speckit.foo.md`` count as root-level paths while ``ab:/speckit.foo.md``
+    does not.
+    """
+    return (
+        sep >= 2
+        and text[sep - 1] == ":"
+        and text[sep - 2].isascii()
+        and text[sep - 2].isalpha()
+        and (sep == 2 or not _is_path_char(text[sep - 3]))
+    )
+
+
+def _hyphenate_ref_match(match: re.Match[str]) -> str:
+    """Hyphenate one dotted speckit reference, leaving ``.md`` file names alone.
+
+    Command names may themselves end in an ``md`` segment: extension
+    commands are ``speckit.<extension>.<command>`` and preset command names
+    may contain further dots, so ``/speckit.foo.md`` and
+    ``speckit.foo.bar.md`` can both be valid command references.  The
+    ``.md`` suffix and the segment count therefore cannot tell a file name
+    apart from a command.  A ``.md`` token is kept as a file name only when
+    it sits inside a path (``commands/speckit.git.commit.md``), that is,
+    when the separator before it follows a path-name character or a Windows
+    drive (``C:\\speckit.foo.md``, ``C:/speckit.foo.md``).  A bare or
+    slash-prefixed token is treated as a command reference, whatever
+    punctuation precedes the slash (``[/speckit.foo.md]``,
+    ``(/speckit.foo.md)``).
+    """
+    ref = match.group(0)
+    if ref.endswith(".md"):
+        start = match.start()
+        text = match.string
+        if start >= 2 and text[start - 1] in "/\\" and (
+            _is_path_char(text[start - 2]) or _is_drive_prefix(text, start - 1)
+        ):
+            return ref
+    return ref.replace(".", "-")
+
+
+def hyphenate_command_refs(text: str) -> str:
+    """Hyphenate dotted ``speckit.*`` command references in *text*."""
+    return _SPECKIT_DOTTED_REF.sub(_hyphenate_ref_match, text)
+
+
+def _hyphenate_frontmatter_refs(val: Any) -> Any:
+    """Recursively hyphenate dotted ``speckit.*`` references in frontmatter values."""
+    if isinstance(val, dict):
+        return {k: _hyphenate_frontmatter_refs(v) for k, v in val.items()}
+    if isinstance(val, list):
+        return [_hyphenate_frontmatter_refs(x) for x in val]
+    if isinstance(val, str):
+        return hyphenate_command_refs(val)
+    return val
+
+
 class ClineIntegration(MarkdownIntegration):
     """Integration for Cline IDE."""
 
@@ -153,6 +221,22 @@ class ClineIntegration(MarkdownIntegration):
             lambda m: f"{m.group(1)}{format_cline_command_name(m.group(2))}",
             content,
         )
+
+    def process_registered_command(
+        self, frontmatter: dict[str, Any], body: str, *, source_id: str
+    ) -> tuple[dict[str, Any], str]:
+        """Hyphenate dotted command references in extension and preset commands.
+
+        Cline only registers hyphenated slash commands, so references such as
+        ``/speckit.git.commit`` in extension and preset command content are
+        rewritten to ``/speckit-git-commit``.  ``speckit.*.md`` file names
+        inside a path keep their extension.  Core commands (``source_id ==
+        "core"``) are left unchanged; their references are rendered through
+        ``invoke_separator`` instead.
+        """
+        if source_id == "core":
+            return frontmatter, body
+        return _hyphenate_frontmatter_refs(frontmatter), hyphenate_command_refs(body)
 
     def post_process_command_content(self, content: str) -> str:
         """Apply Cline-specific transformations to command content.
