@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import io
 import json
 import locale
@@ -13,6 +14,37 @@ from typing import Any
 
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
+
+
+def _read_text(data: bytes, encoding: str) -> str:
+    # TextIOWrapper applies the same universal-newline translation as text=True.
+    with io.TextIOWrapper(io.BytesIO(data), encoding=encoding) as stream:
+        return stream.read()
+
+
+def _decode_output(data: bytes, encoding: str) -> str:
+    """Decode captured output with *encoding*, as ``text=True`` would.
+
+    In Python's UTF-8 mode (``PYTHONUTF8=1``, and the default from Python 3.15)
+    the preferred encoding is always UTF-8, but cmd.exe and other native
+    programs still write in the locale code page, e.g. cp936 on Chinese
+    Windows. If the output is not valid in *encoding*, retry with the locale
+    encoding that ``text=True`` used outside UTF-8 mode.
+    """
+    try:
+        return _read_text(data, encoding)
+    except UnicodeDecodeError as exc:
+        fallback = locale.getencoding()
+        try:
+            same = codecs.lookup(fallback).name == codecs.lookup(encoding).name
+        except LookupError:
+            same = True
+        if same:
+            raise
+        try:
+            return _read_text(data, fallback)
+        except UnicodeDecodeError:
+            raise exc from None
 
 
 class ShellStep(StepBase):
@@ -97,8 +129,7 @@ class ShellStep(StepBase):
             decode_errors = []
             for name in ("stdout", "stderr"):
                 try:
-                    with io.TextIOWrapper(io.BytesIO(getattr(proc, name)), encoding=encoding) as stream:
-                        output[name] = stream.read()
+                    output[name] = _decode_output(getattr(proc, name), encoding)
                 except UnicodeDecodeError as exc:
                     decode_errors.append(f"Shell command {name} could not be decoded: {exc}")
             if decode_errors:
