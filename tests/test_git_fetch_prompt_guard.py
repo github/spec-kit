@@ -78,9 +78,46 @@ def test_python_fetch_disables_terminal_prompt(tmp_path, monkeypatch):
     assert fetch_calls[0][1]["env"]["GIT_TERMINAL_PROMPT"] == "0"
 
 
+def _install_scripts(repo: Path) -> Path:
+    """Install the extension scripts inside the temp project.
+
+    The scripts resolve their project root from their own location, so running
+    the checkout's copy would make them create a branch in this repository
+    instead of the temp project.
+
+    Args:
+        repo: Temporary project root.
+
+    Returns:
+        The temp project root, with ``.specify/scripts`` populated.
+    """
+    layout = {
+        "bash": (
+            PROJECT_ROOT / "scripts" / "bash" / "common.sh",
+            EXT_SCRIPTS / "bash" / "git-common.sh",
+            EXT_SCRIPTS / "bash" / "create-new-feature-branch.sh",
+        ),
+        "powershell": (
+            PROJECT_ROOT / "scripts" / "powershell" / "common.ps1",
+            EXT_SCRIPTS / "powershell" / "git-common.ps1",
+            EXT_SCRIPTS / "powershell" / "create-new-feature-branch.ps1",
+        ),
+        "python": (PROJECT_ROOT / "scripts" / "python" / "common.py",),
+    }
+    for flavor, sources in layout.items():
+        target = repo / ".specify" / "scripts" / flavor
+        target.mkdir(parents=True)
+        for source in sources:
+            if source.is_file():
+                shutil.copy(source, target / source.name)
+    return repo
+
+
 @requires_bash
 def test_bash_fetch_disables_terminal_prompt(tmp_path):
     _init_repo(tmp_path)
+    _install_scripts(tmp_path)
+    script = tmp_path / ".specify" / "scripts" / "bash" / "create-new-feature-branch.sh"
     log = tmp_path / "prompt.log"
     harness = tmp_path / "harness.sh"
     harness.write_text(
@@ -93,11 +130,11 @@ def test_bash_fetch_disables_terminal_prompt(tmp_path):
         '  command git "$@"\n'
         "}\n"
         "export -f git\n"
-        f'exec bash "{BASH_SCRIPT.as_posix()}" --short-name probe-fetch-guard "fetch guard"\n',
+        f'exec bash "{script.as_posix()}" --short-name probe-fetch-guard "fetch guard"\n',
         encoding="utf-8",
     )
 
-    _run(["bash", str(harness)], cwd=tmp_path, log=log)
+    _run(["bash", harness.as_posix()], cwd=tmp_path, log=log)
 
     assert log.read_text(encoding="utf-8") == "0"
 
@@ -105,6 +142,10 @@ def test_bash_fetch_disables_terminal_prompt(tmp_path):
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh is not available")
 def test_powershell_fetch_disables_terminal_prompt(tmp_path):
     _init_repo(tmp_path)
+    _install_scripts(tmp_path)
+    script = (
+        tmp_path / ".specify" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
+    )
     log = tmp_path / "prompt.log"
     harness = tmp_path / "harness.ps1"
     harness.write_text(
@@ -116,7 +157,7 @@ def test_powershell_fetch_disables_terminal_prompt(tmp_path):
         "  $real = (Get-Command git.exe -CommandType Application).Source\n"
         "  & $real @args\n"
         "}\n"
-        f". '{PS1_SCRIPT}' -ShortName 'probe-fetch-guard' 'fetch guard'\n",
+        f". '{script}' -ShortName 'probe-fetch-guard' 'fetch guard'\n",
         encoding="utf-8",
     )
 
