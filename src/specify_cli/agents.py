@@ -105,7 +105,8 @@ class CommandRegistrar:
         ``.md`` suffix and the segment count therefore cannot tell a file name
         apart from a command.  A ``.md`` token is kept as a file name only when
         it sits inside a path (``commands/speckit.git.commit.md``), that is,
-        when the separator before it follows a path-name character.  A bare or
+        when the separator before it follows a path-name character or a Windows
+        drive (``C:\\speckit.foo.md``, ``C:/speckit.foo.md``).  A bare or
         slash-prefixed token is treated as a command reference, whatever
         punctuation precedes the slash (``[/speckit.foo.md]``,
         ``(/speckit.foo.md)``).
@@ -114,13 +115,28 @@ class CommandRegistrar:
         if ref.endswith(".md"):
             start = match.start()
             text = match.string
-            if (
-                start >= 2
-                and text[start - 1] in "/\\"
-                and CommandRegistrar._is_path_char(text[start - 2])
+            if start >= 2 and text[start - 1] in "/\\" and (
+                CommandRegistrar._is_path_char(text[start - 2])
+                or CommandRegistrar._is_drive_prefix(text, start - 1)
             ):
                 return ref
         return ref.replace(".", "-")
+
+    @staticmethod
+    def _is_drive_prefix(text: str, sep: int) -> bool:
+        """Whether a Windows drive (``C:``) ends right before the separator at *sep*.
+
+        The drive letter must stand alone, so ``C:\\speckit.foo.md`` and
+        ``C:/speckit.foo.md`` count as root-level paths while ``ab:/speckit.foo.md``
+        does not.
+        """
+        return (
+            sep >= 2
+            and text[sep - 1] == ":"
+            and text[sep - 2].isascii()
+            and text[sep - 2].isalpha()
+            and (sep == 2 or not CommandRegistrar._is_path_char(text[sep - 3]))
+        )
 
     @staticmethod
     def _is_path_char(ch: str) -> bool:

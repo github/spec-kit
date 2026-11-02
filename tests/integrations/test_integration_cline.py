@@ -146,6 +146,23 @@ class TestClineIntegration(MarkdownIntegrationTests):
         )
         assert refs == {"next": "[/speckit-foo-md]", "file": "[commands/speckit.foo.md]"}
 
+    def test_cline_refs_keep_md_file_names_at_a_windows_drive_root(self):
+        """``C:\\speckit.foo.md`` and ``C:/speckit.foo.md`` are file names, not commands."""
+        from specify_cli.agents import CommandRegistrar
+
+        body = (
+            "Open C:\\speckit.foo.md or d:/speckit.foo.md, "
+            "then run /speckit.foo.md or ab:/speckit.foo.md."
+        )
+        assert CommandRegistrar._hyphenate_body_refs(body) == (
+            "Open C:\\speckit.foo.md or d:/speckit.foo.md, "
+            "then run /speckit-foo-md or ab:/speckit-foo-md."
+        )
+        refs = CommandRegistrar._hyphenate_frontmatter_refs(
+            {"file": "C:\\speckit.foo.md", "other": "C:/speckit.foo.md"}
+        )
+        assert refs == {"file": "C:\\speckit.foo.md", "other": "C:/speckit.foo.md"}
+
     def test_cline_frontmatter_refs_keep_md_file_names(self):
         """Frontmatter string values get the same ``.md`` file name protection."""
         from specify_cli.agents import CommandRegistrar
