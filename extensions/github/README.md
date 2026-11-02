@@ -108,7 +108,8 @@ specify extension add github
 ```
 
 If `github` is already installed but disabled, run `specify extension enable github`
-before selecting the intended integration below.
+followed by `specify integration use <integration>` to register its commands,
+even when that integration is already the default.
 
 An already-installed, enabled extension is re-registered when upgrading the
 default integration only. Before using the replacement in a non-default
