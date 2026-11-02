@@ -472,6 +472,50 @@ def test_valid_unicode_output_is_preserved(project_dir, utf8_locale, output_form
         assert "data" not in result.output
 
 
+@pytest.fixture
+def utf8_mode_code_page_locale(monkeypatch):
+    """Python's UTF-8 mode on a system whose code page is cp936."""
+    monkeypatch.setattr(locale, "getpreferredencoding", lambda do_setlocale=True: "utf-8")
+    monkeypatch.setattr(locale, "getencoding", lambda: "cp936")
+
+
+@pytest.mark.parametrize("output_format", [None, "json"], ids=["text", "json"])
+def test_code_page_output_is_decoded_in_utf8_mode(project_dir, utf8_mode_code_page_locale, output_format):
+    # cmd.exe and other native programs write in the code page even when
+    # Python runs in UTF-8 mode (the default from Python 3.15).
+    stdout = '{"message": "\u5b8c\u6210"}\r\n'
+    stderr = "\u8b66\u544a\r\n"
+    run = _python_run(
+        project_dir,
+        f"import os\nos.write(1, {stdout.encode('cp936')!r})\n"
+        f"os.write(2, {stderr.encode('cp936')!r})\n",
+    )
+    config = {"id": "code-page-output", "type": "shell", "run": run}
+    if output_format is not None:
+        config["output_format"] = output_format
+
+    result = ShellStep().execute(config, StepContext(project_root=str(project_dir)))
+
+    assert result.status == StepStatus.COMPLETED
+    assert result.error is None
+    assert result.output["stdout"] == '{"message": "\u5b8c\u6210"}\n'
+    assert result.output["stderr"] == "\u8b66\u544a\n"
+    if output_format == "json":
+        assert result.output["data"] == {"message": "\u5b8c\u6210"}
+
+
+def test_output_invalid_in_code_page_too_fails_step(project_dir, utf8_mode_code_page_locale):
+    run = _python_run(project_dir, "import os\nos.write(1, b'\\xff')\n")
+    config = {"id": "invalid-output", "type": "shell", "run": run}
+
+    result = ShellStep().execute(config, StepContext(project_root=str(project_dir)))
+
+    assert result.status == StepStatus.FAILED
+    assert "stdout could not be decoded" in result.error
+    assert "utf-8" in result.error
+    assert result.output["stdout"] == ""
+
+
 @pytest.mark.parametrize("continue_on_error", [False, True], ids=["halt", "continue"])
 def test_decoding_failure_respects_continue_on_error(project_dir, utf8_locale, continue_on_error):
     run = _python_run(project_dir, "import os\nos.write(1, bytes([255]))\n")
