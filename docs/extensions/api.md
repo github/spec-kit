@@ -9,7 +9,7 @@ Technical reference for Spec Kit extension system APIs and manifest schema.
 3. [Command File Format](#command-file-format)
 4. [Configuration Schema](#configuration-schema)
 5. [Hook System](#hook-system)
-6. [CLI Commands](#cli-commands)
+6. [Extension Runtime Events](#extension-runtime-events)
 
 ---
 
@@ -25,12 +25,12 @@ schema_version: "1.0"  # Required
 extension:
   id: string           # Required, pattern: ^[a-z0-9-]+$
   name: string         # Required, human-readable name
-  version: string      # Required, semantic version (X.Y.Z)
-  description: string  # Required, brief description (<200 chars)
-  author: string       # Required
-  repository: string   # Required, valid URL
-  license: string      # Required (e.g., "MIT", "Apache-2.0")
-  homepage: string     # Optional, valid URL
+  version: string      # Required, PEP 440 version; SemVer recommended
+  description: string  # Required, brief description
+  author: string       # Optional
+  repository: string   # Optional, source URL
+  license: string      # Optional (e.g., "MIT", "Apache-2.0")
+  homepage: string     # Optional, homepage URL
 
 requires:
   speckit_version: string  # Required, version specifier (>=X.Y.Z)
@@ -43,7 +43,7 @@ provides:
   commands:              # At least one of commands/templates/scripts/hooks/events required
     - name: string       # Required, pattern: ^speckit\.[a-z0-9-]+\.[a-z0-9-]+$
       file: string       # Required, relative path to command file
-      description: string # Required
+      description: string # Optional
 
   templates:             # Optional, array of declared templates. Always resolve
                           # as "replace" -- 'strategy' is not an authorable field here.
@@ -67,7 +67,7 @@ provides:
 hooks:                   # Optional, event hooks. Each event accepts either form below.
   event_name:            # e.g., "after_specify", "after_plan", "after_tasks", "after_implement"
     command: string      # Command to execute
-    priority: integer    # Optional, >= 1, default 10 (lower runs first)
+    priority: integer    # Optional, >= 1, default 10 (HookExecutor sort metadata)
     optional: boolean    # Default: true
     prompt: string       # Prompt text for optional hooks
     description: string  # Hook description
@@ -78,11 +78,19 @@ hooks:                   # Optional, event hooks. Each event accepts either form
     - command: string
       priority: integer
 
+events:                  # Optional, coding-agent lifecycle events
+  session_start:
+    command: string      # Command template with a runnable scripts entry
+
 tags:                    # Optional, array of tags (2-10 recommended)
   - string
 
 defaults:                # Optional, default configuration values
   key: value             # Any YAML structure
+
+config:                  # Optional, separate from provides.config
+  defaults:              # Merged over top-level defaults
+    key: value
 ```
 
 ### Field Specifications
@@ -98,10 +106,11 @@ defaults:                # Optional, default configuration values
 #### `extension.version`
 
 - **Type**: string
-- **Format**: Semantic versioning (X.Y.Z)
+- **Format**: PEP 440; `MAJOR.MINOR.PATCH` is recommended for releases
 - **Description**: Extension version
 - **Examples**: `1.0.0`, `0.9.5`, `2.1.3`
-- **Invalid**: `v1.0`, `1.0`, `1.0.0-beta`
+- **Also accepted**: `v1.0`, `1.0`, `1.0.0-beta`
+- **Invalid**: `latest`, `not-a-version`
 
 #### `requires.speckit_version`
 
@@ -112,7 +121,12 @@ defaults:                # Optional, default configuration values
   - `>=0.1.0` - Any version 0.1.0 or higher
   - `>=0.1.0,<2.0.0` - Version 0.1.x or 1.x
   - `==0.1.0` - Exactly 0.1.0
-- **Invalid**: `0.1.0`, `>= 0.1.0` (space), `latest`
+- **Also accepted**: `>= 0.1.0` (whitespace after the operator)
+- **Invalid**: `0.1.0`, `latest`
+
+Manifest loading requires a non-empty string here; the compatibility check
+parses it as a `packaging.specifiers.SpecifierSet` and checks the installed
+Spec Kit version.
 
 #### `provides.commands[].name`
 
@@ -121,7 +135,14 @@ defaults:                # Optional, default configuration values
 - **Description**: Namespaced command name
 - **Format**:  `speckit.{extension-id}.{command-name}`
 - **Examples**: `speckit.jira.specstoissues`, `speckit.linear.sync`
-- **Invalid**: `jira.specstoissues`, `speckit.command`, `speckit.jira.CreateIssues`
+- **Invalid**: `another-extension.command`, `speckit.jira.CreateIssues`
+
+Legacy two-segment names `speckit.command` and `<extension-id>.command` are
+normalized to `speckit.<extension-id>.command` with a warning. Authors should
+use canonical names rather than relying on this compatibility behavior.
+Installation also checks that primary names belong to the extension's
+namespace and rejects exact command-name or alias collisions with installed
+extensions, plus normalized output-name collisions with core commands.
 
 #### `provides.templates[].name` / `provides.scripts[].name`
 
@@ -153,7 +174,19 @@ defaults:                # Optional, default configuration values
 - **Value**: A single hook mapping, or a list of hook mappings to register multiple commands on one event
 - **Description**: Hooks that execute at lifecycle events
 - **Events**: Defined by core spec-kit commands
-- **Ordering**: Within an event, hooks run by ascending `priority` (integer ≥ 1, default 10; lower runs first; equal priorities keep authoring order via a stable sort)
+- **Ordering**: Current command templates surface hooks in configured YAML order.
+  `HookExecutor.get_hooks_for_event()` instead returns ascending `priority`
+  (integer ≥ 1, default 10), with stable authoring order for ties. See
+  [Hook configuration](#hook-configuration) for execution limitations.
+
+#### `events`
+
+- **Type**: object
+- **Keys**: Canonical coding-agent event names
+- **Value**: An event mapping referencing a runnable command
+- **Description**: Integration-agnostic declarations translated to installed
+  coding agents' native event configuration; see
+  [Extension runtime events](#extension-runtime-events).
 
 ---
 
@@ -233,15 +266,25 @@ is_installed = registry.is_installed(extension_id: str)  # bool
   "extensions": {
     "jira": {
       "version": "1.0.0",
-      "source": "catalog",
+      "source": {"kind": "catalog", "catalog": "my-org"},
       "manifest_hash": "sha256...",
       "enabled": true,
-      "registered_commands": ["speckit.jira.specstoissues", ...],
-      "installed_at": "2026-01-28T..."
+      "priority": 10,
+      "registered_commands": {
+        "claude": ["speckit.jira.specstoissues"]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-01-28T00:00:00"
     }
   }
 }
 ```
+
+`registered_commands` maps integration keys to registered command names;
+`registered_skills` records supplemental skill names. The installer stores
+`"local"` as raw local provenance, or a catalog object as shown above.
+The CLI's normalized `--json` output uses a separate
+[public source shape](cli.md#list-installed-extensions).
 
 ### ExtensionManager
 
@@ -507,19 +550,23 @@ Additional notes and tips.
 ### Frontmatter Fields
 
 ```yaml
-description: string   # Required, brief command description
+description: string   # Recommended, brief command description
 tools: [string]       # Optional, MCP tools required
 ```
 
 ### Special Variables
 
 - `$ARGUMENTS` - Placeholder for user-provided arguments
-- Extension context automatically injected:
+- Markdown command output includes extension context comments:
 
   ```markdown
   <!-- Extension: {extension-id} -->
   <!-- Config: .specify/extensions/{extension-id}/ -->
   ```
+
+Generated skills instead carry provenance in their frontmatter's
+`metadata.source` and do not automatically include these HTML comments.
+Other output formats use their integration-specific renderer.
 
 ---
 
@@ -559,14 +606,26 @@ field_mappings:
 
 ### Config Layers
 
-1. **Extension Defaults** (from `extension.yml` `defaults` section)
+1. **Extension Defaults** (top-level `defaults` merged with `config.defaults`,
+   with `config.defaults` winning on conflicts)
 2. **Project Config** (`{extension-id}-config.yml`)
-3. **Local Override** (`{extension-id}-config.local.yml`, gitignored)
+3. **Local Override** (`local-config.yml`, gitignored)
 4. **Environment Variables** (`SPECKIT_{EXTENSION}_*`)
+
+`ConfigManager` performs this merge when called; extension commands and scripts
+must use it or implement their own loading. It does not interpolate `${...}`
+strings in YAML or validate a `config_schema` field. Configuration validation
+belongs to the extension's commands or scripts.
 
 ### Environment Variable Pattern
 
 Format: `SPECKIT_{EXTENSION}_{KEY}`
+
+The extension ID is uppercased with hyphens changed to underscores. Each
+underscore-separated component after that prefix becomes a nested lowercase
+key: `SPECKIT_JIRA_PROJECT_KEY` sets `project.key`, not `project_key`.
+Environment values remain strings. When installed extension IDs have overlapping
+normalized prefixes, the longer matching extension ID owns the variable.
 
 Examples:
 
@@ -646,19 +705,65 @@ Hooks are prompts run in the same session; they reuse the resolved `BUG_SLUG` an
 
 ### Hook Configuration
 
-**In `.specify/extensions.yml`**:
+Spec Kit stores project-level extension registration and hook configuration in
+`.specify/extensions.yml`. The `installed` list records installed extension IDs,
+`settings` stores project-wide extension settings, and `hooks` groups registered
+hooks by event.
 
 ```yaml
+installed:
+  - git
+  - my-extension
+
+settings:
+  auto_execute_hooks: true
+
 hooks:
-  after_tasks:
-    - extension: jira
-      command: speckit.jira.specstoissues
+  before_implement:
+    - extension: git
+      command: speckit.git.commit
       enabled: true
       optional: true
-      prompt: "Create Jira issues from tasks?"
-      description: "..."
+      priority: 10
+      prompt: "Commit outstanding changes before implementation?"
+      description: "Auto-commit before implementation"
       condition: null
+
+  after_implement:
+    - extension: my-extension
+      command: speckit.my-extension.verify
+      enabled: true
+      optional: false
+      priority: 5
+      description: "Run verification after implementation"
 ```
+
+`auto_execute_hooks` defaults to `true`, but is reserved and is not consulted
+when hooks are surfaced or invoked.
+
+| Field | Description |
+| --- | --- |
+| `extension` | ID of the extension that registered the hook. |
+| `command` | Extension command associated with the hook. |
+| `enabled` | Whether the hook is active. Hooks with `enabled: false` are skipped. |
+| `optional` | If `true`, the hook is presented with its `prompt` and can be skipped. If `false`, it is emitted as an automatic hook with `EXECUTE_COMMAND` markers. |
+| `priority` | Integer metadata >= 1, default `10`. Current command templates use configured YAML order, not priority sorting. |
+| `prompt` | Message shown when asking whether to run an optional hook. |
+| `description` | Human-readable explanation of the hook. |
+| `condition` | Optional expression evaluated by `HookExecutor`: `config.<path>` or `env.<VAR>` with `is set`, `==`, or `!=`. Current command templates do not evaluate conditions and skip hooks with a non-empty condition. |
+
+Hook event names identify when a hook is invoked, generally using
+`before_<command>` or `after_<command>`, such as `before_implement`,
+`after_implement`, `before_tasks`, and `after_tasks`.
+
+Extension manifests reject invalid hook priorities during installation.
+For existing registrations, `HookExecutor.get_hooks_for_event()` sorts using
+`normalize_priority()`: missing values, booleans, values that `int()` rejects
+(including non-finite floats), and values less than `1` fall back to `10`.
+Numeric strings and finite floats are coerced with `int()`.
+Lower values are returned first, with stable authoring order for ties.
+Current command templates read hook lists directly instead of using that
+Python API, so they surface hooks in configured YAML order.
 
 ### Hook Message Format
 
@@ -683,129 +788,32 @@ EXECUTE_COMMAND: {command}
 
 ---
 
-## CLI Commands
+## Extension Runtime Events
 
-### extension list
+Extensions can react to coding-agent lifecycle events by declaring a top-level
+`events` mapping in `extension.yml`:
 
-**Usage**: `specify extension list [OPTIONS]`
+```yaml
+events:
+  session_start:
+    command: speckit.my-extension.initialize
+  pre_tool_use:
+    command: speckit.my-extension.validate
+```
 
-**Options**:
+Event declarations are integration-agnostic. Spec Kit refreshes every installed
+event-capable integration, and each integration translates canonical event names
+into its coding agent's native event configuration. The supported canonical
+events are `session_start`, `pre_tool_use`, `post_tool_use`,
+`user_prompt_submit`, `stop`, and `session_end`; an integration may support
+only a subset.
 
-- `--available` - Show available extensions from catalog
-- `--all` - Show both installed and available
-
-**Output**: List of installed extensions with metadata
-
-### extension catalog list
-
-**Usage**: `specify extension catalog list`
-
-Lists all active catalogs in the current catalog stack, showing name, description, URL, priority, and `install_allowed` status.
-
-### extension catalog add
-
-**Usage**: `specify extension catalog add URL [OPTIONS]`
-
-**Options**:
-
-- `--name NAME` - Catalog name (required)
-- `--priority INT` - Priority (lower = higher priority, default: 10)
-- `--install-allowed / --no-install-allowed` - Allow installs from this catalog (default: false)
-- `--description TEXT` - Optional description of the catalog
-
-**Arguments**:
-
-- `URL` - Catalog URL (must use HTTPS)
-
-Adds a catalog entry to `.specify/extension-catalogs.yml`.
-
-### extension catalog remove
-
-**Usage**: `specify extension catalog remove NAME`
-
-**Arguments**:
-
-- `NAME` - Catalog name to remove
-
-Removes a catalog entry from `.specify/extension-catalogs.yml`.
-
-### extension add
-
-**Usage**: `specify extension add EXTENSION [OPTIONS]`
-
-**Options**:
-
-- `--from URL` - Install from custom URL
-- `--dev PATH` - Install from local directory
-
-**Arguments**:
-
-- `EXTENSION` - Extension name or URL
-
-**Note**: Extensions from catalogs with `install_allowed: false` cannot be installed via this command.
-
-### extension remove
-
-**Usage**: `specify extension remove EXTENSION [OPTIONS]`
-
-**Options**:
-
-- `--keep-config` - Preserve config files
-- `--force` - Skip confirmation
-
-**Arguments**:
-
-- `EXTENSION` - Extension ID
-
-### extension search
-
-**Usage**: `specify extension search [QUERY] [OPTIONS]`
-
-Searches all active catalogs simultaneously. Results include source catalog name and install_allowed status.
-
-**Options**:
-
-- `--tag TAG` - Filter by tag
-- `--author AUTHOR` - Filter by author
-- `--verified` - Show only verified extensions
-
-**Arguments**:
-
-- `QUERY` - Optional search query
-
-### extension info
-
-**Usage**: `specify extension info EXTENSION`
-
-Shows source catalog and install_allowed status.
-
-**Arguments**:
-
-- `EXTENSION` - Extension ID
-
-### extension update
-
-**Usage**: `specify extension update [EXTENSION]`
-
-**Arguments**:
-
-- `EXTENSION` - Optional, extension ID (default: all)
-
-### extension enable
-
-**Usage**: `specify extension enable EXTENSION`
-
-**Arguments**:
-
-- `EXTENSION` - Extension ID
-
-### extension disable
-
-**Usage**: `specify extension disable EXTENSION`
-
-**Arguments**:
-
-- `EXTENSION` - Extension ID
+Runtime events are distinct from extension hooks. Events react to the coding
+agent's lifecycle and execute the referenced command template's `scripts`
+entry directly. The referenced command must therefore provide a runnable
+script; its Markdown instructions are not sent to the coding agent. Hooks
+instead surface extension commands before or after Spec Kit commands such as
+`plan`, `tasks`, and `implement`.
 
 ---
 
@@ -881,7 +889,7 @@ satisfied = version_satisfies("1.2.3", ">=1.0.0,<2.0.0")  # bool
 │   ├── {extension-id}/         # Extension directory
 │   │   ├── extension.yml       # Manifest
 │   │   ├── {ext}-config.yml    # User config
-│   │   ├── {ext}-config.local.yml  # Local overrides (gitignored)
+│   │   ├── local-config.yml    # Local overrides (gitignored)
 │   │   ├── {ext}-config.template.yml  # Template
 │   │   ├── commands/           # Command files
 │   │   │   └── *.md
@@ -889,7 +897,7 @@ satisfied = version_satisfies("1.2.3", ">=1.0.0,<2.0.0")  # bool
 │   │   │   └── *.sh
 │   │   ├── docs/               # Documentation
 │   │   └── README.md
-│   └── extensions.yml          # Project extension config
+├── extensions.yml              # Project extension config
 └── scripts/                    # (existing spec-kit)
 
 .claude/
@@ -902,3 +910,11 @@ satisfied = version_satisfies("1.2.3", ">=1.0.0,<2.0.0")  # bool
 *Last Updated: 2026-01-28*
 *API Version: 1.0*
 *Spec Kit Version: 0.1.0*
+
+## See also
+
+- [Developing extensions](developing.md)
+- [Extension CLI reference](cli.md)
+- [Extension catalogs](catalogs.md)
+- [Extension user guide](overview.md)
+- [Publishing extensions](publishing.md)

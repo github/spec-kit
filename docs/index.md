@@ -77,7 +77,7 @@ Including entirely different processes:
 - **Fiction Book Writing** — novels and long-form fiction, from story bible to submission
 
 <a href="reference/presets.md" class="pillar-link">Presets →</a>&nbsp;&nbsp;
-<a href="reference/extensions.md" class="pillar-link">Extensions →</a>&nbsp;&nbsp;
+<a href="extensions/overview.md" class="pillar-link">Extensions →</a>&nbsp;&nbsp;
 <a href="reference/workflows.md" class="pillar-link">Workflows →</a>&nbsp;&nbsp;
 <a href="reference/bundles.md" class="pillar-link">Bundles →</a>
 
