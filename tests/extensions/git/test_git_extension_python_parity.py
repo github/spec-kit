@@ -313,6 +313,20 @@ class TestCreateFeatureBranchParity:
         assert p.returncode == 0, p.stderr
         assert json.loads(p.stdout)["FEATURE_NUM"] == str(2**63 - 1)
 
+    def test_explicit_number_zero_padded_input_accepted(self, tmp_path: Path):
+        _, py_proj = _twin_projects(tmp_path)
+        p = _run_py(
+            "create-new-feature-branch",
+            py_proj,
+            "--json",
+            "--dry-run",
+            "--number",
+            "0" * 5000 + "1",
+            "some feature",
+        )
+        assert p.returncode == 0, p.stderr
+        assert json.loads(p.stdout)["FEATURE_NUM"] == "001"
+
     def test_explicit_number_above_max_int64_rejected(self, tmp_path: Path):
         """Pin Python-side bound checking; bash currently has no equivalent guard."""
         _, py_proj = _twin_projects(tmp_path)

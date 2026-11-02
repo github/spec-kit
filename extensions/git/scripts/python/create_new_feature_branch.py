@@ -124,12 +124,14 @@ def parse_args(argv: list[str]) -> Args:
             if not re.fullmatch(r"[0-9]+", args.branch_number):
                 _err("Error: --number must be a non-negative integer")
                 raise SystemExit(1)
-            if _int64_from_digits(args.branch_number) is None:
+            normalized_number = _int64_from_digits(args.branch_number)
+            if normalized_number is None:
                 _err(
                     "Error: --number must be between 0 and "
                     f"{MAX_FEATURE_NUMBER}, got '{args.branch_number}'"
                 )
                 raise SystemExit(1)
+            args.branch_number = str(normalized_number)
         elif arg == "--timestamp":
             args.use_timestamp = True
         elif arg in ("--help", "-h"):
