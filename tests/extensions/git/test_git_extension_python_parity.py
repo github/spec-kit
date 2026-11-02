@@ -368,6 +368,23 @@ class TestCreateFeatureBranchParity:
         ) in p.stderr
         assert "Traceback" not in p.stderr
 
+    def test_auto_detected_number_above_max_int64_rejected(self, tmp_path: Path):
+        _, py_proj = _twin_projects(tmp_path)
+        (py_proj / "specs" / f"{2**63 - 1}-existing").mkdir(parents=True)
+        p = _run_py(
+            "create-new-feature-branch",
+            py_proj,
+            "--json",
+            "--dry-run",
+            "some feature",
+        )
+        assert p.returncode == 1
+        assert (
+            "Error: feature number must be between 0 and 9223372036854775807, "
+            "got '9223372036854775808'"
+        ) in p.stderr
+        assert "Traceback" not in p.stderr
+
     def test_timestamp_mode_format(self, tmp_path: Path):
         _, py_proj = _twin_projects(tmp_path)
         p = _run_py(

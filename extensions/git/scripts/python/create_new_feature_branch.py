@@ -549,13 +549,20 @@ def main(argv: list[str]) -> int:
                     branch_number = get_highest_from_specs(specs_dir) + 1
 
             try:
-                feature_num = f"{int(branch_number):03d}"
+                feature_number = int(branch_number)
             except ValueError:
                 _err(
-                    "Error: --number must be between 0 and "
+                    "Error: feature number must be between 0 and "
                     f"{MAX_FEATURE_NUMBER}, got '{branch_number}'"
                 )
                 return 1
+            if not 0 <= feature_number <= MAX_FEATURE_NUMBER:
+                _err(
+                    "Error: feature number must be between 0 and "
+                    f"{MAX_FEATURE_NUMBER}, got '{branch_number}'"
+                )
+                return 1
+            feature_num = f"{feature_number:03d}"
             branch_name = build_branch_name(feature_num, branch_suffix)
 
     branch_byte_len = _byte_length(branch_name)
