@@ -93,6 +93,8 @@ def _firstparty_bundle_component_pins() -> list[tuple[str, str, str, str]]:
             if kind == "bundles":
                 continue
             for entry in entries or []:
+                if kind == "steps" and not entry.get("version"):
+                    continue
                 pins.append(
                     (manifest_path.parent.name, kind, entry["id"], str(entry.get("version")))
                 )
@@ -101,6 +103,42 @@ def _firstparty_bundle_component_pins() -> list[tuple[str, str, str, str]]:
 
 def test_firstparty_bundles_pin_components():
     assert _firstparty_bundle_component_pins(), "expected component pins in bundles/"
+
+
+@pytest.mark.parametrize("optional_version", [{}, {"version": None}, {"version": ""}])
+def test_firstparty_bundle_pins_skip_unpinned_steps(tmp_path, monkeypatch, optional_version):
+    from specify_cli.bundles.manifest import BundleManifest
+    from tests.specify_cli.bundles.helpers import valid_manifest_dict, write_manifest
+
+    data = valid_manifest_dict()
+    data["provides"]["steps"] = [
+        {"id": "unpinned", **optional_version},
+        {"id": "pinned", "version": "1.3.0"},
+    ]
+    assert BundleManifest.from_dict(data).structural_errors() == []
+    write_manifest(tmp_path / "demo-bundle", data)
+    monkeypatch.setitem(globals(), "BUNDLES_ROOT", tmp_path)
+
+    assert _firstparty_bundle_component_pins() == [
+        ("demo-bundle", "extensions", "ext-a", "1.0.0"),
+        ("demo-bundle", "presets", "preset-a", "2.0.0"),
+        ("demo-bundle", "steps", "pinned", "1.3.0"),
+        ("demo-bundle", "workflows", "wf-a", "0.3.0"),
+    ]
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets", "steps", "workflows"])
+def test_firstparty_bundle_pins_retain_invalid_versions(tmp_path, monkeypatch, kind):
+    from tests.specify_cli.bundles.helpers import valid_manifest_dict, write_manifest
+
+    data = valid_manifest_dict(provides={kind: [{"id": "invalid", "version": "bad"}]})
+    write_manifest(tmp_path / "demo-bundle", data)
+    monkeypatch.setitem(globals(), "BUNDLES_ROOT", tmp_path)
+
+    pins = _firstparty_bundle_component_pins()
+    assert pins == [("demo-bundle", kind, "invalid", "bad")]
+    with pytest.raises(InvalidVersion):
+        Version(pins[0][3])
 
 
 @pytest.mark.parametrize(

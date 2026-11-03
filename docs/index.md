@@ -78,7 +78,7 @@ Including entirely different processes:
 
 <a href="presets/overview.md" class="pillar-link">Presets →</a>&nbsp;&nbsp;
 <a href="extensions/overview.md" class="pillar-link">Extensions →</a>&nbsp;&nbsp;
-<a href="reference/workflows.md" class="pillar-link">Workflows →</a>&nbsp;&nbsp;
+<a href="workflows/overview.md" class="pillar-link">Workflows →</a>&nbsp;&nbsp;
 <a href="bundles/overview.md" class="pillar-link">Bundles →</a>
 
 </div>

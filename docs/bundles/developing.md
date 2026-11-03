@@ -1,7 +1,7 @@
 # Developing bundles
 
-A bundle is a manifest and usage documentation that distribute an existing
-component stack. Start with the role or team outcome, select components that
+A bundle distributes an existing component stack through a manifest and usage
+documentation. Start with the role or team outcome, select components that
 provide it, and test their combined installation. A bundle does not replace
 extension, preset, workflow, or step authoring.
 

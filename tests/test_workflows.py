@@ -8535,7 +8535,7 @@ steps:
 
 # ===== continue_on_error Tests =====
 #
-# Locks the contract documented in workflows/README.md "Error Handling"
+# Locks the contract documented in docs/workflows/api.md "Error Handling"
 # section: when a step returns `StepResult(status=StepStatus.FAILED, ...)` and
 # `continue_on_error: true` is declared, the engine records the step's
 # `output` (with `exit_code` and `stderr` from the failure) and its
