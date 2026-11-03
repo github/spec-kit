@@ -54,6 +54,12 @@ To build the documentation locally:
 - `workflows/overlays.md` - Workflow composition through overlays and slots
 - `workflows/catalogs.md` - Workflow and step catalogs, releases, and trust
 - `workflows/publishing.md` - Workflow publishing and catalog submission guide
+- `bundles/overview.md` - Bundle user guide and first-party setups
+- `bundles/cli.md` - Bundle management CLI reference
+- `bundles/developing.md` - Bundle authoring and installation testing guide
+- `bundles/api.md` - Manifest, reference expansion, and installed-record contracts
+- `bundles/catalogs.md` - Bundle catalogs, policies, and release history
+- `bundles/publishing.md` - Bundle publishing and catalog submission guide
 - `community/extensions.md` - Community extension listing
 - `integrations/index.md` - Integration directory and shared setup guidance
 - `integrations/cli.md` - Shared integration management CLI reference

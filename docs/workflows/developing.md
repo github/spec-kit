@@ -211,7 +211,7 @@ Use `specify workflow step add my-step --dev ./my-step` for local iteration and 
 A bundle's `provides.steps` still resolves only through the active step
 catalogs. Bundle-local `steps/<id>/` payloads and relative
 `provides.steps[].source` overrides are **not** resolved in this release, so
-such steps are not installable offline. See the [Bundles reference](../reference/bundles.md).
+such steps are not installable offline. See the [bundle offline limits](../bundles/cli.md#offline-limits).
 
 ## Authoring practices
 

@@ -326,7 +326,7 @@ Catalog-backed bundle extension pins also select historical releases from the
 winning source, using that release's own archive and digest and checking the
 downloaded manifest's ID and version. Bundled extensions follow the packaged
 version policy: a newer compatible packaged patch can be used with a warning.
-See the [bundle reference](../reference/bundles.md) for bundle installation.
+See the [bundle CLI reference](../bundles/cli.md#install-a-bundle) for bundle installation.
 
 ## See also
 

@@ -25,7 +25,7 @@ def test_preset_catalog_docs_warn_about_vetting_install_allowed():
 
 
 def test_bundle_catalog_docs_cover_bundle_source_and_component_catalogs():
-    text = (REPO_ROOT / "docs" / "reference" / "bundles.md").read_text(encoding="utf-8")
+    text = (REPO_ROOT / "docs" / "bundles" / "catalogs.md").read_text(encoding="utf-8")
     assert "component catalogs" in text.lower()
     assert "vet" in text.lower()
     assert "specify workflow step catalog list" in text

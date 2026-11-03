@@ -25,7 +25,7 @@ from packaging.version import InvalidVersion, Version
 
 REPO_ROOT = Path(__file__).parents[2]
 EXTENSIONS_ROOT = REPO_ROOT / "extensions"
-EXAMPLE_BUNDLES_ROOT = REPO_ROOT / "examples" / "bundles"
+BUNDLES_ROOT = REPO_ROOT / "bundles"
 
 
 def _catalog_entries() -> dict[str, dict]:
@@ -84,37 +84,78 @@ def test_catalog_version_is_valid_pep440(ext_id: str):
         )
 
 
-def _example_bundle_extension_pins() -> list[tuple[str, str, str]]:
-    """(bundle name, extension id, pinned version) for every example bundle."""
+def _firstparty_bundle_component_pins() -> list[tuple[str, str, str, str]]:
+    """Pinned components from the published first-party bundle sources."""
     pins = []
-    for manifest_path in sorted(EXAMPLE_BUNDLES_ROOT.glob("*/bundle.yml")):
+    for manifest_path in sorted(BUNDLES_ROOT.glob("*/bundle.yml")):
         data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-        for entry in (data.get("provides") or {}).get("extensions") or []:
-            pins.append((manifest_path.parent.name, entry["id"], str(entry.get("version"))))
+        for kind, entries in (data.get("provides") or {}).items():
+            if kind == "bundles":
+                continue
+            for entry in entries or []:
+                if kind == "steps" and not entry.get("version"):
+                    continue
+                pins.append(
+                    (manifest_path.parent.name, kind, entry["id"], str(entry.get("version")))
+                )
     return pins
 
 
-def test_example_bundles_pin_extensions():
-    assert _example_bundle_extension_pins(), "expected at least one extension pin in examples/bundles"
+def test_firstparty_bundles_pin_components():
+    assert _firstparty_bundle_component_pins(), "expected component pins in bundles/"
+
+
+@pytest.mark.parametrize("optional_version", [{}, {"version": None}, {"version": ""}])
+def test_firstparty_bundle_pins_skip_unpinned_steps(tmp_path, monkeypatch, optional_version):
+    from specify_cli.bundles.manifest import BundleManifest
+    from tests.specify_cli.bundles.helpers import valid_manifest_dict, write_manifest
+
+    data = valid_manifest_dict()
+    data["provides"]["steps"] = [
+        {"id": "unpinned", **optional_version},
+        {"id": "pinned", "version": "1.3.0"},
+    ]
+    assert BundleManifest.from_dict(data).structural_errors() == []
+    write_manifest(tmp_path / "demo-bundle", data)
+    monkeypatch.setitem(globals(), "BUNDLES_ROOT", tmp_path)
+
+    assert _firstparty_bundle_component_pins() == [
+        ("demo-bundle", "extensions", "ext-a", "1.0.0"),
+        ("demo-bundle", "presets", "preset-a", "2.0.0"),
+        ("demo-bundle", "steps", "pinned", "1.3.0"),
+        ("demo-bundle", "workflows", "wf-a", "0.3.0"),
+    ]
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets", "steps", "workflows"])
+def test_firstparty_bundle_pins_retain_invalid_versions(tmp_path, monkeypatch, kind):
+    from tests.specify_cli.bundles.helpers import valid_manifest_dict, write_manifest
+
+    data = valid_manifest_dict(provides={kind: [{"id": "invalid", "version": "bad"}]})
+    write_manifest(tmp_path / "demo-bundle", data)
+    monkeypatch.setitem(globals(), "BUNDLES_ROOT", tmp_path)
+
+    pins = _firstparty_bundle_component_pins()
+    assert pins == [("demo-bundle", kind, "invalid", "bad")]
+    with pytest.raises(InvalidVersion):
+        Version(pins[0][3])
 
 
 @pytest.mark.parametrize(
-    "bundle_name,ext_id,pinned",
-    _example_bundle_extension_pins(),
+    "bundle_name,kind,component_id,pinned",
+    _firstparty_bundle_component_pins(),
     ids=lambda v: v if isinstance(v, str) else str(v),
 )
-def test_example_bundle_pins_match_bundled_manifest(bundle_name: str, ext_id: str, pinned: str):
-    """``BundleExtensionPrimitive`` refuses to install when the resolved
-    extension version differs from the bundle's pin, so an example bundle that
-    still pins a bundled extension's previous version fails for every user who
-    installs it. Test fixtures derive their pins from the bundled manifest and
-    therefore cannot catch this; the shipped examples must be checked directly."""
-    manifest_path = EXTENSIONS_ROOT / ext_id / "extension.yml"
-    if not manifest_path.is_file():
-        pytest.skip(f"'{ext_id}' is not a bundled extension; pin resolves via the catalog at install time")
-    manifest_version = _manifest_version(ext_id)
+def test_firstparty_bundle_pins_match_bundled_manifest(
+    bundle_name: str, kind: str, component_id: str, pinned: str
+):
+    """Check real first-party pins rather than synthetic or illustrative bundles."""
+    manifest_path = REPO_ROOT / kind / component_id / f"{kind[:-1]}.yml"
+    assert manifest_path.is_file(), f"first-party component manifest missing: {manifest_path}"
+    data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest_version = str(data[kind[:-1]]["version"])
     assert Version(pinned) == Version(manifest_version), (
-        f"examples/bundles/{bundle_name}/bundle.yml pins '{ext_id}' to {pinned} but "
+        f"bundles/{bundle_name}/bundle.yml pins {kind}:{component_id} to {pinned} but "
         f"{manifest_path.relative_to(REPO_ROOT)} declares {manifest_version}; the bundler "
-        f"enforces exact pins, so installing this example would fail"
+        f"requires compatible pins for installation"
     )

@@ -192,6 +192,23 @@
     - name: Publishing
       href: workflows/publishing.md
 
+# Bundles
+- name: Bundles
+  href: bundles/overview.md
+  items:
+    - name: Overview
+      href: bundles/overview.md
+    - name: CLI Reference
+      href: bundles/cli.md
+    - name: Developing
+      href: bundles/developing.md
+    - name: API Reference
+      href: bundles/api.md
+    - name: Catalogs
+      href: bundles/catalogs.md
+    - name: Publishing
+      href: bundles/publishing.md
+
 # Reference
 - name: Reference
   items:
@@ -207,8 +224,6 @@
       href: reference/catalogs.md
     - name: Artifacts
       href: reference/artifacts.md
-    - name: Bundles
-      href: reference/bundles.md
     - name: Agentic SDD
       href: reference/agentic-sdd.md
     - name: Agentic Bug Fix

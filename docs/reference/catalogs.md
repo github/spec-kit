@@ -58,7 +58,7 @@ project:
 | Presets | `specify preset catalog list` | [Preset catalogs](../presets/catalogs.md) |
 | Workflows | `specify workflow catalog list` | [Workflow catalogs](../workflows/catalogs.md) |
 | Workflow steps | `specify workflow step catalog list` | [Workflow catalogs](../workflows/catalogs.md) |
-| Bundles | `specify bundle catalog list` | [Bundles](bundles.md#manage-catalog-sources) |
+| Bundles | `specify bundle catalog list` | [Bundle catalogs](../bundles/catalogs.md) |
 
 Each command group also provides `catalog add` and `catalog remove`. Options,
 identifiers, install policies, and configuration filenames differ by component

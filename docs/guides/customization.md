@@ -108,10 +108,10 @@ specify bundle install <bundle-id>
 ```
 
 Inspect `info` before installing to see the resolved component set. See the
-[bundle reference](../reference/bundles.md) for updates, removal, catalog policies,
-offline limitations, validation, and publishing, and the
-[example manifests](https://github.com/github/spec-kit/tree/main/examples/bundles)
-for product manager, business analyst, security researcher, and developer setups.
+[bundle overview](../bundles/overview.md) for available first-party setups and
+the [CLI reference](../bundles/cli.md) for updates, removal, and offline limits.
+For authoring, start with [developing bundles](../bundles/developing.md) and
+[publishing bundles](../bundles/publishing.md).
 
 ## Share your customizations
 
