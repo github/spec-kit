@@ -736,6 +736,8 @@ class PresetResolver:
         self,
         template_name: str,
         template_type: str = "template",
+        *,
+        layers: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[str]:
         """Resolve a template name and return composed content.
 
@@ -751,11 +753,15 @@ class PresetResolver:
         Args:
             template_name: Template name (e.g., "spec-template")
             template_type: Template type ("template", "command", or "script")
+            layers: Compose this slice of the stack (highest priority first,
+                as returned by :meth:`collect_all_layers`) instead of the
+                whole stack, e.g. one preset's layer and everything below it.
 
         Returns:
             Composed content string, or None if not found
         """
-        layers = self.collect_all_layers(template_name, template_type)
+        if layers is None:
+            layers = self.collect_all_layers(template_name, template_type)
         if not layers:
             return None
 

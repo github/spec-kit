@@ -2255,10 +2255,42 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             content = claude_skill.read_text(encoding="utf-8")
             assert "Base preset body" not in content
             assert "Core custom body" in content and "Middle body" in content
+            # top-preset was never registered under Claude.
+            assert "Top body" not in content
+            assert "preset:middle-preset" in content
         else:
             with pytest.warns(UserWarning, match="no base layer"):
                 assert manager.remove("base-preset") is True
             assert not claude_skill.exists()
+
+    def test_remove_shadowed_base_leaves_replace_survivor_in_historical_dir(
+        self, project_dir, temp_dir
+    ):
+        """``middle`` replaces ``base`` in Claude's skill; ``top`` is installed
+        later under Codex only. Removing the shadowed base must not touch
+        Claude's skill, and must not render ``top`` into it."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        manager = PresetManager(project_dir)
+
+        def install(preset_id, body, priority):
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+
+        install("base-preset", "Base preset body", 10)
+        install("middle-preset", "Middle body", 7)
+        before = claude_skill.read_text(encoding="utf-8")
+        assert "preset:middle-preset" in before
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", 5)
+
+        assert manager.remove("base-preset") is True
+
+        assert claude_skill.read_text(encoding="utf-8") == before
 
     def test_remove_base_reconciles_survivor_with_legacy_flat_skill_record(
         self, project_dir, temp_dir
