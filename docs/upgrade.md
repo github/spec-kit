@@ -47,6 +47,8 @@ Bare `specify self upgrade` executes immediately, matching the no-prompt behavio
 
 Tool detection recognizes current and legacy default installation directories, as well as directories configured with `UV_TOOL_DIR`, `PIPX_HOME`, or `XDG_DATA_HOME`. Keep the same directory environment variables set when upgrading a relocated installation so the installer also targets that location.
 
+`PIPX_HOME` expands a leading `~` to your home directory. `UV_TOOL_DIR` treats it literally as part of a path relative to the working directory. `XDG_DATA_HOME` must be absolute; relative values, including those beginning with `~`, are ignored.
+
 Pinned tags must start with `vMAJOR.MINOR.PATCH`. Optional suffixes are limited to dev, alpha/beta/rc, and/or build metadata forms such as `v1.0.0-rc1`, `v0.8.0.dev0`, `v0.8.0+build.42`, or the combination `v1.0.0-rc1+build.42`; branch names, hash refs, `latest`, and bare versions without `v` are rejected.
 
 Set `SPECIFY_UPGRADE_TIMEOUT_SECS` to cap how long the installer subprocess may run (default: no timeout — interrupt with `Ctrl+C` if needed). If that internal timeout fires, `specify self upgrade` exits 124 and reports that it timed out while waiting for the installer subprocess, including the configured timeout and manual retry command. A real installer exit code 124 is propagated with `Upgrade failed. Installer exit code: 124.`, so scripts should treat exit 124 as ambiguous and inspect the message when they need to distinguish the two cases.

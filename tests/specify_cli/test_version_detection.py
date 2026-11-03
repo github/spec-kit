@@ -25,7 +25,7 @@ from tests.specify_cli.self_upgrade_helpers import (
 
 
 class TestRelocatedToolDetection:
-    @pytest.mark.parametrize("value", ["./tools", "../tools"])
+    @pytest.mark.parametrize("value", ["./tools", "../tools", "~/tools"])
     @pytest.mark.parametrize("environment,expected", [
         ("specify-cli", _InstallMethod.UV_TOOL),
         ("specify-cli2", _InstallMethod.UNSUPPORTED),
@@ -44,14 +44,33 @@ class TestRelocatedToolDetection:
             assert _detect_install_method(str(entrypoint)) == expected
         registry_lookup.assert_not_called()
 
+    @pytest.mark.parametrize("value", ["./data", "~/custom-data"])
     @pytest.mark.parametrize("suffix", ["uv/tools/specify-cli/", "pipx/venvs/specify-cli/"])
-    def test_relative_xdg_data_home_is_not_accepted(self, monkeypatch, tmp_path, suffix):
+    def test_relative_xdg_data_home_is_not_accepted(self, monkeypatch, tmp_path, suffix, value):
         from specify_cli._version import _expand_prefix, _path_is_within_prefix
 
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("XDG_DATA_HOME", "./data")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+        monkeypatch.setenv("XDG_DATA_HOME", value)
         prefix = _expand_prefix("${XDG_DATA_HOME}/" + suffix)
-        assert not _path_is_within_prefix((tmp_path / "data" / suffix / "bin/specify"), prefix)
+        entrypoint = Path(os.path.expanduser(value)).resolve() / suffix / "bin/specify"
+        assert not _path_is_within_prefix(entrypoint, prefix)
+
+    def test_uv_tool_dir_tilde_does_not_select_home_directory(self, monkeypatch, tmp_path):
+        home = tmp_path / "home"
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        monkeypatch.setenv("UV_TOOL_DIR", "~/tools")
+        entrypoint = home / "tools" / "specify-cli" / "bin" / "specify"
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.write_text("#!/usr/bin/env python\n")
+        with patch("specify_cli._version._editable_marker_seen", return_value=False), patch(
+            "specify_cli._version.subprocess.run"
+        ) as registry_lookup:
+            assert _detect_install_method(str(entrypoint)) == _InstallMethod.UNSUPPORTED
+        registry_lookup.assert_not_called()
 
     @pytest.mark.parametrize("environment,expected", [
         ("specify-cli", _InstallMethod.PIPX),

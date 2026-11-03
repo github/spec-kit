@@ -364,7 +364,10 @@ def _expand_prefix(prefix: str) -> Path | None:
         if not local_app_data:
             return None
         expanded = expanded.replace("%LOCALAPPDATA%", local_app_data)
-    expanded = os.path.expanduser(os.path.expandvars(expanded))
+    expanded = os.path.expandvars(os.path.expanduser(expanded))
+    # pipx expands a tilde in its override; uv treats it literally and XDG requires absolute paths.
+    if prefix.startswith("${PIPX_HOME}/"):
+        expanded = os.path.expanduser(expanded)
     if _UNRESOLVED_ENV_VAR_RE.search(expanded):
         return None
     try:
