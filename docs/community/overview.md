@@ -54,4 +54,4 @@ To publish your own work, follow the
 the [Presets Publishing Guide](../presets/publishing.md),
 the [Bundle Publishing Guide](../bundles/publishing.md), or the
 [Community Workflow Step Types guide](workflow-steps.md). For help choosing a
-component type, see [Customize Spec Kit](../guides/customization.md).
+component type, see [Adapt Spec Kit to your process](../how-to/customization.md).

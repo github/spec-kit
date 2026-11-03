@@ -95,4 +95,4 @@ were already installed are not rolled back after a later failure.
 - [Publishing bundles](publishing.md)
 - [Community bundles](../community/bundles.md)
 - [Community walkthroughs](../community/walkthroughs.md)
-- [Choosing customization building blocks](../guides/customization.md)
+- [Choosing customization building blocks](../how-to/customization.md)

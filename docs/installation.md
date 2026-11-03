@@ -117,7 +117,7 @@ elsewhere; omit it when you want that check. Non-interactive initialization
 defaults to Copilot unless you select another integration explicitly.
 
 For a non-empty directory, `--force` acknowledges the merge warning. Review the
-[existing-project guide](guides/existing-projects.md) and commit or back up local
+[existing-project guide](how-to/existing-projects.md) and commit or back up local
 changes before initializing:
 
 ```bash

@@ -1,4 +1,4 @@
-# Customize Spec Kit
+# How to adapt Spec Kit to your way of working
 
 The three first-party processes are starting points, not limits. Keep the
 built-in SDD process, add bug fixing or assessment, adapt a process to your
@@ -45,7 +45,7 @@ specify extension add <extension-name>
 
 Examples include Jira integration, post-implementation code review, V-Model test
 traceability, and project health diagnostics. The bundled
-[bug](bugfix.md) and [assess](assessment.md) extensions are first-party examples.
+[bug](../guides/bugfix.md) and [assess](../guides/assessment.md) extensions are first-party examples.
 Browse [community extensions](../community/extensions.md), or use the
 [extension CLI reference](../extensions/cli.md) for management and the
 [extension user guide](../extensions/overview.md#configuration) for configuration.

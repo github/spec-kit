@@ -1,4 +1,4 @@
-# Evolving Specs in Existing Projects
+# How to maintain specifications after delivery
 
 If the repository has not been initialized with Spec Kit yet, start with
 [Adopting Spec Kit in an Existing Project](existing-projects.md). This page
@@ -18,7 +18,7 @@ feature artifacts are maintained when requirements or implementation insights
 change an existing project. None is required or the default.
 
 For the conceptual model definitions, see
-[Spec Persistence Models](../concepts/spec-persistence.md).
+[Spec Persistence Models](spec-persistence.md).
 
 ## Shared Feature Delivery Loop
 

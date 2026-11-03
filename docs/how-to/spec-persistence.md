@@ -1,4 +1,4 @@
-# Spec Persistence Models
+# How to choose a specification persistence model
 
 Spec Kit intentionally leaves teams in control of what happens to `spec.md`,
 `plan.md`, and `tasks.md` after a feature is delivered. The toolkit gives you a
@@ -38,7 +38,7 @@ artifacts and deliver against it.
 A later change requiring implementation still goes through the shared delivery
 process and convergence against its explicit intended artifacts, whether those
 artifacts are new or revised. See
-[Evolving Specs in Existing Projects](../guides/evolving-specs.md) for practical
+[Evolving Specs in Existing Projects](evolving-specs.md) for practical
 guidance.
 
 ## Two Separate Questions

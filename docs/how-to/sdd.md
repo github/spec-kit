@@ -1,4 +1,4 @@
-# What is Spec-Driven Development?
+# How to understand Spec-Driven Development
 
 Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
 
@@ -14,11 +14,11 @@ Spec-Driven Development is a structured process that emphasizes:
 Spec Kit does not prescribe how teams preserve or mutate `spec.md`, `plan.md`,
 and `tasks.md` after requirements change. See
 [Spec Persistence Models](spec-persistence.md) for the concepts and
-[Evolving Specs in Existing Projects](../guides/evolving-specs.md) for the
+[Evolving Specs in Existing Projects](evolving-specs.md) for the
 existing-project evolution workflows.
 
 When components expose interfaces to external consumers, use
-[Contract-Driven Development](../guides/contract-driven-development.md) to
+[Contract-Driven Development](contract-driven-development.md) to
 agree on their observable obligations before implementing each side. This
 applies regardless of architecture or repository layout.
 

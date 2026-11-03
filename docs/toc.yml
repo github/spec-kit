@@ -19,10 +19,6 @@
       href: guides/bugfix.md
     - name: Idea Assessment
       href: guides/assessment.md
-    - name: Existing Projects
-      href: guides/existing-projects.md
-    - name: Customize or Bring Your Own
-      href: guides/customization.md
     - name: Upgrade
       href: upgrade.md
     - name: Install uv
@@ -35,6 +31,29 @@
       href: install/one-time.md
     - name: Enterprise / Air-Gapped
       href: install/air-gapped.md
+
+# How-to guides
+- name: How to
+  href: how-to/index.md
+  items:
+    - name: Understand Spec-Driven Development
+      href: how-to/sdd.md
+    - name: Adopt Spec Kit in an existing project
+      href: how-to/existing-projects.md
+    - name: Work in a monorepo
+      href: how-to/monorepo.md
+    - name: Define and evolve contracts
+      href: how-to/contract-driven-development.md
+    - name: Implement complex features
+      href: how-to/complex-features.md
+    - name: Break down large features
+      href: how-to/spec-of-specs.md
+    - name: Choose a persistence model
+      href: how-to/spec-persistence.md
+    - name: Maintain specifications after delivery
+      href: how-to/evolving-specs.md
+    - name: Adapt Spec Kit to your process
+      href: how-to/customization.md
 
 # Agent integrations
 - name: Integrations
@@ -147,29 +166,11 @@
     - name: Authentication
       href: reference/authentication.md
 
-# Concepts
-- name: Concepts
-  items:
-    - name: What is SDD?
-      href: concepts/sdd.md
-    - name: Spec Persistence Models
-      href: concepts/spec-persistence.md
-    - name: Handling Complex Features
-      href: concepts/complex-features.md
-    - name: Spec of Specs
-      href: concepts/spec-of-specs.md
-
-# Development workflows
+# Development
 - name: Development
   items:
     - name: Local Development
       href: local-development.md
-    - name: Evolving Specs
-      href: guides/evolving-specs.md
-    - name: Contract-Driven Development
-      href: guides/contract-driven-development.md
-    - name: Monorepos
-      href: guides/monorepo.md
 
 # Community
 - name: Community

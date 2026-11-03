@@ -64,7 +64,7 @@ specify integration switch none
 > [!IMPORTANT]
 > Do not manually edit Spec Kit-generated agent commands or skills. Maintain
 > customizations in reviewed [presets](../presets/overview.md) or
-> [project-local overrides](../guides/customization.md#project-local-overrides-and-resolution).
+> [project-local overrides](../how-to/customization.md#project-local-overrides-and-resolution).
 > Before committing, use
 > [`specify integration status`](cli.md#report-integration-status) to verify
 > that `none` is the only installed and default integration. Review the Git diff

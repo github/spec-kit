@@ -1,4 +1,4 @@
-# Contract-Driven Development
+# How to define and evolve contracts between components
 
 When a component exposes an interface to an external consumer, define the
 contract that consumer can rely on. **Contract-driven development** means

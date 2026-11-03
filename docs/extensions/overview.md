@@ -755,4 +755,4 @@ artifact resolution priority.
 - [Developing extensions](developing.md)
 - [Extension API reference](api.md)
 - [Publishing extensions](publishing.md)
-- [Spec persistence models](../concepts/spec-persistence.md)
+- [Spec persistence models](../how-to/spec-persistence.md)
