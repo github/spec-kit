@@ -1,4 +1,4 @@
-# Using Spec Kit in a Monorepo
+# How to use Spec Kit in a monorepo
 
 A Spec Kit project is **directory-scoped**: the project is whichever directory
 contains `.specify/`. A monorepo can hold several independent Spec Kit projects

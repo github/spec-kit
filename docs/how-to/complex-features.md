@@ -1,4 +1,4 @@
-# Handling Complex Features
+# How to implement complex features in bounded runs
 
 Large or complex features often run smoothly through `/speckit.specify`,
 `/speckit.plan`, and `/speckit.tasks`, then degrade during implementation. In

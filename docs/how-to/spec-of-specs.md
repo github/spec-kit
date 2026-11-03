@@ -1,4 +1,4 @@
-# Spec of Specs
+# How to break a large feature into smaller specifications
 
 When a feature is too large to run through a single
 `/speckit.specify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.implement`

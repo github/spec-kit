@@ -139,4 +139,4 @@ Spec Kit maintainers.
 - [Catalogs](catalogs.md)
 - [Publishing presets](publishing.md)
 - [Community presets](../community/presets.md)
-- [Choosing customization building blocks](../guides/customization.md)
+- [Choosing customization building blocks](../how-to/customization.md)

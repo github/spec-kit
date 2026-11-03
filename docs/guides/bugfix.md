@@ -12,7 +12,7 @@ The bundled, opt-in **bug** extension separates the work into
 
 First [install Spec Kit](../installation.md) and initialize the repository that
 contains the bug. If it already contains code, follow
-[Adopting Spec Kit in an Existing Project](existing-projects.md).
+[Adopting Spec Kit in an Existing Project](../how-to/existing-projects.md).
 
 In a terminal at the initialized project root, install the extension:
 

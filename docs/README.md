@@ -31,7 +31,16 @@ To build the documentation locally:
 - `guides/agentic-sdlc.md` - How Spec Kit applies agentic and conventional SDLC practices to itself
 - `guides/bugfix.md` - Bug-fixing walkthrough
 - `guides/assessment.md` - Idea assessment walkthrough
-- `guides/customization.md` - Choosing and combining customization building blocks
+- `how-to/index.md` - How-to guide directory
+- `how-to/sdd.md` - Understanding Spec-Driven Development
+- `how-to/existing-projects.md` - Adopting Spec Kit in an existing project
+- `how-to/monorepo.md` - Working in a monorepo
+- `how-to/contract-driven-development.md` - Defining and evolving component contracts
+- `how-to/complex-features.md` - Implementing complex features in bounded runs
+- `how-to/spec-of-specs.md` - Breaking large features into smaller specifications
+- `how-to/spec-persistence.md` - Choosing a specification persistence model
+- `how-to/evolving-specs.md` - Maintaining specifications after delivery
+- `how-to/customization.md` - Adapting Spec Kit to your process
 - `reference/catalogs.md` - Catalog discovery, trust, private sources, and precedence
 - `extensions/overview.md` - Extension user guide
 - `extensions/cli.md` - Extension management CLI reference

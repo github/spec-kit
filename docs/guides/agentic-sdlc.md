@@ -233,7 +233,7 @@ each combining an extension with a resumable *Spec Kit workflow* and a human
 review gate. It also ships the
 [`lean` preset](https://github.com/github/spec-kit/tree/main/presets/lean)
 to demonstrate an alternative way of shaping core SDD guidance. These are
-Spec Kit's own [extensions, presets, workflows, and bundles](customization.md),
+Spec Kit's own [extensions, presets, workflows, and bundles](../how-to/customization.md),
 not the repository's GitHub Actions workflows.
 
 &#9733; Beyond core feature delivery, agentic community-submission workflows for

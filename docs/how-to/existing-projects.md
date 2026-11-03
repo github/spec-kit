@@ -1,4 +1,4 @@
-# Adopting Spec Kit in an Existing Project
+# How to adopt Spec Kit in an existing project
 
 You do not need to recreate an existing system from specifications before using
 Spec Kit. Initialize the repository in place, capture the rules that matter,
@@ -35,8 +35,8 @@ specifications for existing behavior.
 
 The remaining steps illustrate adopting **SDD** for a bounded feature. If your
 first task is a repair, you can instead follow the
-[bug-fixing quickstart](bugfix.md) after initialization; to evaluate a proposal,
-use the [idea assessment quickstart](assessment.md). Neither process requires
+[bug-fixing quickstart](../guides/bugfix.md) after initialization; to evaluate a proposal,
+use the [idea assessment quickstart](../guides/assessment.md). Neither process requires
 completing the SDD steps below first.
 
 Run `/speckit.constitution` with principles that are already true for the
@@ -100,7 +100,7 @@ artifacts:
 - Allow discoveries to flow back from code, tasks, or plans, then reconcile the
   full artifact set.
 
-The [Spec Persistence Models](../concepts/spec-persistence.md) page compares
+The [Spec Persistence Models](spec-persistence.md) page compares
 these choices. The [Evolving Specs guide](evolving-specs.md) provides the
 maintenance loop for each model.
 
