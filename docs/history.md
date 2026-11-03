@@ -129,6 +129,22 @@ processes alongside feature delivery:
   Its intake → research → define → shape → decide process evaluates an idea
   before it enters SDD.
 
+June also closed the core delivery loop with `/speckit.converge`. Rather than
+treating implementation as the endpoint, it assesses the code against the
+specification, plan, and tasks, then appends traceable tasks for remaining gaps.
+Those tasks return to `/speckit.implement`, creating a convergence loop without
+rewriting the specification or plan. The
+[June newsletter](https://github.com/github/spec-kit/blob/main/newsletters/2026-June.md)
+records this shift from generating an implementation to checking whether it
+satisfies the recorded intent.
+
+July added [agent-native runtime events](integrations/cli.md#runtime-events),
+allowing extensions to react to coding-agent lifecycle events such as session
+start or tool use. Unlike command hooks, these events execute scripts directly
+rather than asking the agent to follow additional instructions. Integrations
+could now connect Spec Kit behavior to the agent's runtime, not just deliver
+commands or skills.
+
 Distribution broadened too: the release pipeline added PyPI publishing, and
 Python joined Bash and PowerShell as a supported project script type. These
 changes made installation and cross-platform use simpler while preserving
@@ -161,6 +177,59 @@ assumptions, reported problems, contributed code or documentation, created
 extensions or presets, shared ideas, or helped someone get started. The milestone
 belongs to the community that carried the project through its first year and
 continues to shape it.
+
+August also made the integration and process model more concrete in daily use.
+Copilot initialization switched to skills by default, replacing the legacy
+markdown-command layout as its default delivery route. The project began
+applying its own idea-assessment process to incoming feature requests through
+the `feature-assess` agentic workflow, which initializes Spec Kit and runs the
+`assess` extension. The
+[August newsletter](https://github.com/github/spec-kit/blob/main/newsletters/2026-August.md)
+records both the agent-native delivery change and this use of Spec Kit to help
+maintain Spec Kit itself.
+
+### September 2026: Inspectable composition
+
+September made the composable model finer-grained and easier to inspect.
+Presets gained explicit extension dependencies, workflows gained named slots
+for reusable insertion points, and individual steps could carry their own
+integration configuration. The new
+[`specify artifact` command group](reference/artifacts.md) exposed commands,
+templates, scripts, and hooks with their composition stacks and contributing
+layers as JSON. Tooling and agents could inspect what a project's installed
+layers actually produced, rather than infer it from configuration alone.
+
+The ecosystem also supplied a concrete example of the extension model reaching
+beyond general development guidance. In September, Microsoft's Azure Cosmos DB
+team [announced the first database extension for Spec Kit](https://devblogs.microsoft.com/cosmosdb/spec-driven-development-comes-to-azure-cosmos-db-the-first-database-extension-for-github-spec-kit/),
+in public preview, bringing database-specific guidance into the implementation
+process. This was work from a Microsoft product team distinct from the Spec Kit
+maintainers, not independent third-party adoption. Alongside it, community
+authors continued expanding the catalog with their own components. The
+[September newsletter](https://github.com/github/spec-kit/blob/main/newsletters/2026-September.md)
+records both the composition changes and that ecosystem growth.
+
+### October–November 2026: Programmatic access and deeper composition
+
+October introduced an experimental local
+[Model Context Protocol (MCP) server](reference/mcp.md), initially exposing
+version information and then artifact inspection and installed-workflow
+listing. These read-only tools let MCP clients inspect Spec Kit directly;
+they did not expose installation, mutation, or workflow execution. The CLI and
+first-class MCP tools dispatch to shared operations, extending access without
+creating a separate implementation of the same behavior.
+
+Composition also extended across more boundaries. Coding-agent adapters became
+[installable from catalogs](integrations/cli.md#catalog-installed-external-adapters),
+allowing agent-specific support to be distributed outside the core package,
+subject to the user's explicit trust decision. Workflows gained
+[calls to other workflows](reference/workflows.md#workflow-composition) within
+a unified execution tree, and bundles gained
+[references to other bundles](reference/bundles.md#bundle-references).
+By early November, run-scoped workflow definitions were also inspectable through
+`specify workflow definition`. Together, these changes made the existing
+primitives more reusable and their effective configuration more visible,
+without introducing a new development process.
 
 ## Enduring themes
 
