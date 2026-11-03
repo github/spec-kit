@@ -44,7 +44,6 @@ provides:
     - name: string       # Required, pattern: ^speckit\.[a-z0-9-]+\.[a-z0-9-]+$
       file: string       # Required, relative path to command file
       description: string # Required
-      aliases: [string]  # Optional, same pattern as name; namespace must match extension.id and must not shadow core or installed extension commands
 
   templates:             # Optional, array of declared templates. Always resolve
                           # as "replace" -- 'strategy' is not an authorable field here.
@@ -633,8 +632,6 @@ Standard events (defined by core):
 - `after_clarify` - After spec clarification
 - `before_constitution` - Before constitution update
 - `after_constitution` - After constitution update
-- `before_taskstoissues` - Before tasks-to-issues conversion
-- `after_taskstoissues` - After tasks-to-issues conversion
 
 #### Bundled `bug` extension events (available when the extension is installed)
 

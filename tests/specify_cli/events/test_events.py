@@ -176,6 +176,38 @@ class TestCollectExtensionEvents:
         result = collect_extension_events(tmp_path)
         assert result == {"pre_tool_use": [{"command": "speckit.my-ext.check"}]}
 
+    @pytest.mark.parametrize(
+        "invalid",
+        [
+            {"command": "speckit.bad.check", "matcher": ["Bash"]},
+            {"command": "speckit.bad.check", "timeout": "30"},
+            {"command": "speckit.bad.check", "timeout": None},
+            {"command": "speckit.bad.check", "matcher": None},
+            {"matcher": "Bash"},
+        ],
+        ids=["matcher-list", "timeout-string", "timeout-null", "matcher-null", "missing-command"],
+    )
+    def test_unregistered_invalid_handler_does_not_break_install(self, tmp_path, caplog, invalid):
+        ext_dir = tmp_path / ".specify" / "extensions" / "staged"
+        ext_dir.mkdir(parents=True)
+        valid = {"command": "speckit.staged.check", "matcher": "Bash"}
+        (ext_dir / "extension.yml").write_text(
+            json.dumps({"events": {"pre_tool_use": [invalid, valid]}}), encoding="utf-8"
+        )
+
+        resolved = resolve_events("claude", None, tmp_path, None)
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        install_integration_events(ClaudeIntegration(), tmp_path, manifest, resolved)
+
+        assert resolved == {"pre_tool_use": [valid]}
+        config = json.loads((tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        hooks = config["hooks"]["PreToolUse"][0]["hooks"]
+        assert len(hooks) == 1
+        assert "speckit.staged.check" in hooks[0]["command"]
+        assert "staged" in caplog.text
+        assert "pre_tool_use" in caplog.text
+
     def test_invalid_yaml_skipped(self, tmp_path):
         ext_dir = tmp_path / ".specify" / "extensions" / "my-ext"
         ext_dir.mkdir(parents=True)
@@ -343,6 +375,14 @@ class TestEventCapableOptionsComposition:
 
 class TestValidateEvents:
     """Test manifest validation."""
+
+    @pytest.mark.parametrize("field", ["matcher", "timeout"])
+    def test_null_optional_handler_field_rejected(self, field):
+        from specify_cli.extensions import ValidationError
+
+        data = {"events": {"pre_tool_use": {"command": "speckit.test", field: None}}}
+        with pytest.raises(ValidationError, match=field):
+            validate_events(data)
 
     def test_unknown_event_rejected(self):
         from specify_cli.extensions import ValidationError

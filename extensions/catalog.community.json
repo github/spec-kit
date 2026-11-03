@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-27T00:00:00Z",
+  "updated_at": "2026-11-02T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -1944,6 +1944,50 @@
       "created_at": "2026-03-13T00:00:00Z",
       "updated_at": "2026-03-13T00:00:00Z"
     },
+    "domain-spec": {
+      "name": "Domain Spec Maintenance",
+      "id": "domain-spec",
+      "description": "Keeps canonical per-domain specs: read before specify/plan, updated after implement",
+      "author": "Jina Park",
+      "version": "0.1.0",
+      "download_url": "https://github.com/jinaparkdev/spec-kit-domain-spec/archive/refs/tags/v0.1.0.zip",
+      "sha256": "de5909b5eea0c4fef48cebba42e88cfc6cab06ae443a315106dbad51e5c5b6a1",
+      "repository": "https://github.com/jinaparkdev/spec-kit-domain-spec",
+      "homepage": "https://github.com/jinaparkdev/spec-kit-domain-spec",
+      "documentation": "https://github.com/jinaparkdev/spec-kit-domain-spec/blob/main/README.md",
+      "changelog": "https://github.com/jinaparkdev/spec-kit-domain-spec/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.8.5",
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          },
+          {
+            "name": "rg",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 3
+      },
+      "tags": [
+        "documentation",
+        "governance",
+        "specs",
+        "living-docs"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-28T00:00:00Z",
+      "updated_at": "2026-10-28T00:00:00Z"
+    },
     "dotdog": {
       "name": "Dotdog",
       "id": "dotdog",
@@ -2457,11 +2501,11 @@
     "gates": {
       "name": "Quality Gates (Enforcement Layer)",
       "id": "gates",
-      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries: the agent boundary (Claude Code PreToolUse/PostToolUse/Stop hooks), the git boundary (pre-commit / pre-merge-commit / commit-msg), and the CI boundary (projected GitHub Actions / GitLab CI / Jenkins pipelines). One policy file, one verify entrypoint, identical results at every boundary.",
+      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries: the agent boundary (Claude Code PreToolUse/PostToolUse/Stop hooks), the git boundary (pre-commit / pre-merge-commit / commit-msg), and the CI boundary (projected GitHub Actions / GitLab CI / Jenkins pipelines). One policy file, one verify entrypoint; CI runs the whole policy, and an earlier boundary skips only what the policy declares, by name.",
       "author": "schwichtgit",
-      "version": "0.4.2",
-      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.4.2/gates-0.4.2.zip",
-      "sha256": "d65657962dabf0507d049389b0d9b478d31026b2dbdab600ebe135048453f290",
+      "version": "0.5.0",
+      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.5.0/gates-0.5.0.zip",
+      "sha256": "f2d6677bed7e038a95092520a03228dbde0b501b14876a582dc8f8d346787893",
       "repository": "https://github.com/schwichtgit/spec-gates",
       "homepage": "https://github.com/schwichtgit/spec-gates",
       "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
@@ -2513,7 +2557,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
-      "updated_at": "2026-10-26T00:00:00Z"
+      "updated_at": "2026-10-28T00:00:00Z"
     },
     "gh-address-cr": {
       "name": "gh-address-cr",
@@ -2726,6 +2770,41 @@
       "stars": 0,
       "created_at": "2026-08-11T00:00:00Z",
       "updated_at": "2026-10-19T00:00:00Z"
+    },
+    "guildwork": {
+      "name": "Guildwork: request, verdict, register",
+      "id": "guildwork",
+      "description": "No code is written until a named human approves a written request, and every verdict is kept.",
+      "author": "Simon Dupont (@Simon-Pacifae-Dupont)",
+      "version": "0.1.0",
+      "download_url": "https://github.com/Simon-Pacifae-Dupont/Guildwork/releases/download/guildwork-v0.1.0/guildwork.zip",
+      "sha256": "f5793fe480f3a607cdab0debe483e8f3a7aa936fff4efec7200f728d5023bd72",
+      "repository": "https://github.com/Simon-Pacifae-Dupont/Guildwork",
+      "homepage": "https://github.com/Simon-Pacifae-Dupont/Guildwork/tree/main/integrations/spec-kit",
+      "documentation": "https://github.com/Simon-Pacifae-Dupont/Guildwork/blob/main/integrations/spec-kit/README.md",
+      "changelog": "https://github.com/Simon-Pacifae-Dupont/Guildwork/blob/main/integrations/spec-kit/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 3
+      },
+      "tags": [
+        "governance",
+        "human-in-the-loop",
+        "approval",
+        "audit-trail",
+        "multi-agent"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-02T00:00:00Z",
+      "updated_at": "2026-11-02T00:00:00Z"
     },
     "harness": {
       "name": "Research Harness",
@@ -5359,14 +5438,15 @@
       "name": "SFSpeckit — Salesforce Spec-Driven Development",
       "id": "sf",
       "description": "Enterprise-Grade Spec-Driven Development (SDD) Framework for Salesforce.",
-      "author": "Sumanth Yanamala",
-      "version": "1.0.0",
-      "download_url": "https://github.com/ysumanth06/spec-kit-sf/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/ysumanth06/spec-kit-sf",
-      "homepage": "https://ysumanth06.github.io/spec-kit-sf/",
-      "documentation": "https://ysumanth06.github.io/spec-kit-sf/introduction.html",
-      "changelog": "https://github.com/ysumanth06/spec-kit-sf/blob/main/CHANGELOG.md",
-      "license": "MIT",
+      "author": "Sumanth Yanamala / Evernorth",
+      "version": "2.0.1",
+      "download_url": "https://github.com/Evernorth/spec-kit-sf/archive/refs/tags/v2.0.1.zip",
+      "sha256": "f066096cd556c94f3666167b4e2ae8d49b9bdb6f1577bfa78dfeed2d815e8256",
+      "repository": "https://github.com/Evernorth/spec-kit-sf",
+      "homepage": "https://github.com/Evernorth/spec-kit-sf",
+      "documentation": "https://github.com/Evernorth/spec-kit-sf#readme",
+      "changelog": "https://github.com/Evernorth/spec-kit-sf/blob/main/CHANGELOG.md",
+      "license": "Apache-2.0",
       "category": "process",
       "effect": "read-write",
       "requires": {
@@ -5385,7 +5465,7 @@
         ]
       },
       "provides": {
-        "commands": 18,
+        "commands": 19,
         "hooks": 2
       },
       "tags": [
@@ -5399,7 +5479,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-13T22:11:30Z",
-      "updated_at": "2026-04-13T22:11:30Z"
+      "updated_at": "2026-10-28T00:00:00Z"
     },
     "ship": {
       "name": "Ship Release Extension",

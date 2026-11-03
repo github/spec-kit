@@ -170,6 +170,22 @@ def test_symlinked_directory_is_not_followed(tmp_path: Path):
     assert not any("secret" in name for name in names)
 
 
+@pytest.mark.parametrize("name", ["bundle.yml", "README.md"])
+def test_build_refuses_symlinked_manifest_or_readme(tmp_path: Path, name: str):
+    bundle = _make_bundle(tmp_path / "b")
+    (bundle / "shared").mkdir()
+    (bundle / name).rename(bundle / "shared" / name)
+    try:
+        (bundle / name).symlink_to(Path("shared") / name)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this platform")
+    # The packager skips symlinked files, so building would otherwise succeed
+    # and emit an artifact without the manifest or README at its root.
+    with pytest.raises(BundlerError, match="symlink"):
+        build_bundle(bundle, output_dir=tmp_path / "out")
+    assert not list((tmp_path / "out").glob("*.zip"))
+
+
 def test_unsafe_bundle_id_is_rejected_before_build(tmp_path: Path):
     data = valid_manifest_dict()
     data["bundle"]["id"] = "../evil"

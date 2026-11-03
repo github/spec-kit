@@ -3,34 +3,38 @@
 from __future__ import annotations
 
 from . import _commands as cli
+from . import _operation_list as operation
 
 
 @cli.workflow_app.command("list")
 def workflow_list():
     """List installed workflows."""
     project_root = cli._require_specify_project()
-    registry = cli._open_workflow_registry(project_root)
-    installed = registry.list()
+    try:
+        result = operation.list_workflows(operation.WorkflowListRequest(project_root))
+    except operation.WorkflowListError as exc:
+        cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
+        raise cli.typer.Exit(1) from exc
 
-    if not installed:
+    if not result.items:
         cli.console.print("[yellow]No workflows installed.[/yellow]")
         cli.console.print("\nInstall a workflow with:")
         cli.console.print("  [cyan]specify workflow add <workflow-id>[/cyan]")
         return
 
     cli.console.print("\n[bold cyan]Installed Workflows:[/bold cyan]\n")
-    for wf_id, wf_data in installed.items():
-        safe_id = cli._escape_markup(wf_id)
-        if not isinstance(wf_data, dict):
+    for item in result.items:
+        if isinstance(item, operation.WorkflowListWarning):
             cli.console.print(
-                f"  [yellow]Warning:[/yellow] Skipping corrupted registry entry '{safe_id}'.\n"
+                f"  [yellow]Warning:[/yellow] {cli._escape_markup(item.message)}\n"
             )
             continue
-        marker = "" if wf_data.get("enabled", True) else " [red]\\[disabled][/red]"
-        name = cli._escape_markup(str(wf_data.get("name", wf_id)))
-        version = cli._escape_markup(str(wf_data.get("version", "?")))
+        safe_id = cli._escape_markup(item.id)
+        marker = "" if item.enabled else " [red]\\[disabled][/red]"
+        name = cli._escape_markup(item.name)
+        version = cli._escape_markup(item.version)
         cli.console.print(f"  [bold]{name}[/bold] ({safe_id}) v{version}{marker}")
-        desc = wf_data.get("description", "")
+        desc = item.description
         if desc:
             cli.console.print(f"    {cli._escape_markup(str(desc))}")
         cli.console.print()

@@ -3,6 +3,7 @@
 import errno
 import os
 import subprocess
+import sys
 from unittest.mock import patch
 
 from specify_cli import app
@@ -236,7 +237,7 @@ class TestInstallerMissing:
         self, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -312,7 +313,7 @@ class TestInstallerMissing:
         self, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"), patch(
             "specify_cli._version._assemble_installer_argv",
             return_value=[
@@ -401,7 +402,7 @@ class TestInstallerFailed:
 
     def test_installer_exit_2_propagates(self, uv_tool_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -424,7 +425,7 @@ class TestInstallerFailed:
 
     def test_installer_exit_127_propagates(self, uv_tool_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -438,7 +439,7 @@ class TestInstallerFailed:
     ):
         monkeypatch.setenv("SPECIFY_UPGRADE_TIMEOUT_SECS", "12")
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -457,7 +458,7 @@ class TestInstallerFailed:
     ):
         monkeypatch.setenv("SPECIFY_UPGRADE_TIMEOUT_SECS", "nan")
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -478,7 +479,7 @@ class TestInstallerFailed:
         self, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -492,7 +493,7 @@ class TestInstallerFailed:
 
     def test_pipx_failure_prints_pipx_rollback_hint(self, pipx_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="pipx"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -510,7 +511,7 @@ class TestInstallerFailed:
         self, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="v0.7.5"
         ):
@@ -530,7 +531,7 @@ class TestInstallerFailed:
         self, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="1.0.0rc1"
         ):

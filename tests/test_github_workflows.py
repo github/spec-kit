@@ -335,6 +335,23 @@ def test_github_actions_are_pinned_to_full_commit_shas():
     assert unpinned_refs == []
 
 
+def test_pytest_matrix_covers_supported_python_versions_on_all_platforms():
+    workflow = yaml.safe_load(
+        (WORKFLOWS_DIR / "test.yml").read_text(encoding="utf-8")
+    )
+    job = workflow["jobs"]["pytest"]
+    assert job["strategy"]["matrix"] == {
+        "os": ["ubuntu-latest", "windows-latest", "macos-latest"],
+        "python-version": ["3.11", "3.12", "3.13", "3.14"],
+    }
+    assert job["runs-on"] == "${{ matrix.os }}"
+    setup_python = next(
+        step for step in job["steps"]
+        if step.get("uses", "").startswith("actions/setup-python@")
+    )
+    assert setup_python["with"]["python-version"] == "${{ matrix.python-version }}"
+
+
 def test_publish_tag_validation_uses_environment_variable():
     steps = _publish_workflow_steps()
 

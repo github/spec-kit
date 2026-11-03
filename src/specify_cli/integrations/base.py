@@ -53,7 +53,6 @@ _CORE_COMMAND_TEMPLATE_ORDER = (
     "checklist",
     "specify",
     "tasks",
-    "taskstoissues",
 )
 _CORE_COMMAND_TEMPLATE_RANK = {
     command: index for index, command in enumerate(_CORE_COMMAND_TEMPLATE_ORDER)
@@ -170,6 +169,26 @@ class IntegrationBase(ABC):
         The default implementation returns *content* unchanged.
         """
         return content
+
+    def process_registered_command(
+        self, frontmatter: dict[str, Any], body: str, *, source_id: str
+    ) -> tuple[dict[str, Any], str]:
+        """Transform a command's frontmatter and body before it is rendered.
+
+        Called by ``CommandRegistrar.register_commands()`` for every command it
+        registers for this integration, after script paths are adjusted and the
+        ``name`` field is injected, and before ``$ARGUMENTS`` and
+        ``__SPECKIT_COMMAND_*__`` tokens are resolved and the command is
+        rendered.  Unlike ``post_process_command_content()``, which only sees
+        the rendered text, this hook receives the parsed frontmatter and the
+        *source_id* (``"core"`` or an extension/preset id), so an integration
+        can apply rewrites that depend on where a command came from.
+
+        Subclasses may override it; they should return new objects rather
+        than mutating *frontmatter* in place.  The default implementation
+        returns both values unchanged.
+        """
+        return frontmatter, body
 
     # -- Public API -------------------------------------------------------
 
@@ -997,6 +1016,20 @@ class IntegrationBase(ABC):
         )
 
         return content
+
+    def preflight_setup(
+        self,
+        project_root: Path,
+        parsed_options: dict[str, Any] | None = None,
+        *,
+        script_type: str | None = None,
+    ) -> None:
+        """Reject a planned ``setup()`` before the CLI writes shared files.
+
+        Install, switch and upgrade call this before touching shared
+        infrastructure. Raise ``ValueError`` or ``OSError`` to refuse.
+        The default accepts every setup.
+        """
 
     def setup(
         self,

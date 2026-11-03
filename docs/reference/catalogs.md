@@ -139,7 +139,7 @@ Use the component-specific publishing guidance when authoring catalog entries:
 | Component type | Publishing guidance |
 | --- | --- |
 | Integrations | [Integration catalog contributions](../integrations/contributing.md) |
-| Extensions | [Extension Publishing Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md) |
+| Extensions | [Extension Publishing Guide](../extensions/publishing.md) |
 | Presets | [Preset Publishing Guide](https://github.com/github/spec-kit/blob/main/presets/PUBLISHING.md) |
 | Workflows | [Workflow Publishing Guide](https://github.com/github/spec-kit/blob/main/workflows/PUBLISHING.md) |
 | Workflow steps | [Community workflow step types](../community/workflow-steps.md) |

@@ -50,7 +50,7 @@ Community projects that extend, visualize, or build on Spec Kit — including VS
 ## Contribute a component
 
 To publish your own work, follow the
-[Extension Publishing Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md),
+[Extension Publishing Guide](../extensions/publishing.md),
 the [Presets Publishing Guide](https://github.com/github/spec-kit/blob/main/presets/PUBLISHING.md),
 the [Community Bundles guide](bundles.md), or the
 [Community Workflow Step Types guide](workflow-steps.md). For help choosing a

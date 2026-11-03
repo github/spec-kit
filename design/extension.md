@@ -141,7 +141,8 @@ Catalog configuration resolves in this order:
 
 Extension configuration merges, from lowest to highest precedence:
 
-1. `config.defaults` in `extension.yml`;
+1. the top-level `defaults` and `config.defaults` in `extension.yml`, merged
+   with `config.defaults` winning on conflicting keys;
 2. `.specify/extensions/<id>/<id>-config.yml`;
 3. `.specify/extensions/<id>/local-config.yml`; and
 4. `SPECKIT_<NORMALIZED_EXTENSION_ID>_*` environment variables.

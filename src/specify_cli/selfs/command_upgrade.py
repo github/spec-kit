@@ -46,7 +46,7 @@ def self_upgrade(
              installer itself exits 2, that installer failure code is
              propagated verbatim
       3      installer binary not found on PATH, or resolved installer path is
-             missing / non-executable
+             rejected / missing / non-executable
       124    internal installer timeout when SPECIFY_UPGRADE_TIMEOUT_SECS is set,
              or a real installer exit code 124 propagated verbatim; scripts
              should treat 124 as ambiguous and inspect the failure message
@@ -104,6 +104,9 @@ def self_upgrade(
         _emit_failure(failure_reason, plan=plan)
         raise typer.Exit(1)
 
+    for rejection in plan.installer_rejections:
+        console.print(rejection, soft_wrap=True, markup=False)
+
     if dry_run:
         if plan.method in (
             _InstallMethod.UVX_EPHEMERAL,
@@ -133,11 +136,12 @@ def self_upgrade(
         raise typer.Exit(0)
 
     if plan.installer_argv is None:
-        _emit_failure(
-            _FAILURE_INSTALLER_MISSING,
-            plan=plan,
-            installer_name=_installer_binary_name(plan.method),
-        )
+        if not plan.installer_rejected:
+            _emit_failure(
+                _FAILURE_INSTALLER_MISSING,
+                plan=plan,
+                installer_name=_installer_binary_name(plan.method),
+            )
         raise typer.Exit(3)
 
     if plan.target_tag is None:

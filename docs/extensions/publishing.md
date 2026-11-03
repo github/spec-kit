@@ -130,7 +130,7 @@ specify extension add <extension-name> --from https://github.com/your-org/spec-k
 
 ### Understanding the Catalogs
 
-Spec Kit uses a dual-catalog system. For details about how catalogs work, see the main [Extensions README](README.md#extension-catalogs).
+Spec Kit uses a dual-catalog system. For details about how catalogs work, see the main [Extensions README](https://github.com/github/spec-kit/blob/main/extensions/README.md#extension-catalogs).
 
 **For extension publishing**: All community extensions are listed in `extensions/catalog.community.json`. Users browse this catalog and copy extensions they trust into their own `catalog.json`.
 
@@ -147,7 +147,7 @@ To submit your extension to the community catalog, file a new issue using the **
 - Testing confirmation
 
 > [!IMPORTANT]
-> Do **not** open a pull request directly to edit `extensions/catalog.community.json`. All community extension submissions must go through the issue template so a maintainer can review the entry and update the catalog.
+> Do **not** open a pull request directly to edit `extensions/catalog.community.json`. All community extension submissions must go through the issue template. Submissions that do not use the issue template will be closed, and you will be asked to resubmit using it.
 
 ### What Happens After You Submit
 
@@ -303,7 +303,7 @@ A: Extensions should be free and open-source. Commercial support/services are al
 
 - **Catalog Issues**: <https://github.com/statsperform/spec-kit/issues>
 - **Extension Template**: <https://github.com/statsperform/spec-kit-extension-template> (coming soon)
-- **Development Guide**: See EXTENSION-DEVELOPMENT-GUIDE.md
+- **Development Guide**: See [Developing extensions](developing.md)
 - **Community**: Discussions and Q&A
 
 ---
