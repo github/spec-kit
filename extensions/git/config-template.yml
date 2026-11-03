@@ -25,8 +25,11 @@ init_commit_message: "[Spec Kit] Initial commit"
 commit_style: fixed
 
 # Auto-commit before/after core commands.
-# Set "default" to enable for all commands, then override per-command.
-# Each key can be true/false. Message is customizable per-command.
+# "default" applies only to events that have no section below.
+# Listed events must use "enabled: true" to opt in, even if default is true.
+# Messages are customizable per event.
+# In fixed mode, removing an event section also removes its custom message;
+# keep the section with "enabled: true" to retain that message.
 auto_commit:
   default: false
   before_clarify:
