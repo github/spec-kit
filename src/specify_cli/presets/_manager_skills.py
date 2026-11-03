@@ -457,6 +457,7 @@ class _PresetSkillMethods:
             active_ai,
             active_skills_dir,
             create_missing=extra_skills_dirs is None,
+            removal_pass=extra_skills_dirs is not None,
         )
 
         return reconciled_skill_commands
@@ -469,6 +470,7 @@ class _PresetSkillMethods:
         active_skills_dir: Optional[Path],
         *,
         create_missing: bool = False,
+        removal_pass: bool = False,
     ) -> None:
         """Re-render, retire or restore native-skill aliases of composed commands.
 
@@ -486,6 +488,12 @@ class _PresetSkillMethods:
                 the active agent's directory (e.g. one retired when its base
                 was removed, once a new base makes it composable again). Like
                 the primary skill, this only happens for the active agent.
+            removal_pass: True when called after a preset was removed, where
+                the primary-skill pass also repairs historical agents'
+                directories. On install/activation passes, rendering stays
+                active-only (the single-active rule of #2948); an alias that
+                is no longer composable is still retired wherever it is
+                recorded, mirroring stale-output retirement.
         """
         from ..integrations._file_changes import after_file_change, before_file_change
 
@@ -520,6 +528,14 @@ class _PresetSkillMethods:
             if not alias_to_tmpl:
                 continue
 
+            # Several native skill agents can resolve to one physical
+            # directory (agy/codex/zed all use ``.agents/skills``). Rendering
+            # it once per recorded agent would let whichever agent is iterated
+            # last win, writing another agent's command-reference syntax over
+            # the active one's. Group by resolved directory and render with
+            # the active agent when it shares that directory, exactly as
+            # ``_unregister_skills`` does.
+            groups: Dict[Path, Dict[str, Any]] = {}
             for agent, names in recorded.items():
                 agent_config = registrar.AGENT_CONFIGS.get(agent)
                 if (
@@ -535,7 +551,22 @@ class _PresetSkillMethods:
                 )
                 if skills_dir is None:
                     continue
-                for alias in names:
+                group = groups.setdefault(skills_dir, {"agents": [], "aliases": []})
+                group["agents"].append(agent)
+                for name in names:
+                    if isinstance(name, str) and name not in group["aliases"]:
+                        group["aliases"].append(name)
+
+            for skills_dir, group in groups.items():
+                agents = group["agents"]
+                agent = (
+                    active_ai if active_ai in agents else sorted(agents)[0]
+                )
+                agent_config = registrar.AGENT_CONFIGS[agent]
+                # Rendering follows the single-active rule outside a removal
+                # pass; retiring an uncomposable alias is allowed anywhere.
+                may_render = removal_pass or skills_dir == active_skills_dir
+                for alias in group["aliases"]:
                     tmpl = alias_to_tmpl.get(alias) if isinstance(alias, str) else None
                     if tmpl is None:
                         continue
@@ -544,7 +575,7 @@ class _PresetSkillMethods:
                     skill_file = skill_dir / "SKILL.md"
                     missing = not skill_dir.exists() and not skill_dir.is_symlink()
                     if missing:
-                        if not (create_missing and agent == active_ai):
+                        if not (create_missing and skills_dir == active_skills_dir):
                             continue
                     else:
                         if not self._validate_skill_subdir(
@@ -571,11 +602,19 @@ class _PresetSkillMethods:
                         continue
                     composed = resolver.resolve_content(primary, "command")
                     if composed is None:
-                        if missing:
+                        if missing or any(
+                            layer["strategy"] == "replace" for layer in layers
+                        ):
+                            # A replace base is still there, so this is a
+                            # resolution failure (e.g. an unreadable layer),
+                            # not a missing base: keep the alias, as the
+                            # primary-skill path keeps its output.
                             continue
                         before_file_change(skill_dir, removal=True)
                         shutil.rmtree(skill_dir)
                         after_file_change(skill_dir)
+                        continue
+                    if not may_render:
                         continue
                     if missing and not self._validate_skill_subdir(
                         skill_dir, create=True, skills_root=skills_dir

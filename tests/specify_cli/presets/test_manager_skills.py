@@ -2105,6 +2105,103 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "Base preset body" not in restored
         assert "source: append-preset:" in restored
 
+    def test_unreadable_surviving_base_keeps_alias_skill(self, project_dir, temp_dir):
+        """A surviving replace base that cannot be decoded makes resolution
+        fail; that is not a missing base, so the alias is kept like the
+        primary skill's output."""
+        manager = self._install_custom_layers(
+            project_dir, temp_dir, alias=self._ALIAS
+        )
+        other = self._create_command_preset(
+            temp_dir, "other-base", "speckit.custom", "other-base", "Other base body"
+        )
+        # Lower-priority than base-preset, so it only becomes the base once
+        # base-preset is removed.
+        manager.install_from_directory(other, "0.1.5", priority=12)
+        alias_file = self._alias_skill(project_dir)
+        before = alias_file.read_text(encoding="utf-8")
+        assert "Base preset body" in before
+        manifest = yaml.safe_load(
+            (manager.presets_dir / "other-base" / "preset.yml").read_text()
+        )
+        command_file = (
+            manager.presets_dir / "other-base"
+            / manifest["provides"]["templates"][0]["file"]
+        )
+        command_file.write_bytes(b"---\ndescription: x\n---\n\xff\xfe broken\n")
+
+        assert manager.remove("base-preset") is True
+
+        assert alias_file.read_text(encoding="utf-8") == before
+
+    def test_install_does_not_rewrite_inactive_agent_alias_skill(
+        self, project_dir, temp_dir
+    ):
+        """Installing a new base while another agent is active must not write
+        an inactive agent's alias: registration is active-only (#2948)."""
+        manager = self._install_custom_layers(
+            project_dir, temp_dir, alias=self._ALIAS
+        )
+        claude_alias = self._alias_skill(project_dir)
+        before = claude_alias.read_text(encoding="utf-8")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+
+        new_base = self._create_command_preset(
+            temp_dir, "new-base", "speckit.custom", "new-base", "New base body"
+        )
+        manager.install_from_directory(new_base, "0.1.5", priority=8)
+
+        assert claude_alias.read_text(encoding="utf-8") == before
+
+    def test_shared_dir_alias_rendered_once_with_active_renderer(
+        self, project_dir, temp_dir
+    ):
+        """Codex and agy share ``.agents/skills``. A shared alias must be
+        rendered once, with the active agent's command-reference syntax."""
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        shared = project_dir / ".agents" / "skills"
+        self._create_skill(shared, "speckit-custom")
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "custom.md").write_text(
+            "---\ndescription: Core custom\n---\n\nCore custom body\n",
+            encoding="utf-8",
+        )
+        manager = PresetManager(project_dir)
+        for preset_id, body, strategy, priority in [
+            ("base-preset", "Base preset body", "replace", 10),
+            ("append-preset", "Run `__SPECKIT_COMMAND_PLAN__`.", "append", 5),
+        ]:
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            manifest_path = preset_dir / "preset.yml"
+            manifest = yaml.safe_load(manifest_path.read_text())
+            manifest["provides"]["templates"][0]["strategy"] = strategy
+            if strategy != "replace":
+                manifest["provides"]["templates"][0]["aliases"] = [self._ALIAS]
+            manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+
+        # `integration use agy` then back to codex records both agent keys
+        # against the one shared directory.
+        self._write_init_options(project_dir, ai="agy", ai_skills=True)
+        manager.register_enabled_presets_for_agent("agy")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        recorded = manager.registry.get("append-preset").get("registered_commands", {})
+        assert {"codex", "agy"} <= set(recorded)
+
+        assert manager.remove("base-preset") is True
+
+        alias_text = (shared / "speckit-custom-short" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        assert "Core custom body" in alias_text
+        # Codex is active, so references use its "$" prefix, not agy's "/".
+        assert "$speckit-plan" in alias_text
+        assert "/speckit-plan" not in alias_text
+
     def test_remove_sole_base_keeps_hand_edited_alias_skill(self, project_dir, temp_dir):
         manager = self._install_custom_layers(project_dir, temp_dir, alias=self._ALIAS)
         alias_file = self._alias_skill(project_dir)
