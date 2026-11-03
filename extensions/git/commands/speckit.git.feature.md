@@ -19,6 +19,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 If the user explicitly provided `GIT_BRANCH_NAME` (e.g., via environment variable, argument, or in their request), pass it through to the script by setting the `GIT_BRANCH_NAME` environment variable before invoking the script. When `GIT_BRANCH_NAME` is set:
 - The script uses the exact value as the branch name, bypassing all prefix/suffix generation
 - `--short-name`, `--number`, and `--timestamp` flags are ignored
+- If the value names the branch that is already checked out, the script succeeds without switching or creating a branch
 - `FEATURE_NUM` is extracted when the final path segment starts with a numeric or timestamp feature marker (for example `042-name`, `feat/042-name`, or `jdoe/app/042-name`), otherwise set to the full branch name
 
 ## Prerequisites

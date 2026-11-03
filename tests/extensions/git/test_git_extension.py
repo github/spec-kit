@@ -29,6 +29,15 @@ CORE_COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
 CORE_COMMON_PS = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
 
 HAS_PWSH = shutil.which("pwsh") is not None
+HAS_WINDOWS_POWERSHELL = os.name == "nt" and shutil.which("powershell") is not None
+# CONTRIBUTING.md targets Windows PowerShell 5.1; run the changed behavior under it too where it exists.
+POWERSHELL_RUNTIMES = [
+    "pwsh",
+    pytest.param(
+        "powershell",
+        marks=pytest.mark.skipif(not HAS_WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"),
+    ),
+]
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -156,12 +165,18 @@ def _run_bash(script_name: str, cwd: Path, *args: str, env_extra: dict | None = 
     )
 
 
-def _run_pwsh(script_name: str, cwd: Path, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
-    """Run an extension PowerShell script."""
+def _run_pwsh(
+    script_name: str, cwd: Path, *args: str, env_extra: dict | None = None, exe: str = "pwsh"
+) -> subprocess.CompletedProcess:
+    """Run an extension PowerShell script with `exe` (pwsh, or Windows PowerShell 5.1)."""
     script = cwd / ".specify" / "extensions" / "git" / "scripts" / "powershell" / script_name
     env = {**os.environ, **_GIT_ENV, **(env_extra or {})}
+    command = [exe, "-NoProfile"]
+    if exe == "powershell":
+        # Windows PowerShell 5.1 defaults to Restricted on client Windows and refuses -File; pwsh defaults to RemoteSigned.
+        command += ["-ExecutionPolicy", "Bypass"]
     return subprocess.run(
-        ["pwsh", "-NoProfile", "-File", str(script), *args],
+        [*command, "-File", str(script), *args],
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -533,6 +548,28 @@ class TestCreateFeatureBash:
         assert "branch_template" in result.stderr
         assert "{slug}" in result.stderr
         assert "{number}" in result.stderr
+
+    def test_git_branch_name_override_naming_current_branch_is_noop(self, tmp_path: Path):
+        """GIT_BRANCH_NAME equal to the checked-out branch exits 0 without switching."""
+        project = _setup_project(tmp_path)
+        subprocess.run(
+            ["git", "checkout", "-q", "-b", "feature/PROJ-42-login"],
+            cwd=project, check=True,
+        )
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "login", "Login page",
+            env_extra={"GIT_BRANCH_NAME": "feature/PROJ-42-login"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "feature/PROJ-42-login"
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert head == "feature/PROJ-42-login"
 
     def test_git_branch_name_override_extracts_number_after_namespace(self, tmp_path: Path):
         """GIT_BRANCH_NAME extracts FEATURE_NUM from a namespaced branch."""
@@ -978,6 +1015,55 @@ class TestCreateFeaturePowerShell:
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "jdoe/2026-app/042-custom-branch"
         assert data["FEATURE_NUM"] == "042"
+
+    @pytest.mark.parametrize("exe", POWERSHELL_RUNTIMES)
+    def test_git_branch_name_override_naming_current_branch_is_noop(self, tmp_path: Path, exe: str):
+        """PowerShell GIT_BRANCH_NAME equal to the checked-out branch exits 0 without switching."""
+        project = _setup_project(tmp_path)
+        subprocess.run(
+            ["git", "checkout", "-q", "-b", "feature/PROJ-42-login"],
+            cwd=project, check=True,
+        )
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-ShortName", "login", "Login page",
+            env_extra={"GIT_BRANCH_NAME": "feature/PROJ-42-login"},
+            exe=exe,
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "feature/PROJ-42-login"
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert head == "feature/PROJ-42-login"
+
+    @pytest.mark.parametrize("exe", POWERSHELL_RUNTIMES)
+    def test_git_branch_name_override_naming_other_existing_branch_fails(self, tmp_path: Path, exe: str):
+        """PowerShell GIT_BRANCH_NAME naming a different existing branch is rejected without switching."""
+        project = _setup_project(tmp_path)
+        subprocess.run(["git", "branch", "feature/other"], cwd=project, check=True)
+        before = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-ShortName", "login", "Login page",
+            env_extra={"GIT_BRANCH_NAME": "feature/other"},
+            exe=exe,
+        )
+
+        assert result.returncode == 1
+        # Windows PowerShell 5.1 word-wraps the error record to the console width
+        assert "already exists" in " ".join(result.stderr.split()), result.stderr
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert head == before
 
     def test_git_branch_name_override_without_feature_marker_preserves_full_name(self, tmp_path: Path):
         """PowerShell keeps the full override name when no feature marker exists."""
