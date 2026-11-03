@@ -7,7 +7,7 @@ import sys
 from unittest.mock import patch
 
 from specify_cli import app
-from specify_cli._version import _runs_from_uv_tool_env_on_windows
+from specify_cli._version import _render_argv, _runs_from_uv_tool_env_on_windows
 
 from tests.specify_cli.self_upgrade_helpers import (
     route_opener_open_through_urlopen,  # noqa: F401 (autouse fixture)
@@ -553,7 +553,7 @@ class TestWindowsUvToolEnvironment:
         self, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="1.2.2"
         ), patch(
@@ -576,7 +576,7 @@ class TestWindowsUvToolEnvironment:
         self, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="1.2.4"
         ), patch(
@@ -595,7 +595,7 @@ class TestWindowsUvToolEnvironment:
     def test_windows_uv_tool_already_on_requested_tag_is_noop(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value=sys.executable), patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="1.2.4"
@@ -613,7 +613,7 @@ class TestWindowsUvToolEnvironment:
 
     def test_windows_pipx_still_runs_installer(self, pipx_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="pipx"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="1.2.2"
         ), patch(
@@ -634,7 +634,7 @@ class TestWindowsUvToolEnvironment:
         self, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="1.2.2"
         ), patch(
@@ -663,7 +663,7 @@ class TestWindowsUvToolEnvironment:
         self, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="1.2.2"
         ), patch(
@@ -689,7 +689,7 @@ class TestWindowsUvToolEnvironment:
             with patch(
                 "specify_cli.authentication.http.urllib.request.urlopen"
             ) as mock_urlopen, patch(
-                "specify_cli._version.shutil.which", return_value="uv"
+                "specify_cli._version.shutil.which", return_value=sys.executable
             ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
                 "specify_cli._version._get_installed_version", return_value="1.2.2"
             ), patch(
@@ -715,7 +715,7 @@ class TestWindowsUvToolEnvironment:
         self, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run"), patch(
             "specify_cli._version._get_installed_version", return_value="1.2.2"
         ), patch(
@@ -726,10 +726,20 @@ class TestWindowsUvToolEnvironment:
 
         assert result.exit_code == 0
         out = strip_ansi(result.output)
-        assert (
-            "Command that would be executed: uv tool install specify-cli --force "
-            "--from git+https://github.com/github/spec-kit.git@v1.2.4"
-        ) in " ".join(out.split())
+        expected_argv = _render_argv(
+            [
+                sys.executable,
+                "tool",
+                "install",
+                "specify-cli",
+                "--force",
+                "--from",
+                "git+https://github.com/github/spec-kit.git@v1.2.4",
+            ]
+        )
+        assert f"Command that would be executed: {expected_argv}" in " ".join(
+            out.split()
+        )
         assert "then run this once this command exits" not in out
 
     def test_windows_uv_tool_dry_run_without_uv_reports_missing_installer(
