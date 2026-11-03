@@ -10,6 +10,7 @@
           "extensions/*.md",
           "guides/*.md",
           "integrations/*.md",
+          "presets/*.md",
           "reference/*.md",
           "install/*.md"
         ]

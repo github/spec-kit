@@ -35,6 +35,12 @@ To build the documentation locally:
 - `reference/catalogs.md` - Catalog discovery, trust, private sources, and precedence
 - `extensions/overview.md` - Extension user guide
 - `extensions/publishing.md` - Extension publishing and catalog submission guide
+- `presets/overview.md` - Preset user guide
+- `presets/cli.md` - Preset management CLI reference
+- `presets/developing.md` - Preset authoring and local testing guide
+- `presets/api.md` - Manifest, composition, and lifecycle reference
+- `presets/catalogs.md` - Preset catalog configuration, schemas, and trust
+- `presets/publishing.md` - Preset publishing and catalog submission guide
 - `integrations/index.md` - Integration directory and shared setup guidance
 - `integrations/cli.md` - Shared integration management CLI reference
 - `integrations/<key>.md` - Agent-specific setup, invocation, options, and limitations
