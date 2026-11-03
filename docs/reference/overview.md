@@ -56,13 +56,17 @@ Artifacts are the commands, templates, and scripts a project exposes, whichever 
 
 Workflows automate multi-step Spec-Driven Development processes into repeatable sequences. They chain commands, prompts, shell steps, and human checkpoints together, with support for conditional logic, loops, fan-out/fan-in, and the ability to pause and resume from the exact point of interruption.
 
-[Workflows reference →](workflows.md)
+[Workflows guide →](../workflows/overview.md)
+
+[Workflow CLI reference →](../workflows/cli.md)
 
 ## Bundles
 
 Bundles compose existing extensions, presets, workflows, and steps into a single, versioned, installable unit. Rather than adding new behavior, a bundle curates a stack of primitives — everything a team or role needs — and installs it in one step through each component's own machinery, with version pinning, conflict checks, and provenance tracking for clean updates and removal.
 
-[Bundles reference →](bundles.md)
+[Bundles guide →](../bundles/overview.md)
+
+[Bundle management reference →](../bundles/cli.md)
 
 ## Agentic Commands
 

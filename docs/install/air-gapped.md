@@ -69,7 +69,7 @@ bundle manifest, not the component payloads it names. Before disconnecting,
 install matching non-bundled components separately. Components with an explicit
 catalog `source` still require network verification even when already installed,
 and workflow step payloads currently resolve only through step catalogs. Review
-the [bundle offline limits](../reference/bundles.md#install-a-bundle) before
+the [bundle offline limits](../bundles/cli.md#offline-limits) before
 depending on `specify bundle install --offline`.
 
 See the [Catalogs reference](../reference/catalogs.md) for catalog types, trust

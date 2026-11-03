@@ -52,6 +52,6 @@ Community projects that extend, visualize, or build on Spec Kit — including VS
 To publish your own work, follow the
 [Extension Publishing Guide](../extensions/publishing.md),
 the [Presets Publishing Guide](../presets/publishing.md),
-the [Community Bundles guide](bundles.md), or the
+the [Bundle Publishing Guide](../bundles/publishing.md), or the
 [Community Workflow Step Types guide](workflow-steps.md). For help choosing a
 component type, see [Adapt Spec Kit to your process](../how-to/customization.md).

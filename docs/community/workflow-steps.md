@@ -87,8 +87,9 @@ The package must satisfy the current installer and loader contract:
 - `.git`, `__pycache__`, and `.DS_Store` are excluded from installation;
   submission automation rejects case-insensitive aliases of these components.
 
-See [Custom step packages](../reference/workflows.md#custom-step-packages) for
-the complete install, validation, and runtime behavior.
+See [Custom step packages](../workflows/developing.md#custom-step-packages) for
+package validation and runtime behavior, and the
+[step installation reference](../workflows/cli.md#step-management) for installation.
 
 ## Submission Contract
 

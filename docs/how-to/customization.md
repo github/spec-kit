@@ -26,8 +26,9 @@ agents and setup, or [contributing integrations](../integrations/contributing.md
 to develop an adapter.
 
 Workflow step packages extend the step types available to workflows. See
-[custom step packages](../reference/workflows.md#custom-step-packages) for
-installation and execution, and
+[custom step packages](../workflows/developing.md#custom-step-packages) for
+authoring and execution, the [step CLI](../workflows/cli.md#step-management)
+for installation, and
 [community workflow steps](../community/workflow-steps.md) for discovery and
 contribution guidance. Review executable packages before installing or using them.
 
@@ -107,14 +108,14 @@ specify bundle install <bundle-id>
 ```
 
 Inspect `info` before installing to see the resolved component set. See the
-[bundle reference](../reference/bundles.md) for updates, removal, catalog policies,
-offline limitations, validation, and publishing, and the
-[example manifests](https://github.com/github/spec-kit/tree/main/examples/bundles)
-for product manager, business analyst, security researcher, and developer setups.
+[bundle overview](../bundles/overview.md) for available first-party setups and
+the [CLI reference](../bundles/cli.md) for updates, removal, and offline limits.
+For authoring, start with [developing bundles](../bundles/developing.md) and
+[publishing bundles](../bundles/publishing.md).
 
 ## Share your customizations
 
 Community components are independently maintained. Review source code before
 installation and use it at your own discretion. Visit the
 [community guide](../community/overview.md) to discover components or publish your
-own, and the [workflow reference](../reference/workflows.md) to automate a process.
+own, and the [workflow guide](../workflows/overview.md) to automate a process.
