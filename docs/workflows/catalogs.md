@@ -129,7 +129,27 @@ replace a previous installation after reviewing the selected package.
 
 ## Resolution and failures
 
-The highest-precedence entry for an ID supplies its metadata, releases, and installation policy. A lower-priority source cannot supply a missing version or override a discovery-only decision. Unreachable sources may be skipped when others are readable; if every fetch fails, the CLI reports the fetch failure rather than an empty result. Invalid catalog structures report errors. Exact lookup stops once a winning entry is found, so a malformed lower-priority catalog does not block that result.
+Workflow and step lookups merge all active catalogs, including for an exact ID.
+They do not stop after finding an ID. Sources are processed in reverse priority
+order so higher-precedence entries overwrite lower-precedence entries; each
+source may be fetched or read from cache even when another provides the ID.
+Vet every active source, not just the source expected to win.
+
+The winning entry supplies its metadata, releases, and installation policy
+together. A lower-priority entry cannot supply a missing version or override a
+winning discovery-only decision. However, a source that fails to fetch
+contributes no entries, so a lower-priority source can supply the ID when the
+preferred source is unavailable. Fetch failures remaining after cache fallback
+are skipped when another source succeeds; if every configured catalog fails,
+lookup reports an error.
+
+A fetched catalog must be a JSON object. Within that object, `workflows` and
+`steps` accept mapping or list forms; unsupported collection shapes and
+non-mapping entries are skipped. These ignored contents do not count as fetch
+failures, so a successfully fetched object can contribute no entries and lookup
+can return no results rather than a structure-validation error. Step catalogs
+additionally reject duplicate JSON fields and duplicate step IDs in list form.
+Release metadata is validated separately and can still produce errors.
 
 ## Cache and private sources
 
