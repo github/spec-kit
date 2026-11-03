@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.3.0] - 2026-11-03
+
+### Changed
+
+- docs: consolidate and correct preset documentation (#5223)
+- [bug-fix] Fix oversized-number-crash: bound Python --number parsing (#5200)
+- docs: consolidate and correct extension documentation (#5221)
+- fix: detect relocated uv and pipx tool installations (#5103)
+- chore(ci): test Python 3.11 and 3.12 (#5220)
+- fix: invoke registered command hook only once (#5219)
+- [Copilot Dreams] Avoid rejecting supported extension submissions (#5216)
+- fix(cline): keep .md extension on speckit.* file names in command bodies (#5168)
+- feat(integrations): add process_registered_command hook with source_id (#5215)
+- [preset] Update A11Y Governance preset to v0.4.6 (#5212)
+- feat!: remove taskstoissues from core (#5053)
+- Add Guildwork: request, verdict, register extension to community catalog (#5214)
+- fix(extensions): stop the git extension's fetch from waiting on a credential prompt (#5201)
+- fix(workflows): decode code-page shell output in Python's UTF-8 mode (#5209)
+- feat(workflows): parse workflow expressions with a Lark LALR grammar (#5171)
+- feat(copilot): add --no-model-invocation integration option (#5118)
+- fix: preserve Windows drive paths in bundle catalog config (#5205)
+- fix(extensions): skip catalog entries without a version on update (#5108)
+- feat(integrations): add a preflight_setup() hook that runs before shared writes (#5198)
+- chore: release 1.2.6, begin 1.2.7.dev0 development (#5211)
+
 ## [1.2.6] - 2026-11-02
 
 ### Changed
