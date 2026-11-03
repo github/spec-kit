@@ -19,7 +19,7 @@ def test_workflow_publishing_does_not_claim_security_review():
 
 
 def test_preset_catalog_docs_warn_about_vetting_install_allowed():
-    text = (REPO_ROOT / "docs" / "reference" / "presets.md").read_text(encoding="utf-8")
+    text = (REPO_ROOT / "docs" / "presets" / "catalogs.md").read_text(encoding="utf-8")
     assert "install_allowed" in text
     assert "vet" in text.lower()
 

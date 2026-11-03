@@ -39,6 +39,12 @@ To build the documentation locally:
 - `extensions/developing.md` - Extension authoring guide
 - `extensions/api.md` - Extension manifest, API, hook, and runtime event contracts
 - `extensions/publishing.md` - Extension publishing and catalog submission guide
+- `presets/overview.md` - Preset user guide
+- `presets/cli.md` - Preset management CLI reference
+- `presets/developing.md` - Preset authoring and local testing guide
+- `presets/api.md` - Manifest, composition, and lifecycle reference
+- `presets/catalogs.md` - Preset catalog configuration, schemas, and trust
+- `presets/publishing.md` - Preset publishing and catalog submission guide
 - `community/extensions.md` - Community extension listing
 - `integrations/index.md` - Integration directory and shared setup guidance
 - `integrations/cli.md` - Shared integration management CLI reference

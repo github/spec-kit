@@ -152,6 +152,23 @@
     - name: Publishing
       href: extensions/publishing.md
 
+# Presets
+- name: Presets
+  href: presets/overview.md
+  items:
+    - name: Overview
+      href: presets/overview.md
+    - name: CLI Reference
+      href: presets/cli.md
+    - name: Developing
+      href: presets/developing.md
+    - name: API Reference
+      href: presets/api.md
+    - name: Catalogs
+      href: presets/catalogs.md
+    - name: Publishing
+      href: presets/publishing.md
+
 # Reference
 - name: Reference
   items:
@@ -165,8 +182,6 @@
       href: integrations/cli.md
     - name: Catalogs
       href: reference/catalogs.md
-    - name: Presets
-      href: reference/presets.md
     - name: Artifacts
       href: reference/artifacts.md
     - name: Workflows

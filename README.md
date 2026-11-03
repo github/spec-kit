@@ -46,8 +46,8 @@ Spec Kit combines ready-to-use processes with composable mechanisms:
 | Connect a process to an external tool or service | [Extension](https://github.github.io/spec-kit/extensions/overview.html) |
 | React to coding-agent lifecycle events | [Extension runtime event](https://github.github.io/spec-kit/extensions/api.html#extension-runtime-events) |
 | Run extension commands before or after Spec Kit commands | [Extension hook](https://github.github.io/spec-kit/extensions/api.html#hook-configuration) |
-| Adapt templates, commands, terminology, or methodology | [Preset](https://github.github.io/spec-kit/reference/presets.html) |
-| Enforce organizational or regulatory standards | [Preset](https://github.github.io/spec-kit/reference/presets.html) |
+| Adapt templates, commands, terminology, or methodology | [Preset](https://github.github.io/spec-kit/presets/overview.html) |
+| Enforce organizational or regulatory standards | [Preset](https://github.github.io/spec-kit/presets/overview.html) |
 | Override a template for one project | [Project-local override](https://github.github.io/spec-kit/guides/customization.html#project-local-overrides-and-resolution) |
 | Automate prompts, commands, gates, and shell tasks | [Workflow](https://github.github.io/spec-kit/reference/workflows.html) |
 | Modify an installed workflow without forking it | [Workflow overlay](https://github.github.io/spec-kit/reference/workflows.html#workflow-overlays) |

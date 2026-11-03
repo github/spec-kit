@@ -42,7 +42,9 @@ Extensions add new capabilities to Spec Kit — domain-specific commands, extern
 
 Presets customize how Spec Kit works — overriding command files, template files, and script files without changing any tooling. They let you enforce organizational standards, adapt the workflow to your methodology, or localize the entire experience. Multiple presets can be stacked with priority ordering to layer customizations.
 
-[Presets reference →](presets.md)
+[Presets guide →](../presets/overview.md)
+
+[Preset management reference →](../presets/cli.md)
 
 ## Artifacts
 
