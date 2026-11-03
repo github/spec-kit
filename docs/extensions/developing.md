@@ -371,7 +371,9 @@ For other integrations' invocation formats, see the shared
 
 ### Script Path Rewriting
 
-Extension commands use relative paths that get rewritten during registration:
+The registrar normalizes helper paths while rendering commands. A
+repository-root reference with two or more `../` segments targets the
+project's core scripts.
 
 **In extension**:
 
@@ -380,14 +382,18 @@ scripts:
   sh: ../../scripts/bash/helper.sh
 ```
 
-**After registration**:
+Use `{SCRIPT}` in the command body to invoke the selected script variant.
+For this example, the generated invocation is:
 
-```yaml
-scripts:
-  sh: .specify/scripts/bash/helper.sh
+```bash
+.specify/scripts/bash/helper.sh
 ```
 
-This allows scripts to reference core spec-kit scripts.
+Bare `scripts/helper.sh` instead targets
+`.specify/extensions/<extension-id>/scripts/helper.sh` for an extension-owned
+script. The generated output format may omit the original `scripts`
+frontmatter after resolving `{SCRIPT}`; do not rely on that metadata surviving
+in the installed command or skill.
 
 ---
 
@@ -844,7 +850,8 @@ reinstall the extension to trigger registration.
 
 - **Issues**: Report bugs at GitHub repository
 - **Discussions**: Ask questions in GitHub Discussions
-- **Examples**: See `spec-kit-jira` for full-featured example (Phase B)
+- **Examples**: See the bundled [GitHub](https://github.com/github/spec-kit/tree/main/extensions/github)
+  and [bug](https://github.com/github/spec-kit/tree/main/extensions/bug) extensions
 
 ---
 

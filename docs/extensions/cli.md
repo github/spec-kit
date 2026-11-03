@@ -21,6 +21,8 @@ Searches all active catalogs for extensions matching the query. Without a query,
 
 ```bash
 specify extension add <name>
+specify extension add --from <url>
+specify extension add --dev <path>
 ```
 
 | Option          | Description                                              |
@@ -32,6 +34,10 @@ specify extension add <name>
 | `--priority <N>`| Resolution priority (default: 10; lower = higher precedence) |
 
 Installs an extension from the catalog, a URL, or a local directory. Extension commands are registered with the active AI coding agent integration. For `generic`, invocations use the configured `--commands-dir`: flat command files by default, or `speckit-<name>/SKILL.md` with `--skills`.
+
+The positional name is required for catalog installs, and `--dev` requires a
+local path. With `--from`, the positional name can be omitted; the downloaded
+manifest supplies the installed extension ID.
 
 If a generic integration refresh cannot produce every extension invocation (for example, because a command or skill is user-modified or its source is missing), it warns and restores that extension's prior registered artifacts. Other extensions can still refresh.
 

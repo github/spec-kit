@@ -32,7 +32,7 @@ There are two ways to install something found through the community catalog:
 
 1. **Install a single vetted release directly.** Get the candidate archive URL
    from `specify extension info <name>`, which prints a "Candidate archive" URL
-   for discovery-only entries. Treat the URL as untrusted until you have reviewed
+   for uninstalled discovery-only entries. Treat the URL as untrusted until you have reviewed
    that release archive, then install it:
 
    ```bash
@@ -275,7 +275,7 @@ inside the entry is optional.
 | `download_url` | string | For archive releases | URL to the release archive; bundled entries can omit it |
 | `bundled` | boolean | No | Marks an extension shipped with Spec Kit, resolved from the running distribution |
 | `repository` | string | No | Source code URL (required for community submission) |
-| `description` | string | No | Brief description, under 200 characters (required for submission) |
+| `description` | string | Yes | Brief description; community submissions require under 200 characters |
 | `author` | string | No | Author/organization (required for submission) |
 | `license` | string | No | SPDX license identifier (required for submission) |
 | `homepage`, `documentation`, `changelog` | string | No | Related URLs |
