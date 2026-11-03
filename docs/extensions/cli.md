@@ -153,8 +153,14 @@ specify extension disable <name>
 
 Disable an extension without removing it. Disabled extensions are excluded from
 registry-driven artifact resolution and future integration registration, and
-their hooks and runtime events are disabled. Non-generic integrations can retain
-generated command or skill files that remain invocable until an integration
+their declarative hooks are marked disabled in `.specify/extensions.yml`.
+Native runtime-event configuration is refreshed on a best-effort basis after
+these state changes. If a refresh fails, the command warns, but a stale native
+hook may remain active and still execute. Retry the affected integration's
+refresh with `specify integration upgrade <key>`.
+
+Non-generic integrations can retain generated command or skill files that
+remain invocable until an integration
 switch, uninstall, or reconciliation removes them. Disabling is not a universal
 execution block. Hook-only extensions can be installed, enabled, and disabled
 even if generic command-output settings are missing or invalid; extensions with

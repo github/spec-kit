@@ -338,8 +338,11 @@ Update these extensions? [y/N]:
 specify extension disable jira
 ```
 
-Hooks and runtime events will be disabled. Re-enable with
-`specify extension enable jira`.
+Declarative hooks are marked disabled in `.specify/extensions.yml`. Native
+runtime-event configuration is then refreshed on a best-effort basis. A refresh
+failure produces a warning but can leave a stale native hook active and able to
+execute. Retry the affected integration with `specify integration upgrade <key>`.
+Re-enable the extension with `specify extension enable jira`.
 
 For the generic integration, disabling also removes owned command or skill
 files. Other integrations can retain generated files that remain invocable
