@@ -1,6 +1,8 @@
 """Oh My Pi (omp) coding agent integration."""
 
 from __future__ import annotations
+
+import re
 from pathlib import Path
 
 from collections.abc import Mapping, Sequence
@@ -34,6 +36,22 @@ class OmpIntegration(MarkdownIntegration):
     _THINKING_LEVELS = {
         "off", "minimal", "low", "medium", "high", "xhigh", "max", "auto",
     }
+
+    # OMP's parser (args.ts / flag-tables.ts in can1357/oh-my-pi) is not
+    # POSIX-strict: value-taking flags consume the *next* token, even one that
+    # looks like a flag, and `--=...` is normalized to the `--` terminator.
+    # To keep generated flags and the prompt intact, ``integration_args`` is
+    # limited to (a) known valueless flags and (b) self-contained
+    # ``--name=value`` tokens.
+    _VALUELESS_FLAGS = frozenset({
+        "--allow-home", "--continue", "--from-claude", "--from-codex",
+        "--no-session", "--no-tools", "--no-lsp", "--no-pty",
+        "--hide-thinking", "--advisor", "--wait-async", "--external-thinking",
+        "--prewalk", "--no-prewalk", "--plan-yolo", "--print-thoughts",
+        "--no-extensions", "--no-skills", "--no-rules", "--no-context-files",
+        "--no-title", "--no-ui", "--auto-approve", "--yolo",
+    })
+    _EQUALS_FLAG_RE = re.compile(r"^--[A-Za-z][A-Za-z0-9-]*=")
 
     def build_exec_args(
         self,
@@ -88,6 +106,17 @@ class OmpIntegration(MarkdownIntegration):
             raise ValueError(
                 "OMP model selection must use the command-step 'model' field, "
                 "not a '--model' flag in 'integration_args'."
+            )
+
+        for value in integration_args or ():
+            if value in self._VALUELESS_FLAGS or self._EQUALS_FLAG_RE.match(value):
+                continue
+            raise ValueError(
+                f"OMP 'integration_args' value {value!r} is not allowed. Use a "
+                "known valueless flag (for example '--no-session') or pass "
+                "flag values inline as '--name=value'; bare value-taking "
+                "flags, positional text, '@file' references and '--=' forms "
+                "can consume or reorder the generated options and prompt."
             )
 
         options = integration_options or {}

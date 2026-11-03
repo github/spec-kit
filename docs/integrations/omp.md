@@ -56,12 +56,22 @@ Command steps can pass per-step runtime configuration to `omp --print` (see
 ```
 
 Option values must be non-empty strings; unknown keys and unsupported
-`thinking` values fail before OMP is launched. `integration_args` is passed
-through as raw OMP CLI flags and each value must be a non-empty string. The
-`--` option terminator is rejected because it would turn the generated options
-and the prompt into positional arguments. Select the model with the step's
+`thinking` values fail before OMP is launched. Select the model with the step's
 top-level `model` field: `integration_options.model` and a `--model` flag in
 `integration_args` are both rejected.
+
+`integration_args` is passed to OMP as raw flags, but OMP's parser lets some
+tokens consume or reorder the generated options and prompt, so each value must
+be one of:
+
+- a known valueless flag such as `--no-session`, `--no-title` or `--yolo`; or
+- a self-contained `--name=value` token such as `--system-prompt=...` or
+  `--resume=<id>`.
+
+Bare value-taking flags (`--system-prompt`, `--resume`), the `--` terminator
+and `--=` forms (which OMP normalizes to `--`), positional text, `@file`
+references, short flags, and `--help`/`--version`/`--print` fail before OMP is
+launched.
 
 Arguments are passed to `omp --print` in this order, so later sources follow
 earlier ones on the command line:
