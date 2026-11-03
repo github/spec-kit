@@ -51,6 +51,10 @@ class OmpIntegration(MarkdownIntegration):
         "--no-extensions", "--no-skills", "--no-rules", "--no-context-files",
         "--no-title", "--no-ui", "--auto-approve", "--yolo",
     })
+    # OMP splits ``--name=value`` at ``=`` and enables these flags regardless
+    # of the inline value (``--help=false`` still prints help and exits), so
+    # they are rejected in equals-form too.
+    _RESERVED_FLAG_NAMES = frozenset({"--help", "--version", "--print"})
     _EQUALS_FLAG_RE = re.compile(r"^--[A-Za-z][A-Za-z0-9-]*=")
 
     def build_exec_args(
@@ -109,7 +113,11 @@ class OmpIntegration(MarkdownIntegration):
             )
 
         for value in integration_args or ():
-            if value in self._VALUELESS_FLAGS or self._EQUALS_FLAG_RE.match(value):
+            if (
+                value in self._VALUELESS_FLAGS
+                or self._EQUALS_FLAG_RE.match(value)
+                and value.partition("=")[0] not in self._RESERVED_FLAG_NAMES
+            ):
                 continue
             raise ValueError(
                 f"OMP 'integration_args' value {value!r} is not allowed. Use a "

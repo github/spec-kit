@@ -156,6 +156,10 @@ class TestOmpIntegration(MarkdownIntegrationTests):
             ["-r"],
             ["--help"],
             ["--print"],
+            ["--help=false"],
+            ["--version=false"],
+            ["--print=false"],
+            ["--help="],
         ],
     )
     def test_integration_args_unsafe_tokens_are_rejected(self, integration_args):
