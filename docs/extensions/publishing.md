@@ -17,7 +17,8 @@ This guide explains how to publish your extension to the Spec Kit extension cata
 Before publishing an extension, ensure you have:
 
 1. **Valid Extension**: A working extension with a valid `extension.yml` manifest
-2. **Git Repository**: Extension hosted on GitHub (or other public git hosting)
+2. **GitHub Repository**: Extension hosted in a public GitHub repository for
+   community catalog submission
 3. **Documentation**: README.md with installation and usage instructions
 4. **License**: Open source license file (MIT, Apache 2.0, etc.)
 5. **Versioning**: Semantic versioning (e.g., 1.0.0)
@@ -83,9 +84,10 @@ tags:                             # 2-5 relevant tags
 
 **Validation Checklist**:
 
-- ✅ `id` is lowercase with hyphens only (no underscores, spaces, or special characters)
+- ✅ `id` starts with a lowercase letter and otherwise contains only lowercase
+  letters, digits, or hyphens (`^[a-z][a-z0-9-]*$` for community submissions)
 - ✅ `version` follows semantic versioning (X.Y.Z)
-- ✅ `description` is concise (under 100 characters)
+- ✅ `description` is concise (under 200 characters for community submissions)
 - ✅ `repository` URL is valid and public
 - ✅ All command files exist in the extension directory
 - ✅ Tags are lowercase and descriptive
@@ -130,9 +132,13 @@ specify extension add <extension-name> --from https://github.com/your-org/spec-k
 
 ### Understanding the Catalogs
 
-Spec Kit uses a dual-catalog system. For details about how catalogs work, see the main [Extensions README](https://github.com/github/spec-kit/blob/main/extensions/README.md#extension-catalogs).
+Spec Kit uses a catalog stack with built-in install and discovery sources.
+See [Extension catalogs](catalogs.md) for configuration, release metadata,
+and trust boundaries.
 
-**For extension publishing**: All community extensions are listed in `extensions/catalog.community.json`. Users browse this catalog and copy extensions they trust into their own `catalog.json`.
+**For extension publishing**: All community extensions are listed in
+`extensions/catalog.community.json`. Users must vet a release before installing
+it directly or copying its entry into their own trusted catalog.
 
 ### How to Submit
 
@@ -148,6 +154,28 @@ To submit your extension to the community catalog, file a new issue using the **
 
 > [!IMPORTANT]
 > Do **not** open a pull request directly to edit `extensions/catalog.community.json`. All community extension submissions must go through the issue template. Submissions that do not use the issue template will be closed, and you will be asked to resubmit using it.
+
+### Submission validation
+
+Community submissions are stricter than the general extension runtime:
+
+- The extension ID must match `^[a-z][a-z0-9-]*$`.
+- The version must be `X.Y.Z` with digits only and no `v` prefix. The release
+  tag may include a `v` prefix or a scope, but its version must match the
+  submitted version.
+- The repository must be public and contain `extension.yml`, `README.md`, and
+  `LICENSE`.
+- The download URL must belong to that same GitHub repository and use either
+  `https://github.com/<owner>/<repo>/archive/refs/tags/<tag>.zip` or
+  `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip`.
+  Floating `releases/latest/` URLs are rejected.
+- The archive must be accessible. If a SHA-256 digest is submitted, it must
+  match the downloaded archive. The automation records the downloaded archive's
+  digest in the proposed catalog entry even when one was not submitted.
+
+These are metadata and archive-provenance checks, not a review of extension
+code. Other public hosting and private releases can be used with a catalog you
+control, but are not accepted through this community submission process.
 
 ### What Happens After You Submit
 
@@ -165,10 +193,6 @@ To submit your extension to the community catalog, file a new issue using the **
 
 > [!NOTE]
 > Maintainers do **not** review, audit, or test the extension code itself.
-
-### Typical Review Timeline
-
-- **Review**: 3-7 business days
 
 ### Updating an Existing Extension
 
@@ -254,7 +278,8 @@ When releasing a new version:
 
 ### Maintenance
 
-1. **Respond to Issues**: Address issues within 1-2 weeks
+1. **Respond to Issues**: Acknowledge and investigate reports as maintainer
+   capacity permits
 2. **Regular Updates**: Keep dependencies updated
 3. **Changelog**: Maintain detailed changelog
 4. **Deprecation**: Give advance notice for breaking changes
@@ -275,11 +300,17 @@ When releasing a new version:
 A: The main catalog is for public extensions only. For private extensions:
 
 - Host your own catalog.json file
-- In a Spec Kit project, users add your catalog: `specify extension catalog add https://your-domain.com/catalog.json --name private-catalog`
+- After vetting its releases, users add your catalog as an install source:
+
+  ```bash
+  specify extension catalog add https://your-domain.com/catalog.json \
+    --name private-catalog --install-allowed
+  ```
 
 ### Q: How long does review take?
 
-A: Typically 3-7 business days. Updates to existing extensions are usually faster.
+A: Submissions wait for maintainer triage, automated validation, and review of
+the generated catalog pull request. There is no promised turnaround.
 
 ### Q: What if my extension is rejected?
 
@@ -301,53 +332,19 @@ A: Extensions should be free and open-source. Commercial support/services are al
 
 ## Support
 
-- **Catalog Issues**: <https://github.com/statsperform/spec-kit/issues>
-- **Extension Template**: <https://github.com/statsperform/spec-kit-extension-template> (coming soon)
+- **Catalog Issues**: <https://github.com/github/spec-kit/issues>
+- **Extension Submission**: [Submit or update a community extension](https://github.com/github/spec-kit/issues/new?template=extension_submission.yml)
 - **Development Guide**: See [Developing extensions](developing.md)
 - **Community**: Discussions and Q&A
 
 ---
 
-## Appendix: Catalog Schema
+## Catalog metadata
 
-### Complete Catalog Entry Schema
-
-```json
-{
-  "name": "string (required)",
-  "id": "string (required, unique)",
-  "description": "string (required, <200 chars)",
-  "author": "string (required)",
-  "version": "string (required, semver)",
-  "download_url": "string (required, valid URL)",
-  "sha256": "string (optional, SHA-256 hex digest of the archive at download_url; verified before install)",
-  "repository": "string (required, valid URL)",
-  "homepage": "string (optional, valid URL)",
-  "documentation": "string (optional, valid URL)",
-  "changelog": "string (optional, valid URL)",
-  "license": "string (required)",
-  "requires": {
-    "speckit_version": "string (required, version specifier)",
-    "tools": [
-      {
-        "name": "string (required)",
-        "version": "string (optional, version specifier)",
-        "required": "boolean (default: false)"
-      }
-    ]
-  },
-  "provides": {
-    "commands": "integer (optional)",
-    "hooks": "integer (optional)"
-  },
-  "tags": ["array of strings (2-10 tags)"],
-  "verified": "boolean (default: false, set by maintainers)",
-  "downloads": "integer (auto-updated)",
-  "stars": "integer (auto-updated)",
-  "created_at": "string (ISO 8601 datetime)",
-  "updated_at": "string (ISO 8601 datetime)"
-}
-```
+Use the canonical [catalog entry schema](catalogs.md#catalog-entry-schema),
+including [historical release records](catalogs.md#historical-releases) when
+advertising older versions. For community submissions, provide all descriptive
+fields collected by the issue form.
 
 ### Valid Tags
 
@@ -364,3 +361,11 @@ Use 2-5 tags that best describe your extension.
 
 *Last Updated: 2026-01-28*
 *Catalog Format Version: 1.0*
+
+## See also
+
+- [Developing extensions](developing.md)
+- [Extension API reference](api.md)
+- [Extension catalogs](catalogs.md)
+- [Extension CLI reference](cli.md)
+- [Community extensions](../community/extensions.md)

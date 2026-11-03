@@ -46,7 +46,8 @@ Examples include Jira integration, post-implementation code review, V-Model test
 traceability, and project health diagnostics. The bundled
 [bug](bugfix.md) and [assess](assessment.md) extensions are first-party examples.
 Browse [community extensions](../community/extensions.md), or use the
-[extension reference](../reference/extensions.md) for management and configuration.
+[extension CLI reference](../extensions/cli.md) for management and the
+[extension user guide](../extensions/overview.md#configuration) for configuration.
 
 ## Presets: change how a process works
 
@@ -68,8 +69,8 @@ illustrates how extensively the terminology can change.
 
 Multiple presets can be stacked with priorities. See
 [community presets](../community/presets.md) for examples and the
-[preset reference](../reference/presets.md) for installation, composition
-strategies, and precedence.
+[preset guide](../presets/overview.md) for stacking and composition, and the
+[CLI reference](../presets/cli.md) for installation and management.
 
 ## Project-local overrides and resolution
 
@@ -89,7 +90,7 @@ stack every time they invoke a command. Removing an overriding component
 restores the surviving command layer through reconciliation.
 
 With no customizations, the core defaults apply. The
-[file resolution reference](../reference/presets.md#file-resolution) is the
+[file resolution reference](../presets/api.md#file-resolution) is the
 authoritative guide to paths, priorities, and prepend/append/wrap composition.
 
 ## Bundles: role-based setups

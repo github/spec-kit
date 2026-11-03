@@ -36,13 +36,15 @@ explicit discovery and installation policies.
 
 Extensions add new capabilities to Spec Kit — domain-specific commands, external tool integrations, quality gates, and more. They are discovered through catalogs and can be installed, updated, enabled, disabled, or removed independently. Multiple extensions can coexist in a single project.
 
-[Extensions reference →](extensions.md)
+[Extension CLI reference →](../extensions/cli.md)
 
 ## Presets
 
 Presets customize how Spec Kit works — overriding command files, template files, and script files without changing any tooling. They let you enforce organizational standards, adapt the workflow to your methodology, or localize the entire experience. Multiple presets can be stacked with priority ordering to layer customizations.
 
-[Presets reference →](presets.md)
+[Presets guide →](../presets/overview.md)
+
+[Preset management reference →](../presets/cli.md)
 
 ## Artifacts
 
