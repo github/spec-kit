@@ -2,7 +2,7 @@
 
 The grammar replaces the former hand-written parser. Only the block body is
 parsed here. The language is the same with these deliberate differences, all
-documented in ``workflows/ARCHITECTURE.md``:
+documented in https://github.github.io/spec-kit/workflows/expressions.html:
 
 * All comparison operators share one precedence level and group left to right
   (``a == b > 0`` is ``(a == b) > 0``). The former engine's operator scan order

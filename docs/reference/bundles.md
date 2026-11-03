@@ -338,7 +338,7 @@ non-default source.
 For workflow components, inspect shell `run` and `env` fields and their
 referenced code, including changes introduced by active overlays. This applies
 even to `strict: true` steps: environment bindings can change executable lookup
-or runtime loading. See [Reviewing shell execution](workflows.md#reviewing-shell-execution).
+or runtime loading. See [Reviewing shell execution](../workflows/steps.md#reviewing-shell-execution).
 
 ### List the Catalog Stack
 

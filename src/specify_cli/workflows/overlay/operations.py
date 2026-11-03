@@ -468,7 +468,7 @@ def workflow_resolve(project_root: Path, workflow_id: str) -> dict[str, Any] | N
     # The list is sorted by (priority, source) ascending, which puts the
     # winning layer first only while priorities DIFFER. On a tie the sort is
     # alphabetical by source while the merge gives the conflict to the LAST id
-    # (docs/reference/workflows.md, overlays section), so the plain "highest
+    # (https://github.github.io/spec-kit/workflows/overlays.html), so the plain "highest
     # precedence first" label stated the opposite of the outcome printed
     # directly beneath it in the same output -- in the one command whose job
     # is explaining which overlay won. Spell the tie-break out rather than

@@ -10,7 +10,7 @@ from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BUNDLED = REPO_ROOT / "workflows" / "speckit" / "workflow.yml"
-REFERENCE_DOC = REPO_ROOT / "docs" / "reference" / "workflows.md"
+REFERENCE_DOC = REPO_ROOT / "docs" / "workflows" / "developing.md"
 DOC_INTRO = "Here is the built-in **Full SDD Cycle** workflow that ships with Spec Kit:"
 
 
@@ -45,7 +45,7 @@ def test_bundled_speckit_workflow_has_no_unused_scope_input() -> None:
 def test_reference_doc_matches_the_shipped_workflow() -> None:
     """The reference guide reproduces this workflow, so it must not drift from it.
 
-    ``docs/reference/workflows.md`` introduces its YAML block as the workflow
+    ``docs/workflows/developing.md`` introduces its YAML block as the workflow
     that ships with Spec Kit, so a reader is entitled to treat it as the real
     definition. It had drifted on four points -- a stale ``version`` and
     ``speckit_version``, a short ``integrations.any`` list, and an

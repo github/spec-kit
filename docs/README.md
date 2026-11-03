@@ -45,6 +45,15 @@ To build the documentation locally:
 - `presets/api.md` - Manifest, composition, and lifecycle reference
 - `presets/catalogs.md` - Preset catalog configuration, schemas, and trust
 - `presets/publishing.md` - Preset publishing and catalog submission guide
+- `workflows/overview.md` - Workflow user guide and run/review/resume walkthrough
+- `workflows/cli.md` - Workflow, overlay, step, and catalog CLI reference
+- `workflows/developing.md` - Workflow and custom-step authoring guide
+- `workflows/api.md` - YAML, step API, execution, and persisted-state contracts
+- `workflows/steps.md` - Built-in step configuration and outputs
+- `workflows/expressions.md` - Expression language, runtime context, and shell safety
+- `workflows/overlays.md` - Workflow composition through overlays and slots
+- `workflows/catalogs.md` - Workflow and step catalogs, releases, and trust
+- `workflows/publishing.md` - Workflow publishing and catalog submission guide
 - `community/extensions.md` - Community extension listing
 - `integrations/index.md` - Integration directory and shared setup guidance
 - `integrations/cli.md` - Shared integration management CLI reference

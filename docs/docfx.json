@@ -11,6 +11,7 @@
           "guides/*.md",
           "integrations/*.md",
           "presets/*.md",
+          "workflows/*.md",
           "reference/*.md",
           "install/*.md"
         ]

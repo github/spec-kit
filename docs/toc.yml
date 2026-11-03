@@ -169,6 +169,29 @@
     - name: Publishing
       href: presets/publishing.md
 
+# Workflows
+- name: Workflows
+  href: workflows/overview.md
+  items:
+    - name: Overview
+      href: workflows/overview.md
+    - name: CLI Reference
+      href: workflows/cli.md
+    - name: Developing
+      href: workflows/developing.md
+    - name: API Reference
+      href: workflows/api.md
+    - name: Step Types
+      href: workflows/steps.md
+    - name: Expressions
+      href: workflows/expressions.md
+    - name: Overlays
+      href: workflows/overlays.md
+    - name: Catalogs
+      href: workflows/catalogs.md
+    - name: Publishing
+      href: workflows/publishing.md
+
 # Reference
 - name: Reference
   items:
@@ -184,8 +207,6 @@
       href: reference/catalogs.md
     - name: Artifacts
       href: reference/artifacts.md
-    - name: Workflows
-      href: reference/workflows.md
     - name: Bundles
       href: reference/bundles.md
     - name: Agentic SDD

@@ -4,8 +4,8 @@ A workflow step type defines what a `type:` in workflow YAML does. This is an
 extension point of the workflow engine, distinct from an agent integration:
 integrations dispatch work to an agent; steps validate and execute workflow
 behavior. For the overall engine, see
-[Workflow System Architecture](../workflows/ARCHITECTURE.md); for YAML usage,
-see [Workflows](../docs/reference/workflows.md).
+[Workflow API and execution model](https://github.github.io/spec-kit/workflows/api.html); for YAML usage,
+see [Workflows](https://github.github.io/spec-kit/workflows/overview.html).
 
 ## Delivery and registration
 
@@ -92,6 +92,6 @@ thread-safe, with per-run data in `config` and `context`, not on `self`.
    resume or nested/concurrent execution when relevant. Registry and engine
    coverage lives in `tests/test_workflows.py`; focused step suites may live
    under `tests/workflows/`.
-3. Update the [workflow reference](../docs/reference/workflows.md) when a
+3. Update the [workflow step reference](https://github.github.io/spec-kit/workflows/steps.html) when a
    built-in step changes the YAML users can write. Keep agent-specific CLI
    dispatch in integrations rather than duplicating it in step types.
