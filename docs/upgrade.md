@@ -158,7 +158,7 @@ Run:
 specify extension update
 ```
 
-With no extension argument, this updates all installed extensions. Use `specify extension update <extension-id-or-name>` to update only one extension. See the [extensions reference](reference/extensions.md#update-extensions) for details.
+With no extension argument, this updates all installed extensions. Use `specify extension update <extension-id-or-name>` to update only one extension. See the [extension CLI reference](extensions/cli.md#update-extensions) for details.
 
 ### Fallback: re-run init
 

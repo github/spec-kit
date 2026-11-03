@@ -36,7 +36,7 @@ explicit discovery and installation policies.
 
 Extensions add new capabilities to Spec Kit — domain-specific commands, external tool integrations, quality gates, and more. They are discovered through catalogs and can be installed, updated, enabled, disabled, or removed independently. Multiple extensions can coexist in a single project.
 
-[Extensions reference →](extensions.md)
+[Extension CLI reference →](../extensions/cli.md)
 
 ## Presets
 
