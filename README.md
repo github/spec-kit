@@ -52,7 +52,7 @@ Spec Kit combines ready-to-use processes with composable mechanisms:
 | Automate prompts, commands, gates, and shell tasks | [Workflow](https://github.github.io/spec-kit/reference/workflows.html) |
 | Modify an installed workflow without forking it | [Workflow overlay](https://github.github.io/spec-kit/reference/workflows.html#workflow-overlays) |
 | Add reusable executable behavior to workflows | [Workflow step](https://github.github.io/spec-kit/reference/workflows.html#custom-step-packages) |
-| Install a curated setup for a role or team | [Bundle](https://github.github.io/spec-kit/reference/bundles.html) |
+| Install a curated setup for a role or team | [Bundle](https://github.github.io/spec-kit/bundles/overview.html) |
 | Discover community components | [Catalog](https://github.github.io/spec-kit/reference/catalogs.html) |
 | Host a private catalog of approved components | [Catalog](https://github.github.io/spec-kit/reference/catalogs.html) |
 | Access private catalogs and component downloads | [Authentication](https://github.github.io/spec-kit/reference/authentication.html) |

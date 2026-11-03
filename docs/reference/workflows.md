@@ -1096,7 +1096,7 @@ URLs are never persisted. `specify workflow step info <id>` shows the source.
 A bundle's `provides.steps` still resolves only through the active step
 catalogs. Bundle-local `steps/<id>/` payloads and relative
 `provides.steps[].source` overrides are **not** resolved in this release, so
-such steps are not installable offline. See the [Bundles reference](bundles.md).
+such steps are not installable offline. See the [bundle offline limits](../bundles/cli.md#offline-limits).
 
 ### Per-Step Integration Configuration
 

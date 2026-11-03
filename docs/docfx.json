@@ -6,6 +6,7 @@
           "*.md",
           "toc.yml",
           "community/*.md",
+          "bundles/*.md",
           "concepts/*.md",
           "extensions/*.md",
           "guides/*.md",
