@@ -24,7 +24,7 @@ then the [integration PR requirements](https://github.com/github/spec-kit/blob/m
 4. **Add tests** under `tests/integrations/test_integration_<package_dir>.py`.
 5. **Add a catalog entry** in `integrations/catalog.json`.
 6. **Update documentation:** add `docs/integrations/<key>.md` and link it from
-   the [integration index](index.md) and [navigation](../toc.yml).
+   the [integration index](index.md), not the navigation dropdown.
    Update the [catalog reference](catalog.md) if needed and
    [integration design](https://github.com/github/spec-kit/blob/main/design/integration.md)
    if the contract changes.
