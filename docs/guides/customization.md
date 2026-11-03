@@ -46,7 +46,8 @@ Examples include Jira integration, post-implementation code review, V-Model test
 traceability, and project health diagnostics. The bundled
 [bug](bugfix.md) and [assess](assessment.md) extensions are first-party examples.
 Browse [community extensions](../community/extensions.md), or use the
-[extension reference](../reference/extensions.md) for management and configuration.
+[extension CLI reference](../extensions/cli.md) for management and the
+[extension user guide](../extensions/overview.md#configuration) for configuration.
 
 ## Presets: change how a process works
 

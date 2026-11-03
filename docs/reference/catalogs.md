@@ -54,7 +54,7 @@ project:
 | Component type | List active catalogs | Detailed reference |
 | --- | --- | --- |
 | Integrations | `specify integration catalog list` | [Integrations](../integrations/cli.md#catalog-management) |
-| Extensions | `specify extension catalog list` | [Extensions](extensions.md#catalog-management) |
+| Extensions | `specify extension catalog list` | [Extensions](../extensions/catalogs.md) |
 | Presets | `specify preset catalog list` | [Preset catalogs](../presets/catalogs.md) |
 | Workflows | `specify workflow catalog list` | [Workflows](workflows.md#catalog-management) |
 | Workflow steps | `specify workflow step catalog list` | [Workflows](workflows.md#catalog-management) |
