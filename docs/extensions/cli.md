@@ -45,8 +45,11 @@ An unqualified catalog install still selects the advertised current version.
 `--version` uses only the winning catalog source for that extension ID; it does
 not fall back to a lower-priority source when the requested version is absent.
 Discovery-only catalogs remain non-installable. `--version` cannot be combined
-with `--dev` or the direct-URL `--from` option. The downloaded archive's extension
-ID and version are checked before installation.
+with `--dev` or the direct-URL `--from` option. For `--version` catalog installs,
+the downloaded archive's extension ID and version are compared with the
+requested catalog ID and version before installation. Unqualified catalog
+installs and direct `--from` installs validate the manifest but do not compare
+its ID or version with expected catalog values.
 
 ## Remove an Extension
 
