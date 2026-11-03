@@ -967,6 +967,102 @@ class TestIntegrationSwitch:
         template = project / ".specify" / "templates" / "plan-template.md"
         assert "$speckit-plan" in template.read_text(encoding="utf-8")
 
+    @pytest.mark.parametrize("edited_command", [None, "plan", "tasks"])
+    def test_failed_switch_syncs_fallback_manifest_without_blessing_user_edits(
+        self, tmp_path, tasks_preset_src, monkeypatch, edited_command
+    ):
+        """Rollback refreshes preset hashes while retaining earlier edits (#5078)."""
+        from specify_cli.integrations import get_integration
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+        if edited_command:
+            edited_rel = f".agents/skills/speckit-{edited_command}/SKILL.md"
+            before = IntegrationManifest.load("codex", project).files[edited_rel]
+            (project / edited_rel).write_bytes(b"User-edited skill\n")
+
+        def fail_setup(*args, **kwargs):
+            raise OSError("injected setup failure")
+
+        monkeypatch.setattr(type(get_integration("gemini")), "setup", fail_setup)
+        result = _run_in_project(project, ["integration", "switch", "gemini", "--script", "sh"])
+        assert result.exit_code == 1, result.output
+        assert "injected setup failure" in " ".join(strip_ansi(result.output).split())
+        data = json.loads((project / ".specify/integration.json").read_bytes())
+        assert data["integration"] == "codex", "precondition: fallback restored"
+        manifest = IntegrationManifest.load("codex", project)
+        if edited_command:
+            assert manifest.files[edited_rel] == before, "pre-existing edits must not be recorded as pristine"
+            assert edited_rel in manifest.check_modified()
+        else:
+            rel = ".agents/skills/speckit-tasks/SKILL.md"
+            content = (project / rel).read_bytes()
+            assert b"Preset tasks body" in content
+            assert manifest.files[rel] == hashlib.sha256(content).hexdigest(), (
+                "manifest hash must match the preset-overridden skill (#5078)"
+            )
+        result = _run_in_project(project, ["integration", "status", "--json"])
+        assert result.exit_code == 0, result.output
+        report = json.loads(result.output)
+        assert report["modified_managed_files"] == (1 if edited_command else 0)
+        result = _run_in_project(project, ["integration", "upgrade", "codex", "--script", "sh"])
+        assert result.exit_code == (1 if edited_command else 0), result.output
+        if edited_command:
+            assert "modified since installation" in result.output
+
+    @pytest.mark.parametrize("state", ["missing", "corrupt", "save-error"])
+    def test_failed_switch_manifest_refresh_is_best_effort(
+        self, tmp_path, tasks_preset_src, monkeypatch, state
+    ):
+        """Manifest failures must retain registration and the switch error (#5078)."""
+        from specify_cli.integrations import get_integration
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+        manifest_path = project / ".specify/integrations/codex.manifest.json"
+        if state == "missing":
+            manifest_path.unlink()
+        elif state == "corrupt":
+            manifest_path.write_bytes(b"{invalid")
+        else:
+            original_save = IntegrationManifest.save
+
+            def fail_fallback_save(self):
+                if self.key == "codex":
+                    raise OSError("injected manifest save failure")
+                return original_save(self)
+
+            monkeypatch.setattr(IntegrationManifest, "save", fail_fallback_save)
+
+        def fail_setup(*args, **kwargs):
+            raise OSError("injected setup failure")
+
+        monkeypatch.setattr(type(get_integration("gemini")), "setup", fail_setup)
+        result = _run_in_project(project, ["integration", "switch", "gemini", "--script", "sh"])
+
+        assert result.exit_code == 1, result.output
+        output = " ".join(strip_ansi(result.output).split())
+        assert "Error: Failed to install integration 'gemini' during switch: injected setup failure" in output
+        assert b"Preset tasks body" in (project / ".agents/skills/speckit-tasks/SKILL.md").read_bytes()
+        if state == "missing":
+            assert not manifest_path.exists(), "no manifest may be created"
+            assert "Warning:" not in output
+        elif state == "corrupt":
+            assert manifest_path.read_bytes() == b"{invalid"
+            assert "snapshot manifest hashes for integration 'codex'" in output
+            assert "resync manifest hashes" not in output
+        else:
+            assert "injected manifest save failure" in output
+            assert "The switch was rolled back, but its manifest hashes may be stale." in output
+
     def test_failed_switch_rescaffolds_fallback_extensions(self, tmp_path):
         """Regression (review 3624184343).
 

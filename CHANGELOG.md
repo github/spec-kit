@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.2.6] - 2026-11-02
+
+### Changed
+
+- feat(droid): add --no-model-invocation integration option (#5116)
+- fix(extensions): make extension add name optional with --from (#5197)
+- fix(extensions): skip non-UTF-8 catalog responses (#5196)
+- feat: add `specify workflow definition` for run-scoped definitions (#4912)
+- fix(integrations): refresh manifest hashes after init --force and switch rollback (#5193)
+- fix(workflows): stop dispatching "None" as command step arguments (#5016)
+- feat(workflows): add opt-in strict shell execution (#5181)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action (#5191)
+- chore(deps): bump the codeql-action group with 2 updates (#5189)
+- fix: reject symlinked integration state (#5176)
+- fix: reject trailing newlines in extension IDs (#5186)
+- fix: reject trailing newlines in preset IDs (#5188)
+- fix(templates): start spec.md from the composed spec-template (#5187)
+- docs: move extension API reference into documentation (#5174)
+- Update iSAQB Architecture Governance preset to v0.2.5 (#5183)
+- fix: reject unsafe self-upgrade installer paths (#5172)
+- fix(bundles): refuse to build when bundle.yml or README.md is a symlink (#5169)
+- docs(assess): clarify README invocation guidance (#5068)
+- fix(integrations): refresh manifest hashes after preset registration on switch and use (#5145)
+- chore: release 1.2.5, begin 1.2.6.dev0 development (#5167)
+
 ## [1.2.5] - 2026-10-28
 
 ### Changed
