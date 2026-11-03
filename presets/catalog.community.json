@@ -316,13 +316,14 @@
     "cross-platform-governance": {
       "name": "Cross-Platform Governance",
       "id": "cross-platform-governance",
-      "version": "0.2.2",
-      "description": "Adds Bash/PowerShell parity, read-only checks, path and native-override review, Unix man pages, bilingual PowerShell help, and provider-neutral model routing.",
+      "version": "0.2.5",
+      "description": "Adds Bash/PowerShell parity, read-only checks, scoped native-override review, Unix man-pages, bilingual help, Verb-Noun discipline, and traceable Spec Kit evidence to scripting projects.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/archive/refs/tags/v0.2.2.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/archive/refs/tags/v0.2.5.zip",
+      "sha256": "eeb88517330858ceae706d35d79bb7ff04e7c37f1f17faf66159eb7e4d917cdc",
       "homepage": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/blob/v0.2.2/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/blob/v0.2.5/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
@@ -336,10 +337,10 @@
         "governance",
         "bash",
         "powershell",
-        "model-routing"
+        "man-page"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-08-12T00:00:00Z"
+      "updated_at": "2026-11-02T00:00:00Z"
     },
     "db-standards": {
       "name": "Database Standards",
