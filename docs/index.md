@@ -6,7 +6,7 @@
 
 **Build with a spec, fix a bug, or assess an idea — with your coding agent.**
 
-Spec Kit gives your coding agent structured processes that keep intent and evidence ahead of implementation. Start with Spec-Driven Development (SDD), bug fixing, or idea assessment. Run a process step by step, automate it, or [shape one of your own](guides/customization.md) — including processes beyond software development.
+Spec Kit gives your coding agent structured processes that keep intent and evidence ahead of implementation. Start with Spec-Driven Development (SDD), bug fixing, or idea assessment. Run a process step by step, automate it, or [shape one of your own](how-to/customization.md) — including processes beyond software development.
 
 <a href="installation.md" class="btn btn-primary btn-lg">Install Spec Kit</a>&nbsp;
 <a href="#choose-your-process" class="btn btn-outline-primary btn-lg">Choose your process</a>
@@ -31,7 +31,7 @@ See [how the Spec Kit project runs its agentic SDLC](guides/agentic-sdlc.md)
 and where it uses Spec Kit itself.
 
 Adding Spec Kit to an established codebase? Start with the
-[existing-project guide](guides/existing-projects.md).
+[existing-project guide](how-to/existing-projects.md).
 
 ---
 
@@ -76,10 +76,10 @@ Including entirely different processes:
 - **MAQA** — multi-agent orchestration with quality assurance gates
 - **Fiction Book Writing** — novels and long-form fiction, from story bible to submission
 
-<a href="reference/presets.md" class="pillar-link">Presets →</a>&nbsp;&nbsp;
-<a href="reference/extensions.md" class="pillar-link">Extensions →</a>&nbsp;&nbsp;
-<a href="reference/workflows.md" class="pillar-link">Workflows →</a>&nbsp;&nbsp;
-<a href="reference/bundles.md" class="pillar-link">Bundles →</a>
+<a href="presets/overview.md" class="pillar-link">Presets →</a>&nbsp;&nbsp;
+<a href="extensions/overview.md" class="pillar-link">Extensions →</a>&nbsp;&nbsp;
+<a href="workflows/overview.md" class="pillar-link">Workflows →</a>&nbsp;&nbsp;
+<a href="bundles/overview.md" class="pillar-link">Bundles →</a>
 
 </div>
 
@@ -158,11 +158,11 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
     <strong>Idea Assessment</strong>
     <span>Research an idea and decide whether it deserves investment</span>
   </a>
-  <a href="guides/customization.md" class="nav-card">
-    <strong>Customize Spec Kit</strong>
+  <a href="how-to/customization.md" class="nav-card">
+    <strong>Adapt Spec Kit to your process</strong>
     <span>Adapt a process, add capabilities, or package a role-based setup</span>
   </a>
-  <a href="guides/existing-projects.md" class="nav-card">
+  <a href="how-to/existing-projects.md" class="nav-card">
     <strong>Existing Projects</strong>
     <span>Adopt Spec Kit safely in an established codebase</span>
   </a>
@@ -182,9 +182,9 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
     <strong>Development</strong>
     <span>Contribute to Spec Kit</span>
   </a>
-  <a href="concepts/sdd.md" class="nav-card">
-    <strong>What is SDD?</strong>
-    <span>The philosophy behind Spec-Driven Development</span>
+  <a href="how-to/index.md" class="nav-card">
+    <strong>How to</strong>
+    <span>Understand and apply Spec Kit practices to your project work</span>
   </a>
   <a href="history.md" class="nav-card">
     <strong>History</strong>

@@ -19,10 +19,6 @@
       href: guides/bugfix.md
     - name: Idea Assessment
       href: guides/assessment.md
-    - name: Existing Projects
-      href: guides/existing-projects.md
-    - name: Customize or Bring Your Own
-      href: guides/customization.md
     - name: Upgrade
       href: upgrade.md
     - name: Install uv
@@ -36,6 +32,29 @@
     - name: Enterprise / Air-Gapped
       href: install/air-gapped.md
 
+# How-to guides
+- name: How to
+  href: how-to/index.md
+  items:
+    - name: Understand Spec-Driven Development
+      href: how-to/sdd.md
+    - name: Adopt Spec Kit in an existing project
+      href: how-to/existing-projects.md
+    - name: Work in a monorepo
+      href: how-to/monorepo.md
+    - name: Define and evolve contracts
+      href: how-to/contract-driven-development.md
+    - name: Implement complex features
+      href: how-to/complex-features.md
+    - name: Break down large features
+      href: how-to/spec-of-specs.md
+    - name: Choose a persistence model
+      href: how-to/spec-persistence.md
+    - name: Maintain specifications after delivery
+      href: how-to/evolving-specs.md
+    - name: Adapt Spec Kit to your process
+      href: how-to/customization.md
+
 # Agent integrations
 - name: Integrations
   href: integrations/index.md
@@ -44,92 +63,6 @@
       href: integrations/index.md
     - name: CLI Reference
       href: integrations/cli.md
-    - name: Alquimia AI
-      href: integrations/alquimia.md
-    - name: Amp
-      href: integrations/amp.md
-    - name: Antigravity
-      href: integrations/agy.md
-    - name: Auggie CLI
-      href: integrations/auggie.md
-    - name: Claude Code
-      href: integrations/claude.md
-    - name: Cline
-      href: integrations/cline.md
-    - name: CodeBuddy CLI
-      href: integrations/codebuddy.md
-    - name: Codex CLI
-      href: integrations/codex.md
-    - name: Command Code
-      href: integrations/command-code.md
-    - name: Cursor
-      href: integrations/cursor-agent.md
-    - name: DeepSeek Harness
-      href: integrations/dsh.md
-    - name: Devin for Terminal
-      href: integrations/devin.md
-    - name: Docker Agent
-      href: integrations/docker-agent.md
-    - name: Factory Droid
-      href: integrations/droid.md
-    - name: Firebender
-      href: integrations/firebender.md
-    - name: Forge
-      href: integrations/forge.md
-    - name: Gemini CLI
-      href: integrations/gemini.md
-    - name: GitHub Copilot
-      href: integrations/copilot.md
-    - name: Goose
-      href: integrations/goose.md
-    - name: Grok Build
-      href: integrations/grok.md
-    - name: Hermes
-      href: integrations/hermes.md
-    - name: IBM Bob
-      href: integrations/bob.md
-    - name: Junie
-      href: integrations/junie.md
-    - name: Kilo Code
-      href: integrations/kilocode.md
-    - name: Kimi Code
-      href: integrations/kimi.md
-    - name: Kiro CLI
-      href: integrations/kiro-cli.md
-    - name: Lingma
-      href: integrations/lingma.md
-    - name: MiniMax Code
-      href: integrations/mcode.md
-    - name: Mistral Vibe
-      href: integrations/vibe.md
-    - name: Muse Code
-      href: integrations/muse.md
-    - name: None (shared scaffolding only)
-      href: integrations/none.md
-    - name: Oh My Pi
-      href: integrations/omp.md
-    - name: opencode
-      href: integrations/opencode.md
-    - name: Pi Coding Agent
-      href: integrations/pi.md
-    - name: Qoder CLI
-      href: integrations/qodercli.md
-    - name: Qwen Code
-      href: integrations/qwen.md
-    - name: RovoDev
-      href: integrations/rovodev.md
-    - name: SHAI (OVHcloud)
-      href: integrations/shai.md
-    - name: Tabnine CLI
-      href: integrations/tabnine.md
-    - name: Trae
-      href: integrations/trae.md
-    - name: ZCode
-      href: integrations/zcode.md
-    - name: Zed
-      href: integrations/zed.md
-    - name: Generic (bring your own agent)
-      href: integrations/generic.md
     - name: Catalogs and External Adapters
       href: integrations/catalog.md
     - name: Contributing Integrations
@@ -141,12 +74,73 @@
   items:
     - name: Overview
       href: extensions/overview.md
+    - name: CLI Reference
+      href: extensions/cli.md
+    - name: Catalogs
+      href: extensions/catalogs.md
     - name: Developing
       href: extensions/developing.md
     - name: API Reference
       href: extensions/api.md
     - name: Publishing
       href: extensions/publishing.md
+
+# Presets
+- name: Presets
+  href: presets/overview.md
+  items:
+    - name: Overview
+      href: presets/overview.md
+    - name: CLI Reference
+      href: presets/cli.md
+    - name: Developing
+      href: presets/developing.md
+    - name: API Reference
+      href: presets/api.md
+    - name: Catalogs
+      href: presets/catalogs.md
+    - name: Publishing
+      href: presets/publishing.md
+
+# Workflows
+- name: Workflows
+  href: workflows/overview.md
+  items:
+    - name: Overview
+      href: workflows/overview.md
+    - name: CLI Reference
+      href: workflows/cli.md
+    - name: Developing
+      href: workflows/developing.md
+    - name: API Reference
+      href: workflows/api.md
+    - name: Step Types
+      href: workflows/steps.md
+    - name: Expressions
+      href: workflows/expressions.md
+    - name: Overlays
+      href: workflows/overlays.md
+    - name: Catalogs
+      href: workflows/catalogs.md
+    - name: Publishing
+      href: workflows/publishing.md
+
+# Bundles
+- name: Bundles
+  href: bundles/overview.md
+  items:
+    - name: Overview
+      href: bundles/overview.md
+    - name: CLI Reference
+      href: bundles/cli.md
+    - name: Developing
+      href: bundles/developing.md
+    - name: API Reference
+      href: bundles/api.md
+    - name: Catalogs
+      href: bundles/catalogs.md
+    - name: Publishing
+      href: bundles/publishing.md
 
 # Reference
 - name: Reference
@@ -161,16 +155,8 @@
       href: integrations/cli.md
     - name: Catalogs
       href: reference/catalogs.md
-    - name: Extensions
-      href: reference/extensions.md
-    - name: Presets
-      href: reference/presets.md
     - name: Artifacts
       href: reference/artifacts.md
-    - name: Workflows
-      href: reference/workflows.md
-    - name: Bundles
-      href: reference/bundles.md
     - name: Agentic SDD
       href: reference/agentic-sdd.md
     - name: Agentic Bug Fix
@@ -180,29 +166,11 @@
     - name: Authentication
       href: reference/authentication.md
 
-# Concepts
-- name: Concepts
-  items:
-    - name: What is SDD?
-      href: concepts/sdd.md
-    - name: Spec Persistence Models
-      href: concepts/spec-persistence.md
-    - name: Handling Complex Features
-      href: concepts/complex-features.md
-    - name: Spec of Specs
-      href: concepts/spec-of-specs.md
-
-# Development workflows
+# Development
 - name: Development
   items:
     - name: Local Development
       href: local-development.md
-    - name: Evolving Specs
-      href: guides/evolving-specs.md
-    - name: Contract-Driven Development
-      href: guides/contract-driven-development.md
-    - name: Monorepos
-      href: guides/monorepo.md
 
 # Community
 - name: Community

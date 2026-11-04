@@ -183,11 +183,22 @@ def _render_argv(argv: list[str]) -> str:
 
 _INSTALLER_PATH_PREFIXES: dict[str, list[str]] = {
     "uv-tool": [
+        "${UV_TOOL_DIR}/specify-cli/",
+        "${XDG_DATA_HOME}/uv/tools/specify-cli/",
         "~/.local/share/uv/tools/specify-cli/",
+        "${APPDATA}/uv/tools/specify-cli/",
+        "${APPDATA}/uv/data/tools/specify-cli/",
+        "~/Library/Application Support/uv/tools/specify-cli/",
         "%LOCALAPPDATA%\\uv\\tools\\specify-cli\\",
     ],
     "pipx": [
+        "${PIPX_HOME}/venvs/specify-cli/",
+        "${XDG_DATA_HOME}/pipx/venvs/specify-cli/",
+        "~/.local/share/pipx/venvs/specify-cli/",
+        "~/Library/Application Support/pipx/venvs/specify-cli/",
+        "${LOCALAPPDATA}/pipx/pipx/venvs/specify-cli/",
         "~/.local/pipx/venvs/specify-cli/",
+        "~/pipx/venvs/specify-cli/",
         "%LOCALAPPDATA%\\pipx\\venvs\\specify-cli\\",
     ],
     "uvx-ephemeral": [
@@ -351,18 +362,28 @@ def _validate_tag(tag: str) -> str:
 def _expand_prefix(prefix: str) -> Path | None:
     """Expand `~` or `%LOCALAPPDATA%`-style tokens in a path prefix."""
 
-    expanded = os.path.expanduser(prefix)
+    # An unset or empty directory override must not become a root-level prefix.
+    for token in _UNRESOLVED_ENV_VAR_RE.findall(prefix):
+        if not os.environ.get(token.strip("${}%")):
+            return None
+    expanded = prefix
     if "%LOCALAPPDATA%" in expanded:
         local_app_data = os.environ.get("LOCALAPPDATA")
         if not local_app_data:
             return None
         expanded = expanded.replace("%LOCALAPPDATA%", local_app_data)
-    expanded = os.path.expandvars(expanded)
+    expanded = os.path.expandvars(os.path.expanduser(expanded))
+    # pipx expands a tilde in its override; uv treats it literally and XDG requires absolute paths.
+    if prefix.startswith("${PIPX_HOME}/"):
+        expanded = os.path.expanduser(expanded)
     if _UNRESOLVED_ENV_VAR_RE.search(expanded):
         return None
     try:
         expanded_path = Path(expanded)
-        return expanded_path.resolve() if expanded_path.is_absolute() else expanded_path
+        # uv and pipx resolve their relative tool directories against the working directory.
+        if expanded_path.is_absolute() or prefix.startswith(("${UV_TOOL_DIR}/", "${PIPX_HOME}/")):
+            return expanded_path.resolve()
+        return expanded_path
     except OSError:
         return None
 
@@ -748,6 +769,26 @@ def _installer_binary_name(method: _InstallMethod) -> str | None:
     return None
 
 
+def _runs_from_uv_tool_env_on_windows() -> bool:
+    """Return whether this process runs from a uv tool environment on Windows."""
+    return os.name == "nt" and os.path.isfile(
+        os.path.join(sys.prefix, "uv-receipt.toml")
+    )
+
+
+# Another process from the same tool environment, such as an editor's
+# `specify mcp` server, keeps python.exe locked after this command exits.
+_UV_TOOL_MANUAL_INTRO = (
+    "Stop any other specify process (such as `specify mcp`), then run this "
+    "once this command exits:"
+)
+
+
+def _uv_tool_manual_command(target_tag: str | None) -> str:
+    """Return the uv command a Windows uv-tool user runs after specify exits."""
+    return f"uv tool install specify-cli --force --from {_source_spec(target_tag)}"
+
+
 def _is_path_like_command(value: str) -> bool:
     """Return whether an argv[0] names a path rather than a bare command."""
     return Path(value).parent != Path(".") or "/" in value or "\\" in value
@@ -812,6 +853,12 @@ def _build_upgrade_plan(
             "(installer rejected)"
             if installer_rejected
             else f"(installer {_installer_binary_name(method)} not found on PATH)"
+        )
+    elif method == _InstallMethod.UV_TOOL and _runs_from_uv_tool_env_on_windows():
+        # self_upgrade prints the uv command instead of running it.
+        command_preview = (
+            "(none — on Windows, uv cannot replace the tool environment specify "
+            "is running from)"
         )
     else:
         command_preview = (

@@ -9,7 +9,7 @@ body:
         Thanks for contributing a preset! This template helps you submit your preset to the community catalog.
 
         **Before submitting:**
-        - Review the [Preset Publishing Guide](https://github.com/github/spec-kit/blob/main/presets/PUBLISHING.md)
+        - Review the [Preset Publishing Guide](https://github.github.io/spec-kit/presets/publishing.html)
         - Ensure your preset has a valid `preset.yml` manifest
         - Create a GitHub release with a version tag (e.g., v1.0.0)
         - Test installation from the release archive: `specify preset add --from <download-url>`

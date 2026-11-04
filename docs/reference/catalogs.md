@@ -54,11 +54,11 @@ project:
 | Component type | List active catalogs | Detailed reference |
 | --- | --- | --- |
 | Integrations | `specify integration catalog list` | [Integrations](../integrations/cli.md#catalog-management) |
-| Extensions | `specify extension catalog list` | [Extensions](extensions.md#catalog-management) |
-| Presets | `specify preset catalog list` | [Presets](presets.md#catalog-management) |
-| Workflows | `specify workflow catalog list` | [Workflows](workflows.md#catalog-management) |
-| Workflow steps | `specify workflow step catalog list` | [Workflows](workflows.md#catalog-management) |
-| Bundles | `specify bundle catalog list` | [Bundles](bundles.md#manage-catalog-sources) |
+| Extensions | `specify extension catalog list` | [Extensions](../extensions/catalogs.md) |
+| Presets | `specify preset catalog list` | [Preset catalogs](../presets/catalogs.md) |
+| Workflows | `specify workflow catalog list` | [Workflow catalogs](../workflows/catalogs.md) |
+| Workflow steps | `specify workflow step catalog list` | [Workflow catalogs](../workflows/catalogs.md) |
+| Bundles | `specify bundle catalog list` | [Bundle catalogs](../bundles/catalogs.md) |
 
 Each command group also provides `catalog add` and `catalog remove`. Options,
 identifiers, install policies, and configuration filenames differ by component
@@ -140,8 +140,8 @@ Use the component-specific publishing guidance when authoring catalog entries:
 | --- | --- |
 | Integrations | [Integration catalog contributions](../integrations/contributing.md) |
 | Extensions | [Extension Publishing Guide](../extensions/publishing.md) |
-| Presets | [Preset Publishing Guide](https://github.com/github/spec-kit/blob/main/presets/PUBLISHING.md) |
-| Workflows | [Workflow Publishing Guide](https://github.com/github/spec-kit/blob/main/workflows/PUBLISHING.md) |
+| Presets | [Preset Publishing Guide](../presets/publishing.md) |
+| Workflows | [Workflow publishing](../workflows/publishing.md) |
 | Workflow steps | [Community workflow step types](../community/workflow-steps.md) |
 | Bundles | [Community bundles](../community/bundles.md) |
 

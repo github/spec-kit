@@ -42,17 +42,17 @@ Spec Kit combines ready-to-use processes with composable mechanisms:
 | Capability | Spec Kit mechanism |
 | --- | --- |
 | Connect to or switch between coding agents | [Integration](https://github.github.io/spec-kit/integrations/index.html) |
-| Add a command, quality gate, or complete process | [Extension](https://github.github.io/spec-kit/reference/extensions.html) |
-| Connect a process to an external tool or service | [Extension](https://github.github.io/spec-kit/reference/extensions.html) |
-| React to coding-agent lifecycle events | [Extension runtime event](https://github.github.io/spec-kit/reference/extensions.html#extension-runtime-events) |
-| Run extension commands before or after Spec Kit commands | [Extension hook](https://github.github.io/spec-kit/reference/extensions.html#project-extension-and-hook-configuration) |
-| Adapt templates, commands, terminology, or methodology | [Preset](https://github.github.io/spec-kit/reference/presets.html) |
-| Enforce organizational or regulatory standards | [Preset](https://github.github.io/spec-kit/reference/presets.html) |
-| Override a template for one project | [Project-local override](https://github.github.io/spec-kit/guides/customization.html#project-local-overrides-and-resolution) |
-| Automate prompts, commands, gates, and shell tasks | [Workflow](https://github.github.io/spec-kit/reference/workflows.html) |
-| Modify an installed workflow without forking it | [Workflow overlay](https://github.github.io/spec-kit/reference/workflows.html#workflow-overlays) |
-| Add reusable executable behavior to workflows | [Workflow step](https://github.github.io/spec-kit/reference/workflows.html#custom-step-packages) |
-| Install a curated setup for a role or team | [Bundle](https://github.github.io/spec-kit/reference/bundles.html) |
+| Add a command, quality gate, or complete process | [Extension](https://github.github.io/spec-kit/extensions/overview.html) |
+| Connect a process to an external tool or service | [Extension](https://github.github.io/spec-kit/extensions/overview.html) |
+| React to coding-agent lifecycle events | [Extension runtime event](https://github.github.io/spec-kit/extensions/api.html#extension-runtime-events) |
+| Run extension commands before or after Spec Kit commands | [Extension hook](https://github.github.io/spec-kit/extensions/api.html#hook-configuration) |
+| Adapt templates, commands, terminology, or methodology | [Preset](https://github.github.io/spec-kit/presets/overview.html) |
+| Enforce organizational or regulatory standards | [Preset](https://github.github.io/spec-kit/presets/overview.html) |
+| Override a template for one project | [Project-local override](https://github.github.io/spec-kit/how-to/customization.html#project-local-overrides-and-resolution) |
+| Automate prompts, commands, gates, and shell tasks | [Workflow](https://github.github.io/spec-kit/workflows/overview.html) |
+| Modify an installed workflow without forking it | [Workflow overlay](https://github.github.io/spec-kit/workflows/overlays.html) |
+| Add reusable executable behavior to workflows | [Workflow step](https://github.github.io/spec-kit/workflows/developing.html#custom-step-packages) |
+| Install a curated setup for a role or team | [Bundle](https://github.github.io/spec-kit/bundles/overview.html) |
 | Discover community components | [Catalog](https://github.github.io/spec-kit/reference/catalogs.html) |
 | Host a private catalog of approved components | [Catalog](https://github.github.io/spec-kit/reference/catalogs.html) |
 | Access private catalogs and component downloads | [Authentication](https://github.github.io/spec-kit/reference/authentication.html) |
@@ -90,7 +90,7 @@ agent in the project directory, then choose a process below.
 For other setups:
 
 - [Installation](https://github.github.io/spec-kit/installation.html) for pinned releases, other installers, CI, and troubleshooting.
-- [Existing projects](https://github.github.io/spec-kit/guides/existing-projects.html) to start with code you already have.
+- [Existing projects](https://github.github.io/spec-kit/how-to/existing-projects.html) to start with code you already have.
 - [Other agents](https://github.github.io/spec-kit/integrations/index.html) for integration keys and [invocation syntax](https://github.github.io/spec-kit/integrations/cli.html#command-invocation).
 - [Upgrade](https://github.github.io/spec-kit/upgrade.html) to update an existing installation.
 
@@ -213,7 +213,7 @@ Combine the [capabilities above](#capabilities) to match your goal:
 Start with the smallest change that meets your needs; you do not have to replace
 the whole process.
 
-[Customization guide](https://github.github.io/spec-kit/guides/customization.html) ·
+[Customization guide](https://github.github.io/spec-kit/how-to/customization.html) ·
 [Community components and walkthroughs](https://github.github.io/spec-kit/community/overview.html)
 
 <a id="-specify-cli-reference"></a>
@@ -227,7 +227,8 @@ the whole process.
 ## Documentation
 
 - [CLI reference](https://github.github.io/spec-kit/reference/overview.html) and [process commands](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
-- [SDD philosophy](https://github.github.io/spec-kit/concepts/sdd.html), [full methodology](./spec-driven.md), and [evolving existing specs](https://github.github.io/spec-kit/guides/evolving-specs.html)
+- [How-to guides](https://github.github.io/spec-kit/how-to/index.html) for applying Spec Kit to your project work
+- [SDD philosophy](https://github.github.io/spec-kit/how-to/sdd.html), [full methodology](./spec-driven.md), and [evolving existing specs](https://github.github.io/spec-kit/how-to/evolving-specs.html)
 - [Project history](https://github.github.io/spec-kit/history.html)
 - [How Spec Kit uses Spec Kit](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
 

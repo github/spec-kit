@@ -6,10 +6,13 @@
           "*.md",
           "toc.yml",
           "community/*.md",
-          "concepts/*.md",
+          "bundles/*.md",
           "extensions/*.md",
           "guides/*.md",
+          "how-to/*.md",
           "integrations/*.md",
+          "presets/*.md",
+          "workflows/*.md",
           "reference/*.md",
           "install/*.md"
         ]

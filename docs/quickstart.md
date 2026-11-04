@@ -64,7 +64,7 @@ cd taskify
 > [!NOTE]
 > Prefer `pipx`, one-time `uvx` runs, a pinned release, or an offline/air-gapped setup? See the [Installation Guide](installation.md) for all supported methods.
 > Adding Spec Kit to a repository that already contains code? Follow
-> [Adopting Spec Kit in an Existing Project](guides/existing-projects.md) before
+> [Adopting Spec Kit in an Existing Project](how-to/existing-projects.md) before
 > starting the workflow below.
 
 Launch your coding agent in the project directory. Invoke the following skills
@@ -174,7 +174,7 @@ Checks the codebase against the spec, plan, and tasks. If it finds gaps, it appe
 ## Next Steps
 
 - See the [Agentic SDD](reference/agentic-sdd.md) reference for full detail on every command
-- Learn how to [customize the process](guides/customization.md) with extensions, presets, workflows, and bundles
+- Learn how to [customize the process](how-to/customization.md) with extensions, presets, workflows, and bundles
 - Read the [complete methodology](https://github.com/github/spec-kit/blob/main/spec-driven.md) for in-depth guidance
 - Compare the [core templates](https://github.com/github/spec-kit/tree/main/templates) with
   [community walkthroughs](community/walkthroughs.md) to see how Spec-Driven Development is used in real projects

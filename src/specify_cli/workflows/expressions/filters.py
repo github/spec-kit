@@ -207,7 +207,8 @@ def _filter_to_json(value: Any) -> str:
     quoting or escaping, so JSON quotes and metacharacters are still interpreted
     by whatever runs the ``run`` field. Interpolate unconstrained JSON into a
     shell step only when you have constrained what it can contain; see the
-    "Interpolation and shell safety" section of ``docs/reference/workflows.md``.
+    "Interpolation and shell safety" section of
+    https://github.github.io/spec-kit/workflows/expressions.html#interpolation-and-shell-safety.
 
     Raises ``ValueError`` when *value* is not JSON-serializable, chained from
     the underlying error so the offending type stays visible. ``allow_nan=False``

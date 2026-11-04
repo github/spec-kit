@@ -473,16 +473,26 @@ def mtime_candidate(tmp_path, request):
 
 
 def _patch_candidate_io(
-    monkeypatch, candidate, stat_errors, *, resolved=None, resolve_error=None
+    monkeypatch, specs_root, candidate, stat_errors, *, resolved=None, resolve_error=None
 ):
     """Inject at os.stat so Python 3.14's os.path.isfile path is covered too.
 
     Resolve is controlled separately: these tests distinguish excluded paths
     from stat failures after successful in-project containment, on every OS.
     """
+    original_rglob = Path.rglob
     original_stat = os.stat
     original_resolve = Path.resolve
+    # Literal-name globbing can stat candidates before yielding them. Capture
+    # real enumeration first so injected errors reach only resolver operations.
+    candidates = tuple(original_rglob(specs_root, "plan.md"))
+    assert candidate in candidates, "expected the candidate in real specs enumeration"
     calls = []
+
+    def rglob(path, pattern, *args, **kwargs):
+        if path == specs_root and pattern == "plan.md":
+            return iter(candidates)
+        return original_rglob(path, pattern, *args, **kwargs)
 
     def stat(path, *args, **kwargs):
         if isinstance(path, (str, os.PathLike)) and Path(path) == candidate:
@@ -499,6 +509,7 @@ def _patch_candidate_io(
             return candidate if resolved is None else resolved
         return original_resolve(path, *args, **kwargs)
 
+    monkeypatch.setattr(Path, "rglob", rglob)
     monkeypatch.setattr(os, "stat", stat)
     monkeypatch.setattr(Path, "resolve", resolve)
     return calls
@@ -511,6 +522,7 @@ def test_mtime_fallback_ignores_excluded_candidate_errors(
     repo, candidate, expected_plan = mtime_candidate
     calls = _patch_candidate_io(
         monkeypatch,
+        repo / "specs",
         candidate,
         {1: errno.EACCES},
         resolved=repo.parent / "private/plan.md",
@@ -525,11 +537,12 @@ def test_mtime_fallback_preserves_contained_stat_errors(
     monkeypatch, mtime_resolver, mtime_candidate, error
 ):
     repo, candidate, _ = mtime_candidate
-    _patch_candidate_io(monkeypatch, candidate, {1: error})
+    calls = _patch_candidate_io(monkeypatch, repo / "specs", candidate, {1: error})
     with pytest.raises(OSError) as exc:
         mtime_resolver(str(repo))
     assert type(exc.value) is type(OSError(error, ""))
     assert exc.value.errno == error
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize("error", [errno.ENOENT, errno.ENOTDIR])
@@ -537,7 +550,7 @@ def test_mtime_fallback_skips_missing_candidate_at_precheck(
     monkeypatch, mtime_resolver, mtime_candidate, error
 ):
     repo, candidate, expected_plan = mtime_candidate
-    calls = _patch_candidate_io(monkeypatch, candidate, {1: error})
+    calls = _patch_candidate_io(monkeypatch, repo / "specs", candidate, {1: error})
     assert mtime_resolver(str(repo)) == expected_plan
     assert len(calls) == 1
 
@@ -547,7 +560,7 @@ def test_mtime_fallback_propagates_sort_stat_errors(
     monkeypatch, mtime_resolver, mtime_candidate, error
 ):
     repo, candidate, _ = mtime_candidate
-    calls = _patch_candidate_io(monkeypatch, candidate, {2: error})
+    calls = _patch_candidate_io(monkeypatch, repo / "specs", candidate, {2: error})
     with pytest.raises(OSError) as exc:
         mtime_resolver(str(repo))
     assert type(exc.value) is type(OSError(error, ""))
