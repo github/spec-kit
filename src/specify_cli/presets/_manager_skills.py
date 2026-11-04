@@ -490,14 +490,17 @@ class _PresetSkillMethods:
                     for idx, layer in enumerate(layers)
                     if layer["path"].is_relative_to(owner_dir)
                 )
+                owner_layers = layers[owner_idx:]
                 composed = resolver.resolve_content(
-                    cmd_name, "command", layers=layers[owner_idx:]
+                    cmd_name, "command", layers=owner_layers
                 )
-                if composed is None:
+                if composed is not None:
+                    overrides[cmd_name] = composed
+                elif all(layer["strategy"] != "replace" for layer in owner_layers):
                     # Nothing left under the owner to compose onto.
                     self._remove_owned_skills(skills_dir, names)
-                else:
-                    overrides[cmd_name] = composed
+                # Otherwise a surviving layer is unreadable: keep the
+                # existing output rather than deleting it.
             if not overrides:
                 continue
             written = self._register_skills(

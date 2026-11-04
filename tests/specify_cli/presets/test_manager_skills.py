@@ -2292,6 +2292,42 @@ class TestPresetSkills(PresetArtifactTestHelpers):
 
         assert claude_skill.read_text(encoding="utf-8") == before
 
+    def test_remove_base_keeps_lower_survivor_skill_when_core_base_is_unreadable(
+        self, project_dir, temp_dir
+    ):
+        """The core base under ``middle`` exists but is not UTF-8, so its
+        composition fails. That is not "no base left": Claude's skill, owned by
+        ``middle``, must be kept rather than deleted."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "custom.md").write_bytes(b"---\ndescription: x\n---\n\n\xff\xfe\n")
+        manager = PresetManager(project_dir)
+
+        def install(preset_id, body, strategy, priority):
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            manifest_path = preset_dir / "preset.yml"
+            manifest = yaml.safe_load(manifest_path.read_text())
+            manifest["provides"]["templates"][0]["strategy"] = strategy
+            manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+
+        install("base-preset", "Base preset body", "replace", 10)
+        install("middle-preset", "Middle body", "append", 7)
+        before = claude_skill.read_text(encoding="utf-8")
+        assert "preset:middle-preset" in before
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", "append", 5)
+
+        assert manager.remove("base-preset") is True
+
+        assert claude_skill.read_text(encoding="utf-8") == before
+
     def test_remove_base_reconciles_survivor_with_legacy_flat_skill_record(
         self, project_dir, temp_dir
     ):
