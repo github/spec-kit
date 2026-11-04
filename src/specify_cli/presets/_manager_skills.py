@@ -568,6 +568,10 @@ class _PresetSkillMethods:
                 recorded, mirroring stale-output retirement.
         """
         from ..integrations._file_changes import after_file_change, before_file_change
+        from ..shared_infra import (
+            _ensure_safe_shared_destination,
+            _ensure_safe_shared_directory,
+        )
 
         try:
             registrar = self._command_registrar()
@@ -709,7 +713,21 @@ class _PresetSkillMethods:
                     ):
                         continue
                     composed_file = pack_dir / ".composed" / f"{primary}.md"
-                    composed_file.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        # Every ancestor and the cache file itself must stay
+                        # inside the project and off symlinks, so a planted
+                        # ``.composed`` link cannot redirect this write.
+                        _ensure_safe_shared_directory(
+                            self.project_root,
+                            composed_file.parent,
+                            create=True,
+                            context="preset composed cache directory",
+                        )
+                        _ensure_safe_shared_destination(
+                            self.project_root, composed_file
+                        )
+                    except (ValueError, OSError):
+                        continue
                     _write_text(composed_file, composed, encoding="utf-8")
                     registrar.register_commands(
                         agent,

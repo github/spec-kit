@@ -2343,6 +2343,62 @@ class TestPresetSkills(PresetArtifactTestHelpers):
                 assert manager.remove("base-preset") is True
             assert not alias_file.exists()
 
+    @pytest.mark.parametrize("link", ["cache-file", "cache-dir"])
+    def test_historical_alias_refresh_does_not_write_through_symlinked_cache(
+        self, project_dir, temp_dir, link
+    ):
+        """Refreshing a shadowed survivor's historical alias writes its
+        ``.composed`` cache; a symlinked cache directory or file must not
+        redirect that write outside the project."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "custom.md").write_text(
+            "---\ndescription: Core custom\n---\n\nCore custom body\n",
+            encoding="utf-8",
+        )
+        manager = PresetManager(project_dir)
+
+        def install(preset_id, body, strategy, priority):
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            manifest_path = preset_dir / "preset.yml"
+            manifest = yaml.safe_load(manifest_path.read_text())
+            manifest["provides"]["templates"][0]["strategy"] = strategy
+            if strategy != "replace":
+                manifest["provides"]["templates"][0]["aliases"] = [self._ALIAS]
+            manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+
+        install("base-preset", "Base preset body", "replace", 10)
+        install("middle-preset", "Middle body", "append", 7)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", "append", 5)
+
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        target = outside / "speckit.custom.md"
+        target.write_text("external\n", encoding="utf-8")
+        cache_dir = manager.presets_dir / "middle-preset" / ".composed"
+        if link == "cache-dir":
+            if cache_dir.exists():
+                shutil.rmtree(cache_dir)
+            cache_dir.symlink_to(outside, target_is_directory=True)
+        else:
+            cache_dir.mkdir(exist_ok=True)
+            cache_file = cache_dir / "speckit.custom.md"
+            if cache_file.exists():
+                cache_file.unlink()
+            cache_file.symlink_to(target)
+
+        assert manager.remove("base-preset") is True
+
+        assert target.read_text(encoding="utf-8") == "external\n"
+        assert sorted(p.name for p in outside.iterdir()) == ["speckit.custom.md"]
+
     def test_remove_base_keeps_lower_survivor_skill_when_core_base_is_unreadable(
         self, project_dir, temp_dir
     ):
