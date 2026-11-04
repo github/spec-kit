@@ -53,7 +53,7 @@ Define what to build before building it. Rich templates, quality checklists, and
 
 ### Use any coding agent
 
-<span class="pillar-stat">38 integrations</span> — Copilot, Gemini, Codex, Kilo Code, Zed, Claude, Forge, Kiro, and more. Switch freely between agents with a single command. No lock-in.
+<span class="pillar-stat">43 integration options</span> — 41 coding-agent integrations, plus `generic` for other tools and `none` for agent-neutral scaffolding. Choose Copilot, Gemini, Codex, Kilo Code, Zed, Claude, Forge, Kiro, and more. Switch freely between agents with a single command. No lock-in.
 
 Run `specify init` with your agent of choice and Spec Kit sets up the right command files and directory structures automatically. If your agent isn't listed, the `generic` integration is an escape hatch for any tool.
 
@@ -65,16 +65,20 @@ Run `specify init` with your agent of choice and Spec Kit sets up the right comm
 
 ### Make it your own
 
-<span class="pillar-stat">157 community extensions</span> (90+ authors), <span class="pillar-stat">33 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, and package it all up as bundles you can share — or replace the process entirely. The process itself lives in these building blocks, so you're never locked to SDD, or even to software.
+<span class="pillar-stat">186 community extensions</span>, <span class="pillar-stat">42 community presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, and package it all up as bundles you can share — or replace the process entirely. The process itself lives in these building blocks, so you're never locked to SDD, or even to software.
 
-Including entirely different processes:
+Explore community processes, integrations, and quality gates:
 
-- **AIDE** — 7-step AI-driven engineering lifecycle
-- **Canon** — baseline-driven workflows (spec-first, code-first, spec-drift)
-- **Product Forge** — product-management-oriented SDD
-- **FX→.NET** — end-to-end .NET Framework migration across 7 phases
-- **MAQA** — multi-agent orchestration with quality assurance gates
-- **Fiction Book Writing** — novels and long-form fiction, from story bible to submission
+- **[Product Forge](https://github.com/VaiYav/speckit-product-forge)** — product-lifecycle orchestration, from research to release readiness
+- **[Architecture Guard](https://github.com/DyanGalih/architecture-guard)** — architectural drift detection and governance
+- **[DocGuard](https://github.com/raccioly/docguard)** — documentation integrity, traceability, and lifecycle checks
+- **[Quality Gates](https://github.com/schwichtgit/spec-gates)** — policy-driven checks at agent, Git, and CI boundaries
+- **[Epic](https://github.com/pmckeown/spec-kit-epic)** — split large initiatives into ordered, coordinated features
+- **[Linear Weave](https://github.com/tonydwoodhouse/spec-kit-linear-weave)** — connect requirements, tasks, and statuses with Linear
+
+Beyond software, the **[Fiction Book Writing preset](https://github.com/adaumann/speckit-preset-fiction-book-writing)** supports novels and long-form fiction, from story bible to submission.
+
+Featuring these independently maintained community projects is not an audit or endorsement. Review their source code before installation and use.
 
 <a href="presets/overview.md" class="pillar-link">Presets →</a>&nbsp;&nbsp;
 <a href="extensions/overview.md" class="pillar-link">Extensions →</a>&nbsp;&nbsp;
@@ -89,7 +93,7 @@ Including entirely different processes:
 
 Works offline, behind firewalls, and on **Windows, macOS, and Linux**. Host your own catalogs to curate what integrations, extensions, presets, workflows, and bundles your organization discovers and recommends.
 
-Community extensions like CI Guard and Architecture Guard add compliance gates and governance that fit the way your team already works.
+Community extensions like Quality Gates and Architecture Guard add policy checks and governance that fit the way your team already works.
 
 <a href="install/air-gapped.md" class="pillar-link">Enterprise / Air-Gapped →</a>&nbsp;&nbsp;
 <a href="reference/overview.md" class="pillar-link">Reference →</a>
@@ -104,32 +108,32 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
 
 ## Built by the community
 
-**270+ contributors** power the Spec Kit ecosystem — from core integrations to entirely new processes. Anyone can create and publish an extension, preset, or workflow.
+**320+ contributors** have helped build Spec Kit. The wider community builds everything from integrations to entirely new processes. Anyone can create and publish an extension, preset, or workflow.
 
 <div class="stats-grid">
   <div class="stat-item">
-    <span class="stat-number">130K+</span>
+    <span class="stat-number">147K+</span>
     <span class="stat-label">GitHub stars</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">270+</span>
+    <span class="stat-number">320+</span>
     <span class="stat-label">Contributors</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">38</span>
-    <span class="stat-label">Integrations</span>
+    <span class="stat-number">43</span>
+    <span class="stat-label">Integration options</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">157</span>
-    <span class="stat-label">Extensions</span>
+    <span class="stat-number">186</span>
+    <span class="stat-label">Community extensions</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">33</span>
-    <span class="stat-label">Presets</span>
+    <span class="stat-number">42</span>
+    <span class="stat-label">Community presets</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">7</span>
-    <span class="stat-label">Friends projects</span>
+    <span class="stat-number">11</span>
+    <span class="stat-label">Friend projects</span>
   </div>
 </div>
 
@@ -205,4 +209,4 @@ Ready to start? [Choose your process](#choose-your-process).
 
 </div>
 
-<p class="text-end small text-body-secondary">Last updated: September 28, 2026</p>
+<p class="text-end small text-body-secondary">Last updated: November 4, 2026</p>
