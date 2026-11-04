@@ -17,11 +17,11 @@ Spec Kit gives your coding agent structured processes that keep intent and evide
 
 ## Choose your process
 
-| What you need | Start here | What you get |
-| --- | --- | --- |
-| Build a feature or application | [Spec-Driven Development](quickstart.md) | A specification carried through planning, implementation, and convergence |
-| Diagnose and repair broken behavior | [Bug fixing](guides/bugfix.md) | An assessed cause, scoped fix, and recorded verification |
-| Decide whether an idea deserves investment | [Idea assessment](guides/assessment.md) | An evidence-backed go, clarify, or stop decision |
+| What you need | Start here | What you get | Command reference |
+| --- | --- | --- | --- |
+| Build a feature or application | [Spec-Driven Development](quickstart.md) | A specification carried through planning, implementation, and convergence | [Agentic SDD](reference/agentic-sdd.md) |
+| Diagnose and repair broken behavior | [Bug fixing](guides/bugfix.md) | An assessed cause, scoped fix, and recorded verification | [Agentic Bug Fix](reference/agentic-bugfix.md) |
+| Decide whether an idea deserves investment | [Idea assessment](guides/assessment.md) | An evidence-backed go, clarify, or stop decision | [Agentic Idea Assessment](reference/agentic-assessment.md) |
 
 These are independent entry points, not mandatory phases. SDD ships in core.
 Bug fixing and assessment are bundled, opt-in extensions. Assessment can stand
@@ -32,6 +32,22 @@ and where it uses Spec Kit itself.
 
 Adding Spec Kit to an established codebase? Start with the
 [existing-project guide](how-to/existing-projects.md).
+
+## Specify CLI
+
+The Specify CLI (`specify`) initializes projects and manages integrations,
+extensions, presets, workflows, and bundles. Process commands such as
+`/speckit.specify` run inside your coding agent, not in the terminal; see
+[command invocation](integrations/cli.md#command-invocation) for your agent's
+syntax and the command references above for arguments, artifacts, and quality
+gates.
+
+| Shared capability | Reference |
+| --- | --- |
+| Initialize projects, check installed tools, and inspect version and system information | [Core Commands](overview/core.md) |
+| Expose supported Specify operations to MCP clients through an experimental local stdio server | [MCP Server](overview/mcp.md) |
+| Inspect visible commands, templates, scripts, and hooks, including winning and hidden composition layers | [Artifacts](overview/artifacts.md) |
+| Discover components through built-in, community, or private catalogs and understand source priority and trust | [Catalogs](overview/catalogs.md) |
 
 ---
 
@@ -96,7 +112,7 @@ Works offline, behind firewalls, and on **Windows, macOS, and Linux**. Host your
 Community extensions like Quality Gates and Architecture Guard add policy checks and governance that fit the way your team already works.
 
 <a href="install/air-gapped.md" class="pillar-link">Enterprise / Air-Gapped →</a>&nbsp;&nbsp;
-<a href="reference/overview.md" class="pillar-link">Reference →</a>
+<a href="overview/catalogs.md" class="pillar-link">Catalogs →</a>
 
 </div>
 
@@ -174,23 +190,23 @@ Community extensions like Quality Gates and Architecture Guard add policy checks
     <strong>Upgrade</strong>
     <span>Keep an existing Spec Kit project current across releases</span>
   </a>
-  <a href="reference/overview.md" class="nav-card">
-    <strong>Reference</strong>
-    <span>Core commands, catalogs, integrations, extensions, presets, and workflows</span>
+  <a href="overview/core.md" class="nav-card">
+    <strong>Core Commands</strong>
+    <span>Initialize projects, check tools, and inspect version and system information</span>
   </a>
   <a href="community/overview.md" class="nav-card">
     <strong>Community</strong>
     <span>Extensions, presets, walkthroughs, and friend projects</span>
   </a>
   <a href="local-development.md" class="nav-card">
-    <strong>Development</strong>
-    <span>Contribute to Spec Kit</span>
+    <strong>Develop Spec Kit locally</strong>
+    <span>Run, debug, and check changes to Spec Kit itself</span>
   </a>
   <a href="how-to/index.md" class="nav-card">
     <strong>How to</strong>
     <span>Understand and apply Spec Kit practices to your project work</span>
   </a>
-  <a href="history.md" class="nav-card">
+  <a href="overview/history.md" class="nav-card">
     <strong>History</strong>
     <span>How Spec Kit grew from its SDD foundation into an extensible process harness</span>
   </a>
@@ -208,5 +224,22 @@ specify init my-project --integration copilot
 Ready to start? [Choose your process](#choose-your-process).
 
 </div>
+
+## See also
+
+Each component has its own guide and management reference:
+
+| Component | Guide | CLI reference |
+| --- | --- | --- |
+| Integrations | [Agent setup and delivery](integrations/index.md) | [Integration management](integrations/cli.md) |
+| Extensions | [Add capabilities, commands, and hooks](extensions/overview.md) | [Extension management](extensions/cli.md) |
+| Presets | [Customize templates, commands, and scripts](presets/overview.md) | [Preset management](presets/cli.md) |
+| Workflows | [Automate repeatable, resumable processes](workflows/overview.md) | [Workflow management](workflows/cli.md) |
+| Bundles | [Install a versioned setup of existing components](bundles/overview.md) | [Bundle management](bundles/cli.md) |
+
+For private catalogs, downloads, and release checks, see
+[Configure authentication](reference/authentication.md). To choose which
+building blocks fit your needs, see
+[Adapt Spec Kit to your process](how-to/customization.md).
 
 <p class="text-end small text-body-secondary">Last updated: November 4, 2026</p>

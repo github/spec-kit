@@ -214,4 +214,4 @@ retention.
 - [Manifest and source assertions](api.md)
 - [Publishing and community submission](publishing.md)
 - [Community bundles](../community/bundles.md)
-- [Shared catalog concepts](../reference/catalogs.md)
+- [Shared catalog concepts](../overview/catalogs.md)

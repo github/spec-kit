@@ -53,11 +53,11 @@ Spec Kit combines ready-to-use processes with composable mechanisms:
 | Modify an installed workflow without forking it | [Workflow overlay](https://github.github.io/spec-kit/workflows/overlays.html) |
 | Add reusable executable behavior to workflows | [Workflow step](https://github.github.io/spec-kit/workflows/developing.html#custom-step-packages) |
 | Install a curated setup for a role or team | [Bundle](https://github.github.io/spec-kit/bundles/overview.html) |
-| Discover community components | [Catalog](https://github.github.io/spec-kit/reference/catalogs.html) |
-| Host a private catalog of approved components | [Catalog](https://github.github.io/spec-kit/reference/catalogs.html) |
+| Discover community components | [Catalog](https://github.github.io/spec-kit/overview/catalogs.html) |
+| Host a private catalog of approved components | [Catalog](https://github.github.io/spec-kit/overview/catalogs.html) |
 | Access private catalogs and component downloads | [Authentication](https://github.github.io/spec-kit/reference/authentication.html) |
 | Work offline or behind a firewall | [Local sources and self-hosted catalogs](https://github.github.io/spec-kit/install/air-gapped.html) |
-| Inspect which layer supplies a command, template, or script | [Artifact inventory](https://github.github.io/spec-kit/reference/artifacts.html) |
+| Inspect which layer supplies a command, template, or script | [Artifact inventory](https://github.github.io/spec-kit/overview/artifacts.html) |
 
 Search the active catalogs with commands such as `specify extension search`,
 `specify preset search`, `specify workflow search`, and `specify bundle search`.
@@ -226,15 +226,18 @@ the whole process.
 
 ## Documentation
 
-- [CLI reference](https://github.github.io/spec-kit/reference/overview.html) and [process commands](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
+- [CLI reference](https://github.github.io/spec-kit/index.html#specify-cli) and [process commands](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
 - [How-to guides](https://github.github.io/spec-kit/how-to/index.html) for applying Spec Kit to your project work
 - [SDD philosophy](https://github.github.io/spec-kit/how-to/sdd.html), [full methodology](./spec-driven.md), and [evolving existing specs](https://github.github.io/spec-kit/how-to/evolving-specs.html)
-- [Project history](https://github.github.io/spec-kit/history.html)
+- [Project history](https://github.github.io/spec-kit/overview/history.html)
 - [How Spec Kit uses Spec Kit](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
 
 ## In the news
 
 - [Open Source Friday: Spec Kit Part 2](https://www.youtube.com/watch?v=8hHCpNVLhmI) (October 16, 2026) — Manfred Riem and Nicole Haugen discuss Spec Kit 1.0 and the expanded toolkit.
+- [Living Specs in SpecKit](https://www.alfredo-perez.dev/blog/2026-10-15-living-specs) (October 15, 2026) — Alfredo Perez explores maintaining capability-level specifications as a project evolves.
+- [Spec Kit Customization Series](https://jesseliberty.com/2026/10/08/4-solutions-to-spec-kit-issues/) (October 8–10, 2026) — Jesse Liberty walks through presets and extension authoring, including testing and publishing.
+- [From Spec-First to Enterprise-Ready: Extending GitHub Spec Kit](https://developer.microsoft.com/blog/from-spec-first-to-enterprise-ready-extending-github-spec-kit/) (October 7, 2026) — Apoorv Gupta explains enterprise customization through presets, extensions, bundles, workflows, and governed catalogs.
 - [Open Source Friday with Spec Kit](https://www.youtube.com/watch?v=2IArMAhkJcE) (May 8, 2026) — An introduction and SDD demonstration with Manfred Riem.
 
 ## Star history

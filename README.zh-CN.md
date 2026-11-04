@@ -175,9 +175,9 @@ specify extension add assess
 
 以下链接指向英文指南。工具升级与功能规范演进是两件事：升级时更新工具文件，需求变化时更新 `specs/` 制品。
 
-- [CLI 参考](https://github.github.io/spec-kit/reference/overview.html)与[流程命令](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
+- [CLI 参考](https://github.github.io/spec-kit/index.html#specify-cli)与[流程命令](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
 - [SDD 理念](https://github.github.io/spec-kit/how-to/sdd.html)、[完整方法论](./spec-driven.md)与[现有规范演进](https://github.github.io/spec-kit/how-to/evolving-specs.html)
-- [项目历史](https://github.github.io/spec-kit/history.html)
+- [项目历史](https://github.github.io/spec-kit/overview/history.html)
 - [Spec Kit 如何使用 Spec Kit](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
 
 <a id="-支持"></a>

@@ -278,7 +278,7 @@ output only for application-data variables whose consumers handle it as data.
 When a shell step invokes Specify itself, catalog overrides such as
 `SPECKIT_WORKFLOW_CATALOG_URL` can also change where child commands discover
 or install components. Vet those bindings alongside the
-[active catalog sources](../reference/catalogs.md#discovery-and-trust).
+[active catalog sources](../overview/catalogs.md#discovery-and-trust).
 
 Workflow validation checks configuration, not whether environment settings or
 commands are safe. `specify workflow info` shows metadata and step identities;

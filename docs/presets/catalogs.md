@@ -221,6 +221,6 @@ catalog JSON or source URLs.
 - [Catalog CLI commands](cli.md#catalog-management)
 - [Manifest API](api.md)
 - [Publishing and community submission](publishing.md)
-- [Cross-component catalog guidance](../reference/catalogs.md)
+- [Cross-component catalog guidance](../overview/catalogs.md)
 - [Catalog and download authentication](../reference/authentication.md)
 - [Community presets](../community/presets.md)

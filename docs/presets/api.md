@@ -239,5 +239,5 @@ handled in Python, not independently by each agent.
 - [Developing presets](developing.md)
 - [Catalog schemas and configuration](catalogs.md)
 - [Publishing presets](publishing.md)
-- [Artifact inventory and composition stacks](../reference/artifacts.md)
+- [Artifact inventory and composition stacks](../overview/artifacts.md)
 - [Integration management](../integrations/cli.md)

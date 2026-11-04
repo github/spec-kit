@@ -199,7 +199,7 @@ it also shows the contributing composition chain, starting at its effective
 base. The displayed path is not a file containing the final composed output.
 Invalid composition produces a warning; a missing name is reported as not
 found. For all artifact kinds and hidden layers, use the separate
-[artifact reference](../reference/artifacts.md).
+[artifact reference](../overview/artifacts.md).
 
 ## Enable or disable a preset
 

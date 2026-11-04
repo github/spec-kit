@@ -162,6 +162,6 @@ Private catalog and package downloads use shared opt-in authentication from `~/.
 - [Catalog CLI commands](cli.md#catalog-management)
 - [Publishing workflows](publishing.md)
 - [Community step submissions](../community/workflow-steps.md)
-- [Cross-component catalogs](../reference/catalogs.md)
+- [Cross-component catalogs](../overview/catalogs.md)
 - [Download authentication](../reference/authentication.md)
 - [Shell source review](steps.md#reviewing-shell-execution)
