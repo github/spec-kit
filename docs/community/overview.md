@@ -7,7 +7,7 @@ The Spec Kit community builds extensions, presets, bundles, workflow steps, walk
 > discretion. A catalog listing is not an audit or endorsement.
 
 Learn how discovery-only community sources and approved private sources fit
-together in the [catalog reference](../reference/catalogs.md).
+together in the [catalog reference](../overview/catalogs.md).
 
 ## Extensions
 

@@ -138,7 +138,7 @@ rewriting the specification or plan. The
 records this shift from generating an implementation to checking whether it
 satisfies the recorded intent.
 
-July added [agent-native runtime events](integrations/cli.md#runtime-events),
+July added [agent-native runtime events](../integrations/cli.md#runtime-events),
 allowing extensions to react to coding-agent lifecycle events such as session
 start or tool use. Unlike command hooks, these events execute scripts directly
 rather than asking the agent to follow additional instructions. Integrations
@@ -194,7 +194,7 @@ September made the composable model finer-grained and easier to inspect.
 Presets gained explicit extension dependencies, workflows gained named slots
 for reusable insertion points, and individual steps could carry their own
 integration configuration. The new
-[`specify artifact` command group](reference/artifacts.md) exposed commands,
+[`specify artifact` command group](artifacts.md) exposed commands,
 templates, scripts, and hooks with their composition stacks and contributing
 layers as JSON. Tooling and agents could inspect what a project's installed
 layers actually produced, rather than infer it from configuration alone.
@@ -212,7 +212,7 @@ records both the composition changes and that ecosystem growth.
 ### October–November 2026: Programmatic access and deeper composition
 
 October introduced an experimental local
-[Model Context Protocol (MCP) server](reference/mcp.md), initially exposing
+[Model Context Protocol (MCP) server](mcp.md), initially exposing
 version information and then artifact inspection and installed-workflow
 listing. These read-only tools let MCP clients inspect Spec Kit directly;
 they did not expose installation, mutation, or workflow execution. The CLI and
@@ -220,12 +220,12 @@ first-class MCP tools dispatch to shared operations, extending access without
 creating a separate implementation of the same behavior.
 
 Composition also extended across more boundaries. Coding-agent adapters became
-[installable from catalogs](integrations/cli.md#catalog-installed-external-adapters),
+[installable from catalogs](../integrations/cli.md#catalog-installed-external-adapters),
 allowing agent-specific support to be distributed outside the core package,
 subject to the user's explicit trust decision. Workflows gained
-[calls to other workflows](reference/workflows.md#workflow-composition) within
+[calls to other workflows](../workflows/steps.md#workflow-composition) within
 a unified execution tree, and bundles gained
-[references to other bundles](reference/bundles.md#bundle-references).
+[references to other bundles](../bundles/api.md#bundle-references).
 By early November, run-scoped workflow definitions were also inspectable through
 `specify workflow definition`. Together, these changes made the existing
 primitives more reusable and their effective configuration more visible,

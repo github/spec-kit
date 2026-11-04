@@ -23,9 +23,25 @@ To build the documentation locally:
 
 ## Structure
 
+The table of contents groups project background and shared CLI reference under
+**Overview**. **Getting Started** pairs each process walkthrough with its command
+reference. **How to** covers project practices, authentication, and local
+development of Spec Kit itself. Integrations, extensions, presets, workflows,
+bundles, and community resources retain their own sections.
+
+Overview's supporting pages live under `overview/`, while `index.md` remains
+the site homepage. Process command references and authentication remain under
+`reference/`, and local development remains at `local-development.md`.
+
 - `docfx.json` - DocFX configuration file
 - `index.md` - Main documentation homepage
+- `overview/history.md` - Project history and stewardship
 - `toc.yml` - Table of contents configuration
+- `overview/core.md` - Core CLI commands and shared project configuration
+- `overview/mcp.md` - Experimental local stdio MCP server
+- `overview/artifacts.md` - Artifact inventory and composition reference
+- `reference/authentication.md` - Authentication configuration guide and reference
+- `local-development.md` - Developing and checking Spec Kit locally
 - `installation.md` - Installation guide
 - `quickstart.md` - Spec-Driven Development walkthrough
 - `guides/agentic-sdlc.md` - How Spec Kit applies agentic and conventional SDLC practices to itself
@@ -41,7 +57,7 @@ To build the documentation locally:
 - `how-to/spec-persistence.md` - Choosing a specification persistence model
 - `how-to/evolving-specs.md` - Maintaining specifications after delivery
 - `how-to/customization.md` - Adapting Spec Kit to your process
-- `reference/catalogs.md` - Catalog discovery, trust, private sources, and precedence
+- `overview/catalogs.md` - Catalog discovery, trust, private sources, and precedence
 - `extensions/overview.md` - Extension user guide
 - `extensions/cli.md` - Extension management CLI reference
 - `extensions/catalogs.md` - Extension catalog configuration, trust, and release schema

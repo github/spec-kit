@@ -25,7 +25,7 @@ numeric priority wins:
 4. **Built-in defaults** — `catalog.json` + `catalog.community.json`
 
 Adding the first project catalog replaces the default sources unless you also
-list them in the project file. See [Catalogs](../reference/catalogs.md)
+list them in the project file. See [Catalogs](../overview/catalogs.md)
 for shared discovery, trust, and private-source guidance.
 
 Example `integration-catalogs.yml`:

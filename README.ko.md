@@ -174,9 +174,9 @@ specify extension add assess
 
 ## 문서
 
-- [CLI 레퍼런스](https://github.github.io/spec-kit/reference/overview.html)와 [프로세스 명령어](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
+- [CLI 레퍼런스](https://github.github.io/spec-kit/index.html#specify-cli)와 [프로세스 명령어](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
 - [SDD 철학](https://github.github.io/spec-kit/how-to/sdd.html), [전체 방법론](./spec-driven.md), [기존 스펙 발전시키기](https://github.github.io/spec-kit/how-to/evolving-specs.html)
-- [프로젝트 연혁](https://github.github.io/spec-kit/history.html)
+- [프로젝트 연혁](https://github.github.io/spec-kit/overview/history.html)
 - [Spec Kit이 Spec Kit을 쓰는 방법](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
 
 ## 스타 추이

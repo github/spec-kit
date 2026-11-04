@@ -161,7 +161,7 @@ options and expected entry formats.
 ## Private and offline environments
 
 If a catalog or its component downloads require credentials, configure
-[catalog and download authentication](authentication.md). Authentication is
+[catalog and download authentication](../reference/authentication.md). Authentication is
 opt-in and scoped to explicitly configured hosts.
 
 Behind a firewall, host catalogs and artifacts on approved internal HTTPS

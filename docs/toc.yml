@@ -1,10 +1,19 @@
-# Home page
-- name: Home
+# Project overview and shared reference
+- name: Overview
   href: index.md
-
-# Project history
-- name: Project History
-  href: history.md
+  items:
+    - name: Introduction
+      href: index.md
+    - name: Project History
+      href: overview/history.md
+    - name: Core Commands
+      href: overview/core.md
+    - name: MCP Server
+      href: overview/mcp.md
+    - name: Artifacts
+      href: overview/artifacts.md
+    - name: Catalogs
+      href: overview/catalogs.md
 
 # Getting started section
 - name: Getting Started
@@ -15,10 +24,16 @@
       href: guides/agentic-sdlc.md
     - name: Spec-Driven Development
       href: quickstart.md
+    - name: SDD Command Reference
+      href: reference/agentic-sdd.md
     - name: Bug Fixing
       href: guides/bugfix.md
+    - name: Bug Fixing Command Reference
+      href: reference/agentic-bugfix.md
     - name: Idea Assessment
       href: guides/assessment.md
+    - name: Idea Assessment Command Reference
+      href: reference/agentic-assessment.md
     - name: Upgrade
       href: upgrade.md
     - name: Install uv
@@ -54,6 +69,10 @@
       href: how-to/evolving-specs.md
     - name: Adapt Spec Kit to your process
       href: how-to/customization.md
+    - name: Configure authentication
+      href: reference/authentication.md
+    - name: Develop Spec Kit locally
+      href: local-development.md
 
 # Agent integrations
 - name: Integrations
@@ -141,36 +160,6 @@
       href: bundles/catalogs.md
     - name: Publishing
       href: bundles/publishing.md
-
-# Reference
-- name: Reference
-  items:
-    - name: Overview
-      href: reference/overview.md
-    - name: Core Commands
-      href: reference/core.md
-    - name: MCP Server
-      href: reference/mcp.md
-    - name: Integration Management
-      href: integrations/cli.md
-    - name: Catalogs
-      href: reference/catalogs.md
-    - name: Artifacts
-      href: reference/artifacts.md
-    - name: Agentic SDD
-      href: reference/agentic-sdd.md
-    - name: Agentic Bug Fix
-      href: reference/agentic-bugfix.md
-    - name: Agentic Idea Assessment
-      href: reference/agentic-assessment.md
-    - name: Authentication
-      href: reference/authentication.md
-
-# Development
-- name: Development
-  items:
-    - name: Local Development
-      href: local-development.md
 
 # Community
 - name: Community

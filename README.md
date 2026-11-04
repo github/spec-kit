@@ -53,11 +53,11 @@ Spec Kit combines ready-to-use processes with composable mechanisms:
 | Modify an installed workflow without forking it | [Workflow overlay](https://github.github.io/spec-kit/workflows/overlays.html) |
 | Add reusable executable behavior to workflows | [Workflow step](https://github.github.io/spec-kit/workflows/developing.html#custom-step-packages) |
 | Install a curated setup for a role or team | [Bundle](https://github.github.io/spec-kit/bundles/overview.html) |
-| Discover community components | [Catalog](https://github.github.io/spec-kit/reference/catalogs.html) |
-| Host a private catalog of approved components | [Catalog](https://github.github.io/spec-kit/reference/catalogs.html) |
+| Discover community components | [Catalog](https://github.github.io/spec-kit/overview/catalogs.html) |
+| Host a private catalog of approved components | [Catalog](https://github.github.io/spec-kit/overview/catalogs.html) |
 | Access private catalogs and component downloads | [Authentication](https://github.github.io/spec-kit/reference/authentication.html) |
 | Work offline or behind a firewall | [Local sources and self-hosted catalogs](https://github.github.io/spec-kit/install/air-gapped.html) |
-| Inspect which layer supplies a command, template, or script | [Artifact inventory](https://github.github.io/spec-kit/reference/artifacts.html) |
+| Inspect which layer supplies a command, template, or script | [Artifact inventory](https://github.github.io/spec-kit/overview/artifacts.html) |
 
 Search the active catalogs with commands such as `specify extension search`,
 `specify preset search`, `specify workflow search`, and `specify bundle search`.
@@ -226,10 +226,10 @@ the whole process.
 
 ## Documentation
 
-- [CLI reference](https://github.github.io/spec-kit/reference/overview.html) and [process commands](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
+- [CLI reference](https://github.github.io/spec-kit/index.html#specify-cli) and [process commands](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
 - [How-to guides](https://github.github.io/spec-kit/how-to/index.html) for applying Spec Kit to your project work
 - [SDD philosophy](https://github.github.io/spec-kit/how-to/sdd.html), [full methodology](./spec-driven.md), and [evolving existing specs](https://github.github.io/spec-kit/how-to/evolving-specs.html)
-- [Project history](https://github.github.io/spec-kit/history.html)
+- [Project history](https://github.github.io/spec-kit/overview/history.html)
 - [How Spec Kit uses Spec Kit](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
 
 ## In the news
