@@ -235,6 +235,9 @@ the whole process.
 ## In the news
 
 - [Open Source Friday: Spec Kit Part 2](https://www.youtube.com/watch?v=8hHCpNVLhmI) (October 16, 2026) — Manfred Riem and Nicole Haugen discuss Spec Kit 1.0 and the expanded toolkit.
+- [Living Specs in SpecKit](https://www.alfredo-perez.dev/blog/2026-10-15-living-specs) (October 15, 2026) — Alfredo Perez explores maintaining capability-level specifications as a project evolves.
+- [Spec Kit Customization Series](https://jesseliberty.com/2026/10/08/4-solutions-to-spec-kit-issues/) (October 8–10, 2026) — Jesse Liberty walks through presets and extension authoring, including testing and publishing.
+- [From Spec-First to Enterprise-Ready: Extending GitHub Spec Kit](https://developer.microsoft.com/blog/from-spec-first-to-enterprise-ready-extending-github-spec-kit/) (October 7, 2026) — Apoorv Gupta explains enterprise customization through presets, extensions, bundles, workflows, and governed catalogs.
 - [Open Source Friday with Spec Kit](https://www.youtube.com/watch?v=2IArMAhkJcE) (May 8, 2026) — An introduction and SDD demonstration with Manfred Riem.
 
 ## Star history
