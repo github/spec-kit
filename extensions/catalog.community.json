@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-03T00:00:00Z",
+  "updated_at": "2026-11-04T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -1866,9 +1866,9 @@
       "id": "docguard",
       "description": "Documentation integrity for AI-assisted repositories: lifecycle registry, drift validation, traceability, safe archival, SARIF/JUnit, MCP, GitHub Actions, and Spec Kit hooks.",
       "author": "raccioly",
-      "version": "0.45.1",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.45.1/spec-kit-docguard-v0.45.1.zip",
-      "sha256": "7248256490092dc3ae5d746b8925bfce8b16fd9ac251a7319f9b4665e83b4f95",
+      "version": "0.46.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.46.0/spec-kit-docguard-v0.46.0.zip",
+      "sha256": "c8d67b15c13d956b118a464bf8c5c362b432daa8bd499a4aa39dc25a9ffff012",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -1909,7 +1909,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-10-16T00:00:00Z"
+      "updated_at": "2026-11-04T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
