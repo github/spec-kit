@@ -90,6 +90,8 @@ class TestOmpIntegration(MarkdownIntegrationTests):
             "--no-title",
             "--thinking",
             "low",
+            "--mode",
+            "text",
             "prompt",
         ]
 
@@ -160,6 +162,9 @@ class TestOmpIntegration(MarkdownIntegrationTests):
             ["--version=false"],
             ["--print=false"],
             ["--help="],
+            ["--export=session.jsonl"],
+            ["--alias=omp-work"],
+            ["--mode=rpc"],
         ],
     )
     def test_integration_args_unsafe_tokens_are_rejected(self, integration_args):
@@ -202,7 +207,7 @@ class TestOmpIntegration(MarkdownIntegrationTests):
         assert parsed["model"] == "gpt-5"
         assert parsed["thinking"] == "high"
         assert parsed["print"] is True
-        assert parsed.get("mode") == ("json" if output_json else None)
+        assert parsed.get("mode") == ("json" if output_json else "text")
 
     def test_replayed_parser_shows_why_bare_flags_are_unsafe(self):
         # Sanity-check the model against the cases from the PR review.

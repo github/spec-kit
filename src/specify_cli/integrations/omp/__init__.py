@@ -52,9 +52,13 @@ class OmpIntegration(MarkdownIntegration):
         "--no-title", "--no-ui", "--auto-approve", "--yolo",
     })
     # OMP splits ``--name=value`` at ``=`` and enables these flags regardless
-    # of the inline value (``--help=false`` still prints help and exits), so
-    # they are rejected in equals-form too.
-    _RESERVED_FLAG_NAMES = frozenset({"--help", "--version", "--print"})
+    # of the inline value (``--help=false`` still prints help and exits).
+    # ``--export``/``--alias`` replace prompt execution (the prompt becomes an
+    # output filename, or alias installation returns early) and ``--mode`` is
+    # owned by the adapter, so they are rejected in equals-form too.
+    _RESERVED_FLAG_NAMES = frozenset({
+        "--help", "--version", "--print", "--export", "--alias", "--mode",
+    })
     _EQUALS_FLAG_RE = re.compile(r"^--[A-Za-z][A-Za-z0-9-]*=")
 
     def build_exec_args(
@@ -81,8 +85,7 @@ class OmpIntegration(MarkdownIntegration):
             args.extend([self._RUNTIME_OPTION_FLAGS[option], value])
         if model:
             args.extend(["--model", model])
-        if output_json:
-            args.extend(["--mode", "json"])
+        args.extend(["--mode", "json" if output_json else "text"])
         args.append(prompt)
         return args
 

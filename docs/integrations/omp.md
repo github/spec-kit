@@ -70,7 +70,7 @@ be one of:
 
 Bare value-taking flags (`--system-prompt`, `--resume`), the `--` terminator
 and `--=` forms (which OMP normalizes to `--`), positional text, `@file`
-references, short flags, and `--help`/`--version`/`--print` fail before OMP is
+references, short flags, and `--help`/`--version`/`--print`/`--export`/`--alias`/`--mode` fail before OMP is
 launched.
 
 Arguments are passed to `omp --print` in this order, so later sources follow
@@ -80,4 +80,4 @@ earlier ones on the command line:
 2. `integration_args`
 3. `integration_options` flags
 4. `--model` from the step's `model` field
-5. `--mode json`, then the prompt
+5. `--mode json` (or `--mode text` when JSON output is off), then the prompt
