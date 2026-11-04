@@ -86,7 +86,7 @@ required to live inside it — the project root identifies the Spec Kit project
 and its command/configuration context, not a containment boundary for feature
 documents. They compose: set both to pick a project and a feature
 non-interactively. See the
-[`SPECIFY_INIT_DIR` reference](../reference/core.md#environment-variables) for
+[`SPECIFY_INIT_DIR` reference](../overview/core.md#environment-variables) for
 the full contract and the two-axes model.
 
 The `specify` CLI's project-scoped subcommands honor the same variable, so they

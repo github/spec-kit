@@ -2,7 +2,7 @@
 
 Understand, choose, and apply Spec Kit practices to your project work.
 These guides cover development approaches, project contexts, complex features,
-and specification maintenance.
+and specification maintenance, plus authentication and developing Spec Kit itself.
 
 | Goal | Guide |
 | --- | --- |
@@ -15,6 +15,8 @@ and specification maintenance.
 | Decide how completed specifications should live | [Choose a persistence model](spec-persistence.md) |
 | Keep feature artifacts aligned after delivery | [Maintain specifications after delivery](evolving-specs.md) |
 | Adapt practices to your team's needs | [Adapt Spec Kit to your process](customization.md) |
+| Access private catalogs, downloads, and release checks | [Configure authentication](../reference/authentication.md) |
+| Contribute changes to Spec Kit itself | [Develop Spec Kit locally](../local-development.md) |
 
 ## See also
 
@@ -22,4 +24,4 @@ and specification maintenance.
 - [Spec-Driven Development quickstart](../quickstart.md)
 - [Bug fixing quickstart](../guides/bugfix.md)
 - [Idea assessment quickstart](../guides/assessment.md)
-- [Reference](../reference/overview.md)
+- [Overview and shared CLI reference](../index.md#specify-cli)

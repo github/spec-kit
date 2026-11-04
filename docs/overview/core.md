@@ -173,7 +173,9 @@ specify -V
 specify mcp
 ```
 
-Starts the experimental stdio-only MCP server. The initial server exposes only
-the stable `version` JSON command through generic list, describe, and run tools.
-See the [MCP Server reference](mcp.md) for the tool names, result contract, and
-current limitations.
+Starts the experimental stdio-only MCP server. Its first-class read-only tools
+expose version information (`specify_version`), artifact inventory and composition
+(`specify_artifact_list`, `specify_artifact_info`), and installed workflows
+(`specify_workflow_list`). The generic list, describe, and run tools support only
+the stable `version` JSON command. See the [MCP Server reference](mcp.md) for the
+tool names, result contracts, and current limitations.

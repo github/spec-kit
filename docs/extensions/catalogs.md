@@ -334,4 +334,4 @@ See the [bundle CLI reference](../bundles/cli.md#install-a-bundle) for bundle in
 - [Extension CLI reference](cli.md)
 - [Publishing extensions](publishing.md)
 - [Community extensions](../community/extensions.md)
-- [Shared catalog reference](../reference/catalogs.md)
+- [Shared catalog reference](../overview/catalogs.md)
