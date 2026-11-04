@@ -321,10 +321,15 @@ class WorkflowCatalog:
     )
     CACHE_DURATION = 3600  # 1 hour
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(
+        self, project_root: Path, *, read_files: FileHelper | None = None
+    ) -> None:
         self.project_root = project_root
         self.workflows_dir = project_root / ".specify" / "workflows"
         self.cache_dir = self.workflows_dir / ".cache"
+        # Optional read-policy handoff for workflow.catalog.list. Existing callers
+        # and all mutation paths retain their established behavior.
+        self._read_files = read_files
 
     # -- Catalog resolution -----------------------------------------------
 
@@ -360,13 +365,20 @@ class WorkflowCatalog:
             )
 
     def _load_catalog_config(
-        self, config_path: Path
+        self, config_path: Path, *, read_files: FileHelper | None = None
     ) -> list[WorkflowCatalogEntry] | None:
         """Load catalog stack configuration from a YAML file."""
-        if not config_path.exists():
+        if read_files is None and not config_path.exists():
             return None
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            if read_files is None:
+                text = config_path.read_text(encoding="utf-8")
+            else:
+                try:
+                    text = read_files.read_text(config_path)
+                except FileNotFoundError:
+                    return None
+            data = yaml.safe_load(text)
         except (yaml.YAMLError, OSError, UnicodeError) as exc:
             raise WorkflowValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
@@ -492,7 +504,9 @@ class WorkflowCatalog:
 
         # 2. Project-level config
         project_config = self.project_root / ".specify" / "workflow-catalogs.yml"
-        project_entries = self._load_catalog_config(project_config)
+        project_entries = self._load_catalog_config(
+            project_config, read_files=self._read_files
+        )
         if project_entries is not None:
             return project_entries
 
