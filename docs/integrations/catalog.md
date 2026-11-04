@@ -159,3 +159,7 @@ See the [contribution guide](contributing.md) for adding built-in integrations
 or submitting external integration catalog entries. For agent-specific setup,
 start with the [integration directory](index.md). Shared user-facing commands
 are documented in the [integration management reference](cli.md).
+
+## See also
+
+- [Community integrations](../community/integrations.md)

@@ -1,4 +1,4 @@
-# Workflow step reference
+# Built-in workflow step types
 
 Step configuration selects executable behavior with `type`. Omitting `type` selects `command`. Step IDs are local expression aliases and must not contain `:`, which is reserved for generated occurrence IDs.
 
@@ -154,7 +154,7 @@ later step needs to inspect the failure:
 > directory is protected accordingly.
 
 Captured text is agent output and therefore untrusted; see
-[Interpolation and shell safety](expressions.md#interpolation-and-shell-safety) before using
+[Interpolation and shell safety](../workflows/expressions.md#interpolation-and-shell-safety) before using
 it in a `shell` step.
 
 ## Per-Step Integration Configuration
@@ -218,7 +218,7 @@ source. For example, on POSIX:
 For cross-platform scripts, read the environment in the program itself, such
 as `os.environ["RESULT"]` in Python. See
 [Shell Step Environment Variables](#shell-step-environment-variables) for the
-binding contract and [Interpolation and shell safety](expressions.md#interpolation-and-shell-safety)
+binding contract and [Interpolation and shell safety](../workflows/expressions.md#interpolation-and-shell-safety)
 for the remaining trust boundary.
 
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
@@ -351,7 +351,7 @@ anchor and `name` is a required human-readable label:
   name: "Post-implementation checks"
 ```
 
-See [Workflow slots](overlays.md#workflow-slots-upstream-extension-points)
+See [Workflow slots](../workflows/overlays.md#workflow-slots-upstream-extension-points)
 for filling a slot, preserving its outputs, and fan-out limitations.
 
 ## Gate Steps
@@ -644,8 +644,9 @@ target resolution and binding.
 
 ## See also
 
-- [Workflow YAML and execution semantics](api.md)
-- [Expressions](expressions.md)
-- [Overlays and workflow slots](overlays.md)
+- [Workflow step overview](overview.md)
+- [Workflow YAML and execution semantics](../workflows/api.md)
+- [Expressions](../workflows/expressions.md)
+- [Overlays and workflow slots](../workflows/overlays.md)
 - [Developing custom step packages](developing.md#custom-step-packages)
 - [Step management CLI](cli.md#step-management)

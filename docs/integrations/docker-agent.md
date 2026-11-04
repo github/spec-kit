@@ -62,4 +62,4 @@ variable remains supported when no per-step reference is supplied. A per-step
 reference overrides the entire legacy value, including any flags it contains.
 Dispatch uses `run --exec`, adds requested `--json` and `--model` flags, and
 places the prompt after `--` so prompt text cannot become CLI options.
-See [per-step integration configuration](../workflows/steps.md#per-step-integration-configuration).
+See [per-step integration configuration](../workflow-steps/types.md#per-step-integration-configuration).

@@ -144,3 +144,7 @@ for trust and installation requirements.
 The [catalog reference](catalog.md) describes descriptor and catalog metadata.
 See [contributing integrations](contributing.md) to develop a built-in
 integration or publish an external adapter.
+
+## See also
+
+- [Community integrations](../community/integrations.md)

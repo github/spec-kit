@@ -27,7 +27,7 @@ The table of contents groups project background and shared CLI reference under
 **Overview**. **Getting Started** pairs each process walkthrough with its command
 reference. **How to** covers project practices, authentication, and local
 development of Spec Kit itself. Integrations, extensions, presets, workflows,
-bundles, and community resources retain their own sections.
+workflow steps, bundles, and community resources retain their own sections.
 
 Overview's supporting pages live under `overview/`, while `index.md` remains
 the site homepage. Process command references and authentication remain under
@@ -71,14 +71,20 @@ the site homepage. Process command references and authentication remain under
 - `presets/catalogs.md` - Preset catalog configuration, schemas, and trust
 - `presets/publishing.md` - Preset publishing and catalog submission guide
 - `workflows/overview.md` - Workflow user guide and run/review/resume walkthrough
-- `workflows/cli.md` - Workflow, overlay, step, and catalog CLI reference
-- `workflows/developing.md` - Workflow and custom-step authoring guide
-- `workflows/api.md` - YAML, step API, execution, and persisted-state contracts
-- `workflows/steps.md` - Built-in step configuration and outputs
+- `workflows/cli.md` - Workflow, overlay, and workflow catalog CLI reference
+- `workflows/developing.md` - Workflow authoring guide
+- `workflows/api.md` - YAML, execution, and persisted-state contracts
 - `workflows/expressions.md` - Expression language, runtime context, and shell safety
 - `workflows/overlays.md` - Workflow composition through overlays and slots
-- `workflows/catalogs.md` - Workflow and step catalogs, releases, and trust
+- `workflows/catalogs.md` - Workflow catalogs, releases, and trust
 - `workflows/publishing.md` - Workflow publishing and catalog submission guide
+- `workflow-steps/overview.md` - Built-in and custom workflow step overview
+- `workflow-steps/cli.md` - Custom step and step catalog management CLI
+- `workflow-steps/developing.md` - Step package authoring and validation
+- `workflow-steps/api.md` - Python extension API, registry, and loader contracts
+- `workflow-steps/types.md` - Built-in step configuration and outputs
+- `workflow-steps/catalogs.md` - Step catalogs, releases, and trust
+- `workflow-steps/publishing.md` - Step release and submission guidance
 - `bundles/overview.md` - Bundle user guide and first-party setups
 - `bundles/cli.md` - Bundle management CLI reference
 - `bundles/developing.md` - Bundle authoring and installation testing guide
@@ -86,6 +92,9 @@ the site homepage. Process command references and authentication remain under
 - `bundles/catalogs.md` - Bundle catalogs, policies, and release history
 - `bundles/publishing.md` - Bundle publishing and catalog submission guide
 - `community/extensions.md` - Community extension listing
+- `community/integrations.md` - Community integration discovery and contribution
+- `community/workflows.md` - Community workflow listing and contribution
+- `community/workflow-steps.md` - Community step listing and submission contract
 - `integrations/index.md` - Integration directory and shared setup guidance
 - `integrations/cli.md` - Shared integration management CLI reference
 - `integrations/<key>.md` - Agent-specific setup, invocation, options, and limitations

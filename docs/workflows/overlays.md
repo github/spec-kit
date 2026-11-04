@@ -183,4 +183,4 @@ When an installed workflow is refreshed or reinstalled, project overlays in `.sp
 ## See also
 
 - [Workflow CLI](cli.md#overlay-management)
-- [Step types](steps.md)
+- [Step types](../workflow-steps/types.md)

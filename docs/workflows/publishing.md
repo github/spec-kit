@@ -132,18 +132,6 @@ workflow discoverable with `specify workflow search`, not automatically
 installable by ID. After vetting a release, install its pinned URL explicitly
 or use a separately configured catalog you trust and allow for installation.
 
-## Publish a custom workflow step
-
-Custom steps contain executable Python and use a different catalog and
-submission contract. Follow the
-[Community Workflow Step Types guide](../community/workflow-steps.md) for
-the issue form, versioned archive, individual tag-pinned file URLs, per-file
-digests, package limits, and maintainer-triggered metadata validation.
-
-Do not submit a hand-edited step catalog PR in place of that issue process.
-Maintainers validate metadata and distribution evidence, not the submitted
-Python code. The community step catalog remains discovery-only.
-
 ## Release updates
 
 1. Update `workflow.version`, documentation, and the changelog.
@@ -159,8 +147,9 @@ which bytes were installed, not whether those bytes are safe.
 ## See also
 
 - [Developing workflows](developing.md)
-- [Workflow and step catalogs](catalogs.md)
+- [Workflow catalogs](catalogs.md)
 - [Installation CLI](cli.md#install-a-workflow)
-- [Shell execution review](steps.md#reviewing-shell-execution)
+- [Shell execution review](../workflow-steps/types.md#reviewing-shell-execution)
 - [Expression interpolation and shell safety](expressions.md#interpolation-and-shell-safety)
-- [Community workflow step submissions](../community/workflow-steps.md)
+- [Community workflows](../community/workflows.md)
+- [Publishing custom workflow steps](../workflow-steps/publishing.md)

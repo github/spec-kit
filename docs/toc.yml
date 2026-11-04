@@ -133,8 +133,6 @@
       href: workflows/developing.md
     - name: API Reference
       href: workflows/api.md
-    - name: Step Types
-      href: workflows/steps.md
     - name: Expressions
       href: workflows/expressions.md
     - name: Overlays
@@ -143,6 +141,25 @@
       href: workflows/catalogs.md
     - name: Publishing
       href: workflows/publishing.md
+
+# Workflow Steps
+- name: Workflow Steps
+  href: workflow-steps/overview.md
+  items:
+    - name: Overview
+      href: workflow-steps/overview.md
+    - name: CLI Reference
+      href: workflow-steps/cli.md
+    - name: Developing
+      href: workflow-steps/developing.md
+    - name: API Reference
+      href: workflow-steps/api.md
+    - name: Built-in Step Types
+      href: workflow-steps/types.md
+    - name: Catalogs
+      href: workflow-steps/catalogs.md
+    - name: Publishing
+      href: workflow-steps/publishing.md
 
 # Bundles
 - name: Bundles
@@ -167,14 +184,18 @@
   items:
     - name: Overview
       href: community/overview.md
+    - name: Integrations
+      href: community/integrations.md
     - name: Extensions
       href: community/extensions.md
     - name: Presets
       href: community/presets.md
-    - name: Bundles
-      href: community/bundles.md
+    - name: Workflows
+      href: community/workflows.md
     - name: Workflow Step Types
       href: community/workflow-steps.md
+    - name: Bundles
+      href: community/bundles.md
     - name: Walkthroughs
       href: community/walkthroughs.md
     - name: Friends

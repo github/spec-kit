@@ -88,7 +88,9 @@ before installation and use.
 
 - [Workflow CLI](cli.md)
 - [Developing workflows](developing.md)
-- [Built-in step types](steps.md)
+- [Workflow step overview](../workflow-steps/overview.md)
+- [Built-in step types](../workflow-steps/types.md)
 - [Workflow overlays](overlays.md)
 - [Catalogs and trust](catalogs.md)
 - [Publishing workflows](publishing.md)
+- [Community workflows](../community/workflows.md)

@@ -36,7 +36,7 @@ Adding Spec Kit to an established codebase? Start with the
 ## Specify CLI
 
 The Specify CLI (`specify`) initializes projects and manages integrations,
-extensions, presets, workflows, and bundles. Process commands such as
+extensions, presets, workflows, workflow steps, and bundles. Process commands such as
 `/speckit.specify` run inside your coding agent, not in the terminal; see
 [command invocation](integrations/cli.md#command-invocation) for your agent's
 syntax and the command references above for arguments, artifacts, and quality
@@ -99,6 +99,7 @@ Featuring these independently maintained community projects is not an audit or e
 <a href="presets/overview.md" class="pillar-link">Presets →</a>&nbsp;&nbsp;
 <a href="extensions/overview.md" class="pillar-link">Extensions →</a>&nbsp;&nbsp;
 <a href="workflows/overview.md" class="pillar-link">Workflows →</a>&nbsp;&nbsp;
+<a href="workflow-steps/overview.md" class="pillar-link">Workflow Steps →</a>&nbsp;&nbsp;
 <a href="bundles/overview.md" class="pillar-link">Bundles →</a>
 
 </div>
@@ -196,7 +197,7 @@ Community extensions like Quality Gates and Architecture Guard add policy checks
   </a>
   <a href="community/overview.md" class="nav-card">
     <strong>Community</strong>
-    <span>Extensions, presets, walkthroughs, and friend projects</span>
+    <span>Community integrations, extensions, presets, workflows, steps, bundles, and companion resources</span>
   </a>
   <a href="local-development.md" class="nav-card">
     <strong>Develop Spec Kit locally</strong>
@@ -235,6 +236,7 @@ Each component has its own guide and management reference:
 | Extensions | [Add capabilities, commands, and hooks](extensions/overview.md) | [Extension management](extensions/cli.md) |
 | Presets | [Customize templates, commands, and scripts](presets/overview.md) | [Preset management](presets/cli.md) |
 | Workflows | [Automate repeatable, resumable processes](workflows/overview.md) | [Workflow management](workflows/cli.md) |
+| Workflow Steps | [Reuse built-in behavior or develop custom types](workflow-steps/overview.md) | [Step management](workflow-steps/cli.md) |
 | Bundles | [Install a versioned setup of existing components](bundles/overview.md) | [Bundle management](bundles/cli.md) |
 
 For private catalogs, downloads, and release checks, see

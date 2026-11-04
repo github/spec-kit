@@ -121,3 +121,9 @@ To update your integration version in the catalog:
 1. Release a new version of your integration
 2. Open a PR updating the version, pinned archive URL, and digest (if provided)
 3. Ensure backward compatibility or document breaking changes
+
+## See also
+
+- [Community integrations](../community/integrations.md)
+- [Integration directory](index.md)
+- [Catalog schema](catalog.md)
