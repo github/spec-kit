@@ -138,7 +138,7 @@ Omitting `--json` exits with code `2` and prints a usage message on stderr; no s
 
 - **`definition`** is the workflow as persisted for the run, verbatim and with overlays already applied, so it reflects the steps as executed. Every key is passed through (including `requires`, `outputs` and unknown keys). Nothing is added, renamed or filled in: an omitted field, such as a gate's `options`, means the engine default applies at run time. Expressions (`{{ ... }}`) are not evaluated. The structure follows the [workflow YAML schema](api.md#workflow-yaml-schema), so `schema_version` is the version of this interface and a schema change is a change to it; because `definition` is emitted as authored, an omitted `schema_version` defaults to `"1.0"` and the engine compares `str(schema_version)` (so unquoted `schema_version: 1.0` in YAML appears as the JSON number `1.0`). Keys may be added to the top-level response envelope (`run_id`, `definition`, `workflow_scopes`) in future versions, but existing envelope keys are never removed or renamed.
 - **Plain JSON.** YAML-native values that JSON cannot represent, such as an unquoted date, appear as strings. Binary values (`!!binary`) are not emitted: each appears as a `"<binary: N bytes>"` placeholder, and the value itself stays in the run's snapshot. A set (`!!set`) appears as a list sorted by its JSON form, so the output does not depend on hash randomization. Non-string mapping keys and non-finite numbers are stringified too. Two mapping keys that collapse to the same JSON property name (for example `1` and `"1"`) make the command fail rather than emit lossy JSON. JSON cannot share a reference, so a reused YAML alias (anchor) is duplicated; a recursive alias, or a non-recursive alias graph that expands past a fixed node or output-size budget, fails instead of consuming unbounded CPU, memory and stdout. The budget applies to each definition separately (the root and every entry in `workflow_scopes`), so a run with many bound workflow calls is not rejected for its total size. A separate, much larger limit (32 MiB) caps the whole response, so a loop or fan-out that repeats a large definition fails instead of multiplying it. A non-string mapping key longer than 256 characters once stringified is rejected for the same reason.
-- **`workflow_scopes`** (always present) holds the frozen definition of every [workflow call](steps.md#workflow-composition) that has been reached, in execution order. Each entry is `{ "scope_path", "workflow_id", "definition" }`, with `scope_path` and `workflow_id` identical to the values in `status --json`. A call step inside `definition` stays as authored; the callee is never expanded in place. A call that has not been reached yet, or whose target could not be resolved, has no entry, and its definition is never read from the installed workflow. The list grows as calls are reached, and a call inside a loop or fan-out has one entry per iteration or item.
+- **`workflow_scopes`** (always present) holds the frozen definition of every [workflow call](../workflow-steps/types.md#workflow-composition) that has been reached, in execution order. Each entry is `{ "scope_path", "workflow_id", "definition" }`, with `scope_path` and `workflow_id` identical to the values in `status --json`. A call step inside `definition` stays as authored; the callee is never expanded in place. A call that has not been reached yet, or whose target could not be resolved, has no entry, and its definition is never read from the installed workflow. The list grows as calls are reached, and a call inside a loop or fan-out has one entry per iteration or item.
 - **Not included: dynamically generated steps.** The output contains the authored root definition and the frozen definitions of bound workflow calls. Steps that a custom step type generates at run time through `StepResult.next_steps` are persisted in the run's execution state but are not exported, so a gate created that way has no definition in this output. The built-in `if`, `switch`, `while`, `do-while` and `fan-out` steps take their steps from the authored definition and are covered.
 - **`scope_path`** is a list of strings from the root: the authored `id` of every enclosing step (`step-<index>` for a step without an `id`). Containers such as `if`, `switch`, loops and fan-out are elements; each loop iteration and fan-out item adds its index as a string, including the first (`["loop", "0", "call"]`). `workflow_scopes` is always present here, while `status --json` includes it only when the run has workflow calls.
 
@@ -286,105 +286,12 @@ specify workflow overlay remove <workflow-id> <overlay-id>
 
 Removes the project overlay file.
 
-## Step Management
-
-Custom steps contain executable Python. Review their source before installation and use. See [Developing custom step packages](developing.md#custom-step-packages) for the package contract.
-
-```bash
-specify workflow step list
-specify workflow step search [query]
-specify workflow step info <step_id>
-specify workflow step info <step_id> --versions
-```
-
-`list` shows installed custom step types; `search` searches active step catalogs; `info` shows installed or catalog metadata and source provenance. `--versions` lists releases from the winning catalog.
-
-### Install from a local directory
-
-```bash
-specify workflow step add my-step --dev /path/to/my-step
-```
-
-`--dev` takes a **directory** (not an archive, not a bare `step.yml`) that is a
-complete package. This needs no catalog, server, or network, which makes it the
-supported local-authoring loop:
-
-```bash
-specify workflow step add my-step --dev ./my-step
-specify workflow step list
-specify workflow step info my-step
-# edit ./my-step, then replace the installed copy:
-specify workflow step add my-step --dev ./my-step --force
-specify workflow step remove my-step
-```
-
-### Install from an archive URL
-
-```bash
-specify workflow step add my-step --from https://example.com/my-step.zip
-```
-
-`--from` accepts a `.zip`, `.tar.gz`, or `.tgz` archive (a bare `step.yml`
-URL is **not** a package). The archive may place `step.yml` and `__init__.py`
-at its root or under exactly one top-level directory; unrelated top-level
-siblings are rejected. Because a step package contains executable Python, a
-direct URL install shows a default-deny trust confirmation before any network
-request; declining cancels with no request and no error. HTTPS is required
-(HTTP is permitted only for loopback hosts), redirects must remain secure, and
-downloads are size-bounded.
-
-### Install from the catalog
-
-```bash
-specify workflow step add my-step
-```
-
-Catalog installs resolve individual file URLs from the active step catalogs and
-then go through the same validation and commit path as `--dev` and `--from`.
-Discovery-only catalogs cannot be installed from.
-
-To submit a custom step type to the discovery-only community catalog, follow
-[Community Workflow Steps](../community/workflow-steps.md). Submissions use
-tag-pinned individual file URLs and per-file digests; maintainers validate
-metadata and distribution evidence, not submitted code.
-
-See [Step releases](catalogs.md#step-releases) for catalog history and exact-version selection.
-
-### Replacement and force
-
-```bash
-specify workflow step add my-step --dev ./my-step --force
-specify workflow step add my-step --from https://example.com/my-step.zip --force
-```
-
-`--force` first stages and validates the replacement before touching the
-existing installation, and can replace both a registered install and a leftover
-unregistered directory. Validation and staging failures leave the previous
-package untouched. If removing the old directory fails, the replacement is not
-published. If publishing the replacement or updating the registry fails after
-the old directory has been removed, the installation may be left incomplete:
-rerun the command with the original source and `--force` to reinstall. No
-automatic rollback is attempted.
-
-### Listing, running, and removing
-
-Installed custom steps appear in `specify workflow step list` and are loaded
-automatically by `workflow add`, `workflow run`, and `workflow resume`. Remove
-one with:
-
-```bash
-specify workflow step remove my-step
-```
-
 ## Catalog Management
-
-Workflow and step catalogs are independent stacks.
 
 ### List Catalogs
 
 ```bash
 specify workflow catalog list
-specify workflow step catalog list
 ```
 
 Shows all active catalog sources.
@@ -393,34 +300,33 @@ Shows all active catalog sources.
 
 ```bash
 specify workflow catalog add <url> [--name <name>]
-specify workflow step catalog add <url> [--name <name>]
 ```
 
 | Option          | Description                      |
 | --------------- | -------------------------------- |
 | `--name <name>` | Optional name for the catalog    |
 
-Adds a custom catalog URL to the project's `.specify/workflow-catalogs.yml`
-or, for step types, `.specify/step-catalogs.yml`. New entries allow installation
+Adds a custom catalog URL to the project's `.specify/workflow-catalogs.yml`.
+New entries allow installation
 and receive a priority after existing entries. Only add vetted sources.
 Configure discovery-only sources by editing the catalog configuration.
 
-Re-adding the same workflow or step catalog URL with the same name succeeds without changing the configuration; a different name is rejected.
+Re-adding the same workflow catalog URL with the same name succeeds without changing the configuration; a different name is rejected.
 
 ### Remove a Catalog
 
 ```bash
 specify workflow catalog remove <index>
-specify workflow step catalog remove <index>
 ```
 
 Removes a project catalog by its index in the corresponding priority-ordered `catalog list`.
-Sources supplied by `SPECKIT_WORKFLOW_CATALOG_URL` or `SPECKIT_STEP_CATALOG_URL` cannot be removed this way; unset the variable to manage project sources.
+Sources supplied by `SPECKIT_WORKFLOW_CATALOG_URL` cannot be removed this way; unset the variable to manage project sources.
 
 ## See also
 
 - [Workflow overview](overview.md)
 - [Workflow API](api.md)
-- [Built-in step types](steps.md)
+- [Step management CLI](../workflow-steps/cli.md)
+- [Built-in step types](../workflow-steps/types.md)
 - [Overlay format](overlays.md)
 - [Catalog schemas and trust](catalogs.md)

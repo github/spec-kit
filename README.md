@@ -51,7 +51,7 @@ Spec Kit combines ready-to-use processes with composable mechanisms:
 | Override a template for one project | [Project-local override](https://github.github.io/spec-kit/how-to/customization.html#project-local-overrides-and-resolution) |
 | Automate prompts, commands, gates, and shell tasks | [Workflow](https://github.github.io/spec-kit/workflows/overview.html) |
 | Modify an installed workflow without forking it | [Workflow overlay](https://github.github.io/spec-kit/workflows/overlays.html) |
-| Add reusable executable behavior to workflows | [Workflow step](https://github.github.io/spec-kit/workflows/developing.html#custom-step-packages) |
+| Add reusable executable behavior to workflows | [Workflow step](https://github.github.io/spec-kit/workflow-steps/developing.html#custom-step-packages) |
 | Install a curated setup for a role or team | [Bundle](https://github.github.io/spec-kit/bundles/overview.html) |
 | Discover community components | [Catalog](https://github.github.io/spec-kit/overview/catalogs.html) |
 | Host a private catalog of approved components | [Catalog](https://github.github.io/spec-kit/overview/catalogs.html) |

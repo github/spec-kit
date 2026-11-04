@@ -223,7 +223,7 @@ Composition also extended across more boundaries. Coding-agent adapters became
 [installable from catalogs](../integrations/cli.md#catalog-installed-external-adapters),
 allowing agent-specific support to be distributed outside the core package,
 subject to the user's explicit trust decision. Workflows gained
-[calls to other workflows](../workflows/steps.md#workflow-composition) within
+[calls to other workflows](../workflow-steps/types.md#workflow-composition) within
 a unified execution tree, and bundles gained
 [references to other bundles](../bundles/api.md#bundle-references).
 By early November, run-scoped workflow definitions were also inspectable through

@@ -92,6 +92,6 @@ thread-safe, with per-run data in `config` and `context`, not on `self`.
    resume or nested/concurrent execution when relevant. Registry and engine
    coverage lives in `tests/test_workflows.py`; focused step suites may live
    under `tests/workflows/`.
-3. Update the [workflow step reference](https://github.github.io/spec-kit/workflows/steps.html) when a
+3. Update the [workflow step reference](https://github.github.io/spec-kit/workflow-steps/types.html) when a
    built-in step changes the YAML users can write. Keep agent-specific CLI
    dispatch in integrations rather than duplicating it in step types.

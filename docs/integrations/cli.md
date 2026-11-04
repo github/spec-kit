@@ -480,7 +480,7 @@ parsed using POSIX shell quoting. Placement and duplicate-flag behavior differ
 by adapter; see the agent guide, especially for Docker Agent and Goose.
 
 Setup `--integration-options` are separate from workflow
-[`integration_args` and `integration_options`](../workflows/steps.md#per-step-integration-configuration).
+[`integration_args` and `integration_options`](../workflow-steps/types.md#per-step-integration-configuration).
 Adapters reject non-empty per-step configuration unless they implement it;
 Docker Agent currently exposes structured agent/safety configuration.
 Headless approval flags, model forwarding, and structured-output support are

@@ -86,9 +86,9 @@ Expressions are resolved by **plain string substitution** — the value of `{{ .
 If an interpolated value can contain characters like `;`, `|`, `&`, `$( )`, backticks, or quotes, it can change or extend the command that actually runs. This matters most when the value is not fully under the workflow author's control:
 
 - **Workflow `inputs.*`** — supplied by whoever runs the workflow.
-- **A prior step's output**, e.g. `{{ steps.plan.output.stdout }}` — for a `command` or `prompt` step with [`capture: true`](steps.md#capturing-command-and-prompt-output) this is **text produced by the AI agent**, which can in turn be influenced by files, tickets, or web content the agent read. Treat agent output as untrusted when it flows into a `shell` step.
+- **A prior step's output**, e.g. `{{ steps.plan.output.stdout }}` — for a `command` or `prompt` step with [`capture: true`](../workflow-steps/types.md#capturing-command-and-prompt-output) this is **text produced by the AI agent**, which can in turn be influenced by files, tickets, or web content the agent read. Treat agent output as untrusted when it flows into a `shell` step.
 
-There is **no shell-escaping filter** in the expression language and **no sandbox** around a `shell` step. Prefer [`strict: true`](steps.md#shell-step) with `env` bindings to keep dynamic values out of shell source. Strict mode does not sanitise data, inspect commands, or prevent an authored script from interpreting data as code. Do not use `eval`, build another `sh -c` command from a variable, or pass untrusted values through shell startup variables such as `BASH_ENV`. On Windows, `cmd.exe` expansion of `%VALUE%` can introduce shell syntax; read untrusted values inside a program instead. On POSIX, quote variable expansions and use the target program's argument validation or `--` where appropriate to prevent option injection.
+There is **no shell-escaping filter** in the expression language and **no sandbox** around a `shell` step. Prefer [`strict: true`](../workflow-steps/types.md#shell-step) with `env` bindings to keep dynamic values out of shell source. Strict mode does not sanitise data, inspect commands, or prevent an authored script from interpreting data as code. Do not use `eval`, build another `sh -c` command from a variable, or pass untrusted values through shell startup variables such as `BASH_ENV`. On Windows, `cmd.exe` expansion of `%VALUE%` can introduce shell syntax; read untrusted values inside a program instead. On POSIX, quote variable expansions and use the target program's argument validation or `--` where appropriate to prevent option injection.
 
 For compatibility, raw interpolation remains enabled when `strict` is omitted or `false`. Its injection risk remains unchanged. Keep values you cannot constrain out of `run` fields entirely. Scrutinise every non-strict `run` field that interpolates a value you do not control, and at minimum:
 
@@ -158,6 +158,6 @@ A single expression (`{{ expr }}` by itself) returns its value without string co
 
 ## See also
 
-- [Workflow step reference](steps.md)
-- [Shell environment bindings](steps.md#shell-step-environment-variables)
+- [Workflow step reference](../workflow-steps/types.md)
+- [Shell environment bindings](../workflow-steps/types.md#shell-step-environment-variables)
 - [Input types](api.md#input-types)

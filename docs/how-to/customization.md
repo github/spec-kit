@@ -26,8 +26,8 @@ agents and setup, or [contributing integrations](../integrations/contributing.md
 to develop an adapter.
 
 Workflow step packages extend the step types available to workflows. See
-[custom step packages](../workflows/developing.md#custom-step-packages) for
-authoring and execution, the [step CLI](../workflows/cli.md#step-management)
+[custom step packages](../workflow-steps/developing.md#custom-step-packages) for
+authoring and execution, the [step CLI](../workflow-steps/cli.md#step-management)
 for installation, and
 [community workflow steps](../community/workflow-steps.md) for discovery and
 contribution guidance. Review executable packages before installing or using them.
