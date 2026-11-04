@@ -116,7 +116,8 @@ returned URL may not be fetchable as is, and a secret placed in the URL path is
 not detected. The CLI still prints URLs as configured.
 
 Expected errors are `invalid_project_directory`, `not_a_spec_kit_project`,
-`unsafe_workflow_storage` (including a symlinked project catalog config), and
+`unsafe_workflow_storage` (including a project catalog config symlink that the
+project's `allow_symlinks` policy denies), and
 `invalid_catalog_config`. Error messages never quote configured values.
 Unexpected failures use sanitized `internal_error`; invalid operation outcomes use
 `invalid_operation_result`. Responses exceeding 1 MiB produce a retryable

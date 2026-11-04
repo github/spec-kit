@@ -53,6 +53,62 @@ class WorkflowValidationError(WorkflowCatalogError):
 
 
 # ---------------------------------------------------------------------------
+# Config YAML
+# ---------------------------------------------------------------------------
+
+# How far aliases may unfold a catalog config beyond the document's own length.
+_MAX_CONFIG_ALIAS_EXPANSION = 1024 * 1024
+
+
+def _expanded_size(node: yaml.Node, sizes: dict[int, int], active: set[int]) -> int:
+    """Measure a composed node with aliases unfolded, visiting shared nodes once."""
+    if isinstance(node, yaml.ScalarNode):
+        return len(node.value)
+    key = id(node)
+    if key in sizes:
+        return sizes[key]
+    if key in active:
+        raise WorkflowValidationError(
+            "Catalog config must not contain recursive YAML aliases."
+        )
+    active.add(key)
+    if isinstance(node, yaml.MappingNode):
+        children = [child for pair in node.value for child in pair]
+    else:
+        children = node.value
+    size = 1 + sum(_expanded_size(child, sizes, active) for child in children)
+    active.remove(key)
+    sizes[key] = size
+    return size
+
+
+def _safe_load_catalog_config(text: str) -> Any:
+    """``yaml.safe_load`` that refuses documents whose aliases unfold without bound.
+
+    An alias shares its anchor's node, so a few hundred bytes can describe
+    terabytes that merge keys or a later ``str()`` would materialize. The size is
+    checked before anything is constructed; a document without aliases never
+    reaches the limit.
+    """
+    loader = yaml.SafeLoader(text)
+    try:
+        node = loader.get_single_node()
+        if node is None:
+            return None
+        if _expanded_size(node, {}, set()) > len(text) + _MAX_CONFIG_ALIAS_EXPANSION:
+            raise WorkflowValidationError(
+                "Catalog config expands beyond the size limit through YAML aliases."
+            )
+        return loader.construct_document(node)
+    except RecursionError:
+        raise WorkflowValidationError(
+            "Catalog config is nested too deeply."
+        ) from None
+    finally:
+        loader.dispose()
+
+
+# ---------------------------------------------------------------------------
 # CatalogEntry
 # ---------------------------------------------------------------------------
 
@@ -378,7 +434,7 @@ class WorkflowCatalog:
                     text = read_files.read_text(config_path)
                 except FileNotFoundError:
                     return None
-            data = yaml.safe_load(text)
+            data = _safe_load_catalog_config(text)
         except (yaml.YAMLError, OSError, UnicodeError) as exc:
             raise WorkflowValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
@@ -789,7 +845,9 @@ class WorkflowCatalog:
         data: dict[str, Any] = {"catalogs": []}
         if config_path.exists():
             try:
-                raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+                raw = _safe_load_catalog_config(
+                    config_path.read_text(encoding="utf-8")
+                )
             except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
                 raise WorkflowValidationError(
                     f"Catalog config file is unreadable or malformed: {exc}"
@@ -874,7 +932,7 @@ class WorkflowCatalog:
             raise WorkflowValidationError("No catalog config file found.")
 
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            data = _safe_load_catalog_config(config_path.read_text(encoding="utf-8"))
         except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
             raise WorkflowValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"

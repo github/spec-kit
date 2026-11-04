@@ -83,3 +83,22 @@ class TestWorkflowCliAlignment:
         result = CliRunner().invoke(app, ["workflow", "catalog", "list"])
         assert result.exit_code == 1
         assert "'catalogs' must be a list" in result.output
+
+    def test_catalog_list_keeps_local_diagnostics_for_malformed_urls(
+        self, project_dir, monkeypatch
+    ):
+        """The shared message is secret-free; the CLI still names what to repair."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.delenv("SPECKIT_WORKFLOW_CATALOG_URL", raising=False)
+        (project_dir / ".specify" / "workflow-catalogs.yml").write_text(
+            'catalogs:\n  - name: bad\n    url: "https://user:token@[::1"\n',
+            encoding="utf-8",
+        )
+        result = CliRunner().invoke(
+            app, ["workflow", "catalog", "list"], env={"COLUMNS": "200"}
+        )
+        assert result.exit_code == 1
+        assert "Catalog URL is malformed: https://user:token@[::1" in result.output

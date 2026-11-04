@@ -143,8 +143,7 @@ def create_workflow_catalog_list_tool(
                 is_error=False,
             )
         except operation.WorkflowCatalogListError as exc:
-            # Config errors can quote a configured URL, including its credentials.
-            # CLI retains its established diagnostics; MCP never exposes them.
+            # Shared messages can name local paths, so MCP sends fixed text only.
             messages = {
                 "invalid_project_directory": "project_directory must be an absolute path.",
                 "not_a_spec_kit_project": "The selected directory is not a Spec Kit project.",

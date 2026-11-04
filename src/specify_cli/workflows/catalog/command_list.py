@@ -17,7 +17,10 @@ def workflow_catalog_list():
             operation.WorkflowCatalogListRequest(project_root)
         )
     except operation.WorkflowCatalogListError as exc:
-        cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
+        # The CLI keeps its established local diagnostics; the shared message is
+        # deliberately free of configured values.
+        diagnostic = str(exc.__cause__ or exc)
+        cli.console.print(f"[red]Error:[/red] {cli._escape_markup(diagnostic)}")
         raise cli.typer.Exit(1) from exc
 
     cli.console.print("\n[bold cyan]Workflow Catalog Sources:[/bold cyan]\n")

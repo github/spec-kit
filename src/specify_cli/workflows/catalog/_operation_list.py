@@ -54,6 +54,7 @@ class WorkflowCatalogListOperationDescriptor:
     contract_version: Literal["1"]
     request_type: type[WorkflowCatalogListRequest]
     result_type: type[WorkflowCatalogListResult]
+    warning_types: tuple[type[object], ...]
     error_types: tuple[type[WorkflowCatalogListError], ...]
     capabilities: frozenset[Literal["local-read"]]
     network_access: Literal["none"]
@@ -64,6 +65,7 @@ WORKFLOW_CATALOG_LIST_OPERATION = WorkflowCatalogListOperationDescriptor(
     contract_version="1",
     request_type=WorkflowCatalogListRequest,
     result_type=WorkflowCatalogListResult,
+    warning_types=(),
     error_types=(WorkflowCatalogListError,),
     capabilities=frozenset({"local-read"}),
     network_access="none",
@@ -93,18 +95,26 @@ def list_catalog_sources(
             root_is_directory = stat.S_ISDIR(root.stat().st_mode)
         except (FileNotFoundError, NotADirectoryError, ValueError):
             root_is_directory = False
-        if not root_is_directory or not (root / ".specify").is_dir():
+        if not root_is_directory:
             raise WorkflowCatalogListError(
                 "not_a_spec_kit_project",
                 "Not a Spec Kit project (no .specify/ directory)",
             )
         files = project_files(root)
+        if not (root / ".specify").is_dir():
+            raise WorkflowCatalogListError(
+                "not_a_spec_kit_project",
+                "Not a Spec Kit project (no .specify/ directory)",
+            )
         validate_workflow_storage(root)
         configs = WorkflowCatalog(root, read_files=files).get_catalog_configs()
     except (ProjectPolicyError, WorkflowStorageError, FileHelperError, OSError) as exc:
         raise WorkflowCatalogListError("unsafe_workflow_storage", str(exc)) from exc
     except WorkflowCatalogError as exc:
-        raise WorkflowCatalogListError("invalid_catalog_config", str(exc)) from exc
+        # Parser and URL diagnostics can quote a configured URL with its credentials.
+        raise WorkflowCatalogListError(
+            "invalid_catalog_config", "The workflow catalog configuration is invalid."
+        ) from exc
 
     selected = configs if limit is None else configs[:limit]
     return WorkflowCatalogListResult(
