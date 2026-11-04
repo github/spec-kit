@@ -2292,6 +2292,57 @@ class TestPresetSkills(PresetArtifactTestHelpers):
 
         assert claude_skill.read_text(encoding="utf-8") == before
 
+    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    def test_remove_base_reconciles_alias_owned_by_lower_survivor_in_historical_dir(
+        self, project_dir, temp_dir, core
+    ):
+        """Like the primary skill, Claude's alias skill rendered by ``middle``
+        must drop the removed base's body even though ``top`` (Codex only)
+        now wins, and must not pick up ``top``'s body."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills = project_dir / ".claude" / "skills"
+        self._create_skill(skills, "speckit-custom")
+        alias_file = self._alias_skill(project_dir)
+        if core:
+            core_cmds = project_dir / ".specify" / "templates" / "commands"
+            core_cmds.mkdir(parents=True, exist_ok=True)
+            (core_cmds / "custom.md").write_text(
+                "---\ndescription: Core custom\n---\n\nCore custom body\n",
+                encoding="utf-8",
+            )
+        manager = PresetManager(project_dir)
+
+        def install(preset_id, body, strategy, priority):
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            manifest_path = preset_dir / "preset.yml"
+            manifest = yaml.safe_load(manifest_path.read_text())
+            manifest["provides"]["templates"][0]["strategy"] = strategy
+            if strategy != "replace":
+                manifest["provides"]["templates"][0]["aliases"] = [self._ALIAS]
+            manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+
+        install("base-preset", "Base preset body", "replace", 10)
+        install("middle-preset", "Middle body", "append", 7)
+        assert "Base preset body" in alias_file.read_text(encoding="utf-8")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", "append", 5)
+
+        if core:
+            assert manager.remove("base-preset") is True
+            content = alias_file.read_text(encoding="utf-8")
+            assert "Base preset body" not in content
+            assert "Core custom body" in content and "Middle body" in content
+            assert "Top body" not in content
+            assert "middle-preset:" in content
+        else:
+            with pytest.warns(UserWarning, match="no base layer"):
+                assert manager.remove("base-preset") is True
+            assert not alias_file.exists()
+
     def test_remove_base_keeps_lower_survivor_skill_when_core_base_is_unreadable(
         self, project_dir, temp_dir
     ):

@@ -669,13 +669,29 @@ class _PresetSkillMethods:
 
                     primary = tmpl["name"]
                     layers = resolver.collect_all_layers(primary, "command")
-                    if not layers or not layers[0]["path"].is_relative_to(pack_dir):
-                        # Another layer wins now; this alias is not ours to render.
+                    owner_idx = next(
+                        (
+                            idx
+                            for idx, layer in enumerate(layers)
+                            if layer["path"].is_relative_to(pack_dir)
+                        ),
+                        None,
+                    )
+                    if owner_idx is None or (
+                        owner_idx > 0 and (missing or not removal_pass)
+                    ):
+                        # Another layer wins now; this alias is not ours to
+                        # render. On a removal pass an existing alias of a
+                        # shadowed preset is still refreshed from its own
+                        # layer down, as its primary skill is.
                         continue
-                    composed = resolver.resolve_content(primary, "command")
+                    owner_layers = layers[owner_idx:]
+                    composed = resolver.resolve_content(
+                        primary, "command", layers=owner_layers
+                    )
                     if composed is None:
                         if missing or any(
-                            layer["strategy"] == "replace" for layer in layers
+                            layer["strategy"] == "replace" for layer in owner_layers
                         ):
                             # A replace base is still there, so this is a
                             # resolution failure (e.g. an unreadable layer),
