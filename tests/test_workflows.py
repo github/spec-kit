@@ -10357,7 +10357,7 @@ class TestWorkflowCatalog:
             (WorkflowCatalog(project_dir), WorkflowValidationError),
             (StepCatalog(project_dir), StepValidationError),
         ):
-            with pytest.raises(error, match=r"\(got 'example\.com/catalog\.json'\)"):
+            with pytest.raises(error, match=r"\(got a URL with no scheme\)"):
                 catalog._validate_catalog_url("example.com/catalog.json")
 
     def test_validate_url_localhost_http_allowed(self, project_dir):

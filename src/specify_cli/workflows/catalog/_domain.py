@@ -350,8 +350,9 @@ class WorkflowCatalog:
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):
-            # A scheme-less value (``example.com/catalog.json``) would otherwise read "got ://".
-            got = f"{parsed.scheme}://" if parsed.scheme else repr(url)
+            # A scheme-less value (``example.com/catalog.json``) would otherwise read
+            # "got ://". The value itself is not echoed: callers render errors as Rich markup.
+            got = f"{parsed.scheme}://" if parsed.scheme else "a URL with no scheme"
             raise WorkflowValidationError(
                 f"Catalog URL must use HTTPS (got {got}). "
                 "HTTP is only allowed for localhost."
