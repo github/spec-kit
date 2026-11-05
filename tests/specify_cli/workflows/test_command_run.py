@@ -515,6 +515,17 @@ steps:
         with pytest.raises(json.JSONDecodeError):
             json.loads(result.stdout)
 
+    def test_run_displays_workflow_name_markup_literally(self, project_dir):
+        workflow = self._WF_DONE.replace(
+            'name: "JSON Done"', 'name: "Build [/x] pipeline"'
+        )
+        wf = self._write_wf(project_dir, workflow, "markup-name")
+
+        result = self._invoke(project_dir, ["workflow", "run", str(wf)])
+
+        assert result.exit_code == 0, result.output
+        assert "Running workflow: Build [/x] pipeline" in result.stdout
+
     def test_json_redirect_keeps_stdout_clean(self, capfd):
         # While a workflow runs under --json, steps can still write to stdout:
         # the gate step prints its prompt and the prompt step runs a

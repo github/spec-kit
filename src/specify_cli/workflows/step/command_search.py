@@ -20,13 +20,13 @@ def workflow_step_search(
     try:
         results = catalog.search(query=query)
     except StepCatalogError as exc:
-        cli.console.print(f"[red]Error:[/red] {exc}")
+        cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)
 
     if not results:
         if query:
             cli.console.print(
-                f"[yellow]No step types found matching '{query}'.[/yellow]"
+                f"[yellow]No step types found matching '{cli._escape_markup(query)}'.[/yellow]"
             )
         else:
             cli.console.print("[yellow]No step types found in catalog.[/yellow]")
