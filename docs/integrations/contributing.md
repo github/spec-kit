@@ -10,7 +10,7 @@ for implementation contracts, ownership, and delivery requirements.
 
 Built-in integrations are maintained by the Spec Kit core team and ship with the CLI.
 
-For checkout setup, see [local development](../local-development.md). Follow the
+For checkout setup, see [local development](../how-to/local-development.md). Follow the
 [contributor testing guidance](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#testing-deterministic-behavior)
 and [validation flow](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#recommended-validation-flow),
 then the [integration PR requirements](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#integration-pull-requests).

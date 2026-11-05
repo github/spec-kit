@@ -72,7 +72,7 @@
     - name: Configure authentication
       href: reference/authentication.md
     - name: Develop Spec Kit locally
-      href: local-development.md
+      href: how-to/local-development.md
 
 # Agent integrations
 - name: Integrations

@@ -31,7 +31,7 @@ workflow steps, bundles, and community resources retain their own sections.
 
 Overview's supporting pages live under `overview/`, while `index.md` remains
 the site homepage. Process command references and authentication remain under
-`reference/`, and local development remains at `local-development.md`.
+`reference/`, and the local development guide lives under `how-to/`.
 
 - `docfx.json` - DocFX configuration file
 - `index.md` - Main documentation homepage
@@ -41,7 +41,7 @@ the site homepage. Process command references and authentication remain under
 - `overview/mcp.md` - Experimental local stdio MCP server
 - `overview/artifacts.md` - Artifact inventory and composition reference
 - `reference/authentication.md` - Authentication configuration guide and reference
-- `local-development.md` - Developing and checking Spec Kit locally
+- `how-to/local-development.md` - Developing and checking Spec Kit locally
 - `installation.md` - Installation guide
 - `quickstart.md` - Spec-Driven Development walkthrough
 - `guides/agentic-sdlc.md` - How Spec Kit applies agentic and conventional SDLC practices to itself

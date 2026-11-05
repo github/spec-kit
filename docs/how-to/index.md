@@ -16,7 +16,7 @@ and specification maintenance, plus authentication and developing Spec Kit itsel
 | Keep feature artifacts aligned after delivery | [Maintain specifications after delivery](evolving-specs.md) |
 | Adapt practices to your team's needs | [Adapt Spec Kit to your process](customization.md) |
 | Access private catalogs, downloads, and release checks | [Configure authentication](../reference/authentication.md) |
-| Contribute changes to Spec Kit itself | [Develop Spec Kit locally](../local-development.md) |
+| Contribute changes to Spec Kit itself | [Develop Spec Kit locally](local-development.md) |
 
 ## See also
 
