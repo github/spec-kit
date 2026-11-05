@@ -4551,6 +4551,80 @@
       "created_at": "2026-03-27T08:22:30Z",
       "updated_at": "2026-03-27T08:22:30Z"
     },
+    "pr": {
+      "name": "Pull Request Workflow",
+      "id": "pr",
+      "description": "Generate or update pull requests from Spec Kit artifacts, enforce installed QA and User Manual freshness policies, then process review feedback through an approval-gated fix and reply workflow.",
+      "author": "Samy K. Abushanab",
+      "version": "4.7.6",
+      "download_url": "https://github.com/samykabu/sanduq/releases/download/pr-v4.7.6/pr.zip",
+      "sha256": "49f6748401af098d9c6d654e3deb0e8a7174a330c009133cf03864c1e5824681",
+      "repository": "https://github.com/samykabu/sanduq",
+      "homepage": "https://github.com/samykabu/sanduq/tree/main/extensions/pr",
+      "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/pr.md",
+      "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/pr/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "extensions": [
+          {
+            "id": "illustrate",
+            "version": ">=2.0.0,<3.0.0",
+            "required": true
+          },
+          {
+            "id": "assure",
+            "version": ">=2.0.0,<3.0.0",
+            "required": false
+          },
+          {
+            "id": "user-manual",
+            "version": ">=1.0.0,<3.0.0",
+            "required": false
+          }
+        ],
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          },
+          {
+            "name": "gh",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 1
+      },
+      "tags": [
+        "pr",
+        "changelog",
+        "documentation",
+        "diagram",
+        "sequence",
+        "flowchart",
+        "state-machine",
+        "data-model",
+        "review",
+        "feedback",
+        "code-review",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-05T00:00:00Z",
+      "updated_at": "2026-11-05T00:00:00Z"
+    },
     "pr-bridge": {
       "name": "PR Bridge",
       "id": "pr-bridge",
