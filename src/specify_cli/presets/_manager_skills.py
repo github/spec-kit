@@ -14,7 +14,6 @@ from .._init_options import is_ai_skills_enabled
 from .._invocation_style import get_invocation_prefix
 from .._utils import dump_frontmatter
 from ..integrations.base import IntegrationBase
-from ..integrations._file_changes import write_text as _write_text
 from ..integrations._registration import project_registration
 from ._manager_commands import _substitute_core_template
 from ._manifest import PresetManifest, PresetValidationError
@@ -568,10 +567,7 @@ class _PresetSkillMethods:
                 recorded, mirroring stale-output retirement.
         """
         from ..integrations._file_changes import after_file_change, before_file_change
-        from ..shared_infra import (
-            _ensure_safe_shared_destination,
-            _ensure_safe_shared_directory,
-        )
+        from ..shared_infra import _ensure_safe_shared_directory, _write_shared_text
 
         try:
             registrar = self._command_registrar()
@@ -681,14 +677,16 @@ class _PresetSkillMethods:
                         ),
                         None,
                     )
-                    if owner_idx is None or (
-                        owner_idx > 0 and (missing or not removal_pass)
-                    ):
-                        # Another layer wins now; this alias is not ours to
-                        # render. On a removal pass an existing alias of a
-                        # shadowed preset is still refreshed from its own
-                        # layer down, as its primary skill is.
+                    if owner_idx is None or (owner_idx > 0 and missing):
                         continue
+                    # Another layer wins now, so outside a removal pass this
+                    # alias is not ours to render. It still goes through the
+                    # retirement check below: a rescaffold re-registers it
+                    # from the raw fragment, which must not stay executable
+                    # once nothing is left to compose onto. On a removal pass
+                    # an existing shadowed alias is refreshed from its own
+                    # layer down, as its primary skill is.
+                    shadowed = owner_idx > 0 and not removal_pass
                     owner_layers = layers[owner_idx:]
                     composed = resolver.resolve_content(
                         primary, "command", layers=owner_layers
@@ -706,7 +704,7 @@ class _PresetSkillMethods:
                         shutil.rmtree(skill_dir)
                         after_file_change(skill_dir)
                         continue
-                    if not may_render:
+                    if shadowed or not may_render:
                         continue
                     if missing and not self._validate_skill_subdir(
                         skill_dir, create=True, skills_root=skills_dir
@@ -716,19 +714,19 @@ class _PresetSkillMethods:
                     try:
                         # Every ancestor and the cache file itself must stay
                         # inside the project and off symlinks, so a planted
-                        # ``.composed`` link cannot redirect this write.
+                        # ``.composed`` link cannot redirect this write. The
+                        # entry is replaced atomically rather than written in
+                        # place, so a hard link to an outside file is broken,
+                        # not written through.
                         _ensure_safe_shared_directory(
                             self.project_root,
                             composed_file.parent,
                             create=True,
                             context="preset composed cache directory",
                         )
-                        _ensure_safe_shared_destination(
-                            self.project_root, composed_file
-                        )
+                        _write_shared_text(self.project_root, composed_file, composed)
                     except (ValueError, OSError):
                         continue
-                    _write_text(composed_file, composed, encoding="utf-8")
                     registrar.register_commands(
                         agent,
                         [{"name": alias, "file": f".composed/{primary}.md"}],
@@ -737,6 +735,67 @@ class _PresetSkillMethods:
                         self.project_root,
                         _resolved_dir=skills_dir,
                     )
+
+    def _drop_survivor_owned_aliases(
+        self, pack_id: str, registered_commands: Dict[str, List[str]]
+    ) -> Dict[str, List[str]]:
+        """Leave out native-skill outputs another installed preset now owns.
+
+        Two presets can declare the same command alias. For native skill
+        agents both record it in ``registered_commands``, but only one file
+        exists, carrying the ``<id>:<file>`` marker of whichever registered
+        it last. Deleting it with the preset being removed would drop a
+        survivor's alias that post-removal reconciliation (which does not
+        create missing outputs on a removal pass) cannot bring back, so keep
+        those names out of the unregister list and let reconciliation
+        recompose them.
+        """
+        try:
+            registrar = self._command_registrar()
+        except ImportError:
+            return registered_commands
+        registrar._ensure_configs()
+        survivors = [pid for pid in self.registry.list() if pid != pack_id]
+        if not survivors:
+            return registered_commands
+        result: Dict[str, List[str]] = {}
+        for agent, names in registered_commands.items():
+            agent_config = registrar.AGENT_CONFIGS.get(agent)
+            if (
+                not isinstance(names, list)
+                or not agent_config
+                or agent_config.get("extension") != "/SKILL.md"
+            ):
+                result[agent] = names
+                continue
+            skills_dir = self._safe_skills_dir_for_agent(agent)
+            kept: List[str] = []
+            for name in names:
+                if skills_dir is not None and isinstance(name, str):
+                    skill_dir = skills_dir / registrar._compute_output_name(
+                        agent, name, agent_config
+                    )
+                    skill_file = skill_dir / "SKILL.md"
+                    source = None
+                    if self._validate_skill_subdir(
+                        skill_dir, create=False, skills_root=skills_dir
+                    ) and skill_file.is_file():
+                        try:
+                            metadata = registrar.parse_frontmatter(
+                                skill_file.read_text(encoding="utf-8")
+                            )[0].get("metadata")
+                        except (OSError, UnicodeDecodeError):
+                            metadata = None
+                        if isinstance(metadata, dict):
+                            source = metadata.get("source")
+                    if isinstance(source, str) and any(
+                        source.startswith(f"{other}:") for other in survivors
+                    ):
+                        continue
+                kept.append(name)
+            if kept:
+                result[agent] = kept
+        return result
 
     def _surviving_owned_skills(
         self,
