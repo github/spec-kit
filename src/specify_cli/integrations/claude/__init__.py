@@ -136,12 +136,15 @@ class ClaudeIntegration(SkillsIntegration):
         return args
 
     def validate_dispatch_setting(self, name: str, value: str) -> None:
-        """Reject effort levels that Claude Code would silently ignore."""
+        """Reject effort levels that Claude Code would silently ignore.
+
+        The value can be captured agent output, so the error does not repeat it.
+        """
         if name == "reasoning_effort" and value not in EFFORT_LEVELS:
             raise ValueError(
                 "Claude Code 'reasoning_effort' must be one of "
-                f"{', '.join(EFFORT_LEVELS)}; got {value!r}. To pass a newer "
-                'level, set SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS="--effort <value>" '
+                f"{', '.join(EFFORT_LEVELS)}. To pass a newer level, set "
+                'SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS="--effort <value>" '
                 "instead of 'reasoning_effort'."
             )
 

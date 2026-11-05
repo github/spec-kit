@@ -92,7 +92,10 @@ class CodexIntegration(SkillsIntegration):
         return args
 
     def validate_dispatch_setting(self, name: str, value: str) -> None:
-        """Require ``context_size`` to be a token count Codex can parse."""
+        """Require ``context_size`` to be a token count Codex can parse.
+
+        The value can be captured agent output, so the error does not repeat it.
+        """
         if name == "context_size" and (
             _CONTEXT_WINDOW.fullmatch(value) is None
             or int(value) > _MAX_CONTEXT_WINDOW
@@ -100,7 +103,7 @@ class CodexIntegration(SkillsIntegration):
             raise ValueError(
                 "Codex 'context_size' must be a positive integer token count "
                 "(model_context_window) without leading zeros, at most "
-                f"{_MAX_CONTEXT_WINDOW}; got {value!r}."
+                f"{_MAX_CONTEXT_WINDOW}."
             )
 
     @classmethod
