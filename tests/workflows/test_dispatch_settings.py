@@ -8,6 +8,7 @@ CLI process are faked, so no agent CLI runs.
 from __future__ import annotations
 
 import dataclasses
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -253,7 +254,7 @@ def register(monkeypatch):
 @pytest.fixture
 def cli(monkeypatch):
     """Find every CLI and fake running it, recording each argv."""
-    state = SimpleNamespace(runs=[], returncode=0, stderr="")
+    state = SimpleNamespace(runs=[], returncode=0, stdout="", stderr="")
 
     def run(args, **kwargs):
         state.runs.append(list(args))
@@ -262,7 +263,7 @@ def cli(monkeypatch):
     def run_captured(args, **kwargs):
         state.runs.append(list(args))
         return CapturedProcess(
-            exit_code=state.returncode, stdout="", stderr=state.stderr
+            exit_code=state.returncode, stdout=state.stdout, stderr=state.stderr
         )
 
     monkeypatch.setattr("shutil.which", lambda name: name)
@@ -322,8 +323,10 @@ def _outputs(result) -> dict:
     return {name: result.output[name] for name in DISPATCH_SETTINGS}
 
 
-def _assert_summarized(message: str) -> None:
-    """A malformed value is summarized, never echoed into the message."""
+def _assert_summarized(message: str, value: str) -> None:
+    """A malformed value is reported by its length, never echoed into the message."""
+    assert f"got a string of length {len(value)}." in message
+    assert value not in message
     assert len(message) < 400
     assert "\x1b" not in message
     assert "\n" not in message
@@ -552,12 +555,12 @@ class TestValidation:
         assert errors[0].startswith(
             f"{LABELS[kind]} step 'ask': '{name}' must be 1-64 letters"
         )
-        _assert_summarized(errors[0])
+        _assert_summarized(errors[0], value)
 
     def test_oversized_literal_is_summarized(self, kind):
         (error,) = STEPS[kind][0]().validate(_config(kind, reasoning_effort=HUGE))
 
-        _assert_summarized(error)
+        _assert_summarized(error, HUGE)
 
 
 @KINDS
@@ -658,7 +661,7 @@ class TestResolvedValueValidation:
             f"{LABELS[kind]} step 'ask': 'context_size' must be 1-64 letters"
         )
         assert result.error.endswith(" (set by step)")
-        _assert_summarized(result.error)
+        _assert_summarized(result.error, value)
         assert cli.runs == []
 
     def test_oversized_untrusted_result_is_summarized(
@@ -675,8 +678,49 @@ class TestResolvedValueValidation:
 
         assert result.status is StepStatus.FAILED
         assert result.error.endswith(" (set by workflow.reasoning_effort)")
-        _assert_summarized(result.error)
+        _assert_summarized(result.error, HUGE)
         assert cli.runs == []
+
+    @pytest.mark.parametrize("continue_on_error", [True, False])
+    def test_rejected_captured_output_stays_out_of_the_error_and_log(
+        self, kind, continue_on_error, project_dir, register, cli, after_step
+    ):
+        """Spec Kit does not print or log captured text, even as a rejected value."""
+        fake = register(_Translating())
+        cli.stdout = "SECRET-api-key-0123456789 tail"
+        steps = [
+            _config(kind, id="read", integration=fake.key, capture=True),
+            _config(
+                kind,
+                integration=fake.key,
+                reasoning_effort="{{ steps.read.output.stdout }}",
+                continue_on_error=continue_on_error,
+            ),
+            after_step,
+        ]
+        state = WorkflowEngine(project_dir).execute(_workflow(steps))
+
+        assert state.step_results["read"]["output"]["stdout"] == cli.stdout
+        error = state.step_results["ask"]["error"]
+        assert error == (
+            f"{LABELS[kind]} step 'ask': 'reasoning_effort' must be 1-64 letters, "
+            "digits, '.', '_', or '-' starting with a letter or digit, got a "
+            f"string of length {len(cli.stdout)}. (set by step)"
+        )
+        log = (
+            project_dir / ".specify" / "workflows" / "runs" / state.run_id / "log.jsonl"
+        ).read_text(encoding="utf-8")
+        failure = "step_continue_on_error" if continue_on_error else "step_failed"
+        events = [json.loads(line) for line in log.splitlines()]
+        assert [event["error"] for event in events if event["event"] == failure] == [
+            error
+        ]
+        assert "SECRET" not in log
+        assert len(cli.runs) == 1
+        assert state.status is (
+            RunStatus.COMPLETED if continue_on_error else RunStatus.FAILED
+        )
+        assert ("after" in state.step_results) is continue_on_error
 
 
 # -- Unsupported integrations ---------------------------------------------
@@ -1158,14 +1202,14 @@ class TestWorkflowDefaults:
 
         assert len(errors) == 1
         assert errors[0].startswith(f"'workflow.{name}' must be 1-64 letters")
-        _assert_summarized(errors[0])
+        _assert_summarized(errors[0], value)
 
     def test_oversized_default_is_summarized(self):
         (error,) = validate_workflow(
             _workflow([_PROMPT], defaults={"context_size": HUGE})
         )
 
-        _assert_summarized(error)
+        _assert_summarized(error, HUGE)
 
     def test_run_rejects_an_invalid_default_before_any_step(
         self, project_dir, register, cli

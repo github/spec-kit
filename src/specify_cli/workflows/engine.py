@@ -214,8 +214,8 @@ def _dispatch_default_errors(definition: WorkflowDefinition) -> list[str]:
         )
 
     # ``null`` and ``""`` leave a dispatch setting unset, and the step checks an
-    # expression once it is resolved. A malformed value is summarized rather
-    # than echoed.
+    # expression once it is resolved. An error reports only a malformed value's
+    # type and length.
     for name in DISPATCH_SETTINGS:
         value = getattr(definition, f"default_{name}")
         if value is None or value == "" or (isinstance(value, str) and "{{" in value):

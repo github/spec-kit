@@ -84,7 +84,9 @@ Built-in integrations and external adapters opt in per setting with these
   `ValueError` to reject a value the CLI would ignore or misread, and the host
   attributes the failure to that setting. If the receiving method itself must
   reject a setting, raise `DispatchSettingsError` with `setting`; without it,
-  the step error lists every requested setting with its source.
+  the step error lists every requested setting with its source. Keep the value
+  out of either error's message: it can come from captured output, which Spec
+  Kit does not print to the terminal or write to `log.jsonl`.
 - `dispatch_setting_hint(setting)`: optional remediation text, such as another
   step field to use instead, which the host appends to its error for an
   unsupported setting. The default returns `None`.
@@ -100,9 +102,9 @@ accepts the keyword or `**kwargs`. It then calls `validate_dispatch_setting()`.
 Each failure raises `DispatchSettingsError`, a `ValueError` whose `setting`
 attribute names the setting, so the step can report where its value came from.
 An unsupported-setting error lists the integrations that support the setting,
-and a malformed value is summarized rather than echoed. A translating method
-can also run the gate itself, with *via* naming that method, so that direct
-calls are checked too.
+and an error about a malformed value reports only its type and length, never
+the value. A translating method can also run the gate itself, with *via*
+naming that method, so that direct calls are checked too.
 
 The host cannot observe what the receiving method does with a declared
 setting. An integration that declares support and then ignores the value, for

@@ -245,7 +245,8 @@ not `context_size: 200000`. An expression must resolve to a string too, so
 read a number from an input declared with `type: string`, not `type: number`.
 A value must be 1 to 64 letters, digits, `.`, `_`, or `-`, starting with a
 letter or digit. Literal values are checked when the workflow is validated, and
-expression results when the step runs. Spec Kit passes the value to the
+expression results when the step runs. An error about a malformed value reports
+only its type and length, not its text. Spec Kit passes the value to the
 integration unchanged. Its meaning and accepted values are defined by the
 integration's CLI, and an integration can reject a value before the CLI runs.
 

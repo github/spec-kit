@@ -1055,15 +1055,29 @@ class TestDispatchSettingsValues:
             "reasoning_effort", "-rf", from_expression=True
         ) == dispatch_setting_value_error("reasoning_effort", "-rf")
 
-    def test_malformed_values_are_summarized_not_echoed(self):
-        value = "\x1b[31m" + "x" * (1024 * 1024) + "\nsecret"
-        message = dispatch_setting_value_error("reasoning_effort", value)
-        assert message is not None
-        assert len(message) < 300
-        assert "\x1b" not in message
-        assert "\n" not in message
-        assert "secret" not in message
-        assert f"length {len(value)}" in message
+    @pytest.mark.parametrize(
+        "value",
+        [
+            pytest.param("SECRET-api-key-0123456789 tail", id="leading-secret"),
+            pytest.param("SECRET!", id="short-secret"),
+            pytest.param("-SECRET", id="leading-dash"),
+            pytest.param("\x1b[31m" + "x" * (1024 * 1024) + "\nSECRET", id="huge"),
+        ],
+    )
+    @pytest.mark.parametrize("from_expression", [False, True])
+    def test_malformed_values_report_only_type_and_length(
+        self, value, from_expression
+    ):
+        """A value can be captured output, which Spec Kit does not print or log."""
+        message = dispatch_setting_value_error(
+            "reasoning_effort", value, from_expression=from_expression
+        )
+
+        assert message == (
+            "'reasoning_effort' must be 1-64 letters, digits, '.', '_', or '-' "
+            f"starting with a letter or digit, got a string of length {len(value)}."
+        )
+        assert "SECRET" not in message
 
 
 class TestEffectiveDispatchSettings:

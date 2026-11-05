@@ -96,7 +96,6 @@ _DISPATCH_PATHS = ("dispatch_command", "build_exec_args")
 # metacharacters (relevant to Windows ``.cmd`` shims), without restricting any
 # integration's vocabulary.
 _DISPATCH_SETTING_VALUE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
-_DISPATCH_SETTING_PREVIEW = 24
 
 
 class DispatchSettingsError(ValueError):
@@ -121,13 +120,6 @@ def requested_dispatch_settings(
     }
 
 
-def _summarize_untrusted_value(value: str) -> str:
-    preview = value[:_DISPATCH_SETTING_PREVIEW]
-    ellipsis = "…" if len(value) > _DISPATCH_SETTING_PREVIEW else ""
-    # repr() escapes control characters, so the summary is always one safe line.
-    return f"a string of length {len(value)} ({preview!r}{ellipsis})"
-
-
 def dispatch_setting_value_error(
     name: str, value: object, *, from_expression: bool = False
 ) -> str | None:
@@ -136,7 +128,8 @@ def dispatch_setting_value_error(
     *from_expression* marks a value that a workflow expression produced, so a
     non-string gets advice about the expression instead of YAML quoting. A
     malformed value can come from untrusted expression results (for example
-    captured agent output), so it is summarized rather than echoed.
+    captured agent output, which Spec Kit does not print or log), so the
+    message reports only the value's type and length, never its text.
     """
     if not isinstance(value, str):
         type_name = type(value).__name__
@@ -153,7 +146,7 @@ def dispatch_setting_value_error(
     if _DISPATCH_SETTING_VALUE.fullmatch(value) is None:
         return (
             f"'{name}' must be 1-64 letters, digits, '.', '_', or '-' starting "
-            f"with a letter or digit, got {_summarize_untrusted_value(value)}."
+            f"with a letter or digit, got a string of length {len(value)}."
         )
     return None
 
@@ -531,6 +524,8 @@ class IntegrationBase(ABC):
         Called by :func:`check_dispatch_settings` for each supported setting
         after the host's own checks. Values are opaque by default; override to
         reject values the CLI would ignore or misread, raising ``ValueError``.
+        Keep *value* out of the message: it can come from captured agent
+        output, which Spec Kit does not print or log.
         """
 
     def dispatch_setting_hint(self, setting: str) -> str | None:
