@@ -490,7 +490,9 @@ The [`reasoning_effort` and `context_size`](../workflow-steps/types.md#reasoning
 settings of `command` and `prompt` steps instead follow one shared contract.
 Spec Kit checks each value and passes it only to an integration that declares
 and translates that setting; with any other integration, the step fails before
-the CLI runs. Adapter authors opt in as described in the
+the CLI runs. GitHub Copilot and Codex CLI translate both settings, and Claude
+Code translates `reasoning_effort`; the agent guides describe each mapping.
+Adapter authors opt in as described in the
 [integration API reference](api.md#per-step-dispatch-settings).
 
 ## FAQ
