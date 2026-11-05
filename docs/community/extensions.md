@@ -69,6 +69,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | Cost Tracker | Track real LLM dollar cost across SDD workflows — per-feature budgets, per-integration comparison, and finance-ready exports | `visibility` | Read+Write | [spec-kit-cost](https://github.com/Quratulain-bilal/spec-kit-cost) |
 | CSDD — Controlled Spec-Driven Development | 把治理规范、门禁、模板安装到已有仓库；第三方扩展按清单可选安装，默认不装。 | `process` | Read+Write | [csdd](https://github.com/yuansanche/csdd) |
 | Data Model Diagram | Generates Mermaid ER diagrams from Spec Kit data models after planning | `docs` | Read+Write | [spec-kit-data-model-diagram](https://github.com/benizzio/spec-kit-data-model-diagram) |
+| deja-vu session recall | Searches your past coding-agent sessions for a feature: what was tried, decided or failed. | `process` | Read-only | [deja-vu](https://github.com/vshulcz/deja-vu) |
 | DocGuard — CDD Enforcement | Documentation integrity for AI-assisted repositories: lifecycle registry, drift validation, traceability, safe archival, SARIF/JUnit, MCP, GitHub Actions, and Spec Kit hooks. | `docs` | Read+Write | [spec-kit-docguard](https://github.com/raccioly/docguard) |
 | Domain Spec Maintenance | Keeps canonical per-domain specs: read before specify/plan, updated after implement | `docs` | Read+Write | [spec-kit-domain-spec](https://github.com/jinaparkdev/spec-kit-domain-spec) |
 | Dotdog | Import GitHub Spec Kit artifacts into local knowledge graphs for validation, analysis, search, and MCP queries. | `docs` | Read+Write | [dotdog](https://github.com/specdog/dotdog) |
