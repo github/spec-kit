@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import keyword
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -220,6 +221,31 @@ def scaffold_integration(
         raise ValueError("Run this command from the Spec Kit repository root.")
 
     package_name = _package_name(clean_key)
+    # A reserved Python keyword cannot name an importable package: the
+    # generated ``integrations/<key>/`` would be unreachable by any import
+    # statement. Soft keywords that ``_clean_key`` admits (``match``,
+    # ``case``) are deliberately NOT rejected here -- they are contextual, and
+    # ``import match`` is valid.
+    if keyword.iskeyword(package_name):
+        raise ValueError(
+            f"Integration key '{clean_key}' becomes the Python keyword "
+            f"'{package_name}', which cannot name an importable package. "
+            "Choose a different key."
+        )
+    # A package shadows a same-named module in the same directory: when a
+    # sibling module ``integrations/<package_name>.py`` already exists, the
+    # generated ``integrations/<package_name>/`` would silently take its place
+    # on import -- and every integration does ``from ..base import ...``. The
+    # check uses the derived package name, so a hyphenated key whose package
+    # name matches a module is caught as well. The existing-file check below
+    # cannot catch this case: it only looks for ``<package_name>/__init__.py``.
+    shadowed = integrations_root / f"{package_name}.py"
+    if shadowed.exists():
+        raise ValueError(
+            f"Integration key '{clean_key}' collides with the existing module "
+            f"{shadowed.relative_to(project_root).as_posix()}; the generated "
+            "package would shadow it. Choose a different key."
+        )
     class_name = _class_name(clean_key)
     integration_dir = integrations_root / package_name
     integration_file = integration_dir / "__init__.py"
