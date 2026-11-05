@@ -513,7 +513,10 @@ class IntegrationManifest:
             os.replace(temp_path, path)
             after_file_change(path)
         finally:
-            temp_path.unlink(missing_ok=True)
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
         return path
 
     @classmethod
