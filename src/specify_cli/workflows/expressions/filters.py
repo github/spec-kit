@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NoReturn
 
 
 # -- Custom filters -------------------------------------------------------
@@ -101,6 +101,11 @@ def _filter_contains(value: Any, substring: Any) -> bool:
     return False
 
 
+def _reject_json_constant(value: str) -> NoReturn:
+    """Reject the non-JSON numeric constants accepted by Python's decoder."""
+    raise ValueError(f"from_json: invalid JSON constant: {value}")
+
+
 def _filter_from_json(value: Any) -> Any:
     """Parse a JSON string into a typed value (list/dict/scalar).
 
@@ -113,7 +118,7 @@ def _filter_from_json(value: Any) -> Any:
             f"from_json: expected a JSON string, got {type(value).__name__}"
         )
     try:
-        return json.loads(value)
+        return json.loads(value, parse_constant=_reject_json_constant)
     except json.JSONDecodeError as exc:
         raise ValueError(f"from_json: invalid JSON: {exc}") from exc
 
