@@ -2527,6 +2527,71 @@ steps:
         )
         assert stat.S_IMODE(workflow_file.stat().st_mode) == 0o644
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    @pytest.mark.parametrize(
+        ("args", "stdin"),
+        [
+            (["workflow", "add", "https://example.com/workflow.yml"], None),
+            (
+                [
+                    "workflow",
+                    "add",
+                    "align-wf",
+                    "--from",
+                    "https://example.com/workflow.yml",
+                ],
+                "y\n",
+            ),
+        ],
+    )
+    def test_add_from_url_fresh_install_uses_project_file_mode(
+        self, project_dir, monkeypatch, args, stdin
+    ):
+        """URL installs must not copy NamedTemporaryFile's 0600 mode.
+
+        Catalog install creates a new workflow.yml at 0666 so the process
+        umask supplies the normal project-file mode (0644 under 0022). A
+        downloaded YAML is staged through NamedTemporaryFile, which is
+        created mode 0600; copying that mode leaves the installed file
+        private. Reinstall still keeps an existing workflow.yml mode, the
+        same as catalog install.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+
+        def install():
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(
+                    "specify_cli.authentication.http.open_url",
+                    lambda url, timeout=None, extra_headers=None,
+                    redirect_validator=None: self._FakeResponse(data, url),
+                )
+                return CliRunner().invoke(app, args, input=stdin)
+
+        previous_umask = os.umask(0o022)
+        try:
+            result = install()
+            workflow_file = (
+                project_dir
+                / ".specify"
+                / "workflows"
+                / "align-wf"
+                / "workflow.yml"
+            )
+            assert result.exit_code == 0, result.output
+            assert stat.S_IMODE(workflow_file.stat().st_mode) == 0o644
+
+            workflow_file.chmod(0o640)
+            result = install()
+        finally:
+            os.umask(previous_umask)
+
+        assert result.exit_code == 0, result.output
+        assert stat.S_IMODE(workflow_file.stat().st_mode) == 0o640
+
     def test_concurrent_catalog_reinstalls_keep_file_and_registry_aligned(
         self, project_dir, monkeypatch
     ):
