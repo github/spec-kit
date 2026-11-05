@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-04T00:00:00Z",
+  "updated_at": "2026-11-05T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -4794,6 +4794,55 @@
       "stars": 0,
       "created_at": "2026-03-28T00:00:00Z",
       "updated_at": "2026-06-16T00:00:00Z"
+    },
+    "project": {
+      "name": "GitHub Project Lifecycle Sync",
+      "id": "project",
+      "description": "Mirror each Spec Kit feature onto a GitHub Project (v2): create a parent feature issue, advance its Status column through the Spec Kit lifecycle (open -> analysis -> engineer-review -> ready -> in-progress -> in-review -> done), and, in standalone use, create one native sub-issue per task and close it as its task is checked off (under Sanduq Workflow, Workflow owns task issues). Board-agnostic initialization lets each repo choose required/automatic or optional/manual sync hooks. Idempotent and no-regress.",
+      "author": "Samy K. Abushanab",
+      "version": "2.7.2",
+      "download_url": "https://github.com/samykabu/sanduq/releases/download/project-v2.7.2/project.zip",
+      "sha256": "eea664e17587341ab43649551147af9144e4d21c745c5e77fc90dbd5bbd0c61e",
+      "repository": "https://github.com/samykabu/sanduq",
+      "homepage": "https://github.com/samykabu/sanduq/tree/main/extensions/project",
+      "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/project.md",
+      "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/project/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          },
+          {
+            "name": "gh",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 6
+      },
+      "tags": [
+        "github",
+        "project",
+        "issues",
+        "sub-issues"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-05T00:00:00Z",
+      "updated_at": "2026-11-05T00:00:00Z"
     },
     "qa": {
       "name": "QA Testing Extension",
