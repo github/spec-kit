@@ -208,6 +208,9 @@ class TestCodexHookCommandNote:
 
 _COMMAND_STEP = (CommandStep, {"command": "speckit.plan", "input": {"args": "body"}})
 _PROMPT_STEP = (PromptStep, {"type": "prompt", "prompt": "Summarise"})
+# Captured agent output that passes the host's value pattern, so only Codex's
+# own rule rejects it.
+_SECRET_OUTPUT = "FAKEsecret0123456789"
 
 
 class TestCodexDispatchSettings:
@@ -284,6 +287,15 @@ class TestCodexDispatchSettings:
         assert excinfo.value.setting == "context_size"
         assert reason in str(excinfo.value)
 
+    def test_rejected_context_size_is_not_echoed(self):
+        with pytest.raises(DispatchSettingsError) as excinfo:
+            get_integration("codex").build_exec_args(
+                "do it", context_size=_SECRET_OUTPUT
+            )
+        message = str(excinfo.value)
+        assert _SECRET_OUTPUT not in message
+        assert self._CODEX_RULE in message
+
     def test_unset_settings_leave_argv_unchanged(self):
         codex = get_integration("codex")
         baseline = ["codex", "exec", "do it", "--model", "gpt-5", "--json"]
@@ -318,11 +330,15 @@ class TestCodexDispatchSettings:
         assert runs == []
 
     @staticmethod
-    def _execute(monkeypatch, tmp_path, step, config, **settings):
+    def _execute(monkeypatch, tmp_path, step, config, *, steps=None, **settings):
         monkeypatch.setattr(shutil, "which", lambda name, *a, **k: f"/bin/{name}")
         return step().execute(
             {"id": "ask", **config, **settings},
-            StepContext(default_integration="codex", project_root=str(tmp_path)),
+            StepContext(
+                default_integration="codex",
+                project_root=str(tmp_path),
+                steps=steps or {},
+            ),
         )
 
     @pytest.mark.parametrize(
@@ -363,4 +379,24 @@ class TestCodexDispatchSettings:
         assert result.status == StepStatus.FAILED
         assert result.output["dispatched"] is False
         assert self._CODEX_RULE in result.error
+        assert runs == []
+
+    @pytest.mark.parametrize(
+        ("step", "config"), [_COMMAND_STEP, _PROMPT_STEP], ids=["command", "prompt"]
+    )
+    def test_workflow_steps_do_not_echo_captured_output(
+        self, monkeypatch, tmp_path, runs, step, config
+    ):
+        result = self._execute(
+            monkeypatch,
+            tmp_path,
+            step,
+            config,
+            steps={"probe": {"output": {"stdout": _SECRET_OUTPUT}}},
+            context_size="{{ steps.probe.output.stdout }}",
+        )
+        assert result.status == StepStatus.FAILED
+        assert _SECRET_OUTPUT not in result.error
+        assert self._CODEX_RULE in result.error
+        assert result.error.endswith(" (set by step)")
         assert runs == []
