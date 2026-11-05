@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -324,6 +325,34 @@ def normalize_repo_paths(text: str, repo: Path) -> str:
     for repo_path in repo_paths:
         text = text.replace(repo_path, "<REPO>")
     return text.replace("\r\n", "\n")
+
+
+_PS_PERSISTENCE_HINT = re.compile(r"\$env:(SPECIFY[A-Z0-9_]*) = '((?:[^']|'')*)'")
+_BASH_PERSISTENCE_HINT = re.compile(r"export (SPECIFY[A-Z0-9_]*)=('[^']*'|[^\s]+)")
+
+
+def fold_persistence_hints(text: str) -> str:
+    """Reduce shell persistence hints to bare ``KEY=VALUE`` pairs.
+
+    The Python variant prints PowerShell-style hints when running on Windows
+    while the bash variant always prints ``export``-style ones, so a cross-style
+    comparison must fold both spellings (and their quoting) together first.
+    Cross-variant equality checks only; never bake this into
+    ``normalize_repo_paths``, whose output tests assert on verbatim.
+    """
+
+    def from_powershell(match: re.Match[str]) -> str:
+        value = match.group(2).replace("''", "'")
+        return f"{match.group(1)}={value}"
+
+    def from_bash(match: re.Match[str]) -> str:
+        value = match.group(2)
+        if len(value) >= 2 and value.startswith("'") and value.endswith("'"):
+            value = value[1:-1]
+        return f"{match.group(1)}={value}"
+
+    text = _PS_PERSISTENCE_HINT.sub(from_powershell, text)
+    return _BASH_PERSISTENCE_HINT.sub(from_bash, text)
 
 
 def normalize_script_names(text: str, repo: Path, script: str) -> str:

@@ -23,6 +23,7 @@ from tests.parity_helpers import (
     break_wrap_layer,
     clean_env,
     collation_range_locale,
+    fold_persistence_hints,
     install_composition_stack,
     install_scripts,
     json_stdout,
@@ -424,6 +425,10 @@ def test_python_prefix_scan_tolerates_permission_error(
         "a to the of",
         "Fix \u00e9DB\u00e9 sync",
         "Ajouter la réservation hôtelière",
+        "-n",
+        "-e",
+        "-E",
+        "-neE",
     ],
     ids=[
         "plain",
@@ -432,6 +437,10 @@ def test_python_prefix_scan_tolerates_permission_error(
         "all_stop_words_fallback",
         "acronym_next_to_non_ascii",
         "accented_words",
+        "option_like_n",
+        "option_like_e",
+        "option_like_E",
+        "option_like_neE",
     ],
 )
 def test_python_branch_name_generation_matches_bash(
@@ -755,20 +764,28 @@ def test_all_variants_branch_truncation_match(repo: Path) -> None:
 
 
 @requires_bash
-def test_python_full_run_matches_bash(repo_pair: tuple[Path, Path]) -> None:
+@pytest.mark.parametrize(
+    "description",
+    ["Add user authentication system", "-n"],
+    ids=["plain", "option_like_n"],
+)
+def test_python_full_run_matches_bash(
+    repo_pair: tuple[Path, Path], description: str
+) -> None:
     repo_a, repo_b = repo_pair
-    description = "Add user authentication system"
 
     bash = run(bash_cmd(repo_a, SCRIPT, "--json", description), repo_a)
     py = run(py_cmd(repo_b, SCRIPT, "--json", description), repo_b)
 
     assert py.returncode == bash.returncode == 0
-    assert normalize_repo_paths(py.stdout, repo_b) == normalize_repo_paths(
-        bash.stdout, repo_a
-    )
-    assert normalize_repo_paths(py.stderr, repo_b) == normalize_repo_paths(
-        bash.stderr, repo_a
-    )
+    # fold_persistence_hints: the Python variant prints PowerShell-style hints
+    # on Windows while the bash variant prints export-style ones.
+    assert fold_persistence_hints(
+        normalize_repo_paths(py.stdout, repo_b)
+    ) == fold_persistence_hints(normalize_repo_paths(bash.stdout, repo_a))
+    assert fold_persistence_hints(
+        normalize_repo_paths(py.stderr, repo_b)
+    ) == fold_persistence_hints(normalize_repo_paths(bash.stderr, repo_a))
 
     branch = json_stdout(py)["BRANCH_NAME"]
     for repo in repo_pair:
