@@ -1274,13 +1274,12 @@ class _PresetSkillMethods:
             if override_source:
                 owned_sources.add(override_source)
             if source in owned_sources:
-                from ..integrations._file_changes import rmdir, unlink
+                from ..integrations._file_changes import unlink_in_directory
 
-                unlink(skill_file)
-                try:
-                    rmdir(skill_subdir)
-                except OSError:
-                    pass
+                unlink_in_directory(
+                    skill_file,
+                    root=self.project_root if skill_file.is_relative_to(self.project_root) else skills_dir,
+                )
 
     @staticmethod
     def _warn_unrestored_skill(
@@ -1543,13 +1542,12 @@ class _PresetSkillMethods:
                 mutated_names.append(skill_name)
             else:
                 # No core or extension template — remove only the generated file
-                from ..integrations._file_changes import rmdir, unlink
+                from ..integrations._file_changes import unlink_in_directory
 
-                unlink(skill_file)
-                try:
-                    rmdir(skill_subdir)
-                except OSError:
-                    pass
+                unlink_in_directory(
+                    skill_file,
+                    root=self.project_root if skill_file.is_relative_to(self.project_root) else skills_dir,
+                )
                 mutated_names.append(skill_name)
 
         return mutated_names
