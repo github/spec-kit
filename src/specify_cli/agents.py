@@ -9,6 +9,7 @@ command files into agent-specific directories in the correct format.
 import hashlib
 import os
 import re
+import tempfile
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -1017,6 +1018,25 @@ class CommandRegistrar:
         return registered
 
     @staticmethod
+    def _replace_file_text(dest: Path, content: str) -> None:
+        """Write ``content`` to ``dest`` by replacing its directory entry.
+
+        An in-place write reaches every hard link of the file, so an alias
+        linked to a file outside the project would carry the new text there
+        too. Writing a sibling temp file and renaming it over ``dest`` only
+        changes what ``dest`` names.
+        """
+        fd, temp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
+        temp_path = Path(temp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            temp_path.chmod(0o644)
+            os.replace(temp_path, dest)
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    @staticmethod
     def _write_registered_output(
         dest_file: Path,
         content: str,
@@ -1038,7 +1058,7 @@ class CommandRegistrar:
         if not link_outputs or (agent_config or {}).get("dev_no_symlink"):
             if dest_file.is_symlink():
                 dest_file.unlink()
-            dest_file.write_text(content, encoding="utf-8")
+            CommandRegistrar._replace_file_text(dest_file, content)
             after_file_change(dest_file)
             return
 
@@ -1050,7 +1070,7 @@ class CommandRegistrar:
         try:
             before_file_change(cache_file)
             cache_file.parent.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(content, encoding="utf-8")
+            CommandRegistrar._replace_file_text(cache_file, content)
             after_file_change(cache_file)
             if dest_file.exists() or dest_file.is_symlink():
                 dest_file.unlink()
@@ -1062,7 +1082,7 @@ class CommandRegistrar:
             # functional by falling back to a copy.
             if dest_file.is_symlink():
                 dest_file.unlink()
-            dest_file.write_text(content, encoding="utf-8")
+            CommandRegistrar._replace_file_text(dest_file, content)
         after_file_change(dest_file)
 
     @staticmethod

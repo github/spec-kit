@@ -2460,6 +2460,40 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             encoding="utf-8"
         )
 
+    def test_alias_refresh_does_not_write_through_hardlinked_skill(
+        self, project_dir, temp_dir
+    ):
+        """An alias ``SKILL.md`` hard-linked to a file outside the project
+        carries the preset's own source marker, so the ownership checks pass;
+        the refresh on removal must replace the directory entry rather than
+        write through the shared inode."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10)
+        install("append-preset", "Appended body", "append", 5)
+        alias_file = self._alias_skill(project_dir)
+        before = alias_file.read_text(encoding="utf-8")
+        assert "Base preset body" in before
+
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        target = outside / "SKILL.md"
+        try:
+            os.link(alias_file, target)
+        except OSError as exc:  # pragma: no cover - filesystem without hard links
+            pytest.skip(f"hard links unsupported: {exc}")
+
+        assert manager.remove("base-preset") is True
+
+        assert target.read_text(encoding="utf-8") == before
+        after = alias_file.read_text(encoding="utf-8")
+        assert "Base preset body" not in after
+        assert "Core custom body" in after and "Appended body" in after
+        assert alias_file.stat().st_nlink == 1
+
     def test_remove_base_keeps_survivor_alias_both_layers_declare(
         self, project_dir, temp_dir
     ):
