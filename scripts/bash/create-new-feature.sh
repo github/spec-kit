@@ -56,7 +56,7 @@ while [ $i -le $# ]; do
         --timestamp)
             USE_TIMESTAMP=true
             ;;
-        --help|-h)
+        --help | -h)
             echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] <feature_description>"
             echo ""
             echo "Options:"
@@ -231,15 +231,15 @@ fit_branch_name() {
     local branch_name="${feature_num}-${branch_suffix}"
 
     if [ "$(branch_byte_count "$branch_name")" -gt "$MAX_BRANCH_LENGTH" ]; then
-        local prefix_length=$(( ${#feature_num} + 1 ))
+        local prefix_length=$((${#feature_num} + 1))
         local max_suffix_length=$((MAX_BRANCH_LENGTH - prefix_length))
         local truncated_suffix
         local -x LC_ALL="$UNICODE_LOCALE"
         local low=0 high=${#branch_suffix} mid
-        if (( high > max_suffix_length )); then
+        if ((high > max_suffix_length)); then
             high=$max_suffix_length
         fi
-        while (( low < high )); do
+        while ((low < high)); do
             mid=$(((low + high + 1) / 2))
             if [ "$(branch_byte_count "${branch_suffix:0:$mid}")" -le "$max_suffix_length" ]; then
                 low=$mid
@@ -270,6 +270,7 @@ shell_quote() {
 
 # Resolve repository root using common.sh functions which prioritize .specify
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
 source "$SCRIPT_DIR/common.sh"
 
 REPO_ROOT=$(get_repo_root) || exit 1
@@ -328,7 +329,8 @@ generate_branch_name() {
         echo "$result"
     else
         # Fallback to original logic if no meaningful words found
-        local cleaned=$(clean_branch_name "$description")
+        local cleaned
+        cleaned=$(clean_branch_name "$description")
         echo "$cleaned" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-' | sed 's/-$//'
     fi
 }
@@ -438,7 +440,12 @@ if [ "$DRY_RUN" != true ]; then
     SPEC_TEMPLATE_CONTENT=""
     if [ ! -f "$SPEC_FILE" ]; then
         NEEDS_SPEC=true
-        if SPEC_TEMPLATE_CONTENT=$(resolve_template_content "spec-template" "$REPO_ROOT"; status=$?; printf x; exit "$status"); then
+        if SPEC_TEMPLATE_CONTENT=$(
+            resolve_template_content "spec-template" "$REPO_ROOT"
+            status=$?
+            printf x
+            exit "$status"
+        ); then
             SPEC_TEMPLATE_CONTENT="${SPEC_TEMPLATE_CONTENT%x}"
             SPEC_TEMPLATE_FOUND=true
         else
@@ -453,7 +460,7 @@ if [ "$DRY_RUN" != true ]; then
 
     if [ "$NEEDS_SPEC" = true ]; then
         if [ "$SPEC_TEMPLATE_FOUND" = true ]; then
-            printf '%s' "$SPEC_TEMPLATE_CONTENT" > "$SPEC_FILE"
+            printf '%s' "$SPEC_TEMPLATE_CONTENT" >"$SPEC_FILE"
         else
             echo "Warning: Spec template not found; created empty spec file" >&2
             touch "$SPEC_FILE"

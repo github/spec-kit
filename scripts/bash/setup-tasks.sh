@@ -8,22 +8,29 @@ JSON_MODE=false
 for arg in "$@"; do
     case "$arg" in
         --json) JSON_MODE=true ;;
-        --help|-h)
+        --help | -h)
             echo "Usage: $0 [--json]"
             echo "  --json    Output results in JSON format"
             echo "  --help    Show this help message"
             exit 0
             ;;
-        *) echo "ERROR: Unknown option '$arg'" >&2; exit 1 ;;
+        *)
+            echo "ERROR: Unknown option '$arg'" >&2
+            exit 1
+            ;;
     esac
 done
 
 # Source common functions
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
 source "$SCRIPT_DIR/common.sh"
 
 # Get feature paths
-_paths_output=$(get_feature_paths) || { echo "ERROR: Failed to resolve feature paths" >&2; exit 1; }
+_paths_output=$(get_feature_paths) || {
+    echo "ERROR: Failed to resolve feature paths" >&2
+    exit 1
+}
 eval "$_paths_output"
 unset _paths_output
 
@@ -51,7 +58,12 @@ fi
 
 # Resolve tasks template through override stack
 TASKS_TEMPLATE=$(resolve_template "tasks-template" "$REPO_ROOT") || true
-if TASKS_TEMPLATE_CONTENT=$(resolve_template_content "tasks-template" "$REPO_ROOT"; status=$?; printf x; exit "$status"); then
+if TASKS_TEMPLATE_CONTENT=$(
+    resolve_template_content "tasks-template" "$REPO_ROOT"
+    status=$?
+    printf x
+    exit "$status"
+); then
     TASKS_TEMPLATE_CONTENT="${TASKS_TEMPLATE_CONTENT%x}"
 else
     echo "ERROR: Could not resolve required tasks-template from the template override stack for $REPO_ROOT" >&2
