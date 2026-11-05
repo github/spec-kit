@@ -116,3 +116,18 @@ without interactive approval. Set `SPECKIT_COPILOT_ALLOW_ALL_TOOLS=0` to stop
 Spec Kit from adding this flag. The deprecated `SPECKIT_ALLOW_ALL_TOOLS` is
 accepted only as a fallback. A configured `--model` and requested
 `--output-format json` are forwarded.
+
+## Workflow Dispatch Settings
+
+Command and prompt steps can set
+[`reasoning_effort` and `context_size`](../workflow-steps/types.md#reasoning-effort-and-context-size).
+Copilot CLI dispatch passes them as native flags after `--model`, in both the
+skills and commands layouts:
+
+| Step setting | Copilot CLI flag | Values in Copilot CLI 1.0.106 |
+|---|---|---|
+| `reasoning_effort` | `--reasoning-effort <value>` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
+| `context_size` | `--context <value>` | `default`, `long_context` |
+
+Spec Kit passes the values through unchanged. Copilot CLI rejects a value it
+does not recognize, and the step fails like any other CLI error.
