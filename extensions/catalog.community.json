@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-04T00:00:00Z",
+  "updated_at": "2026-11-05T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -1792,6 +1792,48 @@
       "stars": 0,
       "created_at": "2026-06-16T00:00:00Z",
       "updated_at": "2026-06-16T00:00:00Z"
+    },
+    "deja-vu": {
+      "name": "deja-vu session recall",
+      "id": "deja-vu",
+      "description": "Searches your past coding-agent sessions for a feature: what was tried, decided or failed.",
+      "author": "Vladislav Shulcz (@vshulcz)",
+      "version": "0.23.5",
+      "download_url": "https://github.com/vshulcz/deja-vu/releases/download/v0.23.5/deja-spec-kit.zip",
+      "sha256": "5060c6ee6a931592e915849bbdfc05537f563fa9a34a12b98bf4e1b1c8abb143",
+      "repository": "https://github.com/vshulcz/deja-vu",
+      "homepage": "https://vshulcz.github.io/deja-vu/",
+      "documentation": "https://github.com/vshulcz/deja-vu/blob/main/extensions/spec-kit/README.md",
+      "changelog": "https://github.com/vshulcz/deja-vu/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.10.0",
+        "tools": [
+          {
+            "name": "deja",
+            "version": ">=0.22.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "memory",
+        "recall",
+        "history",
+        "context",
+        "local-first"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-05T00:00:00Z",
+      "updated_at": "2026-11-05T00:00:00Z"
     },
     "diagram": {
       "name": "Spec Diagram",
