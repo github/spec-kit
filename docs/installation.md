@@ -144,17 +144,18 @@ This confirms that the `specify` command is available and reporting the expected
 
 **Stay current:** Run `specify self check` periodically to learn whether a newer release is available — it is read-only and never modifies your installation. When you are ready to upgrade, follow the [Upgrade Guide](./upgrade.md).
 
-After initialization, you should see the following commands available in your coding agent:
+After initialization with GitHub Copilot's default skills mode, the following
+skills should be available. Invoke them in your agent's chat, not in the terminal:
 
-- `/speckit.specify` - Create specifications
-- `/speckit.plan` - Generate implementation plans
-- `/speckit.tasks` - Break down into actionable tasks
-- `/speckit.implement` - Execute implementation tasks
-- `/speckit.analyze` - Validate cross-artifact consistency
-- `/speckit.clarify` - Identify and resolve ambiguities
-- `/speckit.checklist` - Generate quality checklists
-- `/speckit.constitution` - Create or update project principles
-- `/speckit.converge` - Assess codebase against artifacts and append remaining tasks
+- `/speckit-specify` - Create specifications
+- `/speckit-plan` - Generate implementation plans
+- `/speckit-tasks` - Break down into actionable tasks
+- `/speckit-implement` - Execute implementation tasks
+- `/speckit-analyze` - Validate cross-artifact consistency
+- `/speckit-clarify` - Identify and resolve ambiguities
+- `/speckit-checklist` - Generate quality checklists
+- `/speckit-constitution` - Create or update project principles
+- `/speckit-converge` - Assess codebase against artifacts and append remaining tasks
 
 Scripts are installed into a variant subdirectory matching the chosen script type:
 
@@ -180,3 +181,5 @@ If your environment blocks access to PyPI or GitHub, see the [Enterprise / Air-G
 ### Git Credential Manager on Linux
 
 If you're having issues with Git authentication on Linux, see the [Air-Gapped Installation guide](install/air-gapped.md#git-credential-manager-on-linux) for Git Credential Manager setup instructions.
+
+> Agent invocation examples on this page use GitHub Copilot's default skills syntax (`/speckit-*`). For other integrations and modes, see [Command invocation](integrations/cli.md#command-invocation).
