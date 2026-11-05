@@ -12,7 +12,9 @@ from pathlib import Path
 
 import yaml
 
-from specify_cli.bundles.manifest import ComponentRef
+from specify_cli.bundles import BundlerError
+from specify_cli.bundles.expansion import LoadedBundle
+from specify_cli.bundles.manifest import BundleRef, ComponentRef
 
 
 def valid_manifest_dict(**overrides) -> dict:
@@ -40,6 +42,24 @@ def valid_manifest_dict(**overrides) -> dict:
         "tags": ["demo", "test"],
     }
     data.update(overrides)
+    return data
+
+
+def reference_manifest_dict(
+    bundles: list[dict] | None = None,
+    *,
+    bundle_id: str = "demo-bundle",
+    schema_version: str = "1.1",
+    **provides,
+) -> dict:
+    """Return a manifest dict whose ``provides.bundles`` holds *bundles*.
+
+    Own components are omitted unless passed as keyword lists (e.g.
+    ``extensions=[...]``), so the default is a reference-only bundle.
+    """
+    data = valid_manifest_dict(schema_version=schema_version)
+    data["bundle"]["id"] = bundle_id
+    data["provides"] = {"bundles": bundles or [], **provides}
     return data
 
 
@@ -108,6 +128,22 @@ def write_catalog_file(path: Path, bundles: dict) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(catalog_payload(bundles)), encoding="utf-8")
     return path
+
+
+class FakeBundleLoader:
+    """Deterministic in-memory loader for bundle expansion tests."""
+
+    def __init__(self, bundles: dict[tuple[str, str], LoadedBundle]) -> None:
+        self.bundles = bundles
+        self.load_calls: list[tuple[str, str]] = []
+
+    def load(self, ref: BundleRef, chain: tuple[str, ...]) -> LoadedBundle:
+        key = (ref.id, ref.version or "")
+        self.load_calls.append(key)
+        try:
+            return self.bundles[key]
+        except KeyError:
+            raise BundlerError(f"unknown bundle {ref.id}@{ref.version or '<unpinned>'}") from None
 
 
 class FakeInstaller:

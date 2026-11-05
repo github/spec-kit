@@ -8,7 +8,7 @@ command can run fully offline against pinned/local references.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Mapping
 
 from . import BundlerError
 from .versioning import parse_constraint
@@ -35,6 +35,8 @@ class ValidationReport:
 def validate_manifest(
     manifest: BundleManifest,
     reference_checker: ReferenceChecker | None = None,
+    components: list[ComponentRef] | None = None,
+    origins: Mapping[tuple[str, str], tuple[str, ...]] | None = None,
 ) -> ValidationReport:
     report = ValidationReport()
 
@@ -50,11 +52,14 @@ def validate_manifest(
             )
 
     if reference_checker is not None:
-        for component in manifest.components:
+        selected_components = manifest.components if components is None else components
+        for component in selected_components:
             problem = reference_checker(component)
             if problem:
+                origin = origins.get((component.kind, component.id)) if origins else None
+                chain_text = f" (from {' → '.join((manifest.bundle.id,) + origin)})" if origin else ""
                 report.errors.append(
-                    f"Unresolved reference {component.label()}: {problem}"
+                    f"Unresolved reference {component.label()}{chain_text}: {problem}"
                 )
 
     return report

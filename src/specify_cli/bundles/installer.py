@@ -16,8 +16,8 @@ from pathlib import Path
 from typing import Protocol
 
 from . import BundlerError
-from .conflict import detect_conflicts
-from .manifest import BundleManifest, ComponentRef
+from .conflict import component_setting_differences, detect_conflicts, same_requirement
+from .manifest import BundleManifest, BundleRef, ComponentRef
 from .primitives import BundledPatchWarning
 from .records import (
     InstalledBundleRecord,
@@ -103,7 +103,12 @@ def install_bundle(
     records = load_records(project_root)
 
     if manifest is not None:
-        report = detect_conflicts(manifest, plan.effective_integration, records)
+        report = detect_conflicts(
+            manifest,
+            plan.effective_integration,
+            records,
+            components=plan.components,
+        )
         if report.has_blocking_conflict:
             raise BundlerError(
                 "; ".join(
@@ -114,12 +119,28 @@ def install_bundle(
 
     result = InstallResult(bundle_id=plan.bundle_id)
     existing = find_record(records, plan.bundle_id)
+    # Index the plan by (kind, id) so an unchanged reinstall compares each owned
+    # component against its candidate instead of scanning the whole plan. Plan
+    # components are unique per key (structural_errors rejects duplicates), and
+    # same_requirement still applies the expansion normalization; the per-key
+    # list keeps `any` semantics if a plan ever repeats a key.
+    planned_by_key: dict[tuple[str, str], list[ComponentRef]] = {}
+    for planned in plan.components:
+        planned_by_key.setdefault((planned.kind, planned.id), []).append(planned)
     if (
         existing is not None
         and not refresh
         and (
             existing.version != plan.version
-            or not set(existing.contributed_components).issubset(plan.components)
+            or not all(
+                any(
+                    same_requirement(component, candidate)
+                    for candidate in planned_by_key.get(
+                        (component.kind, component.id), ()
+                    )
+                )
+                for component in existing.contributed_components
+            )
         )
     ):
         raise BundlerError(
@@ -235,6 +256,10 @@ def install_bundle(
         # ``bundle list`` keeps reporting when the bundle was first installed.
         installed_at=existing.installed_at if existing is not None else None,
         installed_versions=installed_versions,
+        bundle_references=[
+            BundleRef(reference.id, reference.version, reference.source_id)
+            for reference in plan.references
+        ],
     )
     updated = upsert_record(records, record)
     if refresh and existing is not None:
@@ -321,14 +346,14 @@ def _check_installed_pins(
     for component in plan.components:
         key = component.kind, component.id
         for bundle_id, required in other_requirements.get(key, []):
-            different = []
-            if component.source != required.source:
-                different.append("source")
-            if component.kind == "presets":
-                if component.priority != required.priority:
-                    different.append("priority")
-                if component.strategy != required.strategy:
-                    different.append("strategy")
+            # Installed bundles keep the flat-bundle rule: extension priority
+            # is never compared, including explicit values such as 5 and 10.
+            # Only preset priority is. This differs from sibling references in
+            # one expansion, which compare extension priority after applying
+            # the default.
+            different = component_setting_differences(
+                component, required, extension_priority=False
+            )
             if different:
                 raise BundlerError(
                     f"Cannot install or refresh shared {component.kind[:-1]} "

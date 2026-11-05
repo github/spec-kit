@@ -25,7 +25,7 @@ numeric priority wins:
 4. **Built-in defaults** — `catalog.json` + `catalog.community.json`
 
 Adding the first project catalog replaces the default sources unless you also
-list them in the project file. See [Catalogs](../reference/catalogs.md)
+list them in the project file. See [Catalogs](../overview/catalogs.md)
 for shared discovery, trust, and private-source guidance.
 
 Example `integration-catalogs.yml`:
@@ -159,3 +159,7 @@ See the [contribution guide](contributing.md) for adding built-in integrations
 or submitting external integration catalog entries. For agent-specific setup,
 start with the [integration directory](index.md). Shared user-facing commands
 are documented in the [integration management reference](cli.md).
+
+## See also
+
+- [Community integrations](../community/integrations.md)

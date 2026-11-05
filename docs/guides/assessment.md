@@ -12,7 +12,7 @@ The bundled, opt-in **assess** extension provides five stages:
 
 [Install Spec Kit and initialize a project](../installation.md). An empty project
 is enough, or you can use an
-[existing repository](existing-projects.md) when the idea relates to its code.
+[existing repository](../how-to/existing-projects.md) when the idea relates to its code.
 In a terminal at the initialized project root, install the extension:
 
 ```bash

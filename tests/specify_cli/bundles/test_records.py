@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from specify_cli.bundler import BundlerError
-from specify_cli.bundles.manifest import ComponentRef
+from specify_cli.bundles.manifest import BundleRef, ComponentRef
 from specify_cli.bundles.records import (
     InstalledBundleRecord,
     components_still_needed,
@@ -39,6 +39,95 @@ def test_save_and_load_roundtrip(tmp_path: Path):
         ("steps", "s1"),
     }
     assert loaded[0].required_components == loaded[0].contributed_components
+
+
+def test_roundtrip_preserves_bundle_references(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    references = [
+        BundleRef("bugfix", "1.0.0", "default"),
+        BundleRef("qa-pack", "2.0.0"),
+    ]
+    record = InstalledBundleRecord.create(
+        bundle_id="team",
+        version="1.0.0",
+        components=[],
+        bundle_references=references,
+    )
+
+    save_records(tmp_path, [record])
+    restored = load_records(tmp_path)[0]
+
+    assert restored.bundle_references == tuple(references)
+    assert restored.to_dict()["bundle_references"] == [
+        {"id": "bugfix", "version": "1.0.0", "source": "default"},
+        {"id": "qa-pack", "version": "2.0.0", "source": None},
+    ]
+
+
+def test_empty_bundle_references_are_omitted_and_flat_records_stay_identical():
+    record = _record("flat", [("extensions", "ext-a")])
+
+    assert record.bundle_references == ()
+    assert "bundle_references" not in record.to_dict()
+    assert record.to_dict() == {
+        "bundle_id": "flat",
+        "version": "1.0.0",
+        "installed_at": record.installed_at,
+        "contributed_components": [{"kind": "extensions", "id": "ext-a"}],
+        "required_components": [{"kind": "extensions", "id": "ext-a"}],
+    }
+
+
+@pytest.mark.parametrize("value", [None, []])
+def test_from_dict_accepts_empty_bundle_references(value):
+    data = {
+        "bundle_id": "team",
+        "version": "1.0.0",
+        "contributed_components": [],
+        "bundle_references": value,
+    }
+    assert InstalledBundleRecord.from_dict(data).bundle_references == ()
+    data.pop("bundle_references")
+    assert InstalledBundleRecord.from_dict(data).bundle_references == ()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        0,
+        False,
+        "not-a-list",
+        {},
+        [{"id": "bugfix"}],
+        [{"version": "1.0.0"}],
+        [{"id": "bugfix", "version": ""}],
+        [{"id": "bugfix", "version": 1}],
+        [{"id": 1, "version": "1.0.0"}],
+        [{"id": "   ", "version": "1.0.0"}],
+        [{"id": "bugfix", "version": "   "}],
+        [{"id": "bugfix", "version": "1.0.0", "source": 1}],
+        ["not-a-mapping"],
+    ],
+)
+def test_from_dict_rejects_corrupt_bundle_references(value):
+    data = {
+        "bundle_id": "team",
+        "version": "1.0.0",
+        "contributed_components": [],
+        "bundle_references": value,
+    }
+    with pytest.raises(BundlerError, match="Corrupt record: 'bundle_references'"):
+        InstalledBundleRecord.from_dict(data)
+
+
+def test_empty_reference_source_normalizes_to_none():
+    data = {
+        "bundle_id": "team",
+        "version": "1.0.0",
+        "contributed_components": [],
+        "bundle_references": [{"id": "child", "version": "1.0.0", "source": ""}],
+    }
+    assert InstalledBundleRecord.from_dict(data).bundle_references[0].source is None
 
 
 def test_roundtrip_retains_unowned_required_pin(tmp_path: Path):

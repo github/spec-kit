@@ -2,6 +2,106 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.3.0] - 2026-11-03
+
+### Changed
+
+- docs: consolidate and correct preset documentation (#5223)
+- [bug-fix] Fix oversized-number-crash: bound Python --number parsing (#5200)
+- docs: consolidate and correct extension documentation (#5221)
+- fix: detect relocated uv and pipx tool installations (#5103)
+- chore(ci): test Python 3.11 and 3.12 (#5220)
+- fix: invoke registered command hook only once (#5219)
+- [Copilot Dreams] Avoid rejecting supported extension submissions (#5216)
+- fix(cline): keep .md extension on speckit.* file names in command bodies (#5168)
+- feat(integrations): add process_registered_command hook with source_id (#5215)
+- [preset] Update A11Y Governance preset to v0.4.6 (#5212)
+- feat!: remove taskstoissues from core (#5053)
+- Add Guildwork: request, verdict, register extension to community catalog (#5214)
+- fix(extensions): stop the git extension's fetch from waiting on a credential prompt (#5201)
+- fix(workflows): decode code-page shell output in Python's UTF-8 mode (#5209)
+- feat(workflows): parse workflow expressions with a Lark LALR grammar (#5171)
+- feat(copilot): add --no-model-invocation integration option (#5118)
+- fix: preserve Windows drive paths in bundle catalog config (#5205)
+- fix(extensions): skip catalog entries without a version on update (#5108)
+- feat(integrations): add a preflight_setup() hook that runs before shared writes (#5198)
+- chore: release 1.2.6, begin 1.2.7.dev0 development (#5211)
+
+## [1.2.6] - 2026-11-02
+
+### Changed
+
+- feat(droid): add --no-model-invocation integration option (#5116)
+- fix(extensions): make extension add name optional with --from (#5197)
+- fix(extensions): skip non-UTF-8 catalog responses (#5196)
+- feat: add `specify workflow definition` for run-scoped definitions (#4912)
+- fix(integrations): refresh manifest hashes after init --force and switch rollback (#5193)
+- fix(workflows): stop dispatching "None" as command step arguments (#5016)
+- feat(workflows): add opt-in strict shell execution (#5181)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action (#5191)
+- chore(deps): bump the codeql-action group with 2 updates (#5189)
+- fix: reject symlinked integration state (#5176)
+- fix: reject trailing newlines in extension IDs (#5186)
+- fix: reject trailing newlines in preset IDs (#5188)
+- fix(templates): start spec.md from the composed spec-template (#5187)
+- docs: move extension API reference into documentation (#5174)
+- Update iSAQB Architecture Governance preset to v0.2.5 (#5183)
+- fix: reject unsafe self-upgrade installer paths (#5172)
+- fix(bundles): refuse to build when bundle.yml or README.md is a symlink (#5169)
+- docs(assess): clarify README invocation guidance (#5068)
+- fix(integrations): refresh manifest hashes after preset registration on switch and use (#5145)
+- chore: release 1.2.5, begin 1.2.6.dev0 development (#5167)
+
+## [1.2.5] - 2026-10-28
+
+### Changed
+
+- docs: publish extension development guide on docs site (#5166)
+- docs: publish extensions overview and navigation (#5165)
+- fix(extensions): load top-level defaults from extension.yml (#5164)
+- fix(bundles): reject integration mappings without an id (#5161)
+- docs: publish extension publishing guide on the docs site (#5163)
+- feat(workflows): expose installed workflow listing through MCP (#5115)
+- fix(extensions): reject hook commands that are not strings (#5146)
+- fix(workflows): accept equivalent version spellings in archive updates (#5155)
+- Add Domain Spec Maintenance extension to community catalog (#5162)
+- Update Architecture Governance preset to v0.6.5 (#5153)
+- Update Quality Gates (Enforcement Layer) extension to v0.5.0 (#5151)
+- Update SFSpeckit — Salesforce Spec-Driven Development to v2.0.1 (#5154)
+- docs(workflows): correct filtered-count comparison guidance (#5148)
+- fix: validate collected extension events (#5133)
+- test(workflows): pin untested workflow expression behavior (#5130)
+- fix(presets): treat non-mapping command frontmatter as empty (#5125)
+- fix(workflows): handle undecodable shell output as a step failure (#5064)
+- fix(vibe): keep user comments that follow a managed hook block (#5109)
+- [extension] Add Shared Knowledge extension to community catalog (#5140)
+- chore: release 1.2.4, begin 1.2.5.dev0 development (#5142)
+
+## [1.2.4] - 2026-10-27
+
+### Changed
+
+- Update Secure Development Assurance Governance preset to v0.1.8 (#5139)
+- feat(bundles): allow bundles to reference other bundles (#5067)
+- fix: report a non-file .extensionignore or .presetignore as a validation error (#5131)
+- fix(presets): attribute core templates with overrides-prefixed names correctly (#5129)
+- ci: select pytest worker count automatically (#5132)
+- feat(vibe): add --no-model-invocation integration option (#5119)
+- refactor(workflows): split the expression evaluator into a package (#5114)
+- fix: make bundle step refresh rollback transactional (#4827)
+- Update Security Governance preset to v0.7.4 (#5128)
+- Update Quality Gates (Enforcement Layer) extension to v0.4.2 (#5127)
+- Update Product Spec Extension to v2.1.0 (#5126)
+- Fix local bundle installation for uppercase .ZIP artifacts (#5106)
+- fix: preserve feature numbering during reinitialization (#5101)
+- fix: retain event hooks when override omits events (#5102)
+- feat(auth): support GitHub CLI credentials (#4960)
+- fix(integrations): pass the Junie dispatch prompt via --task (#5065)
+- chore(deps): bump the codeql-action group with 2 updates (#5066)
+- Add CSDD — Controlled Spec-Driven Development extension to community catalog (#5062)
+- Add Entalpa to Community Friends (#4993)
+- chore: release 1.2.3, begin 1.2.4.dev0 development (#5063)
+
 ## [1.2.3] - 2026-10-22
 
 ### Changed

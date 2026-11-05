@@ -9,7 +9,7 @@ body:
         Thanks for contributing a bundle! This template captures metadata for maintainers to validate formatting, links, component resolution, and installation evidence. Maintainers do not audit, endorse, or support bundle code or installed components.
 
         **Before submitting:**
-        - Review the [Bundles reference](https://github.com/github/spec-kit/blob/main/docs/reference/bundles.md)
+        - Review the [Bundle publishing guide](https://github.github.io/spec-kit/bundles/publishing.html)
         - Ensure your bundle has a valid `bundle.yml` manifest
         - Create a GitHub release with a versioned bundle artifact
         - Test installation from a downloaded artifact: `specify bundle install ./your-bundle-1.0.0.zip`

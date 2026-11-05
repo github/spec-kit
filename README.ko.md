@@ -53,7 +53,7 @@ cd my-project
 예시는 **GitHub Copilot의 기본 스킬 모드**를 기준으로 합니다. 지원되는 다른 에이전트를 쓰려면
 `copilot`을 해당 에이전트의 [통합 키](https://github.github.io/spec-kit/integrations/index.html)로 바꾸세요.
 
-이미 코드가 있나요? [기존 프로젝트 가이드](https://github.github.io/spec-kit/guides/existing-projects.html)를 따르세요.
+이미 코드가 있나요? [기존 프로젝트 가이드](https://github.github.io/spec-kit/how-to/existing-projects.html)를 따르세요.
 특정 버전 고정, 다른 설치 방법, CI, 문제 해결은
 [설치](https://github.github.io/spec-kit/installation.html) 문서를 참고하세요.
 기존 설치를 업데이트하려면 [업그레이드](https://github.github.io/spec-kit/upgrade.html) 문서를 참고하세요.
@@ -161,7 +161,7 @@ specify extension add assess
 **확장**은 기능을 추가하고, **프리셋**은 기존 동작을 조정하며, **워크플로**는 단계를 자동화하고,
 **번들**은 역할별 구성을 하나로 묶습니다. 일회성 템플릿 변경에는 프로젝트 로컬 오버라이드를 사용하세요.
 
-[커스터마이즈 가이드](https://github.github.io/spec-kit/guides/customization.html) ·
+[커스터마이즈 가이드](https://github.github.io/spec-kit/how-to/customization.html) ·
 [커뮤니티 확장, 프리셋, 번들, 실습 가이드](https://github.github.io/spec-kit/community/overview.html)
 
 <a id="-specify-cli-reference"></a>
@@ -174,9 +174,9 @@ specify extension add assess
 
 ## 문서
 
-- [CLI 레퍼런스](https://github.github.io/spec-kit/reference/overview.html)와 [프로세스 명령어](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
-- [SDD 철학](https://github.github.io/spec-kit/concepts/sdd.html), [전체 방법론](./spec-driven.md), [기존 스펙 발전시키기](https://github.github.io/spec-kit/guides/evolving-specs.html)
-- [프로젝트 연혁](https://github.github.io/spec-kit/history.html)
+- [CLI 레퍼런스](https://github.github.io/spec-kit/index.html#specify-cli)와 [프로세스 명령어](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
+- [SDD 철학](https://github.github.io/spec-kit/how-to/sdd.html), [전체 방법론](./spec-driven.md), [기존 스펙 발전시키기](https://github.github.io/spec-kit/how-to/evolving-specs.html)
+- [프로젝트 연혁](https://github.github.io/spec-kit/overview/history.html)
 - [Spec Kit이 Spec Kit을 쓰는 방법](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
 
 ## 스타 추이

@@ -33,6 +33,7 @@ def test_tool_discovery_exposes_first_class_and_transitional_tools(tmp_path):
         "specify_version",
         "specify_artifact_list",
         "specify_artifact_info",
+        "specify_workflow_list",
     ]
     schemas = {tool.name: tool.input_schema for tool in tools}
     assert schemas["specify_list_commands"]["properties"] == {}

@@ -93,33 +93,6 @@ class CommandRegistrar:
                 pass  # Circular import during module init; retry on next access
 
     @staticmethod
-    def _hyphenate_frontmatter_refs(val: Any) -> Any:
-        """Recursively find any dotted references starting with speckit. and hyphenate them."""
-        if isinstance(val, dict):
-            return {
-                k: CommandRegistrar._hyphenate_frontmatter_refs(v)
-                for k, v in val.items()
-            }
-        elif isinstance(val, list):
-            return [CommandRegistrar._hyphenate_frontmatter_refs(x) for x in val]
-        elif isinstance(val, str):
-            return re.sub(
-                r"\bspeckit\.[A-Za-z0-9-_]+(?:\.[A-Za-z0-9-_]+)*\b",
-                lambda m: m.group(0).replace(".", "-"),
-                val,
-            )
-        return val
-
-    @staticmethod
-    def _hyphenate_body_refs(body: str) -> str:
-        """Hyphenate dotted speckit references in command body text."""
-        return re.sub(
-            r"\bspeckit\.[A-Za-z0-9-_]+(?:\.[A-Za-z0-9-_]+)*\b",
-            lambda m: m.group(0).replace(".", "-"),
-            body,
-        )
-
-    @staticmethod
     def parse_frontmatter(content: str) -> tuple[dict, str]:
         """Parse YAML frontmatter from Markdown content.
 
@@ -715,7 +688,6 @@ class CommandRegistrar:
         commands_dir.mkdir(parents=True, exist_ok=True)
 
         registered = []
-        is_cline_ext = agent_name == "cline" and source_id != "core"
         source_root = source_dir.resolve()
 
         # Resolve the command-reference separator for the file THIS registrar
@@ -738,6 +710,7 @@ class CommandRegistrar:
         # ``.bob/commands``.
         _sep = agent_config.get("invoke_separator", ".")
         registrar_writes_skills = agent_config.get("extension") == "/SKILL.md"
+        _integ = None
         try:
             from specify_cli.integrations import get_integration  # noqa: PLC0415
 
@@ -828,9 +801,10 @@ class CommandRegistrar:
                 format_name = agent_config.get("format_name")
                 frontmatter["name"] = format_name(cmd_name) if format_name else cmd_name
 
-            if is_cline_ext:
-                frontmatter = self._hyphenate_frontmatter_refs(frontmatter)
-                body = self._hyphenate_body_refs(body)
+            if _integ is not None:
+                frontmatter, body = _integ.process_registered_command(
+                    frontmatter, body, source_id=source_id
+                )
 
             body = self._convert_argument_placeholder(
                 body, "$ARGUMENTS", agent_config["args"]

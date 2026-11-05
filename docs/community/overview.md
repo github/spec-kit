@@ -1,13 +1,20 @@
 # Community
 
-The Spec Kit community builds extensions, presets, bundles, workflow steps, walkthroughs, and companion projects that expand what you can do with Spec-Driven Development. All community contributions are independently created and maintained by their respective authors.
+The Spec Kit community builds integrations, extensions, presets, workflows, workflow steps, bundles, walkthroughs, and companion projects that expand what you can do with Spec Kit. All community contributions are independently created and maintained by their respective authors.
 
 > [!NOTE]
 > Review community source code before installation and use it at your own
 > discretion. A catalog listing is not an audit or endorsement.
 
 Learn how discovery-only community sources and approved private sources fit
-together in the [catalog reference](../reference/catalogs.md).
+together in the [catalog reference](../overview/catalogs.md).
+
+## Integrations
+
+Integrations connect Spec Kit to coding agents. Community external adapters
+have their own package and catalog contracts, separate from built-in agents.
+
+[Browse community integrations](integrations.md)
 
 ## Extensions
 
@@ -21,11 +28,12 @@ Presets customize how Spec Kit behaves — overriding templates, commands, and t
 
 [Browse community presets →](presets.md)
 
-## Bundles
+## Workflows
 
-Bundles compose extensions, presets, workflows, and steps into role or team stacks that can be installed together.
+Workflows compose reusable steps into repeatable, resumable processes, with
+inputs, control flow, and review gates chosen by their authors.
 
-[Browse community bundles →](bundles.md)
+[Browse community workflows](workflows.md)
 
 ## Workflow step types
 
@@ -33,7 +41,13 @@ Workflow step types add reusable executable behavior that workflows can select
 with `type:`. The community catalog is discovery-only; vet a step's source
 before installing or running it.
 
-[Submit a community workflow step type →](workflow-steps.md)
+[Browse community workflow step types](workflow-steps.md)
+
+## Bundles
+
+Bundles compose extensions, presets, workflows, and steps into role or team stacks that can be installed together.
+
+[Browse community bundles →](bundles.md)
 
 ## Walkthroughs
 
@@ -50,8 +64,14 @@ Community projects that extend, visualize, or build on Spec Kit — including VS
 ## Contribute a component
 
 To publish your own work, follow the
-[Extension Publishing Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md),
-the [Presets Publishing Guide](https://github.com/github/spec-kit/blob/main/presets/PUBLISHING.md),
-the [Community Bundles guide](bundles.md), or the
-[Community Workflow Step Types guide](workflow-steps.md). For help choosing a
-component type, see [Customize Spec Kit](../guides/customization.md).
+[Integration Contribution Guide](../integrations/contributing.md),
+[Extension Publishing Guide](../extensions/publishing.md),
+[Presets Publishing Guide](../presets/publishing.md),
+[Workflow Publishing Guide](../workflows/publishing.md),
+[Community Workflow Step Types guide](workflow-steps.md), or
+[Bundle Publishing Guide](../bundles/publishing.md).
+
+## See also
+
+- [Adapt Spec Kit to your process](../how-to/customization.md)
+- [Catalog discovery and trust](../overview/catalogs.md)

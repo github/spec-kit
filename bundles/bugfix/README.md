@@ -36,3 +36,8 @@ specify bundle remove bugfix
 ```
 
 Removing the bundle uninstalls the workflow and the extension it contributed, unless they are still depended on by another installed bundle (FR-022). Components you installed independently are not attributed to this bundle and survive removal.
+
+## See also
+
+- [Bundle overview](https://github.github.io/spec-kit/bundles/overview.html)
+- [Bundle CLI reference](https://github.github.io/spec-kit/bundles/cli.html)

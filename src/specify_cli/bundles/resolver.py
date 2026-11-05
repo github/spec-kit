@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import BundlerError
 from .versioning import satisfies
+from .expansion import ExpandedManifest, ResolvedReference, format_chain
 from .manifest import BundleManifest, ComponentRef
 
 
@@ -23,6 +24,7 @@ class InstallPlan:
     effective_integration: str | None
     components: list[ComponentRef] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    references: list[ResolvedReference] = field(default_factory=list)
 
     @property
     def component_count(self) -> int:
@@ -41,14 +43,14 @@ class InstallPlan:
 
 
 def resolve_install_plan(
-    manifest: BundleManifest,
+    source: ExpandedManifest | BundleManifest,
     *,
     speckit_version: str,
     active_integration: str | None,
     integration_explicit: bool = False,
     enforce_version: bool = True,
 ) -> InstallPlan:
-    """Expand *manifest* into an :class:`InstallPlan`, enforcing gates.
+    """Expand *source* into an :class:`InstallPlan`, enforcing gates.
 
     Raises :class:`BundlerError` when a hard gate fails (version gate,
     integration clash). Soft issues are collected in ``plan.warnings``.
@@ -60,6 +62,16 @@ def resolve_install_plan(
     explicit override, resolution fails instead of silently adopting the
     bundle's required integration (FR-019 guard).
     """
+    if isinstance(source, BundleManifest):
+        if source.bundles:
+            raise BundlerError(
+                "Cannot resolve a bundle manifest with references before expansion."
+            )
+        expanded = ExpandedManifest.flat(source)
+    else:
+        expanded = source
+
+    manifest = expanded.root
     structural = manifest.structural_errors()
     if structural:
         raise BundlerError(
@@ -107,20 +119,68 @@ def resolve_install_plan(
         effective_integration = required
 
     warnings: list[str] = []
-    if manifest.requires.tools:
-        warnings.append(
-            "Requires external tools: " + ", ".join(manifest.requires.tools)
-        )
-    if manifest.requires.mcp:
-        warnings.append("Requires MCP servers: " + ", ".join(manifest.requires.mcp))
+    if expanded.references:
+        tools: list[str] = []
+        mcp: list[str] = []
+        requirements_to_merge = [
+            manifest.requires,
+            *(reference.manifest.requires for reference in expanded.references),
+        ]
+        for requirements in requirements_to_merge:
+            for tool in requirements.tools:
+                if tool not in tools:
+                    tools.append(tool)
+            for server in requirements.mcp:
+                if server not in mcp:
+                    mcp.append(server)
+    else:
+        # A flat bundle is deliberately byte-compatible with the pre-reference
+        # resolver: duplicate declarations remain visible in warning output.
+        tools = list(manifest.requires.tools)
+        mcp = list(manifest.requires.mcp)
+    if tools:
+        warnings.append("Requires external tools: " + ", ".join(tools))
+    if mcp:
+        warnings.append("Requires MCP servers: " + ", ".join(mcp))
+
+    for reference in expanded.references:
+        reference_manifest = reference.manifest
+        chain = (manifest.bundle.id,) + reference.via + (reference.id,)
+        if enforce_version and reference_manifest.requires.speckit_version:
+            if not satisfies(
+                speckit_version, reference_manifest.requires.speckit_version
+            ):
+                raise BundlerError(
+                    f"Bundle '{reference.id}' ({format_chain(chain)}) requires "
+                    f"Spec Kit {reference_manifest.requires.speckit_version}, "
+                    f"but this project uses {speckit_version}. Update Spec Kit or "
+                    "choose a compatible bundle."
+                )
+
+        if reference_manifest.integration is not None:
+            required = reference_manifest.integration.id
+            if effective_integration is None:
+                warnings.append(
+                    f"Bundle '{reference.id}' ({format_chain(chain)}) targets "
+                    f"integration '{required}'; the project's integration could "
+                    "not be determined."
+                )
+            elif required != effective_integration:
+                warnings.append(
+                    f"Bundle '{reference.id}' ({format_chain(chain)}) targets "
+                    f"'{required}'; this install uses '{effective_integration}'."
+                )
+
+    warnings.extend(expanded.warnings)
 
     return InstallPlan(
         bundle_id=manifest.bundle.id,
         version=manifest.bundle.version,
         role=manifest.bundle.role,
         effective_integration=effective_integration,
-        components=list(manifest.components),
+        components=list(expanded.components),
         warnings=warnings,
+        references=list(expanded.references),
     )
 
 
