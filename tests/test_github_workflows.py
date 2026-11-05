@@ -342,7 +342,7 @@ def test_pytest_matrix_covers_supported_python_versions_on_all_platforms():
     job = workflow["jobs"]["pytest"]
     assert job["strategy"]["matrix"] == {
         "os": ["ubuntu-latest", "windows-latest", "macos-latest"],
-        "python-version": ["3.11", "3.12", "3.13", "3.14"],
+        "python-version": ["3.11", "3.12", "3.13", "3.14", "3.15"],
     }
     assert job["runs-on"] == "${{ matrix.os }}"
     setup_python = next(
