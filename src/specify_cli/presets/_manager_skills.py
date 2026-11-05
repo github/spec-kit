@@ -1274,11 +1274,11 @@ class _PresetSkillMethods:
             if override_source:
                 owned_sources.add(override_source)
             if source in owned_sources:
-                from ..integrations._file_changes import unlink
+                from ..integrations._file_changes import rmdir, unlink
 
                 unlink(skill_file)
                 try:
-                    skill_subdir.rmdir()
+                    rmdir(skill_subdir)
                 except OSError:
                     pass
 
@@ -1543,11 +1543,11 @@ class _PresetSkillMethods:
                 mutated_names.append(skill_name)
             else:
                 # No core or extension template — remove only the generated file
-                from ..integrations._file_changes import unlink
+                from ..integrations._file_changes import rmdir, unlink
 
                 unlink(skill_file)
                 try:
-                    skill_subdir.rmdir()
+                    rmdir(skill_subdir)
                 except OSError:
                     pass
                 mutated_names.append(skill_name)

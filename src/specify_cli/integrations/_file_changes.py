@@ -45,3 +45,10 @@ def write_bytes(path: Path, content: bytes) -> int:
 def unlink(path: Path, *, missing_ok: bool = False) -> None:
     with changing_file(path, removal=True):
         path.unlink(missing_ok=missing_ok)
+
+
+def rmdir(path: Path) -> None:
+    """Journal and remove an empty directory without snapshotting user files."""
+    if not any(path.iterdir()):
+        with changing_file(path, removal=True):
+            path.rmdir()
