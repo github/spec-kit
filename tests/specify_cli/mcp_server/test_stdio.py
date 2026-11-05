@@ -42,6 +42,14 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools(tmp
                     workflow_failure = await session.call_tool(
                         "specify_workflow_list", {"project_directory": "relative"}
                     )
+                    catalogs = await session.call_tool(
+                        "specify_workflow_catalog_list",
+                        {"project_directory": str(tmp_path)},
+                    )
+                    catalog_failure = await session.call_tool(
+                        "specify_workflow_catalog_list",
+                        {"project_directory": "relative"},
+                    )
                     artifacts = await session.call_tool("specify_artifact_list", {})
                     artifact = await session.call_tool(
                         "specify_artifact_info",
@@ -74,6 +82,7 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools(tmp
             "specify_artifact_list",
             "specify_artifact_info",
             "specify_workflow_list",
+            "specify_workflow_catalog_list",
         ]
         assert listed.structured_content["commands"][0]["command"] == "version"
         assert set(version.structured_content) == {
@@ -88,6 +97,13 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools(tmp
         assert workflow_failure.is_error is True
         assert (
             workflow_failure.structured_content["error"]["code"]
+            == "invalid_project_directory"
+        )
+        assert catalogs.is_error is False
+        assert catalogs.structured_content["items"]
+        assert catalog_failure.is_error is True
+        assert (
+            catalog_failure.structured_content["error"]["code"]
             == "invalid_project_directory"
         )
         assert artifacts.is_error is False
