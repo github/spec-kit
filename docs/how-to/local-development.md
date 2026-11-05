@@ -95,8 +95,27 @@ coding agent and follow the
 when slash-command behavior changes.
 
 If you run further CLI commands from the generated project, use the absolute
-path to the Spec Kit checkout's `.venv/bin/specify` or
-`.venv\Scripts\specify.exe`; do not switch to a globally installed `specify`.
+path to the Spec Kit checkout's executable; do not switch to a globally
+installed `specify`. Replace the example checkout path below with your actual
+checkout path. For example, to check the CLI and add the git extension in the
+generated project:
+
+On macOS or Linux:
+
+```bash
+"/path/to/spec-kit/.venv/bin/specify" --help
+"/path/to/spec-kit/.venv/bin/specify" extension add git
+```
+
+On Windows PowerShell:
+
+```powershell
+& "C:\path\to\spec-kit\.venv\Scripts\specify.exe" --help
+& "C:\path\to\spec-kit\.venv\Scripts\specify.exe" extension add git
+```
+
+The PowerShell call operator (`&`) executes the quoted path, including paths
+that contain spaces.
 
 Generated scripts live under `.specify/scripts/`. When testing Bash script
 permissions on macOS or Linux, inspect them from the generated project:
