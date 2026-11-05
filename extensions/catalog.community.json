@@ -2883,6 +2883,51 @@
       "created_at": "2026-06-16T00:00:00Z",
       "updated_at": "2026-06-16T00:00:00Z"
     },
+    "illustrate": {
+      "name": "Illustrate",
+      "id": "illustrate",
+      "description": "Generate, import, and export forty-four technical, product, architecture, process, and quantitative illustration types with tracked project-level light/dark color and font themes.",
+      "author": "Samy K. Abushanab",
+      "version": "2.7.3",
+      "download_url": "https://github.com/samykabu/sanduq/releases/download/illustrate-v2.7.3/illustrate.zip",
+      "sha256": "271d2b80037a191ed6e66d6835efb2bba743580ecc6dd1efc3106750182f7c7c",
+      "repository": "https://github.com/samykabu/sanduq",
+      "homepage": "https://github.com/samykabu/sanduq/tree/main/extensions/illustrate",
+      "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/illustrate.md",
+      "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/illustrate/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "diagrams",
+        "documentation",
+        "svg",
+        "visualization"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-05T00:00:00Z",
+      "updated_at": "2026-11-05T00:00:00Z"
+    },
     "intake": {
       "name": "Intake",
       "id": "intake",
