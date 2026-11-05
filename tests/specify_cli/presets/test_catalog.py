@@ -2,6 +2,7 @@
 
 import io
 import json
+import logging
 import tarfile
 import zipfile
 from contextlib import contextmanager
@@ -250,6 +251,42 @@ class TestPresetCatalog:
         monkeypatch.setenv("SPECKIT_PRESET_CATALOG_URL", "https://custom.example.com/catalog.json")
         catalog = PresetCatalog(project_dir)
         assert catalog.get_catalog_url() == "https://custom.example.com/catalog.json"
+
+    def test_non_default_catalog_url_warns_through_logger_once(
+        self, project_dir, monkeypatch, caplog, capsys
+    ):
+        """The override warning reaches the logging framework, not stderr.
+
+        Regresses the print(..., file=sys.stderr) implementation: that wrote
+        the message straight to stderr and logging captured nothing.
+        """
+        monkeypatch.setenv(
+            "SPECKIT_PRESET_CATALOG_URL", "https://custom.example.com/catalog.json"
+        )
+        catalog = PresetCatalog(project_dir)
+        caplog.set_level(logging.WARNING, logger="specify_cli.presets._catalog")
+
+        assert catalog.get_catalog_url() == "https://custom.example.com/catalog.json"
+
+        message = "Using non-default preset catalog"
+        assert message in caplog.text
+        assert message not in capsys.readouterr().err
+
+        # Once per catalog instance: a second lookup must not repeat it.
+        catalog.get_catalog_url()
+        assert caplog.text.count(message) == 1
+
+    def test_default_catalog_url_logs_no_warning(
+        self, project_dir, monkeypatch, caplog
+    ):
+        """The default path must not emit the override warning."""
+        monkeypatch.delenv("SPECKIT_PRESET_CATALOG_URL", raising=False)
+        catalog = PresetCatalog(project_dir)
+        caplog.set_level(logging.WARNING, logger="specify_cli.presets._catalog")
+
+        catalog.get_catalog_url()
+
+        assert "Using non-default preset catalog" not in caplog.text
 
     # --- _make_request / GitHub auth ---
 
