@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.3.1] - 2026-11-05
+
+### Changed
+
+- Update Quality Gates (Enforcement Layer) extension to v0.6.0 (#5253)
+- fix(catalogs): name a scheme-less catalog URL instead of reporting "got ://" (#5251)
+- fix(extensions): keep git warnings from failing initialize-repo.ps1 on Windows PowerShell 5.1 (#5252)
+- fix(workflows): reject non-JSON constants in from_json (#5250)
+- docs: give workflow steps a dedicated category (#5243)
+- docs: refresh homepage figures and community examples (#5242)
+- Update DocGuard — CDD Enforcement to v0.46.0 (#5238)
+- Update Agent Parity Governance preset to v0.4.5 (#5236)
+- docs: consolidate overview navigation and source pages (#5234)
+- fix(agent-context): skip non-file plan candidates (#5222)
+- docs: add October 2026 newsletter (#5235)
+- docs: organize usage guides under How to (#5230)
+- docs: extend project history through early November 2026 (#5231)
+- docs: simplify integrations navigation dropdown (#5229)
+- Update Quality Gates (Enforcement Layer) extension to v0.5.1 (#5228)
+- docs: consolidate bundle documentation and remove unusable examples (#5226)
+- Update Cross-Platform Governance preset to v0.2.5 (#5218)
+- docs: consolidate and correct workflow documentation (#5225)
+- fix(cli): don't self-upgrade uv tool installs on Windows (#5149)
+- chore: release 1.3.0, begin 1.3.1.dev0 development (#5224)
+
 ## [1.3.0] - 2026-11-03
 
 ### Changed
