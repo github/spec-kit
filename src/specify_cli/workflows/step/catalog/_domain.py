@@ -298,8 +298,10 @@ class StepCatalog:
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):
+            # A scheme-less value (``example.com/catalog.json``) would otherwise read "got ://".
+            got = f"{parsed.scheme}://" if parsed.scheme else repr(url)
             raise StepValidationError(
-                f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
+                f"Catalog URL must use HTTPS (got {got}). "
                 "HTTP is only allowed for localhost."
             )
         if not hostname:

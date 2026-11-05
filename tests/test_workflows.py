@@ -10349,6 +10349,17 @@ class TestWorkflowCatalog:
         with pytest.raises(WorkflowValidationError, match="HTTPS"):
             catalog._validate_catalog_url("http://evil.com/catalog.json")
 
+    def test_validate_url_schemeless_names_the_value(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
+
+        for catalog, error in (
+            (WorkflowCatalog(project_dir), WorkflowValidationError),
+            (StepCatalog(project_dir), StepValidationError),
+        ):
+            with pytest.raises(error, match=r"\(got 'example\.com/catalog\.json'\)"):
+                catalog._validate_catalog_url("example.com/catalog.json")
+
     def test_validate_url_localhost_http_allowed(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
 
