@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import requires_bash
+from tests.parity_helpers import WINDOWS_POWERSHELL
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "git"
@@ -156,12 +157,18 @@ def _run_bash(script_name: str, cwd: Path, *args: str, env_extra: dict | None = 
     )
 
 
-def _run_pwsh(script_name: str, cwd: Path, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
-    """Run an extension PowerShell script."""
+def _run_pwsh(
+    script_name: str,
+    cwd: Path,
+    *args: str,
+    env_extra: dict | None = None,
+    exe: str = "pwsh",
+) -> subprocess.CompletedProcess:
+    """Run an extension PowerShell script (pwsh unless *exe* names another host)."""
     script = cwd / ".specify" / "extensions" / "git" / "scripts" / "powershell" / script_name
     env = {**os.environ, **_GIT_ENV, **(env_extra or {})}
     return subprocess.run(
-        ["pwsh", "-NoProfile", "-File", str(script), *args],
+        [exe, "-NoProfile", "-File", str(script), *args],
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -179,7 +186,7 @@ class TestGitExtensionManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "git"
-        assert m.version == "1.0.3"
+        assert m.version == "1.0.4"
 
     def test_manifest_commands(self):
         """Manifest declares expected commands."""
@@ -317,6 +324,80 @@ class TestInitializeRepoPowerShell:
         project = _setup_project(tmp_path, git=True)
         result = _run_pwsh("initialize-repo.ps1", project)
         assert result.returncode == 0
+
+
+@pytest.mark.parametrize(
+    "exe",
+    [
+        pytest.param(
+            "pwsh",
+            marks=pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available"),
+            id="pwsh",
+        ),
+        pytest.param(
+            WINDOWS_POWERSHELL,
+            marks=pytest.mark.skipif(
+                not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
+            ),
+            id="windows-powershell-5.1",
+        ),
+    ],
+)
+class TestInitializeRepoPowerShellStderr:
+    """git warnings on stderr must not fail initialize-repo.ps1.
+
+    With $ErrorActionPreference = 'Stop', Windows PowerShell 5.1 turns every
+    line a native command writes to redirected stderr into a terminating
+    error, even when the command exits 0. PowerShell 7 does not, so only the
+    windows-powershell-5.1 case can reproduce it.
+    """
+
+    def test_crlf_warnings_do_not_abort_initial_commit(self, tmp_path: Path, exe: str):
+        """LF files with core.autocrlf=true still get the initial commit."""
+        project = _setup_project(tmp_path / "proj", git=False)
+        (project / "notes.txt").write_bytes(b"line one\nline two\n")
+        env = {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "core.autocrlf",
+            "GIT_CONFIG_VALUE_0": "true",
+        }
+
+        result = _run_pwsh("initialize-repo.ps1", project, env_extra=env, exe=exe)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "[OK] Git repository initialized" in result.stdout
+        log = subprocess.run(
+            ["git", "log", "--format=%s"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert log.stdout.strip() == "[Spec Kit] Initial commit"
+
+    def test_commit_failure_is_still_reported(self, tmp_path: Path, exe: str):
+        """A failing git commit still exits 1 and leaves no commit behind."""
+        project = _setup_project(tmp_path / "proj", git=False)
+        hooks = tmp_path / "hooks"
+        hooks.mkdir()
+        hook = hooks / "pre-commit"
+        hook.write_bytes(b'#!/bin/sh\necho "pre-commit: rejected" >&2\nexit 1\n')
+        hook.chmod(0o755)
+        # autocrlf=false keeps the hook's message the only stderr output.
+        env = {
+            "GIT_CONFIG_COUNT": "2",
+            "GIT_CONFIG_KEY_0": "core.autocrlf",
+            "GIT_CONFIG_VALUE_0": "false",
+            "GIT_CONFIG_KEY_1": "core.hooksPath",
+            "GIT_CONFIG_VALUE_1": str(hooks),
+        }
+
+        result = _run_pwsh("initialize-repo.ps1", project, env_extra=env, exe=exe)
+
+        assert result.returncode == 1
+        assert "pre-commit: rejected" in result.stdout + result.stderr
+        commits = subprocess.run(
+            ["git", "rev-list", "--all", "--count"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert commits.stdout.strip() == "0"
 
 
 # ── create-new-feature-branch.sh Tests ──────────────────────────────────────────────
