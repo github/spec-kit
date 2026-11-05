@@ -2,6 +2,8 @@
 
 import json
 import os
+import shutil
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,8 +12,17 @@ import typer
 import yaml
 
 from specify_cli.integrations import get_integration
-from specify_cli.integrations.base import SkillsIntegration
+from specify_cli.integrations.base import (
+    DispatchSettingsError,
+    SkillsIntegration,
+    check_dispatch_settings,
+    effective_dispatch_settings,
+)
+from specify_cli.integrations.copilot import CopilotIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
+from specify_cli.workflows.base import StepContext, StepStatus
+from specify_cli.workflows.step.command import CommandStep
+from specify_cli.workflows.step.prompt import PromptStep
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -1257,3 +1268,239 @@ class TestCopilotNoModelInvocationOption:
         assert _skill_frontmatter(skills_dir / "speckit-specify" / "SKILL.md")[
             "disable-model-invocation"
         ] is True
+
+
+class _LegacyBuilderCopilot(CopilotIntegration):
+    """Overrides only ``build_exec_args``, with the signature that predates
+    per-step dispatch settings."""
+
+    def build_exec_args(
+        self,
+        prompt,
+        *,
+        model=None,
+        output_json=True,
+        integration_args=None,
+        integration_options=None,
+        project_root=None,
+    ):
+        return super().build_exec_args(
+            prompt,
+            model=model,
+            output_json=output_json,
+            integration_args=integration_args,
+            integration_options=integration_options,
+            project_root=project_root,
+        )
+
+
+_COMMAND_STEP = (CommandStep, {"command": "speckit.plan", "input": {"args": "body"}})
+_PROMPT_STEP = (PromptStep, {"type": "prompt", "prompt": "Summarise"})
+
+
+class TestCopilotDispatchSettings:
+    """Per-step ``reasoning_effort`` and ``context_size`` (#4916)."""
+
+    _LAYOUTS = pytest.mark.parametrize(
+        ("skills_mode", "dispatch_head"),
+        [
+            (True, ["copilot", "-p", "/speckit-plan body"]),
+            (False, ["copilot", "-p", "body", "--agent", "speckit.plan"]),
+        ],
+        ids=["skills", "commands"],
+    )
+
+    @pytest.fixture(autouse=True)
+    def _deterministic_argv(self, monkeypatch):
+        monkeypatch.setenv("SPECKIT_INTEGRATION_COPILOT_EXECUTABLE", "copilot")
+        monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
+
+    @pytest.fixture
+    def runs(self, monkeypatch):
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append(list(args))
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        return calls
+
+    @pytest.fixture
+    def no_runs(self, monkeypatch):
+        def fail(*args, **kwargs):
+            raise AssertionError("the Copilot CLI must not start")
+
+        monkeypatch.setattr(subprocess, "run", fail)
+
+    @staticmethod
+    def _copilot(skills_mode=True, cls=CopilotIntegration):
+        copilot = cls()
+        copilot._skills_mode = skills_mode
+        return copilot
+
+    @pytest.mark.parametrize("via", ["dispatch_command", "build_exec_args"])
+    def test_both_receiving_methods_declare_both_settings(self, via):
+        assert effective_dispatch_settings(
+            get_integration("copilot"), via=via
+        ) == frozenset({"reasoning_effort", "context_size"})
+
+    @pytest.mark.parametrize("skills_mode", [True, False], ids=["skills", "commands"])
+    def test_build_exec_args_emits_flags_after_model(self, skills_mode):
+        args = self._copilot(skills_mode).build_exec_args(
+            "do it",
+            model="gpt-5",
+            reasoning_effort="high",
+            context_size="long_context",
+        )
+        assert args == [
+            "copilot", "-p", "do it",
+            "--model", "gpt-5",
+            "--reasoning-effort", "high",
+            "--context", "long_context",
+            "--output-format", "json",
+        ]
+
+    @pytest.mark.parametrize(
+        ("settings", "flags"),
+        [
+            ({"reasoning_effort": "low"}, ["--reasoning-effort", "low"]),
+            ({"context_size": "default"}, ["--context", "default"]),
+        ],
+        ids=["reasoning_effort", "context_size"],
+    )
+    def test_build_exec_args_without_model_emits_only_requested_flags(
+        self, settings, flags
+    ):
+        args = self._copilot().build_exec_args("do it", **settings)
+        assert args == ["copilot", "-p", "do it", *flags, "--output-format", "json"]
+
+    @_LAYOUTS
+    def test_dispatch_command_emits_flags_after_model(
+        self, runs, skills_mode, dispatch_head
+    ):
+        result = self._copilot(skills_mode).dispatch_command(
+            "speckit.plan",
+            "body",
+            model="gpt-5",
+            stream=False,
+            reasoning_effort="xhigh",
+            context_size="long_context",
+        )
+        assert result["exit_code"] == 0
+        assert runs == [
+            [
+                *dispatch_head,
+                "--model", "gpt-5",
+                "--reasoning-effort", "xhigh",
+                "--context", "long_context",
+                "--output-format", "json",
+            ]
+        ]
+
+    @_LAYOUTS
+    def test_unset_settings_leave_argv_unchanged(
+        self, runs, skills_mode, dispatch_head
+    ):
+        copilot = self._copilot(skills_mode)
+        baseline = [
+            "copilot", "-p", "do it", "--model", "gpt-5", "--output-format", "json"
+        ]
+        assert copilot.build_exec_args("do it", model="gpt-5") == baseline
+        assert copilot.build_exec_args(
+            "do it", model="gpt-5", reasoning_effort=None, context_size=None
+        ) == baseline
+
+        copilot.dispatch_command("speckit.plan", "body", model="gpt-5", stream=False)
+        copilot.dispatch_command(
+            "speckit.plan",
+            "body",
+            model="gpt-5",
+            stream=False,
+            reasoning_effort=None,
+            context_size=None,
+        )
+        expected = [*dispatch_head, "--model", "gpt-5", "--output-format", "json"]
+        assert runs == [expected, expected]
+
+    def test_values_pass_through_for_the_cli_to_validate(self):
+        args = self._copilot().build_exec_args(
+            "do it", reasoning_effort="bogus", context_size="huge"
+        )
+        assert args[3:7] == ["--reasoning-effort", "bogus", "--context", "huge"]
+
+    @pytest.mark.usefixtures("no_runs")
+    @pytest.mark.parametrize(
+        ("setting", "value"),
+        [
+            ("reasoning_effort", ""),
+            ("context_size", ""),
+            ("reasoning_effort", "--yolo"),
+            ("context_size", "long context"),
+        ],
+    )
+    def test_direct_calls_reject_malformed_values(self, setting, value):
+        copilot = self._copilot()
+        with pytest.raises(DispatchSettingsError) as built:
+            copilot.build_exec_args("do it", **{setting: value})
+        with pytest.raises(DispatchSettingsError) as dispatched:
+            copilot.dispatch_command("speckit.plan", stream=False, **{setting: value})
+        assert built.value.setting == setting
+        assert dispatched.value.setting == setting
+
+    def test_legacy_builder_subclass_keeps_the_command_path(self, runs):
+        legacy = self._copilot(cls=_LegacyBuilderCopilot)
+        settings = {"reasoning_effort": "high", "context_size": "long_context"}
+
+        assert effective_dispatch_settings(
+            legacy, via="dispatch_command"
+        ) == frozenset(settings)
+        check_dispatch_settings(legacy, settings, via="dispatch_command")
+        legacy.dispatch_command("speckit.plan", "body", stream=False, **settings)
+        assert runs == [
+            [
+                "copilot", "-p", "/speckit-plan body",
+                "--reasoning-effort", "high",
+                "--context", "long_context",
+                "--output-format", "json",
+            ]
+        ]
+
+    def test_legacy_builder_subclass_rejects_the_prompt_path(self):
+        legacy = self._copilot(cls=_LegacyBuilderCopilot)
+
+        assert effective_dispatch_settings(legacy, via="build_exec_args") == frozenset()
+        with pytest.raises(
+            DispatchSettingsError,
+            match="does not support per-step 'reasoning_effort'",
+        ) as excinfo:
+            check_dispatch_settings(
+                legacy, {"reasoning_effort": "high"}, via="build_exec_args"
+            )
+        assert excinfo.value.setting == "reasoning_effort"
+
+    @pytest.mark.parametrize(
+        ("step", "config", "prompt"),
+        [(*_COMMAND_STEP, "/speckit-plan body"), (*_PROMPT_STEP, "Summarise")],
+        ids=["command", "prompt"],
+    )
+    def test_workflow_steps_dispatch_settings(
+        self, monkeypatch, tmp_path, runs, step, config, prompt
+    ):
+        monkeypatch.setattr(shutil, "which", lambda name, *a, **k: f"/bin/{name}")
+        result = step().execute(
+            {
+                "id": "ask",
+                **config,
+                "reasoning_effort": "high",
+                "context_size": "long_context",
+            },
+            StepContext(default_integration="copilot", project_root=str(tmp_path)),
+        )
+        assert result.status == StepStatus.COMPLETED, result.error
+        assert result.output["reasoning_effort"] == "high"
+        assert result.output["context_size"] == "long_context"
+        (args,) = runs
+        assert args[1:] == [
+            "-p", prompt, "--reasoning-effort", "high", "--context", "long_context"
+        ]
