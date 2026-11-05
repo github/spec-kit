@@ -54,6 +54,8 @@ invalid configuration in `execute()` too.
 | `run_id` | `str \| None` | Current run ID |
 | `is_resume` | `bool` | Whether this execution is a resume attempt |
 | `workflow_dir` | `str \| None` | Source directory of the current workflow definition |
+| `default_reasoning_effort` | `str \| None` | Workflow `reasoning_effort` default as written; can be an unevaluated expression |
+| `default_context_size` | `str \| None` | Workflow `context_size` default as written; can be an unevaluated expression |
 
 Mappings default to empty dictionaries, boolean flags to false, and optional
 paths/identifiers to `None`. Paths are strings, not `Path` objects. Use
