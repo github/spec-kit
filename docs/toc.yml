@@ -82,6 +82,8 @@
       href: integrations/index.md
     - name: CLI Reference
       href: integrations/cli.md
+    - name: API Reference
+      href: integrations/api.md
     - name: Catalogs and External Adapters
       href: integrations/catalog.md
     - name: Contributing Integrations

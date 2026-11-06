@@ -97,6 +97,7 @@ the site homepage. Process command references and authentication remain under
 - `community/workflow-steps.md` - Community step listing and submission contract
 - `integrations/index.md` - Integration directory and shared setup guidance
 - `integrations/cli.md` - Shared integration management CLI reference
+- `integrations/api.md` - Public Python adapter and file ownership contracts
 - `integrations/<key>.md` - Agent-specific setup, invocation, options, and limitations
 - `integrations/catalog.md` - Catalog schema and external adapter metadata
 - `integrations/contributing.md` - Integration and catalog contribution guide
