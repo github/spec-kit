@@ -131,10 +131,6 @@ class TestCombinedChecks:
             (REPO_ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
         )
         assert set(test_workflow["jobs"]) == {"pytest"}
-        assert test_workflow["jobs"]["pytest"]["strategy"]["matrix"] == {
-            "os": ["ubuntu-latest", "windows-latest", "macos-latest"],
-            "python-version": ["3.11", "3.12", "3.13", "3.14", "3.15"],
-        }
         assert not (REPO_ROOT / ".github/workflows/security.yml").exists()
         for step in steps:
             assert step.get("continue-on-error", False) is False

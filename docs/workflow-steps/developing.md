@@ -67,9 +67,14 @@ Every source is validated identically before anything is committed:
 
 ## Implement a custom step
 
-Subclass `StepBase`, give the package and implementation the same `type_key`, and return explicit status, outputs, and errors. Override `validate()` and guard invalid configuration in `execute()` too: execution does not automatically call the validator.
+Follow the [Python API reference](api.md): subclass `StepBase`, give the
+package and implementation the same `type_key`, and return explicit status,
+outputs, and errors. Override `validate()` and guard invalid configuration
+in `execute()` too: execution does not automatically call the validator.
 
-The registry shares a single instance of each type. Concurrent fan-out can call it from several threads, so keep execution stateless and thread-safe; store per-run data in `config` and `context`, not `self`. Let the engine own checkpoints and lifecycle transitions.
+A step instance can be called from several threads during concurrent fan-out,
+so keep execution stateless and thread-safe; store per-run data in `config`
+and `context`, not `self`. Let the engine own checkpoints and lifecycle transitions.
 
 Use `specify workflow step add my-step --dev ./my-step` for local iteration and `--force` after editing. See the [step installation reference](cli.md#step-management) for source validation and replacement failure behavior.
 
@@ -90,9 +95,8 @@ such steps are not installable offline. See the [bundle offline limits](../bundl
 ## See also
 
 - [Step overview](overview.md)
-- [Python API and registry](api.md)
+- [Python API reference](api.md)
 - [Step installation CLI](cli.md)
 - [Publishing steps](publishing.md)
 - [Community step submission](../community/workflow-steps.md)
 - [Workflow execution and resume](../workflows/api.md#execution-model)
-- [Contributor step design](https://github.com/github/spec-kit/blob/main/design/workflow-step.md)

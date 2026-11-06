@@ -291,6 +291,10 @@ Explicit environment paths prevent tests from importing another checkout's
 editable install. Start with the affected test files; run the full suite when
 the change requires broader regression coverage.
 
+See [Python version support](SUPPORT.md#python-version-support) for the routine
+and full scheduled/manual CI matrices, compatibility policy, and minimum-version
+lifecycle.
+
 #### Security checks
 
 ```bash

@@ -152,6 +152,6 @@ editable-install development loop; it does not replace the test environment.
 
 - [Contributor guide](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md)
 - [Contributing integrations](../integrations/contributing.md)
-- [Agent integration design](https://github.com/github/spec-kit/blob/main/design/integration.md#adding-an-agent)
+- [Integration API reference](../integrations/api.md)
 - [Spec-Driven Development quickstart](../quickstart.md)
 - [Does Spec Kit use Spec Kit?](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#does-spec-kit-use-spec-kit)

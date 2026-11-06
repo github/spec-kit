@@ -3,8 +3,8 @@
 This guide covers built-in integrations, external adapter development, and
 community catalog submissions.
 
-Start with the [agent integration design](https://github.com/github/spec-kit/blob/main/design/integration.md)
-for implementation contracts, ownership, and delivery requirements.
+Start with the [integration API reference](api.md) for the supported adapter
+contract, rendering hooks, runtime dispatch, and file ownership.
 
 ## Adding a Built-In Integration
 
@@ -15,26 +15,23 @@ For checkout setup, see [local development](../how-to/local-development.md). Fol
 and [validation flow](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#recommended-validation-flow),
 then the [integration PR requirements](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#integration-pull-requests).
 
-### Checklist
+Implement the adapter against the [public API](api.md), add positive and
+negative tests, and document agent-specific setup, invocation, and limitations
+in `docs/integrations/<key>.md`. Link that page from the
+[integration index](index.md), not the navigation dropdown, and add discovery
+metadata using the catalog schema below.
 
-1. **Create the integration subpackage** under `src/specify_cli/integrations/<package_dir>/`
-   using the integration key with hyphens replaced by underscores for `<package_dir>`.
-2. **Implement the integration class** following [Adding an agent](https://github.com/github/spec-kit/blob/main/design/integration.md#adding-an-agent).
-3. **Register the integration** in `src/specify_cli/integrations/__init__.py`.
-4. **Add tests** under `tests/integrations/test_integration_<package_dir>.py`.
-5. **Add a catalog entry** in `integrations/catalog.json`.
-6. **Update documentation:** add `docs/integrations/<key>.md` and link it from
-   the [integration index](index.md), not the navigation dropdown.
-   Update the [catalog reference](catalog.md) if needed and
-   [integration design](https://github.com/github/spec-kit/blob/main/design/integration.md)
-   if the contract changes.
+Built-in source registration and changes to private implementation contracts
+follow the repository's
+[contributor guidance](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#integration-pull-requests);
+they are not required for installing an external adapter.
 
 Use the [catalog schema](catalog.md#catalog-schema) for the built-in entry format.
 
 ## Developing an External Adapter
 
 Implement and package your adapter using the
-[external adapter contract](https://github.com/github/spec-kit/blob/main/design/integration.md#external-adapter-package-contract).
+[external adapter contract](api.md#package-contract).
 The [descriptor reference](catalog.md#integration-descriptor-integrationyml)
 documents package metadata; the [catalog schema](catalog.md#catalog-schema)
 documents published entries.
@@ -50,12 +47,13 @@ catalog, install its neutral adapter, start a fresh CLI process, register
 extension/preset contributions, and exercise command/prompt workflow dispatch
 with a harmless process double.
 
-Cover the [lifecycle contract](https://github.com/github/spec-kit/blob/main/design/integration.md#storage-loading-and-lifecycle),
+Cover the [lifecycle guarantees](api.md#external-adapter-lifecycle-guarantees) and
+[file ownership requirements](api.md#setup-and-file-ownership),
 including:
 
 - Invalid metadata/classes, trust denial, unsafe archives, setup errors, and
   upgrade/uninstall failures.
-- Package code kept separate from generated-file manifests; rollback and
+- Package code kept separate from generated agent files; rollback and
   cleanup that preserve modified files, unrelated user files, independent
   workflow progress, and concurrent edits.
 - Metadata-only commands without import side effects; forced recovery of
@@ -63,8 +61,8 @@ including:
   when that proof is absent.
 - Symlinked write destinations, reserved roots, unsafe legacy paths, and
   case-insensitive overlap between primary and legacy output paths.
-- Overlapping project dispatch and lazy relative imports that retain the
-  correct adapter without serializing independent agent processes.
+- Concurrent dispatch across projects, including package-relative imports
+  that continue to use the correct adapter.
 - For event-capable adapters, event-only extension add/remove and enable/disable
   in fresh CLI processes, including explicit errors when installed code cannot load.
 
@@ -124,6 +122,7 @@ To update your integration version in the catalog:
 
 ## See also
 
+- [Integration API reference](api.md)
 - [Community integrations](../community/integrations.md)
 - [Integration directory](index.md)
 - [Catalog schema](catalog.md)
