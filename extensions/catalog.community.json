@@ -5014,6 +5014,47 @@
       "created_at": "2026-03-28T00:00:00Z",
       "updated_at": "2026-06-16T00:00:00Z"
     },
+    "progress": {
+      "name": "Sanduq Progress Report",
+      "id": "progress",
+      "description": "A live, deterministic progress report for a Spec Kit feature: stages over time, workstreams, runs, blockers and decisions, collected from the host's native hooks and the feature files with no agent spent on upkeep.",
+      "author": "Samy K. Abushanab",
+      "version": "1.7.0",
+      "download_url": "https://github.com/samykabu/sanduq/releases/download/progress-v1.7.0/progress.zip",
+      "sha256": "b4c6677042bb1673784a7db701144636ecde0b299069788988d77f6f4dd23d92",
+      "repository": "https://github.com/samykabu/sanduq",
+      "homepage": "https://github.com/samykabu/sanduq/tree/main/extensions/progress",
+      "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/progress.md",
+      "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/progress/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.1.1.dev0,<2.0.0",
+        "tools": [
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "progress",
+        "reporting",
+        "observability",
+        "hooks"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-06T00:00:00Z",
+      "updated_at": "2026-11-06T00:00:00Z"
+    },
     "project": {
       "name": "GitHub Project Lifecycle Sync",
       "id": "project",
