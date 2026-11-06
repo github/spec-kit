@@ -630,9 +630,11 @@ if (-not $PlanPath) {
                             $attributes = [System.IO.File]::GetAttributes($resolved)
                             if ($attributes -band [System.IO.FileAttributes]::Directory) { return }
                             if ($attributes -band [System.IO.FileAttributes]::ReparsePoint) { return }
-                            # No UnixMode check is possible here: .NET
+                            # No provider metadata is available here: .NET
                             # reports no Unix file type, and the provider
-                            # cannot see the path. Nothing in the fallback
+                            # cannot see the path. The regular-file check
+                            # below still applies: test -f stats the
+                            # literal path directly. Nothing in the fallback
                             # opens the file, so a special file here is a
                             # wrong plan reference, not a hang.
                             $target = [System.IO.FileInfo]::new($resolved)
@@ -648,12 +650,32 @@ if (-not $PlanPath) {
                     # resolved (e.g. through a non-directory).
                     if ($target.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { return }
                     # Special files (named pipe, socket, device): reject from
-                    # metadata instead of opening them. UnixMode (pwsh 7+ on
-                    # Unix) reports the Unix file-type letter; Windows
+                    # metadata instead of opening them. `test -f` stats the
+                    # resolved target and is true only for a regular file;
+                    # it never opens the file, so a named pipe with no
+                    # writer cannot hang the update. It is the same check
+                    # the bash twin uses, and it is POSIX-identical on
+                    # Linux and macOS. UnixMode (pwsh 7+ on Unix) is not
+                    # sufficient on its own: the fifo-link tests failed on
+                    # macOS CI while passing on Linux. Windows
                     # PowerShell 5.1 has no such files as link targets and
-                    # the property is absent there, so nothing is skipped.
-                    $unixMode = $target.PSObject.Properties['UnixMode']
-                    if ($null -ne $unixMode -and $unixMode.Value -is [string] -and $unixMode.Value.Length -gt 0 -and $unixMode.Value[0] -ne '-') { return }
+                    # no test command, so the check runs on Unix only; if
+                    # test is unavailable, fall back to the UnixMode letter.
+                    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+                        $isRegularFile = $null
+                        try {
+                            $null = & test -f $resolved 2>$null
+                            $isRegularFile = ($LASTEXITCODE -eq 0)
+                        } catch {
+                            $isRegularFile = $null
+                        }
+                        if ($null -eq $isRegularFile) {
+                            $unixMode = $target.PSObject.Properties['UnixMode']
+                            if ($null -ne $unixMode -and $unixMode.Value -is [string] -and $unixMode.Value.Length -gt 0 -and $unixMode.Value[0] -ne '-') { return }
+                        } elseif (-not $isRegularFile) {
+                            return
+                        }
+                    }
                     [PSCustomObject]@{
                         ResolvedPath = $resolved
                         Mtime = [System.IO.File]::GetLastWriteTime($resolved)
