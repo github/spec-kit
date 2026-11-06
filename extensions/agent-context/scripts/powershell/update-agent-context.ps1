@@ -106,6 +106,37 @@ function Test-ConfigObject {
     return $false
 }
 
+function Get-LinkTarget {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    # Read a link's target. Get-Item is the Windows PowerShell 5.1
+    # path, but its cmdlets normalize backslashes on Unix, so a link
+    # whose path contains a backslash cannot be read that way; .NET's
+    # LinkTarget (pwsh 7+ on Unix) preserves Unix filename semantics.
+    # Returns $null when the target cannot be read, so the caller
+    # treats the link as unresolvable instead of following a wrong path.
+    try {
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        $target = $item.Target
+        if ($target -is [System.Array]) {
+            $target = $target[0]
+        }
+        return $target
+    } catch {
+        try {
+            $linkTargetProperty = [System.IO.FileInfo].GetProperty('LinkTarget')
+            if ($null -ne $linkTargetProperty) {
+                return $linkTargetProperty.GetValue([System.IO.FileInfo]::new($Path))
+            }
+        } catch {
+            # Cannot read the target; fall through to $null.
+        }
+        return $null
+    }
+}
+
 function Resolve-ContextPath {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
@@ -128,41 +159,75 @@ function Resolve-ContextPath {
     }
     $resolved = [System.IO.Path]::GetFullPath($Base)
 
-    foreach ($segment in ($RelativePath -split '[/\\]')) {
+    # Split only on the host platform's separators: on Unix a backslash
+    # is a valid filename character, not a separator, so splitting on it
+    # would turn one filename into two components and let a symlink
+    # target escape the containment check.
+    $separators = [char[]]@(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    foreach ($segment in $RelativePath.Split($separators)) {
         if ([string]::IsNullOrWhiteSpace($segment) -or $segment -eq '.') {
             continue
         }
 
         if ($segment -eq '..') {
             # Parent of the resolved path, clamped at the filesystem
-            # root (Split-Path returns empty above it). Never collapse
-            # '..' against an unresolved spelling.
-            $parent = Split-Path -Parent $resolved
+            # root (GetDirectoryName returns null above it). Never
+            # collapse '..' against an unresolved spelling.
+            # GetDirectoryName, not Split-Path: the cmdlet normalizes
+            # backslashes on Unix, so the parent of a backslash-named
+            # directory would be wrong.
+            $parent = [System.IO.Path]::GetDirectoryName($resolved)
             if ($parent) {
                 $resolved = $parent
             }
             continue
         }
 
-        $candidate = [System.IO.Path]::GetFullPath((Join-Path $resolved $segment))
-        if ($Depth -gt 0 -and (Test-Path -LiteralPath $candidate)) {
-            $item = Get-Item -LiteralPath $candidate -Force
-            if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
-                $target = $item.Target
-                if ($target -is [System.Array]) {
-                    $target = $target[0]
-                }
+        # Concatenate, do not Join-Path: the cmdlet normalizes
+        # backslashes on Unix, turning one filename into two components.
+        $candidate = [System.IO.Path]::GetFullPath($resolved + [System.IO.Path]::DirectorySeparatorChar + $segment)
+        if ($Depth -gt 0) {
+            # File.GetAttributes, not Test-Path/Get-Item: the cmdlets
+            # normalize backslashes on Unix and cannot see a path that
+            # contains one. GetAttributes reports the link itself.
+            $attributes = $null
+            try {
+                $attributes = [System.IO.File]::GetAttributes($candidate)
+            } catch {
+                # Missing or unreadable: not a link, keep walking.
+            }
+            if ($null -ne $attributes -and ($attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+                $target = Get-LinkTarget -Path $candidate
                 if ($target) {
+                    # Shared total link-follow budget: each followed
+                    # link spends one unit, across recursive calls and
+                    # fallback passes alike. The per-chain depth bound
+                    # alone cannot stop a structure that re-expands the
+                    # same targets (L1 -> L0/L0/..., L2 -> L1/L1/...),
+                    # so total work is capped here; when it is spent,
+                    # the candidate cannot be resolved and the null
+                    # propagates up the chain for the caller to reject.
+                    if ($script:LinkFollowBudgetRemaining -le 0) {
+                        return $null
+                    }
+                    $script:LinkFollowBudgetRemaining--
                     if ([System.IO.Path]::IsPathRooted($target)) {
                         # Absolute target: walk its components from the
                         # filesystem root, not from the project root.
                         $targetRoot = [System.IO.Path]::GetPathRoot($target)
-                        $candidate = Resolve-ContextPath -Root $Root -RelativePath $target.Substring($targetRoot.Length) -Base $targetRoot -Depth ($Depth - 1)
+                        $followed = Resolve-ContextPath -Root $Root -RelativePath $target.Substring($targetRoot.Length) -Base $targetRoot -Depth ($Depth - 1)
                     } else {
                         # Relative target: walk its components from the
                         # link's parent dir ($resolved here).
-                        $candidate = Resolve-ContextPath -Root $Root -RelativePath $target -Base $resolved -Depth ($Depth - 1)
+                        $followed = Resolve-ContextPath -Root $Root -RelativePath $target -Base $resolved -Depth ($Depth - 1)
                     }
+                    if ($null -eq $followed) {
+                        return $null
+                    }
+                    $candidate = $followed
                 }
             }
         }
@@ -191,6 +256,27 @@ function Test-IsSubPath {
     return $pathFull.Equals($rootFull, $comparison) -or
         $pathFull.StartsWith($rootFull + [System.IO.Path]::DirectorySeparatorChar, $comparison)
 }
+
+function ConvertTo-SlashPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    # Normalize '\' to '/' for string prefix comparisons on Windows
+    # only: on Unix a backslash is a valid filename character and must
+    # be preserved, or a plan under a backslash-named directory is
+    # resolved at a path that does not exist.
+    if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+        return $Path.Replace('\', '/')
+    }
+    return $Path
+}
+
+# Total link follows allowed per run, shared across every
+# Resolve-ContextPath call and fallback pass. Initialized here, before
+# the first resolution below; the per-chain depth bound alone cannot
+# stop a structure that re-expands the same targets.
+$script:LinkFollowBudgetRemaining = 1000
 
 $ErrorActionPreference = 'Stop'
 $DefaultStart = '<!-- SPECKIT START -->'
@@ -388,7 +474,7 @@ foreach ($ContextFile in $ContextFiles) {
         exit 1
     }
     $resolvedTarget = Resolve-ContextPath -Root $ProjectRoot -RelativePath $ContextFile
-    if (-not (Test-IsSubPath -Root $ProjectRoot -Path $resolvedTarget)) {
+    if ($null -eq $resolvedTarget -or -not (Test-IsSubPath -Root $ProjectRoot -Path $resolvedTarget)) {
         Write-Warning "agent-context: context file path resolves outside the project root; got '$ContextFile'."
         exit 1
     }
@@ -479,10 +565,14 @@ if (-not $PlanPath) {
                     # never stabilizes and is rejected below.
                     $stabilized = $false
                     for ($depth = 0; $depth -lt 10; $depth++) {
-                        $relPath = $resolved.Replace('\', '/')
-                        $normRoot = $ProjectRoot.Replace('\', '/').TrimEnd('/') + '/'
+                        $relPath = ConvertTo-SlashPath -Path $resolved
+                        $normRoot = (ConvertTo-SlashPath -Path $ProjectRoot).TrimEnd('/') + '/'
                         if (-not $relPath.StartsWith($normRoot, $cmp)) { break }
                         $next = Resolve-ContextPath -Root $ProjectRoot -RelativePath $relPath.Substring($normRoot.Length)
+                        # A null result means the shared link-follow
+                        # budget is spent: the chain cannot be resolved,
+                        # so the candidate is rejected below.
+                        if ($null -eq $next) { break }
                         # Platform-aware equality: PowerShell's -eq is
                         # case-insensitive even on Unix, so a link to a
                         # case-only-differing path would stop the loop
@@ -502,7 +592,27 @@ if (-not $PlanPath) {
                         $target = Get-Item -LiteralPath $resolved -Force -ErrorAction Stop
                     } catch [System.IO.FileNotFoundException] { return }
                     catch [System.IO.DirectoryNotFoundException] { return }
-                    catch [System.Management.Automation.ItemNotFoundException] { return }
+                    catch [System.Management.Automation.ItemNotFoundException] {
+                        # Get-Item normalizes backslashes on Unix, so a
+                        # resolved path containing one is reported missing
+                        # even when it exists. Re-check with .NET, which
+                        # preserves Unix filename semantics.
+                        if ($resolved.Contains('\') -and [System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+                            try {
+                                $attributes = [System.IO.File]::GetAttributes($resolved)
+                            } catch { return }
+                            if ($attributes -band [System.IO.FileAttributes]::Directory) { return }
+                            if ($attributes -band [System.IO.FileAttributes]::ReparsePoint) { return }
+                            # No UnixMode check is possible here: .NET
+                            # reports no Unix file type, and the provider
+                            # cannot see the path. Nothing in the fallback
+                            # opens the file, so a special file here is a
+                            # wrong plan reference, not a hang.
+                            $target = [System.IO.FileInfo]::new($resolved)
+                        } else {
+                            return
+                        }
+                    }
                     # Directories (including links to directories) are not plans.
                     if ($target -is [System.IO.DirectoryInfo]) { return }
                     # Still a link: dangling, or a target that could not be
@@ -523,8 +633,8 @@ if (-not $PlanPath) {
             $candidate = $resolvedCandidates | Sort-Object Mtime -Descending | Select-Object -First 1
             if ($candidate) {
                 # GetRelativePath is .NET 5+ only; strip prefix manually for PS 5.1 compat.
-                $fullPath = $candidate.ResolvedPath.Replace('\', '/')
-                $normRoot = $ProjectRoot.Replace('\', '/').TrimEnd('/') + '/'
+                $fullPath = ConvertTo-SlashPath -Path $candidate.ResolvedPath
+                $normRoot = (ConvertTo-SlashPath -Path $ProjectRoot).TrimEnd('/') + '/'
                 if ($fullPath.StartsWith($normRoot, $cmp)) {
                     $PlanPath = $fullPath.Substring($normRoot.Length)
                 } else {

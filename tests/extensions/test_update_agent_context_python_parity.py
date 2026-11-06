@@ -1102,6 +1102,119 @@ def test_powershell_mtime_fallback_rejects_depth_limit_exhaustion(
     assert (repo / "AGENTS.md").read_bytes() == expected.encode("utf-8")
 
 
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.skipif(os.name == "nt", reason="backslash is a separator on Windows")
+def test_powershell_context_file_backslash_target_stays_outside(
+    tmp_path: Path,
+) -> None:
+    """PowerShell context-file check must preserve Unix filename semantics.
+
+    Regression for the Copilot review on #5283: Resolve-ContextPath split
+    symlink targets on both '/' and '\\', so a context-file symlink to
+    /tmp/project\\other/AGENTS.md (a single Unix filename containing a
+    backslash) was checked as /tmp/project/other/AGENTS.md, which sits
+    inside the project root, while the later write followed the original
+    symlink and modified the external file. The external file must be
+    unchanged.
+    """
+    outside_dir = tmp_path / "project\\other"
+    outside_dir.mkdir()
+    external = outside_dir / "AGENTS.md"
+    external.write_text("# external\n", encoding="utf-8")
+
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    try:
+        (repo / "AGENTS.md").symlink_to(external)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    # Write-Warning reaches stdout under pwsh -File in this harness.
+    assert "outside the project root" in result.stdout
+    assert external.read_bytes() == b"# external\n"
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.skipif(os.name == "nt", reason="backslash is a separator on Windows")
+def test_powershell_mtime_fallback_preserves_backslash_in_plan_directory(
+    tmp_path: Path,
+) -> None:
+    """PowerShell mtime fallback must keep backslashes in Unix filenames.
+
+    Regression for the Copilot review on #5283: the fallback normalized
+    every '\\' to '/' before resolving candidates, so a plan under a
+    directory whose name contains a backslash was resolved at a path
+    that does not exist and silently skipped. The plan must be selected
+    with the backslash preserved in the reported path.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    plan = repo / "specs" / "we\\ird" / "plan.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# plan\n", encoding="utf-8")
+    os.utime(plan, (1_700_000_000, 1_700_000_000))
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert b"at specs/we\\ird/plan.md" in (repo / "AGENTS.md").read_bytes()
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_mtime_fallback_rejects_exponential_link_expansion(
+    tmp_path: Path,
+) -> None:
+    """PowerShell mtime fallback must bound total link-follow work.
+
+    Regression for the Copilot review on #5283: the recursion limit
+    bounded nesting but not total work, so links like L0 -> ., L1 ->
+    L0/L0/..., L2 -> L1/L1/... re-expand the same targets and resolution
+    grows exponentially, stalling the updater on an untrusted checkout.
+    A plan link into this structure must be rejected quickly, with no
+    plan selected.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    # L0 -> ., L1 -> 8x L0, L2 -> 8x L1, L3 -> 8x L2, L4 -> 8x L3.
+    # Resolving a link into L4 costs ~4,700 follows without a shared
+    # budget; the budget must cut it off after a small fixed number.
+    try:
+        (repo / "L0").symlink_to(".", target_is_directory=True)
+        for level in range(1, 5):
+            (repo / f"L{level}").symlink_to(
+                "/".join([f"L{level - 1}"] * 8), target_is_directory=True
+            )
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    # A real plan at the root: the exploding chain resolves here, so
+    # without a budget the candidate is selected; with one it is not.
+    root_plan = repo / "plan.md"
+    root_plan.write_text("# root plan\n", encoding="utf-8")
+    os.utime(root_plan, (1_700_000_000, 1_700_000_000))
+    candidate = repo / "specs/999-candidate/plan.md"
+    candidate.parent.mkdir(parents=True)
+    try:
+        candidate.symlink_to("../../L4/plan.md")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    started = time.monotonic()
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 20, f"link resolution took {elapsed:.1f}s"
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    expected = (
+        "<!-- SPECKIT START -->\n"
+        "For additional context about technologies to be used, project structure,\n"
+        "shell commands, and other important information, read the current plan\n"
+        "<!-- SPECKIT END -->\n"
+    )
+    assert (repo / "AGENTS.md").read_bytes() == expected.encode("utf-8")
+
+
 @pytest.mark.skipif(not POWERSHELL, reason="no PowerShell available")
 def test_python_upsert_matches_powershell(tmp_path: Path) -> None:
     repo_a = make_project(tmp_path / "proj-ps", context_file="AGENTS.md")
