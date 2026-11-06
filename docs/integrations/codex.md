@@ -49,8 +49,10 @@ Codex dispatch passes them as configuration overrides after `--model`:
 | `context_size` | `-c model_context_window=<value>` | A token count: a positive whole number without leading zeros, at most `9223372036854775807` |
 
 Spec Kit passes `reasoning_effort` through unchanged; Codex CLI 0.165.0
-forwards it to the model without checking it. A `context_size` that is not a
-valid token count fails the step before Codex starts.
+forwards it to the model without checking it. Codex displays the reasoning
+effort it is given, so set it from a literal or a workflow input, not from
+captured output. A `context_size` that is not a valid token count fails the
+step before Codex starts.
 
 `context_size` overrides the context window that Codex assumes for the model.
 Codex clamps the value to the model's maximum, and a value below the model's
