@@ -106,38 +106,179 @@ function Test-ConfigObject {
     return $false
 }
 
+function Get-LinkTarget {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    # Read a link's target. Get-Item is the Windows PowerShell 5.1
+    # path, but its cmdlets normalize backslashes on Unix, so a link
+    # whose path contains a backslash cannot be read that way; .NET's
+    # LinkTarget (pwsh 7+ on Unix) preserves Unix filename semantics.
+    # Returns $null when the target cannot be read, so the caller
+    # treats the link as unresolvable instead of following a wrong path.
+    if ($Path.Contains('\') -and [System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+        # Use the .NET lookup first here, not only after a provider
+        # exception: when the normalized spelling also exists, Get-Item
+        # succeeds on that entry and returns the wrong target, so the
+        # fallback below is never reached. A $null result means the
+        # literal path has no readable target; return it rather than
+        # falling through to the provider, which would resolve the
+        # normalized spelling.
+        $linkTargetProperty = [System.IO.FileInfo].GetProperty('LinkTarget')
+        if ($null -ne $linkTargetProperty) {
+            try {
+                return $linkTargetProperty.GetValue([System.IO.FileInfo]::new($Path))
+            } catch {
+                return $null
+            }
+        }
+    }
+    try {
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        $target = $item.Target
+        if ($target -is [System.Array]) {
+            $target = $target[0]
+        }
+        return $target
+    } catch {
+        try {
+            $linkTargetProperty = [System.IO.FileInfo].GetProperty('LinkTarget')
+            if ($null -ne $linkTargetProperty) {
+                return $linkTargetProperty.GetValue([System.IO.FileInfo]::new($Path))
+            }
+        } catch {
+            # Cannot read the target; fall through to $null.
+        }
+        return $null
+    }
+}
+
 function Resolve-ContextPath {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
-        [Parameter(Mandatory = $true)][string]$RelativePath
+        # Optional, not mandatory: a link that targets a filesystem
+        # root resolves to an empty relative path, and a mandatory
+        # string parameter rejects the empty string at bind time,
+        # aborting the whole fallback. Empty means the base directory.
+        [string]$RelativePath = '',
+        [string]$Base = $null,
+        [int]$Depth = 10
     )
 
-    $rootFull = [System.IO.Path]::GetFullPath($Root)
-    $segments = $RelativePath -split '/'
-    $resolved = $rootFull
+    # Resolve $RelativePath segment-by-segment from $Base (the project
+    # root by default; a link's parent dir when following a link
+    # target), following one link per segment. '..' pops the last
+    # already-resolved component instead of being collapsed lexically:
+    # a symlinked parent must win over the lexical spelling, so
+    # plans/alias/../current.md (alias -> archive/nested) reaches
+    # archive/current.md, not plans/current.md. Link chains are bounded
+    # by $Depth so a cycle terminates; the caller re-runs until the
+    # result stabilizes.
+    if (-not $Base) {
+        $Base = $Root
+    }
+    $resolved = [System.IO.Path]::GetFullPath($Base)
 
-    foreach ($segment in $segments) {
-        if ([string]::IsNullOrWhiteSpace($segment) -or $segment -eq '.') {
+    # Split only on the host platform's separators: on Unix a backslash
+    # is a valid filename character, not a separator, so splitting on it
+    # would turn one filename into two components and let a symlink
+    # target escape the containment check.
+    $separators = [char[]]@(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    foreach ($segment in $RelativePath.Split($separators)) {
+        # Skip only empty components and '.': a whitespace-only
+        # component is a valid Unix directory name, so it must be
+        # preserved — discarding it lets a later '..' validate
+        # against a path the write never follows. Compare with
+        # ordinal equality: PowerShell's culture-sensitive -eq
+        # treats a name of '.' or '..' plus an ignorable Unicode
+        # character (e.g. U+034F) as a dot segment, so the resolver
+        # would skip or pop a real directory instead of inspecting it.
+        if ([string]::IsNullOrEmpty($segment) -or [string]::Equals($segment, '.', [System.StringComparison]::Ordinal)) {
             continue
         }
 
-        $candidate = [System.IO.Path]::GetFullPath((Join-Path $resolved $segment))
-        if (Test-Path -LiteralPath $candidate) {
-            $item = Get-Item -LiteralPath $candidate -Force
-            if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
-                $target = $item.Target
-                if ($target -is [System.Array]) {
-                    $target = $target[0]
+        if ([string]::Equals($segment, '..', [System.StringComparison]::Ordinal)) {
+            # Parent of the resolved path, clamped at the filesystem
+            # root (GetDirectoryName returns null above it). Never
+            # collapse '..' against an unresolved spelling.
+            # GetDirectoryName, not Split-Path: the cmdlet normalizes
+            # backslashes on Unix, so the parent of a backslash-named
+            # directory would be wrong.
+            # Require the preceding component to be an existing
+            # directory first: a missing or non-directory component
+            # followed by '..' must not be popped lexically, or a
+            # broken link rewrites to an existing file and gets
+            # selected by mistake. Reject the resolution instead.
+            $precedingAttributes = $null
+            try {
+                $precedingAttributes = [System.IO.File]::GetAttributes($resolved)
+            } catch {
+                return $null
+            }
+            if (($precedingAttributes -band [System.IO.FileAttributes]::Directory) -eq 0) {
+                return $null
+            }
+            $parent = [System.IO.Path]::GetDirectoryName($resolved)
+            if ($parent) {
+                $resolved = $parent
+            }
+            continue
+        }
+
+        # Concatenate, do not Join-Path: the cmdlet normalizes
+        # backslashes on Unix, turning one filename into two components.
+        $candidate = [System.IO.Path]::GetFullPath($resolved + [System.IO.Path]::DirectorySeparatorChar + $segment)
+        # File.GetAttributes, not Test-Path/Get-Item: the cmdlets
+        # normalize backslashes on Unix and cannot see a path that
+        # contains one. GetAttributes reports the link itself.
+        $attributes = $null
+        try {
+            $attributes = [System.IO.File]::GetAttributes($candidate)
+        } catch {
+            # Missing or unreadable: not a link, keep walking.
+        }
+        if ($null -ne $attributes -and ($attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            if ($Depth -le 0) {
+                # Depth exhausted: the link cannot be followed, so the
+                # rest of the path cannot be resolved reliably — a
+                # later '..' would collapse against the unresolved
+                # spelling and validate a path the write never follows.
+                # Return unresolved instead of walking on.
+                return $null
+            }
+            $target = Get-LinkTarget -Path $candidate
+            if ($target) {
+                # Per-candidate total link-follow budget: each
+                # followed link spends one unit, shared across
+                # that candidate's recursive calls and fallback
+                # passes alike. The per-chain depth bound alone
+                # cannot stop a structure that re-expands the
+                # same targets (L1 -> L0/L0/..., L2 -> L1/L1/...),
+                # so total work is capped here; when it is spent,
+                # the candidate cannot be resolved and the null
+                # propagates up the chain for the caller to reject.
+                if ($script:LinkFollowBudgetRemaining -le 0) {
+                    return $null
                 }
-                if ($target) {
-                    if ([System.IO.Path]::IsPathRooted($target)) {
-                        $candidate = [System.IO.Path]::GetFullPath($target)
-                    } else {
-                        $candidate = [System.IO.Path]::GetFullPath(
-                            (Join-Path (Split-Path -Parent $candidate) $target)
-                        )
-                    }
+                $script:LinkFollowBudgetRemaining--
+                if ([System.IO.Path]::IsPathRooted($target)) {
+                    # Absolute target: walk its components from the
+                    # filesystem root, not from the project root.
+                    $targetRoot = [System.IO.Path]::GetPathRoot($target)
+                    $followed = Resolve-ContextPath -Root $Root -RelativePath $target.Substring($targetRoot.Length) -Base $targetRoot -Depth ($Depth - 1)
+                } else {
+                    # Relative target: walk its components from the
+                    # link's parent dir ($resolved here).
+                    $followed = Resolve-ContextPath -Root $Root -RelativePath $target -Base $resolved -Depth ($Depth - 1)
                 }
+                if ($null -eq $followed) {
+                    return $null
+                }
+                $candidate = $followed
             }
         }
         $resolved = $candidate
@@ -165,6 +306,30 @@ function Test-IsSubPath {
     return $pathFull.Equals($rootFull, $comparison) -or
         $pathFull.StartsWith($rootFull + [System.IO.Path]::DirectorySeparatorChar, $comparison)
 }
+
+function ConvertTo-SlashPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    # Normalize '\' to '/' for string prefix comparisons on Windows
+    # only: on Unix a backslash is a valid filename character and must
+    # be preserved, or a plan under a backslash-named directory is
+    # resolved at a path that does not exist.
+    if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+        return $Path.Replace('\', '/')
+    }
+    return $Path
+}
+
+# Link follows allowed per resolution unit (one candidate, or one
+# context file), shared across that unit's recursion and fallback
+# passes. The per-chain depth bound alone cannot stop a structure
+# that re-expands the same targets, so total work is capped; when it
+# is spent, the unit cannot be resolved. Scoped per unit: a rejected
+# candidate must not consume the budget of later ones.
+$script:LinkFollowBudget = 1000
+$script:LinkFollowBudgetRemaining = $script:LinkFollowBudget
 
 $ErrorActionPreference = 'Stop'
 $DefaultStart = '<!-- SPECKIT START -->'
@@ -361,8 +526,29 @@ foreach ($ContextFile in $ContextFiles) {
         Write-Warning "agent-context: context files must not contain '..' path segments; got '$ContextFile'."
         exit 1
     }
-    $resolvedTarget = Resolve-ContextPath -Root $ProjectRoot -RelativePath $ContextFile
-    if (-not (Test-IsSubPath -Root $ProjectRoot -Path $resolvedTarget)) {
+    # Fresh budget per context file: the budget is scoped to one
+    # resolution unit, not shared across unrelated paths.
+    $script:LinkFollowBudgetRemaining = $script:LinkFollowBudget
+    # Resolve the complete link chain before the containment check:
+    # a single Resolve-ContextPath pass stops at its depth bound and
+    # returns a partially resolved path, so an in-project spelling can
+    # pass containment while the later write follows the remaining
+    # links outside the project. Re-run until the result stabilizes,
+    # like the mtime fallback; a chain that never stabilizes (or
+    # leaves the project) is rejected.
+    $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+    $resolvedTarget = [System.IO.Path]::GetFullPath((Join-Path $ProjectRoot $ContextFile))
+    $stabilized = $false
+    for ($depth = 0; $depth -lt 10; $depth++) {
+        $relPath = ConvertTo-SlashPath -Path $resolvedTarget
+        $normRoot = (ConvertTo-SlashPath -Path $ProjectRoot).TrimEnd('/') + '/'
+        if (-not $relPath.StartsWith($normRoot, $cmp)) { break }
+        $next = Resolve-ContextPath -Root $ProjectRoot -RelativePath $relPath.Substring($normRoot.Length)
+        if ($null -eq $next) { break }
+        if ([string]::Equals($next, $resolvedTarget, $cmp)) { $stabilized = $true; break }
+        $resolvedTarget = $next
+    }
+    if (-not $stabilized -or $null -eq $resolvedTarget -or -not (Test-IsSubPath -Root $ProjectRoot -Path $resolvedTarget)) {
         Write-Warning "agent-context: context file path resolves outside the project root; got '$ContextFile'."
         exit 1
     }
@@ -430,15 +616,161 @@ if (-not $PlanPath) {
             # layouts created via SPECIFY_FEATURE_DIRECTORY, e.g.
             # specs/<scope>/<feature>/plan.md, are still discovered when
             # feature.json is absent (#3024).
-            $candidate = Get-ChildItem -Path $specsDir -Filter 'plan.md' -File -Recurse -ErrorAction SilentlyContinue |
-                Sort-Object LastWriteTime -Descending |
-                Select-Object -First 1
+            # Mirror the bash/python mtime fallback (#5222): follow file links
+            # and keep only candidates whose fully resolved target is a
+            # regular file inside the project. Resolve the complete link
+            # chain and check containment before reporting: a link to a file
+            # outside the project must not be reported at its in-project
+            # link path. Eligibility is decided from target metadata only:
+            # the old probe opened each link, which blocks forever on a
+            # Unix named pipe with no writer. Sort by the resolved
+            # target's mtime, like p.stat().st_mtime in the twins:
+            # GetLastWriteTime follows links on Windows but reports the
+            # link's own time on Linux, so call it on the resolved path.
+            # Use case-insensitive comparison on Windows only (matches
+            # common.ps1 pattern).
+            $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+            $resolvedCandidates = Get-ChildItem -Path $specsDir -Filter 'plan.md' -File -Recurse -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                    # Fresh budget per candidate: the budget is scoped
+                    # to this candidate's recursion and fallback
+                    # passes, so a rejected candidate cannot suppress
+                    # later ones.
+                    $script:LinkFollowBudgetRemaining = $script:LinkFollowBudget
+                    $resolved = $_.FullName
+                    # Resolve-ContextPath follows link chains up to its
+                    # depth bound; re-run until the result stabilizes,
+                    # so a chain longer than the bound (or a cycle)
+                    # never stabilizes and is rejected below.
+                    $stabilized = $false
+                    for ($depth = 0; $depth -lt 10; $depth++) {
+                        $relPath = ConvertTo-SlashPath -Path $resolved
+                        $normRoot = (ConvertTo-SlashPath -Path $ProjectRoot).TrimEnd('/') + '/'
+                        if (-not $relPath.StartsWith($normRoot, $cmp)) { break }
+                        $next = Resolve-ContextPath -Root $ProjectRoot -RelativePath $relPath.Substring($normRoot.Length)
+                        # A null result means the shared link-follow
+                        # budget is spent: the chain cannot be resolved,
+                        # so the candidate is rejected below.
+                        if ($null -eq $next) { break }
+                        # Platform-aware equality: PowerShell's -eq is
+                        # case-insensitive even on Unix, so a link to a
+                        # case-only-differing path would stop the loop
+                        # before $resolved is updated.
+                        if ([string]::Equals($next, $resolved, $cmp)) { $stabilized = $true; break }
+                        $resolved = $next
+                    }
+                    # Reject candidates whose chain never stabilized
+                    # within the pass bound: $resolved may still hold an
+                    # unresolved directory link (possibly leading outside
+                    # the project), which the lexical containment check
+                    # below cannot see.
+                    if (-not $stabilized) { return }
+                    # Skip candidates that resolve outside the project.
+                    if (-not (Test-IsSubPath -Root $ProjectRoot -Path $resolved)) { return }
+                    try {
+                        if ($resolved.Contains('\') -and [System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+                            # Retrieve metadata for the literal Unix path
+                            # before using the provider lookup: Get-Item
+                            # normalizes backslashes, so when the
+                            # normalized spelling also exists it reports
+                            # that entry's type instead of this file's —
+                            # a directory at the normalized spelling
+                            # would discard a valid regular plan. .NET
+                            # preserves Unix filename semantics.
+                            $attributes = [System.IO.File]::GetAttributes($resolved)
+                            if ($attributes -band [System.IO.FileAttributes]::Directory) { return }
+                            if ($attributes -band [System.IO.FileAttributes]::ReparsePoint) { return }
+                            # No provider metadata is available here: .NET
+                            # reports no Unix file type, and the provider
+                            # cannot see the path. The regular-file check
+                            # below still applies: test -f stats the
+                            # literal path directly. Nothing in the fallback
+                            # opens the file, so a special file here is a
+                            # wrong plan reference, not a hang.
+                            $target = [System.IO.FileInfo]::new($resolved)
+                        } else {
+                            $target = Get-Item -LiteralPath $resolved -Force -ErrorAction Stop
+                        }
+                    } catch [System.IO.FileNotFoundException] { return }
+                    catch [System.IO.DirectoryNotFoundException] { return }
+                    catch [System.Management.Automation.ItemNotFoundException] { return }
+                    # Directories (including links to directories) are not plans.
+                    if ($target -is [System.IO.DirectoryInfo]) { return }
+                    # Still a link: dangling, or a target that could not be
+                    # resolved (e.g. through a non-directory).
+                    if ($target.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { return }
+                    # Special files (named pipe, socket, device): reject from
+                    # metadata instead of opening them. `test -f` stats the
+                    # resolved target and is true only for a regular file;
+                    # it never opens the file, so a named pipe with no
+                    # writer cannot hang the update. It is the same check
+                    # the bash twin uses, and it is POSIX-identical on
+                    # Linux and macOS. UnixMode (pwsh 7+ on Unix) is not
+                    # sufficient on its own: the fifo-link tests failed on
+                    # macOS CI while passing on Linux. Windows
+                    # PowerShell 5.1 has no such files as link targets and
+                    # no test command, so the check runs on Unix only; if
+                    # test is unavailable, fall back to the UnixMode letter.
+                    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+                        # The resolver drops a trailing '/.' or '/' from a
+                        # link target, so a link to 'current.md/.' resolves
+                        # to the regular file 'current.md' and would pass
+                        # the check below — but opening the link itself fails
+                        # on Unix (ENOTDIR), and the bash/Python twins stat
+                        # the original candidate and reject it. Stat the
+                        # original candidate too, so a broken suffix cannot
+                        # displace a valid plan. `test -f` stats through
+                        # the link, like the twins' p.stat().
+                        $isOriginalRegularFile = $null
+                        try {
+                            $null = & test -f $_.FullName 2>$null
+                            $isOriginalRegularFile = ($LASTEXITCODE -eq 0)
+                        } catch {
+                            $isOriginalRegularFile = $null
+                        }
+                        if ($isOriginalRegularFile -eq $false) { return }
+                        $isRegularFile = $null
+                        try {
+                            $null = & test -f $resolved 2>$null
+                            $isRegularFile = ($LASTEXITCODE -eq 0)
+                        } catch {
+                            $isRegularFile = $null
+                        }
+                        if ($null -eq $isRegularFile) {
+                            $unixMode = $target.PSObject.Properties['UnixMode']
+                            if ($null -ne $unixMode -and $unixMode.Value -is [string] -and $unixMode.Value.Length -gt 0 -and $unixMode.Value[0] -ne '-') { return }
+                        } elseif (-not $isRegularFile) {
+                            return
+                        }
+                    } else {
+                        # Windows has no `test` command, and .NET path
+                        # handling normalizes a trailing '/.' or '/' away,
+                        # so Test-Path and File.Exists cannot see a broken
+                        # suffix. Read the candidate's own link target
+                        # instead: a target ending in '/.', '/', '\.', or
+                        # '\' never denotes a regular file (it is a
+                        # directory reference, or invalid when the
+                        # preceding component is a file), so the twins
+                        # reject it by stat. Reject it here too, so a
+                        # broken suffix cannot displace a valid plan.
+                        $ownTarget = Get-LinkTarget -Path $_.FullName
+                        if ($ownTarget -and (
+                            $ownTarget.EndsWith('/.', [System.StringComparison]::Ordinal) -or
+                            $ownTarget.EndsWith('/', [System.StringComparison]::Ordinal) -or
+                            $ownTarget.EndsWith('\.', [System.StringComparison]::Ordinal) -or
+                            $ownTarget.EndsWith('\', [System.StringComparison]::Ordinal)
+                        )) { return }
+                    }
+                    [PSCustomObject]@{
+                        ResolvedPath = $resolved
+                        Mtime = [System.IO.File]::GetLastWriteTime($resolved)
+                    }
+                }
+            $candidate = $resolvedCandidates | Sort-Object Mtime -Descending | Select-Object -First 1
             if ($candidate) {
                 # GetRelativePath is .NET 5+ only; strip prefix manually for PS 5.1 compat.
-                # Use case-insensitive comparison on Windows only (matches common.ps1 pattern).
-                $fullPath = $candidate.FullName.Replace('\', '/')
-                $normRoot = $ProjectRoot.Replace('\', '/').TrimEnd('/') + '/'
-                $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+                $fullPath = ConvertTo-SlashPath -Path $candidate.ResolvedPath
+                $normRoot = (ConvertTo-SlashPath -Path $ProjectRoot).TrimEnd('/') + '/'
                 if ($fullPath.StartsWith($normRoot, $cmp)) {
                     $PlanPath = $fullPath.Substring($normRoot.Length)
                 } else {
