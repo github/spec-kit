@@ -192,12 +192,16 @@ function Resolve-ContextPath {
         # Skip only empty components and '.': a whitespace-only
         # component is a valid Unix directory name, so it must be
         # preserved — discarding it lets a later '..' validate
-        # against a path the write never follows.
-        if ([string]::IsNullOrEmpty($segment) -or $segment -eq '.') {
+        # against a path the write never follows. Compare with
+        # ordinal equality: PowerShell's culture-sensitive -eq
+        # treats a name of '.' or '..' plus an ignorable Unicode
+        # character (e.g. U+034F) as a dot segment, so the resolver
+        # would skip or pop a real directory instead of inspecting it.
+        if ([string]::IsNullOrEmpty($segment) -or [string]::Equals($segment, '.', [System.StringComparison]::Ordinal)) {
             continue
         }
 
-        if ($segment -eq '..') {
+        if ([string]::Equals($segment, '..', [System.StringComparison]::Ordinal)) {
             # Parent of the resolved path, clamped at the filesystem
             # root (GetDirectoryName returns null above it). Never
             # collapse '..' against an unresolved spelling.
@@ -708,6 +712,23 @@ if (-not $PlanPath) {
                     # no test command, so the check runs on Unix only; if
                     # test is unavailable, fall back to the UnixMode letter.
                     if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+                        # The resolver drops a trailing '/.' or '/' from a
+                        # link target, so a link to 'current.md/.' resolves
+                        # to the regular file 'current.md' and would pass
+                        # the check below — but opening the link itself fails
+                        # on Unix (ENOTDIR), and the bash/Python twins stat
+                        # the original candidate and reject it. Stat the
+                        # original candidate too, so a broken suffix cannot
+                        # displace a valid plan. `test -f` stats through
+                        # the link, like the twins' p.stat().
+                        $isOriginalRegularFile = $null
+                        try {
+                            $null = & test -f $_.FullName 2>$null
+                            $isOriginalRegularFile = ($LASTEXITCODE -eq 0)
+                        } catch {
+                            $isOriginalRegularFile = $null
+                        }
+                        if ($isOriginalRegularFile -eq $false) { return }
                         $isRegularFile = $null
                         try {
                             $null = & test -f $resolved 2>$null

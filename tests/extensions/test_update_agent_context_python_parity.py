@@ -1551,3 +1551,78 @@ def test_powershell_context_file_rejects_depth_exhaustion_before_dotdot(
     # Write-Warning reaches stdout under pwsh -File in this harness.
     assert "outside the project root" in result.stdout
     assert external.read_bytes() == b"# external\n"
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize(
+    "segment", [".\u034f", "..\u034f"], ids=["dot-plus-cgj", "dotdot-plus-cgj"]
+)
+def test_powershell_mtime_fallback_preserves_unicode_dot_directory(
+    tmp_path: Path, segment: str
+) -> None:
+    """PowerShell mtime fallback must treat Unicode dot-like names literally.
+
+    Regression for the Copilot review on #5283: PowerShell's
+    culture-sensitive ``-eq`` treats a directory name consisting of ``.``
+    or ``..`` plus an ignorable Unicode character (U+034F combining
+    grapheme joiner) as a dot segment, so the resolver skipped the real
+    component (or popped its parent) instead of inspecting it. A plan
+    reached through such a directory must be selected at its real path.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    target = repo / "plans" / segment / "current.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("# linked plan\n", encoding="utf-8")
+    os.utime(target, (1_700_000_000, 1_700_000_000))
+    candidate = repo / "specs/999-candidate/plan.md"
+    candidate.parent.mkdir(parents=True)
+    try:
+        candidate.symlink_to(f"../../plans/{segment}/current.md")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert (
+        f"at plans/{segment}/current.md".encode() in (repo / "AGENTS.md").read_bytes()
+    )
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("suffix", ["/.", "/"], ids=["dot-suffix", "slash-suffix"])
+def test_powershell_mtime_fallback_rejects_plan_link_with_invalid_suffix(
+    tmp_path: Path, suffix: str
+) -> None:
+    """PowerShell mtime fallback must reject plan links with bad suffixes.
+
+    Regression for the Copilot review on #5283: on Unix, a ``plan.md``
+    link whose target ends in ``current.md/.`` or ``current.md/`` is
+    invalid when ``current.md`` is a regular file, but the resolver
+    dropped the suffix and the file-type check accepted the rewritten
+    path, so the broken candidate displaced a valid plan (unlike the
+    bash/Python twins, which stat the original candidate). The valid
+    plan must win even when the broken candidate's target is newer.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    valid = repo / "specs/001-valid/plan.md"
+    valid.parent.mkdir(parents=True)
+    valid.write_text("# valid plan\n", encoding="utf-8")
+    os.utime(valid, (1_700_000_000, 1_700_000_000))
+    current = repo / "plans" / "current.md"
+    current.parent.mkdir(parents=True)
+    current.write_text("# current plan\n", encoding="utf-8")
+    os.utime(current, (1_700_000_100, 1_700_000_100))
+    candidate = repo / "specs/999-candidate/plan.md"
+    candidate.parent.mkdir(parents=True)
+    try:
+        candidate.symlink_to(f"../../plans/current.md{suffix}")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert b"at specs/001-valid/plan.md" in (repo / "AGENTS.md").read_bytes()
