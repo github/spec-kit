@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.3.2] - 2026-11-06
+
+### Changed
+
+- [extension] Add Assure extension to community catalog (#5293)
+- Update Sanduq Workflow to v2.3.2 (#5292)
+- docs: clarify uvx environment caching (#5291)
+- ci: streamline routine Python test matrix (#5290)
+- docs: align existing-project examples with Copilot skills (#5288)
+- docs: link installation prerequisites to integration directory (#5287)
+- chore(deps): bump astral-sh/setup-uv from 10.0.1 to 10.3.3 (#5280)
+- community: update Model Routing Governance to v0.2.6 (#5279)
+- chore(deps): bump actions/setup-dotnet from 6.0.0 to 6.1.0 (#5281)
+- docs: correct offline Windows PowerShell prerequisite (#5277)
+- ci: add Python 3.15 to test and audit matrices (#5278)
+- docs: standardize local development on a checkout virtualenv (#5276)
+- fix(integrations): refresh the fallback's manifest hashes on uninstall (#5274)
+- Add deja-vu session recall extension to community catalog (#5255)
+- docs: align installation verification with Copilot skills (#5275)
+- Add Illustrate extension to community catalog (#5273)
+- Add Pull Request Workflow extension to community catalog (#5268)
+- Add Sanduq Workflow extension to community catalog (#5266)
+- Add GitHub Project Lifecycle Sync extension to community catalog (#5265)
+- chore: release 1.3.1, begin 1.3.2.dev0 development (#5271)
+
 ## [1.3.1] - 2026-11-05
 
 ### Changed
