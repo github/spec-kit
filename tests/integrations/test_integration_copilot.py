@@ -12,15 +12,21 @@ import typer
 import yaml
 
 from specify_cli.integrations import get_integration
+from specify_cli.integrations._capture import CapturedProcess
 from specify_cli.integrations.base import (
     DispatchSettingsError,
     SkillsIntegration,
     check_dispatch_settings,
     effective_dispatch_settings,
 )
-from specify_cli.integrations.copilot import CopilotIntegration
+from specify_cli.integrations.copilot import (
+    CONTEXT_TIERS,
+    REASONING_EFFORT_LEVELS,
+    CopilotIntegration,
+)
 from specify_cli.integrations.manifest import IntegrationManifest
-from specify_cli.workflows.base import StepContext, StepStatus
+from specify_cli.workflows.base import RunStatus, StepContext, StepStatus
+from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
 from specify_cli.workflows.step.command import CommandStep
 from specify_cli.workflows.step.prompt import PromptStep
 
@@ -1296,6 +1302,14 @@ class _LegacyBuilderCopilot(CopilotIntegration):
 
 _COMMAND_STEP = (CommandStep, {"command": "speckit.plan", "input": {"args": "body"}})
 _PROMPT_STEP = (PromptStep, {"type": "prompt", "prompt": "Summarise"})
+# Captured agent output that passes the host's value pattern, so only
+# Copilot's own value check rejects it.
+_SECRET_OUTPUT = "FAKEsecret0123456789"
+_ACCEPTED_VALUES = pytest.mark.parametrize(
+    ("setting", "flag", "value"),
+    [("reasoning_effort", "--reasoning-effort", v) for v in REASONING_EFFORT_LEVELS]
+    + [("context_size", "--context", v) for v in CONTEXT_TIERS],
+)
 
 
 class TestCopilotDispatchSettings:
@@ -1423,11 +1437,63 @@ class TestCopilotDispatchSettings:
         expected = [*dispatch_head, "--model", "gpt-5", "--output-format", "json"]
         assert runs == [expected, expected]
 
-    def test_values_pass_through_for_the_cli_to_validate(self):
-        args = self._copilot().build_exec_args(
-            "do it", reasoning_effort="bogus", context_size="huge"
+    def test_accepted_values_match_copilot_cli(self):
+        assert REASONING_EFFORT_LEVELS == (
+            "none", "minimal", "low", "medium", "high", "xhigh", "max"
         )
-        assert args[3:7] == ["--reasoning-effort", "bogus", "--context", "huge"]
+        assert CONTEXT_TIERS == ("default", "long_context")
+
+    @_ACCEPTED_VALUES
+    def test_every_accepted_value_reaches_the_cli(self, runs, setting, flag, value):
+        copilot = self._copilot()
+        assert copilot.build_exec_args("do it", **{setting: value}) == [
+            "copilot", "-p", "do it", flag, value, "--output-format", "json"
+        ]
+        copilot.dispatch_command(
+            "speckit.plan", "body", stream=False, **{setting: value}
+        )
+        assert runs == [
+            ["copilot", "-p", "/speckit-plan body", flag, value,
+             "--output-format", "json"]
+        ]
+
+    @pytest.mark.usefixtures("no_runs")
+    @pytest.mark.parametrize(
+        ("setting", "value", "accepted", "hatch"),
+        [
+            ("reasoning_effort", "bogus", REASONING_EFFORT_LEVELS, "--reasoning-effort"),
+            ("reasoning_effort", "HIGH", REASONING_EFFORT_LEVELS, "--reasoning-effort"),
+            ("reasoning_effort", _SECRET_OUTPUT, REASONING_EFFORT_LEVELS, "--reasoning-effort"),
+            ("context_size", "huge", CONTEXT_TIERS, "--context"),
+            ("context_size", "200000", CONTEXT_TIERS, "--context"),
+            ("context_size", _SECRET_OUTPUT, CONTEXT_TIERS, "--context"),
+        ],
+    )
+    def test_unknown_values_fail_before_the_cli_starts(
+        self, setting, value, accepted, hatch
+    ):
+        copilot = self._copilot()
+        with pytest.raises(DispatchSettingsError) as built:
+            copilot.build_exec_args("do it", **{setting: value})
+        with pytest.raises(DispatchSettingsError) as dispatched:
+            copilot.dispatch_command("speckit.plan", stream=False, **{setting: value})
+        for excinfo in (built, dispatched):
+            message = str(excinfo.value)
+            assert excinfo.value.setting == setting
+            assert value not in message
+            assert f"must be one of {', '.join(accepted)}." in message
+            assert (
+                f'SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS="{hatch} <value>"' in message
+            )
+
+    def test_extra_args_escape_hatch_passes_newer_values(self, monkeypatch):
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS", "--reasoning-effort ultra"
+        )
+        assert self._copilot().build_exec_args("do it") == [
+            "copilot", "-p", "do it", "--reasoning-effort", "ultra",
+            "--output-format", "json",
+        ]
 
     @pytest.mark.usefixtures("no_runs")
     @pytest.mark.parametrize(
@@ -1504,3 +1570,68 @@ class TestCopilotDispatchSettings:
         assert args[1:] == [
             "-p", prompt, "--reasoning-effort", "high", "--context", "long_context"
         ]
+
+    @pytest.mark.parametrize("setting", ["reasoning_effort", "context_size"])
+    @pytest.mark.parametrize(
+        ("label", "step"),
+        [("Command", _COMMAND_STEP[1]), ("Prompt", _PROMPT_STEP[1])],
+        ids=["command", "prompt"],
+    )
+    def test_captured_secret_stays_out_of_the_cli_error_and_log(
+        self, monkeypatch, tmp_path, label, step, setting
+    ):
+        """A streaming step that reads captured output into a setting fails
+        before Copilot CLI could repeat the value."""
+        captured, streamed = [], []
+
+        def run_captured(args, **kwargs):
+            captured.append(list(args))
+            return CapturedProcess(exit_code=0, stdout=_SECRET_OUTPUT, stderr="")
+
+        def run(args, **kwargs):
+            streamed.append(list(args))
+            return subprocess.CompletedProcess(args, 1, stdout="", stderr="")
+
+        monkeypatch.setattr(shutil, "which", lambda name, *a, **k: f"/bin/{name}")
+        monkeypatch.setattr(
+            "specify_cli.workflows.step.prompt.run_captured", run_captured
+        )
+        monkeypatch.setattr(subprocess, "run", run)
+        (tmp_path / ".specify" / "workflows").mkdir(parents=True)
+        definition = WorkflowDefinition(
+            {
+                "schema_version": "1.0",
+                "workflow": {
+                    "id": "leak",
+                    "name": "leak",
+                    "version": "1.0.0",
+                    "integration": "copilot",
+                },
+                "steps": [
+                    {
+                        "id": "read",
+                        "type": "prompt",
+                        "prompt": "Print the token",
+                        "capture": True,
+                    },
+                    {"id": "ask", **step, setting: "{{ steps.read.output.stdout }}"},
+                ],
+            }
+        )
+
+        state = WorkflowEngine(tmp_path).execute(definition)
+
+        assert state.step_results["read"]["output"]["stdout"] == _SECRET_OUTPUT
+        assert len(captured) == 1
+        assert streamed == []
+        assert state.status is RunStatus.FAILED
+        error = state.step_results["ask"]["error"]
+        assert error.startswith(
+            f"{label} step 'ask': GitHub Copilot '{setting}' must be one of "
+        )
+        assert error.endswith(" (set by step)")
+        assert _SECRET_OUTPUT not in error
+        log = (
+            tmp_path / ".specify" / "workflows" / "runs" / state.run_id / "log.jsonl"
+        ).read_text(encoding="utf-8")
+        assert _SECRET_OUTPUT not in log
