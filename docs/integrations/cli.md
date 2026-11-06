@@ -491,7 +491,7 @@ settings of `command` and `prompt` steps instead follow one shared contract.
 Spec Kit checks each value and passes it only to an integration that declares
 and translates that setting; with any other integration, the step fails before
 the CLI runs. Adapter authors opt in as described in the
-[integration design](https://github.com/github/spec-kit/blob/main/design/integration.md#per-step-dispatch-settings).
+[integration API reference](api.md#per-step-dispatch-settings).
 
 ## FAQ
 
