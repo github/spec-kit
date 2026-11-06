@@ -214,23 +214,13 @@ Local directories, direct URLs, and locally bundled installs are recorded
 as local rather than as a reusable download URL. Registry updates preserve
 the existing `installed_at`; remove-then-add replacement creates a new one.
 
-## Implementation map
+## Script template resolution
 
-The Python implementation is the
-[`src/specify_cli/presets/` package](https://github.com/github/spec-kit/tree/main/src/specify_cli/presets):
-`_manifest.py` validates manifests; `_registry.py` tracks installations;
-`_manager.py`, `_manager_commands.py`, and `_manager_skills.py` own lifecycle
-and output reconciliation; `_resolver.py` resolves and composes content;
-`_catalog.py` and `_catalog_versions.py` handle discovery and releases.
-`command_*.py` modules and `catalog/command_*.py` expose the CLI.
-
-Shared command rendering lives in
-[`agents.py`](https://github.com/github/spec-kit/blob/main/src/specify_cli/agents.py)
-and the integration packages. Bash `resolve_template` /
+Bash `resolve_template` /
 `resolve_template_content` and PowerShell `Resolve-Template` /
 `Resolve-TemplateContent` in the respective `common` scripts expose template
 resolution to shell consumers. Agent command and skill materialization is
-handled in Python, not independently by each agent.
+handled by Spec Kit, not independently by each agent.
 
 ## See also
 
