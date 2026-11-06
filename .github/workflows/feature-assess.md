@@ -39,7 +39,7 @@ checkout:
 steps:
   - name: Setup uv
     continue-on-error: true
-    uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+    uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
   - name: Set up Python
     continue-on-error: true
     uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
