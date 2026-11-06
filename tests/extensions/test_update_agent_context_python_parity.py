@@ -1604,6 +1604,9 @@ def test_powershell_mtime_fallback_rejects_plan_link_with_invalid_suffix(
     path, so the broken candidate displaced a valid plan (unlike the
     bash/Python twins, which stat the original candidate). The valid
     plan must win even when the broken candidate's target is newer.
+    On Windows the same rejection runs through the link-target string
+    check: Windows has no ``test`` command, and .NET normalizes a
+    trailing ``/.`` away, so the Unix stat cannot see the suffix.
     """
     repo = make_project(tmp_path / "project", context_file="AGENTS.md")
     valid = repo / "specs/001-valid/plan.md"

@@ -742,6 +742,24 @@ if (-not $PlanPath) {
                         } elseif (-not $isRegularFile) {
                             return
                         }
+                    } else {
+                        # Windows has no `test` command, and .NET path
+                        # handling normalizes a trailing '/.' or '/' away,
+                        # so Test-Path and File.Exists cannot see a broken
+                        # suffix. Read the candidate's own link target
+                        # instead: a target ending in '/.', '/', '\.', or
+                        # '\' never denotes a regular file (it is a
+                        # directory reference, or invalid when the
+                        # preceding component is a file), so the twins
+                        # reject it by stat. Reject it here too, so a
+                        # broken suffix cannot displace a valid plan.
+                        $ownTarget = Get-LinkTarget -Path $_.FullName
+                        if ($ownTarget -and (
+                            $ownTarget.EndsWith('/.', [System.StringComparison]::Ordinal) -or
+                            $ownTarget.EndsWith('/', [System.StringComparison]::Ordinal) -or
+                            $ownTarget.EndsWith('\.', [System.StringComparison]::Ordinal) -or
+                            $ownTarget.EndsWith('\', [System.StringComparison]::Ordinal)
+                        )) { return }
                     }
                     [PSCustomObject]@{
                         ResolvedPath = $resolved
