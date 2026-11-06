@@ -65,7 +65,7 @@
       href: how-to/spec-of-specs.md
     - name: Choose a persistence model
       href: how-to/spec-persistence.md
-    - name: Maintain specifications after delivery
+    - name: Evolve specifications
       href: how-to/evolving-specs.md
     - name: Adapt Spec Kit to your process
       href: how-to/customization.md

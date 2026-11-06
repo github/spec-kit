@@ -55,7 +55,7 @@ the site homepage. Process command references and authentication remain under
 - `how-to/complex-features.md` - Implementing complex features in bounded runs
 - `how-to/spec-of-specs.md` - Breaking large features into smaller specifications
 - `how-to/spec-persistence.md` - Choosing a specification persistence model
-- `how-to/evolving-specs.md` - Maintaining specifications after delivery
+- `how-to/evolving-specs.md` - Evolving specifications for subsequent changes
 - `how-to/customization.md` - Adapting Spec Kit to your process
 - `overview/catalogs.md` - Catalog discovery, trust, private sources, and precedence
 - `extensions/overview.md` - Extension user guide

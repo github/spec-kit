@@ -13,7 +13,7 @@ and specification maintenance, plus authentication and developing Spec Kit itsel
 | Keep implementation within manageable context limits | [Implement complex features](complex-features.md) |
 | Decompose work into independently specified slices | [Break down large features](spec-of-specs.md) |
 | Decide how completed specifications should live | [Choose a persistence model](spec-persistence.md) |
-| Keep feature artifacts aligned after delivery | [Maintain specifications after delivery](evolving-specs.md) |
+| Deliver a change to an existing feature | [Evolve specifications](evolving-specs.md) |
 | Adapt practices to your team's needs | [Adapt Spec Kit to your process](customization.md) |
 | Access private catalogs, downloads, and release checks | [Configure authentication](../reference/authentication.md) |
 | Contribute changes to Spec Kit itself | [Develop Spec Kit locally](local-development.md) |
