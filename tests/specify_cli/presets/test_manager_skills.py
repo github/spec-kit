@@ -3,6 +3,7 @@
 import functools
 import os
 import shutil
+import stat
 from pathlib import Path
 
 import pytest
@@ -2459,6 +2460,46 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "Core custom body" in self._alias_skill(project_dir).read_text(
             encoding="utf-8"
         )
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_alias_refresh_preserves_existing_output_mode(
+        self, project_dir, temp_dir
+    ):
+        """Replacing the alias entry must keep a private (0600) output private
+        rather than resetting it to a fixed world-readable mode."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10)
+        install("append-preset", "Appended body", "append", 5)
+        alias_file = self._alias_skill(project_dir)
+        alias_file.chmod(0o600)
+
+        assert manager.remove("base-preset") is True
+
+        assert "Core custom body" in alias_file.read_text(encoding="utf-8")
+        assert stat.S_IMODE(alias_file.stat().st_mode) == 0o600
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_new_alias_output_honors_umask(self, project_dir, temp_dir):
+        """A newly created alias output gets the default creation mode under
+        the process umask, as an ordinary file write would."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        old_umask = os.umask(0o077)
+        try:
+            install("append-preset", "Appended body", "append", 5)
+        finally:
+            os.umask(old_umask)
+
+        alias_file = self._alias_skill(project_dir)
+        assert "Appended body" in alias_file.read_text(encoding="utf-8")
+        assert stat.S_IMODE(alias_file.stat().st_mode) == 0o600
 
     def test_alias_refresh_does_not_write_through_hardlinked_skill(
         self, project_dir, temp_dir
