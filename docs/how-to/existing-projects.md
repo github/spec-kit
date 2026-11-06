@@ -96,17 +96,11 @@ For command details and optional quality gates, see the
 
 ## 5. Decide How Specs Will Age
 
-After the first change, agree on how the team will maintain completed feature
-artifacts:
-
-- Keep each feature directory as an immutable historical record.
-- Maintain `spec.md` as a living contract and regenerate downstream artifacts.
-- Allow discoveries to flow back from code, tasks, or plans, then reconcile the
-  full artifact set.
-
-The [Spec Persistence Models](spec-persistence.md) page compares
-these choices. The [Evolving Specs guide](evolving-specs.md) provides the
-maintenance loop for each model.
+After the first change, agree on what feature artifacts the team will retain
+and how retained artifacts will be maintained. The
+[Persisting Specifications](persisting-specs.md) page compares those choices, including
+retiring completed feature artifacts under the constitution-only model. Use the
+[Evolving Specs guide](evolving-specs.md) when delivering a subsequent change.
 
 ## Existing-Project Examples
 
