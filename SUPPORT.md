@@ -23,15 +23,16 @@ Spec Kit's minimum Python version is declared by `requires-python` in
 [`pyproject.toml`](./pyproject.toml). Support does not mean every supported
 Python and operating system combination is tested on every change:
 
-| Python version | Routine CI (pull requests and pushes to `main`) | Manual CI (`workflow_dispatch`) |
+| Python version | Routine CI (pull requests and pushes to `main`) | Weekly scheduled and manual CI (`workflow_dispatch`) |
 | --- | --- | --- |
-| Minimum supported version | Linux | Linux, Windows, macOS |
-| Three newest stable versions | Linux, Windows, macOS | Linux, Windows, macOS |
+| Minimum supported version (3.11) | Linux, Windows, macOS | Linux, Windows, macOS |
+| Bugfix-supported stable versions (3.14, 3.15) | Linux, Windows, macOS | Linux, Windows, macOS |
 | Other supported stable versions | Not run | Linux, Windows, macOS |
 
 This balances CI cost with compatibility coverage. The minimum supported
-version on Linux is our touchstone; newer versions receive broader routine coverage.
-The full matrix runs only when manually triggered. Regressions on older
+version is our touchstone across all three platforms alongside bugfix-supported
+stable releases. The full Python 3.11 through 3.15 matrix runs weekly and when
+manually triggered. Regressions on older
 supported versions are addressed as needed when discovered through CI or user
 reports, rather than through proactive fixes for hypothetical problems.
 The exact versions tested are configured in the
@@ -45,8 +46,8 @@ This does not make those versions unsupported or mean that third-party
 distributors cannot provide binaries.
 
 When the minimum supported Python version reaches upstream end of life,
-advance both the Linux touchstone and the minimum requirement to the next
-supported version, removing the end-of-life version from the manual matrix.
+advance both the touchstone and the minimum requirement to the next
+supported version, removing the end-of-life version from the full matrix.
 
 ## GitHub Support Policy
 
