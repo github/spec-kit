@@ -5027,7 +5027,7 @@
       "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/progress.md",
       "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/progress/CHANGELOG.md",
       "license": "MIT",
-      "category": "visibility",
+      "category": "process",
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=1.1.1.dev0,<2.0.0",
