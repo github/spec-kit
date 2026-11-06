@@ -71,7 +71,7 @@ team's retention and maintenance policy separately.
 
 ## See also
 
-- [Specification persistence models](spec-persistence.md) - Choose what survives
+- [Persisting specifications](persisting-specs.md) - Choose what survives
   delivery and how retained artifacts are maintained.
 - [Upgrade Spec Kit](../upgrade.md) - Refresh managed project files rather than
   changing feature requirements.

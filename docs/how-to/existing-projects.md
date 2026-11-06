@@ -94,7 +94,7 @@ For command details and optional quality gates, see the
 
 After the first change, agree on what feature artifacts the team will retain
 and how retained artifacts will be maintained. The
-[Spec Persistence Models](spec-persistence.md) page compares those choices, including
+[Persisting Specifications](persisting-specs.md) page compares those choices, including
 retiring completed feature artifacts under the constitution-only model. Use the
 [Evolving Specs guide](evolving-specs.md) when delivering a subsequent change.
 

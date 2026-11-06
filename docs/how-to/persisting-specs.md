@@ -1,4 +1,4 @@
-# How to choose a specification persistence model
+# How to persist specifications after delivery
 
 Spec Kit intentionally leaves teams in control of what happens to `spec.md`,
 `plan.md`, and `tasks.md` after a feature is delivered. The toolkit gives you a
