@@ -2285,7 +2285,9 @@ def test_markdownlint_step_lints_the_documentation_globs():
 
 
 @requires_bash
-@pytest.mark.parametrize("event", ["pull_request", "push", "initial_push", "workflow_dispatch"])
+@pytest.mark.parametrize("event", [
+    "pull_request", "push", "initial_push", "workflow_dispatch", "manual_root", "manual_merge",
+])
 @pytest.mark.parametrize("contents,exit_code", [("line\n", 0), ("line \n", 2)])
 def test_combined_lint_run_checks_commit_whitespace(tmp_path, event, contents, exit_code):
     env = os.environ.copy()
@@ -2294,13 +2296,16 @@ def test_combined_lint_run_checks_commit_whitespace(tmp_path, event, contents, e
         "GIT_AUTHOR_EMAIL": "test@example.com",
         "GIT_COMMITTER_NAME": "Test",
         "GIT_COMMITTER_EMAIL": "test@example.com",
-        "EVENT_NAME": "push" if event == "initial_push" else event,
+        "EVENT_NAME": (
+            "workflow_dispatch" if event.startswith("manual_")
+            else "push" if event == "initial_push" else event
+        ),
         "PR_BASE_SHA": "",
         "PUSH_BEFORE_SHA": "",
         "GITHUB_SHA": "HEAD",
     })
     subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, env=env, check=True)
-    if event != "initial_push":
+    if event not in {"initial_push", "manual_root"}:
         (tmp_path / "example.txt").write_text("original\n", encoding="utf-8")
         subprocess.run(["git", "add", "example.txt"], cwd=tmp_path, env=env, check=True)
         subprocess.run(
@@ -2313,6 +2318,11 @@ def test_combined_lint_run_checks_commit_whitespace(tmp_path, event, contents, e
         ).stdout.strip()
         env["PR_BASE_SHA"] = base
         env["PUSH_BEFORE_SHA"] = base
+        if event == "manual_merge":
+            subprocess.run(
+                ["git", "checkout", "--quiet", "-b", "whitespace-change"],
+                cwd=tmp_path, env=env, check=True,
+            )
     else:
         env["PUSH_BEFORE_SHA"] = "0" * 40
     (tmp_path / "example.txt").write_text(contents, encoding="utf-8")
@@ -2321,6 +2331,21 @@ def test_combined_lint_run_checks_commit_whitespace(tmp_path, event, contents, e
         ["git", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Change"],
         cwd=tmp_path, env=env, check=True,
     )
+    if event == "manual_merge":
+        subprocess.run(
+            ["git", "checkout", "--quiet", "--detach", base],
+            cwd=tmp_path, env=env, check=True,
+        )
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "merge", "--quiet", "--no-ff",
+             "-m", "Merge change", "whitespace-change"],
+            cwd=tmp_path, env=env, check=True,
+        )
+        parents = subprocess.run(
+            ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
+            cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
+        ).stdout.split()
+        assert len(parents) == 3
     subprocess.run(
         ["git", "remote", "add", "origin", str(tmp_path)],
         cwd=tmp_path, env=env, check=True,

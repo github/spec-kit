@@ -70,7 +70,7 @@ jobs:
             git fetch --no-tags origin "+${PR_BASE_SHA}:refs/checks/pr-base"
             git diff --check refs/checks/pr-base HEAD
           elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            git diff-tree --check --no-commit-id --root -r "$GITHUB_SHA"
+            git diff-tree --check --no-commit-id --root --diff-merges=first-parent -r "$GITHUB_SHA"
           elif [ "$PUSH_BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
             git diff-tree --check --no-commit-id --root -r "$GITHUB_SHA"
           else
