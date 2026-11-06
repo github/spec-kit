@@ -51,6 +51,15 @@ _COPILOT_CORE_COMMANDS = {
     "tasks",
 }
 
+# ``--reasoning-effort`` levels and ``--context`` tiers accepted by GitHub
+# Copilot CLI 1.0.106. The CLI rejects any other value with an error that
+# repeats it, and a value can be captured agent output, so per-step
+# ``reasoning_effort`` and ``context_size`` are limited to these.
+REASONING_EFFORT_LEVELS: tuple[str, ...] = (
+    "none", "minimal", "low", "medium", "high", "xhigh", "max"
+)
+CONTEXT_TIERS: tuple[str, ...] = ("default", "long_context")
+
 
 def _copilot_executable() -> str:
     """Return the executable name for Copilot CLI on this platform.
@@ -351,8 +360,9 @@ class CopilotIntegration(IntegrationBase):
         """Gate per-step dispatch settings and return their Copilot CLI flags.
 
         *via* names the method that received the settings, as for
-        :func:`check_dispatch_settings`. Values pass through unchanged; the
-        CLI rejects levels or tiers it does not recognize.
+        :func:`check_dispatch_settings`. The gate calls
+        :meth:`validate_dispatch_setting`, so only values the CLI accepts
+        reach it.
         """
         settings = requested_dispatch_settings(
             reasoning_effort=reasoning_effort, context_size=context_size
@@ -366,6 +376,27 @@ class CopilotIntegration(IntegrationBase):
         if context_size is not None:
             args.extend(["--context", context_size])
         return args
+
+    def validate_dispatch_setting(self, name: str, value: str) -> None:
+        """Reject values that Copilot CLI does not accept.
+
+        Copilot CLI repeats a rejected value in its error, and the value can be
+        captured agent output, so Spec Kit rejects it first without repeating it.
+        """
+        if name == "reasoning_effort" and value not in REASONING_EFFORT_LEVELS:
+            raise ValueError(
+                "GitHub Copilot 'reasoning_effort' must be one of "
+                f"{', '.join(REASONING_EFFORT_LEVELS)}. To pass a newer level, "
+                'set SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS="--reasoning-effort '
+                "<value>\" instead of 'reasoning_effort'."
+            )
+        if name == "context_size" and value not in CONTEXT_TIERS:
+            raise ValueError(
+                "GitHub Copilot 'context_size' must be one of "
+                f"{', '.join(CONTEXT_TIERS)}. To pass a newer tier, set "
+                'SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS="--context <value>" '
+                "instead of 'context_size'."
+            )
 
     def build_exec_args(
         self,

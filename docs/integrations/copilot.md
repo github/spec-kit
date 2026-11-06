@@ -129,5 +129,10 @@ skills and commands layouts:
 | `reasoning_effort` | `--reasoning-effort <value>` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `context_size` | `--context <value>` | `default`, `long_context` |
 
-Spec Kit passes the values through unchanged. Copilot CLI rejects a value it
-does not recognize, and the step fails like any other CLI error.
+Spec Kit accepts only these values. Any other value fails the step before
+Copilot CLI starts, because Copilot CLI repeats a rejected value in its error
+and the value can come from captured output. To pass a value that a newer
+Copilot CLI release adds, set
+`SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS="--reasoning-effort <value>"` or
+`SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS="--context <value>"` instead of the
+step setting.
