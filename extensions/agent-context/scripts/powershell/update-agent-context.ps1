@@ -157,7 +157,11 @@ function Get-LinkTarget {
 function Resolve-ContextPath {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
-        [Parameter(Mandatory = $true)][string]$RelativePath,
+        # Optional, not mandatory: a link that targets a filesystem
+        # root resolves to an empty relative path, and a mandatory
+        # string parameter rejects the empty string at bind time,
+        # aborting the whole fallback. Empty means the base directory.
+        [string]$RelativePath = '',
         [string]$Base = $null,
         [int]$Depth = 10
     )
@@ -185,7 +189,11 @@ function Resolve-ContextPath {
         [System.IO.Path]::AltDirectorySeparatorChar
     )
     foreach ($segment in $RelativePath.Split($separators)) {
-        if ([string]::IsNullOrWhiteSpace($segment) -or $segment -eq '.') {
+        # Skip only empty components and '.': a whitespace-only
+        # component is a valid Unix directory name, so it must be
+        # preserved — discarding it lets a later '..' validate
+        # against a path the write never follows.
+        if ([string]::IsNullOrEmpty($segment) -or $segment -eq '.') {
             continue
         }
 
@@ -196,6 +204,20 @@ function Resolve-ContextPath {
             # GetDirectoryName, not Split-Path: the cmdlet normalizes
             # backslashes on Unix, so the parent of a backslash-named
             # directory would be wrong.
+            # Require the preceding component to be an existing
+            # directory first: a missing or non-directory component
+            # followed by '..' must not be popped lexically, or a
+            # broken link rewrites to an existing file and gets
+            # selected by mistake. Reject the resolution instead.
+            $precedingAttributes = $null
+            try {
+                $precedingAttributes = [System.IO.File]::GetAttributes($resolved)
+            } catch {
+                return $null
+            }
+            if (($precedingAttributes -band [System.IO.FileAttributes]::Directory) -eq 0) {
+                return $null
+            }
             $parent = [System.IO.Path]::GetDirectoryName($resolved)
             if ($parent) {
                 $resolved = $parent
@@ -497,8 +519,26 @@ foreach ($ContextFile in $ContextFiles) {
     # Fresh budget per context file: the budget is scoped to one
     # resolution unit, not shared across unrelated paths.
     $script:LinkFollowBudgetRemaining = $script:LinkFollowBudget
-    $resolvedTarget = Resolve-ContextPath -Root $ProjectRoot -RelativePath $ContextFile
-    if ($null -eq $resolvedTarget -or -not (Test-IsSubPath -Root $ProjectRoot -Path $resolvedTarget)) {
+    # Resolve the complete link chain before the containment check:
+    # a single Resolve-ContextPath pass stops at its depth bound and
+    # returns a partially resolved path, so an in-project spelling can
+    # pass containment while the later write follows the remaining
+    # links outside the project. Re-run until the result stabilizes,
+    # like the mtime fallback; a chain that never stabilizes (or
+    # leaves the project) is rejected.
+    $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+    $resolvedTarget = [System.IO.Path]::GetFullPath((Join-Path $ProjectRoot $ContextFile))
+    $stabilized = $false
+    for ($depth = 0; $depth -lt 10; $depth++) {
+        $relPath = ConvertTo-SlashPath -Path $resolvedTarget
+        $normRoot = (ConvertTo-SlashPath -Path $ProjectRoot).TrimEnd('/') + '/'
+        if (-not $relPath.StartsWith($normRoot, $cmp)) { break }
+        $next = Resolve-ContextPath -Root $ProjectRoot -RelativePath $relPath.Substring($normRoot.Length)
+        if ($null -eq $next) { break }
+        if ([string]::Equals($next, $resolvedTarget, $cmp)) { $stabilized = $true; break }
+        $resolvedTarget = $next
+    }
+    if (-not $stabilized -or $null -eq $resolvedTarget -or -not (Test-IsSubPath -Root $ProjectRoot -Path $resolvedTarget)) {
         Write-Warning "agent-context: context file path resolves outside the project root; got '$ContextFile'."
         exit 1
     }

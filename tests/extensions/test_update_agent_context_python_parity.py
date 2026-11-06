@@ -1362,3 +1362,143 @@ def test_python_upsert_matches_powershell(tmp_path: Path) -> None:
 
     assert ps.returncode == py.returncode == 0, ps.stderr + py.stderr
     assert (repo_a / "AGENTS.md").read_bytes() == (repo_b / "AGENTS.md").read_bytes()
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_context_file_rejects_root_link_target(
+    tmp_path: Path,
+) -> None:
+    """PowerShell context-file check must survive a link to the filesystem root.
+
+    Regression for the Copilot review on #5283: a link whose target is
+    the filesystem root passes an empty relative path to the recursive
+    resolver, and a mandatory string parameter rejects the empty string
+    at bind time, aborting the script with a binding error instead of
+    the containment rejection. The root is outside the project, so the
+    run must fail with the "outside the project root" warning.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    try:
+        (repo / "AGENTS.md").symlink_to("/")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    # Write-Warning reaches stdout under pwsh -File in this harness.
+    assert "outside the project root" in result.stdout
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.skipif(os.name == "nt", reason="whitespace-only names are trimmed on Windows")
+def test_powershell_mtime_fallback_preserves_whitespace_directory(
+    tmp_path: Path,
+) -> None:
+    """PowerShell mtime fallback must keep whitespace-only directory names.
+
+    Regression for the Copilot review on #5283: the link-target walk
+    discarded whitespace-only components, although they are valid Unix
+    directory names. A plan reached through such a directory must be
+    selected at its real path, not resolved at the path with the
+    component dropped.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    target = repo / "plans" / " " / "current.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("# linked plan\n", encoding="utf-8")
+    os.utime(target, (1_700_000_000, 1_700_000_000))
+    candidate = repo / "specs/999-candidate/plan.md"
+    candidate.parent.mkdir(parents=True)
+    try:
+        candidate.symlink_to("../../plans/ /current.md")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert b"at plans/ /current.md" in (repo / "AGENTS.md").read_bytes()
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize(
+    "ancestor_kind", ["missing", "non-directory"], ids=["missing", "non-directory"]
+)
+def test_powershell_mtime_fallback_rejects_dotdot_after_bad_ancestor(
+    tmp_path: Path, ancestor_kind: str
+) -> None:
+    """PowerShell mtime fallback must not pop '..' past a bad ancestor.
+
+    Regression for the Copilot review on #5283: a missing or
+    non-directory component followed by '..' was removed lexically, so
+    a broken plan link was rewritten to an existing file and
+    incorrectly selected. The candidate must be rejected and no plan
+    selected, even though plans/current.md exists.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    current = repo / "plans" / "current.md"
+    current.parent.mkdir(parents=True)
+    current.write_text("# existing plan\n", encoding="utf-8")
+    os.utime(current, (1_700_000_000, 1_700_000_000))
+    if ancestor_kind == "non-directory":
+        (repo / "plans" / "file.txt").write_text("not a directory\n", encoding="utf-8")
+        ancestor = "file.txt"
+    else:
+        ancestor = "missing"
+    candidate = repo / "specs/999-candidate/plan.md"
+    candidate.parent.mkdir(parents=True)
+    try:
+        candidate.symlink_to(f"../../plans/{ancestor}/../current.md")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    expected = (
+        "<!-- SPECKIT START -->\n"
+        "For additional context about technologies to be used, project structure,\n"
+        "shell commands, and other important information, read the current plan\n"
+        "<!-- SPECKIT END -->\n"
+    )
+    assert (repo / "AGENTS.md").read_bytes() == expected.encode("utf-8")
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_context_file_rejects_unresolved_deep_chain(
+    tmp_path: Path,
+) -> None:
+    """PowerShell context-file check must reject chains past the depth limit.
+
+    Regression for the Copilot review on #5283: when link resolution
+    reached its depth limit, the resolver returned a partially resolved
+    path, and the context-file caller checked that path only once, so
+    an in-project spelling passed containment while the later write
+    followed the remaining links outside the project. A chain of 100
+    directory links to an outside directory must be rejected and the
+    outside file left unchanged.
+    """
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    external = outside_dir / "AGENTS.md"
+    external.write_text("# external\n", encoding="utf-8")
+
+    repo = make_project(tmp_path / "project", context_file="l1/AGENTS.md")
+    prev = outside_dir
+    for i in range(100, 0, -1):
+        link = repo / f"l{i}"
+        try:
+            link.symlink_to(prev, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+        prev = link
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    # Write-Warning reaches stdout under pwsh -File in this harness.
+    assert "outside the project root" in result.stdout
+    assert external.read_bytes() == b"# external\n"
