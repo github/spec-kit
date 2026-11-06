@@ -430,8 +430,32 @@ if (-not $PlanPath) {
             # layouts created via SPECIFY_FEATURE_DIRECTORY, e.g.
             # specs/<scope>/<feature>/plan.md, are still discovered when
             # feature.json is absent (#3024).
+            # Mirror the bash/python mtime fallback (#5222): follow file links
+            # and keep only candidates whose target is a regular file. -File
+            # already excludes directories (including links to directories),
+            # but a dangling link still passes it, so probe each link target
+            # by opening it: the open follows the link and fails for
+            # dangling links, links to directories, and links through
+            # non-directories. Only links are probed, so plain files are
+            # never opened. Sort by the target's mtime, like
+            # p.stat().st_mtime in the twins: GetLastWriteTime follows links
+            # on Windows; on Linux it reports the link's own time, matching
+            # the previous behavior there.
             $candidate = Get-ChildItem -Path $specsDir -Filter 'plan.md' -File -Recurse -ErrorAction SilentlyContinue |
-                Sort-Object LastWriteTime -Descending |
+                Where-Object {
+                    if ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+                        try {
+                            $probe = [System.IO.File]::OpenRead($_.FullName)
+                            $probe.Dispose()
+                            $true
+                        } catch {
+                            $false
+                        }
+                    } else {
+                        $true
+                    }
+                } |
+                Sort-Object { [System.IO.File]::GetLastWriteTime($_.FullName) } -Descending |
                 Select-Object -First 1
             if ($candidate) {
                 # GetRelativePath is .NET 5+ only; strip prefix manually for PS 5.1 compat.

@@ -846,6 +846,92 @@ def test_python_mtime_fallback_finds_nested_plan_matches_powershell(
 
 
 @pytest.mark.skipif(not POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("has_regular_plan", [False, True], ids=["alone", "with-plan"])
+@pytest.mark.parametrize(
+    "candidate_kind",
+    [
+        "regular-file",
+        "directory",
+        "dangling-link",
+        "non-directory-link",
+        "directory-link",
+        "file-link",
+    ],
+)
+def test_powershell_mtime_fallback_selects_only_in_project_files(
+    tmp_path: Path, has_regular_plan: bool, candidate_kind: str
+) -> None:
+    """PowerShell mtime fallback must match the bash/python #5222 fix (#5282).
+
+    Mirrors test_mtime_fallback_selects_only_in_project_files for the
+    PowerShell twin: only candidates whose target is a regular file are
+    eligible, and ordering uses the target's mtime. Two PowerShell-specific
+    differences from the twins, both inherent to Windows PowerShell 5.1:
+
+    - A file link is reported at its in-project link path, not the resolved
+      target path: 5.1 has no link-target resolution API (ResolveLinkTarget
+      is .NET 6+), so the twins' resolved path cannot be reproduced here.
+    - The escaping-link case (target outside the project) is not covered:
+      without link-target resolution the containment skip from #5222 cannot
+      be ported, so the script reports the in-project link path instead.
+      That gap is documented in the fix; the bash/python test covers it.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    expected_plan = ""
+    if has_regular_plan:
+        expected_plan = "specs/backend/001-valid/plan.md"
+        plan = repo / expected_plan
+        plan.parent.mkdir(parents=True)
+        plan.write_text("# older plan\n", encoding="utf-8")
+        os.utime(plan, (1_600_000_000, 1_600_000_000))
+
+    candidate = repo / "specs/999-candidate/plan.md"
+    candidate.parent.mkdir(parents=True)
+    if candidate_kind == "regular-file":
+        candidate.write_text("# newer plan\n", encoding="utf-8")
+        os.utime(candidate, (1_700_000_000, 1_700_000_000))
+        expected_plan = "specs/999-candidate/plan.md"
+    elif candidate_kind == "directory":
+        candidate.mkdir()
+        os.utime(candidate, (1_700_000_000, 1_700_000_000))
+    else:
+        target = repo / "plans/current.md"
+        if candidate_kind == "non-directory-link":
+            target.parent.parent.mkdir(parents=True, exist_ok=True)
+            target.parent.write_text("not a directory\n", encoding="utf-8")
+        elif candidate_kind == "directory-link":
+            target.mkdir(parents=True)
+        elif candidate_kind != "dangling-link":
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("# linked plan\n", encoding="utf-8")
+        try:
+            candidate.symlink_to(
+                target, target_is_directory=candidate_kind == "directory-link"
+            )
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+        if candidate_kind == "file-link":
+            # Valid file links are selected, at the in-project link path
+            # (5.1 cannot resolve the target path like the twins do).
+            os.utime(target, (1_700_000_000, 1_700_000_000))
+            expected_plan = "specs/999-candidate/plan.md"
+
+    result = run_powershell(repo)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    expected = (
+        "<!-- SPECKIT START -->\n"
+        "For additional context about technologies to be used, project structure,\n"
+        "shell commands, and other important information, read the current plan\n"
+    )
+    if expected_plan:
+        expected += f"at {expected_plan}\n"
+    expected += "<!-- SPECKIT END -->\n"
+    assert (repo / "AGENTS.md").read_bytes() == expected.encode("utf-8")
+
+
+@pytest.mark.skipif(not POWERSHELL, reason="no PowerShell available")
 def test_python_upsert_matches_powershell(tmp_path: Path) -> None:
     repo_a = make_project(tmp_path / "proj-ps", context_file="AGENTS.md")
     repo_b = make_project(tmp_path / "proj-py", context_file="AGENTS.md")
