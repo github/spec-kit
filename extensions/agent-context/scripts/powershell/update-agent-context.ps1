@@ -228,47 +228,53 @@ function Resolve-ContextPath {
         # Concatenate, do not Join-Path: the cmdlet normalizes
         # backslashes on Unix, turning one filename into two components.
         $candidate = [System.IO.Path]::GetFullPath($resolved + [System.IO.Path]::DirectorySeparatorChar + $segment)
-        if ($Depth -gt 0) {
-            # File.GetAttributes, not Test-Path/Get-Item: the cmdlets
-            # normalize backslashes on Unix and cannot see a path that
-            # contains one. GetAttributes reports the link itself.
-            $attributes = $null
-            try {
-                $attributes = [System.IO.File]::GetAttributes($candidate)
-            } catch {
-                # Missing or unreadable: not a link, keep walking.
+        # File.GetAttributes, not Test-Path/Get-Item: the cmdlets
+        # normalize backslashes on Unix and cannot see a path that
+        # contains one. GetAttributes reports the link itself.
+        $attributes = $null
+        try {
+            $attributes = [System.IO.File]::GetAttributes($candidate)
+        } catch {
+            # Missing or unreadable: not a link, keep walking.
+        }
+        if ($null -ne $attributes -and ($attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            if ($Depth -le 0) {
+                # Depth exhausted: the link cannot be followed, so the
+                # rest of the path cannot be resolved reliably — a
+                # later '..' would collapse against the unresolved
+                # spelling and validate a path the write never follows.
+                # Return unresolved instead of walking on.
+                return $null
             }
-            if ($null -ne $attributes -and ($attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
-                $target = Get-LinkTarget -Path $candidate
-                if ($target) {
-                    # Per-candidate total link-follow budget: each
-                    # followed link spends one unit, shared across
-                    # that candidate's recursive calls and fallback
-                    # passes alike. The per-chain depth bound alone
-                    # cannot stop a structure that re-expands the
-                    # same targets (L1 -> L0/L0/..., L2 -> L1/L1/...),
-                    # so total work is capped here; when it is spent,
-                    # the candidate cannot be resolved and the null
-                    # propagates up the chain for the caller to reject.
-                    if ($script:LinkFollowBudgetRemaining -le 0) {
-                        return $null
-                    }
-                    $script:LinkFollowBudgetRemaining--
-                    if ([System.IO.Path]::IsPathRooted($target)) {
-                        # Absolute target: walk its components from the
-                        # filesystem root, not from the project root.
-                        $targetRoot = [System.IO.Path]::GetPathRoot($target)
-                        $followed = Resolve-ContextPath -Root $Root -RelativePath $target.Substring($targetRoot.Length) -Base $targetRoot -Depth ($Depth - 1)
-                    } else {
-                        # Relative target: walk its components from the
-                        # link's parent dir ($resolved here).
-                        $followed = Resolve-ContextPath -Root $Root -RelativePath $target -Base $resolved -Depth ($Depth - 1)
-                    }
-                    if ($null -eq $followed) {
-                        return $null
-                    }
-                    $candidate = $followed
+            $target = Get-LinkTarget -Path $candidate
+            if ($target) {
+                # Per-candidate total link-follow budget: each
+                # followed link spends one unit, shared across
+                # that candidate's recursive calls and fallback
+                # passes alike. The per-chain depth bound alone
+                # cannot stop a structure that re-expands the
+                # same targets (L1 -> L0/L0/..., L2 -> L1/L1/...),
+                # so total work is capped here; when it is spent,
+                # the candidate cannot be resolved and the null
+                # propagates up the chain for the caller to reject.
+                if ($script:LinkFollowBudgetRemaining -le 0) {
+                    return $null
                 }
+                $script:LinkFollowBudgetRemaining--
+                if ([System.IO.Path]::IsPathRooted($target)) {
+                    # Absolute target: walk its components from the
+                    # filesystem root, not from the project root.
+                    $targetRoot = [System.IO.Path]::GetPathRoot($target)
+                    $followed = Resolve-ContextPath -Root $Root -RelativePath $target.Substring($targetRoot.Length) -Base $targetRoot -Depth ($Depth - 1)
+                } else {
+                    # Relative target: walk its components from the
+                    # link's parent dir ($resolved here).
+                    $followed = Resolve-ContextPath -Root $Root -RelativePath $target -Base $resolved -Depth ($Depth - 1)
+                }
+                if ($null -eq $followed) {
+                    return $null
+                }
+                $candidate = $followed
             }
         }
         $resolved = $candidate

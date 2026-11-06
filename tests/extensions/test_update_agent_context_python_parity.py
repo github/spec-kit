@@ -1502,3 +1502,52 @@ def test_powershell_context_file_rejects_unresolved_deep_chain(
     # Write-Warning reaches stdout under pwsh -File in this harness.
     assert "outside the project root" in result.stdout
     assert external.read_bytes() == b"# external\n"
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_context_file_rejects_depth_exhaustion_before_dotdot(
+    tmp_path: Path,
+) -> None:
+    """PowerShell context-file check must not collapse '..' past the depth limit.
+
+    Regression for the Copilot review on #5283: when link resolution
+    reached its recursion depth limit, the resolver stopped following
+    links but kept walking, so a '..' after the exhausted link
+    collapsed against the unresolved spelling and the result stabilized
+    at an in-project path while the later write followed the original
+    chain outside the project. A chain of eleven links whose tenth
+    target ends in '..' must be rejected and the outside file left
+    unchanged.
+
+    The eleventh link points at a directory beside the test tree, so
+    following the chain can never loop back into the project (a target
+    under the test tree would make directory enumeration recurse
+    forever through the chain).
+    """
+    elsewhere = tmp_path.parent / (tmp_path.name + "-elsewhere")
+    outside_dir = elsewhere / "outside"
+    outside_dir.mkdir(parents=True)
+    external = elsewhere / "AGENTS.md"
+    external.write_text("# external\n", encoding="utf-8")
+
+    repo = make_project(tmp_path / "project", context_file="l1/AGENTS.md")
+    for i in range(1, 11):
+        link = repo / f"l{i}"
+        try:
+            if i < 10:
+                link.symlink_to(f"l{i + 1}")
+            else:
+                link.symlink_to("l11/..")
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+    try:
+        (repo / "l11").symlink_to(outside_dir, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    # Write-Warning reaches stdout under pwsh -File in this harness.
+    assert "outside the project root" in result.stdout
+    assert external.read_bytes() == b"# external\n"
