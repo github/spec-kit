@@ -162,10 +162,12 @@ must agree.
 
 `process_registered_command(frontmatter, body, *, source_id)` returns a
 `(frontmatter, body)` pair before the command is rendered. `source_id` is
-`core` or the contributing extension/preset ID. Script paths and the command
-name have already been supplied; argument placeholders and command-reference
-tokens are resolved afterward. Return new objects rather than mutating the
-input frontmatter.
+`core` or the contributing extension/preset ID. Script paths have already
+been adjusted; argument placeholders and command-reference tokens are
+resolved afterward. A frontmatter `name` is injected only when
+`registrar_config.inject_name` is enabled and no non-empty name remains.
+Do not assume that `frontmatter["name"]` exists. Return new objects rather
+than mutating the input frontmatter.
 
 `post_process_command_content(content: str) -> str` transforms rendered
 Markdown, TOML, or YAML command text; its default implementation returns the
@@ -174,6 +176,15 @@ content unchanged. For skills, override
 The base skills post-processor adds shared guidance for converting dotted
 hook command names to agent-native hyphenated invocations. Preserve that
 guidance when overriding it, for example by calling `super()`.
+
+`process_registered_command()` and `post_process_command_content()` apply
+during command registration, including extension and preset contributions.
+Inherited `MarkdownIntegration.setup()`, `TomlIntegration.setup()`, and
+`YamlIntegration.setup()` install core templates without calling either
+hook. If core commands need additional agent-specific transformations,
+override `setup()` and use [tracked writes](#setup-and-file-ownership) rather
+than relying on registration hooks alone. Inherited
+`SkillsIntegration.setup()` does call `post_process_skill_content()`.
 
 Prefer these hooks to copying host rendering code. Generated PowerShell
 functionality must remain compatible with Windows PowerShell 5.1.
@@ -265,8 +276,11 @@ Package trust and reauthorization in this section apply to external adapters,
 not built-in integrations shipped with the CLI.
 
 Installation requires an install-enabled catalog and a local trust decision
-before downloading/importing executable Python. Listing, searching, and
-`integration info` inspect metadata without importing adapters.
+before downloading/importing executable Python. Metadata-only inspection
+commands are `specify integration list --catalog`,
+`specify integration search`, and `specify integration info`. Ordinary
+`specify integration list` loads trusted installed adapter code; it is not an
+import-free inspection command.
 
 Consent is tied to the project, integration ID, and verified package contents.
 Copying a project, changing users, or changing package bytes requires new
