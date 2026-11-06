@@ -117,6 +117,23 @@ function Get-LinkTarget {
     # LinkTarget (pwsh 7+ on Unix) preserves Unix filename semantics.
     # Returns $null when the target cannot be read, so the caller
     # treats the link as unresolvable instead of following a wrong path.
+    if ($Path.Contains('\') -and [System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+        # Use the .NET lookup first here, not only after a provider
+        # exception: when the normalized spelling also exists, Get-Item
+        # succeeds on that entry and returns the wrong target, so the
+        # fallback below is never reached. A $null result means the
+        # literal path has no readable target; return it rather than
+        # falling through to the provider, which would resolve the
+        # normalized spelling.
+        $linkTargetProperty = [System.IO.FileInfo].GetProperty('LinkTarget')
+        if ($null -ne $linkTargetProperty) {
+            try {
+                return $linkTargetProperty.GetValue([System.IO.FileInfo]::new($Path))
+            } catch {
+                return $null
+            }
+        }
+    }
     try {
         $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
         $target = $item.Target
@@ -202,10 +219,11 @@ function Resolve-ContextPath {
             if ($null -ne $attributes -and ($attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
                 $target = Get-LinkTarget -Path $candidate
                 if ($target) {
-                    # Shared total link-follow budget: each followed
-                    # link spends one unit, across recursive calls and
-                    # fallback passes alike. The per-chain depth bound
-                    # alone cannot stop a structure that re-expands the
+                    # Per-candidate total link-follow budget: each
+                    # followed link spends one unit, shared across
+                    # that candidate's recursive calls and fallback
+                    # passes alike. The per-chain depth bound alone
+                    # cannot stop a structure that re-expands the
                     # same targets (L1 -> L0/L0/..., L2 -> L1/L1/...),
                     # so total work is capped here; when it is spent,
                     # the candidate cannot be resolved and the null
@@ -272,11 +290,14 @@ function ConvertTo-SlashPath {
     return $Path
 }
 
-# Total link follows allowed per run, shared across every
-# Resolve-ContextPath call and fallback pass. Initialized here, before
-# the first resolution below; the per-chain depth bound alone cannot
-# stop a structure that re-expands the same targets.
-$script:LinkFollowBudgetRemaining = 1000
+# Link follows allowed per resolution unit (one candidate, or one
+# context file), shared across that unit's recursion and fallback
+# passes. The per-chain depth bound alone cannot stop a structure
+# that re-expands the same targets, so total work is capped; when it
+# is spent, the unit cannot be resolved. Scoped per unit: a rejected
+# candidate must not consume the budget of later ones.
+$script:LinkFollowBudget = 1000
+$script:LinkFollowBudgetRemaining = $script:LinkFollowBudget
 
 $ErrorActionPreference = 'Stop'
 $DefaultStart = '<!-- SPECKIT START -->'
@@ -473,6 +494,9 @@ foreach ($ContextFile in $ContextFiles) {
         Write-Warning "agent-context: context files must not contain '..' path segments; got '$ContextFile'."
         exit 1
     }
+    # Fresh budget per context file: the budget is scoped to one
+    # resolution unit, not shared across unrelated paths.
+    $script:LinkFollowBudgetRemaining = $script:LinkFollowBudget
     $resolvedTarget = Resolve-ContextPath -Root $ProjectRoot -RelativePath $ContextFile
     if ($null -eq $resolvedTarget -or -not (Test-IsSubPath -Root $ProjectRoot -Path $resolvedTarget)) {
         Write-Warning "agent-context: context file path resolves outside the project root; got '$ContextFile'."
@@ -558,6 +582,11 @@ if (-not $PlanPath) {
             $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
             $resolvedCandidates = Get-ChildItem -Path $specsDir -Filter 'plan.md' -File -Recurse -ErrorAction SilentlyContinue |
                 ForEach-Object {
+                    # Fresh budget per candidate: the budget is scoped
+                    # to this candidate's recursion and fallback
+                    # passes, so a rejected candidate cannot suppress
+                    # later ones.
+                    $script:LinkFollowBudgetRemaining = $script:LinkFollowBudget
                     $resolved = $_.FullName
                     # Resolve-ContextPath follows link chains up to its
                     # depth bound; re-run until the result stabilizes,
@@ -589,18 +618,16 @@ if (-not $PlanPath) {
                     # Skip candidates that resolve outside the project.
                     if (-not (Test-IsSubPath -Root $ProjectRoot -Path $resolved)) { return }
                     try {
-                        $target = Get-Item -LiteralPath $resolved -Force -ErrorAction Stop
-                    } catch [System.IO.FileNotFoundException] { return }
-                    catch [System.IO.DirectoryNotFoundException] { return }
-                    catch [System.Management.Automation.ItemNotFoundException] {
-                        # Get-Item normalizes backslashes on Unix, so a
-                        # resolved path containing one is reported missing
-                        # even when it exists. Re-check with .NET, which
-                        # preserves Unix filename semantics.
                         if ($resolved.Contains('\') -and [System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
-                            try {
-                                $attributes = [System.IO.File]::GetAttributes($resolved)
-                            } catch { return }
+                            # Retrieve metadata for the literal Unix path
+                            # before using the provider lookup: Get-Item
+                            # normalizes backslashes, so when the
+                            # normalized spelling also exists it reports
+                            # that entry's type instead of this file's —
+                            # a directory at the normalized spelling
+                            # would discard a valid regular plan. .NET
+                            # preserves Unix filename semantics.
+                            $attributes = [System.IO.File]::GetAttributes($resolved)
                             if ($attributes -band [System.IO.FileAttributes]::Directory) { return }
                             if ($attributes -band [System.IO.FileAttributes]::ReparsePoint) { return }
                             # No UnixMode check is possible here: .NET
@@ -610,9 +637,11 @@ if (-not $PlanPath) {
                             # wrong plan reference, not a hang.
                             $target = [System.IO.FileInfo]::new($resolved)
                         } else {
-                            return
+                            $target = Get-Item -LiteralPath $resolved -Force -ErrorAction Stop
                         }
-                    }
+                    } catch [System.IO.FileNotFoundException] { return }
+                    catch [System.IO.DirectoryNotFoundException] { return }
+                    catch [System.Management.Automation.ItemNotFoundException] { return }
                     # Directories (including links to directories) are not plans.
                     if ($target -is [System.IO.DirectoryInfo]) { return }
                     # Still a link: dangling, or a target that could not be

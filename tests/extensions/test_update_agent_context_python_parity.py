@@ -1215,6 +1215,135 @@ def test_powershell_mtime_fallback_rejects_exponential_link_expansion(
     assert (repo / "AGENTS.md").read_bytes() == expected.encode("utf-8")
 
 
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.skipif(os.name == "nt", reason="backslash is a separator on Windows")
+def test_powershell_mtime_fallback_uses_literal_backslash_link_target(
+    tmp_path: Path,
+) -> None:
+    """PowerShell mtime fallback must read a backslash link's own target.
+
+    Regression for the Copilot review on #5283: on Unix, Get-Item
+    normalizes literal backslashes in a link's path, so when the
+    normalized spelling also exists it returns that entry's Target
+    instead of this link's. A plan link under a backslash-named
+    directory must resolve to its own target, not the target of the
+    link at the normalized spelling.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    current = repo / "plans" / "current.md"
+    current.parent.mkdir(parents=True)
+    current.write_text("# newer plan\n", encoding="utf-8")
+    os.utime(current, (1_700_000_000, 1_700_000_000))
+    other = repo / "plans" / "other.md"
+    other.write_text("# older plan\n", encoding="utf-8")
+    os.utime(other, (1_600_000_000, 1_600_000_000))
+    literal = repo / "specs" / "we\\ird" / "plan.md"
+    literal.parent.mkdir(parents=True)
+    try:
+        # Two levels up from specs/we\ird (one backslash-named
+        # directory): the normalized spelling specs/we/ird needs three.
+        literal.symlink_to("../../plans/current.md")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    normalized = repo / "specs" / "we" / "ird" / "plan.md"
+    normalized.parent.mkdir(parents=True)
+    try:
+        normalized.symlink_to("../../../plans/other.md")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert b"at plans/current.md" in (repo / "AGENTS.md").read_bytes()
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_mtime_fallback_rejected_chain_does_not_suppress_valid_link(
+    tmp_path: Path,
+) -> None:
+    """PowerShell mtime fallback must scope the link budget per candidate.
+
+    Regression for the Copilot review on #5283: the link-follow budget
+    was shared by unrelated candidates, so once an earlier candidate
+    consumed it — here the expanding chain — every later valid file
+    link returned null and was discarded too, making selection depend
+    on enumeration order rather than target mtime. The chain candidate
+    must be enumerated first for the bug to show: the valid link is
+    created first and the chain candidate second, so on filesystems
+    that enumerate newest-first the chain comes first, and the chain
+    directory also sorts first alphabetically.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    target = repo / "plans" / "current.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("# valid plan\n", encoding="utf-8")
+    os.utime(target, (1_700_000_000, 1_700_000_000))
+    valid = repo / "specs" / "999-valid" / "plan.md"
+    valid.parent.mkdir(parents=True)
+    try:
+        valid.symlink_to("../../plans/current.md")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    # L0 -> ., L1 -> 8x L0, L2 -> 8x L1, L3 -> 8x L2, L4 -> 8x L3.
+    try:
+        (repo / "L0").symlink_to(".", target_is_directory=True)
+        for level in range(1, 5):
+            (repo / f"L{level}").symlink_to(
+                "/".join([f"L{level - 1}"] * 8), target_is_directory=True
+            )
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    root_plan = repo / "plan.md"
+    root_plan.write_text("# root plan\n", encoding="utf-8")
+    os.utime(root_plan, (1_700_000_000, 1_700_000_000))
+    chain = repo / "specs" / "000-chain" / "plan.md"
+    chain.parent.mkdir(parents=True)
+    try:
+        chain.symlink_to("../../L4/plan.md")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    started = time.monotonic()
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 20, f"link resolution took {elapsed:.1f}s"
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert b"at plans/current.md" in (repo / "AGENTS.md").read_bytes()
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.skipif(os.name == "nt", reason="backslash is a separator on Windows")
+def test_powershell_mtime_fallback_backslash_plan_with_directory_at_normalized_spelling(
+    tmp_path: Path,
+) -> None:
+    """PowerShell mtime fallback must check the literal backslash path.
+
+    Regression for the Copilot review on #5283: the literal-path
+    metadata check ran only when Get-Item reported the candidate
+    missing, but on Unix Get-Item normalizes backslashes, so when the
+    normalized spelling also exists it reports that entry's type
+    instead — a directory at the normalized spelling discarded a
+    valid regular plan. Both spellings are present here; the literal
+    regular file must be selected.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    plan = repo / "specs" / "we\\ird" / "plan.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# plan\n", encoding="utf-8")
+    os.utime(plan, (1_700_000_000, 1_700_000_000))
+    (repo / "specs" / "we" / "ird" / "plan.md").mkdir(parents=True)
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert b"at specs/we\\ird/plan.md" in (repo / "AGENTS.md").read_bytes()
+
+
 @pytest.mark.skipif(not POWERSHELL, reason="no PowerShell available")
 def test_python_upsert_matches_powershell(tmp_path: Path) -> None:
     repo_a = make_project(tmp_path / "proj-ps", context_file="AGENTS.md")
