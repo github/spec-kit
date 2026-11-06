@@ -982,6 +982,126 @@ def test_powershell_mtime_fallback_sorts_by_target_mtime(tmp_path: Path) -> None
     assert b"at specs/backend/001-valid/plan.md" in (repo / "AGENTS.md").read_bytes()
 
 
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_mtime_fallback_resolves_dotdot_through_symlinked_parent(
+    tmp_path: Path,
+) -> None:
+    """PowerShell mtime fallback must resolve '..' after a symlinked parent.
+
+    Regression for the Copilot review on #5283: Resolve-ContextPath
+    collapsed '..' in a link target before resolving the symlinked
+    parent, so plans/alias/../current.md (alias -> archive/nested)
+    wrongly produced plans/current.md instead of archive/current.md.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    nested = repo / "plans" / "archive" / "nested"
+    nested.mkdir(parents=True)
+    target = repo / "plans" / "archive" / "current.md"
+    target.write_text("# linked plan\n", encoding="utf-8")
+    os.utime(target, (1_700_000_000, 1_700_000_000))
+    alias = repo / "plans" / "alias"
+    try:
+        alias.symlink_to("archive/nested", target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    candidate = repo / "specs/999-candidate/plan.md"
+    candidate.parent.mkdir(parents=True)
+    try:
+        candidate.symlink_to("../../plans/alias/../current.md")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert b"at plans/archive/current.md" in (repo / "AGENTS.md").read_bytes()
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.skipif(os.name == "nt", reason="case-only paths collide on Windows")
+def test_powershell_mtime_fallback_selects_case_only_link_target(
+    tmp_path: Path,
+) -> None:
+    """PowerShell mtime fallback must select a case-only link target on Unix.
+
+    Regression for the Copilot review on #5283: PowerShell's -eq is
+    case-insensitive even on Unix, so a link from specs/001/plan.md to
+    Specs/001/plan.md stopped the resolution loop before $resolved was
+    updated, and the ReparsePoint filter then rejected the only
+    candidate.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    target_dir = repo / "Specs" / "001"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    link_dir = repo / "specs" / "001"
+    link_dir.mkdir(parents=True, exist_ok=True)
+    if target_dir.resolve() == link_dir.resolve():
+        pytest.skip("filesystem is case-insensitive")
+    target = target_dir / "plan.md"
+    target.write_text("# linked plan\n", encoding="utf-8")
+    os.utime(target, (1_700_000_000, 1_700_000_000))
+    candidate = link_dir / "plan.md"
+    try:
+        candidate.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert b"at Specs/001/plan.md" in (repo / "AGENTS.md").read_bytes()
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_mtime_fallback_rejects_depth_limit_exhaustion(
+    tmp_path: Path,
+) -> None:
+    """PowerShell mtime fallback must reject chains the loop cannot finish.
+
+    Regression for the Copilot review on #5283: when the ten-pass
+    resolution loop exhausts without stabilizing, $resolved can still
+    hold an unresolved directory link, and the lexical containment
+    check then accepts a file the OS resolves through the remaining
+    chain. A chain of 100 directory links needs more follows than the
+    loop performs, so the candidate must be rejected and no plan
+    selected.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    real = repo / "plans" / "real"
+    real.mkdir(parents=True)
+    plan = real / "plan.md"
+    plan.write_text("# deep plan\n", encoding="utf-8")
+    os.utime(plan, (1_700_000_000, 1_700_000_000))
+    prev = real
+    for i in range(100, 0, -1):
+        link = repo / f"l{i}"
+        try:
+            link.symlink_to(prev, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+        prev = link
+    candidate = repo / "specs/999-candidate/plan.md"
+    candidate.parent.mkdir(parents=True)
+    try:
+        candidate.symlink_to("../../l1/plan.md")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    expected = (
+        "<!-- SPECKIT START -->\n"
+        "For additional context about technologies to be used, project structure,\n"
+        "shell commands, and other important information, read the current plan\n"
+        "<!-- SPECKIT END -->\n"
+    )
+    assert (repo / "AGENTS.md").read_bytes() == expected.encode("utf-8")
+
+
 @pytest.mark.skipif(not POWERSHELL, reason="no PowerShell available")
 def test_python_upsert_matches_powershell(tmp_path: Path) -> None:
     repo_a = make_project(tmp_path / "proj-ps", context_file="AGENTS.md")

@@ -109,20 +109,43 @@ function Test-ConfigObject {
 function Resolve-ContextPath {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
-        [Parameter(Mandatory = $true)][string]$RelativePath
+        [Parameter(Mandatory = $true)][string]$RelativePath,
+        [string]$Base = $null,
+        [int]$Depth = 10
     )
 
-    $rootFull = [System.IO.Path]::GetFullPath($Root)
-    $segments = $RelativePath -split '/'
-    $resolved = $rootFull
+    # Resolve $RelativePath segment-by-segment from $Base (the project
+    # root by default; a link's parent dir when following a link
+    # target), following one link per segment. '..' pops the last
+    # already-resolved component instead of being collapsed lexically:
+    # a symlinked parent must win over the lexical spelling, so
+    # plans/alias/../current.md (alias -> archive/nested) reaches
+    # archive/current.md, not plans/current.md. Link chains are bounded
+    # by $Depth so a cycle terminates; the caller re-runs until the
+    # result stabilizes.
+    if (-not $Base) {
+        $Base = $Root
+    }
+    $resolved = [System.IO.Path]::GetFullPath($Base)
 
-    foreach ($segment in $segments) {
+    foreach ($segment in ($RelativePath -split '[/\\]')) {
         if ([string]::IsNullOrWhiteSpace($segment) -or $segment -eq '.') {
             continue
         }
 
+        if ($segment -eq '..') {
+            # Parent of the resolved path, clamped at the filesystem
+            # root (Split-Path returns empty above it). Never collapse
+            # '..' against an unresolved spelling.
+            $parent = Split-Path -Parent $resolved
+            if ($parent) {
+                $resolved = $parent
+            }
+            continue
+        }
+
         $candidate = [System.IO.Path]::GetFullPath((Join-Path $resolved $segment))
-        if (Test-Path -LiteralPath $candidate) {
+        if ($Depth -gt 0 -and (Test-Path -LiteralPath $candidate)) {
             $item = Get-Item -LiteralPath $candidate -Force
             if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
                 $target = $item.Target
@@ -131,11 +154,14 @@ function Resolve-ContextPath {
                 }
                 if ($target) {
                     if ([System.IO.Path]::IsPathRooted($target)) {
-                        $candidate = [System.IO.Path]::GetFullPath($target)
+                        # Absolute target: walk its components from the
+                        # filesystem root, not from the project root.
+                        $targetRoot = [System.IO.Path]::GetPathRoot($target)
+                        $candidate = Resolve-ContextPath -Root $Root -RelativePath $target.Substring($targetRoot.Length) -Base $targetRoot -Depth ($Depth - 1)
                     } else {
-                        $candidate = [System.IO.Path]::GetFullPath(
-                            (Join-Path (Split-Path -Parent $candidate) $target)
-                        )
+                        # Relative target: walk its components from the
+                        # link's parent dir ($resolved here).
+                        $candidate = Resolve-ContextPath -Root $Root -RelativePath $target -Base $resolved -Depth ($Depth - 1)
                     }
                 }
             }
@@ -447,17 +473,29 @@ if (-not $PlanPath) {
             $resolvedCandidates = Get-ChildItem -Path $specsDir -Filter 'plan.md' -File -Recurse -ErrorAction SilentlyContinue |
                 ForEach-Object {
                     $resolved = $_.FullName
-                    # Resolve-ContextPath follows one link per path segment,
-                    # so a link whose target is itself a link needs another
-                    # pass; bound the loop so a link cycle terminates.
+                    # Resolve-ContextPath follows link chains up to its
+                    # depth bound; re-run until the result stabilizes,
+                    # so a chain longer than the bound (or a cycle)
+                    # never stabilizes and is rejected below.
+                    $stabilized = $false
                     for ($depth = 0; $depth -lt 10; $depth++) {
                         $relPath = $resolved.Replace('\', '/')
                         $normRoot = $ProjectRoot.Replace('\', '/').TrimEnd('/') + '/'
                         if (-not $relPath.StartsWith($normRoot, $cmp)) { break }
                         $next = Resolve-ContextPath -Root $ProjectRoot -RelativePath $relPath.Substring($normRoot.Length)
-                        if ($next -eq $resolved) { break }
+                        # Platform-aware equality: PowerShell's -eq is
+                        # case-insensitive even on Unix, so a link to a
+                        # case-only-differing path would stop the loop
+                        # before $resolved is updated.
+                        if ([string]::Equals($next, $resolved, $cmp)) { $stabilized = $true; break }
                         $resolved = $next
                     }
+                    # Reject candidates whose chain never stabilized
+                    # within the pass bound: $resolved may still hold an
+                    # unresolved directory link (possibly leading outside
+                    # the project), which the lexical containment check
+                    # below cannot see.
+                    if (-not $stabilized) { return }
                     # Skip candidates that resolve outside the project.
                     if (-not (Test-IsSubPath -Root $ProjectRoot -Path $resolved)) { return }
                     try {
