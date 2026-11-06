@@ -69,7 +69,9 @@ result contexts; workflow calls have their own inputs and defaults.
 Use `StepStatus` values rather than arbitrary status strings. A normal
 successful step returns `COMPLETED`; `SKIPPED` records a skipped step,
 `PAUSED` requests a pause, and `FAILED` records an error. `PENDING` and
-`RUNNING` are also enum values used to represent progress.
+`RUNNING` also exist in the enum, but returning either does not leave the
+occurrence pending or running: the engine treats it as completed. Return
+`PAUSED` to stop for a later resume, not a progress status.
 
 Return serializable output values, since the engine persists outputs and
 exposes them to later `{{ steps.<id>.output.* }}` expressions. `next_steps`

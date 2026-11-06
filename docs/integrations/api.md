@@ -168,9 +168,12 @@ tokens are resolved afterward. Return new objects rather than mutating the
 input frontmatter.
 
 `post_process_command_content(content: str) -> str` transforms rendered
-Markdown, TOML, or YAML command text. For skills, override
+Markdown, TOML, or YAML command text; its default implementation returns the
+content unchanged. For skills, override
 `SkillsIntegration.post_process_skill_content(content: str) -> str` instead.
-The default post-processors return the content unchanged.
+The base skills post-processor adds shared guidance for converting dotted
+hook command names to agent-native hyphenated invocations. Preserve that
+guidance when overriding it, for example by calling `super()`.
 
 Prefer these hooks to copying host rendering code. Generated PowerShell
 functionality must remain compatible with Windows PowerShell 5.1.
@@ -199,10 +202,17 @@ The returned list includes the executable followed by its arguments. Return
 parameters must have defaults; accepting omitted keywords through `**kwargs`
 is also supported. Both prompt-only and complete host calls must be valid.
 
-Format bases for CLI agents supply a common `-p <prompt>`, `--model`, and
-`--output-format json` convention. Override it when the agent uses different
-flags or a different executable; do not assume that installing command files
-proves the agent can run non-interactively.
+Inherited CLI dispatch differs by base:
+
+| Base | Default dispatch |
+| --- | --- |
+| `MarkdownIntegration`, `SkillsIntegration` | When `config.requires_cli` is true, use `-p <prompt>`, `--model <model>` when supplied, and `--output-format json` when `output_json` is true |
+| `TomlIntegration` | Same prompt and JSON flags, but the model flag is `-m <model>`; also requires `config.requires_cli` |
+| `IntegrationBase`, `YamlIntegration` | Return `None`; no default CLI dispatch |
+
+Override `build_exec_args()` when the agent uses different flags or a
+different executable. Installing command files does not by itself provide
+non-interactive dispatch support.
 
 `validate_runtime_config(integration_args=None, integration_options=None)`
 validates per-step argument lists and option mappings. The default rejects
