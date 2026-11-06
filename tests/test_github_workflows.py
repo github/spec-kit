@@ -2286,7 +2286,7 @@ def test_bug_test_install_preserves_editable_extras_and_failure(compiled_step, e
 
 def _markdownlint_job() -> dict:
     workflow = yaml.safe_load(LINT_WORKFLOW.read_text(encoding="utf-8"))
-    return workflow["jobs"]["markdownlint"]
+    return workflow["jobs"]["checks"]
 
 
 def _documentation_globs() -> list[str]:
@@ -2321,3 +2321,78 @@ def test_markdownlint_step_lints_the_documentation_globs():
     ]
     assert len(linters) == 1
     assert linters[0]["with"]["globs"] == "${{ env.DOC_GLOBS }}"
+
+
+@requires_bash
+@pytest.mark.parametrize("event", [
+    "pull_request", "push", "initial_push", "workflow_dispatch", "manual_root", "manual_merge",
+])
+@pytest.mark.parametrize("contents,exit_code", [("line\n", 0), ("line \n", 2)])
+def test_combined_lint_run_checks_commit_whitespace(tmp_path, event, contents, exit_code):
+    env = os.environ.copy()
+    env.update({
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@example.com",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@example.com",
+        "EVENT_NAME": (
+            "workflow_dispatch" if event.startswith("manual_")
+            else "push" if event == "initial_push" else event
+        ),
+        "PR_BASE_SHA": "",
+        "PUSH_BEFORE_SHA": "",
+        "GITHUB_SHA": "HEAD",
+    })
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, env=env, check=True)
+    if event not in {"initial_push", "manual_root"}:
+        (tmp_path / "example.txt").write_text("original\n", encoding="utf-8")
+        subprocess.run(["git", "add", "example.txt"], cwd=tmp_path, env=env, check=True)
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Base"],
+            cwd=tmp_path, env=env, check=True,
+        )
+        base = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=tmp_path, env=env,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        env["PR_BASE_SHA"] = base
+        env["PUSH_BEFORE_SHA"] = base
+        if event == "manual_merge":
+            subprocess.run(
+                ["git", "checkout", "--quiet", "-b", "whitespace-change"],
+                cwd=tmp_path, env=env, check=True,
+            )
+    else:
+        env["PUSH_BEFORE_SHA"] = "0" * 40
+    (tmp_path / "example.txt").write_text(contents, encoding="utf-8")
+    subprocess.run(["git", "add", "example.txt"], cwd=tmp_path, env=env, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Change"],
+        cwd=tmp_path, env=env, check=True,
+    )
+    if event == "manual_merge":
+        subprocess.run(
+            ["git", "checkout", "--quiet", "--detach", base],
+            cwd=tmp_path, env=env, check=True,
+        )
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "merge", "--quiet", "--no-ff",
+             "-m", "Merge change", "whitespace-change"],
+            cwd=tmp_path, env=env, check=True,
+        )
+        parents = subprocess.run(
+            ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
+            cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
+        ).stdout.split()
+        assert len(parents) == 3
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(tmp_path)],
+        cwd=tmp_path, env=env, check=True,
+    )
+    step = _workflow_step(_markdownlint_job()["steps"], "Run git diff --check")
+    result = subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", step["run"]],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == exit_code, result.stderr
+    assert ("trailing whitespace" in result.stdout) is (exit_code != 0)
