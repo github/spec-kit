@@ -431,38 +431,62 @@ if (-not $PlanPath) {
             # specs/<scope>/<feature>/plan.md, are still discovered when
             # feature.json is absent (#3024).
             # Mirror the bash/python mtime fallback (#5222): follow file links
-            # and keep only candidates whose target is a regular file. -File
-            # already excludes directories (including links to directories),
-            # but a dangling link still passes it, so probe each link target
-            # by opening it: the open follows the link and fails for
-            # dangling links, links to directories, and links through
-            # non-directories. Only links are probed, so plain files are
-            # never opened. Sort by the target's mtime, like
-            # p.stat().st_mtime in the twins: GetLastWriteTime follows links
-            # on Windows; on Linux it reports the link's own time, matching
-            # the previous behavior there.
-            $candidate = Get-ChildItem -Path $specsDir -Filter 'plan.md' -File -Recurse -ErrorAction SilentlyContinue |
-                Where-Object {
-                    if ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
-                        try {
-                            $probe = [System.IO.File]::OpenRead($_.FullName)
-                            $probe.Dispose()
-                            $true
-                        } catch {
-                            $false
-                        }
-                    } else {
-                        $true
+            # and keep only candidates whose fully resolved target is a
+            # regular file inside the project. Resolve the complete link
+            # chain and check containment before reporting: a link to a file
+            # outside the project must not be reported at its in-project
+            # link path. Eligibility is decided from target metadata only:
+            # the old probe opened each link, which blocks forever on a
+            # Unix named pipe with no writer. Sort by the resolved
+            # target's mtime, like p.stat().st_mtime in the twins:
+            # GetLastWriteTime follows links on Windows but reports the
+            # link's own time on Linux, so call it on the resolved path.
+            # Use case-insensitive comparison on Windows only (matches
+            # common.ps1 pattern).
+            $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+            $resolvedCandidates = Get-ChildItem -Path $specsDir -Filter 'plan.md' -File -Recurse -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                    $resolved = $_.FullName
+                    # Resolve-ContextPath follows one link per path segment,
+                    # so a link whose target is itself a link needs another
+                    # pass; bound the loop so a link cycle terminates.
+                    for ($depth = 0; $depth -lt 10; $depth++) {
+                        $relPath = $resolved.Replace('\', '/')
+                        $normRoot = $ProjectRoot.Replace('\', '/').TrimEnd('/') + '/'
+                        if (-not $relPath.StartsWith($normRoot, $cmp)) { break }
+                        $next = Resolve-ContextPath -Root $ProjectRoot -RelativePath $relPath.Substring($normRoot.Length)
+                        if ($next -eq $resolved) { break }
+                        $resolved = $next
                     }
-                } |
-                Sort-Object { [System.IO.File]::GetLastWriteTime($_.FullName) } -Descending |
-                Select-Object -First 1
+                    # Skip candidates that resolve outside the project.
+                    if (-not (Test-IsSubPath -Root $ProjectRoot -Path $resolved)) { return }
+                    try {
+                        $target = Get-Item -LiteralPath $resolved -Force -ErrorAction Stop
+                    } catch [System.IO.FileNotFoundException] { return }
+                    catch [System.IO.DirectoryNotFoundException] { return }
+                    catch [System.Management.Automation.ItemNotFoundException] { return }
+                    # Directories (including links to directories) are not plans.
+                    if ($target -is [System.IO.DirectoryInfo]) { return }
+                    # Still a link: dangling, or a target that could not be
+                    # resolved (e.g. through a non-directory).
+                    if ($target.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { return }
+                    # Special files (named pipe, socket, device): reject from
+                    # metadata instead of opening them. UnixMode (pwsh 7+ on
+                    # Unix) reports the Unix file-type letter; Windows
+                    # PowerShell 5.1 has no such files as link targets and
+                    # the property is absent there, so nothing is skipped.
+                    $unixMode = $target.PSObject.Properties['UnixMode']
+                    if ($null -ne $unixMode -and $unixMode.Value -is [string] -and $unixMode.Value.Length -gt 0 -and $unixMode.Value[0] -ne '-') { return }
+                    [PSCustomObject]@{
+                        ResolvedPath = $resolved
+                        Mtime = [System.IO.File]::GetLastWriteTime($resolved)
+                    }
+                }
+            $candidate = $resolvedCandidates | Sort-Object Mtime -Descending | Select-Object -First 1
             if ($candidate) {
                 # GetRelativePath is .NET 5+ only; strip prefix manually for PS 5.1 compat.
-                # Use case-insensitive comparison on Windows only (matches common.ps1 pattern).
-                $fullPath = $candidate.FullName.Replace('\', '/')
+                $fullPath = $candidate.ResolvedPath.Replace('\', '/')
                 $normRoot = $ProjectRoot.Replace('\', '/').TrimEnd('/') + '/'
-                $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
                 if ($fullPath.StartsWith($normRoot, $cmp)) {
                     $PlanPath = $fullPath.Substring($normRoot.Length)
                 } else {

@@ -29,6 +29,7 @@ from tests.extensions.test_extension_agent_context import (
     BASH,
     EXT_DIR,
     POWERSHELL,
+    WINDOWS_POWERSHELL,
     _bash_posix_path,
     _bundled_script_env,
 )
@@ -65,10 +66,12 @@ def run_python(project_root: Path, *args: str) -> subprocess.CompletedProcess:
     )
 
 
-def run_powershell(project_root: Path, *args: str) -> subprocess.CompletedProcess:
+def run_powershell(
+    project_root: Path, *args: str, powershell: str | None = None
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         [
-            POWERSHELL,
+            powershell or POWERSHELL,
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",
@@ -845,7 +848,7 @@ def test_python_mtime_fallback_finds_nested_plan_matches_powershell(
     assert b"at specs/backend/001-nested/plan.md" in (repo_b / "AGENTS.md").read_bytes()
 
 
-@pytest.mark.skipif(not POWERSHELL, reason="no PowerShell available")
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
 @pytest.mark.parametrize("has_regular_plan", [False, True], ids=["alone", "with-plan"])
 @pytest.mark.parametrize(
     "candidate_kind",
@@ -856,6 +859,8 @@ def test_python_mtime_fallback_finds_nested_plan_matches_powershell(
         "non-directory-link",
         "directory-link",
         "file-link",
+        "escaping-link",
+        "fifo-link",
     ],
 )
 def test_powershell_mtime_fallback_selects_only_in_project_files(
@@ -864,17 +869,16 @@ def test_powershell_mtime_fallback_selects_only_in_project_files(
     """PowerShell mtime fallback must match the bash/python #5222 fix (#5282).
 
     Mirrors test_mtime_fallback_selects_only_in_project_files for the
-    PowerShell twin: only candidates whose target is a regular file are
-    eligible, and ordering uses the target's mtime. Two PowerShell-specific
-    differences from the twins, both inherent to Windows PowerShell 5.1:
+    PowerShell twin: only candidates whose fully resolved target is a
+    regular file inside the project are eligible, the reported path is the
+    resolved project-relative path, and ordering uses the target's mtime.
+    Links to special files (e.g. a Unix named pipe) are rejected from
+    target metadata, without opening them: opening a pipe with no writer
+    would hang the whole context update.
 
-    - A file link is reported at its in-project link path, not the resolved
-      target path: 5.1 has no link-target resolution API (ResolveLinkTarget
-      is .NET 6+), so the twins' resolved path cannot be reproduced here.
-    - The escaping-link case (target outside the project) is not covered:
-      without link-target resolution the containment skip from #5222 cannot
-      be ported, so the script reports the in-project link path instead.
-      That gap is documented in the fix; the bash/python test covers it.
+    Runs under WINDOWS_POWERSHELL so the 5.1-specific link resolution is
+    exercised on Windows instead of deferring it to CI (Copilot review on
+    #5283).
     """
     repo = make_project(tmp_path / "project", context_file="AGENTS.md")
     expected_plan = ""
@@ -896,11 +900,19 @@ def test_powershell_mtime_fallback_selects_only_in_project_files(
         os.utime(candidate, (1_700_000_000, 1_700_000_000))
     else:
         target = repo / "plans/current.md"
+        if candidate_kind == "escaping-link":
+            target = tmp_path / "outside.md"
         if candidate_kind == "non-directory-link":
             target.parent.parent.mkdir(parents=True, exist_ok=True)
             target.parent.write_text("not a directory\n", encoding="utf-8")
         elif candidate_kind == "directory-link":
             target.mkdir(parents=True)
+        elif candidate_kind == "fifo-link":
+            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                os.mkfifo(target)
+            except (AttributeError, OSError, NotImplementedError) as exc:
+                pytest.skip(f"named pipes unavailable: {exc}")
         elif candidate_kind != "dangling-link":
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("# linked plan\n", encoding="utf-8")
@@ -910,13 +922,14 @@ def test_powershell_mtime_fallback_selects_only_in_project_files(
             )
         except (OSError, NotImplementedError) as exc:
             pytest.skip(f"symlinks unavailable: {exc}")
-        if candidate_kind == "file-link":
-            # Valid file links are selected, at the in-project link path
-            # (5.1 cannot resolve the target path like the twins do).
+        if candidate_kind not in ("dangling-link", "non-directory-link", "fifo-link"):
             os.utime(target, (1_700_000_000, 1_700_000_000))
-            expected_plan = "specs/999-candidate/plan.md"
+        if candidate_kind == "file-link":
+            # Valid file links are selected at the resolved target path,
+            # like the twins.
+            expected_plan = "plans/current.md"
 
-    result = run_powershell(repo)
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
 
     assert result.returncode == 0, result.stderr
     assert result.stderr == ""
@@ -929,6 +942,44 @@ def test_powershell_mtime_fallback_selects_only_in_project_files(
         expected += f"at {expected_plan}\n"
     expected += "<!-- SPECKIT END -->\n"
     assert (repo / "AGENTS.md").read_bytes() == expected.encode("utf-8")
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_mtime_fallback_sorts_by_target_mtime(tmp_path: Path) -> None:
+    """PowerShell mtime fallback must sort by the target's mtime, not the link's.
+
+    Regression for the Copilot review on #5283: GetLastWriteTime() on the
+    link path reports the link's own mtime on Linux, so a newly created
+    link to an older target outranked a newer regular plan. The sort key
+    must come from the fully resolved target.
+    """
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    regular = repo / "specs/backend/001-valid/plan.md"
+    regular.parent.mkdir(parents=True)
+    regular.write_text("# newer regular plan\n", encoding="utf-8")
+    os.utime(regular, (1_650_000_000, 1_650_000_000))
+
+    target = repo / "plans/current.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# older linked plan\n", encoding="utf-8")
+    os.utime(target, (1_600_000_000, 1_600_000_000))
+    candidate = repo / "specs/999-candidate/plan.md"
+    candidate.parent.mkdir(parents=True)
+    try:
+        candidate.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    try:
+        # Newer link, older target: only the target's mtime may decide.
+        os.utime(candidate, (1_700_000_000, 1_700_000_000), follow_symlinks=False)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"link mtime unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert b"at specs/backend/001-valid/plan.md" in (repo / "AGENTS.md").read_bytes()
 
 
 @pytest.mark.skipif(not POWERSHELL, reason="no PowerShell available")
