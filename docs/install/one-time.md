@@ -1,6 +1,6 @@
 # One-time Usage (uvx)
 
-If you want to try Spec Kit without installing it permanently, use `uvx` to run it directly. This downloads the tool into a temporary environment that is discarded after the command finishes.
+If you want to try Spec Kit without installing it permanently, use `uvx` to run it in an isolated environment. uv caches this disposable environment for reuse; it does not install a persistent `specify` command on your PATH.
 
 > [!NOTE]
 > The commands below require **[uv](https://docs.astral.sh/uv/)**. If you see `command not found: uvx`, [install uv first](uv.md).
@@ -27,7 +27,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init --here --inte
 If you plan to use Spec Kit regularly, a persistent installation is recommended:
 
 - Tool stays installed and available in PATH
-- No re-download on every invocation
+- A persistent tool environment that is separate from uv's disposable cache
 - Better tool management with `uv tool list`, `uv tool upgrade`, `uv tool uninstall`
 
 See the main [Installation Guide](../installation.md) for persistent installation instructions.
