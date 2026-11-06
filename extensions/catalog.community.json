@@ -6919,6 +6919,74 @@
       "created_at": "2026-06-09T00:00:00Z",
       "updated_at": "2026-06-09T00:00:00Z"
     },
+    "user-manual": {
+      "name": "User Manual",
+      "id": "user-manual",
+      "description": "Create and incrementally maintain bilingual-ready, audience-aware application manuals in Markdown that reads correctly on GitHub, rendered as Markdown, through your own templates and tools, or as MkDocs HTML and PDF, including modules, interfaces, tutorials, screenshots, APIs, releases, migrations, infrastructure, architecture, and complete data dictionaries.",
+      "author": "Samy K. Abushanab",
+      "version": "2.0.4",
+      "download_url": "https://github.com/samykabu/sanduq/releases/download/user-manual-v2.0.4/user-manual.zip",
+      "sha256": "25b43f3e268f93bca7f396ed8e54fa0505bbbe5752bc34f05bf9f0f9f485e684",
+      "repository": "https://github.com/samykabu/sanduq",
+      "homepage": "https://github.com/samykabu/sanduq/tree/main/extensions/user-manual",
+      "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/user-manual.md",
+      "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/user-manual/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "extensions": [
+          {
+            "id": "illustrate",
+            "version": ">=2.0.0,<3.0.0",
+            "required": true
+          }
+        ],
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          },
+          {
+            "name": "node",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 2
+      },
+      "tags": [
+        "user-manual",
+        "documentation",
+        "mkdocs",
+        "material",
+        "pdf",
+        "bilingual",
+        "arabic",
+        "rtl",
+        "api",
+        "tutorial",
+        "release-notes",
+        "migration-guide",
+        "screenshots",
+        "architecture",
+        "infrastructure",
+        "data-dictionary"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-06T00:00:00Z",
+      "updated_at": "2026-11-06T00:00:00Z"
+    },
     "v-model": {
       "name": "V-Model Extension Pack",
       "id": "v-model",
