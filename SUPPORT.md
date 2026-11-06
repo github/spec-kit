@@ -13,6 +13,41 @@ Please search existing [issues](https://github.com/github/spec-kit/issues) and [
 
 **Spec Kit** is under active development and maintained by GitHub staff and the community. We will do our best to respond to support, feature requests, and community questions as time permits.
 
+## Python version support
+
+Python compatibility, CI coverage, and regression fixes are maintained on a
+best-effort basis, subject to maintainer availability. This policy does not
+guarantee compatibility, a fix, or a response or resolution timeline.
+
+Spec Kit's minimum Python version is declared by `requires-python` in
+[`pyproject.toml`](./pyproject.toml). Support does not mean every supported
+Python and operating system combination is tested on every change:
+
+| Python version | Routine CI (pull requests and pushes to `main`) | Manual CI (`workflow_dispatch`) |
+| --- | --- | --- |
+| Minimum supported version | Linux | Linux, Windows, macOS |
+| Three newest stable versions | Linux, Windows, macOS | Linux, Windows, macOS |
+| Other supported stable versions | Not run | Linux, Windows, macOS |
+
+This balances CI cost with compatibility coverage. The minimum supported
+version on Linux is our touchstone; newer versions receive broader routine coverage.
+The full matrix runs only when manually triggered. Regressions on older
+supported versions are addressed as needed when discovered through CI or user
+reports, rather than through proactive fixes for hypothetical problems.
+The exact versions tested are configured in the
+[Test & Lint Python workflow](./.github/workflows/test.yml).
+
+The [Python Developer's Guide version status](https://devguide.python.org/versions/)
+provides the current upstream lifecycle status for each version. For branches
+in security-only support, the core Python project no longer publishes new
+binary releases, although source-only security releases may still be issued.
+This does not make those versions unsupported or mean that third-party
+distributors cannot provide binaries.
+
+When the minimum supported Python version reaches upstream end of life,
+advance both the Linux touchstone and the minimum requirement to the next
+supported version, removing the end-of-life version from the manual matrix.
+
 ## GitHub Support Policy
 
 Support for this project is limited to the resources listed above.
