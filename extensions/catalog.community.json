@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-05T00:00:00Z",
+  "updated_at": "2026-11-06T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -778,6 +778,64 @@
       "stars": 0,
       "created_at": "2026-10-06T00:00:00Z",
       "updated_at": "2026-10-06T00:00:00Z"
+    },
+    "assure": {
+      "name": "Assure",
+      "id": "assure",
+      "description": "Make QA part of the Spec Kit lifecycle: initialize project policy, require feature test-readiness analysis before implementation, and generate a current QA test manual before pull-request creation.",
+      "author": "Samy K. Abushanab",
+      "version": "2.7.5",
+      "download_url": "https://github.com/samykabu/sanduq/releases/download/assure-v2.7.5/assure.zip",
+      "sha256": "9e75148428b8d78e43d10cc9b67c726c7333813dfac0757e2b89d82477b81bac",
+      "repository": "https://github.com/samykabu/sanduq",
+      "homepage": "https://github.com/samykabu/sanduq/tree/main/extensions/assure",
+      "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/assure.md",
+      "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/assure/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "extensions": [
+          {
+            "id": "illustrate",
+            "version": ">=2.0.0,<3.0.0",
+            "required": true
+          }
+        ],
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 3
+      },
+      "tags": [
+        "qa",
+        "testing",
+        "e2e",
+        "playwright",
+        "documentation",
+        "diagram",
+        "api",
+        "accessibility",
+        "quality-gate",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-06T00:00:00Z",
+      "updated_at": "2026-11-06T00:00:00Z"
     },
     "axi": {
       "name": "Axi Extension",
