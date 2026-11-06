@@ -124,7 +124,7 @@ def test_unlink_in_directory_skips_unsafe_directory(tmp_path, monkeypatch, fallb
 
 
 @pytest.mark.parametrize("fallback", [False, True])
-@pytest.mark.parametrize("swap_at", ["before_unlink", "after_unlink", "before_rmdir"])
+@pytest.mark.parametrize("swap_at", ["before_unlink", "after_unlink", "before_rmdir", "before_rmdir_self"])
 def test_unlink_in_directory_preserves_concurrent_replacements(tmp_path, monkeypatch, fallback, swap_at):
     directory = tmp_path / "skills" / "skill"
     directory.mkdir(parents=True)
@@ -165,6 +165,10 @@ def test_unlink_in_directory_preserves_concurrent_replacements(tmp_path, monkeyp
             directory.parent.rename(tmp_path / "retained")
             directory.parent.symlink_to(outside if descriptor_io else tmp_path / "retained", target_is_directory=True)
             swapped = True
+        elif path == directory and swap_at == "before_rmdir_self":
+            directory.rename(tmp_path / "retained")
+            directory.mkdir()
+            swapped = True
 
     def after_change(path):
         nonlocal swapped
@@ -185,5 +189,5 @@ def test_unlink_in_directory_preserves_concurrent_replacements(tmp_path, monkeyp
         assert directory.is_symlink()
         if descriptor_io:
             assert not (tmp_path / "retained" / "SKILL.md").exists()
-    elif swap_at == "after_unlink" or not descriptor_io:
+    elif swap_at in ("after_unlink", "before_rmdir_self") or not descriptor_io:
         assert directory.is_dir()

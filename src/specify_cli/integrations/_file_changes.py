@@ -85,16 +85,22 @@ def unlink_in_directory(path: Path, *, root: Path) -> None:
                     os.unlink(path.name, dir_fd=directory_fd)
                 except FileNotFoundError:
                     pass
-            try:
-                empty = not os.listdir(directory_fd) and os.path.samestat(
+
+            def same_directory() -> bool:
+                return os.path.samestat(
                     os.fstat(directory_fd),
                     os.stat(directory.name, dir_fd=parent_fd, follow_symlinks=False),
                 )
+
+            try:
+                empty = not os.listdir(directory_fd) and same_directory()
             except (FileNotFoundError, NotADirectoryError):
                 return
             if empty:
                 before_file_change(path.parent, removal=True)
                 try:
+                    if not same_directory():
+                        return
                     os.rmdir(directory.name, dir_fd=parent_fd)
                 except OSError as exc:
                     if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST, errno.ENOENT, errno.ENOTDIR):
