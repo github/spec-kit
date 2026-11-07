@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from .._package_registry import PackageRegistry
-from ..expressions.filters import format_filter_usage
+from ..expressions.filters import ARG_BOUNDS_RULE, format_filter_usage, valid_arg_bounds
 from ..step.installer import StepInstallError, validate_step_id
 
 
@@ -110,13 +110,10 @@ def parse_function_manifest(text: str, expected_id: str | None = None) -> Functi
             )
         minimum = item.get("min_args", 0)
         maximum = item.get("max_args", 0)
-        if (
-            isinstance(minimum, bool) or isinstance(maximum, bool)
-            or not isinstance(minimum, int) or not isinstance(maximum, int)
-            or minimum < 0 or maximum < minimum
-        ):
+        if not valid_arg_bounds(minimum, maximum):
             raise WorkflowFunctionError(
-                f"function.yml function '{name}' has invalid argument bounds"
+                f"function.yml function '{name}' has invalid argument bounds: "
+                f"expected {ARG_BOUNDS_RULE}"
             )
         description = item.get("description", "")
         if not isinstance(description, str):

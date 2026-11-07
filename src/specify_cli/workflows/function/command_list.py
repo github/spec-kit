@@ -7,7 +7,7 @@ import json
 from .. import _commands as cli
 from . import function_app
 from ._domain import FunctionRegistry
-from ..expressions.filters import format_filter_usage
+from ..expressions.filters import format_filter_usage, valid_arg_bounds
 
 
 @function_app.command("list")
@@ -30,11 +30,7 @@ def workflow_function_list(
             name = item.get("name", "")
             minimum = item.get("min_args", 0)
             maximum = item.get("max_args", 0)
-            if (
-                isinstance(minimum, bool) or isinstance(maximum, bool)
-                or not isinstance(minimum, int) or not isinstance(maximum, int)
-                or minimum < 0 or maximum < minimum
-            ):
+            if not valid_arg_bounds(minimum, maximum):
                 minimum, maximum = 0, 0
             functions.append({
                 "name": name,

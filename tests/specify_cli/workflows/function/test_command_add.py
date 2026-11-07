@@ -90,6 +90,15 @@ class TestDevSource:
         result = cli("add", ".cache", "--dev", str(source))
         assert result.exit_code == 1 and "Invalid function id" in result.output
 
+    def test_oversized_max_args_is_rejected_and_nothing_is_installed(self, cli, project_dir, source):
+        (source / "function.yml").write_text(
+            "id: text\nfunctions:\n  - {name: trim, handler: trim, max_args: 100000000}\n"
+        )
+        result = cli("add", "text", "--dev", str(source))
+        assert result.exit_code == 1 and "argument bounds" in result.output
+        assert not FunctionRegistry(project_dir).is_installed("text")
+        assert not install_dir(project_dir, "text").exists()
+
     def test_error_text_is_rendered_literally(self, cli, source):
         (source / "function.yml").write_text("id: text\nfunctions: [[red]x]\n")
         result = cli("add", "text", "--dev", str(source))

@@ -118,6 +118,26 @@ class TestManifestParsing:
         with pytest.raises(WorkflowFunctionError, match="argument bounds"):
             parse_function_manifest(data, "text")
 
+    @pytest.mark.parametrize("maximum", [17, 1000, 100_000_000])
+    def test_max_args_above_the_cap_is_rejected(self, maximum):
+        data = manifest(functions=[{"name": "a", "handler": "a", "max_args": maximum}])
+        with pytest.raises(WorkflowFunctionError, match="argument bounds.*<= 16"):
+            parse_function_manifest(data, "text")
+
+    def test_min_args_above_the_cap_is_rejected(self):
+        data = manifest(functions=[
+            {"name": "a", "handler": "a", "min_args": 17, "max_args": 17}
+        ])
+        with pytest.raises(WorkflowFunctionError, match="argument bounds"):
+            parse_function_manifest(data, "text")
+
+    def test_max_args_at_the_cap_is_accepted(self):
+        data = manifest(functions=[
+            {"name": "a", "handler": "a", "min_args": 16, "max_args": 16}
+        ])
+        (export,) = parse_function_manifest(data, "text").exports
+        assert (export.min_args, export.max_args) == (16, 16)
+
     def test_max_defaults_to_zero_so_min_alone_is_invalid(self):
         data = manifest(functions=[{"name": "a", "handler": "a", "min_args": 1}])
         with pytest.raises(WorkflowFunctionError, match="argument bounds"):

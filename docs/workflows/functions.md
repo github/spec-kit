@@ -58,8 +58,9 @@ functions:
 
 Package IDs use the same safe path-component validation as custom workflow
 steps. Export names are lowercase identifiers (`a-z`, `0-9`, and `_`) and must
-be unique in a package. `min_args` and `max_args` are non-negative integers;
-they count arguments after the value being piped. The defaults are zero. A
+be unique in a package. `min_args` and `max_args` are integers with
+`0 <= min_args <= max_args <= 16`; they count arguments after the value being
+piped. The defaults are zero. A
 bare filter is accepted only when `min_args` is zero. Parenthesized calls must
 contain at least one argument and must be within the declared bounds.
 

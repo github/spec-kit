@@ -132,6 +132,22 @@ class TestList:
             ("bad", 0, 0), ("bool", 0, 0),
         ]
 
+    def test_oversized_stored_bounds_are_listed_without_expanding_usage(self, cli, project_dir):
+        registry = FunctionRegistry(project_dir)
+        registry.add("big", {
+            "functions": [
+                {"name": "huge", "min_args": 0, "max_args": 100_000_000},
+                {"name": "edge", "min_args": 0, "max_args": 16},
+            ],
+        })
+        result = cli("list", "--json")
+        assert result.exit_code == 0
+        (row,) = json.loads(result.output)
+        assert [(f["name"], f["min_args"], f["max_args"]) for f in row["functions"]] == [
+            ("huge", 0, 0), ("edge", 0, 16),
+        ]
+        assert cli("list").exit_code == 0
+
     def test_corrupt_registry_lists_nothing(self, cli, project_dir):
         functions_dir(project_dir).mkdir(parents=True)
         (functions_dir(project_dir) / "function-registry.json").write_text("{bad")

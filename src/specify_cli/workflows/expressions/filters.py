@@ -287,6 +287,22 @@ class FilterSpec:
     usage: str = ""
 
 
+# Largest number of explicit arguments a custom filter may accept. Manifests and
+# registry records are untrusted, and usage text is built per argument.
+MAX_FILTER_ARGS = 16
+
+ARG_BOUNDS_RULE = f"integers with 0 <= min_args <= max_args <= {MAX_FILTER_ARGS}"
+
+
+def valid_arg_bounds(min_args: Any, max_args: Any) -> bool:
+    """Whether *min_args*/*max_args* are acceptable custom-filter argument bounds."""
+    return (
+        not isinstance(min_args, bool) and not isinstance(max_args, bool)
+        and isinstance(min_args, int) and isinstance(max_args, int)
+        and 0 <= min_args <= max_args <= MAX_FILTER_ARGS
+    )
+
+
 def format_filter_usage(name: str, min_args: int, max_args: int) -> str:
     """Return generic usage text for a filter's argument bounds."""
     if min_args == max_args == 0:
@@ -359,14 +375,9 @@ def register_custom_filter(
         raise KeyError(f"Filter '{name}' is already registered")
     if not callable(function):
         raise TypeError(f"Custom filter '{name}' handler must be callable")
-    if (
-        isinstance(min_args, bool) or isinstance(max_args, bool)
-        or not isinstance(min_args, int) or not isinstance(max_args, int)
-        or min_args < 0 or max_args < 0 or min_args > max_args
-    ):
+    if not valid_arg_bounds(min_args, max_args):
         raise ValueError(
-            f"Invalid argument bounds for custom filter '{name}': expected "
-            "non-negative integers with min_args <= max_args"
+            f"Invalid argument bounds for custom filter '{name}': expected {ARG_BOUNDS_RULE}"
         )
 
     def normalized(value: Any, *args: Any) -> Any:

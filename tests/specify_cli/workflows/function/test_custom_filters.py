@@ -163,6 +163,26 @@ class TestRegistration:
             reg("x", minimum=minimum, maximum=maximum)
         assert "x" not in FILTER_TABLE
 
+    @pytest.mark.parametrize(("minimum", "maximum"), [(0, 17), (17, 17), (0, 10**9)])
+    def test_bounds_above_the_cap_are_rejected_without_building_usage(
+        self, minimum, maximum, monkeypatch
+    ):
+        from specify_cli.workflows.expressions import filters
+
+        def forbidden(*args):
+            raise AssertionError("usage text must not be built for rejected bounds")
+
+        monkeypatch.setattr(filters, "format_filter_usage", forbidden)
+        with pytest.raises(ValueError, match="argument bounds.*<= 16"):
+            reg("x", minimum=minimum, maximum=maximum)
+        assert "x" not in FILTER_TABLE
+
+    def test_bounds_at_the_cap_are_accepted(self):
+        reg("x", minimum=0, maximum=16)
+        spec = FILTER_TABLE["x"]
+        assert (spec.min_args, spec.max_args) == (0, 16)
+        assert spec.usage.startswith("x or x(arg1, arg2")
+
     def test_unregister_removes_only_custom_filters(self):
         reg("a")
         reg("b")
