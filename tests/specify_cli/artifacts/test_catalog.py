@@ -471,6 +471,49 @@ class TestListArtifactsContract:
             assert layer["lookupId"] is None
             assert layer["sourcePath"] is None
 
+    @pytest.mark.parametrize(
+        ("header", "docstring", "expected"),
+        [
+            (
+                "# -*- coding: utf-8 -*-\n",
+                '"""Deploy the selected feature."""',
+                "Deploy the selected feature.",
+            ),
+            (
+                "# Copyright Example Team\n# SPDX-License-Identifier: MIT\n",
+                '"""Deploy the selected feature.\n\nAdditional details.\n"""',
+                "Deploy the selected feature.",
+            ),
+            ("# Custom helper\n", '"""   """', "Custom helper"),
+            ("# Custom helper\n", "", "Custom helper"),
+        ],
+    )
+    def test_python_script_description_skips_header_comments(
+        self, spec_kit_project: Path, header: str, docstring: str, expected: str
+    ):
+        templates = spec_kit_project / ".specify" / "templates"
+        scripts = templates / "scripts" / "python"
+        scripts.mkdir(parents=True)
+        commands = templates / "commands"
+        commands.mkdir()
+        (commands / "deploy.md").write_text(
+            "---\nscripts:\n  py: scripts/python/deploy.py\n---\nDeploy.\n", encoding="utf-8"
+        )
+        (spec_kit_project / ".specify" / "init-options.json").write_text(
+            json.dumps({"script": "py"}), encoding="utf-8"
+        )
+        (scripts / "deploy.py").write_text(
+            '#!/usr/bin/env python3\n' + header
+            + "\n" + docstring + "\n"
+            + 'raise RuntimeError("Inventory must never execute this script")\n',
+            encoding="utf-8",
+        )
+
+        catalog = ArtifactCatalog(spec_kit_project)
+        row = next(a for a in catalog.list_artifacts() if a.id == "script:deploy")
+        assert row.description == expected
+        assert catalog.get_artifact_info("script:deploy")["description"] == row.description
+
     def test_includes_root_level_pack_templates(
         self, spec_kit_project: Path
     ):
