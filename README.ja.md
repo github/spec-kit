@@ -15,7 +15,8 @@
     <a href="./README.md">English</a> ·
     <a href="./README.zh-CN.md">简体中文</a> ·
     <strong>日本語</strong> ·
-    <a href="./README.ko.md">한국어</a>
+    <a href="./README.ko.md">한국어</a> ·
+    <a href="./README.fr.md">Français</a>
 </p>
 
 Spec Kitは、AIコーディングエージェントに構造化されたプロセス、再利用可能なテンプレート、記録に残る成果をもたらすオープンソースのツールキットです。以下の3つのプロセスのいずれかから始め、必要に応じてカスタマイズしたり、自分自身のプロセスを持ち込んだりすることもできます。
