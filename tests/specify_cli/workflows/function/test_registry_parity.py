@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import sys
 
 import pytest
 
@@ -137,7 +138,7 @@ def test_save_leaves_only_the_registry_file(kind):
     assert [p.name for p in kind.base.iterdir()] == [kind.path.name]
 
 
-@pytest.mark.skipif(not hasattr(os, "chmod"), reason="chmod is unavailable")
+@pytest.mark.skipif(sys.platform == "win32", reason="chmod mode bits not reliable on Windows")
 def test_save_preserves_existing_file_mode(kind):
     registry = kind.cls(kind.root)
     registry.add("one", {})

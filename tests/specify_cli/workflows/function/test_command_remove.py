@@ -77,7 +77,7 @@ class TestRemove:
         target = install_dir(project_dir, "text")
 
         def fail(path, *args, **kwargs):
-            if os.fspath(path) == os.fspath(target):
+            if os.fspath(path) == os.fspath(target.resolve()):
                 raise OSError("busy")
             return real(path, *args, **kwargs)
 

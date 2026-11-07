@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 
 import pytest
 import yaml
@@ -18,6 +19,18 @@ COLLIDING = [{"name": "upper", "handler": "trim"}]
 
 def custom_filters():
     return sorted(set(FILTER_TABLE) - set(BUILTIN_FILTERS))
+
+
+def python_run(project_dir, name, body, *args):
+    """A shell ``run`` executing *body* with this interpreter.
+
+    The shell step runs through the platform shell (``cmd.exe`` on Windows), so
+    fixtures avoid POSIX utilities and ``;`` chaining and use double quotes only.
+    """
+    script = project_dir / name
+    script.write_text(body, encoding="utf-8")
+    quoted = "".join(f' "{arg}"' for arg in args)
+    return f'"{sys.executable}" "{script}"{quoted}'
 
 
 def workflow_yaml(steps, workflow_id="fn-wf", inputs=None):
@@ -43,7 +56,14 @@ def trim_wf(project_dir):
     path = project_dir / "wf.yml"
     path.write_text(
         workflow_yaml(
-            [{"id": "w", "type": "shell", "run": "printf '%s' '{{ inputs.s | trim }}' > out.txt"}],
+            [{
+                "id": "w", "type": "shell",
+                "run": python_run(
+                    project_dir, "write_out.py",
+                    "import sys\nopen('out.txt', 'w').write(sys.argv[1])\n",
+                    "{{ inputs.s | trim }}",
+                ),
+            }],
             inputs={"s": {"type": "string", "default": "  hi  "}},
         ),
         encoding="utf-8",
@@ -115,7 +135,12 @@ class TestResume:
             workflow_yaml(
                 [
                     {"id": "done", "type": "shell", "run": "echo {{ inputs.s | mark }}"},
-                    {"id": "broken", "type": "shell", "run": "echo {{ inputs.s | mark }}; exit 1"},
+                    {
+                        "id": "broken", "type": "shell",
+                        "run": python_run(
+                            project_dir, "fail.py", "raise SystemExit(1)\n", "{{ inputs.s | mark }}"
+                        ),
+                    },
                 ],
                 inputs={"s": {"type": "string", "default": "v"}},
             ),
