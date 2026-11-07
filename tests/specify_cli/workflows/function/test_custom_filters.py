@@ -295,7 +295,8 @@ class TestValidationParity:
                 raised = True
             assert rejected == raised, form
 
-    def test_validate_workflow_reports_unknown_filter_then_accepts_loaded(self):
+    def test_bare_condition_error_names_unknown_filter_then_asks_for_wrapping(self):
+        """A bare condition always errors: first naming the filter, once loaded asking for ``{{ }}``."""
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 
         definition = WorkflowDefinition.from_string(
@@ -320,6 +321,27 @@ steps:
         assert len(errors) == 1
         assert "unknown filter" not in errors[0]
         assert '"{{ inputs.s | blank }}"' in errors[0]
+
+    def test_wrapped_condition_with_loaded_filter_validates_clean(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        reg("blank", lambda v: not v)
+        definition = WorkflowDefinition.from_string(
+            """
+schema_version: "1.0"
+workflow: {id: w, name: W, version: "1.0.0"}
+inputs: {s: {type: string, default: x}}
+steps:
+  - id: a
+    type: if
+    condition: "{{ inputs.s | blank }}"
+    then:
+      - id: b
+        type: shell
+        run: "echo hi"
+"""
+        )
+        assert validate_workflow(definition) == []
 
 
 # -- Handler adapter (D7) ------------------------------------------------------
