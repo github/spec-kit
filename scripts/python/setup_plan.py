@@ -11,6 +11,7 @@ try:
     from common import (
         TemplateResolutionError,
         get_feature_paths,
+        has_non_whitespace_content,
         resolve_template_content,
     )
 except ImportError:  # pragma: no cover - direct execution from unusual cwd
@@ -18,6 +19,7 @@ except ImportError:  # pragma: no cover - direct execution from unusual cwd
     from common import (
         TemplateResolutionError,
         get_feature_paths,
+        has_non_whitespace_content,
         resolve_template_content,
     )
 
@@ -71,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
         if template_content is not None:
-            if template_content == "":
+            if not has_non_whitespace_content(template_content):
                 print(
                     "ERROR: Plan template is empty; no new plan.md was created.",
                     file=sys.stderr,
