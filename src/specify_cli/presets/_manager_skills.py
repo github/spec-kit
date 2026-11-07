@@ -567,7 +567,10 @@ class _PresetSkillMethods:
                 recorded, mirroring stale-output retirement.
         """
         from ..integrations._file_changes import after_file_change, before_file_change
-        from ..shared_infra import _ensure_safe_shared_directory, _write_shared_text
+        from ..shared_infra import (
+            _ensure_safe_shared_destination,
+            _ensure_safe_shared_directory,
+        )
 
         try:
             registrar = self._command_registrar()
@@ -677,16 +680,26 @@ class _PresetSkillMethods:
                         ),
                         None,
                     )
-                    if owner_idx is None or (owner_idx > 0 and missing):
+                    if owner_idx is None:
                         continue
-                    # Another layer wins now, so outside a removal pass this
-                    # alias is not ours to render. It still goes through the
-                    # retirement check below: a rescaffold re-registers it
-                    # from the raw fragment, which must not stay executable
-                    # once nothing is left to compose onto. On a removal pass
-                    # an existing shadowed alias is refreshed from its own
-                    # layer down, as its primary skill is.
-                    shadowed = owner_idx > 0 and not removal_pass
+                    # The alias belongs to the highest layer that declares
+                    # it, not to whichever layer wins the primary command: a
+                    # higher preset that does not declare this alias leaves
+                    # it to us. Only a higher declarer shadows it.
+                    alias_shadowed = any(
+                        self._layer_declares_alias(resolver, layer, primary, alias)
+                        for layer in layers[:owner_idx]
+                    )
+                    if alias_shadowed and missing:
+                        continue
+                    # A shadowed alias is not ours to render outside a
+                    # removal pass. It still goes through the retirement
+                    # check below: a rescaffold re-registers it from the raw
+                    # fragment, which must not stay executable once nothing
+                    # is left to compose onto. On a removal pass an existing
+                    # shadowed alias is refreshed from its own layer down, as
+                    # its primary skill is.
+                    shadowed = alias_shadowed and not removal_pass
                     owner_layers = layers[owner_idx:]
                     composed = resolver.resolve_content(
                         primary, "command", layers=owner_layers
@@ -717,14 +730,20 @@ class _PresetSkillMethods:
                         # ``.composed`` link cannot redirect this write. The
                         # entry is replaced atomically rather than written in
                         # place, so a hard link to an outside file is broken,
-                        # not written through.
+                        # not written through, and an existing cache keeps
+                        # its permission bits.
                         _ensure_safe_shared_directory(
                             self.project_root,
                             composed_file.parent,
                             create=True,
                             context="preset composed cache directory",
                         )
-                        _write_shared_text(self.project_root, composed_file, composed)
+                        _ensure_safe_shared_destination(
+                            self.project_root, composed_file
+                        )
+                        before_file_change(composed_file)
+                        registrar._replace_file_text(composed_file, composed)
+                        after_file_change(composed_file)
                     except (ValueError, OSError):
                         continue
                     registrar.register_commands(
@@ -735,6 +754,26 @@ class _PresetSkillMethods:
                         self.project_root,
                         _resolved_dir=skills_dir,
                     )
+
+    def _layer_declares_alias(
+        self, resolver: Any, layer: Dict[str, Any], primary: str, alias: str
+    ) -> bool:
+        """Whether ``layer`` comes from a preset declaring ``alias`` for ``primary``."""
+        try:
+            rel = layer["path"].relative_to(self.presets_dir)
+        except (KeyError, TypeError, ValueError):
+            return False
+        if not rel.parts:
+            return False
+        manifest = resolver._get_manifest(self.presets_dir / rel.parts[0])
+        if not manifest:
+            return False
+        return any(
+            tmpl.get("type") == "command"
+            and tmpl.get("name") == primary
+            and alias in (tmpl.get("aliases") or [])
+            for tmpl in manifest.templates
+        )
 
     def _drop_survivor_owned_aliases(
         self, pack_id: str, registered_commands: Dict[str, List[str]]

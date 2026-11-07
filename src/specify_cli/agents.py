@@ -9,8 +9,8 @@ command files into agent-specific directories in the correct format.
 import hashlib
 import os
 import re
+import secrets
 import stat
-import tempfile
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -1027,27 +1027,46 @@ class CommandRegistrar:
         too. Writing a sibling temp file and renaming it over ``dest`` only
         changes what ``dest`` names.
 
-        The replacement keeps an existing file's permission bits, and a new
-        file gets the default creation mode under the process umask, the
-        same as an in-place write would leave them.
+        The replacement keeps an existing file's permission bits. A new file
+        is created with mode 0666 so the kernel applies the process umask,
+        the same as an in-place write; the umask itself is never changed.
+        The temp name has a fixed short length, so any name valid for
+        ``dest`` stays writable.
         """
         try:
             dest_stat = os.lstat(dest)
         except FileNotFoundError:
             dest_stat = None
-        if dest_stat is not None and stat.S_ISREG(dest_stat.st_mode):
-            mode = stat.S_IMODE(dest_stat.st_mode)
+        keep_mode = (
+            stat.S_IMODE(dest_stat.st_mode)
+            if dest_stat is not None and stat.S_ISREG(dest_stat.st_mode)
+            else None
+        )
+        # O_BINARY (Windows) leaves newline translation to the text wrapper
+        # below, as ``tempfile.mkstemp`` and ``Path.write_text`` do.
+        flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_BINARY", 0)
+        )
+        for _attempt in range(100):
+            temp_path = dest.parent / f".speckit-{secrets.token_hex(8)}.tmp"
+            try:
+                fd = os.open(temp_path, flags, 0o666)
+            except FileExistsError:
+                continue
+            break
         else:
-            # ``os.umask`` has no read-only form; set and restore it at once.
-            umask = os.umask(0)
-            os.umask(umask)
-            mode = 0o666 & ~umask
-        fd, temp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
-        temp_path = Path(temp_name)
+            raise FileExistsError(
+                f"Could not create a temporary file next to {dest}"
+            )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write(content)
-            temp_path.chmod(mode)
+            if keep_mode is not None:
+                os.chmod(temp_path, keep_mode)
             os.replace(temp_path, dest)
         finally:
             temp_path.unlink(missing_ok=True)

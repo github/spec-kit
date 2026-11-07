@@ -2501,6 +2501,80 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "Appended body" in alias_file.read_text(encoding="utf-8")
         assert stat.S_IMODE(alias_file.stat().st_mode) == 0o600
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_historical_alias_refresh_preserves_cache_mode(
+        self, project_dir, temp_dir
+    ):
+        """Refreshing a shadowed survivor's ``.composed`` cache keeps a private
+        (0600) cache file private."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", "append", 5)
+        cache_file = (
+            manager.presets_dir / "middle-preset" / ".composed" / "speckit.custom.md"
+        )
+        cache_file.parent.mkdir(exist_ok=True)
+        cache_file.write_text("stale\n", encoding="utf-8")
+        cache_file.chmod(0o600)
+
+        assert manager.remove("base-preset") is True
+
+        assert "Core custom body" in cache_file.read_text(encoding="utf-8")
+        assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
+
+    def test_rescaffold_recomposes_alias_declared_only_by_lower_preset(
+        self, project_dir, temp_dir
+    ):
+        """``top`` wins the primary command but does not declare the alias, so
+        ``middle`` still owns it: a rescaffold must recompose it onto the base
+        instead of leaving the raw fragment it re-registers."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        install("top-preset", "Top body", "append", 5, alias=False)
+        alias_file = self._alias_skill(project_dir)
+
+        manager.register_enabled_presets_for_agent("claude")
+
+        content = alias_file.read_text(encoding="utf-8")
+        assert "Base preset body" in content and "Middle body" in content
+        assert "Top body" not in content
+        assert "source: middle-preset:" in content
+
+    def test_new_base_restores_alias_declared_only_by_lower_preset(
+        self, project_dir, temp_dir
+    ):
+        """An alias retired with its base comes back when a new base arrives,
+        even though a higher preset (which does not declare the alias) wins
+        the primary command."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        install("top-preset", "Top body", "append", 5, alias=False)
+        alias_file = self._alias_skill(project_dir)
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+        assert not alias_file.parent.exists()
+
+        install("new-base", "New base body", "replace", 10, alias=False)
+
+        content = alias_file.read_text(encoding="utf-8")
+        assert "New base body" in content and "Middle body" in content
+        assert "Top body" not in content
+
     def test_alias_refresh_does_not_write_through_hardlinked_skill(
         self, project_dir, temp_dir
     ):
