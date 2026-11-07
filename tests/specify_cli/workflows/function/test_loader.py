@@ -156,6 +156,14 @@ class TestBrokenPackages:
         (package / "function.yml").write_text("id: bad\nfunctions: nope\n")
         self.assert_only_healthy_loaded(project_dir)
 
+    def test_non_string_manifest_key_is_skipped_like_any_invalid_manifest(self, project_dir):
+        self.healthy(project_dir)
+        package = write_installed(project_dir, "bad")
+        (package / "function.yml").write_text(
+            "id: bad\n1: x\nb: y\nfunctions: [{name: bad, handler: trim}]\n"
+        )
+        self.assert_only_healthy_loaded(project_dir)
+
     def test_oversized_max_args_is_skipped_like_any_invalid_manifest(self, project_dir):
         self.healthy(project_dir)
         write_installed(

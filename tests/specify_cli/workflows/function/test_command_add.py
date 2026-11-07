@@ -99,6 +99,18 @@ class TestDevSource:
         assert not FunctionRegistry(project_dir).is_installed("text")
         assert not install_dir(project_dir, "text").exists()
 
+    @pytest.mark.parametrize("extra", ["1: x", "1: x\nb: y"])
+    def test_non_string_manifest_key_is_an_error_not_a_traceback(
+        self, cli, project_dir, source, extra
+    ):
+        (source / "function.yml").write_text(
+            f"id: text\n{extra}\nfunctions: [{{name: trim, handler: trim}}]\n"
+        )
+        result = cli("add", "text", "--dev", str(source))
+        assert result.exit_code == 1 and "unknown key(s)" in result.output
+        assert "Traceback" not in result.output and not isinstance(result.exception, TypeError)
+        assert not FunctionRegistry(project_dir).is_installed("text")
+
     def test_error_text_is_rendered_literally(self, cli, source):
         (source / "function.yml").write_text("id: text\nfunctions: [[red]x]\n")
         result = cli("add", "text", "--dev", str(source))

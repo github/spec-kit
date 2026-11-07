@@ -61,6 +61,15 @@ def _string(data: dict[str, Any], key: str, default: str = "") -> str:
     return value
 
 
+def _unknown_keys(mapping: dict[Any, Any], allowed: set[str]) -> list[str]:
+    """Sorted text of the keys outside *allowed*.
+
+    YAML mapping keys can be any scalar, so they are stringified before they
+    are sorted or joined into a message.
+    """
+    return sorted(str(key) for key in mapping.keys() - allowed)
+
+
 def parse_function_manifest(text: str, expected_id: str | None = None) -> FunctionManifest:
     """Parse the strict ``function.yml`` schema without importing code."""
     try:
@@ -70,7 +79,7 @@ def parse_function_manifest(text: str, expected_id: str | None = None) -> Functi
     if not isinstance(raw, dict):
         raise WorkflowFunctionError("function.yml must be a YAML mapping")
     allowed = {"id", "name", "version", "description", "functions"}
-    unknown = sorted(set(raw) - allowed)
+    unknown = _unknown_keys(raw, allowed)
     if unknown:
         raise WorkflowFunctionError(f"function.yml contains unknown key(s): {', '.join(unknown)}")
     function_id = raw.get("id")
@@ -90,7 +99,7 @@ def parse_function_manifest(text: str, expected_id: str | None = None) -> Functi
         if not isinstance(item, dict):
             raise WorkflowFunctionError(f"function.yml function at index {index} must be a mapping")
         allowed_export = {"name", "handler", "min_args", "max_args", "description"}
-        unknown_export = sorted(set(item) - allowed_export)
+        unknown_export = _unknown_keys(item, allowed_export)
         if unknown_export:
             raise WorkflowFunctionError(
                 f"function.yml function at index {index} contains unknown key(s): {', '.join(unknown_export)}"

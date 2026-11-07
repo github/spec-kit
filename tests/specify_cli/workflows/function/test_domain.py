@@ -108,6 +108,20 @@ class TestManifestParsing:
             parse_function_manifest(data, "text")
 
     @pytest.mark.parametrize(
+        ("text", "listed"),
+        [
+            ("id: text\n1: x\nfunctions: [{name: a, handler: a}]\n", "1"),
+            ("id: text\n1: x\nb: y\nfunctions: [{name: a, handler: a}]\n", "1, b"),
+            ("id: text\n1.5: x\n~: y\nfunctions: [{name: a, handler: a}]\n", "1.5, None"),
+            ("id: text\nfunctions: [{name: a, handler: a, 2: x}]\n", "2"),
+            ("id: text\nfunctions: [{name: a, handler: a, 2: x, c: y}]\n", "2, c"),
+        ],
+    )
+    def test_non_string_unknown_keys_are_reported_not_raised(self, text, listed):
+        with pytest.raises(WorkflowFunctionError, match=f"unknown key\\(s\\): {listed}$"):
+            parse_function_manifest(text, "text")
+
+    @pytest.mark.parametrize(
         ("minimum", "maximum"),
         [(2, 1), (-1, 0), (0, -1), (True, 1), (0, True), ("1", 2), (0, 1.5), (None, 1)],
     )
