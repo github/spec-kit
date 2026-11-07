@@ -1835,11 +1835,13 @@ def workflow_step_remove(*args, **kwargs):
 def register(app: typer.Typer) -> None:
     """Attach the workflow command group to the root Typer app."""
     from .catalog import register as register_catalog
+    from .function import register as register_function
     from .overlay import register as register_overlay
     from .step import register as register_step
 
     register_catalog(workflow_app)
     register_step(workflow_app)
+    register_function(workflow_app)
     register_overlay(workflow_app)
 
     # isort: off
