@@ -896,6 +896,10 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
 
         # Unregister non-skill command files from AI agents.
         if registered_commands:
+            registered_commands = self._drop_survivor_owned_aliases(
+                pack_id, registered_commands
+            )
+        if registered_commands:
             self._unregister_commands(registered_commands)
 
         if pack_dir.exists():
