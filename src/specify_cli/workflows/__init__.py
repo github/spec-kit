@@ -243,3 +243,10 @@ def load_custom_steps(project_root: Path) -> list[str]:
             continue
 
     return loaded
+
+
+def load_workflow_functions(project_root: Path) -> list[str]:
+    """Load project-installed workflow expression functions."""
+    from .function.loader import load_workflow_functions as loader
+
+    return loader(project_root)

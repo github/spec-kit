@@ -1,7 +1,7 @@
 """Fixtures for workflow function tests.
 
-The custom-filter table is process-global, so every test starts and ends with
-only built-in filters registered.
+The custom-filter table and synthetic modules are process-global, so every
+test starts and ends with only built-in filters registered.
 """
 
 from __future__ import annotations
@@ -10,9 +10,9 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _reset_custom_filters():
-    from specify_cli.workflows.expressions import unregister_custom_filters
+def _reset_custom_functions():
+    from specify_cli.workflows.function.loader import _unload_custom_functions
 
-    unregister_custom_filters()
+    _unload_custom_functions()
     yield
-    unregister_custom_filters()
+    _unload_custom_functions()

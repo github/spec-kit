@@ -50,6 +50,26 @@ def _error_console(json_output: bool):
     return err_console if json_output else console
 
 
+def _load_project_workflow_plugins_or_exit(
+    project_root: Path, *, json_output: bool = False, run_id: str | None = None
+) -> None:
+    """Load project workflow steps and expression functions before validation."""
+    from . import load_custom_steps
+    from .function import WorkflowFunctionError, load_workflow_functions
+
+    try:
+        # Package imports may write diagnostics. Keep them off a JSON run's
+        # stdout, but render the expected failure after this context exits.
+        with _stdout_to_stderr_when(json_output):
+            load_custom_steps(project_root)
+            load_workflow_functions(project_root)
+    except (WorkflowFunctionError, OSError) as exc:
+        # OSError (an unreadable steps or functions directory or package file)
+        # was rendered by run/resume's integration-load handler before plugin
+        # loading moved ahead of it; keep that behavior for every entry point.
+        _fail_integration_load(exc, json_output=json_output, run_id=run_id)
+
+
 def _print_package_error(exc: Exception) -> None:
     """Render a package install/remove failure: retained notes as warnings, then the error."""
     for note in getattr(exc, "__notes__", ()):
@@ -214,7 +234,7 @@ def _resolve_installed_workflow_ownership(
 
 
 _WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
-_RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays", "runs", "steps"})
+_RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays", "runs", "steps", "functions"})
 
 
 def _reject_insecure_download_redirect(old_url: str, new_url: str) -> None:
