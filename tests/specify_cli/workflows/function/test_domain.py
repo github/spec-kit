@@ -178,8 +178,18 @@ class TestFunctionIds:
         with pytest.raises(WorkflowFunctionError, match="function id"):
             _validate_function_id(value)
 
-    @pytest.mark.parametrize("value", [".cache", "function-registry.json"])
+    @pytest.mark.parametrize(
+        "value",
+        [
+            ".cache",
+            ".CACHE",
+            "function-registry.json",
+            "Function-Registry.Json",
+            "FUNCTION-REGISTRY.JSON",
+        ],
+    )
     def test_function_specific_reserved_names(self, value):
+        # Case variants alias the registry file on case-insensitive filesystems.
         with pytest.raises(WorkflowFunctionError):
             _validate_function_id(value)
 

@@ -50,7 +50,7 @@ def _validate_function_id(value: str) -> None:
         validate_step_id(value)
     except StepInstallError as exc:
         raise WorkflowFunctionError(str(exc).replace("step id", "function id")) from exc
-    if value in _RESERVED_FUNCTION_IDS:
+    if value.lower() in _RESERVED_FUNCTION_IDS:
         raise WorkflowFunctionError(f"Invalid function id '{value}': reserved name")
 
 
