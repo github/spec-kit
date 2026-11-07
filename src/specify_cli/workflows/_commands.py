@@ -50,6 +50,13 @@ def _error_console(json_output: bool):
     return err_console if json_output else console
 
 
+def _print_package_error(exc: Exception) -> None:
+    """Render a package install/remove failure: retained notes as warnings, then the error."""
+    for note in getattr(exc, "__notes__", ()):
+        console.print(f"[yellow]Warning:[/yellow] {_escape_markup(note)}")
+    console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+
+
 def _fail_integration_load(exc: Exception, *, json_output: bool, run_id: str | None = None):
     """Surface adapter failures before a workflow run state can be created."""
     if json_output:
