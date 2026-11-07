@@ -577,6 +577,9 @@ def _check_filter(filt: tuple[str, str, tuple[Any, ...], bool]) -> str | None:
     spec = FILTER_TABLE.get(name)
     if spec is None:
         return f"unknown filter '{name}'"
+    if has_parens and spec.max_args == 0:
+        # Same wording as the evaluator's zero-argument branch in `_apply_filter`.
+        return f"{name}: expected '| {name}' with no arguments or trailing tokens"
     if call_form_ok(spec, len(args), has_parens):
         return None
     return f"filter '{name}' used in an unsupported form"
