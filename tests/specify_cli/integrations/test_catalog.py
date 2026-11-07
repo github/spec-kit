@@ -85,6 +85,12 @@ class TestCatalogURLValidation:
         with pytest.raises(IntegrationCatalogError, match="HTTPS"):
             IntegrationCatalog._validate_catalog_url("http://example.com/catalog.json")
 
+    def test_schemeless_url_names_the_value(self):
+        with pytest.raises(IntegrationCatalogError) as excinfo:
+            IntegrationCatalog._validate_catalog_url("example.com/catalog.json")
+        assert "(got a URL with no scheme)" in str(excinfo.value)
+        assert "got ://" not in str(excinfo.value)
+
     def test_http_localhost_allowed(self):
         IntegrationCatalog._validate_catalog_url("http://localhost:8080/catalog.json")
         IntegrationCatalog._validate_catalog_url("http://127.0.0.1/catalog.json")

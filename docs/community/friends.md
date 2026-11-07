@@ -5,6 +5,8 @@
 
 Community projects that extend, visualize, or build on Spec Kit:
 
+- **[Project Room](https://github.com/OpenProjectRoom/desktop)** — An open-source Mac app that shows Spec Kit plans and task progress alongside the same repository's local services, tests, APIs, MCP servers, and data. Developers keep coding in their usual editor while Project Room makes the running app inspectable and controllable.
+
 - **[cc-spex](https://github.com/rhuss/cc-spex)** — A Claude Code plugin that adds composable traits on top of Spec Kit with [Superpowers](https://github.com/obra/superpowers)-based quality gates, spec/code review, git worktree isolation, and parallel implementation via agent teams.
 
 - **[VS Code Spec Kit Assistant](https://marketplace.visualstudio.com/items?itemName=rfsales.speckit-assistant)** — A VS Code extension that provides a visual orchestrator for the full SDD workflow (constitution → specification → planning → tasks → implementation) with phase status visualization, an interactive task checklist, DAG visualization, and support for Claude, Gemini, GitHub Copilot, and OpenAI backends. Requires the `specify` CLI in your PATH.

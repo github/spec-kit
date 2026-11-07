@@ -158,7 +158,7 @@ class TestDependencyAuditWorkflow:
 
         assert job["if"] == "${{ github.event_name == 'schedule' }}"
         assert matrix["os"] == ["ubuntu-latest", "windows-latest"]
-        assert matrix["python-version"] == ["3.11", "3.12", "3.13", "3.14"]
+        assert matrix["python-version"] == ["3.11", "3.12", "3.13", "3.14", "3.15"]
         assert job["runs-on"] == "${{ matrix.os }}"
         assert WORKFLOW_COMPILE_SCHEDULED_TEST_EXTRA_DEPS in scheduled_compile["run"]
         assert scheduled_audit["run"] == WORKFLOW_LIVE_PIP_AUDIT

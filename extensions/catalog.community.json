@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-05T00:00:00Z",
+  "updated_at": "2026-11-06T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -683,6 +683,64 @@
       "stars": 0,
       "created_at": "2026-08-17T00:00:00Z",
       "updated_at": "2026-08-17T00:00:00Z"
+    },
+    "assure": {
+      "name": "Assure",
+      "id": "assure",
+      "description": "Make QA part of the Spec Kit lifecycle: initialize project policy, require feature test-readiness analysis before implementation, and generate a current QA test manual before pull-request creation.",
+      "author": "Samy K. Abushanab",
+      "version": "2.7.5",
+      "download_url": "https://github.com/samykabu/sanduq/releases/download/assure-v2.7.5/assure.zip",
+      "sha256": "9e75148428b8d78e43d10cc9b67c726c7333813dfac0757e2b89d82477b81bac",
+      "repository": "https://github.com/samykabu/sanduq",
+      "homepage": "https://github.com/samykabu/sanduq/tree/main/extensions/assure",
+      "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/assure.md",
+      "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/assure/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "extensions": [
+          {
+            "id": "illustrate",
+            "version": ">=2.0.0,<3.0.0",
+            "required": true
+          }
+        ],
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 3
+      },
+      "tags": [
+        "qa",
+        "testing",
+        "e2e",
+        "playwright",
+        "documentation",
+        "diagram",
+        "api",
+        "accessibility",
+        "quality-gate",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-06T00:00:00Z",
+      "updated_at": "2026-11-06T00:00:00Z"
     },
     "atlas": {
       "name": "Atlas",
@@ -1793,6 +1851,48 @@
       "created_at": "2026-06-16T00:00:00Z",
       "updated_at": "2026-06-16T00:00:00Z"
     },
+    "deja-vu": {
+      "name": "deja-vu session recall",
+      "id": "deja-vu",
+      "description": "Searches your past coding-agent sessions for a feature: what was tried, decided or failed.",
+      "author": "Vladislav Shulcz (@vshulcz)",
+      "version": "0.23.5",
+      "download_url": "https://github.com/vshulcz/deja-vu/releases/download/v0.23.5/deja-spec-kit.zip",
+      "sha256": "5060c6ee6a931592e915849bbdfc05537f563fa9a34a12b98bf4e1b1c8abb143",
+      "repository": "https://github.com/vshulcz/deja-vu",
+      "homepage": "https://vshulcz.github.io/deja-vu/",
+      "documentation": "https://github.com/vshulcz/deja-vu/blob/main/extensions/spec-kit/README.md",
+      "changelog": "https://github.com/vshulcz/deja-vu/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.10.0",
+        "tools": [
+          {
+            "name": "deja",
+            "version": ">=0.22.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "memory",
+        "recall",
+        "history",
+        "context",
+        "local-first"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-05T00:00:00Z",
+      "updated_at": "2026-11-05T00:00:00Z"
+    },
     "diagram": {
       "name": "Spec Diagram",
       "id": "diagram",
@@ -2882,6 +2982,51 @@
       "stars": 0,
       "created_at": "2026-06-16T00:00:00Z",
       "updated_at": "2026-06-16T00:00:00Z"
+    },
+    "illustrate": {
+      "name": "Illustrate",
+      "id": "illustrate",
+      "description": "Generate, import, and export forty-four technical, product, architecture, process, and quantitative illustration types with tracked project-level light/dark color and font themes.",
+      "author": "Samy K. Abushanab",
+      "version": "2.7.3",
+      "download_url": "https://github.com/samykabu/sanduq/releases/download/illustrate-v2.7.3/illustrate.zip",
+      "sha256": "271d2b80037a191ed6e66d6835efb2bba743580ecc6dd1efc3106750182f7c7c",
+      "repository": "https://github.com/samykabu/sanduq",
+      "homepage": "https://github.com/samykabu/sanduq/tree/main/extensions/illustrate",
+      "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/illustrate.md",
+      "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/illustrate/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "diagrams",
+        "documentation",
+        "svg",
+        "visualization"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-05T00:00:00Z",
+      "updated_at": "2026-11-05T00:00:00Z"
     },
     "intake": {
       "name": "Intake",
@@ -4551,6 +4696,80 @@
       "created_at": "2026-03-27T08:22:30Z",
       "updated_at": "2026-03-27T08:22:30Z"
     },
+    "pr": {
+      "name": "Pull Request Workflow",
+      "id": "pr",
+      "description": "Generate or update pull requests from Spec Kit artifacts, enforce installed QA and User Manual freshness policies, then process review feedback through an approval-gated fix and reply workflow.",
+      "author": "Samy K. Abushanab",
+      "version": "4.7.6",
+      "download_url": "https://github.com/samykabu/sanduq/releases/download/pr-v4.7.6/pr.zip",
+      "sha256": "49f6748401af098d9c6d654e3deb0e8a7174a330c009133cf03864c1e5824681",
+      "repository": "https://github.com/samykabu/sanduq",
+      "homepage": "https://github.com/samykabu/sanduq/tree/main/extensions/pr",
+      "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/pr.md",
+      "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/pr/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "extensions": [
+          {
+            "id": "illustrate",
+            "version": ">=2.0.0,<3.0.0",
+            "required": true
+          },
+          {
+            "id": "assure",
+            "version": ">=2.0.0,<3.0.0",
+            "required": false
+          },
+          {
+            "id": "user-manual",
+            "version": ">=1.0.0,<3.0.0",
+            "required": false
+          }
+        ],
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          },
+          {
+            "name": "gh",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 1
+      },
+      "tags": [
+        "pr",
+        "changelog",
+        "documentation",
+        "diagram",
+        "sequence",
+        "flowchart",
+        "state-machine",
+        "data-model",
+        "review",
+        "feedback",
+        "code-review",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-05T00:00:00Z",
+      "updated_at": "2026-11-05T00:00:00Z"
+    },
     "pr-bridge": {
       "name": "PR Bridge",
       "id": "pr-bridge",
@@ -4794,6 +5013,96 @@
       "stars": 0,
       "created_at": "2026-03-28T00:00:00Z",
       "updated_at": "2026-06-16T00:00:00Z"
+    },
+    "progress": {
+      "name": "Sanduq Progress Report",
+      "id": "progress",
+      "description": "A live, deterministic progress report for a Spec Kit feature: stages over time, workstreams, runs, blockers and decisions, collected from the host's native hooks and the feature files with no agent spent on upkeep.",
+      "author": "Samy K. Abushanab",
+      "version": "1.7.0",
+      "download_url": "https://github.com/samykabu/sanduq/releases/download/progress-v1.7.0/progress.zip",
+      "sha256": "b4c6677042bb1673784a7db701144636ecde0b299069788988d77f6f4dd23d92",
+      "repository": "https://github.com/samykabu/sanduq",
+      "homepage": "https://github.com/samykabu/sanduq/tree/main/extensions/progress",
+      "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/progress.md",
+      "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/progress/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.1.1.dev0,<2.0.0",
+        "tools": [
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "progress",
+        "reporting",
+        "observability",
+        "hooks"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-06T00:00:00Z",
+      "updated_at": "2026-11-06T00:00:00Z"
+    },
+    "project": {
+      "name": "GitHub Project Lifecycle Sync",
+      "id": "project",
+      "description": "Mirror each Spec Kit feature onto a GitHub Project (v2): create a parent feature issue, advance its Status column through the Spec Kit lifecycle (open -> analysis -> engineer-review -> ready -> in-progress -> in-review -> done), and, in standalone use, create one native sub-issue per task and close it as its task is checked off (under Sanduq Workflow, Workflow owns task issues). Board-agnostic initialization lets each repo choose required/automatic or optional/manual sync hooks. Idempotent and no-regress.",
+      "author": "Samy K. Abushanab",
+      "version": "2.7.2",
+      "download_url": "https://github.com/samykabu/sanduq/releases/download/project-v2.7.2/project.zip",
+      "sha256": "eea664e17587341ab43649551147af9144e4d21c745c5e77fc90dbd5bbd0c61e",
+      "repository": "https://github.com/samykabu/sanduq",
+      "homepage": "https://github.com/samykabu/sanduq/tree/main/extensions/project",
+      "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/project.md",
+      "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/project/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          },
+          {
+            "name": "gh",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 6
+      },
+      "tags": [
+        "github",
+        "project",
+        "issues",
+        "sub-issues"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-05T00:00:00Z",
+      "updated_at": "2026-11-05T00:00:00Z"
     },
     "qa": {
       "name": "QA Testing Extension",
@@ -6709,6 +7018,74 @@
       "created_at": "2026-06-09T00:00:00Z",
       "updated_at": "2026-06-09T00:00:00Z"
     },
+    "user-manual": {
+      "name": "User Manual",
+      "id": "user-manual",
+      "description": "Create and incrementally maintain bilingual-ready, audience-aware application manuals in Markdown that reads correctly on GitHub, rendered as Markdown, through your own templates and tools, or as MkDocs HTML and PDF, including modules, interfaces, tutorials, screenshots, APIs, releases, migrations, infrastructure, architecture, and complete data dictionaries.",
+      "author": "Samy K. Abushanab",
+      "version": "2.0.4",
+      "download_url": "https://github.com/samykabu/sanduq/releases/download/user-manual-v2.0.4/user-manual.zip",
+      "sha256": "25b43f3e268f93bca7f396ed8e54fa0505bbbe5752bc34f05bf9f0f9f485e684",
+      "repository": "https://github.com/samykabu/sanduq",
+      "homepage": "https://github.com/samykabu/sanduq/tree/main/extensions/user-manual",
+      "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/user-manual.md",
+      "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/user-manual/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "extensions": [
+          {
+            "id": "illustrate",
+            "version": ">=2.0.0,<3.0.0",
+            "required": true
+          }
+        ],
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          },
+          {
+            "name": "node",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 2
+      },
+      "tags": [
+        "user-manual",
+        "documentation",
+        "mkdocs",
+        "material",
+        "pdf",
+        "bilingual",
+        "arabic",
+        "rtl",
+        "api",
+        "tutorial",
+        "release-notes",
+        "migration-guide",
+        "screenshots",
+        "architecture",
+        "infrastructure",
+        "data-dictionary"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-06T00:00:00Z",
+      "updated_at": "2026-11-06T00:00:00Z"
+    },
     "v-model": {
       "name": "V-Model Extension Pack",
       "id": "v-model",
@@ -7020,6 +7397,56 @@
       "stars": 0,
       "created_at": "2026-04-22T00:00:00Z",
       "updated_at": "2026-04-22T00:00:00Z"
+    },
+    "workflow": {
+      "name": "Sanduq Workflow",
+      "id": "workflow",
+      "description": "GitHub issue decisions and resumable Scope-to-PR orchestration with optional model-aware delegation, QA, User Manual, and workflow evidence CI.",
+      "author": "Samy K. Abushanab",
+      "version": "2.3.2",
+      "download_url": "https://github.com/samykabu/sanduq/releases/download/workflow-v2.3.2/workflow.zip",
+      "sha256": "a41329646b12bbc6ac3a0b1421ad03daea34ee60357b660c4fbd12ae498489b4",
+      "repository": "https://github.com/samykabu/sanduq",
+      "homepage": "https://github.com/samykabu/sanduq/tree/main/extensions/workflow",
+      "documentation": "https://github.com/samykabu/sanduq/blob/main/docs/extensions/workflow.md",
+      "changelog": "https://github.com/samykabu/sanduq/blob/main/extensions/workflow/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "tools": [
+          {
+            "name": "python",
+            "version": ">=3.11",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "gh",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 15,
+        "hooks": 4
+      },
+      "tags": [
+        "workflow",
+        "github",
+        "orchestration",
+        "pull-request",
+        "issues"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-05T00:00:00Z",
+      "updated_at": "2026-11-06T00:00:00Z"
     },
     "workiq": {
       "name": "Work IQ",

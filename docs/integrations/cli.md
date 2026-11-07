@@ -164,7 +164,7 @@ can supply an external adapter:
 specify init my-project --integration sample-agent --trust-integration
 ```
 
-Review the [external adapter API](https://github.com/github/spec-kit/blob/main/design/integration.md#external-adapter-package-contract)
+Review the [external adapter API](api.md)
 before publishing a package. No pip installation or source-registry edit is
 needed for adapters using the host API and standard library.
 
@@ -285,8 +285,8 @@ Recovery does not bypass catalog policy or replacement-package trust.
 Failed operations roll back their own changes, not unrelated user files or
 workflow progress. Conflicting concurrent edits are reported with recovery
 snapshots retained. Adapter authors should follow the
-[storage, loading, and lifecycle contract](https://github.com/github/spec-kit/blob/main/design/integration.md#storage-loading-and-lifecycle)
-for ownership, journaling, and recovery requirements.
+[setup and file ownership contract](api.md#setup-and-file-ownership)
+and [lifecycle guarantees](api.md#external-adapter-lifecycle-guarantees) for safe writes and recovery.
 
 ## Report Integration Status
 
