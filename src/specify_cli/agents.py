@@ -1068,12 +1068,14 @@ class CommandRegistrar:
                 f"Could not create a temporary file next to {dest}"
             )
         try:
-            if keep_mode is not None:
-                # The umask may have cleared some of the destination's bits;
-                # restore them before writing. This never widens the mode
-                # beyond the destination's own.
-                os.chmod(temp_path, keep_mode)
+            # Wrap the descriptor first so a failing ``chmod`` cannot leak it:
+            # registration catches write errors and carries on.
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                if keep_mode is not None:
+                    # The umask may have cleared some of the destination's
+                    # bits; restore them before writing. This never widens
+                    # the mode beyond the destination's own.
+                    os.chmod(temp_path, keep_mode)
                 fh.write(content)
             os.replace(temp_path, dest)
         finally:

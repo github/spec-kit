@@ -71,3 +71,34 @@ def test_replace_writes_private_content_only_into_private_temp(tmp_path, monkeyp
     assert modes_at_write == [0o600]
     assert dest.read_text(encoding="utf-8") == "secret\n"
     assert stat.S_IMODE(dest.stat().st_mode) == 0o600
+
+
+def test_replace_closes_descriptor_when_chmod_fails(tmp_path, monkeypatch):
+    """A failing ``chmod`` must not leak the temp file's descriptor: callers
+    catch registration errors and continue, so a leak would accumulate."""
+    dest = tmp_path / "owned.md"
+    dest.write_text("old\n", encoding="utf-8")
+    opened = []
+    real_open = os.open
+
+    def recording_open(path, *args, **kwargs):
+        fd = real_open(path, *args, **kwargs)
+        opened.append(fd)
+        return fd
+
+    def failing_chmod(path, mode, *args, **kwargs):
+        raise PermissionError(f"chmod denied: {path}")
+
+    monkeypatch.setattr(os, "open", recording_open)
+    monkeypatch.setattr(os, "chmod", failing_chmod)
+    try:
+        with pytest.raises(PermissionError):
+            CommandRegistrar._replace_file_text(dest, "new\n")
+    finally:
+        monkeypatch.undo()
+
+    assert len(opened) == 1
+    with pytest.raises(OSError):
+        os.fstat(opened[0])
+    assert dest.read_text(encoding="utf-8") == "old\n"
+    assert sorted(p.name for p in tmp_path.iterdir()) == [dest.name]
