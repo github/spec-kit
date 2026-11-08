@@ -352,3 +352,21 @@ def test_update_flat_plan_warnings_keep_existing_output(project: Path, monkeypat
     assert result.exit_code == 0, result.output
     assert "Requires external tools" not in result.output
     assert "Updated 'flat' to v1.2.0." in result.output
+
+
+def test_update_preserves_primitive_priority(project, priority_bundle, monkeypatch):
+    from specify_cli.bundles import command_update
+    from specify_cli.bundles.sources import _local_manifest_source
+
+    source, read_metadata = priority_bundle
+    catalog = write_catalog_file(project / "catalog.json", {"demo-bundle": catalog_entry_dict()})
+    (project / ".specify/bundle-catalogs.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "catalogs": [{"id": "qa", "url": str(catalog), "priority": 0, "install_policy": "install-allowed"}],
+    }), encoding="utf-8")
+    monkeypatch.setattr(command_update, "_download_manifest", lambda *a, **k: _local_manifest_source(str(source)))
+
+    result = runner.invoke(app, ["bundle", "update", "demo-bundle", "--offline"])
+
+    assert result.exit_code == 0, result.output
+    assert read_metadata()["priority"] == 3

@@ -522,6 +522,8 @@ def test_catalog_preset_install_and_refresh_forward_catalog_name(
     calls = []
 
     class _FakeManager:
+        registry = PresetRegistry(tmp_path / ".specify/presets")
+
         def install_from_zip(self, *args, **kwargs):
             calls.append(kwargs)
 
@@ -561,6 +563,8 @@ def test_catalog_extension_install_and_refresh_forward_catalog_and_scaffolding(
     scaffolded = []
 
     class _FakeManager:
+        registry = ExtensionRegistry(tmp_path)
+
         def install_from_zip(self, *args, **kwargs):
             installs.append(kwargs)
             return SimpleNamespace(id="catalog-extension")
@@ -2274,3 +2278,41 @@ def test_extension_pin_refuses_archive_declaring_another_version(
         manager.install(ComponentRef(kind="extensions", id="my-ext", version="0.4.12"))
     assert not manager.is_installed(ComponentRef(kind="extensions", id="my-ext"))
     assert not zip_path.exists()
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets"])
+@pytest.mark.parametrize("catalog_source", [False, True])
+@pytest.mark.parametrize("refresh", [False, True])
+@pytest.mark.parametrize("stored_priority", [None, 3, True])
+def test_primitive_priority_on_install_and_refresh(
+    tmp_path, monkeypatch, kind, catalog_source, refresh, stored_priority,
+):
+    import specify_cli._assets as assets
+
+    manager = primitive_manager(kind, tmp_path, allow_network=catalog_source)
+    if stored_priority is not None:
+        manager._manager.registry.add("c", {"priority": stored_priority})
+    calls = []
+
+    def install(*args, **kwargs):
+        calls.append(args[2] if kind == "presets" else kwargs["priority"])
+        return SimpleNamespace(id="c")
+
+    if catalog_source:
+        entry = {"id": "c", "version": "1.0.0", "download_url": "https://example.com/c.zip"}
+        patch_catalog = _patch_extension_catalog if kind == "extensions" else _patch_preset_catalog
+        patch_catalog(monkeypatch, entry, tmp_path / "archive.zip", [])
+        monkeypatch.setattr(manager._manager, "install_from_zip", install)
+    else:
+        bundled = _write_manifest(tmp_path / "source", kind[:-1], "1.0.0")
+        monkeypatch.setattr(assets, f"_locate_bundled_{kind[:-1]}", lambda cid: bundled)
+        monkeypatch.setattr(manager._manager, "install_from_directory", install)
+    if kind == "extensions":
+        monkeypatch.setattr(manager._manager, "scaffold_config", lambda cid: None)
+    component = ComponentRef(kind, "c", "1.0.0", priority=5)
+
+    (manager.refresh if refresh else manager.install)(component)
+
+    # A malformed stored priority falls back to the bundle's declaration.
+    expected = 3 if refresh and stored_priority == 3 else 5
+    assert calls == [expected]

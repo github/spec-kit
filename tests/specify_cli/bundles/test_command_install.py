@@ -1100,3 +1100,16 @@ def test_install_initializes_uninitialized_project(tmp_path: Path):
     assert marker.exists()
     data = json.loads(marker.read_text(encoding="utf-8"))
     assert "copilot" in json.dumps(data)
+
+
+def test_refresh_preserves_primitive_priority(priority_bundle):
+    from specify_cli.bundles.records import load_records
+
+    source, read_metadata = priority_bundle
+    result = runner.invoke(app, ["bundle", "install", str(source), "--offline", "--refresh"])
+
+    assert result.exit_code == 0, result.output
+    assert read_metadata()["priority"] == 3
+    record = load_records(source.parent.parent)[0]
+    assert record.required_components[0].priority == 10
+    assert record.contributed_components[0].priority == 10

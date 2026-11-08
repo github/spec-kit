@@ -32,6 +32,20 @@ from .versioning import same_version
 DEFAULT_PRIORITY = 10
 
 
+def _installed_priority(registry, component_id: str, default: int) -> int:
+    """Return the priority recorded for an installed component, or ``default``.
+
+    A refresh reinstalls the component, so it must carry over a priority the
+    user set with ``set-priority`` instead of resetting it to the bundle's.
+    """
+    from ..extensions import normalize_priority
+
+    metadata = registry.get(component_id)
+    if not isinstance(metadata, dict):
+        return default
+    return normalize_priority(metadata.get("priority"), default)
+
+
 @dataclass(frozen=True)
 class BundledPatchDetails:
     kind: str
@@ -331,6 +345,8 @@ class _PresetKindManager:
 
         speckit_version = get_speckit_version()
         priority = DEFAULT_PRIORITY if component.priority is None else component.priority
+        if force:
+            priority = _installed_priority(self._manager.registry, component.id, priority)
 
         bundled = _locate_bundled_preset(component.id)
         if bundled is not None and component.source is None:
@@ -422,6 +438,8 @@ class _ExtensionKindManager:
 
         speckit_version = get_speckit_version()
         priority = DEFAULT_PRIORITY if component.priority is None else component.priority
+        if force:
+            priority = _installed_priority(self._manager.registry, component.id, priority)
 
         bundled = _locate_bundled_extension(component.id)
         if bundled is not None and component.source is None:
