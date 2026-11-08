@@ -32,18 +32,29 @@ from .versioning import same_version
 DEFAULT_PRIORITY = 10
 
 
-def _installed_priority(registry, component_id: str, default: int) -> int:
-    """Return the priority recorded for an installed component, or ``default``.
+def _refresh_priority(
+    project_root: Path, registry, component: ComponentRef, declared: int
+) -> int:
+    """Return the priority for reinstalling *component* on a refresh.
 
-    A refresh reinstalls the component, so it must carry over a priority the
-    user set with ``set-priority`` instead of resetting it to the bundle's.
+    A priority the user set with ``set-priority`` differs from every priority
+    the installed bundles declared for the component, so it is kept. Otherwise
+    the bundle's current declaration applies, so an update can change it.
     """
     from ..extensions import normalize_priority
+    from .records import load_records
 
-    metadata = registry.get(component_id)
+    metadata = registry.get(component.id)
     if not isinstance(metadata, dict):
-        return default
-    return normalize_priority(metadata.get("priority"), default)
+        return declared
+    stored = normalize_priority(metadata.get("priority"), declared)
+    bundle_priorities = {
+        DEFAULT_PRIORITY if ref.priority is None else ref.priority
+        for record in load_records(project_root)
+        for ref in record.contributed_components
+        if (ref.kind, ref.id) == (component.kind, component.id)
+    }
+    return declared if stored in bundle_priorities else stored
 
 
 @dataclass(frozen=True)
@@ -346,7 +357,9 @@ class _PresetKindManager:
         speckit_version = get_speckit_version()
         priority = DEFAULT_PRIORITY if component.priority is None else component.priority
         if force:
-            priority = _installed_priority(self._manager.registry, component.id, priority)
+            priority = _refresh_priority(
+                self._root, self._manager.registry, component, priority
+            )
 
         bundled = _locate_bundled_preset(component.id)
         if bundled is not None and component.source is None:
@@ -439,7 +452,9 @@ class _ExtensionKindManager:
         speckit_version = get_speckit_version()
         priority = DEFAULT_PRIORITY if component.priority is None else component.priority
         if force:
-            priority = _installed_priority(self._manager.registry, component.id, priority)
+            priority = _refresh_priority(
+                self._root, self._manager.registry, component, priority
+            )
 
         bundled = _locate_bundled_extension(component.id)
         if bundled is not None and component.source is None:

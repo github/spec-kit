@@ -1113,3 +1113,21 @@ def test_refresh_preserves_primitive_priority(priority_bundle):
     record = load_records(source.parent.parent)[0]
     assert record.required_components[0].priority == 10
     assert record.contributed_components[0].priority == 10
+
+
+def test_refresh_applies_a_changed_bundle_priority(bundled_component):
+    source = bundled_component.declare(5)
+    result = runner.invoke(app, ["bundle", "install", str(source), "--offline", "--refresh"])
+
+    assert result.exit_code == 0, result.output
+    assert bundled_component.read_metadata()["priority"] == 5
+
+
+def test_refresh_keeps_a_user_priority_when_the_bundle_priority_changes(
+    bundled_component, priority_bundle
+):
+    source = bundled_component.declare(5)
+    result = runner.invoke(app, ["bundle", "install", str(source), "--offline", "--refresh"])
+
+    assert result.exit_code == 0, result.output
+    assert bundled_component.read_metadata()["priority"] == 3
