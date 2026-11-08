@@ -1027,9 +1027,12 @@ class CommandRegistrar:
         too. Writing a sibling temp file and renaming it over ``dest`` only
         changes what ``dest`` names.
 
-        The replacement keeps an existing file's permission bits. A new file
-        is created with mode 0666 so the kernel applies the process umask,
-        the same as an in-place write; the umask itself is never changed.
+        The replacement keeps an existing file's permission bits, and the
+        temp file is created with (at most) those bits and set to them before
+        any content is written, so the new text is never readable more widely
+        than the destination. A new file is created with mode 0666 so the
+        kernel applies the process umask, the same as an in-place write; the
+        umask itself is never changed.
         The temp name has a fixed short length, so any name valid for
         ``dest`` stays writable.
         """
@@ -1054,7 +1057,9 @@ class CommandRegistrar:
         for _attempt in range(100):
             temp_path = dest.parent / f".speckit-{secrets.token_hex(8)}.tmp"
             try:
-                fd = os.open(temp_path, flags, 0o666)
+                fd = os.open(
+                    temp_path, flags, 0o666 if keep_mode is None else keep_mode
+                )
             except FileExistsError:
                 continue
             break
@@ -1063,10 +1068,13 @@ class CommandRegistrar:
                 f"Could not create a temporary file next to {dest}"
             )
         try:
+            if keep_mode is not None:
+                # The umask may have cleared some of the destination's bits;
+                # restore them before writing. This never widens the mode
+                # beyond the destination's own.
+                os.chmod(temp_path, keep_mode)
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write(content)
-            if keep_mode is not None:
-                os.chmod(temp_path, keep_mode)
             os.replace(temp_path, dest)
         finally:
             temp_path.unlink(missing_ok=True)

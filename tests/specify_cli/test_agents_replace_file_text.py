@@ -44,3 +44,30 @@ def test_replace_does_not_touch_process_umask(tmp_path, monkeypatch):
 
     assert calls == []
     assert stat.S_IMODE(dest.stat().st_mode) == 0o640
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_replace_writes_private_content_only_into_private_temp(tmp_path, monkeypatch):
+    """Replacing a 0600 file under a 022 umask must not expose the new
+    content through a 0644 temp file before the final chmod."""
+    dest = tmp_path / "private.md"
+    dest.write_text("old\n", encoding="utf-8")
+    dest.chmod(0o600)
+    modes_at_write = []
+    real_fdopen = os.fdopen
+
+    def recording_fdopen(fd, *args, **kwargs):
+        modes_at_write.append(stat.S_IMODE(os.fstat(fd).st_mode))
+        return real_fdopen(fd, *args, **kwargs)
+
+    old_umask = os.umask(0o022)
+    try:
+        monkeypatch.setattr(os, "fdopen", recording_fdopen)
+        CommandRegistrar._replace_file_text(dest, "secret\n")
+    finally:
+        monkeypatch.undo()
+        os.umask(old_umask)
+
+    assert modes_at_write == [0o600]
+    assert dest.read_text(encoding="utf-8") == "secret\n"
+    assert stat.S_IMODE(dest.stat().st_mode) == 0o600
