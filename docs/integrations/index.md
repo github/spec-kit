@@ -111,6 +111,7 @@ agent's chat window in your IDE. Each page links to the agent's installation doc
 | [MiniMax Code](mcode.md) | `mcode` |
 | [Mistral Vibe](vibe.md) | `vibe` |
 | [Muse Code](muse.md) | `muse` |
+| [Nexora Code](nexora.md) | `nexora` |
 | [None: shared scaffolding only](none.md) | `none` |
 | [Oh My Pi](omp.md) | `omp` |
 | [opencode](opencode.md) | `opencode` |

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-24T23:51:45Z",
+  "updated_at": "2026-11-08T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/integrations/catalog.json",
   "integrations": {
     "none": {
@@ -389,6 +389,15 @@
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "skills"]
+    },
+    "nexora": {
+      "id": "nexora",
+      "name": "Nexora Code",
+      "version": "1.0.0",
+      "description": "Nexora Code editor extension (VS Code, Antigravity, Cursor) skills-based integration; optional @nexoracode/cli",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide", "cli", "skills"]
     }
   }
 }
