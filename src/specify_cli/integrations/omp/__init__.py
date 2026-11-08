@@ -42,7 +42,8 @@ class OmpIntegration(MarkdownIntegration):
     # looks like a flag, and `--=...` is normalized to the `--` terminator.
     # To keep generated flags and the prompt intact, ``integration_args`` is
     # limited to (a) known valueless flags and (b) self-contained
-    # ``--name=value`` tokens.
+    # ``--name=value`` tokens. Valueless flags are accepted only in their bare
+    # form: OMP ignores an inline value, so ``--yolo=false`` enables yolo.
     _VALUELESS_FLAGS = frozenset({
         "--allow-home", "--continue", "--from-claude", "--from-codex",
         "--no-session", "--no-tools", "--no-lsp", "--no-pty",
@@ -116,10 +117,20 @@ class OmpIntegration(MarkdownIntegration):
             )
 
         for value in integration_args or ():
+            flag_name, has_inline_value, _ = value.partition("=")
+            if has_inline_value and flag_name in self._VALUELESS_FLAGS:
+                # OMP splits at '=' and enables the boolean, dropping the
+                # inline value: '--yolo=false' still turns on auto-approval.
+                raise ValueError(
+                    f"OMP 'integration_args' value {value!r} is not allowed: "
+                    f"{flag_name!r} does not take a value and OMP enables it "
+                    f"regardless of the inline value. Pass {flag_name!r} "
+                    "on its own to enable it, or omit it to leave it off."
+                )
             if (
                 value in self._VALUELESS_FLAGS
                 or self._EQUALS_FLAG_RE.match(value)
-                and value.partition("=")[0] not in self._RESERVED_FLAG_NAMES
+                and flag_name not in self._RESERVED_FLAG_NAMES
             ):
                 continue
             raise ValueError(

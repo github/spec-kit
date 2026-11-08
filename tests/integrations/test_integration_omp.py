@@ -176,6 +176,41 @@ class TestOmpIntegration(MarkdownIntegrationTests):
     @pytest.mark.parametrize(
         "integration_args",
         [
+            ["--yolo=false"],
+            ["--auto-approve=false"],
+            ["--auto-approve=0"],
+            ["--yolo="],
+            ["--plan-yolo=false"],
+            ["--no-session=false"],
+        ],
+    )
+    def test_integration_args_valueless_flag_with_inline_value_is_rejected(
+        self, integration_args
+    ):
+        """OMP enables a boolean flag regardless of an inline ``=value``.
+
+        ``--yolo=false`` would silently turn on auto-approval, so every
+        equals-form of a known valueless flag is rejected.
+        """
+        with pytest.raises(ValueError, match="does not take a value"):
+            get_integration(self.KEY).build_exec_args(
+                "prompt", integration_args=integration_args
+            )
+
+    @pytest.mark.parametrize(
+        "integration_args", [["--yolo"], ["--auto-approve"], ["--plan-yolo"]]
+    )
+    def test_integration_args_bare_approval_flags_are_accepted(
+        self, integration_args
+    ):
+        args = get_integration(self.KEY).build_exec_args(
+            "prompt", integration_args=integration_args
+        )
+        assert integration_args[0] in args
+
+    @pytest.mark.parametrize(
+        "integration_args",
+        [
             ["--no-session", "--yolo"],
             ["--system-prompt=be brief"],
             ["--resume=abc123"],
