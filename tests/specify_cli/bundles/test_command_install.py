@@ -1131,3 +1131,16 @@ def test_refresh_keeps_a_user_priority_when_the_bundle_priority_changes(
 
     assert result.exit_code == 0, result.output
     assert bundled_component.read_metadata()["priority"] == 3
+
+
+def test_refresh_keeps_a_user_priority_after_the_bundle_declares_the_same_value(
+    bundled_component, priority_bundle
+):
+    for declared in (3, 5):
+        source = bundled_component.declare(declared)
+        result = runner.invoke(
+            app, ["bundle", "install", str(source), "--offline", "--refresh"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert bundled_component.read_metadata()["priority"] == 3

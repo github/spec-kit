@@ -32,29 +32,39 @@ from .versioning import same_version
 DEFAULT_PRIORITY = 10
 
 
-def _refresh_priority(
-    project_root: Path, registry, component: ComponentRef, declared: int
-) -> int:
-    """Return the priority for reinstalling *component* on a refresh.
+# Registry key that marks a priority as set by the user. A refresh reinstalls
+# the component, so it writes the mark again after the reinstall.
+_USER_PRIORITY_KEY = "user_priority"
 
-    A priority the user set with ``set-priority`` differs from every priority
-    the installed bundles declared for the component, so it is kept. Otherwise
-    the bundle's current declaration applies, so an update can change it.
+
+def _user_priority(
+    project_root: Path, registry, component: ComponentRef
+) -> int | None:
+    """Return the priority the user set for an installed component, or ``None``.
+
+    The stored priority is the user's when an earlier refresh marked it so, or
+    when it differs from every priority the installed bundles declared for the
+    component, which means ``set-priority`` changed it.
     """
     from ..extensions import normalize_priority
     from .records import load_records
 
     metadata = registry.get(component.id)
     if not isinstance(metadata, dict):
-        return declared
-    stored = normalize_priority(metadata.get("priority"), declared)
+        return None
+    # 0 stands for a missing or malformed stored value.
+    stored = normalize_priority(metadata.get("priority"), 0)
+    if stored == 0:
+        return None
+    if metadata.get(_USER_PRIORITY_KEY) is True:
+        return stored
     bundle_priorities = {
         DEFAULT_PRIORITY if ref.priority is None else ref.priority
         for record in load_records(project_root)
         for ref in record.contributed_components
         if (ref.kind, ref.id) == (component.kind, component.id)
     }
-    return declared if stored in bundle_priorities else stored
+    return None if stored in bundle_priorities else stored
 
 
 @dataclass(frozen=True)
@@ -346,19 +356,22 @@ class _PresetKindManager:
         return self._do_install(component, force=False)
 
     def refresh(self, component: ComponentRef) -> BundledPatchWarning | None:
-        return self._do_install(component, force=True)
+        priority = _user_priority(self._root, self._manager.registry, component)
+        warning = self._do_install(component, force=True, priority=priority)
+        if priority is not None:
+            self._manager.registry.update(component.id, {_USER_PRIORITY_KEY: True})
+        return warning
 
     def _do_install(
-        self, component: ComponentRef, *, force: bool,
+        self, component: ComponentRef, *, force: bool, priority: int | None = None,
     ) -> BundledPatchWarning | None:
         from .. import get_speckit_version
         from .._assets import _locate_bundled_preset
 
         speckit_version = get_speckit_version()
-        priority = DEFAULT_PRIORITY if component.priority is None else component.priority
-        if force:
-            priority = _refresh_priority(
-                self._root, self._manager.registry, component, priority
+        if priority is None:
+            priority = (
+                DEFAULT_PRIORITY if component.priority is None else component.priority
             )
 
         bundled = _locate_bundled_preset(component.id)
@@ -441,19 +454,22 @@ class _ExtensionKindManager:
         return self._do_install(component, force=False)
 
     def refresh(self, component: ComponentRef) -> BundledPatchWarning | None:
-        return self._do_install(component, force=True)
+        priority = _user_priority(self._root, self._manager.registry, component)
+        warning = self._do_install(component, force=True, priority=priority)
+        if priority is not None:
+            self._manager.registry.update(component.id, {_USER_PRIORITY_KEY: True})
+        return warning
 
     def _do_install(
-        self, component: ComponentRef, *, force: bool,
+        self, component: ComponentRef, *, force: bool, priority: int | None = None,
     ) -> BundledPatchWarning | None:
         from .. import get_speckit_version
         from .._assets import _locate_bundled_extension
 
         speckit_version = get_speckit_version()
-        priority = DEFAULT_PRIORITY if component.priority is None else component.priority
-        if force:
-            priority = _refresh_priority(
-                self._root, self._manager.registry, component, priority
+        if priority is None:
+            priority = (
+                DEFAULT_PRIORITY if component.priority is None else component.priority
             )
 
         bundled = _locate_bundled_extension(component.id)
