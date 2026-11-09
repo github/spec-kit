@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.3.3] - 2026-11-09
+
+### Changed
+
+- test: make script help assertion resilient to wrapping (#5347)
+- Add Spec Kit for Azure DevOps bundle to community catalog (#5335)
+- fix(workflows): reject non-standard JSON in shell output (#5330)
+- fix(presets): keep user files when removing preset skills (#5233)
+- Add ado-lifecycle to community workflow catalog (#5312)
+- fix(presets): render missing preset IDs as literal text (#5314)
+- fix(presets): report catalog fallback order after removal (#5313)
+- fix(workflows): coerce numeric strings for == and != like ordering operators (#5310)
+- Update Model Routing Governance preset to v0.2.8 (#5341)
+- ci: consolidate lint and dependency audit jobs (#5301)
+- feat(workflows): add per-step reasoning effort and context size settings (#5248)
+- [extension] Update Quality Gates (Enforcement Layer) extension to v0.6.1 (#5264)
+- ci: focus default Python matrix on minimum and maintained releases (#5302)
+- [extension] Add Sanduq Progress Report extension to community catalog (#5300)
+- docs: document shared integration and workflow-step APIs (#5296)
+- docs: add constitution-only persistence and separate evolution guidance (#5299)
+- fix: use printf instead of echo for feature description to avoid -n/-e/-E option interpretation (#5247)
+- Add User Manual extension to community catalog (#5295)
+- docs: add Project Room to community friends (#5298)
+- chore: release 1.3.2, begin 1.3.3.dev0 development (#5297)
+
 ## [1.3.2] - 2026-11-06
 
 ### Changed
