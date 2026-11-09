@@ -1,6 +1,7 @@
 """Scoped filesystem operations; see design/file-helper.md for the contract."""
 
 from dataclasses import dataclass, field
+from contextlib import ExitStack
 import codecs
 import errno
 import os
@@ -9,6 +10,7 @@ import stat
 import tempfile
 from typing import TypeVar
 
+from specify_cli._file_handles import windows_handle
 
 _PathType = TypeVar("_PathType", bound=PurePath)
 
@@ -162,7 +164,41 @@ class FileHelper:
     def read_bytes(self, path: Path | str) -> bytes:
         destination = self._path(path)
         self._require_file(destination)
-        return destination.read_bytes()
+        parts = destination.relative_to(self._canonical_root).parts
+        with ExitStack() as stack:
+            if os.name == "nt":
+                current = self._canonical_root
+                stack.enter_context(windows_handle(current, directory=True))
+                for part in parts[:-1]:
+                    current /= part
+                    stack.enter_context(windows_handle(current, directory=True))
+                stack.enter_context(windows_handle(destination, directory=False))
+                fd = os.open(destination, os.O_RDONLY | os.O_BINARY)
+            else:
+                if not (
+                    getattr(os, "O_NOFOLLOW", 0)
+                    and getattr(os, "O_DIRECTORY", 0)
+                    and getattr(os, "O_NONBLOCK", 0)
+                    and os.open in os.supports_dir_fd
+                ):
+                    raise OSError(errno.ENOTSUP, "Safe scoped reads are unsupported on this platform")
+                flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+                flags |= getattr(os, "O_CLOEXEC", 0)
+                parent = os.open(self._canonical_root, flags)
+                stack.callback(os.close, parent)
+                for part in parts[:-1]:
+                    parent = os.open(part, flags, dir_fd=parent)
+                    stack.callback(os.close, parent)
+                fd = os.open(
+                    parts[-1],
+                    os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0),
+                    dir_fd=parent,
+                )
+            stack.callback(os.close, fd)
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise UnsupportedPathError(f"Expected a regular file: {destination}")
+            with os.fdopen(fd, "rb", closefd=False) as stream:
+                return stream.read()
 
     def read_text(self, path: Path | str, *, encoding: str = "utf-8") -> str:
         return self.read_bytes(path).decode(encoding)

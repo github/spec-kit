@@ -207,15 +207,27 @@ entries, not reject a whole project for excluded/unrelated links.
 
 ## Safety limits and migration
 
+Reads resolve supported contained links under the existing policy, then open
+the resolved hierarchy without following substituted links. POSIX reads use
+descriptor-relative directory traversal with `O_DIRECTORY` and `O_NOFOLLOW`,
+and open the leaf with `O_NOFOLLOW` and `O_NONBLOCK`. Windows reads pin each
+resolved directory and leaf with non-reparse handles that withhold delete
+sharing. Both paths validate the opened file with `fstat` before reading its
+descriptor, and release all handles on success or failure. Platforms without
+the required safe-open primitives fail explicitly rather than fall back to
+unchecked pathname reads. A concurrent replacement can fail the read or leave
+it reading the already-open original file, but cannot redirect it through a
+substituted symlink. This does not freeze file contents against in-place edits.
+
 Preflight detects static policy failures before recursive deletion or parent
 creation. Atomic writes recheck the original path before replacement, and
-deletion rechecks each accessed entry. Portable path checks are **not** a
+deletion rechecks each accessed entry. Mutation path checks are **not** a
 race-free sandbox: another process can exchange parents or entries between
 checks and syscalls, and an I/O failure during mutation can leave partial
-results. Protect against concurrent untrusted mutation separately; descriptor-
-relative traversal or platform-specific mechanisms are future work, not a
-claim of this API. The helper does not constrain subprocesses or third-party
-code. Exclusive creation uses `O_EXCL` and `O_NOFOLLOW` where available.
+results. Protect mutations against concurrent untrusted changes separately;
+descriptor-relative or platform-specific mutation mechanisms remain future
+work. The helper does not constrain subprocesses or third-party code.
+Exclusive creation uses `O_EXCL` and `O_NOFOLLOW` where available.
 
 Existing safe-write mechanisms informed this helper, but existing shared
 infrastructure warning/skip behavior and development-mode link creation are

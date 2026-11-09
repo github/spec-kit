@@ -1,6 +1,7 @@
 """Operation-level evidence for the scoped FileHelper foundation."""
 
 from dataclasses import FrozenInstanceError
+from contextlib import contextmanager
 import errno
 import os
 from pathlib import Path, PureWindowsPath
@@ -9,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from specify_cli import file_helper
 from specify_cli.file_helper import (
     FileHelper,
     FileHelperError,
@@ -58,6 +60,258 @@ def test_plain_operations(root, allow):
     assert not (root / "binary").exists()
     files.delete("nested", recursive=True)
     assert list(root.iterdir()) == []
+
+
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("operation", ["read_bytes", "read_text"])
+@pytest.mark.parametrize("kind", ["leaf", "parent", "resolved-link"])
+def test_read_does_not_follow_replacements_after_validation(
+    root, link, monkeypatch, allow, operation, kind
+):
+    if kind == "resolved-link" and not allow:
+        pytest.skip("Contained links require allow mode")
+    directory = root / "directory"
+    directory.mkdir()
+    (directory / "file").write_bytes(b"inside")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "file").write_bytes(b"outside-secret")
+    selected = directory / "file"
+    if kind == "resolved-link":
+        selected = link(root / "alias", selected)
+    original_path = FileHelper._path
+
+    def exchange(self, path, **kwargs):
+        destination = original_path(self, path, **kwargs)
+        if kind == "parent":
+            directory.rename(root / "retained")
+            link(directory, outside)
+        else:
+            destination.unlink()
+            link(destination, outside / "file")
+        return destination
+
+    monkeypatch.setattr(FileHelper, "_path", exchange)
+    try:
+        content = getattr(FileHelper(root, allow_symlinks=allow), operation)(selected)
+    except (OSError, FileHelperError):
+        pass
+    else:
+        assert content in (b"inside", "inside")
+
+
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("kind", ["leaf", "parent"])
+def test_read_uses_opened_file_after_replacement(root, link, monkeypatch, allow, kind):
+    directory = root / "directory"
+    directory.mkdir()
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "file").write_bytes(b"outside-secret")
+    original_fstat = os.fstat
+    swapped = False
+
+    def exchange(fd):
+        nonlocal swapped
+        info = original_fstat(fd)
+        if swapped:
+            return info
+        if kind == "leaf":
+            source, replacement = selected, outside / "file"
+        else:
+            source, replacement = directory, outside
+        if os.name == "nt":
+            with pytest.raises(OSError):
+                source.rename(root / "retained")
+        else:
+            source.rename(root / "retained")
+            link(source, replacement)
+        swapped = True
+        return info
+
+    monkeypatch.setattr("specify_cli.file_helper.os.fstat", exchange)
+    assert FileHelper(root, allow_symlinks=allow).read_bytes(selected) == b"inside"
+    assert swapped
+    if os.name == "nt":
+        source = selected if kind == "leaf" else directory
+        source.rename(root / "retained")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative open regression")
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("phase", ["parent", "leaf"])
+def test_read_rejects_replacement_during_open(root, link, monkeypatch, allow, phase):
+    directory = root / "directory"
+    directory.mkdir()
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "file").write_bytes(b"outside-secret")
+    original_open = os.open
+    swapped = False
+
+    def exchange(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if path == ("directory" if phase == "parent" else "file"):
+            source = directory if phase == "parent" else selected
+            source.rename(root / "retained")
+            link(source, outside if phase == "parent" else outside / "file")
+            swapped = True
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {exchange})
+    monkeypatch.setattr("specify_cli.file_helper.os.open", exchange)
+    with pytest.raises(OSError):
+        FileHelper(root, allow_symlinks=allow).read_bytes(selected)
+    assert swapped
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative open regression")
+def test_read_pins_parent_before_opening_leaf(root, link, monkeypatch):
+    directory = root / "directory"
+    directory.mkdir()
+    (directory / "file").write_bytes(b"inside")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "file").write_bytes(b"outside-secret")
+    original_open = os.open
+    swapped = False
+
+    def exchange(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if path == "file":
+            directory.rename(root / "retained")
+            link(directory, outside)
+            swapped = True
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {exchange})
+    monkeypatch.setattr("specify_cli.file_helper.os.open", exchange)
+    assert FileHelper(root).read_bytes("directory/file") == b"inside"
+    assert swapped
+
+
+@pytest.mark.parametrize("failure", [None, "parent", "leaf", "fstat"])
+def test_windows_read_pins_entire_resolved_hierarchy(root, monkeypatch, failure):
+    directory = root / "directory"
+    directory.mkdir()
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    pinned = []
+    seen = []
+
+    @contextmanager
+    def pin(path, *, directory):
+        if path.name == {"parent": "directory", "leaf": "file"}.get(failure):
+            raise OSError("injected handle failure")
+        pinned.append(path)
+        seen.append((path, directory))
+        try:
+            yield 1
+        finally:
+            assert pinned.pop() == path
+
+    def checked_fstat(fd):
+        assert pinned == [root.resolve(), directory.resolve(), selected.resolve()]
+        if failure == "fstat":
+            raise OSError("injected fstat failure")
+        return os.fstat(fd)
+
+    windows_os = SimpleNamespace(
+        name="nt",
+        O_RDONLY=os.O_RDONLY,
+        O_BINARY=getattr(os, "O_BINARY", 0),
+        open=os.open,
+        close=os.close,
+        fdopen=os.fdopen,
+        fstat=checked_fstat,
+    )
+    monkeypatch.setattr(file_helper, "os", windows_os)
+    monkeypatch.setattr(file_helper, "windows_handle", pin)
+    files = FileHelper(root)
+    if failure:
+        with pytest.raises(OSError, match="injected"):
+            files.read_bytes(selected)
+    else:
+        assert files.read_bytes(selected) == b"inside"
+        assert seen == [
+            (root.resolve(), True),
+            (directory.resolve(), True),
+            (selected.resolve(), False),
+        ]
+    assert pinned == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor cleanup regression")
+@pytest.mark.parametrize("failure", ["parent", "leaf", "fstat", "fdopen", "read"])
+def test_read_closes_descriptors_on_failure(root, monkeypatch, failure):
+    (root / "directory").mkdir()
+    selected = root / "directory/file"
+    selected.write_bytes(b"inside")
+    opened = []
+    original_open = os.open
+
+    def recording_open(path, flags, *args, **kwargs):
+        if str(path) == {"parent": "directory", "leaf": "file"}.get(failure):
+            raise PermissionError("injected open failure")
+        fd = original_open(path, flags, *args, **kwargs)
+        opened.append(fd)
+        return fd
+
+    def fail(*args, **kwargs):
+        raise OSError("injected read failure")
+
+    class FailedRead:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        read = fail
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {recording_open})
+        patch.setattr(os, "open", recording_open)
+        if failure in ("fstat", "fdopen"):
+            patch.setattr(os, failure, fail)
+        elif failure == "read":
+            patch.setattr(os, "fdopen", lambda *args, **kwargs: FailedRead())
+        with pytest.raises(OSError, match="injected"):
+            FileHelper(root).read_bytes(selected)
+    assert opened
+    for fd in opened:
+        with pytest.raises(OSError) as error:
+            os.fstat(fd)
+        assert error.value.errno == errno.EBADF
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX special-file replacement regression")
+def test_read_checks_opened_type_without_blocking_on_fifo(root, monkeypatch):
+    selected = root / "file"
+    selected.write_bytes(b"inside")
+    original_check = FileHelper._require_file
+
+    def exchange(path):
+        original_check(path)
+        path.unlink()
+        os.mkfifo(path)
+
+    monkeypatch.setattr(FileHelper, "_require_file", staticmethod(exchange))
+    with pytest.raises(UnsupportedPathError, match="regular file"):
+        FileHelper(root).read_bytes(selected)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX capability refusal regression")
+def test_read_refuses_unsafe_platform_fallback(root, monkeypatch):
+    (root / "file").write_bytes(b"inside")
+    monkeypatch.setattr(os, "supports_dir_fd", set())
+    with pytest.raises(OSError) as error:
+        FileHelper(root).read_bytes("file")
+    assert error.value.errno == errno.ENOTSUP
 
 
 @pytest.mark.parametrize("allow", [False, True])
