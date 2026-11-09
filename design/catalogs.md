@@ -181,7 +181,8 @@ Current behavior differs by primitive:
   to any readable stale cache after errors while opening, redirecting, bounded
   reading, UTF-8 decoding, or JSON parsing, and currently require only a mapping
   at the payload root before merge. A freshly parsed non-object payload is
-  rejected after that fallback boundary.
+  rejected after that fallback boundary. Shared HTTP URL-policy failures bypass
+  stale-cache fallback and retain their cause in a workflow catalog error.
 - Workflow steps follow the workflow cache/fallback model, validate every
   redirect hop, and disable cache use when the cache path contains a symlink.
   Duplicate JSON fields are re-raised as fatal validation errors before stale
@@ -235,9 +236,11 @@ usable. Validation errors are not uniformly recoverable:
   fails. Workflow-step duplicate JSON fields and duplicate IDs are fatal
   validation errors rather than skippable source-fetch errors.
 - Workflow and step fetches may use readable stale cache data after broad
-  fetch-path failures, including rejected redirects, bounded-read failures,
-  decoding failures, and malformed JSON. Fresh non-object payloads and step
-  duplicate-field errors remain outside that fallback.
+  fetch-path failures, including catalog-validator redirect rejections,
+  bounded-read failures, decoding failures, and malformed JSON. Shared HTTP
+  URL-policy failures bypass stale-cache fallback, including during forced
+  refresh. Fresh non-object payloads and step duplicate-field errors also
+  remain outside that fallback.
 
 Bundle lookup is fail-fast in precedence order: loading a source error stops
 the operation. Built-in fetch fallback is handled inside the bundle fetcher,

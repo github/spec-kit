@@ -187,8 +187,9 @@ def test_symlinked_cache_ancestor_cannot_redirect_write(
     assert list(outside.iterdir()) == []
 
 
+@pytest.mark.parametrize("force_refresh", [False, True])
 def test_regular_cache_fresh_refresh_and_stale_fallback(
-    tmp_path, catalog_kind, fetch, monkeypatch
+    tmp_path, catalog_kind, fetch, monkeypatch, force_refresh,
 ):
     catalog_cls, entry_cls, *_ = catalog_kind
     catalog = catalog_cls(tmp_path)
@@ -209,7 +210,49 @@ def test_regular_cache_fresh_refresh_and_stale_fallback(
         raise URLError("isolated offline test")
 
     monkeypatch.setattr("specify_cli.authentication.http.open_url", unavailable)
-    assert catalog._fetch_single_catalog(entry) == fetch[0]
+    assert catalog._fetch_single_catalog(entry, force_refresh=force_refresh) == fetch[0]
+
+
+@pytest.mark.parametrize("force_refresh", [False, True])
+@pytest.mark.parametrize("rejection", ["initial", "redirect"])
+def test_url_policy_failure_does_not_use_expired_cache(
+    tmp_path, monkeypatch, catalog_kind, force_refresh, rejection,
+):
+    from unittest.mock import patch
+
+    from specify_cli.authentication import http
+
+    monkeypatch.setattr(http, "_config_override", [])
+    catalog_cls, entry_cls, field, *_ = catalog_kind
+    catalog = catalog_cls(tmp_path)
+    url = "https://ex%61mple.com/catalog.json" if rejection == "initial" else URL
+    entry = entry_cls(url, "test", 1, False)
+    data, metadata = catalog._get_cache_paths(url)
+    data.parent.mkdir(parents=True, exist_ok=True)
+    payload = {field: {"cached": {"version": "1.0.0"}}}
+    data.write_text(json.dumps(payload), encoding="utf-8")
+    metadata.write_text(json.dumps({"fetched_at": 0}), encoding="utf-8")
+    assert not catalog._is_url_cache_valid(url)
+    error = WorkflowCatalogError if field == "workflows" else StepCatalogError
+
+    with patch.object(http.urllib.request, "build_opener") as build_opener:
+        def reject_redirect(request, timeout):
+            handler = build_opener.call_args.args[0]
+            return handler.redirect_request(
+                request, None, 302, "Found", {}, "https://localhost/catalog.json",
+            )
+
+        build_opener.return_value.open.side_effect = reject_redirect
+        with pytest.raises(error, match="Failed to fetch catalog") as excinfo:
+            catalog._fetch_single_catalog(entry, force_refresh=force_refresh)
+        assert isinstance(excinfo.value.__cause__, http.URLPolicyError)
+        if rejection == "initial":
+            build_opener.assert_not_called()
+        else:
+            build_opener.return_value.open.assert_called_once()
+
+    assert json.loads(data.read_text(encoding="utf-8")) == payload
+    assert json.loads(metadata.read_text(encoding="utf-8")) == {"fetched_at": 0}
 
 
 @pytest.mark.parametrize("leaf", ["data", "metadata"])

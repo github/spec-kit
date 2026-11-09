@@ -501,7 +501,7 @@ class StepCatalog:
 
         from urllib.parse import urlparse
 
-        from specify_cli.authentication.http import open_url as _open_url
+        from specify_cli.authentication.http import URLPolicyError, open_url as _open_url
 
         def _validate_url(url: str) -> None:
             # A malformed authority (e.g. "https://[::1") makes urlparse /
@@ -557,6 +557,10 @@ class StepCatalog:
                 )
         except _DuplicateCatalogField:
             raise
+        except URLPolicyError as exc:
+            raise StepCatalogError(
+                f"Failed to fetch catalog from {entry.url}: {exc}"
+            ) from exc
         except Exception as exc:
             try:
                 cached = read_cache_json(

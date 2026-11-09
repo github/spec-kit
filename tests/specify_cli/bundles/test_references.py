@@ -879,9 +879,16 @@ def test_online_validation_rejects_unsafe_catalog_redirect(
     assert warnings == []
 
 
-@pytest.mark.parametrize("kind", ["extensions", "presets", "workflows", "steps"])
+@pytest.mark.parametrize("kind,expired_cache", [
+    ("extensions", False),
+    ("presets", False),
+    ("workflows", False),
+    ("steps", False),
+    ("workflows", True),
+    ("steps", True),
+])
 def test_online_validation_rejects_initial_catalog_url_policy_failure(
-    tmp_path, monkeypatch, kind,
+    tmp_path, monkeypatch, kind, expired_cache,
 ):
     from unittest.mock import patch
 
@@ -904,6 +911,16 @@ def test_online_validation_rejects_initial_catalog_url_policy_failure(
             entry("https://ex%61mple.com/catalog.json", "trusted", 1, True),
         ],
     )
+    if expired_cache:
+        import json
+
+        instance = catalog(tmp_path)
+        data, metadata = instance._get_cache_paths("https://ex%61mple.com/catalog.json")
+        data.parent.mkdir(parents=True, exist_ok=True)
+        data.write_text(json.dumps({
+            kind: {"requested": _installable_current(kind)},
+        }), encoding="utf-8")
+        metadata.write_text(json.dumps({"fetched_at": 0}), encoding="utf-8")
     warnings = []
     check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
 

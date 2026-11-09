@@ -562,7 +562,7 @@ class WorkflowCatalog:
 
         # Fetch from URL — validate scheme before opening and after redirects
         from urllib.parse import urlparse
-        from specify_cli.authentication.http import open_url as _open_url
+        from specify_cli.authentication.http import URLPolicyError, open_url as _open_url
 
         def _validate_catalog_url(url: str) -> None:
             # A malformed authority (e.g. "https://[::1") makes urlparse /
@@ -615,6 +615,10 @@ class WorkflowCatalog:
                         label="workflow catalog",
                     ).decode("utf-8")
                 )
+        except URLPolicyError as exc:
+            raise WorkflowCatalogError(
+                f"Failed to fetch catalog from {entry.url}: {exc}"
+            ) from exc
         except Exception as exc:
             # Fall back to cache if available
             try:
