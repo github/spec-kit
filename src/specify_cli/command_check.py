@@ -30,7 +30,7 @@ def _check_external_tools(
         args = integration.build_exec_args("test", project_root=project_root)
         tools = [args[0] if args else integration._resolve_executable()]
     if not tools:
-        tracker.skip(key, "IDE-based, no CLI check")
+        tracker.skip(key, "no CLI required")
         return False
     tools = list(dict.fromkeys(tools))
     missing = [tool for tool in tools if shutil.which(tool) is None]
@@ -90,7 +90,7 @@ def check() -> None:
         elif requires_cli:
             agent_results[agent_key] = check_tool(agent_key, tracker=tracker)
         else:
-            tracker.skip(agent_key, "IDE-based, no CLI check")
+            tracker.skip(agent_key, "no CLI required")
             agent_results[agent_key] = False
 
     tracker.add("code", "Visual Studio Code")

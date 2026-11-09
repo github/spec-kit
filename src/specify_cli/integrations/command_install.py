@@ -20,7 +20,7 @@ from ..integration_state import (
 )
 from ._commands import integration_app
 from ._lifecycle import external_lifecycle, lifecycle_owns_rollback, lifecycle_success
-from ._helpers import _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _remove_integration_json, _resolve_integration_options, _resolve_script_type, _update_init_options_for_integration, _write_integration_json
+from ._helpers import _cli_error_detail, _cli_phase_label, _get_speckit_version, _preflight_setup_or_exit, _read_integration_json, _refresh_init_options_speckit_version, _remove_integration_json, _resolve_integration_options, _resolve_script_type, _update_init_options_for_integration, _write_integration_json
 
 
 @integration_app.command("install")
@@ -98,6 +98,9 @@ def integration_install(
     # is installed.
     raw_options, parsed_options = _resolve_integration_options(
         integration, current, key, integration_options
+    )
+    _preflight_setup_or_exit(
+        integration, project_root, parsed_options, selected_script, "install"
     )
 
     # Ensure shared infrastructure is present (safe to run unconditionally;

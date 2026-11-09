@@ -1612,6 +1612,32 @@ def test_python_dash_prefixed_short_name_matches_bash(
     assert json_stdout(bash)["BRANCH_NAME"] == expected
 
 
+@requires_bash
+@pytest.mark.parametrize(
+    "description",
+    ["-n", "-e", "-E", "-neE"],
+    ids=["n", "e", "E", "neE"],
+)
+def test_python_dash_prefixed_positional_description_matches_bash(
+    repo: Path, description: str
+) -> None:
+    """A positional feature description that looks like an ``echo`` option is text.
+
+    Trimming used ``echo "$FEATURE_DESCRIPTION"``, so bash swallowed ``-n`` /
+    ``-e`` / ``-E`` / ``-neE`` as options, emptied the description, and exited
+    with the whitespace error. ``printf`` keeps the literal so the branch name
+    matches the Python port.
+    """
+    args = ("--json", "--dry-run", "--number", "1", description)
+    bash = run(bash_cmd(repo, SCRIPT, *args), repo)
+    py = run(py_cmd(repo, SCRIPT, *args), repo)
+
+    assert py.returncode == bash.returncode == 0, (bash.stderr, py.stderr)
+    assert json_stdout(py) == json_stdout(bash)
+    expected = f"001-{description.lstrip('-').lower()}"
+    assert json_stdout(bash)["BRANCH_NAME"] == expected
+
+
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
 @pytest.mark.parametrize(
     ("description", "expected"),

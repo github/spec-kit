@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .manifest import BundleManifest
+from .manifest import BundleManifest, ComponentRef
+from .primitives import DEFAULT_PRIORITY
 from .records import InstalledBundleRecord
 from .versioning import same_version
 
@@ -19,10 +20,82 @@ class ConflictReport:
         return self.integration_clash is not None or bool(self.version_clashes)
 
 
+def effective_setting(
+    kind: str, field: str, value, *, extension_priority: bool = True
+):
+    """Return *value* as it affects install for a component of *kind*.
+
+    ``priority`` applies to presets and, when *extension_priority* is true,
+    extensions, where an omitted value installs as ``DEFAULT_PRIORITY``.
+    ``strategy`` applies to presets only. Settings that do not apply return
+    ``None``; ``source`` always applies.
+    """
+    if field == "priority":
+        if kind == "extensions" and extension_priority:
+            return DEFAULT_PRIORITY if value is None else value
+        return value if kind == "presets" else None
+    if field == "strategy":
+        return value if kind == "presets" else None
+    return value
+
+
+def component_setting_differences(
+    a: ComponentRef, b: ComponentRef, *, extension_priority: bool = True
+) -> list[str]:
+    """Return install-affecting setting fields that differ between two refs.
+
+    Compares ``source``, ``priority`` and ``strategy`` through
+    :func:`effective_setting`. Versions are intentionally not compared.
+    """
+    return [
+        field
+        for field in ("source", "priority", "strategy")
+        if effective_setting(
+            a.kind, field, getattr(a, field), extension_priority=extension_priority
+        )
+        != effective_setting(
+            b.kind, field, getattr(b, field), extension_priority=extension_priority
+        )
+    ]
+
+
+def component_differences(
+    a: ComponentRef, b: ComponentRef, *, extension_priority: bool = True
+) -> list[str]:
+    """Install-affecting differences between two refs of the same kind:id.
+
+    Version is compared through ``same_version`` (``v1.0.0`` == ``1.0.0``);
+    ``source``, ``priority`` and ``strategy`` through ``effective_setting``.
+    An empty list means the two refs install identically.
+    """
+    different: list[str] = []
+    if a.version is None or b.version is None:
+        if a.version != b.version:
+            different.append("version")
+    elif not same_version(a.version, b.version):
+        different.append("version")
+    different.extend(
+        component_setting_differences(a, b, extension_priority=extension_priority)
+    )
+    return different
+
+
+def same_requirement(
+    a: ComponentRef, b: ComponentRef, *, extension_priority: bool = True
+) -> bool:
+    """True when *a* and *b* describe the same installable requirement."""
+    return (
+        a.kind == b.kind
+        and a.id == b.id
+        and not component_differences(a, b, extension_priority=extension_priority)
+    )
+
+
 def detect_conflicts(
     manifest: BundleManifest,
     active_integration: str | None,
     installed: list[InstalledBundleRecord],
+    components: list[ComponentRef] | None = None,
 ) -> ConflictReport:
     report = ConflictReport()
 
@@ -43,7 +116,8 @@ def detect_conflicts(
                 (record.bundle_id, component.version)
             )
 
-    for component in manifest.components:
+    selected_components = manifest.components if components is None else components
+    for component in selected_components:
         for owner, version in already.get((component.kind, component.id), []):
             if owner == manifest.bundle.id:
                 continue

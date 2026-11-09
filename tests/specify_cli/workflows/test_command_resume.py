@@ -30,6 +30,50 @@ steps:
     run: "echo done"
 """
 
+    _WF_RAISE = """
+schema_version: "1.0"
+workflow:
+  id: "json-raise"
+  name: "JSON Raise"
+  version: "1.0.0"
+inputs:
+  verdict:
+    type: string
+    default: ""
+  payload:
+    type: string
+    default: "[]"
+steps:
+  - id: ask
+    type: gate
+    message: "Review"
+    options: [approve, reject]
+    verdict_input: verdict
+  - id: parse
+    type: if
+    condition: "{{ inputs.payload | from_json | length }}"
+    then:
+      - id: after
+        type: shell
+        run: "echo parsed"
+"""
+
+    _WF_FAIL = """
+schema_version: "1.0"
+workflow:
+  id: "json-fail"
+  name: "JSON Fail"
+  version: "1.0.0"
+inputs:
+  count:
+    type: number
+    default: 1
+steps:
+  - id: boom
+    type: shell
+    run: "exit 3"
+"""
+
     def _write_wf(self, project_dir, text, name):
         path = project_dir / f"{name}.yml"
         path.write_text(text, encoding="utf-8")
@@ -55,6 +99,74 @@ steps:
         )
         assert resumed["run_id"] == rid
         assert resumed["status"] == "paused"
+
+    def test_resume_json_step_exception_reports_failed_run(self, project_dir):
+        wf = self._write_wf(project_dir, self._WF_RAISE, "raise")
+        rid = json.loads(
+            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
+        )["run_id"]
+        # The approved gate lets the run reach `parse`, whose `from_json`
+        # raises on the supplied payload and fails the resumed run.
+        result = self._invoke(
+            project_dir,
+            [
+                "workflow", "resume", rid, "--json",
+                "--input", "verdict=approve", "--input", "payload=not json",
+            ],
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["run_id"] == rid
+        assert payload["status"] == "failed"
+        assert payload["current_step_id"] == "parse"
+        assert payload["error"].startswith("from_json: invalid JSON")
+        assert result.stderr == ""
+
+    def test_resume_json_refused_before_running_is_not_a_run_outcome(
+        self, project_dir
+    ):
+        from specify_cli.workflows.engine import RunState
+
+        wf = self._write_wf(project_dir, self._WF_FAIL, "fail")
+        failed = json.loads(
+            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
+        )
+        assert failed["status"] == "failed"
+        # Input validation rejects the resume before the run continues, so
+        # the run's recorded failure is not this error and is not reported.
+        result = self._invoke(
+            project_dir,
+            ["workflow", "resume", failed["run_id"], "--json", "--input", "count=abc"],
+        )
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert "Input 'count' expected a number" in result.stderr
+        state = RunState.load(failed["run_id"], project_dir)
+        assert state.error == failed["error"]
+
+    def test_resume_json_refused_with_matching_old_error_is_not_a_run_outcome(
+        self, project_dir
+    ):
+        """A refused resume is not reported as the run's outcome even when the
+        previously recorded failure has exactly the same message."""
+        from specify_cli.workflows.engine import RunState
+
+        wf = self._write_wf(project_dir, self._WF_FAIL, "fail")
+        failed = json.loads(
+            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
+        )
+        message = "Input 'count' expected a number, got 'abc'."
+        state = RunState.load(failed["run_id"], project_dir)
+        state.error = message
+        state.save()
+
+        result = self._invoke(
+            project_dir,
+            ["workflow", "resume", failed["run_id"], "--json", "--input", "count=abc"],
+        )
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert message in result.stderr
 
 
 

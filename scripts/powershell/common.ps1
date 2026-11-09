@@ -246,7 +246,7 @@ function Get-FeaturePathsEnv {
 
 function Test-FileExists {
     param([string]$Path, [string]$Description)
-    if (Test-Path -Path $Path -PathType Leaf) {
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
         Write-Output "  [OK] $Description"
         return $true
     } else {
@@ -263,7 +263,7 @@ function Test-DirHasFiles {
     # only contents are subdirectories (e.g. contracts/v1/openapi.yaml) as
     # non-empty like bash check_dir. Filtering out subdirectories would
     # mis-report such a directory as empty.
-    if ((Test-Path -Path $Path -PathType Container) -and (Get-ChildItem -Path $Path -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+    if ((Test-Path -LiteralPath $Path -PathType Container) -and (Get-ChildItem -LiteralPath $Path -ErrorAction SilentlyContinue | Select-Object -First 1)) {
         Write-Output "  [OK] $Description"
         return $true
     } else {

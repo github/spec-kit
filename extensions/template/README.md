@@ -38,7 +38,7 @@ Starter template for creating a Spec Kit extension.
 7. **Publish** (optional):
    - Create GitHub repository
    - Create release
-   - Submit to catalog (see EXTENSION-PUBLISHING-GUIDE.md)
+   - Submit to catalog (see the [Extension Publishing Guide](https://github.github.com/spec-kit/extensions/publishing.html))
 
 ## Files in This Template
 
@@ -67,10 +67,10 @@ Starter template for creating a Spec Kit extension.
 
 ## Need Help?
 
-- **Development Guide**: See EXTENSION-DEVELOPMENT-GUIDE.md
-- **API Reference**: See EXTENSION-API-REFERENCE.md
-- **Publishing Guide**: See EXTENSION-PUBLISHING-GUIDE.md
-- **User Guide**: See EXTENSION-USER-GUIDE.md
+- **Development Guide**: See [Extension Development Guide](https://github.github.io/spec-kit/extensions/developing.html)
+- **API Reference**: See the [Extension API Reference](https://github.github.io/spec-kit/extensions/api.html)
+- **Publishing Guide**: See the [Extension Publishing Guide](https://github.github.com/spec-kit/extensions/publishing.html)
+- **User Guide**: See the [Extension User Guide](https://github.github.io/spec-kit/extensions/overview.html)
 
 ## Template Version
 

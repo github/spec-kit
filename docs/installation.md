@@ -3,7 +3,9 @@
 ## Prerequisites
 
 - **Linux/macOS** (or Windows; PowerShell scripts now supported without WSL)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [CodeBuddy CLI](https://www.codebuddy.cn/docs/cli/installation), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Pi Coding Agent](https://pi.dev), or [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent)
+- A [supported AI coding agent](integrations/index.md#choose-an-integration).
+  See your integration's page for its installation requirements, or use
+  [`none`](integrations/none.md) for agent-neutral scaffolding.
 - [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pipx.pypa.io/) for persistent installation
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads) *(optional — required only when the git extension is enabled)*
@@ -50,6 +52,8 @@ pipx install specify-cli
 pip install specify-cli
 ```
 
+If `specify-cli` is already installed, these commands keep the installed version, even when a newer release exists. Compare the version shown by `specify version` with the [latest version on PyPI](https://pypi.org/project/specify-cli/). To replace an older install, use the same tool as the original install: `uv tool install --force specify-cli`, `pipx install --force specify-cli` or `pip install --upgrade specify-cli`. A different tool can install a second copy and leave the old `specify` first on `PATH`. An old CLI can't set up projects from current releases: with 0.1.6, for example, `specify init --integration ...` fails with `No such option: --integration`, and `specify init --ai ...` fails with `No matching release asset found`.
+
 To install a specific release, pin the version — for example `uv tool install specify-cli==0.12.11`. See the [PyPI installation guide](install/pypi.md) for details, including how to upgrade and how to [install from a custom or private package index](install/pypi.md#install-from-a-custom-or-private-package-index).
 
 ### One-time Usage
@@ -76,6 +80,12 @@ specify init <project_name> --integration codebuddy
 specify init <project_name> --integration pi
 specify init <project_name> --integration omp
 ```
+
+The README examples use GitHub Copilot's default skills mode. To use another
+supported agent, replace `copilot` with its
+[integration key](integrations/index.md). See
+[Command Invocation](integrations/cli.md#command-invocation) for the
+syntax used by each agent and mode.
 
 ### Specify Script Type (Shell, PowerShell, or Python)
 
@@ -109,7 +119,7 @@ elsewhere; omit it when you want that check. Non-interactive initialization
 defaults to Copilot unless you select another integration explicitly.
 
 For a non-empty directory, `--force` acknowledges the merge warning. Review the
-[existing-project guide](guides/existing-projects.md) and commit or back up local
+[existing-project guide](how-to/existing-projects.md) and commit or back up local
 changes before initializing:
 
 ```bash
@@ -136,27 +146,18 @@ This confirms that the `specify` command is available and reporting the expected
 
 **Stay current:** Run `specify self check` periodically to learn whether a newer release is available — it is read-only and never modifies your installation. When you are ready to upgrade, follow the [Upgrade Guide](./upgrade.md).
 
-After initialization, you should see the following commands available in your coding agent:
+After initialization with GitHub Copilot's default skills mode, the following
+skills should be available. Invoke them in your agent's chat, not in the terminal:
 
-- `/speckit.specify` - Create specifications
-- `/speckit.plan` - Generate implementation plans
-- `/speckit.tasks` - Break down into actionable tasks
-- `/speckit.implement` - Execute implementation tasks
-- `/speckit.analyze` - Validate cross-artifact consistency
-- `/speckit.clarify` - Identify and resolve ambiguities
-- `/speckit.checklist` - Generate quality checklists
-- `/speckit.constitution` - Create or update project principles
-- `/speckit.converge` - Assess codebase against artifacts and append remaining tasks
-- `/speckit.taskstoissues` - Convert tasks to issues (deprecated; warns on invocation; replaced by the bundled `github` extension's
-  `/speckit.github.taskstoissues`; install it with `specify extension add github`)
-
-The `generic` integration also registers extension commands in its configured
-`--commands-dir`. Installing `github` makes `/speckit.github.taskstoissues`
-available there as a command file, or as `/speckit-github-taskstoissues` when
-`--skills` is enabled. The core `/speckit.taskstoissues` (or
-`/speckit-taskstoissues` with `--skills`) remains available during migration, warns on invocation,
-and will be removed in a future minor release.
-See the [GitHub extension's installation notes](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#installation).
+- `/speckit-specify` - Create specifications
+- `/speckit-plan` - Generate implementation plans
+- `/speckit-tasks` - Break down into actionable tasks
+- `/speckit-implement` - Execute implementation tasks
+- `/speckit-analyze` - Validate cross-artifact consistency
+- `/speckit-clarify` - Identify and resolve ambiguities
+- `/speckit-checklist` - Generate quality checklists
+- `/speckit-constitution` - Create or update project principles
+- `/speckit-converge` - Assess codebase against artifacts and append remaining tasks
 
 Scripts are installed into a variant subdirectory matching the chosen script type:
 
@@ -182,3 +183,5 @@ If your environment blocks access to PyPI or GitHub, see the [Enterprise / Air-G
 ### Git Credential Manager on Linux
 
 If you're having issues with Git authentication on Linux, see the [Air-Gapped Installation guide](install/air-gapped.md#git-credential-manager-on-linux) for Git Credential Manager setup instructions.
+
+> Agent invocation examples on this page use GitHub Copilot's default skills syntax (`/speckit-*`). For other integrations and modes, see [Command invocation](integrations/cli.md#command-invocation).

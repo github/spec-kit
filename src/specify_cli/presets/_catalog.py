@@ -133,8 +133,11 @@ class PresetCatalog:
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):
+            # A scheme-less value (``example.com/catalog.json``) would otherwise read
+            # "got ://". The value itself is not echoed: callers render errors as Rich markup.
+            got = f"{parsed.scheme}://" if parsed.scheme else "a URL with no scheme"
             raise PresetValidationError(
-                f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
+                f"Catalog URL must use HTTPS (got {got}). "
                 "HTTP is only allowed for localhost."
             )
         # Check hostname, not netloc: netloc is truthy for host-less URLs like

@@ -59,6 +59,7 @@ Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `ba
 | Scheme | Header | Use for |
 |---|---|---|
 | `bearer` | `Authorization: Bearer <token>` | PATs, fine-grained PATs, OAuth tokens, GitHub App tokens |
+| `github-cli` | `Authorization: Bearer <token>` | Credentials acquired on demand via `gh auth token` |
 
 **Example — PAT via environment variable:**
 
@@ -70,6 +71,51 @@ Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `ba
   "token_env": "GH_TOKEN"
 }
 ```
+
+**Example — GitHub CLI:**
+
+```json
+{
+  "providers": [
+    {
+      "hosts": [
+        "github.com",
+        "api.github.com",
+        "raw.githubusercontent.com",
+        "codeload.github.com"
+      ],
+      "provider": "github",
+      "auth": "github-cli"
+    }
+  ]
+}
+```
+
+Install [GitHub CLI](https://cli.github.com/) and run `gh auth login` before
+using this mode. Specify runs the fixed command
+`gh auth token --hostname github.com` without a shell, caches the result in
+memory for the current process, and never writes the token to disk.
+Surrounding whitespace is trimmed; tokens containing non-ASCII characters,
+embedded carriage returns, or newlines are rejected without including the
+token in the error.
+Credential acquisition failures fail the affected request without trying another
+credential or an unauthenticated request. They use the existing URL-error
+category, so callers retain their normal error handling (for example, warning
+and skipping an unavailable catalog).
+Release checks and upgrades preserve the authentication diagnostic rather than
+reporting a network outage. Online bundle catalog fetching and reference
+validation treat authentication failures as errors, not as availability
+fallbacks to packaged snapshots or unchecked references.
+
+For `github-cli` only, the **first hostname in `hosts`** is passed to
+`gh auth token --hostname`. Put `github.com` or your enterprise instance's
+GitHub CLI login hostname first. It must be an exact hostname, not a wildcard.
+All listed hosts remain request-matching destinations authorized to receive
+that credential; later entries may use supported wildcards. Specify does not
+infer the credential hostname from service prefixes or the requested URL.
+The in-memory cache is keyed by the first hostname. Use separate provider
+entries for hosts requiring different credentials. Host order has no effect
+on existing authentication modes.
 
 ### GitHub Enterprise Server (GHES)
 
@@ -97,6 +143,28 @@ live there. If your instance uses subdomain isolation, also list the `raw.`
 and `codeload.` subdomains your catalog/extension URLs use. A
 `*.ghes.example.com` wildcard matches subdomains but **not** the bare host,
 so always include the bare host explicitly.
+
+With `auth: "github-cli"`, list your enterprise instance's GitHub CLI login
+hostname first, followed by any request hosts or wildcard patterns that should
+receive the same credential:
+
+```json
+{
+  "hosts": [
+    "ghes.example.com",
+    "raw.ghes.example.com",
+    "codeload.ghes.example.com"
+  ],
+  "provider": "github",
+  "auth": "github-cli"
+}
+```
+
+Specify runs `gh auth token --hostname ghes.example.com`, using the first
+hostname exactly as configured. Use separate provider entries for separate
+GitHub instances. The selected host must already be
+authenticated in GitHub CLI; failures suggest `gh auth login --hostname <host>`
+without including GitHub CLI command output.
 
 ### GitHub Enterprise Cloud with data residency (GHE.com)
 
@@ -264,10 +332,13 @@ You can configure multiple entries for different hosts or organizations:
 1. For each outbound HTTP request, the URL hostname is matched against
    the `hosts` patterns in `auth.json`.
 2. If a match is found, the corresponding provider resolves the token
-   and attaches the appropriate `Authorization` header.
-3. If the request receives a 401 or 403, the next matching entry is tried.
-4. After all matching entries are exhausted, an unauthenticated request
-   is attempted as a final fallback.
+   and attaches the appropriate `Authorization` header. A `github-cli`
+   acquisition failure ends the request immediately, without trying later
+   matching entries or making an unauthenticated request.
+3. After successful token acquisition, if the request receives a 401 or 403,
+   the next matching entry is tried.
+4. After all matching entries are exhausted without an acquisition failure,
+   an unauthenticated request is attempted as a final fallback.
 5. On redirects, the `Authorization` header is stripped if the redirect
    target leaves the entry's declared hosts — preventing credential
    leakage to CDNs or third-party services.

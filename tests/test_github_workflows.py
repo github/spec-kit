@@ -335,6 +335,62 @@ def test_github_actions_are_pinned_to_full_commit_shas():
     assert unpinned_refs == []
 
 
+@pytest.mark.parametrize("event_name", ["push", "pull_request", "schedule", "workflow_dispatch"])
+def test_pytest_matrix_covers_supported_python_versions_on_all_platforms(event_name):
+    workflow = yaml.safe_load(
+        (WORKFLOWS_DIR / "test.yml").read_text(encoding="utf-8")
+    )
+    triggers = workflow.get("on", workflow.get(True))
+    assert set(triggers) == {"push", "pull_request", "schedule", "workflow_dispatch"}
+    assert triggers["push"]["branches"] == ["main"]
+    job = workflow["jobs"]["pytest"]
+    matrix = job["strategy"]["matrix"]
+    assert set(matrix) == {"os", "python-version"}
+    assert matrix["os"] == ["ubuntu-latest", "windows-latest", "macos-latest"]
+    expression = re.fullmatch(
+        r"\$\{\{ fromJSON\(\(github\.event_name == 'schedule' \|\| "
+        r"github\.event_name == 'workflow_dispatch'\) "
+        r"&& '([^']+)' \|\| '([^']+)'\) \}\}",
+        matrix["python-version"],
+    )
+    assert expression is not None
+    versions = json.loads(
+        expression.group(1 if event_name in {"schedule", "workflow_dispatch"} else 2)
+    )
+    combinations = [(os_name, version) for os_name in matrix["os"] for version in versions]
+    expected_versions = (
+        ["3.11", "3.12", "3.13", "3.14", "3.15"]
+        if event_name in {"schedule", "workflow_dispatch"}
+        else ["3.11", "3.14", "3.15"]
+    )
+    expected = {
+        (os_name, version)
+        for os_name in ["ubuntu-latest", "windows-latest", "macos-latest"]
+        for version in expected_versions
+    }
+    assert set(combinations) == expected
+    assert len(combinations) == (15 if event_name in {"schedule", "workflow_dispatch"} else 9)
+    assert job["runs-on"] == "${{ matrix.os }}"
+    setup_python = next(
+        step for step in job["steps"]
+        if step.get("uses", "").startswith("actions/setup-python@")
+    )
+    assert setup_python["with"]["python-version"] == "${{ matrix.python-version }}"
+
+
+def test_pytest_workflow_keeps_push_and_pr_checks_with_weekly_and_manual_coverage():
+    workflow = yaml.safe_load(
+        (WORKFLOWS_DIR / "test.yml").read_text(encoding="utf-8")
+    )
+    triggers = workflow.get("on", workflow.get(True))
+    assert triggers == {
+        "push": {"branches": ["main"]},
+        "pull_request": None,
+        "workflow_dispatch": None,
+        "schedule": [{"cron": "17 4 * * 1"}],
+    }
+
+
 def test_publish_tag_validation_uses_environment_variable():
     steps = _publish_workflow_steps()
 
@@ -1406,7 +1462,7 @@ def test_bug_test_workflow_provisions_python_dependencies():
     positions = [names.index(name) for name in expected_names]
     assert positions == sorted(positions)
     assert _workflow_step(steps, "Setup uv")["uses"] == (
-        "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
+        "astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2"
     )
     python_step = _workflow_step(steps, "Set up Python")
     assert python_step["uses"] == (
@@ -2230,7 +2286,7 @@ def test_bug_test_install_preserves_editable_extras_and_failure(compiled_step, e
 
 def _markdownlint_job() -> dict:
     workflow = yaml.safe_load(LINT_WORKFLOW.read_text(encoding="utf-8"))
-    return workflow["jobs"]["markdownlint"]
+    return workflow["jobs"]["checks"]
 
 
 def _documentation_globs() -> list[str]:
@@ -2265,3 +2321,78 @@ def test_markdownlint_step_lints_the_documentation_globs():
     ]
     assert len(linters) == 1
     assert linters[0]["with"]["globs"] == "${{ env.DOC_GLOBS }}"
+
+
+@requires_bash
+@pytest.mark.parametrize("event", [
+    "pull_request", "push", "initial_push", "workflow_dispatch", "manual_root", "manual_merge",
+])
+@pytest.mark.parametrize("contents,exit_code", [("line\n", 0), ("line \n", 2)])
+def test_combined_lint_run_checks_commit_whitespace(tmp_path, event, contents, exit_code):
+    env = os.environ.copy()
+    env.update({
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@example.com",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@example.com",
+        "EVENT_NAME": (
+            "workflow_dispatch" if event.startswith("manual_")
+            else "push" if event == "initial_push" else event
+        ),
+        "PR_BASE_SHA": "",
+        "PUSH_BEFORE_SHA": "",
+        "GITHUB_SHA": "HEAD",
+    })
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, env=env, check=True)
+    if event not in {"initial_push", "manual_root"}:
+        (tmp_path / "example.txt").write_text("original\n", encoding="utf-8")
+        subprocess.run(["git", "add", "example.txt"], cwd=tmp_path, env=env, check=True)
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Base"],
+            cwd=tmp_path, env=env, check=True,
+        )
+        base = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=tmp_path, env=env,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        env["PR_BASE_SHA"] = base
+        env["PUSH_BEFORE_SHA"] = base
+        if event == "manual_merge":
+            subprocess.run(
+                ["git", "checkout", "--quiet", "-b", "whitespace-change"],
+                cwd=tmp_path, env=env, check=True,
+            )
+    else:
+        env["PUSH_BEFORE_SHA"] = "0" * 40
+    (tmp_path / "example.txt").write_text(contents, encoding="utf-8")
+    subprocess.run(["git", "add", "example.txt"], cwd=tmp_path, env=env, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Change"],
+        cwd=tmp_path, env=env, check=True,
+    )
+    if event == "manual_merge":
+        subprocess.run(
+            ["git", "checkout", "--quiet", "--detach", base],
+            cwd=tmp_path, env=env, check=True,
+        )
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "merge", "--quiet", "--no-ff",
+             "-m", "Merge change", "whitespace-change"],
+            cwd=tmp_path, env=env, check=True,
+        )
+        parents = subprocess.run(
+            ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
+            cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
+        ).stdout.split()
+        assert len(parents) == 3
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(tmp_path)],
+        cwd=tmp_path, env=env, check=True,
+    )
+    step = _workflow_step(_markdownlint_job()["steps"], "Run git diff --check")
+    result = subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", step["run"]],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == exit_code, result.stderr
+    assert ("trailing whitespace" in result.stdout) is (exit_code != 0)

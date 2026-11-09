@@ -1,10 +1,19 @@
-# Home page
-- name: Home
+# Project overview and shared reference
+- name: Overview
   href: index.md
-
-# Project history
-- name: Project History
-  href: history.md
+  items:
+    - name: Introduction
+      href: index.md
+    - name: Project History
+      href: overview/history.md
+    - name: Core Commands
+      href: overview/core.md
+    - name: MCP Server
+      href: overview/mcp.md
+    - name: Artifacts
+      href: overview/artifacts.md
+    - name: Catalogs
+      href: overview/catalogs.md
 
 # Getting started section
 - name: Getting Started
@@ -15,14 +24,16 @@
       href: guides/agentic-sdlc.md
     - name: Spec-Driven Development
       href: quickstart.md
+    - name: SDD Command Reference
+      href: reference/agentic-sdd.md
     - name: Bug Fixing
       href: guides/bugfix.md
+    - name: Bug Fixing Command Reference
+      href: reference/agentic-bugfix.md
     - name: Idea Assessment
       href: guides/assessment.md
-    - name: Existing Projects
-      href: guides/existing-projects.md
-    - name: Customize or Bring Your Own
-      href: guides/customization.md
+    - name: Idea Assessment Command Reference
+      href: reference/agentic-assessment.md
     - name: Upgrade
       href: upgrade.md
     - name: Install uv
@@ -36,61 +47,138 @@
     - name: Enterprise / Air-Gapped
       href: install/air-gapped.md
 
-# Reference
-- name: Reference
+# How-to guides
+- name: How to
+  href: how-to/index.md
+  items:
+    - name: Understand Spec-Driven Development
+      href: how-to/sdd.md
+    - name: Adopt Spec Kit in an existing project
+      href: how-to/existing-projects.md
+    - name: Work in a monorepo
+      href: how-to/monorepo.md
+    - name: Define and evolve contracts
+      href: how-to/contract-driven-development.md
+    - name: Implement complex features
+      href: how-to/complex-features.md
+    - name: Break down large features
+      href: how-to/spec-of-specs.md
+    - name: Persist specifications
+      href: how-to/persisting-specs.md
+    - name: Evolve specifications
+      href: how-to/evolving-specs.md
+    - name: Adapt Spec Kit to your process
+      href: how-to/customization.md
+    - name: Configure authentication
+      href: reference/authentication.md
+    - name: Develop Spec Kit locally
+      href: how-to/local-development.md
+
+# Agent integrations
+- name: Integrations
+  href: integrations/index.md
   items:
     - name: Overview
-      href: reference/overview.md
-    - name: Core Commands
-      href: reference/core.md
-    - name: MCP Server
-      href: reference/mcp.md
-    - name: Integrations
-      href: reference/integrations.md
+      href: integrations/index.md
+    - name: CLI Reference
+      href: integrations/cli.md
+    - name: API Reference
+      href: integrations/api.md
+    - name: Catalogs and External Adapters
+      href: integrations/catalog.md
+    - name: Contributing Integrations
+      href: integrations/contributing.md
+
+# Extensions
+- name: Extensions
+  href: extensions/overview.md
+  items:
+    - name: Overview
+      href: extensions/overview.md
+    - name: CLI Reference
+      href: extensions/cli.md
     - name: Catalogs
-      href: reference/catalogs.md
-    - name: Extensions
-      href: reference/extensions.md
-    - name: Presets
-      href: reference/presets.md
-    - name: Artifacts
-      href: reference/artifacts.md
-    - name: Workflows
-      href: reference/workflows.md
-    - name: Bundles
-      href: reference/bundles.md
-    - name: Agentic SDD
-      href: reference/agentic-sdd.md
-    - name: Agentic Bug Fix
-      href: reference/agentic-bugfix.md
-    - name: Agentic Idea Assessment
-      href: reference/agentic-assessment.md
-    - name: Authentication
-      href: reference/authentication.md
+      href: extensions/catalogs.md
+    - name: Developing
+      href: extensions/developing.md
+    - name: API Reference
+      href: extensions/api.md
+    - name: Publishing
+      href: extensions/publishing.md
 
-# Concepts
-- name: Concepts
+# Presets
+- name: Presets
+  href: presets/overview.md
   items:
-    - name: What is SDD?
-      href: concepts/sdd.md
-    - name: Spec Persistence Models
-      href: concepts/spec-persistence.md
-    - name: Handling Complex Features
-      href: concepts/complex-features.md
-    - name: Spec of Specs
-      href: concepts/spec-of-specs.md
+    - name: Overview
+      href: presets/overview.md
+    - name: CLI Reference
+      href: presets/cli.md
+    - name: Developing
+      href: presets/developing.md
+    - name: API Reference
+      href: presets/api.md
+    - name: Catalogs
+      href: presets/catalogs.md
+    - name: Publishing
+      href: presets/publishing.md
 
-# Development workflows
-- name: Development
+# Workflows
+- name: Workflows
+  href: workflows/overview.md
   items:
-    - name: Local Development
-      href: local-development.md
-    - name: Evolving Specs
-      href: guides/evolving-specs.md
-    - name: Contract-Driven Development
-      href: guides/contract-driven-development.md
-    - name: Monorepos
-      href: guides/monorepo.md
+    - name: Overview
+      href: workflows/overview.md
+    - name: CLI Reference
+      href: workflows/cli.md
+    - name: Developing
+      href: workflows/developing.md
+    - name: API Reference
+      href: workflows/api.md
+    - name: Expressions
+      href: workflows/expressions.md
+    - name: Overlays
+      href: workflows/overlays.md
+    - name: Catalogs
+      href: workflows/catalogs.md
+    - name: Publishing
+      href: workflows/publishing.md
+
+# Workflow Steps
+- name: Workflow Steps
+  href: workflow-steps/overview.md
+  items:
+    - name: Overview
+      href: workflow-steps/overview.md
+    - name: CLI Reference
+      href: workflow-steps/cli.md
+    - name: Developing
+      href: workflow-steps/developing.md
+    - name: API Reference
+      href: workflow-steps/api.md
+    - name: Built-in Step Types
+      href: workflow-steps/types.md
+    - name: Catalogs
+      href: workflow-steps/catalogs.md
+    - name: Publishing
+      href: workflow-steps/publishing.md
+
+# Bundles
+- name: Bundles
+  href: bundles/overview.md
+  items:
+    - name: Overview
+      href: bundles/overview.md
+    - name: CLI Reference
+      href: bundles/cli.md
+    - name: Developing
+      href: bundles/developing.md
+    - name: API Reference
+      href: bundles/api.md
+    - name: Catalogs
+      href: bundles/catalogs.md
+    - name: Publishing
+      href: bundles/publishing.md
 
 # Community
 - name: Community
@@ -98,14 +186,18 @@
   items:
     - name: Overview
       href: community/overview.md
+    - name: Integrations
+      href: community/integrations.md
     - name: Extensions
       href: community/extensions.md
     - name: Presets
       href: community/presets.md
-    - name: Bundles
-      href: community/bundles.md
+    - name: Workflows
+      href: community/workflows.md
     - name: Workflow Step Types
       href: community/workflow-steps.md
+    - name: Bundles
+      href: community/bundles.md
     - name: Walkthroughs
       href: community/walkthroughs.md
     - name: Friends

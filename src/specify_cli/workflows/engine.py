@@ -27,7 +27,36 @@ from ..integration_state import (
     default_integration_key,
     try_read_integration_json,
 )
+from ..integrations.base import DISPATCH_SETTINGS, dispatch_setting_value_error
 from .base import RunStatus, StepContext
+
+
+# -- Safe parsing ---------------------------------------------------------
+
+
+def _safe_yaml_load(source: Any, label: str) -> Any:
+    """``yaml.safe_load`` that reports every parse failure as ``ValueError``.
+
+    Pathologically nested documents raise ``RecursionError``, which callers
+    relying on the documented ``ValueError`` contract would not expect.
+    """
+    try:
+        return yaml.safe_load(source)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid YAML in {label}: {exc}") from exc
+    except RecursionError:
+        raise ValueError(f"Invalid YAML in {label}: nested too deeply") from None
+
+
+def _safe_json_load(stream: Any, label: str) -> Any:
+    """``json.load`` that reports excessive nesting as ``ValueError``.
+
+    ``json.JSONDecodeError`` is already a ``ValueError`` and is left as is.
+    """
+    try:
+        return json.load(stream)
+    except RecursionError:
+        raise ValueError(f"Invalid {label}: nested too deeply") from None
 
 
 # -- Workflow Definition --------------------------------------------------
@@ -65,6 +94,8 @@ class WorkflowDefinition:
         # and retains its existing runtime representation as an empty mapping.
         self.default_integration: Any = workflow.get("integration")
         self.default_model: Any = workflow.get("model")
+        self.default_reasoning_effort: Any = workflow.get("reasoning_effort")
+        self.default_context_size: Any = workflow.get("context_size")
         raw_default_options = workflow.get("options")
         self.default_options: Any = (
             {} if raw_default_options is None else raw_default_options
@@ -94,11 +125,7 @@ class WorkflowDefinition:
     def from_yaml(cls, path: Path) -> WorkflowDefinition:
         """Load a workflow definition from a YAML file."""
         with open(path, encoding="utf-8") as f:
-            try:
-                data = yaml.safe_load(f)
-            except yaml.YAMLError as exc:
-                msg = f"Invalid YAML in {path}: {exc}"
-                raise ValueError(msg) from exc
+            data = _safe_yaml_load(f, str(path))
         if not isinstance(data, dict):
             msg = f"Workflow YAML must be a mapping, got {type(data).__name__}."
             raise ValueError(msg)
@@ -107,11 +134,7 @@ class WorkflowDefinition:
     @classmethod
     def from_string(cls, content: str) -> WorkflowDefinition:
         """Load a workflow definition from a YAML string."""
-        try:
-            data = yaml.safe_load(content)
-        except yaml.YAMLError as exc:
-            msg = f"Invalid YAML: {exc}"
-            raise ValueError(msg) from exc
+        data = _safe_yaml_load(content, "workflow definition")
         if not isinstance(data, dict):
             msg = f"Workflow YAML must be a mapping, got {type(data).__name__}."
             raise ValueError(msg)
@@ -189,6 +212,17 @@ def _dispatch_default_errors(definition: WorkflowDefinition) -> list[str]:
             f"{type(definition.default_options).__name__} "
             f"({definition.default_options!r})."
         )
+
+    # ``null`` and ``""`` leave a dispatch setting unset, and the step checks an
+    # expression once it is resolved. An error reports only a malformed value's
+    # type and length.
+    for name in DISPATCH_SETTINGS:
+        value = getattr(definition, f"default_{name}")
+        if value is None or value == "" or (isinstance(value, str) and "{{" in value):
+            continue
+        problem = dispatch_setting_value_error(f"workflow.{name}", value)
+        if problem is not None:
+            errors.append(problem)
 
     return errors
 
@@ -714,6 +748,9 @@ class RunState:
         self.step_results: dict[str, dict[str, Any]] = {}
         self.execution: dict[str, Any] | None = None
         self._checkpoint_failed = False
+        # The exception this process just recorded as the run's failure (never
+        # persisted), so the CLI can tell it apart from an older failure.
+        self._recorded_exception: BaseException | None = None
         # Guards step_results mutation and save() so a concurrent fan-out cannot
         # mutate the dict while save() is serializing it (which would raise
         # "dictionary changed size during iteration").
@@ -735,6 +772,52 @@ class RunState:
     @property
     def runs_dir(self) -> Path:
         return self.project_root / ".specify" / "workflows" / "runs" / self.run_id
+
+    @property
+    def definition_path(self) -> Path:
+        """Snapshot of the workflow definition the run was started with.
+
+        Storage contract: ``resume`` and ``specify workflow definition`` both
+        read this file, so its location and persisted shape must not change.
+        """
+        return self.runs_dir / "workflow.yml"
+
+    def load_definition(self) -> WorkflowDefinition:
+        """Load the definition persisted when this run started.
+
+        Raises ``FileNotFoundError`` if no snapshot exists and ``ValueError``
+        for invalid YAML or a non-mapping document. Never consults the
+        installed workflow.
+        """
+        return WorkflowDefinition.from_yaml(self.definition_path)
+
+    def load_workflow_scopes(
+        self,
+    ) -> list[tuple[list[str], str, WorkflowDefinition]]:
+        """Bound workflow calls as ``(scope_path, workflow_id, definition)``.
+
+        Returned in execution order, with the same ``scope_path`` and
+        ``workflow_id`` that ``status`` reports. Empty when the run has no
+        execution tree. Read-only: the tree is structurally validated but never
+        cross-checked against the root workflow snapshot.
+        Raises ``ValueError`` if the tree or a frozen definition is unusable.
+        """
+        tree = self.execution
+        if tree is None:
+            return []
+        from ._execution import bound_scopes, validate_execution
+
+        validate_execution(tree)
+        scopes = []
+        for path, binding, _ in bound_scopes(tree):
+            scopes.append(
+                (
+                    path,
+                    binding["workflow"],
+                    WorkflowDefinition.from_string(binding["definition"]),
+                )
+            )
+        return scopes
 
     def save(self) -> None:
         """Persist current state to disk.
@@ -829,7 +912,7 @@ class RunState:
 
         try:
             with open(state_path, encoding="utf-8") as f:
-                state_data = json.load(f)
+                state_data = _safe_json_load(f, f"run state for {run_id}")
         except FileNotFoundError:
             msg = f"Run state not found: {state_path}"
             raise FileNotFoundError(msg)
@@ -923,7 +1006,7 @@ class RunState:
         inputs_path = runs_dir / "inputs.json"
         if "inputs" not in state_data and inputs_path.exists():
             with open(inputs_path, encoding="utf-8") as f:
-                inputs_data = json.load(f)
+                inputs_data = _safe_json_load(f, f"run inputs for {run_id}")
             if not isinstance(inputs_data, dict):
                 raise ValueError(
                     "Invalid run inputs: expected a JSON object"
@@ -1107,14 +1190,11 @@ class WorkflowEngine:
         )
         self._execution_state.set(state)
 
-        # Persist a copy of the workflow definition so resume can
-        # reload it even if the original source is no longer available
-        # (e.g. a local YAML path that was moved or deleted).
-        run_dir = self.project_root / ".specify" / "workflows" / "runs" / state.run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-        workflow_copy = run_dir / "workflow.yml"
-        import yaml
-        with open(workflow_copy, "w", encoding="utf-8") as f:
+        # Persist the definition the run was started with. Storage contract
+        # (see RunState.definition_path): read by resume and by
+        # `specify workflow definition`; do not change location or content.
+        state.runs_dir.mkdir(parents=True, exist_ok=True)
+        with open(state.definition_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(definition.data, f, sort_keys=False, allow_unicode=True)
 
         # Resolve inputs
@@ -1133,6 +1213,8 @@ class WorkflowEngine:
             project_root=str(self.project_root),
             run_id=state.run_id,
             workflow_dir=workflow_dir,
+            default_reasoning_effort=definition.default_reasoning_effort,
+            default_context_size=definition.default_context_size,
         )
 
         # Execute steps
@@ -1148,6 +1230,7 @@ class WorkflowEngine:
                 raise
             state.status = RunStatus.FAILED
             state.error = str(exc)
+            state._recorded_exception = exc
             state.append_log({"event": "workflow_failed", "error": str(exc)})
             state.save()
             raise
@@ -1182,11 +1265,9 @@ class WorkflowEngine:
         # Load the workflow definition — try the persisted copy in the
         # run directory first so resume works even if the original
         # source (e.g. a local YAML path) is no longer available.
-        run_dir = self.project_root / ".specify" / "workflows" / "runs" / run_id
-        run_copy = run_dir / "workflow.yml"
-        if run_copy.exists():
-            definition = WorkflowDefinition.from_yaml(run_copy)
-        else:
+        try:
+            definition = state.load_definition()
+        except FileNotFoundError:
             definition = self.load_workflow(state.workflow_id)
 
         # RunState.load() rejects a non-int/negative current_step_index but
@@ -1233,6 +1314,8 @@ class WorkflowEngine:
             run_id=state.run_id,
             is_resume=True,
             workflow_dir=state.workflow_dir,
+            default_reasoning_effort=definition.default_reasoning_effort,
+            default_context_size=definition.default_context_size,
         )
 
         from . import STEP_REGISTRY
@@ -1262,6 +1345,7 @@ class WorkflowEngine:
                 raise
             state.status = RunStatus.FAILED
             state.error = str(exc)
+            state._recorded_exception = exc
             state.append_log({"event": "resume_failed", "error": str(exc)})
             state.save()
             raise
@@ -1438,7 +1522,15 @@ class WorkflowEngine:
                 msg = f"Input {name!r} expected a number, got {value!r}."
                 raise ValueError(msg)
             try:
-                value = float(value)
+                # Preserve integers (including CLI strings) before float can
+                # round identifiers or timestamps above 2**53.
+                if isinstance(value, (str, int)):
+                    try:
+                        value = int(value)
+                    except ValueError:
+                        value = float(value)
+                else:
+                    value = float(value)
                 if value == int(value):
                     value = int(value)
             except (ValueError, TypeError, OverflowError):

@@ -4,14 +4,14 @@ A workflow step type defines what a `type:` in workflow YAML does. This is an
 extension point of the workflow engine, distinct from an agent integration:
 integrations dispatch work to an agent; steps validate and execute workflow
 behavior. For the overall engine, see
-[Workflow System Architecture](../workflows/ARCHITECTURE.md); for YAML usage,
-see [Workflows](../docs/reference/workflows.md).
+[Workflow API and execution model](https://github.github.io/spec-kit/workflows/api.html); for YAML usage,
+see [Workflows](https://github.github.io/spec-kit/workflows/overview.html).
 
 ## Delivery and registration
 
 | Route | Source | Registration |
 |---|---|---|
-| Built-in | `src/specify_cli/workflows/steps/<package>/__init__.py` | Explicit import and `_register_step()` in `src/specify_cli/workflows/__init__.py` |
+| Built-in | `src/specify_cli/workflows/step/<package>/__init__.py` | Explicit import and `_register_step()` in `src/specify_cli/workflows/__init__.py` |
 | Installed | Package under `.specify/workflows/steps/<id>/`, containing `step.yml` and `__init__.py` | `load_custom_steps(project_root)` loads a matching `StepBase` subclass at workflow run/resume |
 
 `STEP_REGISTRY` maps each `type_key` to a single step instance. Built-in keys
@@ -43,6 +43,18 @@ automatically validate a definition passed to `execute()`. Guard invalid
 configurations in `execute()` too, returning a failed result rather than a
 successful default or an unhandled exception.
 
+The built-in shell step preserves raw `run` interpolation by default.
+Per-step `strict: true` rejects expression markers in `run` during validation
+and execution. Its optional `env` mapping evaluates string templates separately,
+requires NUL-free string results encodable for the process environment on
+POSIX, and overrides only the child environment.
+`SPECKIT_WORKFLOW_DIR` remains engine-owned. This prevents workflow expression
+values from becoming shell source in strict mode; it is not a sandbox or a
+guarantee that an authored script handles environment data safely.
+Environment bindings and inherited settings can intentionally affect executable
+lookup, module loading, and runtime startup. Strict mode does not filter them;
+workflow source review must cover both `run` and `env` and referenced code.
+
 New runs persist an execution tree. Resume replays completed occurrences into
 their expression contexts without calling their implementations, then continues
 at the unfinished occurrence. Selected branches, custom expansions, loop
@@ -72,7 +84,7 @@ thread-safe, with per-run data in `config` and `context`, not on `self`.
 
 ## Adding a step type
 
-1. Implement the step in its own `steps/<package>/` subpackage and register
+1. Implement the step in its own `step/<package>/` subpackage and register
    it explicitly with a unique `type_key`. For an external package, provide
    `step.yml` with a matching `step.type_key` and a matching subclass in
    `__init__.py`; catalog discovery alone does not register the code.
@@ -80,6 +92,6 @@ thread-safe, with per-run data in `config` and `context`, not on `self`.
    resume or nested/concurrent execution when relevant. Registry and engine
    coverage lives in `tests/test_workflows.py`; focused step suites may live
    under `tests/workflows/`.
-3. Update the [workflow reference](../docs/reference/workflows.md) when a
+3. Update the [workflow step reference](https://github.github.io/spec-kit/workflow-steps/types.html) when a
    built-in step changes the YAML users can write. Keep agent-specific CLI
    dispatch in integrations rather than duplicating it in step types.

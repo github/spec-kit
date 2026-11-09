@@ -8,7 +8,7 @@ rather than repairing broken behavior, see
 [Idea Assessment](agentic-assessment.md).
 
 > [!NOTE]
-> Commands are written in `/speckit.bug.*` form throughout this page. GitHub Copilot's default skills mode uses `/speckit-bug-*`; some other agents use `$speckit-bug-*` (e.g. Codex, ZCode) or `/skill:speckit-bug-*` (e.g. Kimi). See [Command invocation](integrations.md#command-invocation).
+> Commands are written in `/speckit.bug.*` form throughout this page. GitHub Copilot's default skills mode uses `/speckit-bug-*`; some other agents use `$speckit-bug-*` (e.g. Codex, ZCode) or `/skill:speckit-bug-*` (e.g. Kimi). See [Command invocation](../integrations/cli.md#command-invocation).
 
 The bug extension is a bundled, opt-in extension. Install it before using these commands:
 

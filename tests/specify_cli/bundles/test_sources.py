@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,14 +14,25 @@ from typer.testing import CliRunner
 from specify_cli import app
 from specify_cli.bundles import BundlerError
 from specify_cli.bundles import sources as bundle_sources
-from specify_cli.bundles.catalogs import CatalogEntry
+from specify_cli.bundles.catalog_stack import CatalogStack
+from specify_cli.bundles.catalogs import (
+    CatalogEntry,
+    CatalogSource,
+    InstallPolicy,
+    Scope,
+)
+from specify_cli.bundles.expansion import expand_manifest
+from specify_cli.bundles.manifest import BundleManifest, BundleRef
 from specify_cli.bundles.sources import (
+    CatalogBundleLoader,
     _download_manifest,
     _local_manifest_source,
     _require_https,
 )
 from tests.specify_cli.bundles.helpers import (
     catalog_entry_dict,
+    catalog_payload,
+    reference_manifest_dict,
     valid_manifest_dict,
     write_manifest,
 )
@@ -65,6 +77,498 @@ def _patch_download(monkeypatch, body: bytes) -> None:
         return _Response(body, url)
 
     monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
+
+
+def _catalog_source(
+    source_id: str,
+    priority: int,
+    policy: InstallPolicy = InstallPolicy.INSTALL_ALLOWED,
+) -> CatalogSource:
+    return CatalogSource(
+        id=source_id,
+        url=f"builtin://{source_id}",
+        priority=priority,
+        install_policy=policy,
+        scope=Scope.PROJECT,
+    )
+
+
+def _catalog_stack(sources, payloads) -> CatalogStack:
+    return CatalogStack(sources, lambda source: payloads[source.id])
+
+
+def _manifest(bundle_id: str, version: str = "1.2.0"):
+    data = valid_manifest_dict()
+    data["bundle"]["id"] = bundle_id
+    data["bundle"]["version"] = version
+    return BundleManifest.from_dict(data)
+
+
+def _resolved_catalog_entry(
+    bundle_id: str = "bugfix",
+    version: str = "1.2.0",
+    **overrides,
+):
+    return catalog_entry_dict(
+        bundle_id,
+        version=version,
+        download_url=f"https://example.com/{bundle_id}-{version}.zip",
+        **overrides,
+    )
+
+
+def test_catalog_loader_resolves_pinned_release_and_returns_source_policy():
+    stack = _catalog_stack(
+        [_catalog_source("default", 1)],
+        {"default": catalog_payload({"bugfix": _resolved_catalog_entry()})},
+    )
+    loader = CatalogBundleLoader(
+        stack,
+        offline=True,
+        download=lambda resolved, *, offline: _manifest(
+            resolved.entry.id, resolved.entry.version
+        ),
+    )
+
+    loaded = loader.load(BundleRef("bugfix", "1.2.0"), ("team",))
+
+    assert loaded.manifest.bundle.id == "bugfix"
+    assert loaded.manifest.bundle.version == "1.2.0"
+    assert loaded.source_id == "default"
+    assert loaded.install_allowed is True
+
+
+def test_catalog_loader_omitted_source_uses_effective_stack_winner():
+    stack = _catalog_stack(
+        [_catalog_source("default", 1), _catalog_source("community", 20)],
+        {
+            "default": catalog_payload(
+                {"bugfix": _resolved_catalog_entry(version="2.0.0")}
+            ),
+            "community": catalog_payload(
+                {"bugfix": _resolved_catalog_entry(version="1.0.0")}
+            ),
+        },
+    )
+    calls = []
+
+    def download(resolved, *, offline):
+        calls.append((resolved.source.id, offline))
+        return _manifest("bugfix", resolved.entry.version)
+
+    loaded = CatalogBundleLoader(stack, offline=True, download=download).load(
+        BundleRef("bugfix", "2.0.0"), ("team",)
+    )
+
+    assert loaded.source_id == "default"
+    assert calls == [("default", True)]
+
+
+def test_catalog_loader_omitted_source_uses_higher_priority_non_default_catalog():
+    stack = _catalog_stack(
+        [_catalog_source("community", 1), _catalog_source("default", 20)],
+        {
+            "community": catalog_payload(
+                {"bugfix": _resolved_catalog_entry(version="1.2.0")}
+            ),
+            "default": catalog_payload(
+                {"bugfix": _resolved_catalog_entry(version="1.2.0")}
+            ),
+        },
+    )
+    calls = []
+
+    def download(resolved, *, offline):
+        calls.append(resolved.source.id)
+        return _manifest("bugfix", resolved.entry.version)
+
+    loaded = CatalogBundleLoader(stack, offline=True, download=download).load(
+        BundleRef("bugfix", "1.2.0"), ("team",)
+    )
+
+    assert loaded.source_id == "community"
+    assert calls == ["community"]
+
+
+def test_catalog_loader_project_default_definition_overrides_builtin_default(
+    tmp_path: Path,
+):
+    project_catalog = tmp_path / "project-catalog.json"
+    project_catalog.write_text(
+        yaml.safe_dump(catalog_payload({
+            "bugfix": _resolved_catalog_entry(version="1.2.0"),
+        })),
+        encoding="utf-8",
+    )
+    config = tmp_path / ".specify"
+    config.mkdir()
+    (config / "bundle-catalogs.yml").write_text(
+        yaml.safe_dump({
+            "catalogs": [{
+                "id": "default",
+                "url": str(project_catalog),
+                "priority": 1,
+                "install_policy": "install-allowed",
+            }],
+        }),
+        encoding="utf-8",
+    )
+
+    stack = CatalogStack.load(
+        tmp_path,
+        lambda source: yaml.safe_load(Path(source.url).read_text(encoding="utf-8")),
+    )
+    calls = []
+
+    def download(resolved, *, offline):
+        calls.append((resolved.source.id, resolved.source.url))
+        return _manifest("bugfix", resolved.entry.version)
+
+    loaded = CatalogBundleLoader(stack, offline=True, download=download).load(
+        BundleRef("bugfix", "1.2.0"), ("team",)
+    )
+
+    assert loaded.source_id == "default"
+    assert calls == [("default", str(project_catalog))]
+
+
+def test_catalog_loader_missing_release_does_not_fall_through_to_lower_catalog():
+    stack = _catalog_stack(
+        [_catalog_source("project", 1), _catalog_source("default", 20)],
+        {
+            "project": catalog_payload(
+                {"bugfix": _resolved_catalog_entry(version="2.0.0")}
+            ),
+            "default": catalog_payload(
+                {"bugfix": _resolved_catalog_entry(version="1.2.0")}
+            ),
+        },
+    )
+    calls = []
+
+    def download(resolved, *, offline):
+        calls.append(resolved)
+        return _manifest("bugfix", resolved.entry.version)
+
+    with pytest.raises(BundlerError, match="catalog 'project' offers 2\\.0\\.0"):
+        CatalogBundleLoader(stack, offline=True, download=download).load(
+            BundleRef("bugfix", "1.2.0"), ("team",)
+        )
+
+    assert calls == []
+
+
+def test_catalog_loader_expansion_wraps_missing_release_and_source_failures():
+    cases = [
+        (
+            BundleRef("bugfix", "0.9.0"),
+            "Update the reference",
+        ),
+        (
+            BundleRef("bugfix", "1.2.0", "default"),
+            "winning catalog is 'community'",
+        ),
+    ]
+    for reference, cause in cases:
+        stack = _catalog_stack(
+            [_catalog_source("community", 1)],
+            {
+                "community": catalog_payload(
+                    {"bugfix": _resolved_catalog_entry(version="1.2.0")}
+                ),
+            },
+        )
+        root = BundleManifest.from_dict(
+            reference_manifest_dict([{
+                "id": reference.id,
+                "version": reference.version,
+                **({"source": reference.source} if reference.source else {}),
+            }], bundle_id="team")
+        )
+
+        with pytest.raises(BundlerError) as excinfo:
+            expand_manifest(
+                root,
+                CatalogBundleLoader(stack, offline=False, download=lambda *_args, **_kwargs: _manifest("bugfix")),
+            )
+
+        message = str(excinfo.value)
+        if reference.source:
+            assert message.startswith("Bundle reference bugfix (team)")
+            assert "Cannot resolve bundle reference" not in message
+        else:
+            assert message.startswith("Cannot resolve bundle reference bugfix@")
+            assert message.count("Cannot resolve bundle reference bugfix@") == 1
+        assert cause in message
+
+
+def test_catalog_loader_real_download_path_honors_offline_mode():
+    stack = _catalog_stack(
+        [_catalog_source("default", 1)],
+        {"default": catalog_payload({"bugfix": _resolved_catalog_entry()})},
+    )
+
+    with pytest.raises(BundlerError, match="Network access disabled"):
+        CatalogBundleLoader(stack, offline=True).load(
+            BundleRef("bugfix", "1.2.0"), ("team",)
+        )
+
+
+def test_catalog_loader_accepts_matching_explicit_source():
+    stack = _catalog_stack(
+        [_catalog_source("team-catalog", 1)],
+        {
+            "team-catalog": catalog_payload(
+                {"bugfix": _resolved_catalog_entry()}
+            )
+        },
+    )
+    loaded = CatalogBundleLoader(
+        stack,
+        offline=False,
+        download=lambda resolved, *, offline: _manifest(
+            resolved.entry.id, resolved.entry.version
+        ),
+    ).load(BundleRef("bugfix", "1.2.0", "team-catalog"), ("team",))
+
+    assert loaded.source_id == "team-catalog"
+
+
+def test_catalog_loader_rejects_source_mismatch_before_download():
+    stack = _catalog_stack(
+        [_catalog_source("project", 1), _catalog_source("default", 20)],
+        {
+            "project": catalog_payload({"bugfix": _resolved_catalog_entry()}),
+            "default": catalog_payload({"bugfix": _resolved_catalog_entry()}),
+        },
+    )
+    calls = []
+
+    def download(resolved, *, offline):
+        calls.append(resolved)
+        return _manifest("bugfix")
+
+    loader = CatalogBundleLoader(stack, offline=False, download=download)
+    with pytest.raises(BundlerError, match="winning catalog is 'project'"):
+        loader.load(BundleRef("bugfix", "1.2.0", "default"), ("team",))
+
+    assert calls == []
+
+
+def test_catalog_loader_missing_release_names_pin_and_offered_versions():
+    stack = _catalog_stack(
+        [_catalog_source("default", 1)],
+        {
+            "default": catalog_payload(
+                {
+                    "bugfix": _resolved_catalog_entry(
+                        version="2.0.0",
+                        releases={
+                            "1.0.0": {
+                                "download_url": "https://example.com/bugfix-1.0.0.zip",
+                                "sha256": "a" * 64,
+                            }
+                        },
+                    )
+                }
+            )
+        },
+    )
+
+    with pytest.raises(
+        BundlerError,
+        match=(
+            r"'team' pins bugfix 0\.9\.0, but catalog 'default' offers "
+            r"2\.0\.0, 1\.0\.0\. Update the reference"
+        ),
+    ):
+        CatalogBundleLoader(stack, offline=False).load(
+            BundleRef("bugfix", "0.9.0"), ("team",)
+        )
+
+
+def _missing_release_stack(source):
+    return _catalog_stack(
+        [source],
+        {
+            source.id: catalog_payload(
+                {"bugfix": _resolved_catalog_entry(version="1.0.1")}
+            )
+        },
+    )
+
+
+def test_catalog_loader_offline_builtin_missing_release_recommends_retry():
+    stack = _missing_release_stack(_catalog_source("default", 1))
+
+    with pytest.raises(BundlerError) as excinfo:
+        CatalogBundleLoader(stack, offline=True).load(
+            BundleRef("bugfix", "1.0.2"), ("team",)
+        )
+
+    message = str(excinfo.value)
+    assert "'team' pins bugfix 1.0.2, but catalog 'default' offers 1.0.1." in message
+    assert "built-in catalog may be outdated" in message
+    assert "Re-run without --offline." in message
+    assert "Update the reference" not in message
+
+
+@pytest.mark.parametrize("offline", [True, False])
+def test_catalog_loader_non_builtin_missing_release_keeps_update_advice(offline):
+    # A local catalog named "default" must not be mistaken for the built-in one.
+    local = replace(_catalog_source("default", 1), url="/tmp/default-catalog.json")
+    stack = _missing_release_stack(local)
+
+    with pytest.raises(BundlerError) as excinfo:
+        CatalogBundleLoader(stack, offline=offline).load(
+            BundleRef("bugfix", "1.0.2"), ("team",)
+        )
+
+    message = str(excinfo.value)
+    assert "Update the reference to an advertised version." in message
+    assert "--offline" not in message
+
+
+def test_catalog_loader_offline_release_miss_depends_on_winning_source():
+    # The built-in catalog is configured, but a local source wins the lookup.
+    local = replace(_catalog_source("team", 1), url="/tmp/team-catalog.json")
+    builtin = _catalog_source("default", 20)
+    stack = _catalog_stack(
+        [local, builtin],
+        {
+            "team": catalog_payload(
+                {"bugfix": _resolved_catalog_entry(version="1.0.1")}
+            ),
+            "default": catalog_payload(
+                {"bugfix": _resolved_catalog_entry(version="1.0.2")}
+            ),
+        },
+    )
+
+    with pytest.raises(BundlerError) as excinfo:
+        CatalogBundleLoader(stack, offline=True).load(
+            BundleRef("bugfix", "1.0.2"), ("team",)
+        )
+
+    assert "Update the reference to an advertised version." in str(excinfo.value)
+
+
+def test_catalog_loader_offline_missing_bundle_reports_network_limit():
+    stack = _catalog_stack(
+        [_catalog_source("default", 1)],
+        {"default": catalog_payload({})},
+    )
+
+    with pytest.raises(BundlerError) as excinfo:
+        CatalogBundleLoader(stack, offline=True).load(
+            BundleRef("missing", "0.9.0"), ("team",)
+        )
+
+    message = str(excinfo.value)
+    assert message.startswith(
+        "Bundle 'missing' was not found in any configured catalog."
+    )
+    assert "built-in catalog may be outdated" in message
+    assert "Re-run without --offline." in message
+
+
+def test_catalog_loader_offline_missing_bundle_in_local_catalog_has_no_retry_hint():
+    local = replace(_catalog_source("team", 1), url="/tmp/team-catalog.json")
+    stack = _catalog_stack([local], {"team": catalog_payload({})})
+
+    with pytest.raises(BundlerError) as excinfo:
+        CatalogBundleLoader(stack, offline=True).load(
+            BundleRef("missing", "0.9.0"), ("team",)
+        )
+
+    assert str(excinfo.value) == (
+        "Bundle 'missing' was not found in any configured catalog."
+    )
+
+
+def test_catalog_loader_online_missing_bundle_reports_catalog_miss():
+    stack = _catalog_stack(
+        [_catalog_source("default", 1)],
+        {"default": catalog_payload({})},
+    )
+
+    with pytest.raises(BundlerError) as excinfo:
+        CatalogBundleLoader(stack, offline=False).load(
+            BundleRef("missing", "0.9.0"), ("team",)
+        )
+
+    assert str(excinfo.value) == (
+        "Bundle 'missing' was not found in any configured catalog."
+    )
+
+
+def test_catalog_loader_propagates_offline_download_error():
+    stack = _catalog_stack(
+        [_catalog_source("default", 1)],
+        {"default": catalog_payload({"bugfix": _resolved_catalog_entry()})},
+    )
+    error = BundlerError("Network access disabled; cannot download bundle 'bugfix'.")
+
+    def download(resolved, *, offline):
+        assert offline is True
+        raise error
+
+    with pytest.raises(BundlerError) as excinfo:
+        CatalogBundleLoader(stack, offline=True, download=download).load(
+            BundleRef("bugfix", "1.2.0"), ("team",)
+        )
+
+    assert excinfo.value is error
+
+
+def test_catalog_loader_returns_discovery_only_policy():
+    stack = _catalog_stack(
+        [_catalog_source("community", 1, InstallPolicy.DISCOVERY_ONLY)],
+        {"community": catalog_payload({"bugfix": _resolved_catalog_entry()})},
+    )
+    loaded = CatalogBundleLoader(
+        stack,
+        offline=True,
+        download=lambda resolved, *, offline: _manifest(
+            resolved.entry.id, resolved.entry.version
+        ),
+    ).load(BundleRef("bugfix", "1.2.0"), ("team",))
+
+    assert loaded.source_id == "community"
+    assert loaded.install_allowed is False
+
+
+def test_catalog_loader_expands_through_real_catalog_stack():
+    stack = _catalog_stack(
+        [_catalog_source("default", 1)],
+        {"default": catalog_payload({"bugfix": _resolved_catalog_entry()})},
+    )
+    root = BundleManifest.from_dict(
+        reference_manifest_dict(
+            [{"id": "bugfix", "version": "1.2.0"}],
+            bundle_id="team",
+        )
+    )
+    expanded = expand_manifest(
+        root,
+        CatalogBundleLoader(
+            stack,
+            offline=True,
+            download=lambda resolved, *, offline: _manifest(
+                resolved.entry.id, resolved.entry.version
+            ),
+        ),
+    )
+
+    assert [(ref.id, ref.source_id) for ref in expanded.references] == [
+        ("bugfix", "default")
+    ]
+    assert [component.id for component in expanded.components] == [
+        "ext-a",
+        "preset-a",
+        "step-a",
+        "wf-a",
+    ]
 
 
 def test_local_source_none_for_non_path():
