@@ -51,6 +51,20 @@ jobs:
 
       # Explicit prerequisites let independent checks finish after a failure
       # without masking that failure or continuing after cancellation.
+      # Audit committed inputs before Markdownlint can execute repository
+      # JavaScript configuration in this shared workspace.
+      - name: Check committed audit requirements are current
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.uv.outcome == 'success' && steps.python.outcome == 'success' }}
+        env:
+          DEPENDENCY_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          DEPENDENCY_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          GENERATED_REQUIREMENTS: ${{ runner.temp }}/security-audit-requirements.txt
+        run: python .github/scripts/check_security_requirements.py
+
+      - name: Run pip-audit (committed requirements)
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.uv.outcome == 'success' && steps.python.outcome == 'success' }}
+        run: uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r .github/security-audit-requirements.txt --progress-spinner off
+
       - name: Run ruff check
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.uv.outcome == 'success' && steps.python.outcome == 'success' }}
         run: uvx ruff@0.15.0 check src tests
@@ -142,18 +156,6 @@ jobs:
             echo "$matches"
             exit 1
           fi
-
-      - name: Check committed audit requirements are current
-        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.uv.outcome == 'success' && steps.python.outcome == 'success' }}
-        env:
-          DEPENDENCY_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
-          DEPENDENCY_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-          GENERATED_REQUIREMENTS: ${{ runner.temp }}/security-audit-requirements.txt
-        run: python .github/scripts/check_security_requirements.py
-
-      - name: Run pip-audit (committed requirements)
-        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.uv.outcome == 'success' && steps.python.outcome == 'success' }}
-        run: uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r .github/security-audit-requirements.txt --progress-spinner off
 
   dependency-audit-scheduled:
     name: Dependency audit scheduled (${{ matrix.os }}, Python ${{ matrix.python-version }})

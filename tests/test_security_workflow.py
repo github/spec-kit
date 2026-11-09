@@ -84,14 +84,14 @@ def _load_sync_script():
 
 
 CHECK_STEPS = (
+    "Check committed audit requirements are current",
+    "Run pip-audit (committed requirements)",
     "Run ruff check",
     "Run git diff --check",
     "Verify the documentation globs match files",
     "Run markdownlint-cli2",
     "Run shellcheck on shell scripts",
     "Reject bash 4+ case-modification expansions",
-    "Check committed audit requirements are current",
-    "Run pip-audit (committed requirements)",
 )
 PYTHON_CHECK_STEPS = (
     "Run ruff check",
@@ -114,6 +114,14 @@ def _check_runs(step_name, outcomes, cancelled=False):
 
 
 class TestCombinedChecks:
+    def test_dependency_audits_precede_executable_markdown_configuration(self):
+        steps = _load_security_workflow()["jobs"]["checks"]["steps"]
+        names = [step["name"] for step in steps]
+        sync_index = names.index("Check committed audit requirements are current")
+        audit_index = names.index("Run pip-audit (committed requirements)")
+        markdown_index = names.index("Run markdownlint-cli2")
+        assert sync_index < audit_index < markdown_index
+
     def test_checks_share_one_job_and_tool_setup(self):
         workflow = _load_security_workflow()
         assert set(workflow["jobs"]) == {"checks", "dependency-audit-scheduled"}
