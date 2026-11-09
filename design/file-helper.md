@@ -209,11 +209,16 @@ entries, not reject a whole project for excluded/unrelated links.
 
 Reads resolve supported contained links under the existing policy, then open
 the resolved hierarchy without following substituted links. POSIX reads use
-descriptor-relative directory traversal with `O_DIRECTORY` and `O_NOFOLLOW`,
-and open the leaf with `O_NOFOLLOW` and `O_NONBLOCK`. Windows reads pin each
-resolved directory and leaf with non-reparse handles that withhold delete
-sharing. Both paths validate the opened file with `fstat` before reading its
-descriptor, and release all handles on success or failure. Platforms without
+descriptor-relative directory traversal with `O_DIRECTORY` and `O_NOFOLLOW`.
+Directory descriptors use `O_SEARCH` or `O_PATH` where available so searchable
+directories need not be listable, and each superseded parent is closed as soon
+as its child is open. The leaf uses `O_NOFOLLOW` and `O_NONBLOCK`. Windows reads
+pin each resolved directory and leaf with non-reparse handles that withhold
+delete sharing; directory handles also withhold write sharing to prevent
+in-place reparse changes during traversal. Reads duplicate the validated leaf
+handle into an independently owned descriptor, never reopen its pathname.
+Both paths validate the opened file with `fstat` before reading its descriptor,
+and release all handles on success or failure. Platforms without
 the required safe-open primitives fail explicitly rather than fall back to
 unchecked pathname reads. A concurrent replacement can fail the read or leave
 it reading the already-open original file, but cannot redirect it through a

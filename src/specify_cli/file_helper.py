@@ -10,7 +10,7 @@ import stat
 import tempfile
 from typing import TypeVar
 
-from specify_cli._file_handles import windows_handle
+from specify_cli._file_handles import windows_handle, windows_read_fd
 
 _PathType = TypeVar("_PathType", bound=PurePath)
 
@@ -168,12 +168,12 @@ class FileHelper:
         with ExitStack() as stack:
             if os.name == "nt":
                 current = self._canonical_root
-                stack.enter_context(windows_handle(current, directory=True))
+                stack.enter_context(windows_handle(current, directory=True, share_write=False))
                 for part in parts[:-1]:
                     current /= part
-                    stack.enter_context(windows_handle(current, directory=True))
-                stack.enter_context(windows_handle(destination, directory=False))
-                fd = os.open(destination, os.O_RDONLY | os.O_BINARY)
+                    stack.enter_context(windows_handle(current, directory=True, share_write=False))
+                handle = stack.enter_context(windows_handle(destination, directory=False))
+                fd = stack.enter_context(windows_read_fd(handle))
             else:
                 if not (
                     getattr(os, "O_NOFOLLOW", 0)
@@ -182,19 +182,23 @@ class FileHelper:
                     and os.open in os.supports_dir_fd
                 ):
                     raise OSError(errno.ENOTSUP, "Safe scoped reads are unsupported on this platform")
-                flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+                flags = getattr(os, "O_SEARCH", getattr(os, "O_PATH", os.O_RDONLY))
+                flags |= os.O_DIRECTORY | os.O_NOFOLLOW
                 flags |= getattr(os, "O_CLOEXEC", 0)
                 parent = os.open(self._canonical_root, flags)
-                stack.callback(os.close, parent)
-                for part in parts[:-1]:
-                    parent = os.open(part, flags, dir_fd=parent)
-                    stack.callback(os.close, parent)
-                fd = os.open(
-                    parts[-1],
-                    os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0),
-                    dir_fd=parent,
-                )
-            stack.callback(os.close, fd)
+                try:
+                    for part in parts[:-1]:
+                        child = os.open(part, flags, dir_fd=parent)
+                        os.close(parent)
+                        parent = child
+                    fd = os.open(
+                        parts[-1],
+                        os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0),
+                        dir_fd=parent,
+                    )
+                    stack.callback(os.close, fd)
+                finally:
+                    os.close(parent)
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise UnsupportedPathError(f"Expected a regular file: {destination}")
             with os.fdopen(fd, "rb", closefd=False) as stream:

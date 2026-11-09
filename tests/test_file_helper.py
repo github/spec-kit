@@ -6,6 +6,7 @@ import errno
 import os
 from pathlib import Path, PureWindowsPath
 import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -194,7 +195,7 @@ def test_read_pins_parent_before_opening_leaf(root, link, monkeypatch):
     assert swapped
 
 
-@pytest.mark.parametrize("failure", [None, "parent", "leaf", "fstat"])
+@pytest.mark.parametrize("failure", [None, "parent", "leaf", "duplicate", "fstat"])
 def test_windows_read_pins_entire_resolved_hierarchy(root, monkeypatch, failure):
     directory = root / "directory"
     directory.mkdir()
@@ -204,15 +205,33 @@ def test_windows_read_pins_entire_resolved_hierarchy(root, monkeypatch, failure)
     seen = []
 
     @contextmanager
-    def pin(path, *, directory):
+    def pin(path, *, directory, share_write=True):
         if path.name == {"parent": "directory", "leaf": "file"}.get(failure):
             raise OSError("injected handle failure")
+        if directory:
+            assert not share_write
         pinned.append(path)
         seen.append((path, directory))
         try:
             yield 1
         finally:
             assert pinned.pop() == path
+
+    @contextmanager
+    def duplicate(handle):
+        assert handle == 1
+        assert pinned == [root.resolve(), directory.resolve(), selected.resolve()]
+        if failure == "duplicate":
+            raise OSError("injected duplicate failure")
+        fd = os.open(selected, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        try:
+            yield fd
+        finally:
+            os.close(fd)
+
+    def no_path_open(*args, **kwargs):
+        assert pinned == [root.resolve(), directory.resolve(), selected.resolve()]
+        pytest.fail("Windows reads must duplicate the validated handle, not reopen its path")
 
     def checked_fstat(fd):
         assert pinned == [root.resolve(), directory.resolve(), selected.resolve()]
@@ -224,13 +243,14 @@ def test_windows_read_pins_entire_resolved_hierarchy(root, monkeypatch, failure)
         name="nt",
         O_RDONLY=os.O_RDONLY,
         O_BINARY=getattr(os, "O_BINARY", 0),
-        open=os.open,
+        open=no_path_open,
         close=os.close,
         fdopen=os.fdopen,
         fstat=checked_fstat,
     )
     monkeypatch.setattr(file_helper, "os", windows_os)
     monkeypatch.setattr(file_helper, "windows_handle", pin)
+    monkeypatch.setattr(file_helper, "windows_read_fd", duplicate, raising=False)
     files = FileHelper(root)
     if failure:
         with pytest.raises(OSError, match="injected"):
@@ -243,6 +263,120 @@ def test_windows_read_pins_entire_resolved_hierarchy(root, monkeypatch, failure)
             (selected.resolve(), False),
         ]
     assert pinned == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Portable replacement model; native reparse coverage is separate")
+@pytest.mark.parametrize("allow", [False, True])
+def test_windows_read_keeps_validated_object_when_path_changes(root, link, monkeypatch, allow):
+    selected = root / "file"
+    selected.write_bytes(b"inside")
+    outside = root.parent / "outside"
+    outside.write_bytes(b"outside")
+    changed = False
+
+    @contextmanager
+    def pin(path, *, directory, share_write=True):
+        nonlocal changed
+        if directory:
+            yield 1
+        else:
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+            try:
+                # Model reparse changes after validation without changing the opened object.
+                path.unlink()
+                link(path, outside)
+                changed = True
+                yield fd
+            finally:
+                os.close(fd)
+
+    @contextmanager
+    def duplicate(handle):
+        fd = os.dup(handle)
+        try:
+            yield fd
+        finally:
+            os.close(fd)
+
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(
+        name="nt", open=os.open, O_RDONLY=os.O_RDONLY,
+        O_BINARY=getattr(os, "O_BINARY", 0), close=os.close,
+        fstat=os.fstat, fdopen=os.fdopen,
+    ))
+    monkeypatch.setattr(file_helper, "windows_handle", pin)
+    monkeypatch.setattr(file_helper, "windows_read_fd", duplicate, raising=False)
+    assert FileHelper(root, allow_symlinks=allow).read_bytes(selected) == b"inside"
+    assert changed
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions required")
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("restricted", ["root", "parent"])
+def test_read_through_search_only_directories(root, allow, restricted):
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses directory permission checks")
+    directory = root / "directory"
+    directory.mkdir()
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    limited = root if restricted == "root" else directory
+    previous_mode = limited.stat().st_mode & 0o777
+    limited.chmod(0o111)
+    try:
+        assert selected.read_bytes() == b"inside"
+        with pytest.raises(PermissionError):
+            list(limited.iterdir())
+        assert FileHelper(root, allow_symlinks=allow).read_bytes(selected) == b"inside"
+    finally:
+        limited.chmod(previous_mode)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions required")
+@pytest.mark.parametrize("restricted", ["root", "parent"])
+def test_read_rejects_non_searchable_directories(root, restricted):
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses directory permission checks")
+    directory = root / "directory"
+    directory.mkdir()
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    files = FileHelper(root)
+    limited = root if restricted == "root" else directory
+    previous_mode = limited.stat().st_mode & 0o777
+    limited.chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            files.read_bytes(selected)
+    finally:
+        limited.chmod(previous_mode)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor limits required")
+@pytest.mark.parametrize("allow", [False, True])
+def test_read_deep_path_with_small_descriptor_limit(root, allow):
+    directory = root
+    for _ in range(96):
+        directory /= "d"
+        directory.mkdir()
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    result = subprocess.run(
+        [sys.executable, "-c", """
+import resource
+import sys
+from pathlib import Path
+from specify_cli.file_helper import FileHelper
+
+root, selected = map(Path, sys.argv[1:3])
+soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+limit = 64 if soft == resource.RLIM_INFINITY else min(64, soft)
+resource.setrlimit(resource.RLIMIT_NOFILE, (limit, hard))
+assert selected.read_bytes() == b"inside"
+assert FileHelper(root, allow_symlinks=sys.argv[3] == "True").read_bytes(selected) == b"inside"
+""", str(root), str(selected), str(allow)],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor cleanup regression")
