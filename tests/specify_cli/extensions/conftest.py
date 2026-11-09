@@ -100,7 +100,7 @@ def project_dir(temp_dir):
     ],
     ids=["no-version", "no-name", "no-description", "markup"],
 )
-def incomplete_catalog_entry(request, project_dir, monkeypatch):
+def incomplete_catalog_entry(request, tmp_path, monkeypatch):
     """Serve an incomplete entry and a healthy sibling from the real cache.
 
     Returns the header expected for the incomplete entry.
@@ -109,6 +109,10 @@ def incomplete_catalog_entry(request, project_dir, monkeypatch):
 
     entry, header = request.param
 
+    # tmp_path, not temp_dir: monkeypatch restores the cwd only after
+    # temp_dir's rmtree, which Windows refuses while the cwd is inside it.
+    project_dir = tmp_path / "project"
+    (project_dir / ".specify").mkdir(parents=True)
     monkeypatch.chdir(project_dir)
     monkeypatch.setenv("SPECKIT_CATALOG_URL", ExtensionCatalog.DEFAULT_CATALOG_URL)
     catalog = ExtensionCatalog(project_dir)
