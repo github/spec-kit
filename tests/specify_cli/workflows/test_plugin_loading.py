@@ -12,7 +12,9 @@ from typer.testing import CliRunner
 from specify_cli import app
 from specify_cli.workflows.expressions import BUILTIN_FILTERS, FILTER_TABLE
 
-from .helpers import install_dir, write_installed
+from tests.specify_cli.workflows.function.helpers import install_dir, write_installed
+
+pytestmark = pytest.mark.usefixtures("reset_custom_functions")
 
 COLLIDING = [{"name": "upper", "handler": "trim"}]
 

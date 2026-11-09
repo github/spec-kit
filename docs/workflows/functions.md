@@ -100,9 +100,11 @@ present on disk (the error says "found on disk, not in the registry" in that
 case). Runtime loading also fails on a collision, naming every colliding
 function and both sources, if packages were copied manually or a new Spec Kit
 release introduces a conflicting built-in. The collision check happens before
-any package code is imported. Built-in filters are never replaced. If loading
-fails because a directory or file cannot be read, the command reports the error
-and exits with code 1 (a failed payload with `--json`).
+any package code is imported. Built-in filters are never replaced. If the
+functions directory itself cannot be read, the command reports the error and
+exits with code 1 (a failed payload with `--json`). Packages with an invalid or
+unreadable manifest, or whose module fails to import, are skipped, so their
+filters may later be reported as unknown.
 
 The filter registry is process-global while a workflow is loaded. A project
 reload replaces the previous project's custom filters. Function handlers must

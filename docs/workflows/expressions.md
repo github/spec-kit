@@ -24,8 +24,9 @@ message: "{{ inputs.message | trim | upper }}"
 ```
 
 A function receives the piped value followed by the explicit filter
-arguments. Manifest `min_args` and `max_args` bounds are checked during
-validation and evaluation. Bare form is available for zero-minimum functions;
+arguments. Manifest `min_args` and `max_args` bounds are enforced when the
+expression is evaluated. Filter names and argument counts in wrapped
+`{{ ... }}` expressions are not checked during workflow validation. Bare form is available for zero-minimum functions;
 parenthesized calls contain one or more arguments. Function names share a flat
 namespace with built-in filters and other installed packages. Collisions are
 errors and built-ins are never shadowed.

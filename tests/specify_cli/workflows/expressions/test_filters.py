@@ -18,6 +18,8 @@ from specify_cli.workflows.expressions import (
     unregister_custom_filters,
 )
 
+pytestmark = pytest.mark.usefixtures("reset_custom_functions")
+
 BUILTIN_NAMES = (
     "default", "join", "map", "contains", "split",
     "from_json", "upper", "lower", "length", "to_json",
