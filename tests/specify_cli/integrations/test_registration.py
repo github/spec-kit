@@ -142,11 +142,14 @@ class TestParseIntegrationOptionsEqualsForm:
         ["integration", "upgrade", "--help"],
     ],
 )
-def test_script_help_includes_python_variant(args):
+@pytest.mark.parametrize("terminal_width", [60, 80, 120])
+def test_script_help_includes_python_variant(args, terminal_width, monkeypatch):
+    monkeypatch.setattr("typer.rich_utils.MAX_WIDTH", terminal_width)
     result = runner.invoke(app, args)
 
     assert result.exit_code == 0
-    assert "sh, ps, or py" in " ".join(strip_ansi(result.output).split())
+    help_text = strip_ansi(result.output).replace("\u2502", " ")
+    assert "sh, ps, or py" in " ".join(help_text.split())
 
 
 class TestIntegrationProjectGuards(IntegrationCatalogCliTestBase):
