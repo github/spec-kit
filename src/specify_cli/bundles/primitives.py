@@ -330,7 +330,18 @@ class _PresetKindManager:
         from .._assets import _locate_bundled_preset
 
         speckit_version = get_speckit_version()
-        priority = DEFAULT_PRIORITY if component.priority is None else component.priority
+
+        # Preserve existing priority from registry if available
+        existing_priority = None
+        if component.kind == "preset":
+            existing = self._manager.registry.get(component.id)
+            if existing and isinstance(existing, dict):
+                existing_priority = existing.get("priority")
+
+        if existing_priority is not None:
+            priority = existing_priority
+        else:
+            priority = DEFAULT_PRIORITY if component.priority is None else component.priority
 
         bundled = _locate_bundled_preset(component.id)
         if bundled is not None and component.source is None:
@@ -421,7 +432,18 @@ class _ExtensionKindManager:
         from .._assets import _locate_bundled_extension
 
         speckit_version = get_speckit_version()
-        priority = DEFAULT_PRIORITY if component.priority is None else component.priority
+
+        # Preserve existing priority from registry if available
+        existing_priority = None
+        if component.kind == "extension":
+            existing = self._manager.registry.get(component.id)
+            if existing and isinstance(existing, dict):
+                existing_priority = existing.get("priority")
+
+        if existing_priority is not None:
+            priority = existing_priority
+        else:
+            priority = DEFAULT_PRIORITY if component.priority is None else component.priority
 
         bundled = _locate_bundled_extension(component.id)
         if bundled is not None and component.source is None:
