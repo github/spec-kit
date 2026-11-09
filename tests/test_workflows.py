@@ -1630,6 +1630,31 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.n >= 'abc' }}", ctx) is False
         assert evaluate_expression("{{ inputs.n <= 'abc' }}", ctx) is False
 
+    def test_equality_coerces_numeric_strings_like_ordering(self):
+        """``==``/``!=`` agree with ``>=``/``<=`` for numeric strings.
+
+        Captured stdout ``"10"`` was both ``>= 10`` and ``<= 10`` but not
+        ``== 10``, because only the ordering operators coerced numeric strings.
+        """
+        from specify_cli.workflows.expressions import evaluate_condition
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            steps={"count": {"output": {"stdout": "10"}}},
+            inputs={"s10": "10", "f10": "10.0", "name": "10x"},
+        )
+        assert evaluate_condition("{{ steps.count.output.stdout >= 10 }}", ctx) is True
+        assert evaluate_condition("{{ steps.count.output.stdout <= 10 }}", ctx) is True
+        assert evaluate_condition("{{ steps.count.output.stdout == 10 }}", ctx) is True
+        assert evaluate_condition("{{ steps.count.output.stdout != 10 }}", ctx) is False
+        assert evaluate_condition("{{ steps.count.output.stdout == 11 }}", ctx) is False
+        assert evaluate_condition("{{ steps.count.output.stdout != 11 }}", ctx) is True
+        # Two numeric strings compare as numbers, as they do for ordering.
+        assert evaluate_condition("{{ inputs.s10 == inputs.f10 }}", ctx) is True
+        # A non-numeric string is still compared as-is.
+        assert evaluate_condition("{{ inputs.name == 10 }}", ctx) is False
+        assert evaluate_condition("{{ inputs.name == '10x' }}", ctx) is True
+
     def test_boolean_literals_are_case_insensitive(self):
         """``{{ True }}``/``{{ TRUE }}`` resolve as booleans, as the ``.lower()``
         branch intends; only lowercase was pinned before."""

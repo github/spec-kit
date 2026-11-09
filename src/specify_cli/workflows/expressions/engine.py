@@ -50,7 +50,7 @@ from lark.exceptions import UnexpectedCharacters, UnexpectedInput, UnexpectedTok
 from . import namespace
 from .filters import FILTER_TABLE, _EXPECTED_FILTERS
 from .namespace import _resolve_dot_path
-from .operators import _safe_compare, _safe_membership
+from .operators import _safe_compare, _safe_equals, _safe_membership
 from .template import (
     _collapse_whitespace,
     _find_block_close,
@@ -431,9 +431,9 @@ def _eval(node: Any, namespace_: dict[str, Any]) -> Any:
         left = _eval(node[2], namespace_)
         right = _eval(node[3], namespace_)
         if op == "==":
-            return left == right
+            return _safe_equals(left, right, negate=False)
         if op == "!=":
-            return left != right
+            return _safe_equals(left, right, negate=True)
         if op == "in":
             return _safe_membership(left, right, negate=False)
         if op == "not in":
