@@ -53,6 +53,13 @@ event_app = typer.Typer(
 # install) would otherwise run unconfined script tokens.
 EVENT_SCRIPT_PATH_CONFINEMENT = True
 
+# Generated hook dispatchers refuse to delegate unless this name is True.
+# A stale global install that predates the #5336 runner contract (per-event
+# runner-failure exit codes, SPECKIT_EVENT propagation) still exposes
+# EVENT_SCRIPT_PATH_CONFINEMENT, so confinement alone cannot prove the
+# resolver honors the new contract.
+EVENT_RUNNER_CONTRACT = True
+
 EVENTS_DISPATCHER_DIR = Path(".specify")
 EVENTS_DISPATCHER_FILENAME = "events.py"
 # POSIX-form (forward-slash) relative path so it matches manifest keys, which
@@ -83,6 +90,20 @@ CANONICAL_EVENTS = frozenset({
     "user_prompt_submit",
     "stop",
 })
+
+# Events whose handlers act as guards: when a handler cannot run (timeout or
+# startup error), the runner failure must keep blocking the agent action.
+# Claude Code reads exit 2 from a PreToolUse hook as "block the tool call",
+# so a pre_tool_use validation that never ran must still block. Every other
+# event fails open with exit 1 so a slow handler cannot keep the agent
+# running (#5336). Mirrored inside the generated dispatcher template
+# (_runner_failure_exit_code); keep both in sync.
+BLOCKING_FAILURE_EVENTS = frozenset({"pre_tool_use"})
+
+
+def _runner_failure_exit_code(event_name: str) -> int:
+    """Exit code for a runner failure (timeout/startup error) for *event_name*."""
+    return 2 if event_name in BLOCKING_FAILURE_EVENTS else 1
 
 # -- Events Dispatcher template ---------------------------------------------
 
@@ -289,6 +310,18 @@ def _resolve_argv(template_path, project_root, ext_id):
     return [str(script_abs), *rest]
 
 
+# Guard events (pre_tool_use) fail closed: a runner failure (timeout or
+# handler failing to start) must keep blocking the action (exit 2). Every
+# other event fails open with exit 1. Mirrors BLOCKING_FAILURE_EVENTS /
+# _runner_failure_exit_code in the full resolver; keep both in sync.
+_BLOCKING_FAILURE_EVENTS = frozenset({"pre_tool_use"})
+
+
+def _runner_failure_exit_code(event_name):
+    """Exit code for a runner failure (timeout/startup error) for *event_name*."""
+    return 2 if event_name in _BLOCKING_FAILURE_EVENTS else 1
+
+
 def _run_inline(command_name, payload, project_root, timeout, envelope="plain", native_event="", event_name=""):
     """Resolve and run the event command with stdlib only (no specify_cli)."""
     template_path, ext_id = _find_command_template(command_name, project_root)
@@ -325,12 +358,16 @@ def _run_inline(command_name, payload, project_root, timeout, envelope="plain", 
         return 0
     except subprocess.TimeoutExpired:
         print(f"Event {command_name} timed out", file=sys.stderr)
-        # Exit 1, not 2: a runner failure is not the handler's decision, and
-        # agents read exit 2 from a Stop hook as "don't stop, keep going".
-        return 1
+        # A runner failure is not the handler's decision. For guard events
+        # (pre_tool_use) the failure must keep blocking (exit 2); for other
+        # events exit 1, since agents read exit 2 from a Stop hook as
+        # "don't stop, keep going".
+        return _runner_failure_exit_code(event_name)
     except Exception as e:
         print(f"Event {command_name} error: {e}", file=sys.stderr)
-        return 1
+        # The handler never ran, so its failure cannot be treated as a
+        # decision: guard events keep blocking (exit 2), others fail open.
+        return _runner_failure_exit_code(event_name)
 
 
 def _emit(output, envelope, native_event=""):
@@ -426,14 +463,19 @@ def main():
     # the full resolver, which also handles extension manifests whose file stem
     # differs from the command name and the project's custom script selection.
     # Require EVENT_SCRIPT_PATH_CONFINEMENT so a stale global install cannot
-    # bypass the generated dispatcher's path guard.
+    # bypass the generated dispatcher's path guard, and EVENT_RUNNER_CONTRACT
+    # so a stale install that predates the #5336 runner contract (per-event
+    # runner-failure exit codes, SPECKIT_EVENT) cannot bypass those fixes.
     try:
         from specify_cli.events import (
+            EVENT_RUNNER_CONTRACT as _contract_ok,
             EVENT_SCRIPT_PATH_CONFINEMENT as _confine_ok,
             resolve_and_run_event_command,
         )
         if _confine_ok is not True:
             raise ImportError("specify_cli.events lacks script path confinement")
+        if _contract_ok is not True:
+            raise ImportError("specify_cli.events lacks the event runner contract")
         sys.exit(
             resolve_and_run_event_command(
                 command_name, _event_name, payload, project_root, timeout=timeout, envelope=envelope, native_event=native_event
@@ -793,6 +835,11 @@ def resolve_and_run_event_command(
     required inside ``hookSpecificOutput`` by Qwen's hooks spec (and included
     by the Claude Code hooks spec Gemini/Tabnine/Devin derive from). Only
     used when *envelope* is ``hookSpecificOutput``.
+
+    A runner failure (timeout, or the handler failing to start) exits 2 for
+    guard events (``pre_tool_use``) so the action stays blocked, and 1 for
+    every other event so a slow handler cannot keep the agent running. A
+    handler's own non-zero exit code always passes through unchanged.
     """
     template_path, ext_id = _find_command_template(command_name, project_root)
     if not template_path:
@@ -832,12 +879,16 @@ def resolve_and_run_event_command(
         return 0
     except subprocess.TimeoutExpired:
         sys.stderr.write(f"Event command {command_name} timed out\n")
-        # Exit 1, not 2: a runner failure is not the handler's decision, and
-        # agents read exit 2 from a Stop hook as "don't stop, keep going".
-        return 1
+        # A runner failure is not the handler's decision. For guard events
+        # (pre_tool_use) the failure must keep blocking (exit 2); for other
+        # events exit 1, since agents read exit 2 from a Stop hook as
+        # "don't stop, keep going".
+        return _runner_failure_exit_code(event_name)
     except Exception as e:
         sys.stderr.write(f"Event command {command_name} error: {e}\n")
-        return 1
+        # The handler never ran, so its failure cannot be treated as a
+        # decision: guard events keep blocking (exit 2), others fail open.
+        return _runner_failure_exit_code(event_name)
 
 
 def _emit_event_stdout(output: str, envelope: str, native_event: str = "") -> None:

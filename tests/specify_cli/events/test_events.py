@@ -1633,6 +1633,27 @@ class TestCommandRunner:
         script_file.write_text(f"#!/bin/sh\nsleep {seconds}\nexit 0\n", encoding="utf-8")
         script_file.chmod(0o755)
 
+    def _write_broken_command(self, tmp_path):
+        """Create a core command whose script cannot start: the file exists
+        (so argv resolves) but its shebang names a missing interpreter, so
+        exec fails with a genuine subprocess startup error."""
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "broken.md").write_text(
+            "---\n"
+            "description: \"Broken\"\n"
+            "scripts:\n"
+            "  sh: scripts/broken.sh\n"
+            "---\n"
+            "Body\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script_file = script_dir / "broken.sh"
+        script_file.write_text("#!/does/not/exist\nexit 0\n", encoding="utf-8")
+        script_file.chmod(0o755)
+
     def test_timeout_returns_1_not_blocking_2(self, tmp_path, capsys):
         """A handler that runs past its timeout must not exit 2: Claude Code
         reads exit 2 from a Stop hook as "don't stop, keep going", so a slow
@@ -1646,6 +1667,49 @@ class TestCommandRunner:
         )
         assert code == 1
         assert "timed out" in capsys.readouterr().err
+
+    def test_pre_tool_use_timeout_returns_2_blocking(self, tmp_path, capsys):
+        """A pre_tool_use handler that runs past its timeout must still exit
+        2: Claude Code reads exit 2 from a PreToolUse hook as "block the tool
+        call", so a guard that never ran must keep the call blocked instead
+        of failing open like a Stop hook."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        self._write_sleep_command(tmp_path, 5)
+        code = resolve_and_run_event_command(
+            "speckit.slow", "pre_tool_use", "{}", tmp_path, timeout=1
+        )
+        assert code == 2
+        assert "timed out" in capsys.readouterr().err
+
+    def test_pre_tool_use_startup_failure_returns_2_blocking(self, tmp_path, capsys):
+        """A pre_tool_use handler that cannot start must still exit 2: the
+        guard did not validate the tool call, so the call stays blocked."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        self._write_broken_command(tmp_path)
+        code = resolve_and_run_event_command(
+            "speckit.broken", "pre_tool_use", "{}", tmp_path
+        )
+        assert code == 2
+        assert "error:" in capsys.readouterr().err
+
+    def test_startup_failure_returns_1_for_stop(self, tmp_path, capsys):
+        """A Stop handler that cannot start exits 1 with an error diagnostic:
+        the runner failure must not read as "don't stop, keep going", and the
+        generic error branch needs its own coverage so it cannot silently
+        revert to exit 2."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        self._write_broken_command(tmp_path)
+        code = resolve_and_run_event_command(
+            "speckit.broken", "stop", "{}", tmp_path
+        )
+        assert code == 1
+        assert "error:" in capsys.readouterr().err
 
     def test_handler_own_exit_2_still_passes_through(self, tmp_path):
         """A handler that deliberately exits 2 keeps that exit code: only a
@@ -1921,6 +1985,9 @@ class TestCommandRunner:
         content = (tmp_path / EVENTS_DISPATCHER_REL).read_text()
         # Delegates to specify_cli when importable and confinement is present.
         assert "EVENT_SCRIPT_PATH_CONFINEMENT" in content
+        # Delegation also requires the #5336 runner contract, so a stale
+        # install with confinement alone cannot bypass the new runner.
+        assert "EVENT_RUNNER_CONTRACT" in content
         assert "from specify_cli.events import" in content
         assert "resolve_and_run_event_command" in content
         assert "except (ImportError, TypeError):" in content
@@ -2054,6 +2121,83 @@ class TestCommandRunner:
         )
         assert result.returncode == 1, f"stderr={result.stderr!r}"
         assert "timed out" in result.stderr
+
+    def test_dispatcher_inline_fallback_pre_tool_use_timeout_returns_2(self, tmp_path):
+        """The inline fallback must exit 2 on a pre_tool_use timeout: the
+        guard never ran, so the tool call stays blocked — same rule as the
+        full resolver."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, _out = self._install_boot_dispatcher(
+            tmp_path, "#!/bin/sh\nsleep 5\nexit 0\n", event="pre_tool_use"
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.boot", "pre_tool_use", 1
+        )
+        assert result.returncode == 2, f"stderr={result.stderr!r}"
+        assert "timed out" in result.stderr
+
+    def test_dispatcher_inline_fallback_startup_failure_returns_1(self, tmp_path):
+        """The inline fallback must exit 1 with an error diagnostic when a
+        Stop handler cannot start: the generic error branch needs its own
+        coverage in the fallback too, so it cannot silently revert to 2."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, _out = self._install_boot_dispatcher(
+            tmp_path, "#!/does/not/exist\nexit 0\n", event="stop"
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.boot", "stop", 60
+        )
+        assert result.returncode == 1, f"stderr={result.stderr!r}"
+        assert "error:" in result.stderr
+
+    def test_dispatcher_ignores_stale_specify_cli_without_runner_contract(self, tmp_path):
+        """A generated dispatcher must not delegate to an older specify_cli
+        that has EVENT_SCRIPT_PATH_CONFINEMENT but predates the #5336 runner
+        contract (per-event failure exit codes, SPECKIT_EVENT): after a
+        one-time uvx upgrade, that resolver would still return 2 on timeout
+        and omit SPECKIT_EVENT. The dispatcher must fall back to its inline
+        resolver instead."""
+        import subprocess as _sp
+        import sys as _sys
+
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, out_file = self._install_boot_dispatcher(
+            tmp_path, "#!/bin/sh\necho ran > " + shlex.quote(str(tmp_path / "boot.out")) + "\nexit 0\n"
+        )
+        ran = tmp_path / "delegated"
+        fake_dir = tmp_path / "_stale_pkg"
+        pkg = fake_dir / "specify_cli"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "events.py").write_text(
+            "EVENT_SCRIPT_PATH_CONFINEMENT = True\n"
+            "def resolve_and_run_event_command(*_a, **_k):\n"
+            f"    open({str(ran)!r}, 'w').write('delegated')\n"
+            "    return 0\n",
+            encoding="utf-8",
+        )
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(fake_dir)
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input="{}",
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            cwd=str(tmp_path),
+        )
+        assert not ran.exists(), f"stale package ran; stderr={result.stderr!r}"
+        assert result.returncode == 0, f"stderr={result.stderr!r}"
+        assert out_file.read_text().strip() == "ran", (
+            "inline fallback did not run the script after refusing delegation"
+        )
 
     def test_dispatcher_inline_fallback_passes_speckit_event(self, tmp_path):
         """The inline fallback passes the fired event to the handler via
