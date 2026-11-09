@@ -333,7 +333,7 @@ class _PresetKindManager:
 
         # Preserve existing priority from registry if available
         existing_priority = None
-        if component.kind == "preset":
+        if component.kind == "presets":
             existing = self._manager.registry.get(component.id)
             if existing and isinstance(existing, dict):
                 existing_priority = existing.get("priority")
@@ -435,7 +435,7 @@ class _ExtensionKindManager:
 
         # Preserve existing priority from registry if available
         existing_priority = None
-        if component.kind == "extension":
+        if component.kind == "extensions":
             existing = self._manager.registry.get(component.id)
             if existing and isinstance(existing, dict):
                 existing_priority = existing.get("priority")
