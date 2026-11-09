@@ -23,6 +23,7 @@ def _windows_handle(path: Path, *, directory: bool) -> Iterator[int]:
         wintypes.DWORD,
         wintypes.LPVOID,
         wintypes.DWORD,
+        wintypes.DWORD,
         wintypes.HANDLE,
     ]
     create.restype = wintypes.HANDLE

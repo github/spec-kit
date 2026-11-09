@@ -175,29 +175,33 @@ class FileHelper:
     def _creation_directory(self, directory: Path) -> Iterator[int | Path]:
         """Anchor an already policy-resolved parent without following new links."""
         parts = directory.relative_to(self._canonical_root).parts
-        with ExitStack() as stack:
-            if os.name == "nt":
+        if os.name == "nt":
+            with ExitStack() as stack:
                 current = self._canonical_root
                 stack.enter_context(_windows_handle(current, directory=True))
                 for part in parts:
                     current = current / part
                     stack.enter_context(_windows_handle(current, directory=True))
                 yield current
-                return
+            return
 
-            if not (
-                getattr(os, "O_NOFOLLOW", 0)
-                and getattr(os, "O_DIRECTORY", 0)
-                and os.open in os.supports_dir_fd
-            ):
-                raise OSError(errno.ENOTSUP, "Anchored file creation is unsupported on this platform")
-            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
-            parent = os.open(self._canonical_root, flags)
-            stack.callback(os.close, parent)
+        if not (
+            getattr(os, "O_NOFOLLOW", 0)
+            and getattr(os, "O_DIRECTORY", 0)
+            and os.open in os.supports_dir_fd
+        ):
+            raise OSError(errno.ENOTSUP, "Anchored file creation is unsupported on this platform")
+        access = getattr(os, "O_PATH", 0) or getattr(os, "O_SEARCH", 0) or os.O_RDONLY
+        flags = access | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        parent = os.open(self._canonical_root, flags)
+        try:
             for part in parts:
-                parent = os.open(part, flags, dir_fd=parent)
-                stack.callback(os.close, parent)
+                child = os.open(part, flags, dir_fd=parent)
+                os.close(parent)
+                parent = child
             yield parent
+        finally:
+            os.close(parent)
 
     def create_bytes(self, path: Path | str, content: bytes, *, mode: int = 0o644) -> None:
         """Exclusively create a file; never overwrite an existing entry."""

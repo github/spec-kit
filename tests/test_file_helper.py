@@ -760,6 +760,70 @@ def test_exclusive_create_preserves_mode_and_umask(root, operation, allow):
     assert (root / "new").stat().st_mode & 0o777 == 0o640
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions")
+@pytest.mark.parametrize("operation", ["create_bytes", "create_text"])
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("ancestor", [".", "parent", "parent/nested"])
+@pytest.mark.parametrize("permissions", [0o300, 0o200])
+def test_exclusive_create_respects_write_and_search_permissions(
+    root, operation, allow, ancestor, permissions
+):
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses directory permission checks")
+    (root / "parent/nested").mkdir(parents=True)
+    files = FileHelper(root, allow_symlinks=allow)
+    restricted = root / ancestor
+    content = b"new" if operation == "create_bytes" else "new"
+    restricted.chmod(permissions)
+    try:
+        if permissions == 0o300:
+            getattr(files, operation)("parent/nested/new", content)
+            assert (root / "parent/nested/new").read_bytes() == b"new"
+        else:
+            with pytest.raises(PermissionError):
+                getattr(files, operation)("parent/nested/new", content)
+    finally:
+        restricted.chmod(0o700)
+    if permissions == 0o200:
+        assert not (root / "parent/nested/new").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory descriptor traversal")
+@pytest.mark.parametrize("operation", ["create_bytes", "create_text"])
+@pytest.mark.parametrize("allow", [False, True])
+def test_exclusive_create_bounds_live_parent_descriptors(root, monkeypatch, operation, allow):
+    destination = root.joinpath(*("nested" for _ in range(32)), "new")
+    destination.parent.mkdir(parents=True)
+    files = FileHelper(root, allow_symlinks=allow)
+    real_open = os.open
+    real_close = os.close
+    live = set()
+    maximum = 0
+
+    def limited_open(path, flags, *args, **kwargs):
+        nonlocal maximum
+        if len(live) >= 2:
+            raise OSError(errno.EMFILE, "parent descriptor budget exhausted")
+        fd = real_open(path, flags, *args, **kwargs)
+        if flags & os.O_DIRECTORY:
+            live.add(fd)
+            maximum = max(maximum, len(live))
+        return fd
+
+    def observe_close(fd):
+        real_close(fd)
+        live.remove(fd)
+
+    monkeypatch.setattr(os, "open", limited_open)
+    monkeypatch.setattr(os, "close", observe_close)
+    monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {limited_open})
+    content = b"new" if operation == "create_bytes" else "new"
+    getattr(files, operation)(destination, content)
+    assert destination.read_bytes() == b"new"
+    assert maximum == 2
+    assert live == set()
+
+
 @pytest.mark.parametrize("encoding", ["ascii", "unknown-encoding"])
 def test_exclusive_create_text_encoding_failure_precedes_creation(root, encoding):
     with pytest.raises((UnicodeEncodeError, LookupError)):

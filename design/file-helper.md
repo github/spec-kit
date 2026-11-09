@@ -166,8 +166,12 @@ helpers for independent project/source/managed boundaries.
   exclusive-open flags. `O_EXCL` and `O_NOFOLLOW` (where available) remain in use;
   the policy-resolved parent hierarchy is anchored through creation. POSIX
   opens each resolved directory without following links and creates the leaf
-  relative to the final directory descriptor. Windows pins the canonical root
-  and every resolved parent with non-reparse handles withholding delete sharing.
+  relative to the final directory descriptor. Search-only handles (`O_PATH`
+  or `O_SEARCH`, where available) avoid adding a directory-read permission
+  requirement. Traversal closes each previous parent after opening its child,
+  keeping the number of live directory descriptors independent of path depth.
+  Windows pins the canonical root and every resolved parent with non-reparse
+  handles withholding delete sharing.
   Allowed contained parent links and trusted root aliases are resolved before
   anchoring; they are not banned. Parents must already exist, and the supplied
   mode remains filtered by the process umask. Unsupported anchoring primitives
