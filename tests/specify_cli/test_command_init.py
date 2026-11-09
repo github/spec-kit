@@ -376,3 +376,61 @@ def test_init_force_keeps_recovered_markers(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert IntegrationManifest.load("codex", project).is_recovered(rel)
+
+
+def test_init_force_registers_extensions_as_skills_in_skills_mode(tmp_path, monkeypatch):
+    """Force re-init into a skills-mode agent must register extensions as skills (#5321).
+
+    The force re-registration reads the saved ai / ai_skills init options to
+    decide skill vs command rendering. Before the fix it ran before those
+    options were saved, so a skills-mode re-init wrote command files for the
+    extension instead of SKILL.md files.
+    """
+    from specify_cli.extensions import ExtensionManager
+
+    result = _init(tmp_path, "proj")
+    assert result.exit_code == 0, _strip(result.stdout)
+    project = tmp_path / "proj"
+
+    ext_dir = tmp_path / "test-ext"
+    (ext_dir / "commands").mkdir(parents=True)
+    (ext_dir / "extension.yml").write_text(
+        "schema_version: '1.0'\n"
+        "extension:\n"
+        "  id: test-ext\n"
+        "  name: Test Extension\n"
+        "  version: 1.0.0\n"
+        "  description: A test extension for skill registration\n"
+        "requires:\n"
+        "  speckit_version: '>=0.1.0'\n"
+        "provides:\n"
+        "  commands:\n"
+        "    - name: speckit.test-ext.hello\n"
+        "      file: commands/hello.md\n"
+        "      description: Test hello command\n",
+        encoding="utf-8",
+    )
+    (ext_dir / "commands" / "hello.md").write_text(
+        "---\n"
+        "description: \"Test hello command\"\n"
+        "---\n"
+        "\n"
+        "# Hello Command\n"
+        "\n"
+        "Run this to say hello.\n"
+        "$ARGUMENTS\n",
+        encoding="utf-8",
+    )
+    ExtensionManager(project).install_from_directory(
+        ext_dir, "0.1.0", register_commands=False
+    )
+
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, [
+        "init", "--here", "--force", "--integration", "copilot",
+        "--script", "sh", "--non-interactive", "--ignore-agent-tools", "--offline",
+    ])
+    assert result.exit_code == 0, _strip(result.stdout)
+
+    assert (project / ".github" / "skills" / "speckit-test-ext-hello" / "SKILL.md").is_file()
+    assert not (project / ".github" / "agents" / "speckit.test-ext.hello.agent.md").exists()
