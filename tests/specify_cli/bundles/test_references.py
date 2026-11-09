@@ -879,6 +879,45 @@ def test_online_validation_rejects_unsafe_catalog_redirect(
     assert warnings == []
 
 
+@pytest.mark.parametrize("kind", ["extensions", "presets", "workflows", "steps"])
+def test_online_validation_rejects_initial_catalog_url_policy_failure(
+    tmp_path, monkeypatch, kind,
+):
+    from unittest.mock import patch
+
+    from specify_cli.authentication import http
+    from specify_cli.extensions import CatalogEntry, ExtensionCatalog
+    from specify_cli.presets import PresetCatalog, PresetCatalogEntry
+    from specify_cli.workflows.catalog import (
+        StepCatalog, StepCatalogEntry, WorkflowCatalog, WorkflowCatalogEntry,
+    )
+
+    catalog, entry = {
+        "extensions": (ExtensionCatalog, CatalogEntry),
+        "presets": (PresetCatalog, PresetCatalogEntry),
+        "workflows": (WorkflowCatalog, WorkflowCatalogEntry),
+        "steps": (StepCatalog, StepCatalogEntry),
+    }[kind]
+    monkeypatch.setattr(
+        catalog, "get_active_catalogs",
+        lambda self: [
+            entry("https://ex%61mple.com/catalog.json", "trusted", 1, True),
+        ],
+    )
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    with patch.object(http, "_load_config") as load_config, patch.object(
+        http.urllib.request, "build_opener",
+    ) as build_opener:
+        problem = check(_ref(kind, "requested"))
+        assert problem is not None
+        assert "unsafe request URL" in problem
+        assert warnings == []
+        load_config.assert_not_called()
+        build_opener.assert_not_called()
+
+
 @pytest.mark.parametrize("kind", ["extensions", "presets"])
 @pytest.mark.parametrize("redirect", ["validator", "policy"])
 def test_online_validation_does_not_skip_unsafe_higher_priority_catalog(

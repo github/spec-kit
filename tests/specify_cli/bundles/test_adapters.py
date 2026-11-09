@@ -441,6 +441,36 @@ def test_builtin_community_catalog_does_not_fall_back_for_redirect_policy_errors
     assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
 
 
+def test_builtin_community_catalog_does_not_fall_back_for_initial_url_policy_error(
+    monkeypatch, tmp_path,
+):
+    from specify_cli.authentication import http
+
+    monkeypatch.setitem(
+        adapters._BUILTIN_REPOSITORY_URLS,
+        "builtin://community",
+        "https://ex%61mple.com/catalog.json",
+    )
+    catalog_path = tmp_path / "bundles" / "catalog.community.json"
+    catalog_path.parent.mkdir()
+    catalog_path.write_text(
+        '{"schema_version":"1.0","bundles":{}}', encoding="utf-8",
+    )
+    monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
+    fetcher = adapters.make_catalog_fetcher(allow_network=True)
+
+    with patch.object(http, "_load_config") as load_config, patch.object(
+        http.urllib.request, "build_opener",
+    ) as build_opener, warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with pytest.raises(BundlerError, match="unsafe request URL") as excinfo:
+            fetcher(_source("builtin://community"))
+        assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
+        assert caught == []
+        load_config.assert_not_called()
+        build_opener.assert_not_called()
+
+
 def test_builtin_community_catalog_falls_back_for_incomplete_read(
     monkeypatch, tmp_path
 ):

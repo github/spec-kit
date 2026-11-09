@@ -66,13 +66,17 @@ def _hostname_in_hosts(hostname: str, hosts: tuple[str, ...]) -> bool:
 RedirectValidator = Callable[[str, str], None]
 
 
-class RedirectPolicyError(urllib.error.URLError):
+class URLPolicyError(urllib.error.URLError):
+    """A URL rejected because it violates the client's transport policy."""
+
+
+class RedirectPolicyError(URLPolicyError):
     """A redirect rejected because it violates the client's security policy."""
 
 
 def _validate_initial_url(url: str) -> None:
     if not is_https_or_localhost_http(url):
-        raise urllib.error.URLError(
+        raise URLPolicyError(
             "unsafe request URL: target must use HTTPS with a hostname, "
             "or HTTP to loopback (for example localhost, 127.0.0.1, ::1)"
         )

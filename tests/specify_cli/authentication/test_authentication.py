@@ -1496,7 +1496,6 @@ class TestInitialUrlSafety:
     def test_rejects_cleartext_before_resolving_credentials(
         self, monkeypatch, helper, provider_key, scheme, url,
     ):
-        import urllib.error
         from unittest.mock import patch
         from specify_cli.authentication import http
 
@@ -1511,7 +1510,7 @@ class TestInitialUrlSafety:
         with patch.object(
             provider, "resolve_token", return_value=token,
         ) as resolve, patch.object(http.urllib.request, "build_opener") as build_opener:
-            with pytest.raises(urllib.error.URLError, match="HTTPS"):
+            with pytest.raises(http.URLPolicyError, match="HTTPS"):
                 getattr(http, helper)(url)
             resolve.assert_not_called()
             build_opener.assert_not_called()
@@ -1527,13 +1526,12 @@ class TestInitialUrlSafety:
         "file:///tmp/archive.zip",
     ])
     def test_rejects_unsafe_urls_without_auth_config(self, monkeypatch, helper, url):
-        import urllib.error
         from unittest.mock import patch
         from specify_cli.authentication import http
 
         monkeypatch.setattr(http, "_config_override", [])
         with patch.object(http.urllib.request, "build_opener") as build_opener:
-            with pytest.raises(urllib.error.URLError, match="HTTPS"):
+            with pytest.raises(http.URLPolicyError, match="HTTPS"):
                 getattr(http, helper)(url)
             build_opener.assert_not_called()
 

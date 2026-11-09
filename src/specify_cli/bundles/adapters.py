@@ -229,7 +229,7 @@ def _http_get_json(source_id: str, url: str) -> dict:
     rather than only on the initial URL.
     """
     from ..authentication.github import GitHubCliAuthError
-    from ..authentication.http import RedirectPolicyError, open_url
+    from ..authentication.http import URLPolicyError, open_url
 
     def _validate_redirect(_old_url: str, new_url: str) -> None:
         _validate_remote_url(source_id, new_url)
@@ -259,8 +259,8 @@ def _http_get_json(source_id: str, url: str) -> dict:
         raise BundlerError(
             f"Failed to fetch catalog from {url}: {exc}"
         ) from exc
-    except (GitHubCliAuthError, RedirectPolicyError) as exc:
-        # Authentication and redirect-policy failures are definitive, not
+    except (GitHubCliAuthError, URLPolicyError) as exc:
+        # Authentication and URL-policy failures are definitive, not
         # transient catalog unavailability.
         raise BundlerError(
             f"Failed to fetch catalog from {url}: {exc}"
