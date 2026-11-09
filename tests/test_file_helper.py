@@ -579,17 +579,27 @@ def test_delete_closes_directory_descriptors(root, monkeypatch, failure):
     parent.mkdir()
     (parent / "victim").write_text("selected")
     opened = []
+    root_opens = []
     open_directory = os.open
+    duplicate = os.dup
 
     def observe(*args, **kwargs):
         fd = open_directory(*args, **kwargs)
         opened.append(fd)
+        if args[0] == root.resolve():
+            root_opens.append(fd)
         return fd
+
+    def observe_duplicate(fd):
+        result = duplicate(fd)
+        opened.append(result)
+        return result
 
     def denied(*args, **kwargs):
         raise PermissionError("removal denied")
 
     monkeypatch.setattr(os, "open", observe)
+    monkeypatch.setattr(os, "dup", observe_duplicate)
     if failure:
         monkeypatch.setattr(os, "unlink", denied)
         with pytest.raises(PermissionError, match="removal denied"):
@@ -598,7 +608,8 @@ def test_delete_closes_directory_descriptors(root, monkeypatch, failure):
     else:
         FileHelper(root).delete(parent / "victim")
         assert not (parent / "victim").exists()
-    assert len(opened) == 2
+    assert len(root_opens) == 1
+    assert len(opened) >= 2
     for fd in opened:
         with pytest.raises(OSError) as exc:
             os.fstat(fd)
@@ -686,6 +697,193 @@ def test_delete_reuses_root_after_ancestor_exchange(root, link, monkeypatch, all
     assert attempted
     assert (outside / "project/tree/victim").read_text() == "keep"
     assert not (retained / "project/tree/victim").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX retained-root path resolution")
+@pytest.mark.parametrize("kind", ["file", "directory", "recursive-tree"])
+@pytest.mark.parametrize("target", ["relative", "absolute", "chain", "parent-traversal"])
+def test_delete_resolves_links_in_retained_root(root, link, monkeypatch, kind, target):
+    ancestor = root / "ancestor"
+    project = ancestor / "project"
+    outside = root / "outside/project"
+    for boundary in (project, outside):
+        for name in ("selected", "unrelated"):
+            directory = boundary / name
+            directory.mkdir(parents=True)
+            victim = directory / "victim"
+            if kind == "file":
+                victim.write_text("keep")
+            else:
+                victim.mkdir()
+                if kind == "recursive-tree":
+                    (victim / "child").write_text("keep")
+    for boundary, selected in ((project, "selected"), (outside, "unrelated")):
+        if target == "absolute":
+            destination = boundary / selected
+        elif target == "chain":
+            link(boundary / "first", selected)
+            destination = "first"
+        elif target == "parent-traversal":
+            (boundary / "nested").mkdir()
+            destination = f"nested/../{selected}"
+        else:
+            destination = selected
+        link(boundary / "alias", destination)
+    files = FileHelper(project, allow_symlinks=True)
+    retained = root / "retained"
+    acquire = FileHelper._deletion_root
+
+    @contextmanager
+    def exchange(self):
+        with acquire(self) as handle:
+            ancestor.rename(retained)
+            link(ancestor, outside.parent)
+            yield handle
+
+    monkeypatch.setattr(FileHelper, "_deletion_root", exchange)
+    files.delete("alias/victim", recursive=kind == "recursive-tree")
+    assert not (retained / "project/selected/victim").exists()
+    assert (retained / "project/unrelated/victim").exists()
+    assert (retained / "project/alias").is_symlink()
+    assert (outside / "selected/victim").exists()
+    assert (outside / "unrelated/victim").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX retained-root preflight")
+def test_delete_classifies_descendants_in_retained_root(root, link, monkeypatch):
+    ancestor = root / "ancestor"
+    project = ancestor / "project"
+    outside = root / "outside/project"
+    for boundary in (project, outside):
+        (boundary / "tree").mkdir(parents=True)
+        (boundary / "tree/a-file").write_text("keep")
+    link(project / "tree/z-link", root / "missing")
+    (outside / "tree/z-link").write_text("replacement")
+    files = FileHelper(project)
+    retained = root / "retained"
+    acquire = FileHelper._deletion_root
+
+    @contextmanager
+    def exchange(self):
+        with acquire(self) as handle:
+            ancestor.rename(retained)
+            link(ancestor, outside.parent)
+            yield handle
+
+    monkeypatch.setattr(FileHelper, "_deletion_root", exchange)
+    with pytest.raises(SymlinkDeniedError):
+        files.delete("tree", recursive=True)
+    assert (retained / "project/tree/a-file").read_text() == "keep"
+    assert (retained / "project/tree/z-link").is_symlink()
+    assert (outside / "tree/z-link").read_text() == "replacement"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative metadata")
+@pytest.mark.parametrize("recursive", [False, True])
+def test_delete_metadata_and_links_use_retained_descriptors(root, link, monkeypatch, recursive):
+    (root / "selected/tree").mkdir(parents=True)
+    (root / "selected/tree/victim").write_text("selected")
+    link(root / "alias", "selected")
+    files = FileHelper(root, allow_symlinks=True)
+    acquire = FileHelper._deletion_root
+    stat_entry = os.stat
+    readlink = os.readlink
+    calls = []
+
+    def relative_stat(path, *args, **kwargs):
+        assert isinstance(kwargs.get("dir_fd"), int)
+        assert kwargs.get("follow_symlinks") is False
+        assert not Path(path).is_absolute()
+        calls.append("stat")
+        return stat_entry(path, *args, **kwargs)
+
+    def relative_readlink(path, *args, **kwargs):
+        assert isinstance(kwargs.get("dir_fd"), int)
+        assert not Path(path).is_absolute()
+        calls.append("readlink")
+        return readlink(path, *args, **kwargs)
+
+    def no_path_metadata(*args, **kwargs):
+        pytest.fail("Deletion metadata must not reopen an absolute pathname")
+
+    @contextmanager
+    def observe(self):
+        with acquire(self) as handle, monkeypatch.context() as scoped:
+            scoped.setattr(Path, "lstat", no_path_metadata)
+            scoped.setattr(os, "stat", relative_stat)
+            scoped.setattr(os, "readlink", relative_readlink)
+            yield handle
+
+    monkeypatch.setattr(FileHelper, "_deletion_root", observe)
+    files.delete("alias/tree" if recursive else "alias/tree/victim", recursive=recursive)
+    assert "stat" in calls and "readlink" in calls
+    assert not (root / "selected/tree/victim").exists()
+    assert (root / "alias").is_symlink()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX retained-root revalidation")
+@pytest.mark.parametrize("recursive", [False, True])
+def test_delete_revalidates_entries_in_retained_root(root, link, monkeypatch, recursive):
+    ancestor = root / "ancestor"
+    project = ancestor / "project"
+    (project / "selected").mkdir(parents=True)
+    (project / "selected/victim").write_text("selected")
+    outside = root / "outside/project"
+    outside.mkdir(parents=True)
+    link(outside / "selected", root / "missing")
+    files = FileHelper(project)
+    retained = root / "retained"
+    plan = FileHelper._deletion_plan
+    selected = project / ("selected" if recursive else "selected/victim")
+    attempted = False
+
+    def exchange(self, path, **kwargs):
+        nonlocal attempted
+        result = plan(self, path, **kwargs)
+        if path == selected:
+            attempted = True
+            ancestor.rename(retained)
+            link(ancestor, outside.parent)
+        return result
+
+    monkeypatch.setattr(FileHelper, "_deletion_plan", exchange)
+    files.delete(selected, recursive=recursive)
+    assert attempted
+    assert not (retained / "project/selected/victim").exists()
+    assert (outside / "selected").is_symlink()
+
+
+@pytest.mark.parametrize(
+    ("kind", "error"),
+    [
+        ("dangling", FileNotFoundError),
+        ("cycle", UnsupportedPathError),
+        ("excessive", UnsupportedPathError),
+        ("non-directory", NotADirectoryError),
+        ("escape-and-return", PathEscapeError),
+    ],
+)
+def test_delete_parent_link_targets_preserve_failure_contract(root, link, kind, error):
+    (root / "target").mkdir()
+    (root / "target/victim").write_text("keep")
+    if kind == "dangling":
+        target = "missing"
+    elif kind == "cycle":
+        target = "alias"
+    elif kind == "excessive":
+        for index in reversed(range(41)):
+            link(root / f"chain-{index}", "target" if index == 40 else f"chain-{index + 1}")
+        target = "chain-0"
+    elif kind == "non-directory":
+        (root / "file").write_text("keep")
+        target = "file/../target"
+    else:
+        target = f"../{root.name}/target"
+    link(root / "alias", target)
+    with pytest.raises(error):
+        FileHelper(root, allow_symlinks=True).delete("alias/victim")
+    assert (root / "target/victim").read_text() == "keep"
+    assert (root / "alias").is_symlink()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions")
@@ -1453,18 +1651,29 @@ def test_directory_reparse_entries_rejected_before_traversal_portably(
     junction.mkdir()
     (junction / "keep").write_text("keep")
     lstat = Path.lstat
+    stat_entry = os.stat
+
+    def as_reparse(result):
+        return SimpleNamespace(
+            st_mode=result.st_mode,
+            st_file_attributes=0x400,
+            st_reparse_tag=0xA0000003,
+        )
 
     def directory_reparse(path, **kwargs):
         result = lstat(path, **kwargs)
         if path == junction:
-            return SimpleNamespace(
-                st_mode=result.st_mode,
-                st_file_attributes=0x400,
-                st_reparse_tag=0xA0000003,
-            )
+            return as_reparse(result)
+        return result
+
+    def directory_reparse_stat(path, *args, **kwargs):
+        result = stat_entry(path, *args, **kwargs)
+        if kwargs.get("dir_fd") is not None and Path(path).name == junction.name:
+            return as_reparse(result)
         return result
 
     monkeypatch.setattr(Path, "lstat", directory_reparse)
+    monkeypatch.setattr(os, "stat", directory_reparse_stat)
     files = FileHelper(root, allow_symlinks=allow)
     for operation in (
         lambda: files.read_bytes(junction / "keep"),
