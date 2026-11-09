@@ -181,7 +181,12 @@ helpers for independent project/source/managed boundaries.
   This is not hard-link confinement: a hard-linked alias can observe updates.
 - `delete(path, recursive=False)` unlinks files/links or removes directories.
   Nonrecursive directory deletion requires an empty directory. The established
-  root cannot be deleted.
+  root cannot be deleted. Recursive enumeration and each removal use anchored
+  directories: POSIX uses no-follow directory descriptors and descriptor-relative
+  `unlink`/`rmdir`; Windows holds the resolved ancestors without delete sharing.
+  Allowed contained parent links are resolved before anchoring, and leaf links
+  are still unlinked rather than followed. Platforms lacking the required
+  directory-descriptor operations fail with `ENOTSUP`, not pathname-only deletion.
 - `symlink(target, path)` creates a link exclusively. Relative targets are
   interpreted relative to the link parent, not the helper root.
 
@@ -209,13 +214,17 @@ entries, not reject a whole project for excluded/unrelated links.
 
 Preflight detects static policy failures before recursive deletion or parent
 creation. Atomic writes recheck the original path before replacement, and
-deletion rechecks each accessed entry. Portable path checks are **not** a
-race-free sandbox: another process can exchange parents or entries between
-checks and syscalls, and an I/O failure during mutation can leave partial
-results. Protect against concurrent untrusted mutation separately; descriptor-
-relative traversal or platform-specific mechanisms are future work, not a
-claim of this API. The helper does not constrain subprocesses or third-party
-code. Exclusive creation uses `O_EXCL` and `O_NOFOLLOW` where available.
+deletion rechecks each accessed entry. Deletion also anchors directory
+enumeration and removal so exchanging an accessed parent for a link cannot
+redirect those operations. POSIX removal stays attached to the opened directory
+even if that directory is renamed; Windows prevents ancestor renames while
+handles are held. Concurrent changes may still cause deletion to fail or leave
+partial results, and preflight is not a transaction or an immutable tree snapshot.
+Leaf removal acts on the current entry in the anchored parent, not a pinned leaf
+identity. Other mutations retain pathname-based checks and are **not** a race-free
+sandbox. Protect those operations against concurrent untrusted mutation
+separately. The helper does not constrain subprocesses or third-party code.
+Exclusive creation uses `O_EXCL` and `O_NOFOLLOW` where available.
 
 Existing safe-write mechanisms informed this helper, but existing shared
 infrastructure warning/skip behavior and development-mode link creation are
@@ -229,4 +238,6 @@ path replacement.
 Windows path classification and directory-mode reparse rejection have portable
 regression tests. Native Windows path and junction tests also exist and are
 skipped on other hosts; running the portable cases on macOS does not validate
-Windows filesystem syscalls or junction behavior.
+Windows filesystem syscalls or junction behavior. Deletion replacement tests
+exercise swaps at enumeration and removal boundaries on the native host; Windows
+handle-sharing behavior requires a native Windows run.

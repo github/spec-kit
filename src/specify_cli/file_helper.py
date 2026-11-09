@@ -1,5 +1,7 @@
 """Scoped filesystem operations; see design/file-helper.md for the contract."""
 
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 import codecs
 import errno
@@ -9,8 +11,14 @@ import stat
 import tempfile
 from typing import TypeVar
 
+from specify_cli._file_handles import _windows_handle
+
 
 _PathType = TypeVar("_PathType", bound=PurePath)
+_DELETE_DIR_FD_SUPPORTED = (
+    {os.open, os.unlink, os.rmdir} <= os.supports_dir_fd
+    and os.scandir in os.supports_fd
+)
 
 
 def _strip_extended_length_prefix(path: _PathType) -> _PathType:
@@ -238,6 +246,37 @@ class FileHelper:
         resolved = self._walk(target_parts)
         destination.symlink_to(target, target_is_directory=resolved.is_dir())
 
+    @contextmanager
+    def _deletion_directory(self, path: Path) -> Iterator[int | Path]:
+        """Anchor a resolved directory without following replacement links."""
+        parts = path.relative_to(self._canonical_root).parts
+        if os.name == "nt":
+            with ExitStack() as stack:
+                current = self._canonical_root
+                stack.enter_context(_windows_handle(current, directory=True))
+                for part in parts:
+                    current = current / part
+                    stack.enter_context(_windows_handle(current, directory=True))
+                yield current
+            return
+
+        if not (
+            _DELETE_DIR_FD_SUPPORTED
+            and getattr(os, "O_NOFOLLOW", 0)
+            and getattr(os, "O_DIRECTORY", 0)
+        ):
+            raise OSError(errno.ENOTSUP, "Handle-based deletion is unsupported on this platform")
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        parent = os.open(self._canonical_root, flags)
+        try:
+            for part in parts:
+                child = os.open(part, flags, dir_fd=parent)
+                os.close(parent)
+                parent = child
+            yield parent
+        finally:
+            os.close(parent)
+
     def _deletion_plan(self, path: Path, *, recursive: bool) -> list[tuple[Path, bool]]:
         mode = self._entry_mode(path)
         if stat.S_ISLNK(mode):
@@ -250,8 +289,9 @@ class FileHelper:
             raise UnsupportedPathError(f"Unsupported filesystem object: {path}")
         plan: list[tuple[Path, bool]] = []
         if recursive:
-            with os.scandir(path) as entries:
-                children = sorted((Path(entry.path) for entry in entries))
+            with self._deletion_directory(path) as directory:
+                with os.scandir(directory) as entries:
+                    children = sorted(path / entry.name for entry in entries)
             for child in children:
                 plan.extend(self._deletion_plan(child, recursive=True))
         plan.append((path, True))
@@ -268,7 +308,10 @@ class FileHelper:
             checked = self._path(entry, follow_leaf=False)
             if checked != entry:
                 raise FileHelperError(f"Destination changed during deletion: {entry}")
-            if directory:
-                entry.rmdir()
-            else:
-                entry.unlink()
+            with self._deletion_directory(entry.parent) as parent:
+                leaf = parent / entry.name if isinstance(parent, Path) else entry.name
+                directory_fd = None if isinstance(parent, Path) else parent
+                if directory:
+                    os.rmdir(leaf, dir_fd=directory_fd)
+                else:
+                    os.unlink(leaf, dir_fd=directory_fd)

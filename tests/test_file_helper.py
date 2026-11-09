@@ -2,6 +2,7 @@
 
 from dataclasses import FrozenInstanceError
 import errno
+from contextlib import contextmanager
 import os
 from pathlib import Path, PureWindowsPath
 import subprocess
@@ -383,6 +384,316 @@ def test_deletion_rechecks_parents_after_preflight(root, link, monkeypatch):
         FileHelper(root, allow_symlinks=True).delete(tree, recursive=True)
     assert (root / "retained/file").read_text() == "keep"
     assert (tree / "nested").is_symlink()
+
+
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("kind", ["file", "directory", "recursive-file", "recursive-directory"])
+def test_delete_parent_exchange_at_removal(root, link, monkeypatch, allow, kind):
+    tree = root / "tree"
+    parent = tree / "parent"
+    parent.mkdir(parents=True)
+    outside = root.parent / "outside"
+    outside.mkdir()
+    victim = parent / "victim"
+    external = outside / "victim"
+    directory = kind in ("directory", "recursive-directory")
+    if directory:
+        victim.mkdir()
+        external.mkdir()
+    else:
+        external.write_text("keep")
+        victim.write_text("selected")
+    retained = root / "retained"
+    primitive = "rmdir" if directory else "unlink"
+    remove = getattr(os, primitive)
+    attempted = False
+
+    def exchange(path, *args, **kwargs):
+        nonlocal attempted
+        if not attempted and (Path(path) == victim or str(path) == victim.name):
+            attempted = True
+            try:
+                parent.rename(retained)
+            except PermissionError:
+                if os.name != "nt":
+                    raise
+            else:
+                link(parent, outside)
+        return remove(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, primitive, exchange)
+    try:
+        FileHelper(root, allow_symlinks=allow).delete(
+            tree if kind.startswith("recursive-") else victim,
+            recursive=kind.startswith("recursive-"),
+        )
+    except (FileHelperError, OSError):
+        # A later recursive entry may reject the exchanged parent.
+        if not attempted:
+            raise
+    assert attempted
+    if directory:
+        assert external.is_dir()
+    else:
+        assert external.read_text() == "keep"
+    if retained.exists():
+        assert not os.path.lexists(retained / "victim")
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_recursive_delete_parent_exchange_at_scan(root, link, monkeypatch, allow):
+    tree = root / "tree"
+    tree.mkdir()
+    (tree / "selected").write_text("selected")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "keep").write_text("keep")
+    retained = root / "retained"
+    scan = os.scandir
+    attempted = False
+    observed = []
+
+    def exchange(path):
+        nonlocal attempted
+        if not attempted:
+            attempted = True
+            try:
+                tree.rename(retained)
+            except PermissionError:
+                if os.name != "nt":
+                    raise
+            else:
+                link(tree, outside)
+        entries = scan(path)
+        # Capture enumeration as well as removal: no outside entry is visited.
+        with entries:
+            children = list(entries)
+        observed.extend(entry.name for entry in children)
+        return scanned(children)
+
+    @contextmanager
+    def scanned(entries):
+        yield iter(entries)
+
+    monkeypatch.setattr(os, "scandir", exchange)
+    try:
+        FileHelper(root, allow_symlinks=allow).delete(tree, recursive=True)
+    except (FileHelperError, OSError):
+        if not attempted:
+            raise
+    assert attempted
+    assert observed == ["selected"]
+    assert (outside / "keep").read_text() == "keep"
+
+
+@pytest.mark.parametrize("recursive", [False, True])
+def test_delete_link_parent_exchange_at_removal(root, link, monkeypatch, recursive):
+    parent = root / "parent"
+    parent.mkdir()
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "victim").write_text("keep")
+    link(parent / "victim", outside / "victim")
+    retained = root / "retained"
+    unlink = os.unlink
+    attempted = False
+
+    def exchange(path, *args, **kwargs):
+        nonlocal attempted
+        if not attempted:
+            attempted = True
+            try:
+                parent.rename(retained)
+            except PermissionError:
+                if os.name != "nt":
+                    raise
+            else:
+                link(parent, outside)
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", exchange)
+    FileHelper(root, allow_symlinks=True).delete(parent / "victim", recursive=recursive)
+    assert attempted
+    assert (outside / "victim").read_text() == "keep"
+    assert not os.path.lexists((retained if retained.exists() else parent) / "victim")
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_delete_exchange_after_final_validation(root, link, monkeypatch, allow):
+    parent = root / "parent"
+    parent.mkdir()
+    (parent / "victim").write_text("selected")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "victim").write_text("keep")
+    retained = root / "retained"
+    check = FileHelper._path
+    checks = 0
+
+    def exchange(self, path, **kwargs):
+        nonlocal checks
+        result = check(self, path, **kwargs)
+        checks += 1
+        if checks == 2:
+            parent.rename(retained)
+            link(parent, outside)
+        return result
+
+    monkeypatch.setattr(FileHelper, "_path", exchange)
+    with pytest.raises(OSError):
+        FileHelper(root, allow_symlinks=allow).delete(parent / "victim")
+    assert checks == 2
+    assert (outside / "victim").read_text() == "keep"
+    assert (retained / "victim").read_text() == "selected"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor traversal")
+@pytest.mark.parametrize("allow", [False, True])
+def test_delete_exchange_during_parent_open(root, link, monkeypatch, allow):
+    parent = root / "parent"
+    parent.mkdir()
+    (parent / "victim").write_text("selected")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "victim").write_text("keep")
+    retained = root / "retained"
+    open_directory = os.open
+
+    def exchange(path, flags, *args, **kwargs):
+        if path == "parent":
+            parent.rename(retained)
+            link(parent, outside)
+        return open_directory(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", exchange)
+    with pytest.raises(OSError):
+        FileHelper(root, allow_symlinks=allow).delete(parent / "victim")
+    assert (outside / "victim").read_text() == "keep"
+    assert (retained / "victim").read_text() == "selected"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor lifetime")
+@pytest.mark.parametrize("failure", [False, True])
+def test_delete_closes_directory_descriptors(root, monkeypatch, failure):
+    parent = root / "parent"
+    parent.mkdir()
+    (parent / "victim").write_text("selected")
+    opened = []
+    open_directory = os.open
+
+    def observe(*args, **kwargs):
+        fd = open_directory(*args, **kwargs)
+        opened.append(fd)
+        return fd
+
+    def denied(*args, **kwargs):
+        raise PermissionError("removal denied")
+
+    monkeypatch.setattr(os, "open", observe)
+    if failure:
+        monkeypatch.setattr(os, "unlink", denied)
+        with pytest.raises(PermissionError, match="removal denied"):
+            FileHelper(root).delete(parent / "victim")
+        assert (parent / "victim").read_text() == "selected"
+    else:
+        FileHelper(root).delete(parent / "victim")
+        assert not (parent / "victim").exists()
+    assert len(opened) == 2
+    for fd in opened:
+        with pytest.raises(OSError) as exc:
+            os.fstat(fd)
+        assert exc.value.errno == errno.EBADF
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX capability check")
+def test_delete_unsupported_backend_does_not_remove(root, monkeypatch):
+    (root / "victim").write_text("keep")
+    monkeypatch.setattr("specify_cli.file_helper._DELETE_DIR_FD_SUPPORTED", False)
+    with pytest.raises(OSError) as exc:
+        FileHelper(root).delete("victim")
+    assert exc.value.errno == errno.ENOTSUP
+    assert (root / "victim").read_text() == "keep"
+
+
+@pytest.mark.parametrize("failure", [False, True])
+@pytest.mark.parametrize("recursive", [False, True])
+def test_windows_delete_holds_ancestors_until_io_completes_portably(
+    root, link, monkeypatch, failure, recursive
+):
+    import specify_cli.file_helper as module
+
+    parent = root / "target/nested"
+    parent.mkdir(parents=True)
+    (parent / "victim").write_text("selected")
+    alias = link(root / "alias", root / "target")
+    active = []
+    events = []
+    unlink = os.unlink
+    rmdir = os.rmdir
+    scan = os.scandir
+
+    @contextmanager
+    def handle(path, *, directory):
+        assert directory
+        active.append(path)
+        try:
+            yield 123
+        finally:
+            assert active.pop() == path
+
+    def assert_anchored(path):
+        path = Path(path)
+        assert active[0] == root.resolve()
+        assert active[-1] == path
+        assert all(not part.is_symlink() for part in active)
+        events.append(path)
+
+    def observe_scan(path):
+        assert_anchored(path)
+        return scan(path)
+
+    def remove(path, *, dir_fd=None):
+        assert dir_fd is None
+        assert_anchored(Path(path).parent)
+        if failure:
+            raise PermissionError("removal denied")
+        unlink(path)
+
+    def remove_directory(path, *, dir_fd=None):
+        assert dir_fd is None
+        assert_anchored(Path(path).parent)
+        rmdir(path)
+
+    backend = SimpleNamespace(**vars(os))
+    backend.name = "nt"
+    backend.unlink = remove
+    backend.rmdir = remove_directory
+    backend.scandir = observe_scan
+    monkeypatch.setattr(module, "os", backend)
+    monkeypatch.setattr(module, "_windows_handle", handle)
+    files = FileHelper(root, allow_symlinks=True)
+    selected = alias / "nested" if recursive else alias / "nested/victim"
+    if failure:
+        with pytest.raises(PermissionError, match="removal denied"):
+            files.delete(selected, recursive=recursive)
+        assert (parent / "victim").read_text() == "selected"
+    else:
+        files.delete(selected, recursive=recursive)
+        assert not (parent / "victim").exists()
+    assert events
+    assert active == []
+    assert alias.is_symlink()
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_delete_through_trusted_root_alias(root, link, allow):
+    alias = link(root.parent / "alias", root)
+    (root / "tree/nested").mkdir(parents=True)
+    (root / "tree/nested/file").write_text("selected")
+    FileHelper(alias, allow_symlinks=allow).delete(alias / "tree", recursive=True)
+    assert alias.is_symlink()
+    assert root.is_dir()
+    assert not (root / "tree").exists()
 
 
 @pytest.mark.parametrize("allow", [False, True])
