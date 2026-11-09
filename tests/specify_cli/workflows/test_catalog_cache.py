@@ -214,9 +214,21 @@ def test_regular_cache_fresh_refresh_and_stale_fallback(
 
 
 @pytest.mark.parametrize("force_refresh", [False, True])
-@pytest.mark.parametrize("rejection", ["initial", "redirect"])
+@pytest.mark.parametrize("rejection,target", [
+    ("initial", "https://ex%61mple.com/catalog.json"),
+    ("initial", "http://example.com/catalog.json"),
+    ("initial", "https://[::1"),
+    ("redirect", "https://localhost/catalog.json"),
+    ("redirect", "http://example.com/catalog.json"),
+    ("redirect", "https://[::1"),
+    ("redirect", "https:///catalog.json"),
+    ("redirect", "https://example.com:invalid/catalog.json"),
+    ("final", "http://example.com/catalog.json"),
+    ("final", "https://[::1"),
+    ("final", "https:///catalog.json"),
+])
 def test_url_policy_failure_does_not_use_expired_cache(
-    tmp_path, monkeypatch, catalog_kind, force_refresh, rejection,
+    tmp_path, monkeypatch, catalog_kind, force_refresh, rejection, target,
 ):
     from unittest.mock import patch
 
@@ -225,7 +237,7 @@ def test_url_policy_failure_does_not_use_expired_cache(
     monkeypatch.setattr(http, "_config_override", [])
     catalog_cls, entry_cls, field, *_ = catalog_kind
     catalog = catalog_cls(tmp_path)
-    url = "https://ex%61mple.com/catalog.json" if rejection == "initial" else URL
+    url = target if rejection == "initial" else URL
     entry = entry_cls(url, "test", 1, False)
     data, metadata = catalog._get_cache_paths(url)
     data.parent.mkdir(parents=True, exist_ok=True)
@@ -239,10 +251,14 @@ def test_url_policy_failure_does_not_use_expired_cache(
         def reject_redirect(request, timeout):
             handler = build_opener.call_args.args[0]
             return handler.redirect_request(
-                request, None, 302, "Found", {}, "https://localhost/catalog.json",
+                request, None, 302, "Found", {}, target,
             )
 
-        build_opener.return_value.open.side_effect = reject_redirect
+        if rejection == "redirect":
+            build_opener.return_value.open.side_effect = reject_redirect
+        elif rejection == "final":
+            response = build_opener.return_value.open.return_value.__enter__.return_value
+            response.geturl.return_value = target
         with pytest.raises(error, match="Failed to fetch catalog") as excinfo:
             catalog._fetch_single_catalog(entry, force_refresh=force_refresh)
         assert isinstance(excinfo.value.__cause__, http.URLPolicyError)
@@ -250,6 +266,8 @@ def test_url_policy_failure_does_not_use_expired_cache(
             build_opener.assert_not_called()
         else:
             build_opener.return_value.open.assert_called_once()
+        if rejection == "final":
+            response.read.assert_not_called()
 
     assert json.loads(data.read_text(encoding="utf-8")) == payload
     assert json.loads(metadata.read_text(encoding="utf-8")) == {"fetched_at": 0}

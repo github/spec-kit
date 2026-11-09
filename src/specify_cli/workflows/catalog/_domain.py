@@ -575,22 +575,20 @@ class WorkflowCatalog:
                 hostname = parsed.hostname
                 _ = parsed.port
             except (TypeError, ValueError):
-                raise WorkflowCatalogError(
+                raise URLPolicyError(
                     f"Refusing to fetch catalog from malformed URL: {url}"
                 ) from None
             is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
             if parsed.scheme != "https" and not (
                 parsed.scheme == "http" and is_localhost
             ):
-                raise WorkflowCatalogError(
+                raise URLPolicyError(
                     f"Refusing to fetch catalog from non-HTTPS URL: {url}"
                 )
             if not hostname:
-                raise WorkflowCatalogError(
+                raise URLPolicyError(
                     f"Refusing to fetch catalog from URL with no hostname: {url}"
                 )
-
-        _validate_catalog_url(entry.url)
 
         # Validate EVERY redirect hop, not just the final URL: _open_url follows
         # redirects, so an https:// entry that 30x-redirects through http:// (or
@@ -603,6 +601,7 @@ class WorkflowCatalog:
             _validate_catalog_url(new_url)
 
         try:
+            _validate_catalog_url(entry.url)
             with _open_url(
                 entry.url, timeout=30, redirect_validator=_validate_redirect
             ) as resp:
