@@ -312,6 +312,7 @@ class _PresetSkillMethods:
                             skills_dir,
                             skill_subdir / "SKILL.md",
                             skill_content,
+                            preserve_mode=True,
                         )
                         wrote_override = True
                     if (
@@ -1348,7 +1349,7 @@ class _PresetSkillMethods:
 
                 skill_file = skill_subdir / "SKILL.md"
                 _write_shared_text(
-                    skills_dir, skill_file, skill_content
+                    skills_dir, skill_file, skill_content, preserve_mode=True
                 )
                 written.append(target_skill_name)
                 self._merge_pack_registered_skills(
@@ -2008,7 +2009,9 @@ class _PresetSkillMethods:
                     skill_content = integration.post_process_skill_content(
                         skill_content
                     )
-                _write_shared_text(skills_dir, skill_file, skill_content)
+                _write_shared_text(
+                    skills_dir, skill_file, skill_content, preserve_mode=True
+                )
                 mutated_names.append(skill_name)
                 continue
 
@@ -2066,7 +2069,9 @@ class _PresetSkillMethods:
                     skill_content = integration.post_process_skill_content(
                         skill_content
                     )
-                _write_shared_text(skills_dir, skill_file, skill_content)
+                _write_shared_text(
+                    skills_dir, skill_file, skill_content, preserve_mode=True
+                )
                 mutated_names.append(skill_name)
             else:
                 # No core or extension template — remove the skill entirely

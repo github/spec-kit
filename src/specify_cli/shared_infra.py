@@ -8,6 +8,7 @@ import hmac
 import logging
 import os
 import re
+import stat
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -317,8 +318,26 @@ def _ensure_safe_shared_destination(
             raise ValueError(f"Shared infrastructure destination escapes project root: {label}") from None
 
 
-def _write_shared_text(project_path: Path, dest: Path, content: str) -> None:
-    _write_shared_bytes(project_path, dest, content.encode("utf-8"))
+def _write_shared_text(
+    project_path: Path, dest: Path, content: str, *, preserve_mode: bool = False
+) -> None:
+    """Atomically write ``content`` to ``dest`` (see ``_write_shared_bytes``).
+
+    With ``preserve_mode``, an existing regular file keeps its permission
+    bits instead of being reset to 0644, so refreshing a private output
+    does not widen it; a new file still gets 0644. The content is written
+    into a 0600 temp file, so it is never readable more widely than that
+    before the final mode is applied.
+    """
+    mode = 0o644
+    if preserve_mode:
+        try:
+            dest_stat = os.lstat(dest)
+        except FileNotFoundError:
+            dest_stat = None
+        if dest_stat is not None and stat.S_ISREG(dest_stat.st_mode):
+            mode = stat.S_IMODE(dest_stat.st_mode)
+    _write_shared_bytes(project_path, dest, content.encode("utf-8"), mode=mode)
 
 
 def _write_shared_bytes(

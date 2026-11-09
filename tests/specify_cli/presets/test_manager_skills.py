@@ -2575,6 +2575,45 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "New base body" in content and "Middle body" in content
         assert "Top body" not in content
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_skill_refresh_on_removal_preserves_skill_mode(
+        self, project_dir, temp_dir
+    ):
+        """Recomposing a surviving preset's skill keeps a private (0600)
+        ``SKILL.md`` private instead of resetting it to 0644."""
+        manager = self._install_custom_layers(project_dir, temp_dir, core=True)
+        skill_file = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        skill_file.chmod(0o600)
+
+        assert manager.remove("base-preset") is True
+
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Core custom body" in content and "Appended body" in content
+        assert stat.S_IMODE(skill_file.stat().st_mode) == 0o600
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_skill_restore_on_removal_preserves_skill_mode(
+        self, project_dir, temp_dir
+    ):
+        """Restoring the core skill when the last preset goes keeps the
+        existing ``SKILL.md`` mode."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        self._install_alias_layer(
+            manager, temp_dir, "base-preset", "Base preset body", "replace", 10,
+            alias=False,
+        )
+        skill_file = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        assert "Base preset body" in skill_file.read_text(encoding="utf-8")
+        skill_file.chmod(0o600)
+
+        assert manager.remove("base-preset") is True
+
+        assert "Base preset body" not in skill_file.read_text(encoding="utf-8")
+        assert stat.S_IMODE(skill_file.stat().st_mode) == 0o600
+
     def test_alias_refresh_does_not_write_through_hardlinked_skill(
         self, project_dir, temp_dir
     ):
