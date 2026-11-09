@@ -436,6 +436,40 @@ def test_init_force_registers_extensions_as_skills_in_skills_mode(tmp_path, monk
     assert not (project / ".github" / "agents" / "speckit.test-ext.hello.agent.md").exists()
 
 
+def _create_test_extension(tmp_path: Path) -> Path:
+    """Create a minimal extension dir with one hello command."""
+    ext_dir = tmp_path / "test-ext"
+    (ext_dir / "commands").mkdir(parents=True)
+    (ext_dir / "extension.yml").write_text(
+        "schema_version: '1.0'\n"
+        "extension:\n"
+        "  id: test-ext\n"
+        "  name: Test Extension\n"
+        "  version: 1.0.0\n"
+        "  description: A test extension for skill registration\n"
+        "requires:\n"
+        "  speckit_version: '>=0.1.0'\n"
+        "provides:\n"
+        "  commands:\n"
+        "    - name: speckit.test-ext.hello\n"
+        "      file: commands/hello.md\n"
+        "      description: Test hello command\n",
+        encoding="utf-8",
+    )
+    (ext_dir / "commands" / "hello.md").write_text(
+        "---\n"
+        "description: \"Test hello command\"\n"
+        "---\n"
+        "\n"
+        "# Hello Command\n"
+        "\n"
+        "Run this to say hello.\n"
+        "$ARGUMENTS\n",
+        encoding="utf-8",
+    )
+    return ext_dir
+
+
 def test_init_force_rejects_symlinked_extension_skill_destination(tmp_path, monkeypatch):
     """Force re-init must not write SKILL.md through a symlinked skill dir (#5323).
 
@@ -489,7 +523,10 @@ def test_init_force_rejects_symlinked_extension_skill_destination(tmp_path, monk
     outside.mkdir()
     skill_subdir = project / ".github" / "skills" / "speckit-test-ext-hello"
     skill_subdir.parent.mkdir(parents=True, exist_ok=True)
-    os.symlink(outside, skill_subdir, target_is_directory=True)
+    try:
+        os.symlink(outside, skill_subdir, target_is_directory=True)
+    except OSError:
+        pytest.skip("Current platform/user cannot create directory symlinks")
 
     monkeypatch.chdir(project)
     result = CliRunner().invoke(app, [
@@ -500,3 +537,91 @@ def test_init_force_rejects_symlinked_extension_skill_destination(tmp_path, monk
 
     assert not (outside / "SKILL.md").exists()
     assert skill_subdir.is_symlink()
+
+
+def test_relative_project_root_still_registers_extension_skills(tmp_path, monkeypatch):
+    """Extension skills must register when the project root is relative (#5323).
+
+    With ExtensionManager(Path(".")), the skills directory is relative
+    while _extension_skill_trusted_root() returns an absolute root, so
+    the trusted-root validation rejected every normal destination and
+    the handler silently skipped the skill. Relative roots must be
+    normalized before validation.
+    """
+    from specify_cli.extensions import ExtensionManager
+
+    result = _init(tmp_path, "proj")
+    assert result.exit_code == 0, _strip(result.stdout)
+    project = tmp_path / "proj"
+
+    ext_dir = _create_test_extension(tmp_path)
+
+    # Switch the saved options to copilot (skills mode) first, mirroring
+    # the #5321 force re-init path; no extension is installed yet.
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, [
+        "init", "--here", "--force", "--integration", "copilot",
+        "--script", "sh", "--non-interactive", "--ignore-agent-tools", "--offline",
+    ])
+    assert result.exit_code == 0, _strip(result.stdout)
+
+    manager = ExtensionManager(Path("."))
+    manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+    assert (project / ".github" / "skills" / "speckit-test-ext-hello" / "SKILL.md").is_file()
+
+
+def test_init_force_does_not_modify_hard_linked_skill_file(tmp_path, monkeypatch):
+    """Force re-init must not write SKILL.md in place through a hard link (#5323).
+
+    A hard-linked SKILL.md shares its inode with other paths, so writing
+    it in place would change every linked copy. Forced registration must
+    replace the file without modifying the shared data.
+    """
+    from specify_cli.extensions import ExtensionManager
+
+    result = _init(tmp_path, "proj")
+    assert result.exit_code == 0, _strip(result.stdout)
+    project = tmp_path / "proj"
+
+    ext_dir = _create_test_extension(tmp_path)
+
+    # Switch the saved options to copilot (skills mode) first, mirroring
+    # the #5321 force re-init path, so installation registers the skill
+    # under .github/skills.
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, [
+        "init", "--here", "--force", "--integration", "copilot",
+        "--script", "sh", "--non-interactive", "--ignore-agent-tools", "--offline",
+    ])
+    assert result.exit_code == 0, _strip(result.stdout)
+
+    ExtensionManager(project).install_from_directory(
+        ext_dir, "0.1.0", register_commands=False
+    )
+
+    # Pre-create the skill file with known content and hard-link it
+    # outside the project.
+    skill_file = project / ".github" / "skills" / "speckit-test-ext-hello" / "SKILL.md"
+    assert skill_file.is_file()
+    old_content = "---\nold: content\n---\n\n# Old Skill\n"
+    skill_file.write_text(old_content, encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_link = outside / "SKILL.md"
+    try:
+        os.link(skill_file, outside_link)
+    except OSError:
+        pytest.skip("Current platform/user cannot create hard links")
+
+    result = CliRunner().invoke(app, [
+        "init", "--here", "--force", "--integration", "copilot",
+        "--script", "sh", "--non-interactive", "--ignore-agent-tools", "--offline",
+    ])
+    assert result.exit_code == 0, _strip(result.stdout)
+
+    # The linked copy outside the project must be untouched...
+    assert outside_link.read_text(encoding="utf-8") == old_content
+    # ...while the project's skill was regenerated.
+    assert skill_file.read_text(encoding="utf-8") != old_content
+    assert skill_file.is_file() and not skill_file.is_symlink()

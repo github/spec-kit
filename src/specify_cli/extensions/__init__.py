@@ -1637,7 +1637,13 @@ class ExtensionManager:
             if trusted_root is None:
                 continue
             try:
-                _validate_safe_shared_directory(trusted_root, skill_subdir)
+                # Normalize relative destinations before validation: the
+                # trusted root is absolute, so a relative skill path (for
+                # example with ExtensionManager(Path("."))) would fail the
+                # containment check and the skill would be silently skipped.
+                _validate_safe_shared_directory(
+                    trusted_root, Path(os.path.abspath(skill_subdir))
+                )
             except (OSError, ValueError):
                 continue
             CommandRegistrar._ensure_inside(cache_file, cache_root)
@@ -1725,6 +1731,16 @@ class ExtensionManager:
                 integration, "post_process_skill_content"
             ):
                 skill_content = integration.post_process_skill_content(skill_content)
+
+            # A hard-linked SKILL.md shares its inode with other paths, so
+            # writing it in place would change every linked copy. Drop our
+            # link first so the write below creates a fresh file instead.
+            if skill_file.is_file() and not skill_file.is_symlink():
+                try:
+                    if skill_file.stat().st_nlink > 1:
+                        unlink(skill_file)
+                except OSError:
+                    pass  # best effort; the write below still proceeds
 
             if use_dev_symlink:
                 try:
