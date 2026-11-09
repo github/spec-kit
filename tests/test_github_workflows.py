@@ -504,7 +504,13 @@ git() {
     ("v1.2", True, 2, False),
     ("v1.2.3$(touch${IFS}injected)", True, 2, False),
     ("v1.2.3`touch${IFS}injected`", True, 2, False),
-    ('v1.2.3";touch${IFS}injected;#', True, 2, False),
+    pytest.param(
+        'v1.2.3";touch${IFS}injected;#', True, 2, False,
+        marks=pytest.mark.skipif(
+            sys.platform == "win32",
+            reason="Windows disallows double quotes in loose-ref filenames",
+        ),
+    ),
 ])
 def test_release_workflow_simulation(
     tmp_path, tag, previous_tag, commit_count, release_exists
