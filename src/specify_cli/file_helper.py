@@ -7,6 +7,7 @@ import errno
 import os
 from pathlib import Path, PurePath, PureWindowsPath
 import stat
+import sys
 import tempfile
 from typing import TypeVar
 
@@ -182,8 +183,11 @@ class FileHelper:
                     and os.open in os.supports_dir_fd
                 ):
                     raise OSError(errno.ENOTSUP, "Safe scoped reads are unsupported on this platform")
-                flags = getattr(os, "O_SEARCH", getattr(os, "O_PATH", os.O_RDONLY))
-                flags |= os.O_DIRECTORY | os.O_NOFOLLOW
+                directory_access = getattr(os, "O_SEARCH", getattr(os, "O_PATH", None))
+                if directory_access is None:
+                    # Older SDK builds omit Darwin's O_SEARCH (O_EXEC | O_DIRECTORY).
+                    directory_access = 0x40000000 if sys.platform == "darwin" else os.O_RDONLY
+                flags = directory_access | os.O_DIRECTORY | os.O_NOFOLLOW
                 flags |= getattr(os, "O_CLOEXEC", 0)
                 parent = os.open(self._canonical_root, flags)
                 try:

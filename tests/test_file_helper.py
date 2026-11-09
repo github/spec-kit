@@ -312,9 +312,16 @@ def test_windows_read_keeps_validated_object_when_path_changes(root, link, monke
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions required")
 @pytest.mark.parametrize("allow", [False, True])
 @pytest.mark.parametrize("restricted", ["root", "parent"])
-def test_read_through_search_only_directories(root, allow, restricted):
+@pytest.mark.parametrize("older_darwin_sdk", [
+    False,
+    pytest.param(True, marks=pytest.mark.skipif(sys.platform != "darwin", reason="Darwin SDK regression")),
+])
+def test_read_through_search_only_directories(root, monkeypatch, allow, restricted, older_darwin_sdk):
     if os.geteuid() == 0:
         pytest.skip("Root bypasses directory permission checks")
+    if older_darwin_sdk:
+        for flag in ("O_SEARCH", "O_PATH", "O_EXEC"):
+            monkeypatch.delattr(os, flag, raising=False)
     directory = root / "directory"
     directory.mkdir()
     selected = directory / "file"

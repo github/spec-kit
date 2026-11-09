@@ -211,8 +211,10 @@ Reads resolve supported contained links under the existing policy, then open
 the resolved hierarchy without following substituted links. POSIX reads use
 descriptor-relative directory traversal with `O_DIRECTORY` and `O_NOFOLLOW`.
 Directory descriptors use `O_SEARCH` or `O_PATH` where available so searchable
-directories need not be listable, and each superseded parent is closed as soon
-as its child is open. The leaf uses `O_NOFOLLOW` and `O_NONBLOCK`. Windows reads
+directories need not be listable, including Darwin's native `O_SEARCH` value
+when a Python build uses an older SDK that omits the constant. Each superseded
+parent is closed as soon as its child is open. The leaf uses `O_NOFOLLOW` and
+`O_NONBLOCK`. Windows reads
 pin each resolved directory and leaf with non-reparse handles that withhold
 delete sharing; directory handles also withhold write sharing to prevent
 in-place reparse changes during traversal. Reads duplicate the validated leaf
