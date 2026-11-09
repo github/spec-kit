@@ -91,9 +91,10 @@ class TestCatalogURLValidation:
         assert "(got a URL with no scheme)" in str(excinfo.value)
         assert "got ://" not in str(excinfo.value)
 
-    def test_http_localhost_allowed(self):
-        IntegrationCatalog._validate_catalog_url("http://localhost:8080/catalog.json")
-        IntegrationCatalog._validate_catalog_url("http://127.0.0.1/catalog.json")
+    @pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+    def test_http_localhost_rejected(self, host):
+        with pytest.raises(IntegrationCatalogError, match="HTTPS"):
+            IntegrationCatalog._validate_catalog_url(f"http://{host}:8080/catalog.json")
 
     def test_missing_host_rejected(self):
         with pytest.raises(IntegrationCatalogError, match="valid URL"):

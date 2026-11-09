@@ -39,7 +39,8 @@ catalogs:
     description: Our vetted workflow steps
 ```
 
-`url` requires HTTPS (loopback HTTP is allowed for development). Lower numeric
+`url` requires HTTPS, including for local development; plain HTTP is rejected
+before network access. Lower numeric
 priorities win; the first source wins ties. `install_allowed` defaults to false
 in hand-authored configuration.
 

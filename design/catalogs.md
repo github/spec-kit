@@ -107,9 +107,13 @@ catalogs:
     install_policy: discovery-only
 ```
 
-Supported bundle source schemes are `https`, localhost `http`, `file`,
-`builtin`, and local filesystem paths. The other five catalog types accept
-remote HTTPS URLs, with HTTP allowed only for localhost.
+Supported bundle source schemes are `https`, `file`, `builtin`, and local
+filesystem paths. The other five catalog types accept remote HTTPS URLs.
+All six types reject plain HTTP catalog sources, including localhost and
+loopback addresses, before network access. This intentionally removes the
+former local-development HTTP exception so every source layer follows the
+same HTTPS policy. Local HTTPS development servers need a certificate trusted
+by the system. Archive download policies are separate and unchanged.
 
 ## Configuration semantics
 
@@ -130,7 +134,7 @@ phase and accepted values otherwise differ:
   to `1`. Bundle `CatalogSource` materialization rejects booleans and floats
   rather than coercing them, but `_read()` and `remove_source()` can carry or
   remove those raw values without materializing them.
-- Replacement-layer loaders reject malformed remote URLs and non-localhost
+- Replacement-layer loaders reject malformed remote URLs and all plain
   HTTP while resolving the active stack. Bundle source validation depends on
   the path: catalog commands validate supported schemes and remote security
   before writing, while a hand-edited stack is revalidated by the fetcher when
@@ -228,6 +232,8 @@ usable. Validation errors are not uniformly recoverable:
   expose a lower-precedence copy.
 - Preset lookup preserves the first fetch error when no source is readable;
   preset search currently converts ordinary fetch failures to an empty result.
+  Invalid source configuration (`PresetValidationError`) is fatal in search,
+  including rejected HTTP catalog URLs.
   `PresetCatalogValidationError` remains fatal: search can fail on invalid
   lower-precedence content even after reading a valid higher source, while a
   targeted lookup can return as soon as it finds the requested higher entry.

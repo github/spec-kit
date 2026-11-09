@@ -8,6 +8,7 @@ import json
 import marshal
 import os
 import shutil
+import ssl
 import stat
 import struct
 import subprocess
@@ -15,13 +16,19 @@ import sys
 import tarfile
 import threading
 import zipfile
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from ipaddress import ip_address
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import yaml
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 from typer.testing import CliRunner
 
 from specify_cli import AGENT_CONFIG, app
@@ -89,8 +96,43 @@ def isolated_registry(monkeypatch, tmp_path):
     unload_installed_integrations()
 
 
+@pytest.fixture(scope="module")
+def tls_certificate(tmp_path_factory):
+    root = tmp_path_factory.mktemp("integration-catalog-tls")
+    key = ec.generate_private_key(ec.SECP256R1())
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
+    now = datetime.now(timezone.utc)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .add_extension(
+            x509.SubjectAlternativeName([x509.IPAddress(ip_address("127.0.0.1"))]),
+            critical=False,
+        )
+        .sign(key, hashes.SHA256())
+    )
+    cert_path = root / "certificate.pem"
+    key_path = root / "key.pem"
+    cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    key_path.chmod(0o600)
+    return cert_path, key_path
+
+
 @pytest.fixture
-def server(tmp_path):
+def server(tmp_path, monkeypatch, tls_certificate):
     downloads = tmp_path / "downloads"
     downloads.mkdir()
     requests = []
@@ -104,10 +146,15 @@ def server(tmp_path):
             pass
 
     http = ThreadingHTTPServer(("127.0.0.1", 0), partial(Handler, directory=str(downloads)))
+    cert_path, key_path = tls_certificate
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert_path, key_path)
+    http.socket = context.wrap_socket(http.socket, server_side=True)
+    monkeypatch.setenv("SSL_CERT_FILE", str(cert_path))
     thread = threading.Thread(target=http.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     result = SimpleNamespace(
-        root=downloads, url=f"http://127.0.0.1:{http.server_port}", requests=requests,
+        root=downloads, url=f"https://127.0.0.1:{http.server_port}", requests=requests,
     )
     try:
         yield result

@@ -37,7 +37,9 @@ catalogs:
     description: Our vetted workflows
 ```
 
-`url` requires HTTPS (loopback HTTP is allowed for development). Lower numeric priorities win; the first source wins ties. `install_allowed` defaults to false in hand-authored configuration.
+`url` requires HTTPS, including for local development; plain HTTP is rejected
+before network access. Lower numeric priorities win; the first source wins ties.
+`install_allowed` defaults to false in hand-authored configuration.
 
 `specify workflow catalog add` creates project entries with installation allowed and a priority after existing entries. It does not expose preset-style `--install-allowed` or `--priority` flags. Add only vetted sources; edit the configuration when a discovery-only source is intended. Adding a project stack replaces implicit defaults unless you include them explicitly.
 
