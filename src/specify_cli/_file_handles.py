@@ -39,6 +39,13 @@ def _open_windows_handle(path: Path, *, directory: bool, overwrite: bool = False
         _fields_ = [("attributes", wintypes.DWORD), ("tag", wintypes.DWORD)]
 
     kernel = _windows_api()
+    flags = 0x00200000 | 0x02000000
+    if overwrite:
+        # The CRT exposes no read-only mask query; restore it before opening.
+        mask = os.umask(0o200)
+        os.umask(mask)
+        if mask & 0o200:
+            flags |= 0x1  # FILE_ATTRIBUTE_READONLY for newly created files.
     # Attribute-only directory handles do not prevent renaming; include
     # FILE_LIST_DIRECTORY and withhold FILE_SHARE_DELETE for every ancestor.
     handle = kernel.CreateFileW(
@@ -47,7 +54,7 @@ def _open_windows_handle(path: Path, *, directory: bool, overwrite: bool = False
         0x3,
         None,
         4 if overwrite else 3,  # OPEN_ALWAYS never truncates an existing file.
-        0x00200000 | 0x02000000,
+        flags,
         None,
     )
     if handle == wintypes.HANDLE(-1).value:

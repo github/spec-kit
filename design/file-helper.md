@@ -181,14 +181,18 @@ helpers for independent project/source/managed boundaries.
   failure propagates, and a write failure can leave truncated/partial content.
   This is not hard-link confinement: a hard-linked alias can observe updates.
   After policy resolution, POSIX opens each resolved directory relative to an
-  already-open parent descriptor with no-follow flags, then opens the leaf
-  without truncation. Windows pins each resolved directory with non-reparse
-  handles withholding delete sharing, then opens/creates a non-reparse leaf
+  already-open parent descriptor with no-follow flags, using search/path-only
+  access where supported so unreadable but searchable parents remain usable,
+  then opens the leaf without truncation. Windows pins each resolved directory
+  with non-reparse handles withholding delete sharing, then opens/creates a non-reparse leaf
   without truncation and holds it through text I/O. Both paths check the opened
   file type before truncating that same descriptor. An exchanged parent cannot
   redirect creation or truncation through a new link. Allowed links are still
   resolved by the normal policy walk; the anchored traversal operates on their
   resolved target, not on the original link spelling.
+  Windows creation also honors the CRT process mask: masking the owner-write
+  bit creates a read-only file, matching native text creation, without changing
+  the attributes of an existing file.
 - `delete(path, recursive=False)` unlinks files/links or removes directories.
   Nonrecursive directory deletion requires an empty directory. The established
   root cannot be deleted.

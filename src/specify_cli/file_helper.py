@@ -250,7 +250,8 @@ class FileHelper:
             ):
                 raise OSError(errno.ENOTSUP, "Scoped text overwrite is unsupported on this platform")
             directory_flags = (
-                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+                getattr(os, "O_SEARCH", getattr(os, "O_PATH", os.O_RDONLY))
+                | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
             )
             parent = os.open(self._canonical_root, directory_flags)
             stack.callback(os.close, parent)

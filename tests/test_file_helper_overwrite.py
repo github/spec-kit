@@ -115,6 +115,101 @@ def test_overwrite_matches_native_text_and_preserves_hardlinks(tmp_path, allow, 
     assert path.read_bytes() == alias.read_bytes() == b""
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions required")
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("restricted", ["root", "parent"])
+def test_searchable_unreadable_directory_retains_native_overwrite_behavior(
+    tmp_path, existing, allow, restricted
+):
+    root = tmp_path / "project"
+    parent = root / "parent"
+    parent.mkdir(parents=True)
+    native = parent / "native"
+    leaf = parent / "file"
+    if existing:
+        native.write_text("longer old content")
+        leaf.write_text("longer old content")
+    directory = root if restricted == "root" else parent
+    directory.chmod(0o300)
+    try:
+        try:
+            os.listdir(directory)
+        except PermissionError:
+            pass
+        else:
+            pytest.skip("This process can read directories without read permission")
+        native.write_text("new\n")
+        FileHelper(root, allow_symlinks=allow).overwrite_text("parent/file", "new\n")
+        assert leaf.read_bytes() == native.read_bytes()
+        assert leaf.stat().st_mode == native.stat().st_mode
+    finally:
+        directory.chmod(0o700)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions required")
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("allow", [False, True])
+def test_unsearchable_parent_still_rejects_overwrite(tmp_path, existing, allow):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    leaf = parent / "file"
+    native = parent / "native"
+    if existing:
+        leaf.write_text("old")
+        native.write_text("old")
+    parent.chmod(0o600)
+    try:
+        try:
+            native.write_text("new")
+        except PermissionError:
+            pass
+        else:
+            pytest.skip("This process can traverse directories without search permission")
+        with pytest.raises(PermissionError):
+            FileHelper(tmp_path, allow_symlinks=allow).overwrite_text("parent/file", "new")
+    finally:
+        parent.chmod(0o700)
+    if existing:
+        assert leaf.read_text() == "old"
+    else:
+        assert not leaf.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows CRT mask semantics required")
+@pytest.mark.parametrize("mask", [0, 0o200])
+@pytest.mark.parametrize("allow", [False, True])
+def test_native_windows_overwrite_creation_matches_masked_native_creation(tmp_path, mask, allow):
+    native = tmp_path / "native"
+    leaf = tmp_path / "file"
+    existing = tmp_path / "existing"
+    existing.write_text("longer old content")
+    before = existing.stat()
+    previous_mask = os.umask(mask)
+    try:
+        native.write_text("caf\u00e9\n")
+        files = FileHelper(tmp_path, allow_symlinks=allow)
+        files.overwrite_text("file", "caf\u00e9\n")
+        files.overwrite_text("existing", "new")
+        assert leaf.read_bytes() == native.read_bytes()
+        assert leaf.stat().st_mode == native.stat().st_mode
+        assert existing.stat().st_mode == before.st_mode
+        assert existing.stat().st_ino == before.st_ino
+        assert existing.read_text() == "new"
+        assert os.umask(mask) == mask
+        for path in (native, leaf):
+            if mask & 0o200:
+                with pytest.raises(PermissionError):
+                    path.write_text("again")
+            else:
+                path.write_text("again")
+    finally:
+        os.umask(previous_mask)
+        for path in (native, leaf):
+            if path.exists():
+                path.chmod(0o600)
+
+
 @pytest.mark.parametrize("allow", [False, True])
 def test_overwrite_trusted_root_alias_and_contained_link_chains(tmp_path, allow):
     root = tmp_path / "project"
