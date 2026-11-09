@@ -1253,6 +1253,45 @@ class TestInitIntegrationFlag:
             "_register_extensions_for_agent was not called during init --here --force"
         )
 
+    @pytest.mark.parametrize("skills_mode", [True, False])
+    def test_init_here_force_registers_extensions_in_selected_mode(self, tmp_path, skills_mode):
+        """A preinstalled extension follows this init's mode without saved options."""
+        from typer.testing import CliRunner
+
+        from specify_cli import _locate_bundled_extension, app
+        from specify_cli.extensions import ExtensionManager
+
+        project = tmp_path / "force-extension-mode"
+        project.mkdir()
+        extension = _locate_bundled_extension("git")
+        assert extension is not None
+        ExtensionManager(project).install_from_directory(
+            extension, "1.3.2", register_commands=False
+        )
+        assert not (project / ".specify" / "init-options.json").exists()
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init", "--here", "--force", "--non-interactive",
+                    "--integration", "copilot", "--script", "sh",
+                    "--ignore-agent-tools", "--integration-options",
+                    "--skills" if skills_mode else "--commands",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        skill = project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        command = project / ".github" / "agents" / "speckit.git.feature.agent.md"
+        assert skill.exists() is skills_mode
+        assert command.exists() is not skills_mode
+
     def test_init_here_without_force_does_not_reapply_presets(self, tmp_path):
         """Without --force (fresh project), _register_presets_for_agent should NOT be called."""
         from unittest.mock import MagicMock, patch
