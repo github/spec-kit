@@ -333,8 +333,9 @@ Initial request URLs must use HTTPS with a hostname. HTTP is allowed only for
 unambiguous loopback hosts, such as `localhost`, `127.0.0.1`, and `::1`.
 Unsafe URLs are rejected before credentials are resolved or any request is
 made, including when no authentication is configured.
-Catalog validation treats URL-policy rejections as definitive errors rather
-than temporary availability failures.
+Online bundle catalog fetching and reference validation treat URL-policy
+rejections as definitive errors, not as availability fallbacks to packaged
+snapshots or unchecked references.
 
 1. For each outbound HTTP request, the URL hostname is matched against
    the `hosts` patterns in `auth.json`.
