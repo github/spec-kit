@@ -486,6 +486,13 @@ Docker Agent currently exposes structured agent/safety configuration.
 Headless approval flags, model forwarding, and structured-output support are
 also adapter-specific, not universal guarantees.
 
+The [`reasoning_effort` and `context_size`](../workflow-steps/types.md#reasoning-effort-and-context-size)
+settings of `command` and `prompt` steps instead follow one shared contract.
+Spec Kit checks each value and passes it only to an integration that declares
+and translates that setting; with any other integration, the step fails before
+the CLI runs. Adapter authors opt in as described in the
+[integration API reference](api.md#per-step-dispatch-settings).
+
 ## FAQ
 
 ### Can I install multiple integrations in the same project?

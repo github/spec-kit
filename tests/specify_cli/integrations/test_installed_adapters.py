@@ -4755,3 +4755,226 @@ def test_extension_info_lists_registered_names_without_loading_adapter(
     assert f"• {listed}: " in info.output, info.output
     assert f"• {not_listed}: " not in info.output, info.output
     assert KEY not in INTEGRATION_REGISTRY
+
+
+DISPATCH_SETTINGS_BODY = '''
+    supported_dispatch_settings = frozenset({"reasoning_effort", "context_size"})
+
+    def build_exec_args(self, prompt, *, model=None, output_json=True,
+                        integration_args=None, integration_options=None,
+                        project_root=None, reasoning_effort=None, context_size=None):
+        import sys
+        args = [sys.executable, "-c", SCRIPT, prompt]
+        if reasoning_effort is not None:
+            args += ["--effort", reasoning_effort]
+        if context_size is not None:
+            args += ["--context", context_size]
+        return args
+'''
+LEGACY_DISPATCH_BODY = '''
+    def build_exec_args(self, prompt, *, model=None, output_json=True,
+                        integration_args=None, integration_options=None,
+                        project_root=None):
+        import sys
+        return [sys.executable, "-c", SCRIPT, prompt]
+'''
+# Inherits the declaration of a capable adapter in ``capable.py`` but replaces
+# the builder that translates the settings with one that absorbs them. It
+# imports the module, not the class, so the package exports one adapter class.
+LEGACY_OVERRIDE_OF_CAPABLE_ADAPTER = '''from . import capable
+
+
+class SampleIntegration(capable.SampleIntegration):
+    def build_exec_args(self, prompt, **kwargs):
+        import sys
+        return [sys.executable, "-c", capable.SCRIPT, prompt]
+'''
+
+
+def agent_cli(tmp_path):
+    """Return a stand-in agent CLI script with its argument log and fail flag.
+
+    The script appends the arguments it receives to ``log`` as one JSON line,
+    then exits 1 while ``fail`` exists and 0 otherwise.
+    """
+    log = tmp_path / "agent-cli-calls.jsonl"
+    fail = tmp_path / "agent-cli-fails"
+    script = (
+        "import json, os, sys\n"
+        f"with open({str(log)!r}, 'a', encoding='utf-8') as stream:\n"
+        "    stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        f"sys.exit(1 if os.path.exists({str(fail)!r}) else 0)\n"
+    )
+    return SimpleNamespace(script=script, log=log, fail=fail)
+
+
+def agent_cli_implementation(cli, body):
+    """Return adapter source whose ``SCRIPT`` is the stand-in CLI's script."""
+    return implementation(body=body) + f"\nSCRIPT = {cli.script!r}\n"
+
+
+def dispatched(cli):
+    """Return the argument lists the stand-in agent CLI received, in order."""
+    if not cli.log.exists():
+        return []
+    return [json.loads(line) for line in cli.log.read_text(encoding="utf-8").splitlines()]
+
+
+def write_dispatch_workflow(project, steps, *, inputs=None, **defaults):
+    data = {
+        "schema_version": "1.0",
+        "workflow": {
+            "id": "sample-workflow", "name": "Sample Workflow", "version": "1.0.0",
+            "integration": KEY, **defaults,
+        },
+        "steps": steps,
+    }
+    if inputs is not None:
+        data["inputs"] = inputs
+    path = project / "sample-dispatch-workflow.yml"
+    path.write_text(yaml.safe_dump(data))
+    return path
+
+
+def dispatch_outputs(project, run_id):
+    """Return each recorded step's ``(reasoning_effort, context_size)`` output."""
+    from specify_cli.workflows.engine import RunState
+
+    return {
+        step_id: (result["output"]["reasoning_effort"], result["output"]["context_size"])
+        for step_id, result in RunState.load(run_id, project).step_results.items()
+    }
+
+
+def run_fresh_process(project, arguments):
+    executable = Path(sys.executable).parent / ("specify.exe" if os.name == "nt" else "specify")
+    return subprocess.run(
+        [str(executable), *arguments], cwd=project, capture_output=True,
+        text=True, encoding="utf-8", timeout=120, check=False,
+    )
+
+
+def test_declared_dispatch_settings_reach_installed_adapter_on_run_and_resume(tmp_path, server):
+    cli = agent_cli(tmp_path)
+    publish(server, code=agent_cli_implementation(cli, DISPATCH_SETTINGS_BODY))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    workflow = str(write_dispatch_workflow(project, [
+        {"id": "plan", "type": "command", "command": "speckit.plan",
+         "reasoning_effort": "{{ inputs.effort }}"},
+        {"id": "review", "type": "prompt", "prompt": "Review the plan", "context_size": "200000"},
+    ], inputs={"effort": {"type": "string", "default": "high"}}))
+
+    completed = run_fresh_process(project, ["workflow", "run", workflow, "--json"])
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    report = json.loads(completed.stdout)
+    assert report["status"] == "completed"
+    assert dispatched(cli) == [
+        ["/speckit-plan", "--effort", "high"],
+        ["Review the plan", "--context", "200000"],
+    ]
+    assert dispatch_outputs(project, report["run_id"]) == {
+        "plan": ("high", None), "review": (None, "200000"),
+    }
+
+    cli.fail.touch()
+    failed = run_fresh_process(project, ["workflow", "run", workflow, "--json"])
+    assert failed.returncode == 1, failed.stdout + failed.stderr
+    failed_run = json.loads(failed.stdout)
+    assert (failed_run["status"], failed_run["current_step_id"]) == ("failed", "plan")
+    assert dispatched(cli)[2:] == [["/speckit-plan", "--effort", "high"]]
+
+    cli.fail.unlink()
+    resumed = run_fresh_process(
+        project, ["workflow", "resume", failed_run["run_id"], "--input", "effort=low", "--json"],
+    )
+    assert resumed.returncode == 0, resumed.stdout + resumed.stderr
+    assert json.loads(resumed.stdout)["status"] == "completed"
+    assert dispatched(cli)[3:] == [
+        ["/speckit-plan", "--effort", "low"],
+        ["Review the plan", "--context", "200000"],
+    ]
+    assert dispatch_outputs(project, failed_run["run_id"]) == {
+        "plan": ("low", None), "review": (None, "200000"),
+    }
+
+
+@pytest.mark.parametrize("continue_on_error", [False, True])
+@pytest.mark.parametrize("kind", ["command", "prompt"])
+@pytest.mark.parametrize("adapter", ["undeclared", "inherited-declaration"])
+def test_legacy_installed_adapter_fails_only_steps_requesting_dispatch_settings(
+    tmp_path, server, adapter, kind, continue_on_error,
+):
+    """A legacy adapter keeps loading and running steps; a step that requests a
+    setting its builder does not translate fails before the CLI runs."""
+    from specify_cli.workflows.engine import RunState
+
+    cli = agent_cli(tmp_path)
+    if adapter == "undeclared":
+        publish(server, code=agent_cli_implementation(cli, LEGACY_DISPATCH_BODY))
+    else:
+        publish(server, code=LEGACY_OVERRIDE_OF_CAPABLE_ADAPTER, members={
+            "capable.py": agent_cli_implementation(cli, DISPATCH_SETTINGS_BODY).encode(),
+        })
+    project = catalog_project(tmp_path, server)
+    install(project)
+    if adapter == "inherited-declaration":
+        inherited = INTEGRATION_REGISTRY[KEY].supported_dispatch_settings
+        assert inherited == {"reasoning_effort", "context_size"}
+    requesting = {"id": "effort", "type": kind, "reasoning_effort": "high"}
+    if kind == "command":
+        requesting["command"] = "speckit.tasks"
+    else:
+        requesting["prompt"] = "Summarize the plan"
+    if continue_on_error:
+        requesting["continue_on_error"] = True
+    workflow = write_dispatch_workflow(project, [
+        {"id": "plan", "type": "command", "command": "speckit.plan"},
+        requesting,
+        {"id": "review", "type": "prompt", "prompt": "Review the plan"},
+    ])
+
+    result = run_fresh_process(project, ["workflow", "run", str(workflow), "--json"])
+
+    assert result.returncode == (0 if continue_on_error else 1), result.stdout + result.stderr
+    assert "Traceback" not in result.stderr
+    report = json.loads(result.stdout)
+    assert report["status"] == ("completed" if continue_on_error else "failed")
+    assert dispatched(cli) == (
+        [["/speckit-plan"], ["Review the plan"]] if continue_on_error else [["/speckit-plan"]]
+    )
+    results = RunState.load(report["run_id"], project).step_results
+    assert results["plan"]["status"] == "completed"
+    assert results["effort"]["status"] == "failed"
+    assert results["effort"]["output"]["dispatched"] is False
+    error = results["effort"]["error"]
+    assert error.startswith(
+        f"{kind.capitalize()} step 'effort': Integration {KEY!r} does not support "
+        "per-step 'reasoning_effort'."
+    ), error
+    assert error.endswith(" (set by step)"), error
+    assert report.get("error") == (None if continue_on_error else error)
+
+
+@pytest.mark.parametrize(
+    "unset", [{}, {"reasoning_effort": None, "context_size": ""}], ids=["absent", "null-or-empty"],
+)
+def test_installed_adapter_receives_no_dispatch_settings_when_unset(tmp_path, server, unset):
+    cli = agent_cli(tmp_path)
+    publish(server, code=agent_cli_implementation(cli, DISPATCH_SETTINGS_BODY))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    workflow = write_dispatch_workflow(project, [
+        {"id": "plan", "type": "command", "command": "speckit.plan", **unset},
+        {"id": "review", "type": "prompt", "prompt": "Review the plan", **unset},
+    ], **unset)
+
+    result = run_fresh_process(project, ["workflow", "run", str(workflow), "--json"])
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    assert report["status"] == "completed"
+    assert dispatched(cli) == [["/speckit-plan"], ["Review the plan"]]
+    assert dispatch_outputs(project, report["run_id"]) == {
+        "plan": (None, None), "review": (None, None),
+    }

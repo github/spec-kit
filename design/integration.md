@@ -41,12 +41,75 @@ Hyphenated keys use underscores in package names. Its class declares:
 Import and `_register()` the class in `src/specify_cli/integrations/__init__.py`
 (both lists alphabetically). This registry is the source of built-in Python
 integration behavior. If the agent supports non-interactive workflows, implement
-`build_exec_args()` with the full base signature; `options()` declares
-install-time `--integration-options`, not per-workflow runtime options.
+`build_exec_args()` with the full base signature. The `reasoning_effort` and
+`context_size` keywords are required only for the settings it translates; accept
+an untranslated one only to reject it through `check_dispatch_settings()` (see
+[Per-step dispatch settings](#per-step-dispatch-settings)). `options()`
+declares install-time `--integration-options`, not per-workflow runtime options.
 Agent-specific native events can be declared on the integration. Set
 `multi_install_safe = True` only when the integration emits no files or uses a
 static, non-overlapping agent root and command directory; shared dynamic paths
 are not safe by default.
+
+### Per-step dispatch settings
+
+Workflow `command` and `prompt` steps can request the settings in
+`DISPATCH_SETTINGS` (`reasoning_effort`, then `context_size`) for one CLI
+invocation. Values are opaque strings whose meaning belongs to the agent's CLI.
+Prompt steps pass requested settings to `build_exec_args()`. Command steps pass
+them to `dispatch_command()`, whose base implementation forwards only the
+requested keywords to `build_exec_args()`. The *receiving method* is therefore
+`build_exec_args()`, or `dispatch_command()` for a command step when the
+integration overrides it.
+
+Built-in integrations and external adapters opt in per setting with these
+`specify_cli.integrations.base` APIs:
+
+- `supported_dispatch_settings`: a `frozenset` of the settings the integration
+  translates. Declare it on the class that implements the receiving method.
+  `effective_dispatch_settings()` reads the declaration from that class only:
+  a subclass that inherits the method inherits support, but a subclass that
+  overrides it must declare support again. A declaration on any other class,
+  or one that is not a set or frozenset, declares nothing.
+- `reasoning_effort` and `context_size` keywords: the receiving method accepts
+  one, defaulting to `None`, for each declared setting. Hosts pass a keyword
+  only when a step sets that setting, so calls without settings are unchanged.
+  Treat any value other than `None` as requested; hosts never pass `""`.
+  Translate the value into CLI arguments placed after those from
+  `SPECKIT_INTEGRATION_<KEY>_EXTRA_ARGS`, and do not pass it on:
+  `IntegrationBase.build_exec_args()` and the format-base builders translate
+  neither setting and raise `DispatchSettingsError` rather than drop a value.
+- `validate_dispatch_setting(name, value)`: an optional per-setting hook that
+  the gate calls before anything runs. The default accepts every value; raise
+  `ValueError` to reject a value the CLI would ignore or misread, and the host
+  attributes the failure to that setting. If the receiving method itself must
+  reject a setting, raise `DispatchSettingsError` with `setting`; without it,
+  the step error lists every requested setting with its source. Keep the value
+  out of either error's message: it can come from captured output, which Spec
+  Kit does not print to the terminal or write to `log.jsonl`.
+- `dispatch_setting_hint(setting)`: optional remediation text, such as another
+  step field to use instead, which the host appends to its error for an
+  unsupported setting. The default returns `None`.
+
+The host gate, `check_dispatch_settings(integration, settings, *, via)`, cannot
+be overridden by integrations. Steps run it before executable detection, with
+*via* set to `"dispatch_command"` for command steps and `"build_exec_args"` for
+prompt steps; the base `dispatch_command()` runs it with `"build_exec_args"`.
+For each requested setting, in `DISPATCH_SETTINGS` order, the gate requires a
+string of 1 to 64 letters, digits, `.`, `_`, or `-` that starts with a letter
+or digit, support under the ownership rule above, and a receiving method that
+accepts the keyword or `**kwargs`. It then calls `validate_dispatch_setting()`.
+Each failure raises `DispatchSettingsError`, a `ValueError` whose `setting`
+attribute names the setting, so the step can report where its value came from.
+An unsupported-setting error lists the integrations that support the setting,
+and an error about a malformed value reports only its type and length, never
+the value. A translating method can also run the gate itself, with *via*
+naming that method, so that direct calls are checked too.
+
+The host cannot observe what the receiving method does with a declared
+setting. An integration that declares support and then ignores the value, for
+example by absorbing it in `**kwargs`, drops it silently: a declaration is a
+promise to translate the setting.
 
 ## Output flavors
 
@@ -182,6 +245,13 @@ output_json=True, integration_args=None, integration_options=None,
 project_root=None)` as appropriate. Every explicitly declared host keyword
 parameter must have a default; accepting omitted keywords through `**kwargs`
 is also supported. Validation checks both prompt-only and complete host calls.
+This required signature does not change for
+[per-step dispatch settings](#per-step-dispatch-settings), and installation
+does not check dispatch-setting declarations. An adapter that does not declare
+support never receives `reasoning_effort` or `context_size`: a step that
+requests either fails before the adapter's CLI runs. Adapters opt in like
+built-in integrations, and the host gate checks the declaration and the
+receiving method's signature when a step requests a setting.
 An adapter using only the host API and
 standard library needs no pip installation or source-registry edit.
 Import-side-effect registration is rejected.
