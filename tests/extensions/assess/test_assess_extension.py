@@ -69,6 +69,39 @@ class TestExtensionLayout:
             cmd = EXT_DIR / "commands" / f"{name}.md"
             assert cmd.is_file(), f"Missing command file: {cmd}"
 
+    def test_decide_needs_clarification_step_refines_in_place(self):
+        """The decide report-back must match the assessment guide (#5325).
+
+        docs/guides/assessment.md says answering a [NEEDS CLARIFICATION]
+        question is artifact refinement -- edit the Markdown in place -- and
+        that re-running a command is an exception. The decide command used to
+        tell the agent the opposite ("re-run the named stage"), so tools
+        offering a next-step answer box had to pick a side, and a re-run also
+        triggers the overwrite confirmation. Pin the guide's side: the
+        needs-clarification next step names in-place refinement, and any
+        mention of re-running is conditional on the answer changing a stage's
+        inputs rather than the unconditional next step.
+        """
+        text = (EXT_DIR / "commands" / "speckit.assess.decide.md").read_text(
+            encoding="utf-8"
+        )
+        # The report-back next step is the arrow line; the verdict definition
+        # and the decision.md output template also mention the verdict and are
+        # deliberately untouched (#4402 kept the output template).
+        step = next(
+            line
+            for line in text.splitlines()
+            if line.lstrip().startswith("- **needs-clarification** →")
+        )
+        assert "refine the named artifact in place" in step
+        assert "re-run the named stage" not in step
+        # A re-run may be offered only as the guarded exception, never first:
+        # the refinement wording must precede any re-run mention.
+        rerun = step.lower().find("re-run")
+        assert rerun == -1 or rerun > step.find("refine the named artifact")
+        if rerun != -1:
+            assert "only when" in step[rerun:]
+
 
 # ── Catalog registration ─────────────────────────────────────────────────────
 
