@@ -1,6 +1,7 @@
 """Handle-based non-atomic text overwrite behavior."""
 
 import os
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -119,9 +120,17 @@ def test_overwrite_matches_native_text_and_preserves_hardlinks(tmp_path, allow, 
 @pytest.mark.parametrize("existing", [False, True])
 @pytest.mark.parametrize("allow", [False, True])
 @pytest.mark.parametrize("restricted", ["root", "parent"])
+@pytest.mark.parametrize(
+    "legacy_macos",
+    [False, pytest.param(True, marks=pytest.mark.skipif(sys.platform != "darwin", reason="Darwin flags"))],
+)
 def test_searchable_unreadable_directory_retains_native_overwrite_behavior(
-    tmp_path, existing, allow, restricted
+    tmp_path, monkeypatch, existing, allow, restricted, legacy_macos
 ):
+    if legacy_macos:
+        monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{
+            key: value for key, value in vars(os).items() if key not in ("O_SEARCH", "O_PATH", "O_EXEC")
+        }))
     root = tmp_path / "project"
     parent = root / "parent"
     parent.mkdir(parents=True)

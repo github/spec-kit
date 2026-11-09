@@ -4,6 +4,7 @@ import codecs
 import errno
 import os
 import stat
+import sys
 import tempfile
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
@@ -249,9 +250,12 @@ class FileHelper:
                 and getattr(os, "O_NONBLOCK", 0)
             ):
                 raise OSError(errno.ENOTSUP, "Scoped text overwrite is unsupported on this platform")
+            directory_access = getattr(os, "O_SEARCH", getattr(os, "O_PATH", None))
+            if directory_access is None:
+                # Older Darwin Python builds omit the kernel's O_EXEC/O_SEARCH bit.
+                directory_access = 0x40000000 if sys.platform == "darwin" else os.O_RDONLY
             directory_flags = (
-                getattr(os, "O_SEARCH", getattr(os, "O_PATH", os.O_RDONLY))
-                | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+                directory_access | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
             )
             parent = os.open(self._canonical_root, directory_flags)
             stack.callback(os.close, parent)
