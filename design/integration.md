@@ -287,7 +287,11 @@ non-empty legacy directories are not snapshotted merely for parent cleanup.
 This also applies when an adapter records an already-written file.
 Custom writes to existing files must use `IntegrationManifest.record_file()`
 or the host's before-write primitives, such as
-`IntegrationBase.write_file_and_record()`. `record_existing()` alone remains
+`IntegrationBase.write_file_and_record()`. Those primitives resolve each
+destination with `IntegrationBase.resolve_destination_inside()` and refuse one
+that escapes the project before creating directories or writing, so a
+symlink planted at an output path cannot redirect a write outside the
+project. `record_existing()` alone remains
 supported for new files and unchanged existing files; it cannot recover bytes
 already overwritten outside the journal. Such an unobserved overwrite fails
 explicitly, retains the resulting file rather than deleting it, and reports

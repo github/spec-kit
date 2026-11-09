@@ -773,3 +773,199 @@ class TestInstallScriptsPython:
         assert sh_file.stat().st_mode & 0o111
         # Negative: a non-script file is not made executable.
         assert not (txt_file.stat().st_mode & 0o111)
+
+
+def _symlink_or_skip(link, target, *, target_is_directory=False):
+    """Create *link* -> *target*, skipping when the platform cannot symlink."""
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+
+class TestDestinationContainment:
+    """Write helpers must reject destinations that resolve outside the project
+    *before* creating directories or writing bytes, so a planted symlink can
+    never redirect an integration write to an outside file (PR #5316 review)."""
+
+    @staticmethod
+    def _project(tmp_path):
+        project = tmp_path / "proj"
+        project.mkdir()
+        return project
+
+    # -- resolve_destination_inside -------------------------------------
+
+    def test_returns_resolved_path_for_new_nested_destination(self, tmp_path):
+        project = self._project(tmp_path)
+        dest = project / ".stub" / "commands" / "speckit.plan.md"
+        resolved = IntegrationBase.resolve_destination_inside(dest, project)
+        assert resolved == dest.resolve()
+        assert resolved.is_relative_to(project.resolve())
+        assert not dest.parent.exists(), "validation must not create directories"
+
+    def test_rejects_dot_dot_traversal(self, tmp_path):
+        project = self._project(tmp_path)
+        dest = project / ".stub" / ".." / ".." / "escaped.md"
+        with pytest.raises(ValueError, match="escapes project root"):
+            IntegrationBase.resolve_destination_inside(dest, project)
+
+    def test_rejects_absolute_path_outside_project(self, tmp_path):
+        project = self._project(tmp_path)
+        with pytest.raises(ValueError, match="escapes project root"):
+            IntegrationBase.resolve_destination_inside(tmp_path / "elsewhere.md", project)
+
+    def test_rejects_existing_file_symlink_pointing_outside(self, tmp_path):
+        project = self._project(tmp_path)
+        outside = tmp_path / "victim.md"
+        outside.write_text("keep", encoding="utf-8")
+        link = project / ".stub" / "commands" / "speckit.specify.md"
+        link.parent.mkdir(parents=True)
+        _symlink_or_skip(link, outside)
+        with pytest.raises(ValueError, match="escapes project root"):
+            IntegrationBase.resolve_destination_inside(link, project)
+
+    def test_rejects_dangling_symlink_pointing_outside(self, tmp_path):
+        project = self._project(tmp_path)
+        link = project / "dangling.md"
+        _symlink_or_skip(link, tmp_path / "not-created-yet.md")
+        with pytest.raises(ValueError, match="escapes project root"):
+            IntegrationBase.resolve_destination_inside(link, project)
+
+    def test_rejects_symlinked_ancestor_pointing_outside(self, tmp_path):
+        project = self._project(tmp_path)
+        outside_dir = tmp_path / "outside-dir"
+        outside_dir.mkdir()
+        (project / ".stub").mkdir()
+        _symlink_or_skip(project / ".stub" / "commands", outside_dir, target_is_directory=True)
+        dest = project / ".stub" / "commands" / "deeper" / "speckit.plan.md"
+        with pytest.raises(ValueError, match="escapes project root"):
+            IntegrationBase.resolve_destination_inside(dest, project)
+
+    def test_allows_symlinked_ancestor_inside_project(self, tmp_path):
+        project = self._project(tmp_path)
+        real = project / "real-commands"
+        real.mkdir()
+        (project / ".stub").mkdir()
+        _symlink_or_skip(project / ".stub" / "commands", real, target_is_directory=True)
+        dest = project / ".stub" / "commands" / "speckit.plan.md"
+        resolved = IntegrationBase.resolve_destination_inside(dest, project)
+        assert resolved == (real / "speckit.plan.md").resolve()
+
+    # -- write_file_and_record -------------------------------------------
+
+    def test_write_refuses_outside_file_symlink_before_writing(self, tmp_path):
+        project = self._project(tmp_path)
+        outside = tmp_path / "victim.md"
+        outside.write_text("original", encoding="utf-8")
+        dest = project / ".stub" / "commands" / "speckit.specify.md"
+        dest.parent.mkdir(parents=True)
+        _symlink_or_skip(dest, outside)
+        manifest = IntegrationManifest("stub", project.resolve())
+
+        with pytest.raises(ValueError, match="escapes project root"):
+            IntegrationBase.write_file_and_record("overwritten", dest, project, manifest)
+
+        assert outside.read_text(encoding="utf-8") == "original"
+        assert dest.is_symlink()
+        assert manifest.files == {}
+
+    def test_write_refuses_outside_dir_symlink_before_mkdir(self, tmp_path):
+        project = self._project(tmp_path)
+        outside_dir = tmp_path / "outside-dir"
+        outside_dir.mkdir()
+        (project / ".stub").mkdir()
+        _symlink_or_skip(project / ".stub" / "commands", outside_dir, target_is_directory=True)
+        dest = project / ".stub" / "commands" / "nested" / "speckit.specify.md"
+        manifest = IntegrationManifest("stub", project.resolve())
+
+        with pytest.raises(ValueError, match="escapes project root"):
+            IntegrationBase.write_file_and_record("payload", dest, project, manifest)
+
+        assert list(outside_dir.iterdir()) == [], "no directory or file created outside"
+        assert manifest.files == {}
+
+    def test_write_still_writes_and_records_inside_project(self, tmp_path):
+        project = self._project(tmp_path)
+        dest = project / ".stub" / "commands" / "speckit.plan.md"
+        manifest = IntegrationManifest("stub", project.resolve())
+
+        out = IntegrationBase.write_file_and_record("body\r\nmore\r\n", dest, project, manifest)
+
+        assert out == dest
+        assert dest.read_bytes() == b"body\nmore\n"
+        assert ".stub/commands/speckit.plan.md" in manifest.files
+
+    # -- copy_command_to_directory / record_file_in_manifest ---------------
+
+    def test_copy_refuses_outside_symlink_when_project_root_given(self, tmp_path):
+        project = self._project(tmp_path)
+        src = tmp_path / "template.md"
+        src.write_text("template", encoding="utf-8")
+        outside = tmp_path / "victim.md"
+        outside.write_text("original", encoding="utf-8")
+        dest_dir = project / ".stub" / "commands"
+        dest_dir.mkdir(parents=True)
+        _symlink_or_skip(dest_dir / "speckit.specify.md", outside)
+
+        with pytest.raises(ValueError, match="escapes project root"):
+            IntegrationBase.copy_command_to_directory(
+                src, dest_dir, "speckit.specify.md", project_root=project
+            )
+
+        assert outside.read_text(encoding="utf-8") == "original"
+
+    def test_copy_copies_inside_project(self, tmp_path):
+        project = self._project(tmp_path)
+        src = tmp_path / "template.md"
+        src.write_text("template", encoding="utf-8")
+        dst = IntegrationBase.copy_command_to_directory(
+            src, project / ".stub" / "commands", "speckit.specify.md", project_root=project
+        )
+        assert dst == project / ".stub" / "commands" / "speckit.specify.md"
+        assert dst.read_text(encoding="utf-8") == "template"
+
+    def test_record_file_in_manifest_rejects_outside_file(self, tmp_path):
+        project = self._project(tmp_path)
+        outside = tmp_path / "victim.md"
+        outside.write_text("x", encoding="utf-8")
+        manifest = IntegrationManifest("stub", project.resolve())
+        with pytest.raises(ValueError, match="escapes project root"):
+            IntegrationBase.record_file_in_manifest(outside, project, manifest)
+        assert manifest.files == {}
+
+    # -- setup paths that use the helpers ---------------------------------
+
+    def test_markdown_setup_refuses_outside_command_symlink(self, tmp_path):
+        project = self._project(tmp_path)
+        outside = tmp_path / "victim.md"
+        outside.write_text("original", encoding="utf-8")
+        link = project / ".stub" / "commands" / "speckit.specify.md"
+        link.parent.mkdir(parents=True)
+        _symlink_or_skip(link, outside)
+        manifest = IntegrationManifest("stub", project.resolve())
+
+        with pytest.raises(ValueError, match="escapes project root"):
+            StubIntegration().setup(project, manifest)
+
+        assert outside.read_text(encoding="utf-8") == "original"
+        assert link.is_symlink()
+
+    def test_install_scripts_refuses_outside_script_symlink(self, monkeypatch, tmp_path):
+        scripts_src = tmp_path / "bundled_scripts"
+        scripts_src.mkdir()
+        (scripts_src / "common.sh").write_text("echo hi\n", encoding="utf-8")
+        integration = StubIntegration()
+        monkeypatch.setattr(integration, "integration_scripts_dir", lambda: scripts_src)
+        project = self._project(tmp_path)
+        outside = tmp_path / "victim.sh"
+        outside.write_text("original", encoding="utf-8")
+        scripts_dest = project / ".specify" / "integrations" / "stub" / "scripts"
+        scripts_dest.mkdir(parents=True)
+        _symlink_or_skip(scripts_dest / "common.sh", outside)
+        manifest = IntegrationManifest("stub", project.resolve())
+
+        with pytest.raises(ValueError, match="escapes project root"):
+            integration.install_scripts(project, manifest)
+
+        assert outside.read_text(encoding="utf-8") == "original"

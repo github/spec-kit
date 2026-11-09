@@ -528,3 +528,91 @@ class TestNexoraMultiInstall:
         status = _run_in_project(project, ["integration", "status", "--json"])
         payload = json.loads(status.output)
         assert payload["installed_integrations"] == ["claude"]
+
+
+def _symlink_or_skip(link: Path, target: Path, *, target_is_directory: bool = False) -> None:
+    """Create *link* -> *target*, skipping when the platform cannot symlink."""
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+
+class TestNexoraSymlinkContainment:
+    """Regression for the PR #5316 review finding: a symlink planted under
+    ``.nexora/skills`` before setup must never let the inherited skill writer
+    create or overwrite a file outside the project. The containment error is
+    raised before any directory is created or bytes are written."""
+
+    @staticmethod
+    def _project(tmp_path: Path) -> Path:
+        project = tmp_path / "proj"
+        project.mkdir()
+        return project
+
+    def test_setup_refuses_skill_file_symlink_outside_project(self, tmp_path):
+        project = self._project(tmp_path)
+        outside = tmp_path / "outside" / "victim.md"
+        outside.parent.mkdir()
+        outside.write_text("outside content\n", encoding="utf-8")
+        planted = project / ".nexora" / "skills" / "speckit-specify" / "SKILL.md"
+        planted.parent.mkdir(parents=True)
+        _symlink_or_skip(planted, outside)
+        i = get_integration("nexora")
+        m = IntegrationManifest("nexora", project.resolve())
+
+        with pytest.raises(ValueError, match="escapes project root"):
+            i.setup(project, m, script_type="sh")
+
+        assert outside.read_text(encoding="utf-8") == "outside content\n"
+        assert planted.is_symlink()
+        assert planted.resolve() == outside.resolve()
+        assert not any(key.endswith("speckit-specify/SKILL.md") for key in m.files)
+
+    def test_setup_refuses_skill_dir_symlink_outside_project(self, tmp_path):
+        project = self._project(tmp_path)
+        outside_dir = tmp_path / "outside-skill"
+        outside_dir.mkdir()
+        (outside_dir / "SKILL.md").write_text("outside content\n", encoding="utf-8")
+        skills = project / ".nexora" / "skills"
+        skills.mkdir(parents=True)
+        _symlink_or_skip(skills / "speckit-specify", outside_dir, target_is_directory=True)
+        i = get_integration("nexora")
+        m = IntegrationManifest("nexora", project.resolve())
+
+        with pytest.raises(ValueError, match="escapes project root"):
+            i.setup(project, m, script_type="sh")
+
+        assert (outside_dir / "SKILL.md").read_text(encoding="utf-8") == "outside content\n"
+        assert sorted(p.name for p in outside_dir.iterdir()) == ["SKILL.md"]
+
+    def test_setup_refuses_skills_root_symlink_outside_project(self, tmp_path):
+        project = self._project(tmp_path)
+        outside_dir = tmp_path / "outside-skills"
+        outside_dir.mkdir()
+        (project / ".nexora").mkdir()
+        _symlink_or_skip(project / ".nexora" / "skills", outside_dir, target_is_directory=True)
+        i = get_integration("nexora")
+        m = IntegrationManifest("nexora", project.resolve())
+
+        with pytest.raises(ValueError, match="escapes project root"):
+            i.setup(project, m, script_type="sh")
+
+        assert list(outside_dir.iterdir()) == []
+
+    def test_setup_allows_symlinked_skill_dir_inside_project(self, tmp_path):
+        """Links that stay inside the project are still honoured."""
+        project = self._project(tmp_path)
+        real = project / "shared-skills" / "speckit-specify"
+        real.mkdir(parents=True)
+        skills = project / ".nexora" / "skills"
+        skills.mkdir(parents=True)
+        _symlink_or_skip(skills / "speckit-specify", real, target_is_directory=True)
+        i = get_integration("nexora")
+        m = IntegrationManifest("nexora", project.resolve())
+
+        created = i.setup(project, m, script_type="sh")
+
+        assert (real / "SKILL.md").exists()
+        assert any(p.name == "SKILL.md" and p.parent.name == "speckit-specify" for p in created)
+        assert m.check_modified() == []

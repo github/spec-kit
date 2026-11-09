@@ -266,12 +266,17 @@ writes, use these supported operations:
 | --- | --- |
 | `manifest.record_file(rel_path, content, *, ownership="whole") -> Path` | Write bytes or UTF-8 text and record ownership; path is project-relative |
 | `manifest.record_existing(rel_path, *, recovered=False, ownership=None) -> None` | Record an existing regular file; `recovered=True` marks preserved existing content |
-| `IntegrationBase.write_file_and_record(content, dest, project_root, manifest) -> Path` | Write UTF-8 text with LF newlines and record it; `dest` is the destination path |
+| `IntegrationBase.resolve_destination_inside(dest, project_root) -> Path` | Resolve `dest` (following any existing symlink on its path) and raise `ValueError` if it escapes the project; call before creating directories or writing |
+| `IntegrationBase.write_file_and_record(content, dest, project_root, manifest) -> Path` | Write UTF-8 text with LF newlines and record it; `dest` is the destination path and is checked with `resolve_destination_inside()` before anything is written |
+| `IntegrationBase.copy_command_to_directory(src, dest_dir, filename, project_root=None) -> Path` | Copy a template into `dest_dir`; pass `project_root` so the destination is checked before the copy |
 
 Ownership is `whole` for an adapter-owned file, `partial` for entries merged
 into a file, or `shared` for a host-shared artifact. Do not claim whole-file
 ownership of user settings or shared dispatchers. Manifest paths must be
-canonical, project-local, and non-symlinked.
+canonical, project-local, and non-symlinked. The write helpers resolve each
+destination and reject one that escapes the project *before* creating
+directories or writing, so a pre-existing symlink planted at an output path
+cannot redirect a write to a file outside the project.
 
 Use a write-and-record operation **before overwriting existing content**.
 `record_existing()` alone cannot restore bytes already overwritten outside

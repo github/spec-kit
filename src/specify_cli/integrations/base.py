@@ -650,20 +650,54 @@ class IntegrationBase(ABC):
     # -- File operations — granular primitives for setup() ----------------
 
     @staticmethod
+    def resolve_destination_inside(dest: Path, project_root: Path) -> Path:
+        """Resolve *dest* and verify it stays inside *project_root*.
+
+        Returns the fully resolved destination.  Resolution follows every
+        symlink on the path -- *dest* itself when it already exists as a
+        link (including a dangling one) and any symlinked ancestor -- and
+        appends the not-yet-existing tail to the real path of the nearest
+        existing ancestor, so the check reflects where a write would
+        actually land.  Call it *before* creating directories or writing
+        bytes: a pre-existing link planted at the destination (for example
+        ``speckit-<name>/SKILL.md`` or its ``speckit-<name>/`` parent)
+        pointing outside the project is rejected before anything outside is
+        touched.  Links that stay inside the project remain supported.
+
+        Raises ``ValueError`` when the resolved path escapes the project.
+        """
+        project_root_resolved = project_root.resolve()
+        resolved = dest.resolve()
+        if not resolved.is_relative_to(project_root_resolved):
+            raise ValueError(
+                f"Integration destination {resolved} escapes "
+                f"project root {project_root_resolved}"
+            )
+        return resolved
+
+    @staticmethod
     def copy_command_to_directory(
         src: Path,
         dest_dir: Path,
         filename: str,
+        project_root: Path | None = None,
     ) -> Path:
         """Copy a command template to *dest_dir* with the given *filename*.
 
         Creates *dest_dir* if needed.  Returns the absolute path of the
         written file.  The caller can post-process the file before
         recording it in the manifest.
+
+        When *project_root* is given, the destination is checked with
+        ``resolve_destination_inside()`` before any directory is created
+        or bytes are copied, so a pre-existing symlink at the destination
+        (or on its path) cannot redirect the copy outside the project.
         """
         dst = dest_dir / filename
         from ._file_changes import after_file_change, before_file_change
 
+        if project_root is not None:
+            IntegrationBase.resolve_destination_inside(dst, project_root)
         before_file_change(dst)
         dest_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
@@ -680,8 +714,8 @@ class IntegrationBase(ABC):
 
         *file_path* must be inside *project_root*.
         """
-        rel = file_path.resolve().relative_to(project_root.resolve())
-        manifest.record_existing(rel)
+        resolved = IntegrationBase.resolve_destination_inside(file_path, project_root)
+        manifest.record_existing(resolved.relative_to(project_root.resolve()))
 
     @staticmethod
     def write_file_and_record(
@@ -696,16 +730,22 @@ class IntegrationBase(ABC):
         avoid platform newline translation (CRLF on Windows).  Any
         ``\r\n`` sequences in *content* are normalised to ``\n`` before
         writing.  Returns *dest*.
+
+        The destination is checked with ``resolve_destination_inside()``
+        before any directory is created or bytes are written, so a
+        pre-existing symlink at *dest* or on an ancestor cannot redirect
+        the write outside the project.
         """
         normalized = content.replace("\r\n", "\n")
         from ._file_changes import after_file_change, before_file_change
 
+        IntegrationBase.resolve_destination_inside(dest, project_root)
         before_file_change(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(normalized.encode("utf-8"))
         after_file_change(dest)
-        rel = dest.resolve().relative_to(project_root.resolve())
-        manifest.record_existing(rel)
+        resolved = IntegrationBase.resolve_destination_inside(dest, project_root)
+        manifest.record_existing(resolved.relative_to(project_root.resolve()))
         return dest
 
     def integration_scripts_dir(self) -> Path | None:
@@ -748,6 +788,7 @@ class IntegrationBase(ABC):
             if not src_script.is_file():
                 continue
             dst_script = scripts_dest / src_script.name
+            self.resolve_destination_inside(dst_script, project_root)
             before_file_change(dst_script)
             scripts_dest.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src_script, dst_script)
@@ -1070,7 +1111,9 @@ class IntegrationBase(ABC):
 
         for src_file in templates:
             dst_name = self.command_filename(src_file.stem)
-            dst_file = self.copy_command_to_directory(src_file, dest, dst_name)
+            dst_file = self.copy_command_to_directory(
+                src_file, dest, dst_name, project_root=project_root
+            )
             self.record_file_in_manifest(dst_file, project_root, manifest)
             created.append(dst_file)
 
