@@ -310,6 +310,11 @@ for the remaining trust boundary.
 
 Shell `timeout` must be a positive number and defaults to `300` seconds. A timeout kills the command and fails the step. Shell output is captured for later expressions.
 
+Set `output_format: json` to parse stdout into typed `output.data`. Invalid JSON,
+including bare `NaN`, `Infinity`, and `-Infinity` constants, fails the step while
+preserving `stdout`, `stderr`, and `exit_code`. Quoted strings such as `"NaN"`
+remain valid. Without `output_format`, stdout remains raw text with no `data` field.
+
 ## Shell Step Environment Variables
 
 Shell steps automatically receive the following environment variables:
