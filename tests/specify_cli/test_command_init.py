@@ -625,3 +625,74 @@ def test_init_force_does_not_modify_hard_linked_skill_file(tmp_path, monkeypatch
     # ...while the project's skill was regenerated.
     assert skill_file.read_text(encoding="utf-8") != old_content
     assert skill_file.is_file() and not skill_file.is_symlink()
+
+
+def test_init_force_skips_hard_linked_skill_when_detach_fails(tmp_path, monkeypatch):
+    """Force re-init must skip a hard-linked SKILL.md it cannot detach (#5323).
+
+    If dropping the hard link raises OSError (for example, the file lives
+    in a non-writable directory), writing in place would modify every
+    linked copy, so the skill must be skipped instead of written. The
+    init itself still succeeds.
+    """
+    from specify_cli.extensions import ExtensionManager
+
+    result = _init(tmp_path, "proj")
+    assert result.exit_code == 0, _strip(result.stdout)
+    project = tmp_path / "proj"
+
+    ext_dir = _create_test_extension(tmp_path)
+
+    # Switch the saved options to copilot (skills mode) first, mirroring
+    # the #5321 force re-init path, so installation registers the skill
+    # under .github/skills.
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, [
+        "init", "--here", "--force", "--integration", "copilot",
+        "--script", "sh", "--non-interactive", "--ignore-agent-tools", "--offline",
+    ])
+    assert result.exit_code == 0, _strip(result.stdout)
+
+    ExtensionManager(project).install_from_directory(
+        ext_dir, "0.1.0", register_commands=False
+    )
+
+    # Pre-create the skill file with known content and hard-link it
+    # outside the project.
+    skill_file = project / ".github" / "skills" / "speckit-test-ext-hello" / "SKILL.md"
+    assert skill_file.is_file()
+    old_content = "---\nold: content\n---\n\n# Old Skill\n"
+    skill_file.write_text(old_content, encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_link = outside / "SKILL.md"
+    try:
+        os.link(skill_file, outside_link)
+    except OSError:
+        pytest.skip("Current platform/user cannot create hard links")
+
+    # Make only this skill's detach fail, mirroring an unlink denied by
+    # the directory permissions; every other unlink still works.
+    import specify_cli.integrations._file_changes as file_changes
+
+    real_unlink = file_changes.unlink
+
+    def _fail_skill_detach(path, *, missing_ok=False):
+        if os.fspath(path) == os.fspath(skill_file):
+            raise OSError("cannot unlink hard-linked skill file")
+        return real_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(file_changes, "unlink", _fail_skill_detach)
+
+    result = CliRunner().invoke(app, [
+        "init", "--here", "--force", "--integration", "copilot",
+        "--script", "sh", "--non-interactive", "--ignore-agent-tools", "--offline",
+    ])
+    assert result.exit_code == 0, _strip(result.stdout)
+
+    # The linked copy outside the project must be untouched...
+    assert outside_link.read_text(encoding="utf-8") == old_content
+    # ...and the project's skill must be left as it was, not overwritten
+    # in place through the surviving hard link.
+    assert skill_file.read_text(encoding="utf-8") == old_content
+    assert skill_file.stat().st_nlink > 1

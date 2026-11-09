@@ -1740,7 +1740,11 @@ class ExtensionManager:
                     if skill_file.stat().st_nlink > 1:
                         unlink(skill_file)
                 except OSError:
-                    pass  # best effort; the write below still proceeds
+                    # The detach failed (for example, the file lives in a
+                    # non-writable directory), so writing in place would
+                    # modify every hard-linked copy. Skip this skill
+                    # instead of writing through the link.
+                    continue
 
             if use_dev_symlink:
                 try:
