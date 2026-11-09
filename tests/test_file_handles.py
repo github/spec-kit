@@ -89,7 +89,7 @@ def _set_windows_symlink_reparse(path: Path, target: Path) -> None:
         wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID,
     ]
     control.restype = wintypes.BOOL
-    handle = _winapi.CreateFile(str(path), 0x40000000, 0x7, None, 3, 0x02200000, None)
+    handle = _winapi.CreateFile(str(path), 0x40000000, 0x7, 0, 3, 0x02200000, 0)
     try:
         buffer = ctypes.create_string_buffer(data)
         returned = wintypes.DWORD()
@@ -140,7 +140,7 @@ def test_windows_read_directory_pin_prevents_writable_reparse_handle(tmp_path):
     import _winapi
 
     def writable_handle():
-        return _winapi.CreateFile(str(tmp_path), 0x40000000, 0x7, None, 3, 0x02200000, None)
+        return _winapi.CreateFile(str(tmp_path), 0x40000000, 0x7, 0, 3, 0x02200000, 0)
 
     _winapi.CloseHandle(writable_handle())
     with _file_handles.windows_handle(tmp_path, directory=True, share_write=False):
