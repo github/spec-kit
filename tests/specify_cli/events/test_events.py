@@ -1614,6 +1614,96 @@ class TestCommandRunner:
         code = resolve_and_run_event_command("speckit.test", "session_start", "{}", tmp_path)
         assert code == 0
 
+    def _write_sleep_command(self, tmp_path, seconds):
+        """Create a core command whose script sleeps, then return its name."""
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "slow.md").write_text(
+            "---\n"
+            "description: \"Slow\"\n"
+            "scripts:\n"
+            "  sh: scripts/slow.sh\n"
+            "---\n"
+            "Body\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script_file = script_dir / "slow.sh"
+        script_file.write_text(f"#!/bin/sh\nsleep {seconds}\nexit 0\n", encoding="utf-8")
+        script_file.chmod(0o755)
+
+    def test_timeout_returns_1_not_blocking_2(self, tmp_path, capsys):
+        """A handler that runs past its timeout must not exit 2: Claude Code
+        reads exit 2 from a Stop hook as "don't stop, keep going", so a slow
+        script would keep the agent running when it should stop."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        self._write_sleep_command(tmp_path, 5)
+        code = resolve_and_run_event_command(
+            "speckit.slow", "stop", "{}", tmp_path, timeout=1
+        )
+        assert code == 1
+        assert "timed out" in capsys.readouterr().err
+
+    def test_handler_own_exit_2_still_passes_through(self, tmp_path):
+        """A handler that deliberately exits 2 keeps that exit code: only a
+        runner failure (timeout/error) is downgraded to 1, never the
+        handler's own decision."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "block.md").write_text(
+            "---\n"
+            "description: \"Block\"\n"
+            "scripts:\n"
+            "  sh: scripts/block.sh\n"
+            "---\n"
+            "Body\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script_file = script_dir / "block.sh"
+        script_file.write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
+        script_file.chmod(0o755)
+
+        code = resolve_and_run_event_command("speckit.block", "stop", "{}", tmp_path)
+        assert code == 2
+
+    def test_event_name_passed_as_speckit_event_env(self, tmp_path):
+        """The handler sees which event fired via the SPECKIT_EVENT env var."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "which.md").write_text(
+            "---\n"
+            "description: \"Which\"\n"
+            "scripts:\n"
+            "  sh: scripts/which.sh\n"
+            "---\n"
+            "Body\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        out_file = tmp_path / "event.out"
+        script_file = script_dir / "which.sh"
+        script_file.write_text(
+            f"#!/bin/sh\necho \"$SPECKIT_EVENT\" > {shlex.quote(str(out_file))}\nexit 0\n",
+            encoding="utf-8",
+        )
+        script_file.chmod(0o755)
+
+        code = resolve_and_run_event_command("speckit.which", "stop", "{}", tmp_path)
+        assert code == 0
+        assert out_file.read_text().strip() == "stop"
+
     def test_py_variant_anchored_under_specify(self, tmp_path):
         """S2: the py variant resolves scripts/... under .specify/, not the
         project root, and prepends the resolved interpreter."""
@@ -1896,6 +1986,91 @@ class TestCommandRunner:
         # The inline resolver ran the script with the payload.
         assert out_file.exists(), f"inline fallback did not run script; stderr={result.stderr!r} rc={result.returncode}"
         assert out_file.read_text() == '{"tool_name":"x"}'
+
+    def _install_boot_dispatcher(self, tmp_path, script_text, event="session_start"):
+        """Install a dispatcher for speckit.boot and write its script.
+
+        Returns (dispatcher_path, out_file) — the script writes its output to
+        out_file when run. Mirrors test_dispatcher_inline_fallback_runs_script.
+        """
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {event: [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        assert dispatcher.is_file()
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        out_file = tmp_path / "boot.out"
+        (cmd_dir / "boot.md").write_text(
+            "---\ndescription: \"Boot\"\nscripts:\n  sh: scripts/boot.sh\n---\nBody\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script = script_dir / "boot.sh"
+        script.write_text(script_text, encoding="utf-8")
+        script.chmod(0o755)
+        return dispatcher, out_file
+
+    def _run_dispatcher_inline(self, tmp_path, dispatcher, command, event, timeout):
+        """Run the generated dispatcher with specify_cli shadowed so the
+        inline stdlib fallback handles the event. Returns the CompletedProcess."""
+        import subprocess as _sp
+        import sys as _sys
+
+        fake_dir = tmp_path / "_fake"
+        (fake_dir / "specify_cli").mkdir(parents=True, exist_ok=True)
+        (fake_dir / "specify_cli" / "__init__.py").write_text("", encoding="utf-8")
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(fake_dir)
+        return _sp.run(
+            [_sys.executable, str(dispatcher), command, event, str(timeout)],
+            input="{}",
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=str(tmp_path),
+            check=False,
+        )
+
+    def test_dispatcher_inline_fallback_timeout_returns_1(self, tmp_path):
+        """The inline fallback must not exit 2 on timeout either: the same
+        Stop-hook "don't stop" misread applies when specify_cli is absent."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, _out = self._install_boot_dispatcher(
+            tmp_path, "#!/bin/sh\nsleep 5\nexit 0\n"
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.boot", "session_start", 1
+        )
+        assert result.returncode == 1, f"stderr={result.stderr!r}"
+        assert "timed out" in result.stderr
+
+    def test_dispatcher_inline_fallback_passes_speckit_event(self, tmp_path):
+        """The inline fallback passes the fired event to the handler via
+        SPECKIT_EVENT, same as the full resolver."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, out_file = self._install_boot_dispatcher(
+            tmp_path,
+            f"#!/bin/sh\necho \"$SPECKIT_EVENT\" > {shlex.quote(str(tmp_path / 'boot.out'))}\nexit 0\n",
+            event="stop",
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.boot", "stop", 60
+        )
+        assert result.returncode == 0, f"stderr={result.stderr!r}"
+        assert out_file.read_text().strip() == "stop"
 
     def test_dispatcher_ignores_stale_specify_cli_without_confinement(self, tmp_path):
         """A generated dispatcher must not delegate to an older specify_cli

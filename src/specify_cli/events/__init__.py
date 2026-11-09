@@ -289,7 +289,7 @@ def _resolve_argv(template_path, project_root, ext_id):
     return [str(script_abs), *rest]
 
 
-def _run_inline(command_name, payload, project_root, timeout, envelope="plain", native_event=""):
+def _run_inline(command_name, payload, project_root, timeout, envelope="plain", native_event="", event_name=""):
     """Resolve and run the event command with stdlib only (no specify_cli)."""
     template_path, ext_id = _find_command_template(command_name, project_root)
     if not template_path:
@@ -297,6 +297,8 @@ def _run_inline(command_name, payload, project_root, timeout, envelope="plain", 
     argv = _resolve_argv(template_path, project_root, ext_id)
     if not argv:
         return 0
+    # Tell the handler which event fired (mirrors the full resolver below).
+    env = {**os.environ, "SPECKIT_EVENT": event_name} if event_name else None
     try:
         # ``payload`` is decoded above from the binary buffer with an explicit
         # ``utf-8``. Without ``encoding=`` here, ``text=True`` re-encodes it
@@ -312,6 +314,7 @@ def _run_inline(command_name, payload, project_root, timeout, envelope="plain", 
             encoding="utf-8",
             timeout=timeout,
             cwd=str(project_root),
+            env=env,
         )
         if result.stdout:
             _emit(result.stdout, envelope, native_event)
@@ -322,10 +325,12 @@ def _run_inline(command_name, payload, project_root, timeout, envelope="plain", 
         return 0
     except subprocess.TimeoutExpired:
         print(f"Event {command_name} timed out", file=sys.stderr)
-        return 2
+        # Exit 1, not 2: a runner failure is not the handler's decision, and
+        # agents read exit 2 from a Stop hook as "don't stop, keep going".
+        return 1
     except Exception as e:
         print(f"Event {command_name} error: {e}", file=sys.stderr)
-        return 2
+        return 1
 
 
 def _emit(output, envelope, native_event=""):
@@ -438,7 +443,7 @@ def main():
         pass
 
     # Fallback: self-contained stdlib resolver (one-time/temporary installs).
-    sys.exit(_run_inline(command_name, payload, project_root, timeout, envelope, native_event))
+    sys.exit(_run_inline(command_name, payload, project_root, timeout, envelope, native_event, _event_name))
 
 
 if __name__ == "__main__":
@@ -797,6 +802,9 @@ def resolve_and_run_event_command(
     if not argv:
         logger.warning("No script found for event command '%s'", command_name)
         return 0
+    # Tell the handler which event fired so one script can serve several
+    # events (mirrors the inline fallback in the generated dispatcher).
+    env = {**os.environ, "SPECKIT_EVENT": event_name} if event_name else None
     try:
         # ``payload`` reaches here already decoded from stdin's binary buffer
         # with an explicit ``utf-8`` (see event_run/dispatcher main()). Without
@@ -813,6 +821,7 @@ def resolve_and_run_event_command(
             encoding="utf-8",
             timeout=timeout,
             cwd=str(project_root),
+            env=env,
         )
         if result.stdout:
             _emit_event_stdout(result.stdout, envelope, native_event)
@@ -823,10 +832,12 @@ def resolve_and_run_event_command(
         return 0
     except subprocess.TimeoutExpired:
         sys.stderr.write(f"Event command {command_name} timed out\n")
-        return 2
+        # Exit 1, not 2: a runner failure is not the handler's decision, and
+        # agents read exit 2 from a Stop hook as "don't stop, keep going".
+        return 1
     except Exception as e:
         sys.stderr.write(f"Event command {command_name} error: {e}\n")
-        return 2
+        return 1
 
 
 def _emit_event_stdout(output: str, envelope: str, native_event: str = "") -> None:
