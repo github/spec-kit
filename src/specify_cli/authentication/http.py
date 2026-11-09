@@ -3,7 +3,8 @@
 No credentials are sent unless the user has created ``auth.json``.
 For each outbound URL the helper matches the hostname against
 configured entries, resolves the token via the appropriate provider
-class, and attaches auth headers.  Redirect safety is enforced:
+class, and attaches auth headers. Initial URLs must use HTTPS, except
+for HTTP to unambiguous loopback hosts. Redirect safety is enforced:
 the ``Authorization`` header is stripped when a redirect leaves the
 entry's declared hosts.  On 401/403 the next matching entry is tried,
 then unauthenticated.
@@ -16,7 +17,7 @@ import urllib.request
 from typing import Callable
 from urllib.parse import urlparse
 
-from .._download_security import is_safe_download_redirect
+from .._download_security import is_https_or_localhost_http, is_safe_download_redirect
 from . import get_provider
 from .config import (
     AuthConfigEntry,
@@ -67,6 +68,14 @@ RedirectValidator = Callable[[str, str], None]
 
 class RedirectPolicyError(urllib.error.URLError):
     """A redirect rejected because it violates the client's security policy."""
+
+
+def _validate_initial_url(url: str) -> None:
+    if not is_https_or_localhost_http(url):
+        raise urllib.error.URLError(
+            "unsafe request URL: target must use HTTPS with a hostname, "
+            "or HTTP to loopback (for example localhost, 127.0.0.1, ::1)"
+        )
 
 
 def _validate_strict_redirect(old_url: str, new_url: str) -> None:
@@ -135,7 +144,9 @@ def build_request(url: str, extra_headers: dict[str, str] | None = None) -> urll
     Returns a plain request when no entry matches or the file doesn't exist.
     A ``github-cli`` acquisition failure raises immediately, without trying
     later matching entries or returning an unauthenticated request.
+    Rejects URLs that are not HTTPS or loopback HTTP before resolving tokens.
     """
+    _validate_initial_url(url)
     headers: dict[str, str] = {}
     if extra_headers:
         # Strip Authorization from extra_headers to prevent bypass
@@ -193,7 +204,10 @@ def open_url(
     Redirect scheme safety: every attempt goes through
     ``_StripAuthOnRedirect``, which rejects redirects to non-HTTPS URLs except
     HTTP between loopback URLs, and rejects remote-to-local redirects.
+    Initial URLs must also use HTTPS or loopback HTTP; unsafe URLs are
+    rejected before resolving tokens or making any request.
     """
+    _validate_initial_url(url)
     entries = find_entries_for_url(url, _load_config())
 
     def _make_req(auth_headers: dict[str, str]) -> urllib.request.Request:

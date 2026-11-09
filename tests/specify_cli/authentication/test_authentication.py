@@ -1481,6 +1481,109 @@ class TestAuthenticatedHttp:
 # ---------------------------------------------------------------------------
 
 
+class TestInitialUrlSafety:
+    @pytest.mark.parametrize("helper", ["build_request", "open_url"])
+    @pytest.mark.parametrize("provider_key,scheme", [
+        ("github", "bearer"),
+        ("github", "github-cli"),
+        ("azure-devops", "basic-pat"),
+        ("bitbucket", "basic"),
+    ])
+    @pytest.mark.parametrize("url", [
+        "http://example.com/archive.zip",
+        "ftp://example.com/archive.zip",
+    ])
+    def test_rejects_cleartext_before_resolving_credentials(
+        self, monkeypatch, helper, provider_key, scheme, url,
+    ):
+        import urllib.error
+        from unittest.mock import patch
+        from specify_cli.authentication import http
+
+        entry = AuthConfigEntry(
+            hosts=("example.com",), provider=provider_key, auth=scheme,
+            token="test-token", username="test-user",
+        )
+        monkeypatch.setattr(http, "_config_override", [entry])
+        provider = get_provider(provider_key)
+        assert provider is not None
+        token = "test-user:test-token" if scheme == "basic" else "test-token"
+        with patch.object(
+            provider, "resolve_token", return_value=token,
+        ) as resolve, patch.object(http.urllib.request, "build_opener") as build_opener:
+            with pytest.raises(urllib.error.URLError, match="HTTPS"):
+                getattr(http, helper)(url)
+            resolve.assert_not_called()
+            build_opener.assert_not_called()
+
+    @pytest.mark.parametrize("helper", ["build_request", "open_url"])
+    @pytest.mark.parametrize("url", [
+        "http://example.com/archive.zip",
+        "http://0.0.0.0/archive.zip",
+        "http://127.1/archive.zip",
+        "https:///archive.zip",
+        "https://[::1",
+        "https://example.com:invalid/archive.zip",
+        "file:///tmp/archive.zip",
+    ])
+    def test_rejects_unsafe_urls_without_auth_config(self, monkeypatch, helper, url):
+        import urllib.error
+        from unittest.mock import patch
+        from specify_cli.authentication import http
+
+        monkeypatch.setattr(http, "_config_override", [])
+        with patch.object(http.urllib.request, "build_opener") as build_opener:
+            with pytest.raises(urllib.error.URLError, match="HTTPS"):
+                getattr(http, helper)(url)
+            build_opener.assert_not_called()
+
+    @pytest.mark.parametrize("helper", ["build_request", "open_url"])
+    @pytest.mark.parametrize("provider_key,scheme", [
+        ("github", "bearer"),
+        ("azure-devops", "basic-pat"),
+        ("bitbucket", "basic"),
+    ])
+    @pytest.mark.parametrize("url", [
+        "https://example.com/archive.zip",
+        "http://localhost:8000/archive.zip",
+        "http://127.0.0.1:8000/archive.zip",
+        "http://[::1]:8000/archive.zip",
+    ])
+    def test_allows_https_and_loopback_http(
+        self, monkeypatch, helper, provider_key, scheme, url,
+    ):
+        from unittest.mock import patch
+        from urllib.parse import urlparse
+        from specify_cli.authentication import http
+
+        entry = AuthConfigEntry(
+            hosts=(urlparse(url).hostname,), provider=provider_key, auth=scheme,
+            token="test-token", username="test-user",
+        )
+        monkeypatch.setattr(http, "_config_override", [entry])
+        provider = get_provider(provider_key)
+        assert provider is not None
+        token = "test-user:test-token" if scheme == "basic" else "test-token"
+        with patch.object(
+            provider, "resolve_token", return_value=token,
+        ) as resolve, patch.object(http.urllib.request, "build_opener") as build_opener:
+            result = getattr(http, helper)(url, extra_headers={"Accept": "application/zip"})
+            if helper == "build_request":
+                request = result
+                build_opener.assert_not_called()
+            else:
+                opener = build_opener.return_value
+                assert result is opener.open.return_value
+                opener.open.assert_called_once()
+                request = opener.open.call_args.args[0]
+            resolve.assert_called_once_with(entry)
+            assert request.full_url == url
+            assert request.get_header("Accept") == "application/zip"
+            assert request.get_header("Authorization") == provider.auth_headers(
+                token, scheme,
+            )["Authorization"]
+
+
 class TestAuthenticatedHttpNegative:
     def _set_config(self, monkeypatch, entries):
         from specify_cli.authentication import http as _mod
