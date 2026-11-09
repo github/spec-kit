@@ -39,7 +39,7 @@ Command steps can pass per-step runtime configuration to `omp --print` (see
 | ------------------------- | ------------ | ------------------------------------------------------------------------ |
 | `profile`                 | `--profile`  | Isolated OMP profile name                                                |
 | `thinking`                | `--thinking` | One of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `auto` |
-| `tools`                   | `--tools`    | Comma-separated list of tools to enable                                  |
+| `tools`                   | `--tools`    | Comma-separated list of tools to select (not an exclusive allowlist)     |
 
 ```yaml
 - id: plan-with-omp
@@ -54,6 +54,11 @@ Command steps can pass per-step runtime configuration to `omp --print` (see
     tools: "read,bash"
   model: "gpt-5"
 ```
+
+`tools` selects which tools OMP enables; it is not an exclusive allowlist or a
+security boundary. OMP can still enable discovered custom and
+extension-registered tools that are absent from the list, so `tools: read`
+does not guarantee read-only access.
 
 Option values must be non-empty strings; unknown keys and unsupported
 `thinking` values fail before OMP is launched. Select the model with the step's
