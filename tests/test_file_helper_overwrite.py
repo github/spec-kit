@@ -196,7 +196,7 @@ def test_native_windows_overwrite_creation_matches_masked_native_creation(tmp_pa
     before = existing.stat()
     previous_mask = os.umask(mask)
     try:
-        native.write_text("caf\u00e9\n")
+        native.write_text("caf\u00e9\n", encoding="utf-8")
         files = FileHelper(tmp_path, allow_symlinks=allow)
         files.overwrite_text("file", "caf\u00e9\n")
         files.overwrite_text("existing", "new")
