@@ -566,7 +566,11 @@ class _PresetSkillMethods:
                 is no longer composable is still retired wherever it is
                 recorded, mirroring stale-output retirement.
         """
-        from ..integrations._file_changes import after_file_change, before_file_change
+        from ..integrations._file_changes import (
+            after_file_change,
+            before_file_change,
+            unlink_in_directory,
+        )
         from ..shared_infra import (
             _ensure_safe_shared_destination,
             _ensure_safe_shared_directory,
@@ -713,9 +717,11 @@ class _PresetSkillMethods:
                             # not a missing base: keep the alias, as the
                             # primary-skill path keeps its output.
                             continue
-                        before_file_change(skill_dir, removal=True)
-                        shutil.rmtree(skill_dir)
-                        after_file_change(skill_dir)
+                        alias_file = skill_dir / "SKILL.md"
+                        unlink_in_directory(
+                            alias_file,
+                            root=self.project_root if alias_file.is_relative_to(self.project_root) else skills_dir,
+                        )
                         continue
                     if shadowed or not may_render:
                         continue
@@ -902,7 +908,7 @@ class _PresetSkillMethods:
         ``<id>:<file>`` (command registration for native skill agents);
         anything else is left untouched.
         """
-        from ..integrations._file_changes import after_file_change, before_file_change
+        from ..integrations._file_changes import unlink_in_directory
 
         registrar = self._command_registrar()
         pack_ids = list(self.registry.list())
@@ -923,9 +929,10 @@ class _PresetSkillMethods:
                 source == f"preset:{pack_id}" or source.startswith(f"{pack_id}:")
                 for pack_id in pack_ids
             ):
-                before_file_change(skill_dir, removal=True)
-                shutil.rmtree(skill_dir)
-                after_file_change(skill_dir)
+                unlink_in_directory(
+                    skill_file,
+                    root=self.project_root if skill_file.is_relative_to(self.project_root) else skills_dir,
+                )
 
     def _resolve_agent_skills_dir(self, agent_name: str) -> Path:
         """Resolve the real skill output directory for an integration."""
