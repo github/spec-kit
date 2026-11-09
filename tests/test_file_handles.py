@@ -3,7 +3,6 @@
 from contextlib import contextmanager
 import os
 from pathlib import Path
-import struct
 import sys
 from types import SimpleNamespace
 
@@ -73,15 +72,6 @@ def _set_windows_symlink_reparse(path: Path, target: Path) -> None:
     from ctypes import wintypes
     import _winapi
 
-    name = str(target.resolve())
-    substitute = "\\??\\UNC\\" + name[2:] if name.startswith("\\\\") else "\\??\\" + name
-    encoded_substitute = substitute.encode("utf-16-le")
-    encoded_name = name.encode("utf-16-le")
-    names = encoded_substitute + b"\0\0" + encoded_name + b"\0\0"
-    data = struct.pack(
-        "<IHHHHHHI", 0xA000000C, 12 + len(names), 0,
-        0, len(encoded_substitute), len(encoded_substitute) + 2, len(encoded_name), 0,
-    ) + names
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     control = kernel.DeviceIoControl
     control.argtypes = [
@@ -89,14 +79,76 @@ def _set_windows_symlink_reparse(path: Path, target: Path) -> None:
         wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID,
     ]
     control.restype = wintypes.BOOL
-    handle = _winapi.CreateFile(str(path), 0x40000000, 0x7, 0, 3, 0x02200000, 0)
+    template = target.with_name("reparse-template")
+    template.symlink_to(target)
     try:
-        buffer = ctypes.create_string_buffer(data)
+        buffer = ctypes.create_string_buffer(16 * 1024)
         returned = wintypes.DWORD()
-        if not control(handle, 0x900A4, buffer, len(data), None, 0, ctypes.byref(returned), None):
-            raise ctypes.WinError(ctypes.get_last_error())
+        source = _winapi.CreateFile(str(template), 0, 0x7, 0, 3, 0x02200000, 0)
+        try:
+            if not control(source, 0x900A8, None, 0, buffer, len(buffer), ctypes.byref(returned), None):
+                raise ctypes.WinError(ctypes.get_last_error())
+        finally:
+            _winapi.CloseHandle(source)
+        handle = _winapi.CreateFile(str(path), 0x40000000, 0x7, 0, 3, 0x02200000, 0)
+        try:
+            if not control(handle, 0x900A4, buffer, returned.value, None, 0, ctypes.byref(returned), None):
+                raise ctypes.WinError(ctypes.get_last_error())
+        finally:
+            _winapi.CloseHandle(handle)
     finally:
-        _winapi.CloseHandle(handle)
+        template.unlink()
+
+
+@pytest.mark.parametrize("failure", [None, "get", "set"])
+def test_reparse_fixture_copies_native_buffer_and_cleans_up(tmp_path, monkeypatch, failure):
+    import ctypes
+    from ctypes import wintypes
+
+    target = tmp_path / "outside"
+    target.write_bytes(b"outside")
+    probe = tmp_path / "probe"
+    try:
+        probe.symlink_to(target)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"Symlink creation unavailable: {exc}")
+    probe.unlink()
+    opened = []
+    closed = []
+    payload = b"OS-generated reparse buffer"
+
+    def create(path, access, sharing, security, disposition, flags, template):
+        assert (sharing, security, disposition, flags, template) == (7, 0, 3, 0x02200000, 0)
+        assert access == (0 if not opened else 0x40000000)
+        opened.append(len(opened) + 1)
+        return opened[-1]
+
+    class Control:
+        def __call__(self, handle, code, source, source_size, destination, size, returned, overlapped):
+            if code == 0x900A8:
+                assert handle == 1 and source is None and source_size == 0
+                if failure == "get":
+                    return False
+                ctypes.memmove(destination, payload, len(payload))
+                ctypes.cast(returned, ctypes.POINTER(wintypes.DWORD))[0] = len(payload)
+            else:
+                assert code == 0x900A4 and handle == 2
+                assert ctypes.string_at(source, source_size) == payload
+                if failure == "set":
+                    return False
+            return True
+
+    monkeypatch.setitem(sys.modules, "_winapi", SimpleNamespace(CreateFile=create, CloseHandle=closed.append))
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: SimpleNamespace(DeviceIoControl=Control()), raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
+    monkeypatch.setattr(ctypes, "WinError", lambda code: OSError("injected native failure"), raising=False)
+    if failure:
+        with pytest.raises(OSError, match="injected native failure"):
+            _set_windows_symlink_reparse(tmp_path / "file", target)
+    else:
+        _set_windows_symlink_reparse(tmp_path / "file", target)
+    assert closed == opened
+    assert not (tmp_path / "reparse-template").is_symlink()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows reparse changes required")
@@ -105,7 +157,7 @@ def test_windows_read_never_reopens_leaf_after_in_place_reparse_change(tmp_path,
     root = tmp_path / "project"
     root.mkdir()
     selected = root / "file"
-    selected.write_bytes(b"inside")
+    selected.write_bytes(b"")
     outside = tmp_path / "outside"
     outside.write_bytes(b"outside")
     changed = False
@@ -131,7 +183,7 @@ def test_windows_read_never_reopens_leaf_after_in_place_reparse_change(tmp_path,
     except UnsupportedPathError:
         pass
     else:
-        assert content == b"inside"
+        assert content == b""
     assert changed
 
 
