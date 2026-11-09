@@ -106,9 +106,11 @@ class CodexIntegration(SkillsIntegration):
         path = root / rel
         if prior is None or prior.ownership_modes.get(rel) != "whole":
             return False
-        if path.is_symlink() or not path.is_file():
-            return False
         try:
+            # A symlinked ancestor makes the file unsafe to rehash or delete.
+            _validate_record_path(Path(rel), root)
+            if path.is_symlink() or not path.is_file():
+                return False
             if hashlib.sha256(path.read_bytes()).hexdigest() == prior.files[rel]:
                 return True
             return self._load_openai_yaml(path, rel) == self._GENERATED_POLICY
@@ -167,7 +169,12 @@ class CodexIntegration(SkillsIntegration):
     ) -> None:
         """Undo policies an earlier install wrote that this setup no longer writes.
 
-        Unmodified generated files are deleted; in user files only the policy is removed.
+        Unmodified generated files are deleted; in user files only the policy is
+        removed, after which the file is no longer tracked. A file is tracked
+        only while it holds the managed policy, so a policy the user sets later
+        is never claimed. Files whose cleanup fails stay tracked under their
+        prior hash so a later run retries; upgrade's stale-file pass skips them
+        via ``stale_cleanup_exclusions``.
         """
         generated = IntegrationManifest(self.key, project_root, version="policy-cleanup")
         modes = prior.ownership_modes
@@ -177,20 +184,38 @@ class CodexIntegration(SkillsIntegration):
             if self._is_generated(project_root, rel, prior):
                 generated._files[rel] = recorded_hash
                 continue
-            cleaned = self._remove_policy(project_root, rel)
+            if self._remove_policy(project_root, rel):
+                continue
             path = project_root / rel
-            if (modes[rel] == "whole" or not cleaned) and path.is_file() and not path.is_symlink():
-                # A generated file the user edited is theirs now, even if it no
-                # longer parses. Track it as partial so upgrade's stale-file
-                # pass, which deletes whole files with force, leaves it alone;
-                # a file whose policy could not be removed stays tracked so a
-                # later run can retry.
-                try:
-                    manifest.record_existing(rel, ownership="partial")
-                except (OSError, ValueError) as exc:
-                    logger.warning("Could not keep tracking %s: %s", rel, exc)
+            if path.exists() or path.is_symlink():
+                # Unreadable, unparseable or unsafe: it may hold user edits, so
+                # it is partial and nothing deletes it.
+                self._retain(manifest, rel, recorded_hash, "partial")
         # Each entry was checked above, content-equal ones included.
-        generated.uninstall(project_root, force=True, remove_manifest=False)
+        _, skipped = generated.uninstall(project_root, force=True, remove_manifest=False)
+        for path in skipped:
+            rel = path.relative_to(project_root).as_posix()
+            if path.exists() or path.is_symlink():
+                self._retain(manifest, rel, prior.files[rel], modes[rel])
+
+    @staticmethod
+    def _retain(manifest: IntegrationManifest, rel: str, recorded_hash: str, ownership: str) -> None:
+        """Keep tracking ``rel`` without reading it, which may be what failed."""
+        manifest._files[rel] = recorded_hash
+        manifest._ownership_modes[rel] = ownership
+
+    def stale_cleanup_exclusions(self) -> set[str]:
+        # ``setup`` releases policy files itself and drops a file from the
+        # manifest once its policy is removed; upgrade must not then delete it.
+        from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+
+        exclusions = super().stale_cleanup_exclusions()
+        exclusions.update(self._policy_rel(name) for name in CORE_COMMAND_NAMES)
+        return exclusions
+
+    def _policy_rel(self, command_name: str) -> str:
+        skills = PurePosixPath(self.registrar_config["dir"])
+        return (skills / f"speckit-{command_name}" / "agents" / "openai.yaml").as_posix()
 
     @staticmethod
     def _is_core_command_skill_dir(name: str) -> bool:
@@ -214,12 +239,19 @@ class CodexIntegration(SkillsIntegration):
         enabled = (parsed_options or {}).get("no_model_invocation") is True
         prior = self._prior_manifest(root)
         if enabled:
-            # Reject unusable existing policy files before anything is written.
+            # Reject unusable layouts and existing policy files before anything
+            # is written.
             from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
 
-            skills = PurePosixPath(self.registrar_config["dir"])
+            skills_rel = self.registrar_config["dir"]
+            try:
+                # Policies are recorded and cleaned up by their lexical path,
+                # which a symlinked skills directory would not match.
+                _validate_record_path(Path(skills_rel), root)
+            except ValueError as exc:
+                raise ValueError(f"Cannot use --no-model-invocation: {exc}") from exc
             for name in sorted(CORE_COMMAND_NAMES):
-                rel = (skills / f"speckit-{name}" / "agents" / "openai.yaml").as_posix()
+                rel = self._policy_rel(name)
                 agents_dir = (root / rel).parent
                 if agents_dir.exists() or agents_dir.is_symlink():
                     self._plan_policy(root, rel, prior)
@@ -229,9 +261,9 @@ class CodexIntegration(SkillsIntegration):
         planned: list[tuple[str, str, str]] = []
         if enabled:
             for skill_file in [f for f in created if f.name == "SKILL.md"]:
-                if self._is_core_command_skill_dir(skill_file.parent.name):
-                    dest = skill_file.parent / "agents" / "openai.yaml"
-                    plan = self._plan_policy(root, dest.relative_to(root).as_posix(), prior)
+                name = skill_file.parent.name
+                if self._is_core_command_skill_dir(name):
+                    plan = self._plan_policy(root, self._policy_rel(name.removeprefix("speckit-")), prior)
                     if plan is not None:
                         planned.append(plan)
         for rel, content, ownership in planned:

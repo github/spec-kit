@@ -594,3 +594,161 @@ class TestCodexNoModelInvocationOwnership:
         manifest = self._setup(tmp_path, enabled=False)
         assert path.read_bytes() == broken
         assert manifest.ownership_modes[self.PLAN_REL] == "partial"
+
+    @pytest.mark.skipif(
+        os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+        reason="needs POSIX permissions enforced for the current user",
+    )
+    def test_clearing_option_keeps_unreadable_edit_of_generated_file(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        self._init(tmp_path, "--no-model-invocation")
+        path = tmp_path / self.PLAN_REL
+        edited = b"interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n"
+        path.write_bytes(edited)
+        path.chmod(0)
+        try:
+            result = _run_in_project(
+                tmp_path, ["integration", "upgrade", "codex", "--force", "--integration-options", ""]
+            )
+        finally:
+            path.chmod(0o644)
+        assert result.exit_code == 0, result.output
+        assert path.read_bytes() == edited
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "partial"
+        assert self._other_policies(tmp_path) == []
+
+        self._init(tmp_path)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self.PLAN_REL not in self._manifest(tmp_path).files
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_teardown_preserves_generated_file_under_symlinked_agents_dir(self, tmp_path):
+        manifest = self._setup(tmp_path)
+        agents_dir = (tmp_path / self.PLAN_REL).parent
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        (elsewhere / "openai.yaml").write_bytes((agents_dir / "openai.yaml").read_bytes())
+        (agents_dir / "openai.yaml").unlink()
+        agents_dir.rmdir()
+        agents_dir.symlink_to(elsewhere, target_is_directory=True)
+        content = (elsewhere / "openai.yaml").read_bytes()
+
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert (elsewhere / "openai.yaml").read_bytes() == content
+        assert agents_dir.is_symlink()
+        assert self._other_policies(tmp_path) == []
+
+    def test_policy_the_user_sets_after_clearing_is_never_claimed(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        def upgrade(options):
+            result = _run_in_project(
+                tmp_path, ["integration", "upgrade", "codex", "--force", "--integration-options", options]
+            )
+            assert result.exit_code == 0, result.output
+
+        self._init(tmp_path, "--no-model-invocation")
+        path = tmp_path / self.PLAN_REL
+        path.write_text(
+            "interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n",
+            encoding="utf-8",
+        )
+        upgrade("")
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self.PLAN_REL not in self._manifest(tmp_path).files
+
+        user_owned = "interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n"
+        path.write_text(user_owned, encoding="utf-8")
+        upgrade("--no-model-invocation")
+        assert self.PLAN_REL not in self._manifest(tmp_path).files
+        upgrade("")
+        assert path.read_text(encoding="utf-8") == user_owned
+
+    def test_generated_file_that_cannot_be_deleted_stays_tracked_for_retry(self, tmp_path, monkeypatch):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        real_unlink = Path.unlink
+
+        def unlink(self, *args, **kwargs):
+            if self == path:
+                raise PermissionError("locked")
+            return real_unlink(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", unlink)
+        manifest = self._setup(tmp_path, enabled=False)
+        monkeypatch.undo()
+        assert path.exists()
+        assert manifest.ownership_modes[self.PLAN_REL] == "whole"
+        assert self._other_policies(tmp_path) == []
+        manifest.save()
+
+        manifest = self._setup(tmp_path, enabled=False)
+        assert not path.exists()
+        assert self.PLAN_REL not in manifest.files
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_symlinked_skills_dir_inside_project_is_rejected_before_writing(self, tmp_path):
+        shared = tmp_path / "shared-skills"
+        shared.mkdir()
+        (tmp_path / ".agents").mkdir()
+        (tmp_path / ".agents" / "skills").symlink_to(shared, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="--no-model-invocation.*symlink"):
+            self._setup(tmp_path)
+        assert not list(shared.rglob("*"))
+
+        manifest = self._setup(tmp_path, enabled=False)
+        assert list(shared.glob("*/SKILL.md"))
+        assert not [k for k in manifest.files if k.endswith("openai.yaml")]
+
+    def test_stale_cleanup_never_deletes_policy_files(self):
+        exclusions = get_integration("codex").stale_cleanup_exclusions()
+        assert self.PLAN_REL in exclusions
+        assert ".agents/skills/speckit-specify/agents/openai.yaml" in exclusions
+
+
+@pytest.mark.filterwarnings("ignore:Cannot compose command 'speckit.wrap-test':UserWarning")
+class TestCodexNoModelInvocationPresets:
+    """Preset overrides rewrite ``SKILL.md`` without running ``setup()`` (#2654)."""
+
+    SKILL = ".agents/skills/speckit-specify"
+
+    @staticmethod
+    def _add_and_remove_self_test_preset(project):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        skill_md = project / TestCodexNoModelInvocationPresets.SKILL / "SKILL.md"
+        result = _run_in_project(
+            project, ["preset", "add", "--dev", str(REPO_ROOT / "presets" / "self-test")]
+        )
+        assert result.exit_code == 0, result.output
+        overridden = "preset:self-test" in skill_md.read_text(encoding="utf-8")
+        policy_while_overridden = sorted((skill_md.parent).rglob("openai.yaml"))
+        result = _run_in_project(project, ["preset", "remove", "self-test"])
+        assert result.exit_code == 0, result.output
+        assert "preset:self-test" not in skill_md.read_text(encoding="utf-8")
+        return overridden, policy_while_overridden
+
+    def test_policy_survives_preset_override_and_removal(self, tmp_path):
+        import yaml
+
+        from tests.specify_cli.integrations._helpers import _init_project
+
+        project = _init_project(tmp_path, "codex", "--no-model-invocation")
+        policy = project / self.SKILL / "agents" / "openai.yaml"
+        before = policy.read_bytes()
+        overridden, during = self._add_and_remove_self_test_preset(project)
+        assert overridden
+        assert during == [policy]
+        assert policy.read_bytes() == before
+        assert yaml.safe_load(before) == {"policy": {"allow_implicit_invocation": False}}
+
+    def test_preset_override_adds_no_policy_without_option(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _init_project
+
+        project = _init_project(tmp_path, "codex")
+        overridden, during = self._add_and_remove_self_test_preset(project)
+        assert overridden
+        assert during == []
+        assert not (project / self.SKILL / "agents").exists()

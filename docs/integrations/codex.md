@@ -59,7 +59,10 @@ description in Codex's context.
   Such a file is rewritten as plain YAML, so its comments and formatting are
   not kept. One that already sets it to `false` is left untouched. If an existing file
   cannot be read, is not valid YAML, or is not a mapping, setup stops with an
-  error naming the file and leaves it unchanged. Skills that commands other than
+  error naming the file and leaves it unchanged. Setup with the option also
+  stops before writing anything if `.agents` or `.agents/skills` is a symlink.
+  Once the policy has been removed from a file Spec Kit no longer tracks it, so
+  a policy you set there yourself afterwards is never removed. Skills that commands other than
   `init`, `install` and `upgrade` register (for example presets that add core
   skills) get no `agents/openai.yaml` until `specify integration upgrade codex
   --force` is run.
