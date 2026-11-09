@@ -182,11 +182,22 @@ helpers for independent project/source/managed boundaries.
 - `delete(path, recursive=False)` unlinks files/links or removes directories.
   Nonrecursive directory deletion requires an empty directory. The established
   root cannot be deleted. Recursive enumeration and each removal use anchored
-  directories: POSIX uses no-follow directory descriptors and descriptor-relative
-  `unlink`/`rmdir`; Windows holds the resolved ancestors without delete sharing.
+  directories. Each deletion acquires its root once, checks that it matches the
+  root identity recorded at construction, and retains that anchor through
+  preflight and all removals. POSIX uses no-follow directory descriptors and
+  descriptor-relative `unlink`/`rmdir`; Windows holds the full canonical ancestry,
+  including ancestors above the root, without delete sharing while using absolute
+  paths. This does not change the trusted treatment of aliases resolved at root
+  establishment.
   Allowed contained parent links are resolved before anchoring, and leaf links
   are still unlinked rather than followed. Platforms lacking the required
   directory-descriptor operations fail with `ENOTSUP`, not pathname-only deletion.
+  POSIX traversal and removal use search/path-only descriptors (`O_SEARCH` or
+  `O_PATH`) where available, so known entries in write-and-execute-only parents
+  can still be removed. Read-capable descriptors are requested only for directories
+  being enumerated; systems without search/path-only flags retain read-capable
+  traversal. Recursive enumeration still requires directory read permission, and
+  removal still requires the operating system's normal directory permissions.
 - `symlink(target, path)` creates a link exclusively. Relative targets are
   interpreted relative to the link parent, not the helper root.
 
@@ -216,8 +227,9 @@ Preflight detects static policy failures before recursive deletion or parent
 creation. Atomic writes recheck the original path before replacement, and
 deletion rechecks each accessed entry. Deletion also anchors directory
 enumeration and removal so exchanging an accessed parent for a link cannot
-redirect those operations. POSIX removal stays attached to the opened directory
-even if that directory is renamed; Windows prevents ancestor renames while
+redirect those operations. Reopening the absolute root pathname for each entry is
+avoided; a replaced root is rejected before use. POSIX removal stays attached to
+the opened directory even if that directory is renamed; Windows prevents ancestor renames while
 handles are held. Concurrent changes may still cause deletion to fail or leave
 partial results, and preflight is not a transaction or an immutable tree snapshot.
 Leaf removal acts on the current entry in the anchored parent, not a pinned leaf
