@@ -17,13 +17,15 @@ def _remove_step_locked(project_root: cli.Path, step_id: str) -> None:
     """
     import shutil
 
-    from .catalog import StepRegistry, StepValidationError
+    from .catalog import StepValidationError
 
     safe_step_id = cli._escape_markup(step_id)
-    registry = StepRegistry(project_root)
+    # Directory-level symlink refusal runs first so it keeps its specific
+    # message; registry construction then surfaces read errors cleanly.
+    steps_base_dir = step_helpers._resolve_steps_base_dir_or_exit(project_root)
+    registry = step_helpers._load_step_registry_or_exit(project_root)
     in_registry = registry.is_installed(step_id)
 
-    steps_base_dir = step_helpers._resolve_steps_base_dir_or_exit(project_root)
     step_dir = (steps_base_dir / step_id).resolve()
     # Defense-in-depth: even though step_helpers._validate_step_id_or_exit rejects path
     # separators, ensure that the resolved directory is a single child of
