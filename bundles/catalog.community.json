@@ -1,8 +1,31 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-06T00:00:00Z",
+  "updated_at": "2026-11-09T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/bundles/catalog.community.json",
   "bundles": {
+    "ado": {
+      "name": "Spec Kit for Azure DevOps",
+      "id": "ado",
+      "version": "0.3.1",
+      "role": "developer",
+      "description": "The ado extension plus the ado-lifecycle workflow: an ADO story to Done with a human gate on every board or PR change.",
+      "author": "praveenlavu",
+      "license": "MIT",
+      "download_url": "https://github.com/praveenlavu/spec-kit-ado/releases/download/v0.3.1/ado-0.3.1.zip",
+      "sha256": "f910adc38010329ecf333126d0843f6a519c003501925b14adb0b23f5f0ae504",
+      "repository": "https://github.com/praveenlavu/spec-kit-ado",
+      "requires": {
+        "speckit_version": ">=1.2.1"
+      },
+      "provides": {
+        "extensions": 1,
+        "presets": 0,
+        "steps": 0,
+        "workflows": 1
+      },
+      "tags": ["azure-devops", "issue-tracking", "hitl", "workflow", "governance"],
+      "verified": false
+    },
     "agentstandards": {
       "name": "Agentstandards Multi-Vendor Architecture",
       "id": "agentstandards",
