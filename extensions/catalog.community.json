@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-07T00:00:00Z",
+  "updated_at": "2026-11-09T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -5297,38 +5297,37 @@
       "updated_at": "2026-04-22T00:00:00Z"
     },
     "refine": {
-      "name": "Spec Refine",
+      "name": "Refine",
       "id": "refine",
-      "description": "Update specs in-place, propagate changes to plan and tasks, and diff impact across artifacts.",
-      "author": "Quratulain-bilal",
+      "description": "Amend the latest feature with fixes/additions, then run plan, tasks, analyze (with fixes) and implement in one pass",
+      "author": "Zdertis420",
       "version": "1.0.0",
-      "download_url": "https://github.com/Quratulain-bilal/spec-kit-refine/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/Quratulain-bilal/spec-kit-refine",
-      "homepage": "https://github.com/Quratulain-bilal/spec-kit-refine",
-      "documentation": "https://github.com/Quratulain-bilal/spec-kit-refine/blob/main/README.md",
-      "changelog": "https://github.com/Quratulain-bilal/spec-kit-refine/blob/main/CHANGELOG.md",
+      "download_url": "https://github.com/Zdertis420/spec-kit-refine/archive/refs/tags/v1.0.0.zip",
+      "sha256": "761fd3b043efd6fa9d41ddbe519cd2a6adac483a1cb4681e7ee4787195078eb6",
+      "repository": "https://github.com/Zdertis420/spec-kit-refine",
+      "homepage": "https://github.com/Zdertis420/spec-kit-refine",
+      "documentation": "https://github.com/Zdertis420/spec-kit-refine/blob/main/README.md",
+      "changelog": "",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.4.0"
+        "speckit_version": ">=0.1.0"
       },
       "provides": {
-        "commands": 4,
-        "hooks": 2
+        "commands": 1,
+        "hooks": 0
       },
       "tags": [
-        "refine",
-        "iterate",
-        "propagation",
         "workflow",
-        "specifications"
+        "iteration",
+        "automation"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-08T00:00:00Z",
-      "updated_at": "2026-04-08T00:00:00Z"
+      "updated_at": "2026-11-09T00:00:00Z"
     },
     "repoindex": {
       "name": "Repository Index",
