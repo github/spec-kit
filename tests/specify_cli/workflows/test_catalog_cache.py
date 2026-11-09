@@ -230,7 +230,8 @@ def test_regular_cache_fresh_refresh_and_stale_fallback(
 def test_url_policy_failure_does_not_use_expired_cache(
     tmp_path, monkeypatch, catalog_kind, force_refresh, rejection, target,
 ):
-    from unittest.mock import patch
+    from email.message import Message
+    from unittest.mock import MagicMock, patch
 
     from specify_cli.authentication import http
 
@@ -248,10 +249,17 @@ def test_url_policy_failure_does_not_use_expired_cache(
     error = WorkflowCatalogError if field == "workflows" else StepCatalogError
 
     with patch.object(http.urllib.request, "build_opener") as build_opener:
+        redirect_parent = MagicMock()
+        redirect_parent.open.side_effect = AssertionError("Rejected redirect was followed")
+
         def reject_redirect(request, timeout):
             handler = build_opener.call_args.args[0]
-            return handler.redirect_request(
-                request, None, 302, "Found", {}, target,
+            handler.add_parent(redirect_parent)
+            request.timeout = timeout
+            headers = Message()
+            headers["Location"] = target
+            return handler.http_error_302(
+                request, io.BytesIO(b""), 302, "Found", headers,
             )
 
         if rejection == "redirect":
@@ -268,6 +276,7 @@ def test_url_policy_failure_does_not_use_expired_cache(
             build_opener.return_value.open.assert_called_once()
         if rejection == "final":
             response.read.assert_not_called()
+        redirect_parent.open.assert_not_called()
 
     assert json.loads(data.read_text(encoding="utf-8")) == payload
     assert json.loads(metadata.read_text(encoding="utf-8")) == {"fetched_at": 0}

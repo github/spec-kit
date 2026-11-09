@@ -2244,6 +2244,77 @@ class TestRedirectStripping:
                 target,
             )
 
+    @pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
+    @pytest.mark.parametrize("header", ["Location", "URI"])
+    @pytest.mark.parametrize("target", [
+        "https://[::1",
+        "https://example.com:invalid/catalog.json",
+        "https:///catalog.json",
+        "https://:443/catalog.json",
+        "http:///catalog.json",
+        "file:///catalog.json",
+    ])
+    def test_redirect_response_rejects_malformed_location(self, code, header, target):
+        from email.message import Message
+        from unittest.mock import MagicMock
+        from urllib.request import Request
+
+        from specify_cli.authentication.http import RedirectPolicyError, _StripAuthOnRedirect
+
+        handler = _StripAuthOnRedirect(("example.com",))
+        parent = MagicMock()
+        handler.add_parent(parent)
+        request = Request("https://example.com/catalog.json")
+        request.timeout = 10
+        headers = Message()
+        headers[header] = target
+
+        with pytest.raises(RedirectPolicyError):
+            getattr(handler, f"http_error_{code}")(
+                request, io.BytesIO(b""), code, "Found", headers,
+            )
+        parent.open.assert_not_called()
+
+    @pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
+    @pytest.mark.parametrize("header", ["Location", "URI"])
+    @pytest.mark.parametrize("target,expected_url,expected_auth", [
+        ("/next.json", "https://example.com/next.json", "test-token"),
+        ("next.json", "https://example.com/next.json", "test-token"),
+        ("?page=2", "https://example.com/catalog.json?page=2", "test-token"),
+        ("//cdn.example.org/next.json", "https://cdn.example.org/next.json", None),
+        ("https://example.com/next file.json", "https://example.com/next%20file.json", "test-token"),
+    ])
+    def test_redirect_response_preserves_supported_locations(
+        self, code, header, target, expected_url, expected_auth,
+    ):
+        from email.message import Message
+        from unittest.mock import MagicMock
+        from urllib.request import Request
+
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+
+        handler = _StripAuthOnRedirect(("example.com",))
+        parent = MagicMock()
+        handler.add_parent(parent)
+        request = Request(
+            "https://example.com/catalog.json",
+            headers={"Authorization": "test-token"},
+        )
+        request.timeout = 10
+        headers = Message()
+        headers[header] = target
+        response = io.BytesIO(b"redirect body")
+
+        result = getattr(handler, f"http_error_{code}")(
+            request, response, code, "Found", headers,
+        )
+        assert result is parent.open.return_value
+        parent.open.assert_called_once()
+        redirected = parent.open.call_args.args[0]
+        assert redirected.full_url == expected_url
+        assert redirected.get_header("Authorization") == expected_auth
+        assert response.closed
+
     def test_strict_redirect_error_describes_target_and_allowed_localhost(self):
         from specify_cli.authentication.http import _StripAuthOnRedirect
         from urllib.request import Request

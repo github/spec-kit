@@ -94,10 +94,11 @@ def _validate_strict_redirect(old_url: str, new_url: str) -> None:
 class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
     """Redirect handler that guards every redirect it is installed for.
 
-    1. Run any caller-provided redirect validator.
-    2. Reject redirects that are not HTTPS with a hostname. HTTP loopback is
+    1. Reject malformed absolute targets before urllib normalizes their headers.
+    2. Run any caller-provided redirect validator.
+    3. Reject redirects that are not HTTPS with a hostname. HTTP loopback is
        allowed only when the previous hop is also loopback.
-    3. Drop ``Authorization`` when a redirect leaves trusted hosts or downgrades.
+    4. Drop ``Authorization`` when a redirect leaves trusted hosts or downgrades.
     """
 
     def __init__(
@@ -108,6 +109,31 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
         super().__init__()
         self._hosts = hosts
         self._redirect_validator = redirect_validator
+
+    def http_error_302(self, req, fp, code, msg, headers):
+        if "location" in headers:
+            target = headers["location"]
+        elif "uri" in headers:
+            target = headers["uri"]
+        else:
+            return super().http_error_302(req, fp, code, msg, headers)
+
+        try:
+            parsed = urlparse(target)
+            hostname = parsed.hostname
+            parsed.port
+        except ValueError as exc:
+            raise RedirectPolicyError(f"malformed redirect URL: {exc}") from exc
+
+        # urllib can otherwise normalize a hostless absolute URL onto the
+        # current host before redirect_request sees the original target.
+        if parsed.scheme and (parsed.scheme not in ("http", "https") or not hostname):
+            raise RedirectPolicyError(
+                "unsafe redirect URL: an absolute target must use HTTP(S) with a hostname"
+            )
+        return super().http_error_302(req, fp, code, msg, headers)
+
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         try:

@@ -199,6 +199,17 @@ A future shared fetch boundary may share URL validation, redirect validation,
 bounded reads, cache records, and error types. It must preserve each
 primitive's fallback policy until a separate behavior change is approved.
 
+The workflow and step URL-policy behavior above is an intentional transport
+hardening change: stale metadata must not mask a rejected URL or redirect during
+an online fetch, particularly when bundles rely on the result to validate a
+reference. Previously, a catalog callback could reject a redirect or final URL
+and still return expired metadata. Both catalog and shared HTTP validators now
+preserve these rejections as definitive catalog errors; ordinary fetch failures
+retain their existing stale-cache fallback. The shared redirect handler checks
+raw `Location` and legacy `URI` headers before urllib can normalize malformed
+absolute targets or raise an unclassified parsing error. Valid relative and
+scheme-relative redirects retain urllib's normal resolution behavior.
+
 ## Payload validation ownership
 
 The shared source layer should own source configuration, fetching, cache
