@@ -43,6 +43,7 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "mcode",
     "vibe",
     "muse",
+    "nexora",
     "omp",
     "opencode",
     "pi",
@@ -306,6 +307,33 @@ class TestAgentConfigConsistency:
     def test_agent_config_includes_pi(self):
         """AGENT_CONFIG should include pi."""
         assert "pi" in AGENT_CONFIG
+
+    # --- Nexora Code consistency checks ---
+
+    def test_nexora_in_agent_config(self):
+        """AGENT_CONFIG should include nexora as a no-CLI skills integration."""
+        assert "nexora" in AGENT_CONFIG
+        assert AGENT_CONFIG["nexora"]["name"] == "Nexora Code"
+        assert AGENT_CONFIG["nexora"]["folder"] == ".nexora/"
+        assert AGENT_CONFIG["nexora"]["commands_subdir"] == "skills"
+        assert AGENT_CONFIG["nexora"]["requires_cli"] is False
+        assert AGENT_CONFIG["nexora"]["install_url"] is not None
+
+    def test_nexora_in_extension_registrar(self):
+        """Extension command registrar should write nexora skills under .nexora/skills."""
+        cfg = CommandRegistrar.AGENT_CONFIGS
+
+        assert "nexora" in cfg
+        nexora_cfg = cfg["nexora"]
+        assert nexora_cfg["dir"] == ".nexora/skills"
+        assert nexora_cfg["format"] == "markdown"
+        assert nexora_cfg["args"] == "$ARGUMENTS"
+        assert nexora_cfg["extension"] == "/SKILL.md"
+        assert nexora_cfg["invoke_separator"] == "-"
+
+    def test_agent_config_includes_nexora(self):
+        """AGENT_CONFIG should include nexora."""
+        assert "nexora" in AGENT_CONFIG
 
     # --- Goose consistency checks ---
 

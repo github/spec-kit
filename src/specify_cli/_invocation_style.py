@@ -39,6 +39,7 @@ CONDITIONAL_SLASH_AGENTS: frozenset[str] = frozenset(
         "generic",
         "hermes",
         "lingma",
+        "nexora",
         "rovodev",
         "vibe",
     }

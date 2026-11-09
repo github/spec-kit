@@ -96,6 +96,7 @@ def _register_builtins() -> None:
     from .lingma import LingmaIntegration
     from .mcode import McodeIntegration
     from .muse import MuseIntegration
+    from .nexora import NexoraIntegration
     from .none import NoneIntegration
     from .omp import OmpIntegration
     from .opencode import OpencodeIntegration
@@ -141,6 +142,7 @@ def _register_builtins() -> None:
     _register(LingmaIntegration())
     _register(McodeIntegration())
     _register(MuseIntegration())
+    _register(NexoraIntegration())
     _register(NoneIntegration())
     _register(OmpIntegration())
     _register(OpencodeIntegration())
