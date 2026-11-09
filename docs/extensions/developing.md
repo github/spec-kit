@@ -237,6 +237,7 @@ Available hook points:
 - `before_checklist` / `after_checklist`: Before/after checklist generation
 - `before_clarify` / `after_clarify`: Before/after spec clarification
 - `before_constitution` / `after_constitution`: Before/after constitution update
+- `before_converge` / `after_converge`: Before/after convergence assessment
 - `before_bug_assess` / `after_bug_assess`: Before/after bug assessment (bundled `bug` extension)
 - `before_bug_fix` / `after_bug_fix`: Before/after bug remediation (bundled `bug` extension)
 - `before_bug_test` / `after_bug_test`: Before/after bug verification (bundled `bug` extension)
