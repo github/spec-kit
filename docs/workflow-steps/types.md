@@ -223,6 +223,7 @@ inputs:
 steps:
   - id: plan
     command: speckit.plan
+    integration: codex         # Codex takes context_size as a token count
     reasoning_effort: "high"   # Overrides the workflow default
     context_size: "200000"     # Quoted: values are strings
 
