@@ -1,16 +1,20 @@
 """Scoped filesystem operations; see design/file-helper.md for the contract."""
 
-from dataclasses import dataclass, field
 import codecs
 import errno
 import os
-from pathlib import Path, PurePath, PureWindowsPath
 import stat
 import tempfile
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass, field
+from pathlib import Path, PurePath, PureWindowsPath
 from typing import TypeVar
 
+from specify_cli._file_handles import _windows_handle, _windows_overwrite_fd
 
 _PathType = TypeVar("_PathType", bound=PurePath)
+_OVERWRITE_DIR_FD_SUPPORTED = os.open in os.supports_dir_fd
 
 
 def _strip_extended_length_prefix(path: _PathType) -> _PathType:
@@ -217,11 +221,49 @@ class FileHelper:
         if destination.exists():
             self._require_file(destination)
         codecs.lookup(encoding)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-        flags |= getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(destination, flags, 0o666)
-        with os.fdopen(fd, "w", encoding=encoding) as stream:
-            stream.write(content)
+        with self._overwrite_descriptor(destination) as fd:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise UnsupportedPathError(f"Expected a regular file: {destination}")
+            os.ftruncate(fd, 0)
+            with os.fdopen(fd, "w", encoding=encoding, closefd=False) as stream:
+                stream.write(content)
+
+    @contextmanager
+    def _overwrite_descriptor(self, destination: Path) -> Iterator[int]:
+        """Anchor the resolved hierarchy before opening a non-truncating leaf."""
+        parts = destination.relative_to(self._canonical_root).parts
+        with ExitStack() as stack:
+            if os.name == "nt":
+                current = self._canonical_root
+                stack.enter_context(_windows_handle(current, directory=True))
+                for part in parts[:-1]:
+                    current = current / part
+                    stack.enter_context(_windows_handle(current, directory=True))
+                yield stack.enter_context(_windows_overwrite_fd(destination))
+                return
+
+            if not (
+                _OVERWRITE_DIR_FD_SUPPORTED
+                and getattr(os, "O_NOFOLLOW", 0)
+                and getattr(os, "O_DIRECTORY", 0)
+                and getattr(os, "O_NONBLOCK", 0)
+            ):
+                raise OSError(errno.ENOTSUP, "Scoped text overwrite is unsupported on this platform")
+            directory_flags = (
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+            )
+            parent = os.open(self._canonical_root, directory_flags)
+            stack.callback(os.close, parent)
+            for part in parts[:-1]:
+                parent = os.open(part, directory_flags, dir_fd=parent)
+                stack.callback(os.close, parent)
+            flags = (
+                os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK
+                | getattr(os, "O_CLOEXEC", 0)
+            )
+            fd = os.open(parts[-1], flags, 0o666, dir_fd=parent)
+            stack.callback(os.close, fd)
+            yield fd
 
     def symlink(self, target: Path | str, path: Path | str) -> None:
         """Create a link to an existing contained regular file or directory.
