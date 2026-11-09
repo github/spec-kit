@@ -615,7 +615,7 @@ class TestCodexNoModelInvocationOwnership:
             path.chmod(0o644)
         assert result.exit_code == 0, result.output
         assert path.read_bytes() == edited
-        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "partial"
+        assert self.PLAN_REL in self._manifest(tmp_path).files
         assert self._other_policies(tmp_path) == []
 
         self._init(tmp_path)
@@ -671,7 +671,7 @@ class TestCodexNoModelInvocationOwnership:
         real_unlink = Path.unlink
 
         def unlink(self, *args, **kwargs):
-            if self == path:
+            if self.resolve() == path.resolve():
                 raise PermissionError("locked")
             return real_unlink(self, *args, **kwargs)
 
@@ -701,6 +701,68 @@ class TestCodexNoModelInvocationOwnership:
         manifest = self._setup(tmp_path, enabled=False)
         assert list(shared.glob("*/SKILL.md"))
         assert not [k for k in manifest.files if k.endswith("openai.yaml")]
+
+    @pytest.mark.skipif(
+        os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+        reason="needs POSIX permissions enforced for the current user",
+    )
+    def test_generated_file_unreadable_at_cleanup_is_deleted_on_retry(self, tmp_path):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        path.chmod(0)
+        try:
+            manifest = self._setup(tmp_path, enabled=False)
+        finally:
+            path.chmod(0o644)
+        assert manifest.ownership_modes[self.PLAN_REL] == "whole"
+        manifest.save()
+
+        self._setup(tmp_path, enabled=False)
+        assert not path.exists()
+        assert not path.parent.exists()
+
+    def test_cleaned_edit_of_a_former_core_policy_survives_upgrade(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        self._init(tmp_path)
+        rel = ".agents/skills/speckit-retired/agents/openai.yaml"
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "interface:\n  display_name: Retired\npolicy:\n  allow_implicit_invocation: false\n",
+            encoding="utf-8",
+        )
+        manifest = self._manifest(tmp_path)
+        manifest._files[rel] = "0" * 64
+        manifest._ownership_modes[rel] = "whole"
+        manifest.save()
+
+        result = _run_in_project(tmp_path, ["integration", "upgrade", "codex", "--force"])
+        assert result.exit_code == 0, result.output
+        assert self._yaml(path) == {"interface": {"display_name": "Retired"}}
+        assert self._manifest(tmp_path).ownership_modes[rel] == "partial"
+
+    def test_directory_at_policy_path_is_not_kept_tracked(self, tmp_path):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        path.unlink()
+        path.mkdir()
+        manifest = self._setup(tmp_path, enabled=False)
+        assert path.is_dir()
+        assert self.PLAN_REL not in manifest.files
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_symlinked_skill_dir_is_rejected_before_writing(self, tmp_path):
+        shared = tmp_path / "shared-plan"
+        shared.mkdir()
+        skills = tmp_path / ".agents" / "skills"
+        skills.mkdir(parents=True)
+        (skills / "speckit-plan").symlink_to(shared, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="--no-model-invocation.*symlink"):
+            self._setup(tmp_path)
+        assert not list(skills.glob("*/SKILL.md"))
+        assert not list(shared.iterdir())
 
     def test_stale_cleanup_never_deletes_policy_files(self):
         exclusions = get_integration("codex").stale_cleanup_exclusions()

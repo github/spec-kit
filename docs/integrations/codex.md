@@ -60,7 +60,8 @@ description in Codex's context.
   not kept. One that already sets it to `false` is left untouched. If an existing file
   cannot be read, is not valid YAML, or is not a mapping, setup stops with an
   error naming the file and leaves it unchanged. Setup with the option also
-  stops before writing anything if `.agents` or `.agents/skills` is a symlink.
+  stops before writing anything if `.agents`, `.agents/skills` or a core
+  `speckit-<command>` skill directory is a symlink.
   Once the policy has been removed from a file Spec Kit no longer tracks it, so
   a policy you set there yourself afterwards is never removed. Skills that commands other than
   `init`, `install` and `upgrade` register (for example presets that add core

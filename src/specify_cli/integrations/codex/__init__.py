@@ -178,25 +178,31 @@ class CodexIntegration(SkillsIntegration):
         """
         generated = IntegrationManifest(self.key, project_root, version="policy-cleanup")
         modes = prior.ownership_modes
+        protected = self.stale_cleanup_exclusions()
         for rel, recorded_hash in prior.files.items():
             if rel in keep or not self._is_policy_rel(rel):
                 continue
             if self._is_generated(project_root, rel, prior):
                 generated._files[rel] = recorded_hash
                 continue
-            if self._remove_policy(project_root, rel):
-                continue
             path = project_root / rel
-            if path.exists() or path.is_symlink():
-                # Unreadable, unparseable or unsafe: it may hold user edits, so
-                # it is partial and nothing deletes it.
-                self._retain(manifest, rel, recorded_hash, "partial")
+            if self._remove_policy(project_root, rel):
+                if modes[rel] == "whole" and rel not in protected:
+                    # No longer a core command, so upgrade's stale-file pass
+                    # would force-delete the user's edited file.
+                    self._retain(manifest, rel, recorded_hash, "partial")
+                continue
+            if path.is_file() or path.is_symlink():
+                # Unreadable, unparseable or unsafe: retry on a later run. The
+                # prior mode is kept so a generated file is still recognised,
+                # and deleted, once it can be read again.
+                self._retain(manifest, rel, recorded_hash, modes[rel])
         # Each entry was checked above, content-equal ones included.
         _, skipped = generated.uninstall(project_root, force=True, remove_manifest=False)
         for path in skipped:
             rel = path.relative_to(project_root).as_posix()
-            if path.exists() or path.is_symlink():
-                self._retain(manifest, rel, prior.files[rel], modes[rel])
+            if path.is_file() or path.is_symlink():
+                self._retain(manifest, rel, prior.files[rel], "whole")
 
     @staticmethod
     def _retain(manifest: IntegrationManifest, rel: str, recorded_hash: str, ownership: str) -> None:
@@ -244,14 +250,15 @@ class CodexIntegration(SkillsIntegration):
             from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
 
             skills_rel = self.registrar_config["dir"]
-            try:
-                # Policies are recorded and cleaned up by their lexical path,
-                # which a symlinked skills directory would not match.
-                _validate_record_path(Path(skills_rel), root)
-            except ValueError as exc:
-                raise ValueError(f"Cannot use --no-model-invocation: {exc}") from exc
             for name in sorted(CORE_COMMAND_NAMES):
                 rel = self._policy_rel(name)
+                try:
+                    # Policies are recorded and cleaned up by their lexical
+                    # path, which a symlinked skills or skill directory would
+                    # not match.
+                    _validate_record_path(Path(rel), root)
+                except ValueError as exc:
+                    raise ValueError(f"Cannot use --no-model-invocation: {exc}") from exc
                 agents_dir = (root / rel).parent
                 if agents_dir.exists() or agents_dir.is_symlink():
                     self._plan_policy(root, rel, prior)
@@ -262,6 +269,8 @@ class CodexIntegration(SkillsIntegration):
         if enabled:
             for skill_file in [f for f in created if f.name == "SKILL.md"]:
                 name = skill_file.parent.name
+                if skill_file.parent.parent != root / skills_rel:
+                    continue
                 if self._is_core_command_skill_dir(name):
                     plan = self._plan_policy(root, self._policy_rel(name.removeprefix("speckit-")), prior)
                     if plan is not None:
