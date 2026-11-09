@@ -148,6 +148,7 @@ def server(tmp_path, monkeypatch, tls_certificate):
     http = ThreadingHTTPServer(("127.0.0.1", 0), partial(Handler, directory=str(downloads)))
     cert_path, key_path = tls_certificate
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(cert_path, key_path)
     http.socket = context.wrap_socket(http.socket, server_side=True)
     monkeypatch.setenv("SSL_CERT_FILE", str(cert_path))
@@ -162,6 +163,27 @@ def server(tmp_path, monkeypatch, tls_certificate):
         http.shutdown()
         http.server_close()
         thread.join()
+
+
+def test_catalog_server_explicitly_requires_tls12(request, monkeypatch):
+    configured = []
+    minimum_version = ssl.SSLContext.minimum_version
+
+    def set_minimum_version(context, version):
+        configured.append((context, version))
+        minimum_version.fset(context, version)
+
+    monkeypatch.setattr(
+        ssl.SSLContext,
+        "minimum_version",
+        property(minimum_version.fget, set_minimum_version),
+    )
+    request.getfixturevalue("server")
+
+    assert len(configured) == 1
+    context, version = configured[0]
+    assert version == ssl.TLSVersion.TLSv1_2
+    assert context.minimum_version > ssl.TLSVersion.TLSv1_1
 
 
 def publish(server, *, metadata=None, code=None, version="1.0.0", members=None, archive="zip"):
