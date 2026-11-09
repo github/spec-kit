@@ -5833,7 +5833,7 @@
       "repository": "https://github.com/mauriziopinotti/spec-kit-sizing",
       "homepage": "https://github.com/mauriziopinotti/spec-kit-sizing",
       "documentation": "https://github.com/mauriziopinotti/spec-kit-sizing/blob/main/README.md",
-      "changelog": "",
+      "changelog": "https://github.com/mauriziopinotti/spec-kit-sizing/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
