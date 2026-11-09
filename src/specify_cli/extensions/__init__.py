@@ -1625,6 +1625,21 @@ class ExtensionManager:
             skill_dir_preexists = (
                 skill_subdir.exists() or skill_subdir.is_symlink()
             )
+            # Reject symlinked skill destinations before any write. The
+            # skills root itself is validated, but a symlinked per-skill
+            # directory would redirect SKILL.md outside the project, and
+            # the force path bypasses the pre-existing-directory guards
+            # below. Mirrors _find_extension_skill_dirs, which applies
+            # the same validation before removal.
+            from ..shared_infra import _validate_safe_shared_directory
+
+            trusted_root = self._extension_skill_trusted_root(skills_dir)
+            if trusted_root is None:
+                continue
+            try:
+                _validate_safe_shared_directory(trusted_root, skill_subdir)
+            except (OSError, ValueError):
+                continue
             CommandRegistrar._ensure_inside(cache_file, cache_root)
             if selected_ai == "generic" and skill_dir_preexists:
                 metadata = self.registry.get(manifest.id) or {}

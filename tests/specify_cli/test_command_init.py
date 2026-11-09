@@ -434,3 +434,69 @@ def test_init_force_registers_extensions_as_skills_in_skills_mode(tmp_path, monk
 
     assert (project / ".github" / "skills" / "speckit-test-ext-hello" / "SKILL.md").is_file()
     assert not (project / ".github" / "agents" / "speckit.test-ext.hello.agent.md").exists()
+
+
+def test_init_force_rejects_symlinked_extension_skill_destination(tmp_path, monkeypatch):
+    """Force re-init must not write SKILL.md through a symlinked skill dir (#5323).
+
+    With force=True the pre-existing-directory guards in
+    ``_register_extension_skills`` are bypassed, so a skill directory that
+    is a symlink to a location outside the project would receive the
+    generated SKILL.md. The destination must be rejected before any write.
+    """
+    from specify_cli.extensions import ExtensionManager
+
+    result = _init(tmp_path, "proj")
+    assert result.exit_code == 0, _strip(result.stdout)
+    project = tmp_path / "proj"
+
+    ext_dir = tmp_path / "test-ext"
+    (ext_dir / "commands").mkdir(parents=True)
+    (ext_dir / "extension.yml").write_text(
+        "schema_version: '1.0'\n"
+        "extension:\n"
+        "  id: test-ext\n"
+        "  name: Test Extension\n"
+        "  version: 1.0.0\n"
+        "  description: A test extension for skill registration\n"
+        "requires:\n"
+        "  speckit_version: '>=0.1.0'\n"
+        "provides:\n"
+        "  commands:\n"
+        "    - name: speckit.test-ext.hello\n"
+        "      file: commands/hello.md\n"
+        "      description: Test hello command\n",
+        encoding="utf-8",
+    )
+    (ext_dir / "commands" / "hello.md").write_text(
+        "---\n"
+        "description: \"Test hello command\"\n"
+        "---\n"
+        "\n"
+        "# Hello Command\n"
+        "\n"
+        "Run this to say hello.\n"
+        "$ARGUMENTS\n",
+        encoding="utf-8",
+    )
+    ExtensionManager(project).install_from_directory(
+        ext_dir, "0.1.0", register_commands=False
+    )
+
+    # Plant a symlink where the extension skill would be written, pointing
+    # outside the project.
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    skill_subdir = project / ".github" / "skills" / "speckit-test-ext-hello"
+    skill_subdir.parent.mkdir(parents=True, exist_ok=True)
+    os.symlink(outside, skill_subdir, target_is_directory=True)
+
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, [
+        "init", "--here", "--force", "--integration", "copilot",
+        "--script", "sh", "--non-interactive", "--ignore-agent-tools", "--offline",
+    ])
+    assert result.exit_code == 0, _strip(result.stdout)
+
+    assert not (outside / "SKILL.md").exists()
+    assert skill_subdir.is_symlink()
