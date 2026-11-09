@@ -1,8 +1,58 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-07T00:00:00Z",
+  "updated_at": "2026-11-09T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
+    "ado": {
+      "name": "Spec Kit for Azure DevOps — human-gated lifecycle",
+      "id": "ado",
+      "description": "Azure DevOps story to Done through Spec Kit, with a human sign-off before every board change.",
+      "author": "praveenlavu",
+      "version": "0.3.2",
+      "download_url": "https://github.com/praveenlavu/spec-kit-ado/archive/refs/tags/v0.3.2.zip",
+      "sha256": "1f6806c67de462a3a5e34e818c070dd49bd689bf0cb22a0fdc6078467b2fae4c",
+      "repository": "https://github.com/praveenlavu/spec-kit-ado",
+      "homepage": "https://github.com/praveenlavu/spec-kit-ado",
+      "documentation": "https://github.com/praveenlavu/spec-kit-ado/blob/v0.3.2/README.md",
+      "changelog": "https://github.com/praveenlavu/spec-kit-ado/blob/v0.3.2/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.2.1",
+        "tools": [
+          {
+            "name": "ado",
+            "version": ">=0.3.0",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "gh",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 13,
+        "hooks": 2
+      },
+      "tags": [
+        "azure-devops",
+        "issue-tracking",
+        "hitl",
+        "workflow",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-09T00:00:00Z",
+      "updated_at": "2026-11-09T00:00:00Z"
+    },
     "adrkit": {
       "name": "adrkit — decision memory for spec-driven development",
       "id": "adrkit",
