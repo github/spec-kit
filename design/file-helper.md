@@ -183,9 +183,14 @@ helpers for independent project/source/managed boundaries.
   After policy resolution, POSIX opens each resolved directory relative to an
   already-open parent descriptor with no-follow flags, using search/path-only
   access where supported so unreadable but searchable parents remain usable,
-  then opens the leaf without truncation. Windows pins each resolved directory
-  with non-reparse handles withholding delete sharing, then opens/creates a non-reparse leaf
-  without truncation and holds it through text I/O. Both paths check the opened
+  and closes the previous directory after opening its child. Descriptor usage
+  stays bounded independently of path depth. It then opens the leaf without
+  truncation. Windows retains every resolved directory's non-reparse handle,
+  withholding delete sharing, and opens an existing non-reparse leaf without
+  truncation. For a missing leaf, it uses exclusive CRT creation so the CRT
+  applies the process mask without querying or changing it in the helper. A
+  leaf introduced between these calls causes an explicit creation error.
+  The opened leaf remains held through text I/O. Both paths check the opened
   file type before truncating that same descriptor. An exchanged parent cannot
   redirect creation or truncation through a new link. Allowed links are still
   resolved by the normal policy walk; the anchored traversal operates on their
@@ -223,8 +228,7 @@ entries, not reject a whole project for excluded/unrelated links.
 
 Preflight detects static policy failures before recursive deletion or parent
 creation. Atomic writes recheck the original path before replacement, and
-deletion rechecks each accessed entry. Except for the anchored
-`overwrite_text` operation described above, portable path checks are **not** a
+deletion rechecks each accessed entry. Portable path checks are **not** a
 race-free sandbox: another process can exchange parents or entries between
 checks and syscalls, and an I/O failure during mutation can leave partial
 results. Protect against concurrent untrusted mutation separately; descriptor-

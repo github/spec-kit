@@ -39,13 +39,6 @@ def _open_windows_handle(path: Path, *, directory: bool, overwrite: bool = False
         _fields_ = [("attributes", wintypes.DWORD), ("tag", wintypes.DWORD)]
 
     kernel = _windows_api()
-    flags = 0x00200000 | 0x02000000
-    if overwrite:
-        # The CRT exposes no read-only mask query; restore it before opening.
-        mask = os.umask(0o200)
-        os.umask(mask)
-        if mask & 0o200:
-            flags |= 0x1  # FILE_ATTRIBUTE_READONLY for newly created files.
     # Attribute-only directory handles do not prevent renaming; include
     # FILE_LIST_DIRECTORY and withhold FILE_SHARE_DELETE for every ancestor.
     handle = kernel.CreateFileW(
@@ -53,8 +46,8 @@ def _open_windows_handle(path: Path, *, directory: bool, overwrite: bool = False
         (0x40000000 | 0x80) if overwrite else ((0x80 | 0x1) if directory else 0x80000000),
         0x3,
         None,
-        4 if overwrite else 3,  # OPEN_ALWAYS never truncates an existing file.
-        flags,
+        3,  # OPEN_EXISTING never creates or truncates a file.
+        0x00200000 | 0x02000000,
         None,
     )
     if handle == wintypes.HANDLE(-1).value:
@@ -87,15 +80,21 @@ def _windows_handle(path: Path, *, directory: bool) -> Iterator[int]:
 
 @contextmanager
 def _windows_overwrite_fd(path: Path) -> Iterator[int]:
-    """Open/create without truncation and transfer handle ownership to the CRT."""
-    import msvcrt
-
-    handle = _open_windows_handle(path, directory=False, overwrite=True)
+    """Open an existing target, or exclusively create it through the CRT."""
     try:
-        fd = msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
-    except BaseException:
-        _windows_api().CloseHandle(handle)
-        raise
+        handle = _open_windows_handle(path, directory=False, overwrite=True)
+    except FileNotFoundError:
+        # Exclusive CRT creation applies the process mask without following
+        # a leaf introduced after the existing-file open.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_BINARY, 0o666)
+    else:
+        try:
+            import msvcrt
+
+            fd = msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
+        except BaseException:
+            _windows_api().CloseHandle(handle)
+            raise
     try:
         yield fd
     finally:

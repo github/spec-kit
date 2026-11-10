@@ -1,6 +1,7 @@
 """Handle-based non-atomic text overwrite behavior."""
 
 import os
+import subprocess
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -8,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from specify_cli import file_helper
+from specify_cli import _file_handles, file_helper
 from specify_cli.file_helper import FileHelper, UnsupportedPathError
 
 
@@ -448,6 +449,52 @@ def test_native_windows_leaf_swap_at_open_never_follows_new_link(
         assert (root / "original").read_text() == "old"
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows CRT exclusive-create semantics required")
+@pytest.mark.parametrize("kind", ["file", "existing-target-link", "missing-target-link"])
+@pytest.mark.parametrize("allow", [False, True])
+def test_native_windows_leaf_introduced_before_crt_creation_is_not_followed(
+    tmp_path, monkeypatch, kind, allow
+):
+    root = tmp_path / "project"
+    root.mkdir()
+    leaf = root / "file"
+    outside = tmp_path / "outside"
+    if kind != "missing-target-link":
+        outside.write_text("outside")
+    if kind != "file":
+        try:
+            probe = root / "probe"
+            probe.symlink_to(outside)
+            probe.unlink()
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"Symlink creation unavailable: {exc}")
+    original = os.open
+    attempted = []
+
+    def insert(path, flags, mode):
+        assert Path(path) == leaf
+        assert flags & os.O_EXCL and not flags & os.O_TRUNC
+        attempted.append(path)
+        if kind == "file":
+            leaf.write_text("introduced")
+        else:
+            leaf.symlink_to(outside)
+        return original(path, flags, mode)
+
+    monkeypatch.setattr(_file_handles, "os", SimpleNamespace(**{**vars(os), "open": insert}))
+    with pytest.raises(OSError):
+        FileHelper(root, allow_symlinks=allow).overwrite_text("file", "new")
+    assert attempted == [leaf]
+    if kind == "missing-target-link":
+        assert not outside.exists()
+    else:
+        assert outside.read_text() == "outside"
+    if kind == "file":
+        assert leaf.read_text() == "introduced"
+    else:
+        assert leaf.is_symlink()
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative open required")
 @pytest.mark.parametrize("allow", [False, True])
 @pytest.mark.parametrize("existing", [False, True])
@@ -512,3 +559,39 @@ def test_leaf_swap_after_open_keeps_truncation_and_write_on_opened_file(
     assert leaf.is_symlink()
     assert (root / "original").read_text() == "new"
     assert (root / "original").stat().st_ino == inode
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor limits required")
+@pytest.mark.parametrize("depth", [1, 80])
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("allow", [False, True])
+def test_overwrite_descriptor_usage_is_independent_of_path_depth(tmp_path, depth, existing, allow):
+    parent = tmp_path
+    for _ in range(depth):
+        parent = parent / "d"
+        parent.mkdir()
+    if existing:
+        (parent / "file").write_text("longer old content")
+    result = subprocess.run(
+        [
+            sys.executable, "-c",
+            """
+import resource
+import sys
+from pathlib import Path
+from specify_cli.file_helper import FileHelper
+
+root = Path(sys.argv[1])
+parent = root.joinpath(*(["d"] * int(sys.argv[2])))
+files = FileHelper(root, allow_symlinks=sys.argv[3] == "True")
+_, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+resource.setrlimit(resource.RLIMIT_NOFILE, (64, hard))
+(parent / "native").write_text("native")
+files.overwrite_text(parent / "file", "new")
+assert (parent / "file").read_text() == "new"
+""",
+            str(tmp_path), str(depth), str(allow),
+        ],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

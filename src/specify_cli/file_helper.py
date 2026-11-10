@@ -258,17 +258,22 @@ class FileHelper:
                 directory_access | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
             )
             parent = os.open(self._canonical_root, directory_flags)
-            stack.callback(os.close, parent)
-            for part in parts[:-1]:
-                parent = os.open(part, directory_flags, dir_fd=parent)
-                stack.callback(os.close, parent)
-            flags = (
-                os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK
-                | getattr(os, "O_CLOEXEC", 0)
-            )
-            fd = os.open(parts[-1], flags, 0o666, dir_fd=parent)
-            stack.callback(os.close, fd)
-            yield fd
+            try:
+                for part in parts[:-1]:
+                    child = os.open(part, directory_flags, dir_fd=parent)
+                    os.close(parent)
+                    parent = child
+                flags = (
+                    os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK
+                    | getattr(os, "O_CLOEXEC", 0)
+                )
+                fd = os.open(parts[-1], flags, 0o666, dir_fd=parent)
+                try:
+                    yield fd
+                finally:
+                    os.close(fd)
+            finally:
+                os.close(parent)
 
     def symlink(self, target: Path | str, path: Path | str) -> None:
         """Create a link to an existing contained regular file or directory.
