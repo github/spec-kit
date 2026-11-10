@@ -320,6 +320,29 @@ class TestCodexDispatchSettings:
             "--json",
         ]
 
+    def test_overrides_follow_extra_args(self, monkeypatch, runs):
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CODEX_EXTRA_ARGS", "--sandbox workspace-write"
+        )
+        codex = get_integration("codex")
+        settings = {"reasoning_effort": "high", "context_size": "200000"}
+        tail = [
+            "--model", "gpt-5",
+            "-c", 'model_reasoning_effort="high"',
+            "-c", "model_context_window=200000",
+            "--json",
+        ]
+        assert codex.build_exec_args("do it", model="gpt-5", **settings) == [
+            "codex", "exec", "do it", "--sandbox", "workspace-write", *tail
+        ]
+        codex.dispatch_command(
+            "speckit.plan", "body", model="gpt-5", stream=False, **settings
+        )
+        (args,) = runs
+        assert args[1:] == [
+            "exec", "$speckit-plan body", "--sandbox", "workspace-write", *tail
+        ]
+
     def test_dispatch_command_rejects_before_the_cli_starts(self, runs):
         with pytest.raises(DispatchSettingsError) as excinfo:
             get_integration("codex").dispatch_command(

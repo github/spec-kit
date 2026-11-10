@@ -1495,6 +1495,42 @@ class TestCopilotDispatchSettings:
             "--output-format", "json",
         ]
 
+    @pytest.mark.parametrize(
+        ("skills_mode", "dispatch_head"),
+        [
+            (True, ["copilot", "-p", "/speckit-plan body", "--log-level", "debug"]),
+            (
+                False,
+                [
+                    "copilot", "-p", "body", "--log-level", "debug",
+                    "--agent", "speckit.plan",
+                ],
+            ),
+        ],
+        ids=["skills", "commands"],
+    )
+    def test_flags_follow_extra_args(
+        self, monkeypatch, runs, skills_mode, dispatch_head
+    ):
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS", "--log-level debug"
+        )
+        copilot = self._copilot(skills_mode)
+        settings = {"reasoning_effort": "high", "context_size": "long_context"}
+        tail = [
+            "--model", "gpt-5",
+            "--reasoning-effort", "high",
+            "--context", "long_context",
+            "--output-format", "json",
+        ]
+        assert copilot.build_exec_args("do it", model="gpt-5", **settings) == [
+            "copilot", "-p", "do it", "--log-level", "debug", *tail
+        ]
+        copilot.dispatch_command(
+            "speckit.plan", "body", model="gpt-5", stream=False, **settings
+        )
+        assert runs == [[*dispatch_head, *tail]]
+
     @pytest.mark.usefixtures("no_runs")
     @pytest.mark.parametrize(
         ("setting", "value"),

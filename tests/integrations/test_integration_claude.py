@@ -1417,6 +1417,27 @@ class TestClaudeDispatchSettings:
             "claude", "-p", "do it", "--effort", "ultra", "--output-format", "json"
         ]
 
+    def test_effort_follows_extra_args(self, monkeypatch, runs):
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS", "--permission-mode acceptEdits"
+        )
+        claude = get_integration("claude")
+        tail = ["--model", "sonnet", "--output-format", "json", "--effort", "high"]
+        assert claude.build_exec_args(
+            "do it", model="sonnet", reasoning_effort="high"
+        ) == ["claude", "-p", "do it", "--permission-mode", "acceptEdits", *tail]
+        claude.dispatch_command(
+            "speckit.plan",
+            "body",
+            model="sonnet",
+            stream=False,
+            reasoning_effort="high",
+        )
+        (args,) = runs
+        assert args[1:] == [
+            "-p", "/speckit-plan body", "--permission-mode", "acceptEdits", *tail
+        ]
+
     @staticmethod
     def _execute(monkeypatch, tmp_path, step, config, *, steps=None, **settings):
         monkeypatch.setattr(shutil, "which", lambda name, *a, **k: f"/bin/{name}")
