@@ -298,8 +298,14 @@ descriptor-relative or change their documented concurrency limitations.
   directory entry.
   On systems using the read-capable fallback, root establishment also requires
   read permission on the root.
-  Component resolution retains opened parent descriptors instead of reopening
-  every prefix. Recursive preflight and mutation carry each parent descriptor
+  POSIX component resolution and final parent anchoring retain only the current
+  traversal descriptor, opening its child before releasing the preceding one.
+  Their live descriptor count is bounded independently of operation-path depth,
+  in addition to the helper's retained root. Link-target jumps and `..` are
+  re-anchored through that root rather than following an opened directory's
+  physical parent after a rename. Windows retains the accessed ancestor handles
+  because its path-based access requires those directories to stay pinned.
+  Recursive preflight and mutation carry each parent descriptor
   through its children, opening directories a bounded number of times across
   the two passes. Descriptor-open counts grow linearly with visited directories
   and operation-path components; recursive descriptor lifetimes grow with tree

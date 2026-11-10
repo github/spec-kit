@@ -60,28 +60,54 @@ class _WalkDirectories:
     root_handle: int | Path
     flags: int
     resources: ExitStack
-    opened: dict[Path, int | Path] = field(default_factory=dict)
+    opened: dict[Path, Path] = field(default_factory=dict)
+    current: tuple[Path, int] | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.root_handle, int):
+            self.resources.callback(self._release_current)
+
+    def _release_current(self) -> None:
+        current, self.current = self.current, None
+        if current is not None:
+            os.close(current[1])
+
+    def _posix_directory(self, path: Path, root_fd: int) -> int:
+        current_path, parent = self.current or (self.root, root_fd)
+        if path == current_path:
+            return parent
+        if path.parent != current_path:
+            # Re-anchor jumps, including "..", rather than following a moved
+            # directory's physical parent outside the retained root.
+            self._release_current()
+            current_path, parent = self.root, root_fd
+        for part in path.relative_to(current_path).parts:
+            child = os.open(part, self.flags, dir_fd=parent)
+            previous = self.current
+            current_path = current_path / part
+            self.current = (current_path, child)
+            if previous is not None:
+                os.close(previous[1])
+            parent = child
+        return parent
 
     def directory(self, path: Path) -> int | Path:
+        path.relative_to(self.root)
+        if isinstance(self.root_handle, int):
+            return self._posix_directory(path, self.root_handle)
         if path == self.root:
             return self.root_handle
-        path.relative_to(self.root)
         if path not in self.opened:
-            parent = self.directory(path.parent)
-            if isinstance(parent, Path):
-                try:
-                    self.resources.enter_context(_windows_handle(path, directory=True))
-                except OSError as exc:
-                    if exc.errno == errno.EINVAL and getattr(exc, "winerror", None) is None:
-                        raise NotADirectoryError(
-                            errno.ENOTDIR, "Expected a directory", str(path)
-                        ) from exc
-                    raise
-                self.opened[path] = path
-            else:
-                fd = os.open(path.name, self.flags, dir_fd=parent)
-                self.resources.callback(os.close, fd)
-                self.opened[path] = fd
+            self.directory(path.parent)
+            try:
+                self.resources.enter_context(_windows_handle(path, directory=True))
+            except OSError as exc:
+                if exc.errno == errno.EINVAL and getattr(exc, "winerror", None) is None:
+                    raise NotADirectoryError(
+                        errno.ENOTDIR, "Expected a directory", str(path)
+                    ) from exc
+                raise
+            self.opened[path] = path
         return self.opened[path]
 
 
@@ -513,6 +539,13 @@ class FileHelper:
     @contextmanager
     def _deletion_directory(self, path: Path, *, root: int | Path) -> Iterator[int | Path]:
         parts = path.relative_to(self._canonical_root).parts
+        if isinstance(root, int):
+            with ExitStack() as resources:
+                directories = _WalkDirectories(
+                    self._canonical_root, root, self._directory_flags(), resources
+                )
+                yield directories.directory(path)
+            return
         with ExitStack() as resources:
             parent = root
             for part in parts:

@@ -603,6 +603,122 @@ def test_delete_exchange_during_parent_open(root, link, monkeypatch, allow):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor lifetime")
+@pytest.mark.parametrize("stage", ["resolve", "anchor", "delete"])
+@pytest.mark.parametrize("allow", [False, True])
+def test_deep_nonrecursive_delete_with_low_descriptor_limit(root, stage, allow):
+    import resource
+
+    if resource.getrlimit(resource.RLIMIT_NOFILE)[1] < 64:
+        pytest.skip("Hard descriptor limit is below the regression budget")
+    deepest = root / "tree"
+    for _ in range(80):
+        deepest /= "d"
+    deepest.mkdir(parents=True)
+    (deepest / "direct").write_text("control")
+    (deepest / "victim").write_text("selected")
+    script = """
+import os
+from pathlib import Path
+import resource
+import sys
+from specify_cli.file_helper import FileHelper
+
+root, deepest = map(Path, sys.argv[1:3])
+stage, allow = sys.argv[3], sys.argv[4] == "True"
+_, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+resource.setrlimit(resource.RLIMIT_NOFILE, (64, hard))
+(deepest / "direct").unlink()
+with FileHelper(root, allow_symlinks=allow) as files:
+    if stage == "resolve":
+        with files._deletion_root() as anchor:
+            assert files._path(deepest / "victim", follow_leaf=False, root_handle=anchor) == deepest / "victim"
+        files.delete(deepest / "victim")
+    elif stage == "anchor":
+        with files._deletion_root() as anchor:
+            with files._deletion_directory(deepest, root=anchor) as parent:
+                os.unlink("victim", dir_fd=parent)
+    else:
+        files.delete(deepest / "victim")
+assert not (deepest / "victim").exists()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(root), str(deepest), stage, str(allow)],
+        capture_output=True, text=True, timeout=60, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (deepest / "direct").exists()
+    assert not (deepest / "victim").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor lifetime")
+@pytest.mark.parametrize("target_kind", ["absolute", "parent-traversal"])
+def test_deep_contained_link_delete_with_low_descriptor_limit(root, link, target_kind):
+    import resource
+
+    if resource.getrlimit(resource.RLIMIT_NOFILE)[1] < 64:
+        pytest.skip("Hard descriptor limit is below the regression budget")
+    deepest = root / "tree"
+    for _ in range(80):
+        deepest /= "d"
+    deepest.mkdir(parents=True)
+    (deepest / "victim").write_text("selected")
+    target = deepest if target_kind == "absolute" else (
+        deepest.relative_to(root) / ".." / "d"
+    )
+    alias = link(root / "alias", target)
+    script = """
+from pathlib import Path
+import resource
+import sys
+from specify_cli.file_helper import FileHelper
+
+root = Path(sys.argv[1])
+_, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+resource.setrlimit(resource.RLIMIT_NOFILE, (64, hard))
+with FileHelper(root, allow_symlinks=True) as files:
+    files.delete("alias/victim")
+assert (root / "alias").is_symlink()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(root)],
+        capture_output=True, text=True, timeout=60, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert alias.is_symlink()
+    assert not (deepest / "victim").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative parent traversal")
+def test_link_parent_traversal_reanchors_after_directory_moves_outside_root(root, link, monkeypatch):
+    branch = root / "branch"
+    branch.mkdir()
+    (root / "selected").mkdir()
+    (root / "selected/victim").write_text("selected")
+    outside = root.parent / "outside"
+    (outside / "selected").mkdir(parents=True)
+    (outside / "selected/victim").write_text("keep")
+    alias = link(root / "alias", "branch/../selected")
+    original = os.open
+    attempted = False
+
+    def move_after_open(path, flags, *args, **kwargs):
+        nonlocal attempted
+        fd = original(path, flags, *args, **kwargs)
+        if path == "branch" and not attempted:
+            attempted = True
+            branch.rename(outside / "moved")
+        return fd
+
+    monkeypatch.setattr(os, "open", move_after_open)
+    with FileHelper(root, allow_symlinks=True) as files:
+        files.delete(alias / "victim")
+    assert attempted
+    assert not (root / "selected/victim").exists()
+    assert (outside / "selected/victim").read_text() == "keep"
+    assert alias.is_symlink()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor lifetime")
 def test_recursive_delete_preserves_deep_tree_support(root):
     import resource
 
