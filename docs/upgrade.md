@@ -21,6 +21,10 @@
 
 The CLI tool (`specify`) is separate from your project files. Upgrade it to get the latest features and bug fixes.
 
+If you installed from PyPI and want to keep that install route, follow the
+[PyPI upgrade instructions](install/pypi.md#upgrade). Repeating
+`uv tool install specify-cli` does not upgrade an existing installation.
+
 ### Recommended: `specify self upgrade`
 
 The CLI ships with two self-management commands that handle the common case automatically:
@@ -39,7 +43,11 @@ specify self upgrade
 specify self upgrade --tag vX.Y.Z[suffix]
 ```
 
-Bare `specify self upgrade` executes immediately, matching the no-prompt behavior of commands like `pip install -U` and `npm update`. The CLI classifies your runtime into one of: `uv tool`, `pipx`, `uvx (ephemeral)`, source checkout, or unsupported. Only `uv tool` and `pipx` are upgraded automatically; for `uv tool` installs, it runs `uv tool install specify-cli --force --from <git ref>` under the hood so pinned release tags work. The other paths print path-specific guidance and exit 0 without touching anything.
+Bare `specify self upgrade` executes immediately, matching the no-prompt behavior of commands like `pip install -U` and `npm update`. The CLI classifies your runtime into one of: `uv tool`, `pipx`, `uvx (ephemeral)`, source checkout, or unsupported. Only `uv tool` and `pipx` are upgraded automatically; for `uv tool` installs, it runs `uv tool install specify-cli --force --from <git ref>` under the hood so pinned release tags work. On Windows, `uv` cannot replace the tool environment `specify` is running from, so for `uv tool` installs `specify self upgrade` prints that command for you to run once it exits, and exits 0 without touching anything. Stop any other process running from that environment first, such as a `specify mcp` server, or uv can still fail partway through. The other paths print path-specific guidance and exit 0 without touching anything.
+
+Tool detection recognizes current and legacy default installation directories, as well as directories configured with `UV_TOOL_DIR`, `PIPX_HOME`, or `XDG_DATA_HOME`. Keep the same directory environment variables set when upgrading a relocated installation so the installer also targets that location.
+
+`PIPX_HOME` expands a leading `~` to your home directory. `UV_TOOL_DIR` treats it literally as part of a path relative to the working directory. `XDG_DATA_HOME` must be absolute; relative values, including those beginning with `~`, are ignored.
 
 Pinned tags must start with `vMAJOR.MINOR.PATCH`. Optional suffixes are limited to dev, alpha/beta/rc, and/or build metadata forms such as `v1.0.0-rc1`, `v0.8.0.dev0`, `v0.8.0+build.42`, or the combination `v1.0.0-rc1+build.42`; branch names, hash refs, `latest`, and bare versions without `v` are rejected.
 
@@ -95,7 +103,7 @@ When Spec Kit releases new features (like new slash commands, updated templates,
 
 For existing Spec Kit projects, use the manifest-aware upgrade path first:
 
-- ✅ **Integration command/skill files** (`.claude/skills/`, `.github/prompts/`, `.agents/skills/`, etc.)
+- ✅ **Integration command/skill files** (`.claude/skills/`, `.github/skills/`, `.agents/skills/`, etc.)
 - ✅ **Managed shared scripts and templates** (`.specify/scripts/`, `.specify/templates/`) when they are unchanged from the previous managed copy
 - ✅ **Installed extensions** when you run `specify extension update`
 
@@ -140,7 +148,7 @@ specify integration upgrade claude
 specify integration upgrade codex
 ```
 
-See the [integration reference](reference/integrations.md#upgrade-an-integration) for options such as `--script`, `--integration-options`, and `--force`.
+See the [integration reference](integrations/cli.md#upgrade-an-integration) for options such as `--script`, `--integration-options`, and `--force`.
 
 ### 3. Update installed extensions
 
@@ -150,7 +158,7 @@ Run:
 specify extension update
 ```
 
-With no extension argument, this updates all installed extensions. Use `specify extension update <extension-id-or-name>` to update only one extension. See the [extensions reference](reference/extensions.md#update-extensions) for details.
+With no extension argument, this updates all installed extensions. Use `specify extension update <extension-id-or-name>` to update only one extension. See the [extension CLI reference](extensions/cli.md#update-extensions) for details.
 
 ### Fallback: re-run init
 
@@ -420,7 +428,7 @@ This warning appears when you run `specify init --here` (or `specify init .`) in
 
 Only Spec Kit infrastructure files:
 
-- Agent command/skill files (`.claude/skills/`, `.github/prompts/`, etc.)
+- Agent command/skill files (`.claude/skills/`, `.github/skills/`, etc.)
 - Scripts in `.specify/scripts/`
 - Templates in `.specify/templates/`
 - Missing memory files such as `.specify/memory/constitution.md` may be created from templates; an existing constitution is preserved
@@ -498,15 +506,19 @@ The `specify` CLI tool is used for:
 - **Fallback recovery:** `specify init --here --force` when integration metadata is missing or the manifest-aware path cannot be used
 - **Diagnostics:** `specify check` to verify tool installation
 
-Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/speckit.plan`, etc.) are **permanently installed** in your project's agent folder (`.claude/`, `.github/prompts/`, `.pi/prompts/`, `.omp/commands/`, etc.). Your AI coding agent reads these command files directly—no need to run `specify` again.
+Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/speckit.plan`, etc.) are **permanently installed** in your project's agent folder (`.claude/`, `.github/skills/`, `.pi/prompts/`, `.omp/commands/`, etc.). Your AI coding agent reads these command files directly—no need to run `specify` again.
 
 **If your agent isn't recognizing slash commands:**
 
 1. **Verify command files exist:**
 
    ```bash
-   # For GitHub Copilot
-   ls -la .github/prompts/
+   # For GitHub Copilot (default skills layout)
+   ls -la .github/skills/
+
+   # For GitHub Copilot with the commands layout (--integration-options="--commands",
+   # or a project created before skills became the default and upgraded since)
+   ls -la .github/agents/ .github/prompts/
 
    # For Claude
    ls -la .claude/skills/

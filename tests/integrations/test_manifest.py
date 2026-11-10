@@ -33,6 +33,83 @@ class TestManifestRecordFile:
         m.record_existing("existing.txt")
         assert m.files["existing.txt"] == _sha256(f)
 
+    @pytest.mark.parametrize("link_kind", ["leaf", "ancestor", "dangling-leaf", "dangling-ancestor"])
+    @pytest.mark.parametrize("content", ["replacement", b"replacement"])
+    def test_record_file_rejects_lexical_symlinks(self, tmp_path, link_kind, content):
+        target_dir = tmp_path / "user"
+        target_dir.mkdir()
+        target = target_dir / "target.txt"
+        if not link_kind.startswith("dangling"):
+            target.write_text("user content")
+        if link_kind.endswith("leaf"):
+            link = tmp_path / "link.txt"
+            relative = "link.txt"
+            link.symlink_to(target)
+        else:
+            link = tmp_path / "linked-dir"
+            relative = "linked-dir/target.txt"
+            link.symlink_to(target_dir if link_kind == "ancestor" else tmp_path / "missing-dir", target_is_directory=True)
+        before = target.read_bytes() if target.exists() else None
+        m = IntegrationManifest("test", tmp_path)
+        with pytest.raises(ValueError, match="symlinked"):
+            m.record_file(relative, content)
+        assert m.files == {}
+        assert link.is_symlink()
+        assert (target.read_bytes() if target.exists() else None) == before
+        assert not (tmp_path / "missing-dir").exists()
+
+    def test_record_file_rejects_noncanonical_parent_segments(self, tmp_path):
+        (tmp_path / "nested").mkdir()
+        target = tmp_path / "safe.txt"
+        target.write_text("user content")
+        m = IntegrationManifest("test", tmp_path)
+        with pytest.raises(ValueError, match="canonical"):
+            m.record_file("nested/../safe.txt", "replacement")
+        assert target.read_text() == "user content"
+        assert m.files == {}
+
+    @pytest.mark.parametrize("content", ["replacement", b"replacement"])
+    def test_record_file_can_replace_a_regular_existing_file(self, tmp_path, content):
+        target = tmp_path / "target.txt"
+        target.write_text("original")
+        m = IntegrationManifest("test", tmp_path)
+        assert m.record_file("target.txt", content) == target
+        assert target.read_bytes() == b"replacement"
+        assert m.files == {"target.txt": hashlib.sha256(b"replacement").hexdigest()}
+
+    @pytest.mark.parametrize("ownership", ["whole", "partial", "shared"])
+    def test_ownership_round_trip_and_forced_uninstall(self, tmp_path, ownership):
+        m = IntegrationManifest("test", tmp_path)
+        path = m.record_file("generated.txt", "content", ownership=ownership)
+        m.record_existing("generated.txt")
+        m.save()
+        loaded = IntegrationManifest.load("test", tmp_path)
+        assert loaded.ownership_modes == {"generated.txt": ownership}
+        removed, skipped = loaded.uninstall(force=True)
+        assert path.exists() == (ownership != "whole")
+        assert removed == ([path] if ownership == "whole" else [])
+        assert skipped == ([] if ownership == "whole" else [path])
+
+    @pytest.mark.parametrize("ownership", ["unknown", False, [], None])
+    def test_invalid_record_ownership_fails_before_writing(self, tmp_path, ownership):
+        m = IntegrationManifest("test", tmp_path)
+        with pytest.raises(ValueError, match="ownership"):
+            m.record_file("generated.txt", "content", ownership=ownership)
+        assert not (tmp_path / "generated.txt").exists()
+
+    @pytest.mark.parametrize("ownership", [
+        {"generated.txt": "unknown"}, {"untracked.txt": "whole"}, [],
+    ])
+    def test_invalid_persisted_ownership_is_rejected(self, tmp_path, ownership):
+        m = IntegrationManifest("test", tmp_path)
+        m.record_file("generated.txt", "content")
+        path = m.save()
+        data = json.loads(path.read_text())
+        data["ownership_modes"] = ownership
+        path.write_text(json.dumps(data))
+        with pytest.raises(ValueError, match="ownership"):
+            IntegrationManifest.load("test", tmp_path)
+
 
 class TestManifestRecordExistingErrors:
     """Error-case coverage for ``record_existing`` symlink + non-file guards.
@@ -174,6 +251,70 @@ class TestManifestCheckModified:
 
 
 class TestManifestUninstall:
+    @pytest.mark.parametrize("force", [False, True])
+    @pytest.mark.parametrize("outside", [False, True])
+    def test_uninstall_preserves_files_under_symlinked_ancestors(self, tmp_path, force, outside):
+        root = tmp_path / "project"
+        root.mkdir()
+        m = IntegrationManifest("test", root)
+        m.record_file("owned/file.txt", "matching content")
+        m.save()
+        (root / "owned/file.txt").unlink()
+        (root / "owned").rmdir()
+        target = (tmp_path if outside else root) / "user"
+        target.mkdir()
+        victim = target / "file.txt"
+        victim.write_text("matching content")
+        (root / "owned").symlink_to(target, target_is_directory=True)
+        removed, skipped = m.uninstall(force=force)
+        assert victim.read_text() == "matching content"
+        assert removed == []
+        assert skipped == [root / "owned/file.txt"]
+        assert (root / "owned").is_symlink()
+
+    @pytest.mark.parametrize("force", [False, True])
+    def test_uninstall_rechecks_parent_after_observer(self, tmp_path, force):
+        from specify_cli.integrations._file_changes import file_change_observer
+
+        root = tmp_path / "project"
+        root.mkdir()
+        m = IntegrationManifest("test", root)
+        m.record_file("owned/file.txt", "matching content")
+        victim_dir = tmp_path / "user"
+        victim_dir.mkdir()
+        victim = victim_dir / "file.txt"
+        victim.write_text("matching content")
+
+        def swap_parent(path, before, removal):
+            if path == root / "owned/file.txt" and before:
+                (root / "owned").rename(root / "original")
+                (root / "owned").symlink_to(victim_dir, target_is_directory=True)
+
+        token = file_change_observer.set(swap_parent)
+        try:
+            removed, skipped = m.uninstall(force=force)
+        finally:
+            file_change_observer.reset(token)
+        assert victim.read_text() == "matching content"
+        assert removed == []
+        assert skipped == [root / "owned/file.txt"]
+
+    @pytest.mark.parametrize("force", [False, True])
+    def test_uninstall_preserves_manifest_under_symlinked_parent(self, tmp_path, force):
+        root = tmp_path / "project"
+        root.mkdir()
+        m = IntegrationManifest("test", root)
+        m.save()
+        integrations = root / ".specify/integrations"
+        integrations.rename(tmp_path / "user-manifests")
+        integrations.symlink_to(tmp_path / "user-manifests", target_is_directory=True)
+        victim = tmp_path / "user-manifests/test.manifest.json"
+        before = victim.read_bytes()
+        removed, skipped = m.uninstall(force=force)
+        assert victim.read_bytes() == before
+        assert removed == []
+        assert skipped == [m.manifest_path]
+
     def test_removes_unmodified(self, tmp_path):
         m = IntegrationManifest("test", tmp_path)
         m.record_file("d/f.txt", "content")

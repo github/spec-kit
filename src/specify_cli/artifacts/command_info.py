@@ -3,23 +3,37 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+from pathlib import Path
 
 import typer
 
-from ..presets import PresetError
-from . import (
-    ArtifactCatalog,
-    ArtifactError,
-    ArtifactKind,
-    ArtifactResolutionError,
-)
+from . import ArtifactError, ArtifactKind
 from ._commands import (
     _emit_error_and_exit,
     _require_json_flag,
-    _resolve_project_root,
     artifact_app,
 )
+from ._operation_info import (
+    ArtifactInfoRequest,
+    ArtifactInfoResolutionError,
+    get_artifact_info,
+)
+
+
+def _project_directory_from_cli_context() -> Path:
+    """Return the explicit project directory selected by the CLI invocation."""
+    invocation_directory = Path.cwd()
+    override = os.environ.get("SPECIFY_INIT_DIR", "")
+    if not override:
+        return invocation_directory
+    return (invocation_directory / override).resolve()
+
+
+def _resolve_project_root() -> Path:
+    """Preserve the command module's established project-root patch seam."""
+    return _project_directory_from_cli_context()
 
 
 @artifact_app.command("info")
@@ -50,15 +64,26 @@ def artifact_info(
         resolved_kind = kind  # type: ignore[assignment]
 
     try:
-        root = _resolve_project_root()
-        catalog = ArtifactCatalog(root)
-        payload = catalog.get_artifact_info(name, kind=resolved_kind)
+        result = get_artifact_info(
+            ArtifactInfoRequest(
+                project_directory=_resolve_project_root(),
+                identifier=name,
+                kind=resolved_kind,
+            )
+        )
     except ArtifactError as exc:
         _emit_error_and_exit(exc)
         return  # pragma: no cover
-    except (OSError, PresetError):
-        _emit_error_and_exit(ArtifactResolutionError())
+    except OSError:
+        _emit_error_and_exit(ArtifactInfoResolutionError(Path("."), name))
         return  # pragma: no cover
 
-    sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+    sys.stdout.write(
+        json.dumps(
+            result.to_json_dict(),
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+    )
     sys.stdout.write("\n")

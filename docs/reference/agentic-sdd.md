@@ -1,6 +1,6 @@
 # Agentic SDD
 
-The `/speckit.*` slash commands drive the core Spec-Driven Development (SDD) process — an **agentic process** your coding agent runs step by step. For a guided, end-to-end run see the [Quick Start Guide](../quickstart.md); this page is the detailed reference for each command — including arguments, output, and how they interact. For the philosophy behind the process, see [What is SDD?](../concepts/sdd.md). For bug triage, see [Agentic Bug Fix](agentic-bugfix.md).
+The `/speckit.*` slash commands drive the core Spec-Driven Development (SDD) process — an **agentic process** your coding agent runs step by step. For a guided, end-to-end run see the [Quick Start Guide](../quickstart.md); this page is the detailed reference for each command — including arguments, output, and how they interact. For the philosophy behind the process, see [Understand Spec-Driven Development](../how-to/sdd.md). For bug triage, see [Agentic Bug Fix](agentic-bugfix.md).
 
 The commands are designed to run in order, but only `/speckit.specify` is strictly required before `/speckit.plan`. The clarify, checklist, and analyze commands are quality gates you add for anything with meaningful ambiguity.
 
@@ -9,7 +9,7 @@ For evaluating an idea before committing to a specification, see
 independent of the SDD process.
 
 > [!NOTE]
-> Commands are written in `/speckit.*` form throughout this page. GitHub Copilot's default skills mode uses `/speckit-*`; some other agents use `$speckit-*` (e.g. Codex, ZCode) or `/skill:speckit-*` (e.g. Kimi). See [Command invocation](integrations.md#command-invocation).
+> Commands are written in `/speckit.*` form throughout this page. GitHub Copilot's default skills mode uses `/speckit-*`; some other agents use `$speckit-*` (e.g. Codex, ZCode) or `/skill:speckit-*` (e.g. Kimi). See [Command invocation](../integrations/cli.md#command-invocation).
 
 ```text
 /speckit.constitution -> /speckit.specify -> /speckit.clarify -> /speckit.plan -> /speckit.checklist -> /speckit.tasks -> /speckit.analyze -> /speckit.implement -> /speckit.converge
@@ -30,7 +30,6 @@ skills by default.
 | `/speckit.tasks` | `speckit-tasks` | Break the plan into actionable tasks |
 | `/speckit.implement` | `speckit-implement` | Execute the tasks |
 | `/speckit.converge` | `speckit-converge` | Assess implementation against the artifacts and append remaining work |
-| `/speckit.taskstoissues` | `speckit-taskstoissues` | Optionally convert tasks into GitHub issues |
 | `/speckit.clarify` | `speckit-clarify` | Resolve ambiguity before planning (optional quality gate; formerly `/quizme`) |
 | `/speckit.analyze` | `speckit-analyze` | Check artifact consistency after tasks and before implementation (optional quality gate) |
 | `/speckit.checklist` | `speckit-checklist` | Generate requirements-quality checklists (optional quality gate) |
@@ -157,17 +156,3 @@ It first prints a severity-graded findings summary, then resolves to one of two 
 
 - **Converged** — no gaps found. `tasks.md` is left byte-for-byte unchanged and you'll see a clean result like `✅ Converged — the implementation satisfies the spec, plan, and tasks.` You're done; proceed to review or open a PR.
 - **Tasks appended** — gaps found. Converge appends them as new tasks under a Convergence section in `tasks.md` and tells you how many. Run `/speckit.implement` again to complete them, then `/speckit.converge` once more. Each pass finds fewer items; repeat until it reports converged.
-
-## `/speckit.taskstoissues`
-
-Optionally converts an existing `tasks.md` into actionable GitHub issues. Run it
-after generating tasks when you want to track execution in GitHub:
-
-```text
-/speckit.taskstoissues
-```
-
-This command requires a GitHub `origin` remote and access to the GitHub MCP tools
-for listing and creating issues. It creates issues only in the repository
-identified by that remote and checks existing task IDs to avoid duplicates.
-It is not required to implement tasks or converge on a feature.

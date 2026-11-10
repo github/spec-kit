@@ -9,11 +9,14 @@ from rich.markup import escape as _escape_markup
 
 from .._console import console
 from . import BundlerError
+from .expansion import require_installable
 from ._commands import (
     _build_stack,
     _bundle_overlaps,
+    _expand_manifest,
     _default_script_type,
-    _fail,
+    _fail_with_notes,
+    _render_install_warnings,
     _resolve_init_integration,
     _run_init,
     _speckit_version,
@@ -41,21 +44,42 @@ def bundle_install(
         "--refresh",
         help="Refresh owned components from this bundle source",
     ),
+    version: str | None = typer.Option(
+        None,
+        "--version",
+        help="Install an exact bundle release from the catalog",
+    ),
 ) -> None:
     """Install a bundle's full component set through each primitive's machinery.
 
     ``bundle_id`` may be a catalog bundle id, or a local path to a built
     artifact (``.zip``), a bundle directory, or a ``bundle.yml`` file. Local
-    sources install directly without consulting the catalog stack. Use
+    sources install directly without consulting the catalog stack, unless
+    the manifest declares ``provides.bundles``: a local parent's references
+    resolve through the catalog stack and need network access. Use
     ``--refresh`` to update owned components from a newer local source.
     """
     try:
+        # Direct callers such as ``bundle init`` receive Typer's OptionInfo
+        # default rather than a parsed option.
+        if not isinstance(version, str):
+            version = None
+        if version is not None:
+            if not version.strip():
+                raise BundlerError("--version must not be blank.")
+            if Path(bundle_id).expanduser().exists():
+                raise BundlerError(
+                    "--version requires a catalog bundle ID, not a local path."
+                )
+            if refresh:
+                raise BundlerError("--version cannot be used with --refresh.")
         from .project import find_project_root
         from .adapters import DefaultPrimitiveInstaller
         from .installer import install_bundle
         from .resolver import resolve_install_plan
 
         project_root = find_project_root()
+        stack = None
 
         local_manifest = _local_manifest_source(bundle_id)
         if local_manifest is not None:
@@ -66,7 +90,7 @@ def bundle_install(
             )
         else:
             stack = _build_stack(project_root or Path.cwd(), offline=offline)
-            resolved = stack.resolve(bundle_id)
+            resolved = stack.resolve(bundle_id, version)
 
             if not resolved.install_allowed:
                 raise BundlerError(
@@ -75,6 +99,15 @@ def bundle_install(
                 )
             manifest = _download_manifest(resolved, offline=offline)
 
+        expanded = _expand_manifest(
+            project_root or Path.cwd(),
+            manifest,
+            offline=offline,
+            stack=stack,
+            download=_download_manifest,
+        )
+        require_installable(expanded)
+
         if project_root is None:
             init_integration = _resolve_init_integration(integration, manifest)
             # Resolve all hard compatibility gates before ``specify init``.
@@ -82,7 +115,7 @@ def bundle_install(
             # initialize a project and only then fail its version/integration
             # checks, leaving state behind after a failed install.
             resolve_install_plan(
-                manifest,
+                expanded,
                 speckit_version=_speckit_version(),
                 active_integration=init_integration,
                 integration_explicit=True,
@@ -96,7 +129,12 @@ def bundle_install(
             )
             project_root = require_project_root()
 
-        for overlap in _bundle_overlaps(project_root, manifest, offline=offline):
+        for overlap in _bundle_overlaps(
+            project_root,
+            manifest,
+            offline=offline,
+            components=expanded.components,
+        ):
             console.print(f"[yellow]![/yellow] {_escape_markup(str(overlap))}")
 
         # For an already-initialized project, the project's recorded active
@@ -106,7 +144,7 @@ def bundle_install(
         # target when the active integration cannot be determined.
         detected = active_integration(project_root)
         plan = resolve_install_plan(
-            manifest,
+            expanded,
             speckit_version=_speckit_version(),
             active_integration=detected if detected is not None else integration,
             integration_explicit=bool(integration) and detected is None,
@@ -122,9 +160,10 @@ def bundle_install(
             refresh=refresh,
         )
     except BundlerError as exc:
-        _fail(str(exc))
+        _fail_with_notes(exc)
         return
 
+    _render_install_warnings(result)
     refresh_summary = (
         f", {len(result.refreshed)} refreshed, {len(result.uninstalled)} removed"
         if refresh

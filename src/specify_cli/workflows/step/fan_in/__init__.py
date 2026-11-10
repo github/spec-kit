@@ -86,6 +86,25 @@ class FanInStep(StepBase):
                 output={"results": []},
             )
 
+        # Generated fan-out item aliases (``fan:template:0``) are reporting-only:
+        # declared step IDs cannot contain ':' (engine validation rejects them),
+        # so a ':' entry can never match a real step. The engine does not
+        # auto-validate before ``execute``, so reject it loudly here too rather
+        # than silently joining a stale or empty item result.
+        aliased_entries = [w for w in wait_for if ":" in w]
+        if aliased_entries:
+            first = aliased_entries[0]
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Fan-in step {config.get('id', '?')!r}: 'wait_for' entry "
+                    f"{first!r} looks like a fan-out item alias; wait on the "
+                    f"fan-out step id instead — its 'output.results' holds the "
+                    f"ordered item results."
+                ),
+                output={"results": []},
+            )
+
         # Collect results from referenced steps
         results = []
         for step_id in wait_for:

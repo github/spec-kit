@@ -29,6 +29,7 @@ from typing import Any
 
 import typer
 
+from .._capture import run_captured
 from ..base import IntegrationBase, IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
 
@@ -42,18 +43,28 @@ _COPILOT_CORE_COMMANDS = {
     "plan",
     "specify",
     "tasks",
-    "taskstoissues",
 }
 
 
 def _copilot_executable() -> str:
     """Return the executable name for Copilot CLI on this platform.
 
-    On Windows, subprocess invocation is reliable with `copilot.cmd`.
+    On Windows, the Copilot CLI may be installed as `copilot.exe` (e.g. a
+    standalone installer, winget, scoop) or as a `copilot.cmd` npm shim.
+    Probe `PATH` for whichever is actually present instead of assuming the
+    npm-style shim.
     """
-    if os.name == "nt":
-        return "copilot.cmd"
-    return "copilot"
+    if os.name != "nt":
+        return "copilot"
+
+    for candidate in ("copilot.exe", "copilot.cmd"):
+        if shutil.which(candidate):
+            return candidate
+
+    # Nothing found on PATH — keep the historical default so the
+    # resulting "command not found" error still references the
+    # previously expected name.
+    return "copilot.cmd"
 
 
 def _allow_all() -> bool:
@@ -165,6 +176,14 @@ class CopilotIntegration(IntegrationBase):
 
     # Mutable flag set by setup() — indicates the active scaffolding mode.
     _skills_mode: bool = True
+
+    # Set by ``setup()`` from ``--no-model-invocation`` (skills layout only);
+    # applies to core command skills only, since mandatory extension hooks rely
+    # on the model invoking the hook skill. Integrations are process-wide
+    # singletons, so preset overrides re-registered later in the same run see
+    # the same value. Commands that rewrite skills without calling ``setup()``
+    # (e.g. ``preset add``, ``integration use``) get the default.
+    _disable_model_invocation: bool = False
 
     def effective_invoke_separator(
         self,
@@ -287,15 +306,27 @@ class CopilotIntegration(IntegrationBase):
                 ),
             ),
         )
+        opts.append(
+            IntegrationOption(
+                "--no-model-invocation",
+                is_flag=True,
+                default=False,
+                help=(
+                    "Install core command skills as user-invocable only "
+                    "(disable-model-invocation: true); skills layout only, documented for VS Code"
+                ),
+            ),
+        )
         return opts
 
     def _resolve_executable(self) -> str:
         """Return the Copilot CLI executable, respecting the env-var override.
 
         Checks ``SPECKIT_INTEGRATION_COPILOT_EXECUTABLE`` first.  Falls
-        back to the platform-specific default from ``_copilot_executable()``
-        (``copilot.cmd`` on Windows, ``copilot`` elsewhere) so that
-        existing behaviour is preserved when the env var is unset.
+        back to the platform-specific default from ``_copilot_executable()``:
+        on Windows this probes ``PATH`` for ``copilot.exe`` then
+        ``copilot.cmd``, only falling back to ``copilot.cmd`` when neither is
+        found; elsewhere it is always ``copilot``.
         """
         env_name = "SPECKIT_INTEGRATION_COPILOT_EXECUTABLE"
         override = os.environ.get(env_name, "").strip()
@@ -356,6 +387,8 @@ class CopilotIntegration(IntegrationBase):
         stream: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        output_json: bool | None = None,
+        capture_max_bytes: int | None = None,
     ) -> dict[str, Any]:
         """Dispatch via ``--agent speckit.<stem>`` instead of slash-commands.
 
@@ -367,6 +400,11 @@ class CopilotIntegration(IntegrationBase):
         (``/speckit-<stem>``).
         """
         import subprocess
+
+        if stream and capture_max_bytes is not None:
+            raise ValueError("capture_max_bytes requires stream=False.")
+        if output_json is None:
+            output_json = not stream
 
         self.validate_runtime_config(integration_args, integration_options)
 
@@ -400,7 +438,7 @@ class CopilotIntegration(IntegrationBase):
             cli_args.append("--yolo")
         if model:
             cli_args.extend(["--model", model])
-        if not stream:
+        if output_json:
             cli_args.extend(["--output-format", "json"])
 
         cwd = str(project_root) if project_root else None
@@ -423,6 +461,14 @@ class CopilotIntegration(IntegrationBase):
                 "stdout": "",
                 "stderr": "",
             }
+
+        if capture_max_bytes is not None:
+            return run_captured(
+                cli_args,
+                cwd=cwd,
+                timeout=timeout,
+                max_bytes=capture_max_bytes,
+            ).as_dispatch_result()
 
         result = subprocess.run(
             cli_args,
@@ -454,14 +500,78 @@ class CopilotIntegration(IntegrationBase):
         exclusions.add(".vscode/settings.json")
         return exclusions
 
+    @staticmethod
+    def _inject_frontmatter_flag(content: str, key: str, value: str = "true") -> str:
+        """Insert ``key: value`` before the closing ``---`` if not already present."""
+        lines = content.splitlines(keepends=True)
+        dash_count = 0
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith(f"{key}:"):
+                return content
+
+        out: list[str] = []
+        dash_count = 0
+        injected = False
+        for line in lines:
+            if line.rstrip("\n\r") == "---":
+                dash_count += 1
+                if dash_count == 2 and not injected:
+                    eol = "\r\n" if line.endswith("\r\n") else "\n"
+                    out.append(f"{key}: {value}{eol}")
+                    injected = True
+            out.append(line)
+        return "".join(out)
+
+    @staticmethod
+    def _skill_name_from_content(content: str) -> str | None:
+        """Return the ``name:`` field of a skill's first frontmatter block."""
+        dash_count = 0
+        for line in content.splitlines():
+            stripped = line.rstrip("\r\n")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith("name:"):
+                name = stripped[len("name:"):].strip().strip('"').strip("'")
+                return name or None
+        return None
+
+    @staticmethod
+    def _is_core_command_skill(name: str | None) -> bool:
+        from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+
+        return bool(name) and name.startswith("speckit-") and (
+            name.removeprefix("speckit-") in CORE_COMMAND_NAMES
+        )
+
     def post_process_skill_content(self, content: str) -> str:
         """Inject shared hook guidance into Copilot skill content.
 
         Delegates to :class:`_CopilotSkillsHelper` for shared post-processing.
         The ``mode:`` frontmatter field is intentionally omitted: VS Code
         Copilot Agent Skills do not support it (see issue #2799).
+
+        ``disable-model-invocation: true`` is added to core command skills
+        when the last ``setup()`` in this process was given
+        ``--no-model-invocation`` in the skills layout. Otherwise the key is
+        omitted, which VS Code treats as ``false``.
         """
-        return _CopilotSkillsHelper().post_process_skill_content(content)
+        updated = _CopilotSkillsHelper().post_process_skill_content(content)
+        if self._disable_model_invocation and self._is_core_command_skill(
+            self._skill_name_from_content(updated)
+        ):
+            updated = self._inject_frontmatter_flag(
+                updated, "disable-model-invocation"
+            )
+        return updated
 
     def setup(
         self,
@@ -478,15 +588,24 @@ class CopilotIntegration(IntegrationBase):
         """
         parsed_options = parsed_options or {}
         self._skills_mode = self.is_skills_mode(parsed_options, project_root)
-        if self._skills_mode:
-            created = self._setup_skills(project_root, manifest, parsed_options, **opts)
-        else:
-            created = self._setup_commands(project_root, manifest, parsed_options, **opts)
-
-        # Install agent runtime events
-        event_files = self.emit_events(
-            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+        self._disable_model_invocation = (
+            self._skills_mode and parsed_options.get("no_model_invocation") is True
         )
+        try:
+            if self._skills_mode:
+                created = self._setup_skills(project_root, manifest, parsed_options, **opts)
+            else:
+                created = self._setup_commands(project_root, manifest, parsed_options, **opts)
+
+            # Install agent runtime events
+            event_files = self.emit_events(
+                project_root, manifest, events=opts.get("events"), parsed_options=parsed_options,
+                force=opts.get("force", False),
+            )
+        except BaseException:
+            self._disable_model_invocation = False
+            raise
+
         created.extend(event_files)
         return created
 
@@ -562,13 +681,16 @@ class CopilotIntegration(IntegrationBase):
         settings_src = self._vscode_settings_path()
         if settings_src and settings_src.is_file():
             dst_settings = project_root / ".vscode" / "settings.json"
-            dst_settings.parent.mkdir(parents=True, exist_ok=True)
             if dst_settings.exists():
                 # Merge into existing — don't track since we can't safely
                 # remove the user's settings file on uninstall.
                 self._merge_vscode_settings(settings_src, dst_settings)
             else:
-                shutil.copy2(settings_src, dst_settings)
+                from .._file_changes import changing_file
+
+                with changing_file(dst_settings):
+                    dst_settings.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(settings_src, dst_settings)
                 self.record_file_in_manifest(dst_settings, project_root, manifest)
                 created.append(dst_settings)
 
@@ -601,7 +723,9 @@ class CopilotIntegration(IntegrationBase):
             content = path.read_text(encoding="utf-8")
             updated = self.post_process_skill_content(content)
             if updated != content:
-                path.write_bytes(updated.encode("utf-8"))
+                from .._file_changes import write_bytes
+
+                write_bytes(path, updated.encode("utf-8"))
                 self.record_file_in_manifest(path, project_root, manifest)
 
         return created
@@ -664,6 +788,12 @@ class CopilotIntegration(IntegrationBase):
         if not changed:
             return
 
-        dst.write_text(
-            json.dumps(existing, indent=4) + "\n", encoding="utf-8"
+        # A lone surrogate (\ud800) can't be UTF-8 encoded; write it back as its JSON escape.
+        from .._file_changes import write_text
+
+        write_text(
+            dst,
+            json.dumps(existing, indent=4, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+            errors="backslashreplace",
         )

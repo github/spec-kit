@@ -4,18 +4,24 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
+import stat
+import tempfile
 import time
 from dataclasses import dataclass
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from ...._download_security import (
-    MAX_JSON_CATALOG_BYTES as MAX_JSON_CATALOG_BYTES,
     read_response_limited,
 )
+from ..._catalog_cache import read_cache_json, write_cache_json
+
+logger = logging.getLogger(__name__)
 
 
 def _max_json_catalog_bytes() -> int:
@@ -36,6 +42,19 @@ class StepCatalogError(Exception):
 
 class StepValidationError(StepCatalogError):
     """Validation error for step catalog config or step data."""
+
+
+class _DuplicateCatalogField(StepCatalogError):
+    """An ambiguous JSON object in a step catalog."""
+
+
+def _unique_json_fields(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateCatalogField(f"Duplicate field '{key}' in step catalog.")
+        result[key] = value
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -111,48 +130,104 @@ class StepRegistry:
         return default_registry
 
     def save(self) -> None:
-        """Persist registry to disk.
-
-        Raises ``StepValidationError`` with a clear message on filesystem
-        errors (read-only fs, permission denied, ...) so callers can surface
-        a clean error to the user rather than an unhandled ``OSError``.
-        """
+        """Persist registry atomically without truncating an existing file."""
         if self._has_symlinked_parent() or self.registry_path.is_symlink():
             raise StepValidationError(
                 "Refusing to write step registry through a symlinked path."
             )
+        fd = -1
+        tmp: str | None = None
         try:
             self.steps_dir.mkdir(parents=True, exist_ok=True)
-            with open(self.registry_path, "w", encoding="utf-8") as f:
+            fd, tmp = tempfile.mkstemp(
+                dir=str(self.registry_path.parent),
+                prefix=f".{self.registry_path.name}.",
+                suffix=".tmp",
+            )
+            # Keep the exclusive descriptor open while writing and checking the
+            # path so a replaced temporary file can never be committed.
+            with os.fdopen(os.dup(fd), "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=2)
-        except OSError as exc:
+                f.flush()
+                os.fsync(f.fileno())
+            try:
+                if self.registry_path.exists():
+                    existing = self.registry_path.stat(follow_symlinks=False)
+                    if stat.S_ISREG(existing.st_mode) and hasattr(os, "fchmod"):
+                        os.fchmod(fd, stat.S_IMODE(existing.st_mode))
+                    if stat.S_ISREG(existing.st_mode) and hasattr(os, "fchown"):
+                        try:
+                            os.fchown(fd, existing.st_uid, existing.st_gid)
+                        except PermissionError:
+                            pass
+            except OSError:
+                # Persisting valid data is more important than preserving mode
+                # or ownership metadata when that best-effort operation fails.
+                pass
+            staged = os.stat(tmp, follow_symlinks=False)
+            opened = os.fstat(fd)
+            if (
+                not stat.S_ISREG(staged.st_mode)
+                or staged.st_dev != opened.st_dev
+                or staged.st_ino != opened.st_ino
+            ):
+                raise OSError("Staged step registry changed before commit")
+            os.close(fd)
+            fd = -1
+            os.replace(tmp, self.registry_path)
+            tmp = None
+        except (OSError, TypeError, ValueError) as exc:
             raise StepValidationError(
                 f"Failed to write step registry at {self.registry_path}: {exc}"
             ) from exc
+        finally:
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            if tmp is not None:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
 
     def add(self, step_id: str, metadata: dict[str, Any]) -> None:
         """Add or update an installed step entry."""
         import copy
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         raw_existing = self.data["steps"].get(step_id)
+        had_entry = step_id in self.data["steps"]
         # Corrupted-but-parseable registries may hold non-dict entries; treat
         # them as absent rather than crashing on existing.get() (mirrors
         # WorkflowRegistry.add).
         existing = raw_existing if isinstance(raw_existing, dict) else {}
         metadata_to_store = copy.deepcopy(metadata)
         metadata_to_store["installed_at"] = existing.get(
-            "installed_at", datetime.now(timezone.utc).isoformat()
+            "installed_at", datetime.now(UTC).isoformat()
         )
-        metadata_to_store["updated_at"] = datetime.now(timezone.utc).isoformat()
+        metadata_to_store["updated_at"] = datetime.now(UTC).isoformat()
         self.data["steps"][step_id] = metadata_to_store
-        self.save()
+        try:
+            self.save()
+        except (StepValidationError, TypeError, ValueError):
+            if had_entry:
+                self.data["steps"][step_id] = raw_existing
+            else:
+                del self.data["steps"][step_id]
+            raise
 
     def remove(self, step_id: str) -> bool:
         """Remove an installed step entry. Returns True if found."""
         if step_id in self.data["steps"]:
+            removed_entry = self.data["steps"][step_id]
             del self.data["steps"][step_id]
-            self.save()
+            try:
+                self.save()
+            except (StepValidationError, TypeError, ValueError):
+                self.data["steps"][step_id] = removed_entry
+                raise
             return True
         return False
 
@@ -199,15 +274,6 @@ class StepCatalog:
         self.steps_dir = project_root / ".specify" / "workflows" / "steps"
         self.cache_dir = self.steps_dir / ".cache"
 
-    def _is_cache_path_safe(self) -> bool:
-        """Return False if any component of the cache path is a symlink."""
-        current = self.project_root
-        for part in (".specify", "workflows", "steps", ".cache"):
-            current = current / part
-            if current.is_symlink():
-                return False
-        return True
-
     # -- Catalog resolution -----------------------------------------------
 
     def _validate_catalog_url(self, url: str) -> None:
@@ -232,8 +298,11 @@ class StepCatalog:
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):
+            # A scheme-less value (``example.com/catalog.json``) would otherwise read
+            # "got ://". The value itself is not echoed: callers render errors as Rich markup.
+            got = f"{parsed.scheme}://" if parsed.scheme else "a URL with no scheme"
             raise StepValidationError(
-                f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
+                f"Catalog URL must use HTTPS (got {got}). "
                 "HTTP is only allowed for localhost."
             )
         if not hostname:
@@ -253,6 +322,15 @@ class StepCatalog:
             raise StepValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
             ) from exc
+        indexed_entries = self._parse_catalog_config(data, config_path)
+        if indexed_entries is None:
+            return None
+        return [entry for _, entry in indexed_entries]
+
+    def _parse_catalog_config(
+        self, data: Any, config_path: Path
+    ) -> list[tuple[int, StepCatalogEntry]] | None:
+        """Validate and order sources, retaining their original YAML positions."""
         # Same two guards as WorkflowCatalog._load_catalog_config above, kept in
         # lockstep: this is the step-catalog twin of that loader and read the
         # same way. Dropping ``or {}`` stops a falsy non-mapping top level from
@@ -276,7 +354,7 @@ class StepCatalog:
         if not catalogs_data:
             return None
 
-        entries: list[StepCatalogEntry] = []
+        entries: list[tuple[int, StepCatalogEntry]] = []
         for idx, item in enumerate(catalogs_data):
             if not isinstance(item, dict):
                 raise StepValidationError(
@@ -315,15 +393,18 @@ class StepCatalog:
             else:
                 install_allowed = bool(raw_install)
             entries.append(
-                StepCatalogEntry(
-                    url=url,
-                    name=str(item.get("name", f"catalog-{idx + 1}")),
-                    priority=priority,
-                    install_allowed=install_allowed,
-                    description=str(item.get("description", "")),
+                (
+                    idx,
+                    StepCatalogEntry(
+                        url=url,
+                        name=str(item.get("name", f"catalog-{idx + 1}")),
+                        priority=priority,
+                        install_allowed=install_allowed,
+                        description=str(item.get("description", "")),
+                    ),
                 )
             )
-        entries.sort(key=lambda e: e.priority)
+        entries.sort(key=lambda item: item[1].priority)
         if not entries:
             raise StepValidationError(
                 f"Catalog config {config_path} contains {len(catalogs_data)} "
@@ -390,36 +471,36 @@ class StepCatalog:
     def _is_url_cache_valid(self, url: str) -> bool:
         """Check if cached data for a URL is still fresh."""
         _, meta_file = self._get_cache_paths(url)
-        if not meta_file.exists():
-            return False
         try:
-            with open(meta_file, encoding="utf-8") as f:
-                meta = json.load(f)
+            meta = read_cache_json(self.project_root, meta_file)
             if not isinstance(meta, dict):
                 return False
             fetched_at = float(meta.get("fetched_at", 0))
             return (time.time() - fetched_at) < self.CACHE_DURATION
-        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        except (UnicodeError, json.JSONDecodeError, OSError, TypeError, ValueError):
             return False
 
     def _fetch_single_catalog(
         self, entry: StepCatalogEntry, force_refresh: bool = False
     ) -> dict[str, Any]:
         """Fetch a single catalog, using cache when possible."""
-        cache_safe = self._is_cache_path_safe()
         cache_file, meta_file = self._get_cache_paths(entry.url)
 
-        if cache_safe and not force_refresh and self._is_url_cache_valid(entry.url):
+        if not force_refresh and self._is_url_cache_valid(entry.url):
             try:
-                with open(cache_file, encoding="utf-8") as f:
-                    cached = json.load(f)
+                cached = read_cache_json(
+                    self.project_root, cache_file, object_pairs_hook=_unique_json_fields,
+                )
                 if isinstance(cached, dict):
                     return cached
+            except _DuplicateCatalogField:
+                raise
             except (UnicodeDecodeError, json.JSONDecodeError, OSError):
                 # Ignore invalid/unreadable cache and fall back to fetching from source.
                 pass
 
         from urllib.parse import urlparse
+
         from specify_cli.authentication.http import open_url as _open_url
 
         def _validate_url(url: str) -> None:
@@ -471,18 +552,23 @@ class StepCatalog:
                         max_bytes=_max_json_catalog_bytes(),
                         error_type=StepCatalogError,
                         label="step catalog",
-                    ).decode("utf-8")
+                    ).decode("utf-8"),
+                    object_pairs_hook=_unique_json_fields,
                 )
+        except _DuplicateCatalogField:
+            raise
         except Exception as exc:
-            if cache_safe and cache_file.exists():
-                try:
-                    with open(cache_file, encoding="utf-8") as f:
-                        cached = json.load(f)
-                    if isinstance(cached, dict):
-                        return cached
-                except (json.JSONDecodeError, ValueError, OSError):
-                    # Stale-cache read failed; let the original fetch error propagate.
-                    pass
+            try:
+                cached = read_cache_json(
+                    self.project_root, cache_file, object_pairs_hook=_unique_json_fields,
+                )
+                if isinstance(cached, dict):
+                    return cached
+            except _DuplicateCatalogField:
+                raise
+            except (UnicodeError, json.JSONDecodeError, ValueError, OSError):
+                # Stale-cache read failed; let the original fetch error propagate.
+                pass
             raise StepCatalogError(
                 f"Failed to fetch catalog from {entry.url}: {exc}"
             ) from exc
@@ -492,15 +578,14 @@ class StepCatalog:
                 f"Catalog from {entry.url} is not a valid JSON object."
             )
 
-        if cache_safe:
-            try:
-                self.cache_dir.mkdir(parents=True, exist_ok=True)
-                with open(cache_file, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2)
-                with open(meta_file, "w", encoding="utf-8") as f:
-                    json.dump({"url": entry.url, "fetched_at": time.time()}, f)
-            except OSError:
-                pass  # Proceed without caching if disk write fails
+        try:
+            write_cache_json(self.project_root, cache_file, data, indent=2)
+            write_cache_json(
+                self.project_root, meta_file,
+                {"url": entry.url, "fetched_at": time.time()},
+            )
+        except OSError as exc:
+            logger.warning("Could not safely cache step catalog %s: %s", entry.url, exc)
 
         return data
 
@@ -515,6 +600,8 @@ class StepCatalog:
         for entry in reversed(catalogs):
             try:
                 data = self._fetch_single_catalog(entry, force_refresh)
+            except _DuplicateCatalogField:
+                raise
             except StepCatalogError:
                 fetch_errors += 1
                 continue
@@ -527,6 +614,7 @@ class StepCatalog:
                     step_data["_install_allowed"] = entry.install_allowed
                     merged[step_id] = step_data
             elif isinstance(steps, list):
+                seen_in_source: set[str] = set()
                 for step_data in steps:
                     if not isinstance(step_data, dict):
                         continue
@@ -535,6 +623,11 @@ class StepCatalog:
                         continue
                     step_id = str(raw_step_id).strip()
                     if step_id:
+                        if step_id in seen_in_source:
+                            raise StepCatalogError(
+                                f"Duplicate step ID '{step_id}' in catalog '{entry.name}'."
+                            )
+                        seen_in_source.add(step_id)
                         step_data["id"] = step_id
                         step_data["_catalog_name"] = entry.name
                         step_data["_install_allowed"] = entry.install_allowed
@@ -550,10 +643,13 @@ class StepCatalog:
         query: str | None = None,
     ) -> list[dict[str, Any]]:
         """Search step types across all configured catalogs."""
+        from ._versions import available_versions
+
         merged = self._get_merged_steps()
         results: list[dict[str, Any]] = []
 
         for step_id, step_data in merged.items():
+            available_versions(step_data, step_id)
             step_data.setdefault("id", step_id)
             if query:
                 q = query.lower()
@@ -569,13 +665,18 @@ class StepCatalog:
             results.append(step_data)
         return results
 
-    def get_step_info(self, step_id: str) -> dict[str, Any] | None:
-        """Get details for a specific step from the catalog."""
+    def get_step_info(
+        self, step_id: str, version: str | None = None
+    ) -> dict[str, Any] | None:
+        """Get the current or an exact release from the winning catalog."""
+        from ._versions import select_release
+
         merged = self._get_merged_steps()
         step = merged.get(step_id)
         if step:
             step.setdefault("id", step_id)
-        return step
+            return select_release(step, step_id, version)
+        return None
 
     def get_catalog_configs(self) -> list[dict[str, Any]]:
         """Return current catalog configuration as a list of dicts."""
@@ -675,7 +776,12 @@ class StepCatalog:
         return "added"
 
     def remove_catalog(self, index: int) -> str:
-        """Remove a catalog source by index (0-based). Returns the removed name."""
+        """Remove a project source by its index in the active catalog list."""
+        if os.environ.get("SPECKIT_STEP_CATALOG_URL", "").strip():
+            raise StepValidationError(
+                "The active catalog comes from SPECKIT_STEP_CATALOG_URL. "
+                "Unset that variable to remove a project catalog source."
+            )
         config_path = self.project_root / ".specify" / "step-catalogs.yml"
         if not config_path.exists():
             raise StepValidationError("No step catalog config file found.")
@@ -686,25 +792,15 @@ class StepCatalog:
             raise StepValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        if data is None:
-            data = {}
-        elif not isinstance(data, dict):
+        entries = self._parse_catalog_config(data, config_path) or []
+
+        if index < 0 or index >= len(entries):
             raise StepValidationError(
-                "Catalog config file is corrupted (expected a mapping)."
-            )
-        catalogs = data.get("catalogs", [])
-        if not isinstance(catalogs, list):
-            raise StepValidationError(
-                "Catalog config 'catalogs' must be a list."
+                f"Catalog index {index} out of range (0-{len(entries) - 1})."
             )
 
-        if index < 0 or index >= len(catalogs):
-            raise StepValidationError(
-                f"Catalog index {index} out of range (0-{len(catalogs) - 1})."
-            )
-
-        removed = catalogs.pop(index)
-        data["catalogs"] = catalogs
+        source_index, entry = entries[index]
+        data["catalogs"].pop(source_index)
 
         try:
             with open(config_path, "w", encoding="utf-8") as f:
@@ -716,6 +812,4 @@ class StepCatalog:
                 f"Failed to write catalog config {config_path}: {exc}"
             ) from exc
 
-        if isinstance(removed, dict):
-            return removed.get("name", f"catalog-{index + 1}")
-        return f"catalog-{index + 1}"
+        return entry.name

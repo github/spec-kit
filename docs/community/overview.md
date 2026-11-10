@@ -1,10 +1,20 @@
 # Community
 
-The Spec Kit community builds extensions, presets, bundles, walkthroughs, and companion projects that expand what you can do with Spec-Driven Development. All community contributions are independently created and maintained by their respective authors.
+The Spec Kit community builds integrations, extensions, presets, workflows, workflow steps, bundles, walkthroughs, and companion projects that expand what you can do with Spec Kit. All community contributions are independently created and maintained by their respective authors.
 
 > [!NOTE]
 > Review community source code before installation and use it at your own
 > discretion. A catalog listing is not an audit or endorsement.
+
+Learn how discovery-only community sources and approved private sources fit
+together in the [catalog reference](../overview/catalogs.md).
+
+## Integrations
+
+Integrations connect Spec Kit to coding agents. Community external adapters
+have their own package and catalog contracts, separate from built-in agents.
+
+[Browse community integrations](integrations.md)
 
 ## Extensions
 
@@ -17,6 +27,21 @@ Extensions add new capabilities to Spec Kit — domain-specific commands, extern
 Presets customize how Spec Kit behaves — overriding templates, commands, and terminology without changing any tooling. Community presets range from language localizations to entirely different development methodologies.
 
 [Browse community presets →](presets.md)
+
+## Workflows
+
+Workflows compose reusable steps into repeatable, resumable processes, with
+inputs, control flow, and review gates chosen by their authors.
+
+[Browse community workflows](workflows.md)
+
+## Workflow step types
+
+Workflow step types add reusable executable behavior that workflows can select
+with `type:`. The community catalog is discovery-only; vet a step's source
+before installing or running it.
+
+[Browse community workflow step types](workflow-steps.md)
 
 ## Bundles
 
@@ -39,7 +64,14 @@ Community projects that extend, visualize, or build on Spec Kit — including VS
 ## Contribute a component
 
 To publish your own work, follow the
-[Extension Publishing Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md),
-the [Presets Publishing Guide](https://github.com/github/spec-kit/blob/main/presets/PUBLISHING.md),
-or the [Community Bundles guide](bundles.md). For help choosing a component type,
-see [Customize Spec Kit](../guides/customization.md).
+[Integration Contribution Guide](../integrations/contributing.md),
+[Extension Publishing Guide](../extensions/publishing.md),
+[Presets Publishing Guide](../presets/publishing.md),
+[Workflow Publishing Guide](../workflows/publishing.md),
+[Community Workflow Step Types guide](workflow-steps.md), or
+[Bundle Publishing Guide](../bundles/publishing.md).
+
+## See also
+
+- [Adapt Spec Kit to your process](../how-to/customization.md)
+- [Catalog discovery and trust](../overview/catalogs.md)

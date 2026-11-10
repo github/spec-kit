@@ -37,7 +37,12 @@ FEATURE_ASSESS_LABELS = {
     "feature-kill",
     "feature-invalid",
 }
-COMMUNITY_SUBMISSION_WORKFLOWS = (
+PR_ASSESS_LABELS = {
+    "pr-description-aligned",
+    "pr-description-needs-update",
+    "pr-description-inconclusive",
+}
+ARCHIVE_SUBMISSION_WORKFLOWS = (
     (
         "bundle",
         "bundle-submission",
@@ -58,6 +63,16 @@ COMMUNITY_SUBMISSION_WORKFLOWS = (
         "presets/catalog.community.json",
         "docs/community/presets.md",
         "Do not modify any other files",
+    ),
+)
+COMMUNITY_SUBMISSION_WORKFLOWS = (
+    *ARCHIVE_SUBMISSION_WORKFLOWS,
+    (
+        "workflow-step",
+        "workflow-step-submission",
+        "workflows/step-catalog.community.json",
+        "docs/community/workflow-steps.md",
+        "Edit only `workflows/step-catalog.community.json`",
     ),
 )
 REPOSITORY_OWNED_DRAFT_PR_EXEMPTION = (
@@ -150,11 +165,11 @@ def _safe_output_config(compiled: dict) -> dict:
     return json.loads(step["env"]["GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG"])
 
 
-def _bundle_success_label_step() -> dict:
-    _, _, source, _ = _agentic_workflow("add-community-bundle")
+def _bundle_success_label_step(kind="bundle") -> dict:
+    _, _, source, _ = _agentic_workflow(f"add-community-{kind}")
     return _workflow_step(
         source["jobs"]["conclusion"]["pre-steps"],
-        "Mark bundle submission passed after PR creation",
+        f"Mark {'bundle' if kind == 'bundle' else 'step'} submission passed after PR creation",
     )
 
 
@@ -175,8 +190,8 @@ def test_bundle_success_labels_run_after_successful_pr_publication():
     assert compiled["jobs"]["agent"]["permissions"]["issues"] == "read"
 
 
-def _run_bundle_success_labels(result, pr_number, labels, fail_api=""):
-    step = _bundle_success_label_step()
+def _run_bundle_success_labels(result, pr_number, labels, fail_api="", kind="bundle"):
+    step = _bundle_success_label_step(kind)
     harness = r"""
 const fs = require('node:fs');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
@@ -220,18 +235,21 @@ const shouldRun = new Function('needs', `return ${input.condition}`)(needs);
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+@pytest.mark.parametrize("kind", ["bundle", "workflow-step"])
 @pytest.mark.parametrize("labels", [
     ["bundle-submission", "validation-failed"],
     ["bundle-submission", "validation-failed", "needs-info", "triaged"],
     ["bundle-submission", "validation-passed"],
 ])
-def test_bundle_success_labels_correct_omitted_agent_updates(labels):
-    result = _run_bundle_success_labels("success", "37", labels)
+def test_bundle_success_labels_correct_omitted_agent_updates(labels, kind):
+    labels = [f"{kind}-submission" if label == "bundle-submission" else label for label in labels]
+    result = _run_bundle_success_labels("success", "37", labels, kind=kind)
     assert result["error"] is None
     assert result["labels"] == sorted(
         (set(labels) - {"validation-failed", "needs-info"}) | {"validation-passed"}
     )
     assert result["calls"][-1]["api"] == "addLabels"
+    assert result["calls"][-1]["args"]["labels"] == ["validation-passed"]
     for call in result["calls"]:
         assert call["args"]["owner"] == "test-owner"
         assert call["args"]["repo"] == "test-repo"
@@ -239,25 +257,61 @@ def test_bundle_success_labels_correct_omitted_agent_updates(labels):
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+@pytest.mark.parametrize("kind", ["bundle", "workflow-step"])
 @pytest.mark.parametrize(("status", "pr_number"), [
     ("success", ""), ("failure", ""), ("failure", "37"),
     ("cancelled", "37"), ("skipped", ""),
 ])
-def test_bundle_success_labels_do_not_run_without_successful_publication(status, pr_number):
-    labels = ["bundle-submission", "validation-failed"]
-    result = _run_bundle_success_labels(status, pr_number, labels)
+def test_bundle_success_labels_do_not_run_without_successful_publication(status, pr_number, kind):
+    labels = [f"{kind}-submission", "validation-failed"]
+    result = _run_bundle_success_labels(status, pr_number, labels, kind=kind)
     assert result == {"labels": sorted(labels), "calls": [], "error": None}
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+@pytest.mark.parametrize("kind", ["bundle", "workflow-step"])
 @pytest.mark.parametrize("fail_api", ["listLabelsOnIssue", "removeLabel", "addLabels"])
-def test_bundle_success_labels_surface_api_errors(fail_api):
+def test_bundle_success_labels_surface_api_errors(fail_api, kind):
     result = _run_bundle_success_labels(
-        "success", "37", ["bundle-submission", "validation-failed"], fail_api
+        "success", "37", [f"{kind}-submission", "validation-failed"], fail_api, kind
     )
     assert result["error"] == f"API failure: {fail_api}"
     assert result["calls"][-1]["api"] == fail_api
     assert "validation-passed" not in result["labels"]
+
+
+@pytest.mark.parametrize("name", [
+    "add-community-bundle", "add-community-extension", "add-community-preset",
+    "bug-assess", "bug-fix", "bug-test", "feature-assess",
+])
+def test_agentic_workflow_labels_are_applied_not_suggested(name):
+    source_text, compiled_text, source, compiled = _agentic_workflow(name)
+    assert source["safe-outputs"]["add-labels"]["issue-intent"] is False
+    assert _safe_output_config(compiled)["add_labels"]["issue_intent"] is False
+    agent_config_step = _workflow_step(
+        compiled["jobs"]["agent"]["steps"], "Generate Safe Outputs Config"
+    )
+    agent_config = json.loads(agent_config_step["env"]["GH_AW_SAFE_OUTPUTS_CONFIG"])
+    assert agent_config["add_labels"]["issue_intent"] is False
+    responsibilities = " ".join(
+        source_text.split("## Label Responsibilities\n", 1)[1].split("\n## ", 1)[0].split()
+    )
+    assert "Applying the outcome labels is your responsibility" in responsibilities
+    assert (
+        "Use the `add_labels` safe output on source issue "
+        "#${{ github.event.issue.number }}"
+    ) in responsibilities
+    assert "with plain strings in its `labels` array" in responsibilities
+    assert (
+        "Never emit label objects with `suggest: true` or suggestion-only output."
+    ) in responsibilities
+    assert f"{{{{#runtime-import .github/workflows/{name}.md}}}}" in compiled_text
+    if name.startswith("add-community-"):
+        assert 'For a Passed outcome, emit `labels: ["validation-passed"]`' in responsibilities
+        assert 'for a Failed outcome, emit `labels: ["validation-failed"]`' in responsibilities
+        assert (
+            "this requirement does not turn environment blockers into submission failures."
+        ) in responsibilities
 
 
 def test_github_actions_are_pinned_to_full_commit_shas():
@@ -281,6 +335,62 @@ def test_github_actions_are_pinned_to_full_commit_shas():
     assert unpinned_refs == []
 
 
+@pytest.mark.parametrize("event_name", ["push", "pull_request", "schedule", "workflow_dispatch"])
+def test_pytest_matrix_covers_supported_python_versions_on_all_platforms(event_name):
+    workflow = yaml.safe_load(
+        (WORKFLOWS_DIR / "test.yml").read_text(encoding="utf-8")
+    )
+    triggers = workflow.get("on", workflow.get(True))
+    assert set(triggers) == {"push", "pull_request", "schedule", "workflow_dispatch"}
+    assert triggers["push"]["branches"] == ["main"]
+    job = workflow["jobs"]["pytest"]
+    matrix = job["strategy"]["matrix"]
+    assert set(matrix) == {"os", "python-version"}
+    assert matrix["os"] == ["ubuntu-latest", "windows-latest", "macos-latest"]
+    expression = re.fullmatch(
+        r"\$\{\{ fromJSON\(\(github\.event_name == 'schedule' \|\| "
+        r"github\.event_name == 'workflow_dispatch'\) "
+        r"&& '([^']+)' \|\| '([^']+)'\) \}\}",
+        matrix["python-version"],
+    )
+    assert expression is not None
+    versions = json.loads(
+        expression.group(1 if event_name in {"schedule", "workflow_dispatch"} else 2)
+    )
+    combinations = [(os_name, version) for os_name in matrix["os"] for version in versions]
+    expected_versions = (
+        ["3.11", "3.12", "3.13", "3.14", "3.15"]
+        if event_name in {"schedule", "workflow_dispatch"}
+        else ["3.11", "3.14", "3.15"]
+    )
+    expected = {
+        (os_name, version)
+        for os_name in ["ubuntu-latest", "windows-latest", "macos-latest"]
+        for version in expected_versions
+    }
+    assert set(combinations) == expected
+    assert len(combinations) == (15 if event_name in {"schedule", "workflow_dispatch"} else 9)
+    assert job["runs-on"] == "${{ matrix.os }}"
+    setup_python = next(
+        step for step in job["steps"]
+        if step.get("uses", "").startswith("actions/setup-python@")
+    )
+    assert setup_python["with"]["python-version"] == "${{ matrix.python-version }}"
+
+
+def test_pytest_workflow_keeps_push_and_pr_checks_with_weekly_and_manual_coverage():
+    workflow = yaml.safe_load(
+        (WORKFLOWS_DIR / "test.yml").read_text(encoding="utf-8")
+    )
+    triggers = workflow.get("on", workflow.get(True))
+    assert triggers == {
+        "push": {"branches": ["main"]},
+        "pull_request": None,
+        "workflow_dispatch": None,
+        "schedule": [{"cron": "17 4 * * 1"}],
+    }
+
+
 def test_publish_tag_validation_uses_environment_variable():
     steps = _publish_workflow_steps()
 
@@ -288,6 +398,210 @@ def test_publish_tag_validation_uses_environment_variable():
         step = steps[step_name]
         assert step["env"]["TAG"] == "${{ inputs.tag }}"
         assert "${{ inputs.tag }}" not in step["run"]
+
+
+def _release_workflow_steps():
+    workflow = yaml.safe_load(
+        (WORKFLOWS_DIR / "release.yml").read_text(encoding="utf-8")
+    )
+    return {step["name"]: step for step in workflow["jobs"]["release"]["steps"]}
+
+
+RELEASE_VERSION_STEPS = (
+    "Check if release already exists",
+    "Generate release notes",
+    "Create GitHub Release",
+)
+
+
+def test_release_version_uses_environment_variables():
+    steps = _release_workflow_steps()
+    for name in RELEASE_VERSION_STEPS:
+        step = steps[name]
+        assert step["env"]["VERSION"] == "${{ steps.version.outputs.tag }}"
+        assert "${{ steps.version.outputs.tag }}" not in step["run"]
+
+
+@requires_bash
+@pytest.mark.parametrize("tag", ["v0.1.11", "v0.2.0", "v1.0.0"])
+def test_release_tag_validation_accepts_valid_tag(tmp_path, tag):
+    output = tmp_path / "github output"
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c",
+         _release_workflow_steps()["Extract version from tag"]["run"]],
+        cwd=tmp_path,
+        env={**os.environ, "GITHUB_REF": f"refs/tags/{tag}", "GITHUB_OUTPUT": str(output)},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert output.read_text() == f"tag={tag}\n"
+    assert f"Building release for {tag}" in result.stdout
+
+
+@requires_bash
+@pytest.mark.parametrize("tag", [
+    "", "1.2.3", "v1.2", "v1.2.3.4", "v1.2.3-rc1", "v1.2.3+build",
+    "v1.a.3", "v1.2.3\nother=value", "v1.2.3$(touch${IFS}injected)",
+    "v1.2.3`touch${IFS}injected`", 'v1.2.3";touch${IFS}injected;#',
+])
+def test_release_tag_validation_rejects_invalid_tag_before_output(tmp_path, tag):
+    output = tmp_path / "github-output"
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c",
+         _release_workflow_steps()["Extract version from tag"]["run"]],
+        cwd=tmp_path,
+        env={**os.environ, "GITHUB_REF": f"refs/tags/{tag}", "GITHUB_OUTPUT": str(output)},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode != 0
+    assert "is not a valid release tag" in result.stdout
+    assert not output.exists()
+    assert not (tmp_path / "injected").exists()
+
+
+@requires_bash
+@pytest.mark.parametrize("step_name", RELEASE_VERSION_STEPS)
+@pytest.mark.parametrize("tag", ["v1.2.3", "v1.2.3$(touch${IFS}injected)"])
+def test_release_steps_treat_version_as_data(tmp_path, step_name, tag):
+    step = _release_workflow_steps()[step_name]
+    script = step["run"].replace("${{ steps.version.outputs.tag }}", tag)
+    stubs = """
+gh() { printf '%s\\n' "$@" >> gh-args; }
+git() {
+  case "$1" in
+    tag) echo v0.0.1 ;;
+    rev-list) echo 1 ;;
+    log) echo '- Example change' ;;
+    *) return 1 ;;
+  esac
+}
+"""
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", stubs + script],
+        cwd=tmp_path,
+        env={**os.environ, "VERSION": tag, "GITHUB_TOKEN": "test-token",
+             "GITHUB_OUTPUT": str(tmp_path / "github-output")},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "injected").exists()
+    if step_name == "Generate release notes":
+        assert f"spec-kit.git@{tag}" in (tmp_path / "release_notes.md").read_text()
+    else:
+        assert (tmp_path / "gh-args").read_text().splitlines()[:3] == [
+            "release", "view" if step_name.startswith("Check") else "create", tag,
+        ]
+
+
+@requires_bash
+@pytest.mark.parametrize(("tag", "previous_tag", "commit_count", "release_exists"), [
+    ("v0.1.11", True, 2, False),
+    ("v0.2.0", True, 2, False),
+    ("v1.0.0", True, 2, False),
+    ("v1.2.3", False, 2, False),
+    ("v1.2.3", False, 22, False),
+    ("v1.2.3", True, 2, True),
+    ("v1.2", True, 2, False),
+    ("v1.2.3$(touch${IFS}injected)", True, 2, False),
+    ("v1.2.3`touch${IFS}injected`", True, 2, False),
+    pytest.param(
+        'v1.2.3";touch${IFS}injected;#', True, 2, False,
+        marks=pytest.mark.skipif(
+            sys.platform == "win32",
+            reason="Windows disallows double quotes in loose-ref filenames",
+        ),
+    ),
+])
+def test_release_workflow_simulation(
+    tmp_path, tag, previous_tag, commit_count, release_exists
+):
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Release Test", "GIT_AUTHOR_EMAIL": "test@example.invalid",
+        "GIT_COMMITTER_NAME": "Release Test", "GIT_COMMITTER_EMAIL": "test@example.invalid",
+        "GITHUB_REF": f"refs/tags/{tag}",
+        "TEST_PYTHON": sys.executable,
+        "GH_CALLS": str(tmp_path / "gh-calls"),
+        "RELEASE_VIEW_STATUS": "0" if release_exists else "1",
+    }
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", *args],
+            cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
+        )
+
+    git("init", "--quiet")
+    for index in range(commit_count):
+        git("commit", "--quiet", "--allow-empty", "-m", f"Release change {index}")
+        if previous_tag and index == 0:
+            git("tag", "v0.1.0")
+    git("tag", tag)
+    git("checkout", "--quiet", "--detach", f"refs/tags/{tag}")
+
+    steps = _release_workflow_steps()
+    values = {"${{ secrets.GITHUB_TOKEN }}": "test-token"}
+    ran = []
+    stub = """
+gh() {
+  "$TEST_PYTHON" -c 'import json, sys; print(json.dumps(sys.argv[1:]))' "$@" >> "$GH_CALLS"
+  if [ "$2" = view ]; then return "$RELEASE_VIEW_STATUS"; fi
+}
+"""
+    for index, (name, step) in enumerate(steps.items()):
+        if "run" not in step:
+            continue
+        if "if" in step:
+            assert step["if"] == "steps.check_release.outputs.exists == 'false'"
+            if values["${{ steps.check_release.outputs.exists }}"] != "false":
+                continue
+        output = tmp_path / f"output-{index}"
+        step_env = {key: values.get(value, value) for key, value in step.get("env", {}).items()}
+        assert "shell" not in step
+        # An unspecified shell on Linux uses bash -e, without pipefail.
+        result = subprocess.run(
+            ["bash", "-e", "-c", stub + step["run"]],
+            cwd=tmp_path, env={**env, **step_env, "GITHUB_OUTPUT": str(output)},
+            capture_output=True, text=True, check=False,
+        )
+        ran.append(name)
+        if result.returncode:
+            break
+        if output.exists():
+            for line in output.read_text().splitlines():
+                key, value = line.split("=", 1)
+                values[f"${{{{ steps.{step['id']}.outputs.{key} }}}}"] = value
+
+    calls_path = tmp_path / "gh-calls"
+    calls = [json.loads(line) for line in calls_path.read_text().splitlines()] if calls_path.exists() else []
+    assert not (tmp_path / "injected").exists()
+    notes_path = tmp_path / "release_notes.md"
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
+        assert result.returncode != 0
+        assert "is not a valid release tag" in result.stdout
+        assert ran == ["Extract version from tag"]
+        assert not calls
+        assert not notes_path.exists()
+        return
+
+    assert result.returncode == 0, f"{ran[-1]}: {result.stdout}\n{result.stderr}"
+    assert calls[0] == ["release", "view", tag]
+    if release_exists:
+        assert ran == ["Extract version from tag", "Check if release already exists"]
+        assert len(calls) == 1
+        assert not notes_path.exists()
+    else:
+        assert ran == ["Extract version from tag", *RELEASE_VERSION_STEPS]
+        assert calls[1:] == [[
+            "release", "create", tag, "--title", f"Spec Kit - {tag[1:]}",
+            "--notes-file", "release_notes.md",
+        ]]
+        notes = notes_path.read_text()
+        assert f"spec-kit.git@{tag}" in notes
+        assert "## What's Changed" in notes
+        assert f"- Release change {commit_count - 1}" in notes
+        expected_count = min(commit_count, 20) if not previous_tag else commit_count - 1
+        assert notes.count("- Release change ") == expected_count
 
 
 @requires_bash
@@ -460,6 +774,218 @@ def test_community_submission_automation_is_wired_to_allowed_files():
         assert label in assignment_text
 
 
+def test_extension_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    extension_form = yaml.safe_load(
+        (forms_dir / "extension_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert extension_form["labels"] == ["triage-must-have"]
+    assert "extension-submission" not in extension_form["labels"]
+
+
+def test_preset_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    preset_form = yaml.safe_load(
+        (forms_dir / "preset_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert preset_form["labels"] == ["triage-must-have"]
+    assert "preset-submission" not in preset_form["labels"]
+
+
+def test_bundle_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    bundle_form = yaml.safe_load(
+        (forms_dir / "bundle_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert bundle_form["labels"] == ["triage-must-have"]
+    assert "bundle-submission" not in bundle_form["labels"]
+
+
+def test_workflow_step_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    workflow_step_form = yaml.safe_load(
+        (forms_dir / "workflow_step_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert workflow_step_form["labels"] == ["triage-must-have"]
+    assert not {
+        "enhancement",
+        "needs-triage",
+        "workflow-step-submission",
+        "validation-passed",
+        "validation-failed",
+    } & set(workflow_step_form["labels"])
+
+
+def test_workflow_step_submission_form_has_valid_complete_field_contract():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    workflow_step_form = yaml.safe_load(
+        (forms_dir / "workflow_step_submission.yml").read_text(encoding="utf-8")
+    )
+    fields = [item for item in workflow_step_form["body"] if "id" in item]
+    field_ids = [field["id"] for field in fields]
+
+    assert len(field_ids) == len(set(field_ids))
+    assert all(re.fullmatch(r"[A-Za-z0-9_-]+", field_id) for field_id in field_ids)
+    assert set(field_ids) == {
+        "step-id",
+        "step-name",
+        "version",
+        "description",
+        "author",
+        "repository",
+        "download-url",
+        "step-yml-url",
+        "init-url",
+        "extra-files",
+        "file-sha256",
+        "license",
+        "speckit-compatibility",
+        "runtime-dependencies",
+        "step-type-count",
+        "step-types-provided",
+        "documentation",
+        "changelog",
+        "testing-details",
+        "attestations",
+        "additional-context",
+        "ai-disclosure",
+    }
+    required_ids = {
+        "step-id",
+        "step-name",
+        "version",
+        "description",
+        "author",
+        "repository",
+        "download-url",
+        "step-yml-url",
+        "init-url",
+        "extra-files",
+        "file-sha256",
+        "license",
+        "speckit-compatibility",
+        "runtime-dependencies",
+        "step-type-count",
+        "step-types-provided",
+        "documentation",
+        "testing-details",
+        "ai-disclosure",
+    }
+    assert {
+        field["id"]
+        for field in fields
+        if field.get("validations", {}).get("required") is True
+    } == required_ids
+    field_by_id = {field["id"]: field for field in fields}
+    assert field_by_id["step-type-count"][
+        "attributes"
+    ]["options"] == ["1"]
+    assert all(
+        option["required"] is True
+        for option in field_by_id["attestations"]["attributes"]["options"]
+    )
+    bundle_form = yaml.safe_load(
+        (forms_dir / "bundle_submission.yml").read_text(encoding="utf-8")
+    )
+    bundle_fields = {
+        item["id"]: item for item in bundle_form["body"] if "id" in item
+    }
+    assert field_by_id["download-url"]["attributes"]["label"] == (
+        bundle_fields["download-url"]["attributes"]["label"]
+    )
+    download_description = field_by_id["download-url"]["attributes"]["description"]
+    assert "versioned" in download_description
+    assert "immutable" not in download_description
+    assert "immutable" not in yaml.safe_dump(workflow_step_form).lower()
+    extra_files_description = field_by_id["extra-files"]["attributes"]["description"]
+    assert "forward slashes" in extra_files_description
+    assert "relative and non-empty" in extra_files_description
+    assert "no empty, `.` or `..` segments" in extra_files_description
+    assert "case-insensitively alias `step.yml` or `__init__.py`" in (
+        extra_files_description
+    )
+    feature_form = yaml.safe_load(
+        (forms_dir / "feature_request.yml").read_text(encoding="utf-8")
+    )
+    feature_fields = {
+        item["id"]: item for item in feature_form["body"] if "id" in item
+    }
+    assert field_by_id["ai-disclosure"] == feature_fields["ai-disclosure"]
+
+
+def test_workflow_step_submission_form_documents_maintainer_triggered_validation():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    workflow_step_form = yaml.safe_load(
+        (forms_dir / "workflow_step_submission.yml").read_text(encoding="utf-8")
+    )
+    introduction = workflow_step_form["body"][0]["attributes"]["value"]
+
+    assert "Opening the form alone does not start validation" in introduction
+    assert "A maintainer applies `workflow-step-submission`" in introduction
+    assert "draft catalog pull request for maintainer review" in introduction
+    assert "only the `triage-must-have` intake verdict" in introduction
+
+
+def test_other_issue_forms_do_not_apply_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    automatic_intake_forms = {
+        "bundle_submission.yml",
+        "extension_submission.yml",
+        "preset_submission.yml",
+        "workflow_step_submission.yml",
+    }
+    other_forms = sorted(
+        path
+        for path in forms_dir.glob("*.yml")
+        if path.name != "config.yml" and path.name not in automatic_intake_forms
+    )
+
+    assert [path.name for path in other_forms] == [
+        "agent_request.yml",
+        "bug_report.yml",
+        "feature_request.yml",
+    ]
+    for form_path in other_forms:
+        form = yaml.safe_load(form_path.read_text(encoding="utf-8"))
+        assert "triage-must-have" not in form["labels"]
+
+
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
+def test_community_submission_title_mismatch_reports_stop(kind):
+    """Guard written requirements, not hosted agent behavior."""
+    source_text, _, _, compiled = _agentic_workflow(f"add-community-{kind}")
+    trigger = source_text.split("## Triggering Conditions\n", 1)[1].split(
+        "\n## Step 1", 1
+    )[0]
+    prose = " ".join(trigger.split())
+    assert f"verify that the issue title starts with `[{kind.title()}]:`" in prose
+    assert "If it does not, emit one `add_comment` on the issue" in prose
+    assert (
+        f"The {kind}-submission workflow stopped before validation because "
+        f"the issue title does not start with `[{kind.title()}]:`."
+    ) in prose
+    assert "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" in trigger
+    assert (
+        "stop without validation, label changes, catalog/docs edits, or PR creation."
+    ) in prose
+    assert "Do not substitute `noop` for this comment" in prose
+    assert "Otherwise, continue to Step 1" in prose
+    assert "stop without commenting" not in source_text
+    run_context = _workflow_step(
+        compiled["jobs"]["activation"]["steps"], "Interpolate variables and render templates"
+    )["env"]
+    for variable, expression in (
+        ("GH_AW_GITHUB_SERVER_URL", "${{ github.server_url }}"),
+        ("GH_AW_GITHUB_REPOSITORY", "${{ github.repository }}"),
+        ("GH_AW_GITHUB_RUN_ID", "${{ github.run_id }}"),
+    ):
+        assert run_context[variable] == expression
+
+
 @pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
 def test_community_upgrade_uses_established_runtime_defaults(kind):
     _, compiled_text, source, compiled = _agentic_workflow(f"add-community-{kind}")
@@ -582,7 +1108,7 @@ def test_community_upgrade_preserves_scoped_draft_pr_contract(
     }
     removable_labels = (
         ["validation-passed", "validation-failed", "needs-info"]
-        if kind == "bundle" else ["validation-passed", "validation-failed"]
+        if kind in ("bundle", "workflow-step") else ["validation-passed", "validation-failed"]
     )
     assert outputs["remove_labels"]["allowed"] == source["safe-outputs"][
         "remove-labels"
@@ -590,9 +1116,17 @@ def test_community_upgrade_preserves_scoped_draft_pr_contract(
     assert set(outputs) == expected_outputs
     assert set(source["safe-outputs"]) == expected_source_outputs
     assert outputs["add_comment"] == source["safe-outputs"]["add-comment"] == {"max": 2}
-    assert outputs["add_labels"] == source["safe-outputs"]["add-labels"] == {
-        "allowed": [label, "validation-passed", "validation-failed", "needs-info"],
+    expected_labels = {
+        "allowed": (
+            [label, "validation-failed", "needs-info"]
+            if kind == "workflow-step"
+            else [label, "validation-passed", "validation-failed", "needs-info"]
+        ),
         "max": 3,
+    }
+    assert outputs["add_labels"] == {**expected_labels, "issue_intent": False}
+    assert source["safe-outputs"]["add-labels"] == {
+        **expected_labels, "issue-intent": False
     }
     assert source["safe-outputs"]["noop"] == {"report-as-issue": False}
     assert outputs["noop"] == {"max": 1, "report-as-issue": "false"}
@@ -656,7 +1190,7 @@ _CATALOG_DOWNLOAD_URL_CLAUSES = (
 
 def test_community_submission_workflows_require_tag_pinned_download_urls():
     """Catalog agents must reject floating releases/latest URLs (issue #4185)."""
-    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+    for workflow, *_ in ARCHIVE_SUBMISSION_WORKFLOWS:
         source_text = (WORKFLOWS_DIR / f"add-community-{workflow}.md").read_text(
             encoding="utf-8"
         )
@@ -682,7 +1216,7 @@ def test_community_submission_workflows_require_tag_pinned_download_urls():
             )
 
 
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 def test_community_checksum_instructions_preserve_submitted_digest(kind):
     source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
     parsing = source_text.split("## Step 1", 1)[1].split("## Step 2", 1)[0]
@@ -724,7 +1258,7 @@ def test_community_checksum_instructions_preserve_submitted_digest(kind):
     assert "record its digest as `actual_sha256`" in comparison_prose
 
 
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 def test_community_catalog_records_computed_checksum_only_after_validation(kind):
     source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
     catalog = source_text.split("## Step 4", 1)[1].split("## Step 5", 1)[0]
@@ -740,7 +1274,7 @@ def test_community_catalog_records_computed_checksum_only_after_validation(kind)
 
 
 @pytest.mark.skipif(shutil.which("sha256sum") is None, reason="sha256sum not available")
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 @pytest.mark.parametrize("case", ["matching", "mismatch", "malformed"])
 def test_community_checksum_command_rejects_invalid_digest(kind, case, tmp_path):
     source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
@@ -784,7 +1318,7 @@ def test_community_checksum_command_rejects_invalid_digest(kind, case, tmp_path)
             assert result.stdout.strip() == f"{archive.name}: FAILED"
 
 
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 def test_community_archive_permission_failures_are_not_submission_failures(kind):
     source_text, _, source, compiled = _agentic_workflow(f"add-community-{kind}")
     outcome = source_text.split("### Validation outcome\n", 1)[1].split(
@@ -817,10 +1351,21 @@ def test_community_archive_permission_failures_are_not_submission_failures(kind)
         "If there are no environment blockers and every required check completed "
         "and passed:"
     )
-    assert re.search(
-        r"remove `validation-failed`.*add (?:the )?`validation-passed`",
-        passed, re.IGNORECASE | re.DOTALL,
-    )
+    if kind == "preset":
+        assert "Remove any stale `validation-passed` and `validation-failed`" in passed
+        assert "Do not add `validation-passed` yet" in passed
+        generated = source_text.split("### Verify the generated files", 1)[1].split(
+            "\n## Step 6", 1
+        )[0]
+        assert "validate_community_preset.py generated" in generated
+        assert "add the `validation-passed`" in source_text.split(
+            "\n## Step 6", 1
+        )[1]
+    else:
+        assert re.search(
+            r"remove `validation-failed`.*add (?:the )?`validation-passed`",
+            passed, re.IGNORECASE | re.DOTALL,
+        )
     assert "validation-failed" in source["safe-outputs"]["remove-labels"]["allowed"]
     assert "validation-failed" in _safe_output_config(compiled)["remove_labels"]["allowed"]
     assert "validation-passed" in source["safe-outputs"]["remove-labels"]["allowed"]
@@ -884,7 +1429,7 @@ def _community_submission_harness_command(workflow: str) -> str:
 
 def test_community_submission_archive_fetch_tool_is_allowed():
     """Archive checks must not require interactive tool or URL permission grants."""
-    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+    for workflow, *_ in ARCHIVE_SUBMISSION_WORKFLOWS:
         source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
         config = _frontmatter(source.read_text(encoding="utf-8"))
         bash_tools = config["tools"]["bash"]
@@ -917,7 +1462,7 @@ def test_community_submission_archive_redirect_hosts_are_allowed():
         "release-assets.githubusercontent.com",
         "raw.githubusercontent.com",
     ]
-    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+    for workflow, *_ in ARCHIVE_SUBMISSION_WORKFLOWS:
         source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
         config = _frontmatter(source.read_text(encoding="utf-8"))
 
@@ -938,7 +1483,7 @@ def test_community_submission_archive_redirect_hosts_are_allowed():
 
 
 def test_community_submission_archive_fetch_requires_direct_evidence():
-    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+    for workflow, *_ in ARCHIVE_SUBMISSION_WORKFLOWS:
         source_text = (WORKFLOWS_DIR / f"add-community-{workflow}.md").read_text(
             encoding="utf-8"
         )
@@ -987,7 +1532,7 @@ _COMMUNITY_DOWNLOAD_URL_CASES = [
 ]
 
 
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 @pytest.mark.parametrize(("url", "allowed"), _COMMUNITY_DOWNLOAD_URL_CASES)
 def test_community_download_documented_character_allowlist(kind, url, allowed):
     """Exercise the documented regex, not an agent's adherence to the instructions."""
@@ -1006,7 +1551,7 @@ def test_community_download_documented_character_allowlist(kind, url, allowed):
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 @pytest.mark.parametrize("url", [url for url, _ in _COMMUNITY_DOWNLOAD_URL_CASES])
 def test_community_download_command_treats_url_file_as_data(kind, url, tmp_path):
     """Even data rejected by the documented allowlist cannot become shell syntax."""
@@ -1121,7 +1666,7 @@ def test_bug_test_workflow_provisions_python_dependencies():
     positions = [names.index(name) for name in expected_names]
     assert positions == sorted(positions)
     assert _workflow_step(steps, "Setup uv")["uses"] == (
-        "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
+        "astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2"
     )
     python_step = _workflow_step(steps, "Set up Python")
     assert python_step["uses"] == (
@@ -1276,8 +1821,11 @@ def test_bug_workflow_upgrade_preserves_runtime_and_negative_guards(name):
     assert set(outputs) == expected_outputs
     assert set(source["safe-outputs"]) == expected_source_outputs
     assert outputs["add_comment"] == source["safe-outputs"]["add-comment"] == {"max": 1}
-    assert outputs["add_labels"] == source["safe-outputs"]["add-labels"] == {
-        "allowed": labels, "max": 1
+    assert outputs["add_labels"] == {
+        "allowed": labels, "max": 1, "issue_intent": False
+    }
+    assert source["safe-outputs"]["add-labels"] == {
+        "allowed": labels, "max": 1, "issue-intent": False
     }
     assert source["safe-outputs"]["noop"] == {"report-as-issue": False}
     assert outputs["noop"] == {"max": 1, "report-as-issue": "false"}
@@ -1295,6 +1843,495 @@ def test_bug_workflow_upgrade_preserves_runtime_and_negative_guards(name):
     assert {
         ref for ref in refs if ref.startswith("github/gh-aw-actions/")
     } == expected_actions
+
+
+def test_pr_assess_triggers_cover_issues_and_fork_prs_without_silent_state_filters():
+    _, _, source, compiled = _agentic_workflow("pr-assess")
+    events = {
+        "issues": {"types": ["labeled"]},
+        "pull_request_target": {"types": ["labeled"]},
+    }
+    assert (source.get("on") or source[True]) == {
+        **events,
+        "skip-bots": ["github-actions", "copilot", "dependabot"],
+    }
+    assert (compiled.get("on") or compiled[True]) == events
+    assert source["if"] == "github.event.label.name == 'pr-assess'"
+    pre_activation = compiled["jobs"]["pre_activation"]
+    assert pre_activation["if"] == source["if"]
+    assert compiled["jobs"]["activation"]["if"] == (
+        "needs.pre_activation.outputs.activated == 'true' && "
+        "(github.event.label.name == 'pr-assess')"
+    )
+    assert pre_activation["outputs"]["activated"] == (
+        "${{ steps.check_membership.outputs.is_team_member == 'true' && "
+        "steps.check_skip_bots.outputs.skip_bots_ok == 'true' }}"
+    )
+    assert (
+        _workflow_step(pre_activation["steps"], "Check team membership for workflow")[
+            "env"
+        ]["GH_AW_REQUIRED_ROLES"]
+        == "admin,maintainer,write"
+    )
+    assert (
+        _workflow_step(pre_activation["steps"], "Check skip-bots")["env"][
+            "GH_AW_SKIP_BOTS"
+        ]
+        == "github-actions,copilot-swe-agent,Copilot,copilot,@app/copilot-swe-agent,dependabot"
+    )
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+def test_pr_assess_activation_and_concurrency_for_expected_and_prevented_events():
+    _, _, source, compiled = _agentic_workflow("pr-assess")
+    pre_activation = compiled["jobs"]["pre_activation"]
+    cases = []
+    for event_name in ("issues", "pull_request_target"):
+        for label in ("pr-assess", "bug-assess", "pr-description-aligned"):
+            for state in ("open", "closed"):
+                for fork in (
+                    (False, True) if event_name == "pull_request_target" else (False,)
+                ):
+                    cases.append(
+                        {
+                            "event_name": event_name,
+                            "label": label,
+                            "state": state,
+                            "fork": fork,
+                            "member": True,
+                            "bot_allowed": True,
+                        }
+                    )
+    for member, bot_allowed in ((False, True), (True, False)):
+        cases.append(
+            {
+                "event_name": "pull_request_target",
+                "label": "pr-assess",
+                "state": "open",
+                "fork": True,
+                "member": member,
+                "bot_allowed": bot_allowed,
+            }
+        )
+    harness = r"""
+const fs = require('node:fs');
+const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+const results = input.cases.map(test => {
+  const item = {number: 37, state: test.state};
+  if (test.event_name === 'pull_request_target') {
+    item.base = {repo: {id: 1, full_name: 'test/repo'}};
+    item.head = {repo: {id: test.fork ? 2 : 1, full_name: test.fork ? 'fork/repo' : 'test/repo'}};
+  }
+  const github = {
+    event_name: test.event_name,
+    event: {action: 'labeled', label: {name: test.label}, issue: {}, pull_request: {},
+      [test.event_name === 'issues' ? 'issue' : 'pull_request']: item}
+  };
+  const steps = {
+    check_membership: {outputs: {is_team_member: String(test.member)}},
+    check_skip_bots: {outputs: {skip_bots_ok: String(test.bot_allowed)}}
+  };
+  const evaluate = (expression, needs = {}) =>
+    new Function('github', 'steps', 'needs', `return ${expression}`)(github, steps, needs);
+  const pre = evaluate(input.pre_condition);
+  const activated = pre && evaluate(input.activated);
+  const needs = {pre_activation: {outputs: {activated: String(activated)}}};
+  const group = input.group.replace(/\$\{\{(.*?)\}\}/g, (_, expression) => evaluate(expression));
+  return {source: evaluate(input.source_condition), pre,
+    activation: evaluate(input.activation_condition, needs), group};
+});
+console.log(JSON.stringify(results));
+"""
+    result = subprocess.run(
+        ["node", "-e", harness],
+        input=json.dumps(
+            {
+                "cases": cases,
+                "source_condition": source["if"],
+                "pre_condition": pre_activation["if"],
+                "activated": pre_activation["outputs"]["activated"][3:-2].strip(),
+                "activation_condition": compiled["jobs"]["activation"]["if"],
+                "group": compiled["concurrency"]["group"],
+            }
+        ),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    for case, actual in zip(cases, json.loads(result.stdout), strict=True):
+        requested = case["label"] == "pr-assess"
+        assert actual == {
+            "source": requested,
+            "pre": requested,
+            "activation": requested and case["member"] and case["bot_allowed"],
+            "group": f"pr-assess-37-{case['label']}",
+        }, case
+    assert (
+        compiled["concurrency"]
+        == source["concurrency"]
+        == {
+            "group": (
+                "pr-assess-${{ github.event.issue.number || github.event.pull_request.number }}"
+                "-${{ github.event.label.name }}"
+            ),
+            "cancel-in-progress": False,
+        }
+    )
+
+
+def test_pr_assess_uses_trusted_instructions_without_executing_pr_code():
+    _, compiled_text, source, compiled = _agentic_workflow("pr-assess")
+    metadata = _gh_aw_metadata(compiled_text)
+    assert metadata["compiler_version"] == "v0.89.21"
+    assert metadata["strict"] is True
+    assert metadata["engine_versions"] == {"copilot": "1.0.87"}
+    assert source["checkout"] is False
+    assert source["tools"] == {
+        "bash": False,
+        "cli-proxy": False,
+        "github": {
+            "toolsets": ["issues", "pull_requests", "repos"],
+            "allowed": ["issue_read", "pull_request_read", "get_file_contents"],
+            "min-integrity": "none",
+        },
+    }
+    assert source["network"] == {"allowed": ["defaults", "github"]}
+    permissions = {"contents": "read", "issues": "read", "pull-requests": "read"}
+    assert (
+        source["permissions"] == compiled["jobs"]["agent"]["permissions"] == permissions
+    )
+    assert compiled["permissions"] == {}
+    assert "steps" not in source and "jobs" not in source
+    agent_steps = compiled["jobs"]["agent"]["steps"]
+    assert not any(
+        step.get("uses", "").startswith("actions/checkout@") for step in agent_steps
+    )
+    checkout = _workflow_step(
+        compiled["jobs"]["activation"]["steps"], "Checkout .github and .agents folders"
+    )
+    assert checkout["with"]["persist-credentials"] is False
+    assert "ref" not in checkout["with"]
+    assert "{{#runtime-import .github/workflows/pr-assess.md}}" in compiled_text
+    manifest = json.loads(
+        compiled_text.splitlines()[1].removeprefix("# gh-aw-manifest: ")
+    )
+    assert next(
+        server["tools"]
+        for server in manifest["mcp_servers"]
+        if server["name"] == "github"
+    ) == ["get_file_contents", "issue_read", "pull_request_read"]
+    refs = {match.group("ref") for match in USES_RE.finditer(compiled_text)}
+    assert refs and all(PINNED_SHA_RE.search(ref) for ref in refs)
+    assert {ref for ref in refs if ref.startswith("github/gh-aw-actions/")} == {
+        "github/gh-aw-actions/setup@924af5fdc64061cfbf66fb584c8b07e2ac230c60"
+    }
+
+
+def test_pr_assess_outputs_are_bounded_to_the_triggering_item():
+    _, _, source, compiled = _agentic_workflow("pr-assess")
+    outputs = _safe_output_config(compiled)
+    assert set(source["safe-outputs"]) == {
+        "add-comment",
+        "add-labels",
+        "remove-labels",
+        "noop",
+    }
+    assert (
+        outputs["add_comment"]
+        == source["safe-outputs"]["add-comment"]
+        == {"target": "triggering", "max": 1}
+    )
+    for name, max_labels in (("add_labels", 1), ("remove_labels", 2)):
+        assert outputs[name]["target"] == "triggering"
+        assert outputs[name]["max"] == max_labels
+        assert set(outputs[name]["allowed"]) == PR_ASSESS_LABELS
+        assert "pr-assess" not in outputs[name]["allowed"]
+        source_output = source["safe-outputs"][name.replace("_", "-")]
+        assert source_output["target"] == outputs[name]["target"]
+        assert source_output["max"] == max_labels
+        assert set(source_output["allowed"]) == PR_ASSESS_LABELS
+        assert not {"target_repo", "allowed_repos"} & outputs[name].keys()
+    assert outputs["add_labels"]["issue_intent"] is False
+    agent_config = json.loads(
+        _workflow_step(
+            compiled["jobs"]["agent"]["steps"], "Generate Safe Outputs Config"
+        )["env"]["GH_AW_SAFE_OUTPUTS_CONFIG"]
+    )
+    for name in ("add_comment", "add_labels", "remove_labels"):
+        assert agent_config[name] == outputs[name]
+    assert "replace_label" not in outputs
+    assert (
+        not {
+            "create_issue",
+            "create_pull_request",
+            "update_pull_request",
+            "close_issue",
+            "close_pull_request",
+            "create_pull_request_review",
+            "push_to_pull_request",
+        }
+        & outputs.keys()
+    )
+    assert compiled["jobs"]["safe_outputs"]["permissions"] == {
+        "issues": "write",
+        "pull-requests": "write",
+    }
+    assert source["safe-outputs"]["noop"] == {"report-as-issue": False}
+
+
+def test_pr_assess_cleans_up_stale_outcomes_before_adding_the_selected_label():
+    source_text, _, _, compiled = _agentic_workflow("pr-assess")
+    agent_steps = compiled["jobs"]["agent"]["steps"]
+    tools_meta = json.loads(
+        _workflow_step(agent_steps, "Generate Safe Outputs Tools")["env"][
+            "GH_AW_TOOLS_META_JSON"
+        ]
+    )
+    assert "add_labels" in tools_meta["description_suffixes"]
+    assert "remove_labels" in tools_meta["description_suffixes"]
+    assert "replace_label" not in tools_meta["description_suffixes"]
+    text = " ".join(source_text.split())
+    for clause in (
+        "Use `remove_labels` to queue removal of any existing outcome labels other than the selected outcome, at most two.",
+        "After queuing stale-label cleanup, use `add_labels` with exactly one **plain string**",
+        "only if the selected outcome is absent.",
+        "If the selected outcome is already present, do not remove or re-add it.",
+        "A matching sole outcome requires no label mutation.",
+        "Do not change the description verdict to inconclusive solely because labels conflict.",
+        "If existing outcome labels cannot be read, do not queue a label mutation",
+        "Do not remove `pr-assess`, unrelated labels, or earlier assessment comments.",
+        "Only change labels on the triggering PR.",
+        "Separate remove/add operations can partially fail",
+        "do not make concurrent manual label edits safe.",
+    ):
+        assert clause in text
+    assert text.index("Use `remove_labels`") < text.index(
+        "After queuing stale-label cleanup"
+    )
+    assert "`replace_label`" not in text
+    assert "A failed run does not refresh an earlier verdict" not in text
+
+
+def test_pr_assess_reruns_require_a_new_standalone_comment_even_without_label_changes():
+    source_text, _, _, _ = _agentic_workflow("pr-assess")
+    text = " ".join(source_text.split())
+    assert "Every completed assessment must queue a **new standalone comment**" in text
+    assert "including when the sole outcome already matches" in text
+    assert (
+        "Do not refer to earlier assessments or use `still needs-update` phrasing."
+        in text
+    )
+    assert "A matching sole outcome requires no label mutation." in text
+
+
+def test_pr_assess_misuse_branches_require_a_comment_without_verdict_labels():
+    source_text, _, _, _ = _agentic_workflow("pr-assess")
+    routing = " ".join(
+        source_text.split("## Step 1", 1)[1].split("## Step 2", 1)[0].split()
+    )
+    issue = routing.split("**Issue event (`issues`).**", 1)[1].split(
+        "**PR event (`pull_request_target`).**", 1
+    )[0]
+    assert "Do not attempt to read a PR with this issue number." in issue
+    assert "Use `add_comment` on the triggering issue" in issue
+    assert "Apply `pr-assess` to the relevant open PR." in issue
+    closed = routing.split("**PR event (`pull_request_target`).**", 1)[1].split(
+        "**PR metadata cannot be read.**", 1
+    )[0]
+    assert "If it is closed or merged, use `add_comment`" in closed
+    assert "This workflow assesses open PRs only." in closed
+    for branch in (issue, closed):
+        assert (
+            "**Stop after queuing this comment. Do not add or remove labels.**"
+            in branch
+        )
+    assert "**one comment on the triggering item**" in routing
+    assert (
+        "Do not use `noop`, `missing_data`, or `missing_tool` instead of that comment."
+        in routing
+    )
+
+
+def test_pr_assess_missing_evidence_routes_to_an_explained_inconclusive_report():
+    source_text, _, _, _ = _agentic_workflow("pr-assess")
+    text = " ".join(source_text.split())
+    assert (
+        "Continue to Step 4 with an **inconclusive** result explaining the read failure."
+        in text
+    )
+    assert "If no data can be read, still post an inconclusive report" in text
+    assert (
+        "If any change remains unexamined or unresolved, retain established "
+        "findings but make the overall verdict **inconclusive**."
+    ) in text
+    assert (
+        "**inconclusive**: Evidence/coverage is insufficient. This takes precedence"
+        in text
+    )
+    reporting = text.split("## Step 4", 1)[1].split("## Guardrails", 1)[0]
+    assert "Use `add_comment` to queue **one** assessment report" in reporting
+    assert "before queuing label changes" in reporting
+    assert "Use **unknown**, not invented file counts or revisions" in reporting
+    assert (
+        "Explain the missing, unresolved, or unavailable evidence in the rationale."
+    ) in reporting
+    assert "retain established findings" in reporting
+    assert "anything left unchecked" in reporting
+    assert "exactly one **plain string**" in reporting
+    assert (
+        "Never emit label objects with `suggest: true` or suggestion-only output."
+        in reporting
+    )
+
+
+def test_pr_assess_public_report_contract_prioritizes_human_readability():
+    source_text, _, _, _ = _agentic_workflow("pr-assess")
+    comparison = " ".join(
+        source_text.split("## Step 3 - Compare Claims and Material Changes", 1)[1]
+        .split("## Step 4", 1)[0]
+        .split()
+    )
+    reporting = " ".join(
+        source_text.split("## Step 4 - Report and Apply the Outcome", 1)[1]
+        .split("Applying the outcome label", 1)[0]
+        .split()
+    )
+
+    assert "not general code review" in source_text
+    assert "not presumed deception or author intent" in source_text
+    assert "state confidence" not in comparison
+    assert (
+        "Assess internally how strongly the evidence supports each discrepancy"
+    ) in comparison
+    assert "do not publish confidence scores in the assessment comment" in comparison
+    assert (
+        "**PR description assessment: <aligned | needs-update | inconclusive>.**"
+    ) in reporting
+    assert "exactly one concise rationale sentence" in reporting
+    assert (
+        "Reviewed all <changed files> files at <linked short assessed revision>."
+    ) in reporting
+    assert (
+        "Reviewed <examined files>/<changed files> files at "
+        "<linked short assessed revision>."
+    ) in reporting
+    assert (
+        "If a file count or the revision is unavailable, use the incomplete form "
+        "with `unknown` for that value"
+    ) in reporting
+    assert "explain the missing evidence in the inconclusive rationale" in reporting
+    assert "Do not link `unknown`." in reporting
+
+    aligned = reporting.split("- **aligned:**", 1)[1].split("- **needs-update:**", 1)[0]
+    assert "Stop after the reviewed-files line" in aligned
+    assert "Do not add a findings table or suggested-update section." in aligned
+
+    needs_update = reporting.split("- **needs-update:**", 1)[1].split(
+        "- **inconclusive:**", 1
+    )[0]
+    assert "| What needs attention | Evidence |" in needs_update
+    assert "only evidenced material omissions or contradictions" in needs_update
+    assert "Do not include correctly documented changes." in needs_update
+    assert "revision-linked evidence for every row" in needs_update
+    assert "**Suggested update:**" in needs_update
+    assert "short human reviewer note describing the observable impact" in needs_update
+    assert "**DESCRIPTION-ONLY**" in needs_update
+    assert (
+        "smallest correction to the PR description, not code-change alternatives."
+        in needs_update
+    )
+    assert "Do not use changelog or tool directives" in needs_update
+    for directive in ("state explicitly", "remove", "qualify"):
+        assert f"`{directive}`" in needs_update
+
+    inconclusive = reporting.split("- **inconclusive:**", 1)[1]
+    assert (
+        "missing, unresolved, or unavailable evidence in the rationale" in inconclusive
+    )
+    assert (
+        "same compact two-column table to retain established findings" in inconclusive
+    )
+    assert "revision-linked evidence" in inconclusive
+    assert "anything left unchecked" in inconclusive
+    assert "that evidence only" not in inconclusive
+    assert (
+        "Do not add a `Limitations` heading or `Suggested update` section."
+    ) in inconclusive
+
+    for public_noise in (
+        "**Revision:**",
+        "**Coverage:**",
+        "**Material changes:**",
+        "documented count",
+        "omission count",
+        "contradiction count",
+        "unresolved count",
+        "Description claim",
+        "confidence",
+        "**Limitations:**",
+        "This assesses description alignment, not author intent or general code quality.",
+        "It applies to the revision examined.",
+        "Remove and re-add `pr-assess` to reassess.",
+    ):
+        assert public_noise not in reporting
+    assert "author intent" not in reporting
+    assert "general code quality" not in reporting
+    assert "Preserve the harness's generated-by footer." in reporting
+
+
+def test_pr_assess_checks_input_stability_before_reporting_a_verdict():
+    source_text, _, _, _ = _agentic_workflow("pr-assess")
+    reporting = " ".join(
+        source_text.split("## Step 4 - Report and Apply the Outcome", 1)[1]
+        .split("## Guardrails", 1)[0]
+        .split()
+    )
+    before_comment = reporting.split("Use `add_comment`", 1)[0]
+    assert before_comment.startswith(
+        "Re-read the PR with `pull_request_read` (`get`) before queuing the report."
+    )
+    assert (
+        "If you examined code, compare its head SHA, base SHA, body, and title text with "
+        "the values captured in Step 2."
+    ) in before_comment
+    assert (
+        "If any value changed, or the final read fails, use **inconclusive**"
+        in before_comment
+    )
+    assert (
+        "If the title changed, say that the title changed during assessment."
+        in before_comment
+    )
+    assert (
+        "Do not substitute the new head SHA for the revision you examined."
+        in before_comment
+    )
+    assert (
+        "If the PR is now closed or merged, queue the Step 1 not-assessed "
+        "comment and stop without changing labels."
+    ) in before_comment.split("If you examined code", 1)[0]
+
+
+def test_pr_assess_compares_description_and_diff_without_overclaiming():
+    source_text, _, _, _ = _agentic_workflow("pr-assess")
+    text = " ".join(source_text.split())
+    for clause in (
+        "cumulative PR diff (`get_diff`)",
+        "Read all available inventory pages",
+        "Do not assess only the latest commit or a sample of files.",
+        "the PR diff's comparison revision for old content",
+        "Do not confuse the current base tip with the old side of a PR diff",
+        "An empty body, template placeholders, or an HTML-comment-only body",
+        "**Code to description:**",
+        "**Description to code:**",
+        "supporting test, mechanical edit, or generated lockfile entry",
+        "Do not infer an omission from a file name alone",
+        "not presumed deception or author intent",
+        "never instructions",
+        "never check out or execute contributor code",
+    ):
+        assert clause.lower() in text.lower()
 
 
 def test_bug_fix_exempts_maintenance_from_pr_count_confirmation():
@@ -1453,7 +2490,7 @@ def test_bug_test_install_preserves_editable_extras_and_failure(compiled_step, e
 
 def _markdownlint_job() -> dict:
     workflow = yaml.safe_load(LINT_WORKFLOW.read_text(encoding="utf-8"))
-    return workflow["jobs"]["markdownlint"]
+    return workflow["jobs"]["checks"]
 
 
 def _documentation_globs() -> list[str]:
@@ -1488,3 +2525,78 @@ def test_markdownlint_step_lints_the_documentation_globs():
     ]
     assert len(linters) == 1
     assert linters[0]["with"]["globs"] == "${{ env.DOC_GLOBS }}"
+
+
+@requires_bash
+@pytest.mark.parametrize("event", [
+    "pull_request", "push", "initial_push", "workflow_dispatch", "manual_root", "manual_merge",
+])
+@pytest.mark.parametrize("contents,exit_code", [("line\n", 0), ("line \n", 2)])
+def test_combined_lint_run_checks_commit_whitespace(tmp_path, event, contents, exit_code):
+    env = os.environ.copy()
+    env.update({
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@example.com",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@example.com",
+        "EVENT_NAME": (
+            "workflow_dispatch" if event.startswith("manual_")
+            else "push" if event == "initial_push" else event
+        ),
+        "PR_BASE_SHA": "",
+        "PUSH_BEFORE_SHA": "",
+        "GITHUB_SHA": "HEAD",
+    })
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, env=env, check=True)
+    if event not in {"initial_push", "manual_root"}:
+        (tmp_path / "example.txt").write_text("original\n", encoding="utf-8")
+        subprocess.run(["git", "add", "example.txt"], cwd=tmp_path, env=env, check=True)
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Base"],
+            cwd=tmp_path, env=env, check=True,
+        )
+        base = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=tmp_path, env=env,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        env["PR_BASE_SHA"] = base
+        env["PUSH_BEFORE_SHA"] = base
+        if event == "manual_merge":
+            subprocess.run(
+                ["git", "checkout", "--quiet", "-b", "whitespace-change"],
+                cwd=tmp_path, env=env, check=True,
+            )
+    else:
+        env["PUSH_BEFORE_SHA"] = "0" * 40
+    (tmp_path / "example.txt").write_text(contents, encoding="utf-8")
+    subprocess.run(["git", "add", "example.txt"], cwd=tmp_path, env=env, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Change"],
+        cwd=tmp_path, env=env, check=True,
+    )
+    if event == "manual_merge":
+        subprocess.run(
+            ["git", "checkout", "--quiet", "--detach", base],
+            cwd=tmp_path, env=env, check=True,
+        )
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "merge", "--quiet", "--no-ff",
+             "-m", "Merge change", "whitespace-change"],
+            cwd=tmp_path, env=env, check=True,
+        )
+        parents = subprocess.run(
+            ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
+            cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
+        ).stdout.split()
+        assert len(parents) == 3
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(tmp_path)],
+        cwd=tmp_path, env=env, check=True,
+    )
+    step = _workflow_step(_markdownlint_job()["steps"], "Run git diff --check")
+    result = subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", step["run"]],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == exit_code, result.stderr
+    assert ("trailing whitespace" in result.stdout) is (exit_code != 0)

@@ -11,7 +11,7 @@ These are one time installations required to be able to test your changes locall
 1. Install [Python 3.11+](https://www.python.org/downloads/)
 1. Install [uv](https://docs.astral.sh/uv/) for package management
 1. Install [Git](https://git-scm.com/downloads)
-1. Have an [AI coding agent available](https://github.github.io/spec-kit/reference/integrations.html)
+1. Have an [AI coding agent available](https://github.github.io/spec-kit/integrations/index.html)
 
 <details>
 <summary><b>💡 Hint if you are using <code>VSCode</code> or <code>GitHub Codespaces</code> as your IDE</b></summary>
@@ -36,15 +36,17 @@ On [GitHub Codespaces](https://github.com/features/codespaces) it's even simpler
 > If your pull request introduces a large change that materially impacts the work of the CLI or the rest of the repository (e.g., you're introducing new templates, arguments, or otherwise major changes), make sure that it was **discussed and agreed upon** by the project maintainers. Pull requests with large changes that did not have a prior conversation and agreement will be closed.
 
 1. Fork and clone the repository
-1. Configure and install the dependencies: `uv sync --extra test`
-1. Make sure the CLI works on your machine: `uv run specify --help`
-1. Create a new branch: `git checkout -b <type>/<number>-<short-slug>` (see [Branch naming](#branch-naming) below)
+1. Set up this checkout's `.venv` and editable install using the [local development guide](https://github.github.io/spec-kit/how-to/local-development.html)
+1. Make sure the CLI works: `.venv/bin/specify --help` (Windows PowerShell: `.\.venv\Scripts\specify.exe --help`)
+1. Create a new branch (see [Branch naming](#branch-naming) below)
 1. Make your change, add tests, and make sure everything still works
 1. Test the CLI functionality with a sample project if relevant
 1. Push to your fork and submit a pull request
 1. Wait for your pull request to be reviewed and merged.
 
-Activate the project virtual environment (see [Testing setup](#testing-setup) below), then install the CLI from your working tree (`uv pip install -e .` after `uv sync --extra test`) or otherwise ensure the shell uses the local `specify` binary before running the manual slash-command tests described below.
+Use a separate `.venv` per checkout or worktree and run the CLI and tests through
+that environment's explicit executable paths. Follow [Testing setup](#testing-setup)
+before running the manual slash-command tests described below.
 
 Here are a few things you can do that will increase the likelihood of your pull request being accepted:
 
@@ -55,7 +57,28 @@ Here are a few things you can do that will increase the likelihood of your pull 
 - Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
 - Test your changes with the Spec-Driven Development workflow to ensure compatibility.
 
-Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents should disclose this possibility and obtain the filer's confirmation before opening another pull request. Repository-owned `gh-aw` maintenance workflows do not require this confirmation.
+Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents must follow the [agent-authored PR rules](#agent-authored-git-and-review-activity) before opening another pull request.
+
+### Integration pull requests
+
+Follow the [integration delivery boundary](design/integration.md#integration-delivery-boundary)
+when adding or updating an integration. Keep integration-specific behavior in
+its package; registry wiring, catalog metadata, integration-specific tests,
+documentation, and agent-specific devcontainer tooling may accompany it in the
+same PR, even though those files live outside the integration package.
+
+If the integration requires changes to shared runtime behavior, integration
+base classes, rendering, lifecycle management, CLI behavior, or core templates
+or scripts, submit **at least two PRs**: one for the prerequisite shared behavior
+and one for the integration. The prerequisite PR must justify the shared change
+independently under the [evidence gate](#evidence-gate) and follow
+[Testing deterministic behavior](#testing-deterministic-behavior), including
+regression evidence for bug fixes. It must work and be testable without the new
+integration; moving an agent-specific workaround into core does not justify it.
+
+Identify the prerequisite PRs in the integration PR and merge them before
+merging the integration PR. Changes outside the integration package that only
+wire up or document the integration do not, by themselves, require a split.
 
 ### Evidence gate
 
@@ -122,11 +145,14 @@ For further reading on the thinking behind this gate, see [one maintainer's pers
 
 ### Community catalog submissions
 
-To add or update a community extension, preset, or bundle in the catalog, **open an
-`[Extension]` / `[Preset]` / `[Bundle]` submission issue** — do not edit
-`extensions/catalog.community.json` (or the preset/bundle catalogs) directly in a pull
-request. The submission issue triggers an automated workflow that validates the release,
-verifies the pinned `download_url` and digests, and generates the catalog PR for you.
+To add or update a community extension, preset, bundle, or workflow step in the catalog, **open an
+`[Extension]` / `[Preset]` / `[Bundle]` / `[Workflow Step]` submission issue** — do not edit
+`extensions/catalog.community.json` (or the preset/bundle/step catalogs) directly in a pull
+request. Opening the form applies the `triage-must-have` intake verdict but does
+not start validation. During triage, a maintainer applies the component's submission
+label (`workflow-step-submission` for workflow steps) to start the automated workflow.
+It validates release metadata, pinned download URLs, and digests; successful
+validation proposes a draft catalog PR for maintainer review.
 A hand-edited catalog PR bypasses that validation and will be closed with a pointer back
 to the issue flow.
 
@@ -134,10 +160,29 @@ This applies to **new entries, version updates, and repairs alike** — a versio
 fix to a broken entry is still an update and needs the same validation. Always pin
 `download_url` to a release tag (e.g. `.../releases/download/<tag>/...` or
 `.../archive/refs/tags/<tag>.zip`); never use `releases/latest/`.
+Workflow-step submissions still require a pinned archive `download_url` as release
+provenance and evidence for the author's direct-archive installation test. Catalog
+installation uses separate tag-pinned individual file URLs and per-file digests;
+see [Community Workflow Step Types](docs/community/workflow-steps.md).
+
+### External agent adapters
+
+External integrations adapt the host's commands and extension/preset
+contributions; they do not redistribute a core command inventory. Publish a
+standalone package with root `integration.yml` and `__init__.py`, then advertise
+its pinned archive URL and preferably its SHA-256 in a catalog. Registering a
+catalog only enables discovery/download; importing executable adapter code
+requires the user's trust decision and an install-enabled source. Follow the
+[integration API and lifecycle design](design/integration.md#external-adapter-package-contract)
+and [integration catalog contribution guide](docs/integrations/contributing.md).
+Add public-path positive and negative tests rather than injecting test classes
+directly into the registry; include fresh-process loading and rollback evidence.
 
 ### Branch naming
 
-We recommend naming branches as `<type>/<number>-<short-slug>`, where `<number>` is the issue or PR number (whichever comes first) and `<type>` is one of:
+When an issue exists, name the branch `<type>/<issue-number>-<short-slug>`.
+For PR-only changes without an issue, use `<type>/<short-slug>` instead.
+Choose the prefix from:
 
 | Prefix | When to use | Example |
 |---|---|---|
@@ -147,7 +192,9 @@ We recommend naming branches as `<type>/<number>-<short-slug>`, where `<number>`
 | `community/` | Community catalog additions | `community/2492-add-mde-extension` |
 | `chore/` | Maintenance, tooling, CI | `chore/2366-editorconfig` |
 
-Including the issue or PR number makes branches traceable — especially useful since the project uses squash merges and `git branch --merged` won't detect merged branches. If you start with a PR (no issue), use the PR number once it's assigned.
+Put an existing issue number immediately after the prefix to make the branch
+traceable; do not add a PR number later for PR-only changes. Keep the slug
+short, descriptive, and kebab-case.
 
 ## Development workflow
 
@@ -179,6 +226,29 @@ When working on spec-kit:
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
 
+### Testing deterministic behavior
+
+Behavioral changes to repository-maintained code or configuration that runs or
+controls execution without an LLM require tests for both intended behavior
+(positive cases) and relevant invalid inputs, failures, or prevented behavior
+(negative cases). This includes Python, shell, and PowerShell code in the CLI,
+core scripts, extensions, presets, and tooling; workflow step types; and
+execution wiring such as script selection, workflow shell steps, and CI `run:`
+steps. Existing tests count when they cover the changed behavior.
+
+Behavioral changes to repository-maintained or generated PowerShell
+functionality must include evidence from Windows PowerShell 5.1 or reproducible
+evidence that demonstrates 5.1 compatibility. All PowerShell scripts in the
+repository and all generated PowerShell functionality MUST target Windows
+PowerShell 5.1. Check syntax, cmdlet and parameter availability, .NET Framework
+APIs, encoding, and process/runtime behavior against that target.
+
+Bug fixes also need a regression test that fails before the fix and passes
+afterward. If a baseline or an execution path cannot be tested automatically,
+explain the limitation and provide reproducible evidence for the affected
+success and failure paths. Prompt-only and other non-behavioral edits do not
+require invented tests.
+
 ### Recommended validation flow
 
 For the smoothest review experience, validate changes in this order:
@@ -191,28 +261,39 @@ For the smoothest review experience, validate changes in this order:
 #### Agent configuration and wiring consistency
 
 ```bash
-uv run python -m pytest tests/test_agent_config_consistency.py -q
+.venv/bin/python -m pytest tests/test_agent_config_consistency.py -q
 ```
 
 Run this when you change agent metadata, context update scripts, or integration wiring.
+On Windows PowerShell, use `.\.venv\Scripts\python.exe` instead of
+`.venv/bin/python`. Complete the [local environment setup](https://github.github.io/spec-kit/how-to/local-development.html#1-prepare-the-checkout)
+first.
 
 #### Running the full test suite
 
-Install the test dependencies into the project's own virtual environment and run
-`pytest` through that interpreter:
+Complete the [local environment setup](https://github.github.io/spec-kit/how-to/local-development.html#1-prepare-the-checkout),
+then run `pytest` through this checkout's interpreter:
 
 ```bash
-uv pip install -e ".[test]"
-.venv/bin/python -m pytest tests -q   # Windows: .venv\Scripts\python -m pytest tests -q
+.venv/bin/python -m pytest tests -q
 ```
 
-> **Note:** prefer `.venv/bin/python -m pytest` over a bare `uv run pytest`.
-> If another Spec Kit checkout has an editable (`-e`) install registered in a
-> shared/global environment, `uv run pytest` can resolve `specify_cli` to that
-> *other* worktree, turning it into a partial namespace package that fails to
-> import newly added subpackages. Running through the project `.venv` resolves
-> `specify_cli` to this checkout's `src/`. This matches the gotcha documented in
-> `AGENTS.md` (Common Pitfalls).
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests -q
+```
+
+On macOS, use `LC_ALL=en_US.UTF-8 .venv/bin/python -m pytest tests -q`
+so Bash Unicode handling uses a UTF-8 locale.
+
+Explicit environment paths prevent tests from importing another checkout's
+editable install. Start with the affected test files; run the full suite when
+the change requires broader regression coverage.
+
+See [Python version support](SUPPORT.md#python-version-support) for the routine
+and full scheduled/manual CI matrices, compatibility policy, and minimum-version
+lifecycle.
 
 #### Security checks
 
@@ -232,8 +313,13 @@ uv pip compile pyproject.toml --extra test --universal --upgrade --generate-hash
 The scheduled CI audit resolves the runtime and `test` extra dependency set
 across the supported Python and OS matrix to catch newly published advisories.
 Upstream package releases drift over time, so even an unrelated PR touching
-`pyproject.toml` can fail the `dependency-audit` check until the committed file
+`pyproject.toml` can fail the `Lint & dependency audit` check until the committed file
 is regenerated with the command above and re-committed.
+
+The `lint.yml` workflow runs Ruff, documentation lint, shell checks, and the
+committed dependency audit in one job with shared checkout and tool setup.
+Independent checks still run after another check fails, and any failure fails
+the job. The scheduled dependency-audit matrix runs separately.
 
 #### Shell scripts
 
@@ -241,28 +327,27 @@ is regenerated with the command above and re-committed.
 git ls-files -z -- '*.sh' | xargs -0 shellcheck --severity=error
 ```
 
-The CI `lint.yml` `shellcheck` job currently reports and blocks only
+The CI `lint.yml` ShellCheck step currently reports and blocks only
 error-severity findings. Warnings such as SC2155 are intentionally outside this
-job until a follow-up cleanup tightens the threshold.
+check until a follow-up cleanup tightens the threshold.
 
 ### Manual testing
 
 #### Testing setup
 
+Follow the [local development guide](https://github.github.io/spec-kit/how-to/local-development.html#1-prepare-the-checkout)
+to create this checkout's `.venv` and install it in editable mode. From the
+Spec Kit repository root, initialize a separate test project with that CLI:
+
 ```bash
-# Install the project and test dependencies from your local branch
-cd <spec-kit-repo>
-uv sync --extra test
-source .venv/bin/activate  # On Windows (CMD): .venv\Scripts\activate  |  (PowerShell): .venv\Scripts\Activate.ps1
-uv pip install -e .
-# Ensure the `specify` binary in this environment points at your working tree so the agent runs the branch you're testing.
-
-# Initialize a test project using your local changes
-uv run specify init <temp-dir>/speckit-test --integration <agent>
+.venv/bin/specify init <temp-dir>/speckit-test --integration <agent>
 cd <temp-dir>/speckit-test
-
-# Open in your agent
 ```
+
+On Windows PowerShell, use `.\.venv\Scripts\specify.exe` instead of
+`.venv/bin/specify`. Open the generated project in your agent. If further CLI
+commands are needed from that directory, use the absolute path to the original
+checkout's `.venv` executable, not a globally installed `specify`.
 
 #### Manual testing process
 
@@ -346,6 +431,8 @@ That being said, if you are using any kind of AI assistance (e.g., agents, ChatG
 If your PR responses or comments are being generated by an AI, disclose that as well, naming the same agent, model(s), settings/mode, and extent.
 
 As an exception, trivial spacing or typo fixes don't need to be disclosed, so long as the changes are limited to small parts of the code or short phrases. The catalog-submission issue forms (extension, preset, and bundle submissions) feed content-neutral validation automation rather than code review, so they carry no disclosure field and are exempt from this requirement. Spec Kit's own bundled agentic workflows (the automated bug-fix and community-catalog prompts under `.github/workflows/`) are likewise exempt: they run as a fixed, known agent and open draft PRs for maintainer review, so their agent identity is inherent to the workflow rather than self-declared per contribution.
+The trivial-fix exception does not waive the disclosures below for agents acting
+on behalf of a contributor; the bundled workflows retain their exception.
 
 An example disclosure:
 
@@ -364,6 +451,39 @@ what extent, which in turn helps us judge whether our [`AGENTS.md`](./AGENTS.md)
 
 In a perfect world, AI assistance would produce equal or higher quality work than any human. That isn't the world we live in today, and in most cases
 where human supervision or expertise is not in the loop, it's generating code that cannot be reasonably maintained or evolved.
+
+### Agent-authored Git and review activity
+
+For an agent acting on behalf of a contributor, disclosure is continuous: the
+PR body, each agent-authored commit, and each AI-generated PR comment or reply
+must independently identify the agent's involvement. A PR-body disclosure does
+not cover later commits or review rounds.
+
+- **Before opening a PR:** Check whether the filing account already has three
+  open PRs in this repository. If so, explain that another submission may
+  receive lower review priority and obtain the filer's explicit permission.
+  Without it, including during autonomous operation, leave the work on a branch
+  and report that confirmation is required. Repository-owned `gh-aw` maintenance
+  workflows are exempt from this count check.
+- **For every agent-authored commit:** Include an `Assisted-by:` trailer naming
+  the actual agent and model and whether it acted `autonomous` or `supervised`,
+  for example, `Assisted-by: GitHub Copilot (model: Claude Opus 4.8, autonomous)`.
+  Use `model: unknown` only if the model genuinely cannot be determined. Use
+  `supervised` only if a human authored or line-by-line reviewed the change
+  before commit. Do not hide agent authorship behind the operator's git
+  identity or remove tool-generated `Co-authored-by:` trailers.
+- **For each AI-generated PR comment:** Identify the contributor on whose
+  behalf it is posted, the agent, model, settings/mode, and extent of AI
+  involvement. Restate this in every review-round summary, not just the PR
+  body. Post one top-level summary per round with the changes and commit SHA;
+  reply inline only for disagreement, deferral, or a non-obvious fix, and keep
+  those replies brief. Do not resolve conversations on a reviewer's behalf.
+  Avoid emoji, celebratory framing, checklist mirroring, and restating the
+  reviewer's comments. Re-request review once, after all feedback is addressed.
+
+Fast responses do not replace disclosure: do not post an unexplained "Done" or
+push an undisclosed fix moments after review. Do not claim personal human review
+or testing for an automated change; describe the automation truthfully.
 
 ### What we're looking for
 

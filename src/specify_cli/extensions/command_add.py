@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from packaging.version import InvalidVersion, Version
 from rich.markup import escape as _escape_markup
 from rich.panel import Panel
 
@@ -18,19 +19,48 @@ from . import _commands
 
 @_commands.extension_app.command("add")
 def extension_add(
-    extension: str = typer.Argument(help="Extension name or path"),
+    extension: Optional[str] = typer.Argument(None, help="Extension name or path (optional when --from is given)"),
     dev: bool = typer.Option(False, "--dev", help="Install from local directory"),
     from_url: Optional[str] = typer.Option(None, "--from", help="Install from custom URL"),
     force: bool = typer.Option(False, "--force", help="Overwrite if already installed"),
     priority: int = typer.Option(10, "--priority", help="Resolution priority (lower = higher precedence, default 10)"),
+    version: Optional[str] = typer.Option(None, "--version", help="Install an exact version from a catalog"),
 ):
     """Install an extension."""
     from . import ExtensionManager, ExtensionCatalog, ExtensionError, ValidationError, CompatibilityError, REINSTALL_COMMAND
+
+    # Compatibility callers invoke this function directly, in which case
+    # Typer supplies its OptionInfo object instead of a parsed option value.
+    if not isinstance(version, str):
+        version = None
+    # Same for the optional positional name when a caller omits it.
+    if not isinstance(extension, str):
+        extension = None
+
+    # The name is optional only for URL installs (``--from <url>``), where the
+    # archive's manifest supplies the extension ID. ``--dev`` needs a local
+    # path, and a catalog install needs a name to look up.
+    if extension is None and (dev or not from_url):
+        if dev:
+            console.print("[red]Error:[/red] --dev requires the path to a local extension directory.")
+        else:
+            console.print(
+                "[red]Error:[/red] Missing extension name or source. "
+                "Provide an extension name, or install from a URL with --from <url>."
+            )
+        console.print("\nUsage:")
+        console.print("  specify extension add <name>")
+        console.print("  specify extension add --from <url>")
+        console.print("  specify extension add --dev <path>")
+        raise typer.Exit(1)
 
     project_root = _commands._require_specify_project()
     # Validate priority
     if priority < 1:
         console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
+        raise typer.Exit(1)
+    if version is not None and (not version.strip() or dev or from_url):
+        console.print("[red]Error:[/red] --version requires a catalog install (without --dev or --from).")
         raise typer.Exit(1)
 
     manager = ExtensionManager(project_root)
@@ -89,7 +119,8 @@ def extension_add(
             console.print("Cancelled")
             raise typer.Exit(0)
 
-    safe_extension = _escape_markup(extension)
+    # With ``--from`` and no name, describe the install by its source URL.
+    safe_extension = _escape_markup(extension if extension is not None else str(from_url))
 
     try:
         with console.status(f"[cyan]Installing extension: {safe_extension}[/cyan]"):
@@ -133,7 +164,10 @@ def extension_add(
 
             else:
                 # Try bundled extensions first (shipped with spec-kit)
-                bundled_path = _commands._locate_bundled_extension(extension)
+                bundled_path = (
+                    _commands._locate_bundled_extension(extension)
+                    if version is None else None
+                )
                 if bundled_path is not None:
                     manifest = manager.install_from_directory(
                         bundled_path, speckit_version, priority=priority, force=force
@@ -155,9 +189,55 @@ def extension_add(
                         console.print("  specify extension search")
                         raise typer.Exit(1)
 
+                    if version is not None:
+                        # Resolve within the winning catalog source. A missing
+                        # historical release must not fall through to a lower
+                        # priority (or discovery-only) catalog. Reuse the entry
+                        # already resolved above rather than fetching again.
+                        from ._catalog_versions import select_release
+
+                        selected = select_release(ext_info, version)
+                        if selected is None:
+                            console.print(
+                                f"[red]Error:[/red] Extension '{_escape_markup(str(ext_info['id']))}' "
+                                f"has no catalog release for version {_escape_markup(version)}."
+                            )
+                            raise typer.Exit(1)
+                        ext_info = selected
+                        if not ext_info.get("_install_allowed", True):
+                            console.print(
+                                f"[red]Error:[/red] Extension '{_escape_markup(str(ext_info['id']))}' "
+                                "is from a discovery-only catalog and cannot be installed."
+                            )
+                            raise typer.Exit(1)
+
                     # If catalog resolved a display name to an ID, check bundled again
                     resolved_id = ext_info['id']
-                    if resolved_id != extension:
+                    if version is not None and ext_info.get("bundled") and not ext_info.get("download_url"):
+                        from . import ExtensionManifest
+
+                        candidate = _commands._locate_bundled_extension(resolved_id)
+                        if candidate is not None:
+                            bundled_manifest = ExtensionManifest(candidate / "extension.yml")
+                            try:
+                                packaged_matches = Version(bundled_manifest.version) == Version(
+                                    version
+                                )
+                            except InvalidVersion:
+                                packaged_matches = False
+                            if packaged_matches:
+                                bundled_path = candidate
+                                manifest = manager.install_from_directory(
+                                    bundled_path, speckit_version, priority=priority, force=force
+                                )
+                        if bundled_path is None:
+                            console.print(
+                                f"[red]Error:[/red] Bundled extension '{_escape_markup(resolved_id)}' "
+                                f"version {_escape_markup(version)} is not shipped with this Spec Kit release. "
+                                "Upgrade Spec Kit or choose an available catalog archive."
+                            )
+                            raise typer.Exit(1)
+                    if version is None and resolved_id != extension:
                         bundled_path = _commands._locate_bundled_extension(resolved_id)
                         if bundled_path is not None:
                             manifest = manager.install_from_directory(
@@ -206,7 +286,11 @@ def extension_add(
                         # Download extension archive (use the resolved catalog ID).
                         extension_id = ext_info['id']
                         console.print(f"Downloading {_escape_markup(str(ext_info['name']))} v{_escape_markup(str(ext_info.get('version', 'unknown')))}...")
-                        archive_path = catalog.download_extension(extension_id)
+                        archive_path = (
+                            catalog.download_extension_info(ext_info)
+                            if version is not None
+                            else catalog.download_extension(extension_id)
+                        )
 
                         try:
                             manifest = manager.install_from_zip(
@@ -215,6 +299,10 @@ def extension_add(
                                 priority=priority,
                                 force=force,
                                 catalog_name=ext_info.get("_catalog_name"),
+                                **(
+                                    {"expected_id": extension_id, "expected_version": version}
+                                    if version is not None else {}
+                                ),
                             )
                         finally:
                             archive_path.unlink(missing_ok=True)
@@ -230,22 +318,9 @@ def extension_add(
         for warning in manifest.warnings:
             console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {_escape_markup(str(warning))}")
 
-        selected_ai = _commands.load_init_options(project_root).get("ai")
-        is_cline = selected_ai == "cline"
-        is_forge = selected_ai == "forge"
-
-        if is_cline:
-            from specify_cli.integrations.cline import format_cline_command_name
-        if is_forge:
-            from specify_cli.integrations.forge import format_forge_command_name
-
         console.print("\n[bold cyan]Provided commands:[/bold cyan]")
         for cmd in manifest.commands:
-            cmd_name = cmd['name']
-            if is_cline:
-                cmd_name = format_cline_command_name(cmd_name)
-            elif is_forge:
-                cmd_name = format_forge_command_name(cmd_name)
+            cmd_name = _commands._registered_command_name(project_root, cmd['name'])
             console.print(f"  • {_escape_markup(str(cmd_name))} - {_escape_markup(str(cmd.get('description', '')))}")
 
         # Report agent skills registration

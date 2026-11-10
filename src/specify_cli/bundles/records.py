@@ -1,19 +1,22 @@
-"""Installed-bundle records — provenance for precise list/remove/update.
+"""Installed-bundle records — requirements and ownership for list/remove/update.
 
 Records are stored as JSON at ``.specify/bundle-records.json``. Each record
-captures exactly which components a bundle contributed so removal touches only
-that bundle's components and never collateral (FR-022, SC-004).
+stores every required component for conflict detection and separately records
+which components the bundle contributed, so removal never touches independently
+installed components (FR-022, SC-004). Known installed
+versions are stored separately from requested pins to make patch substitutions
+visible without changing bundle ownership or manifest identity.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from . import BundlerError
 from .yamlio import dump_json, ensure_within, load_json
-from .manifest import COMPONENT_KINDS, ComponentRef, _text
+from .manifest import COMPONENT_KINDS, BundleRef, ComponentRef, _text
 
 RECORDS_FILENAME = "bundle-records.json"
 RECORDS_SCHEMA_VERSION = "1.0"
@@ -24,7 +27,10 @@ class InstalledBundleRecord:
     bundle_id: str
     version: str
     contributed_components: tuple[ComponentRef, ...]
+    required_components: tuple[ComponentRef, ...]
     installed_at: str
+    installed_versions: dict[str, str] = field(default_factory=dict)
+    bundle_references: tuple[BundleRef, ...] = ()
 
     @classmethod
     def create(
@@ -33,23 +39,46 @@ class InstalledBundleRecord:
         version: str,
         components: list[ComponentRef],
         installed_at: str | None = None,
+        required_components: list[ComponentRef] | None = None,
+        installed_versions: dict[str, str] | None = None,
+        bundle_references: list[BundleRef] | None = None,
     ) -> "InstalledBundleRecord":
         return cls(
             bundle_id=bundle_id,
             version=version,
             contributed_components=tuple(components),
+            required_components=tuple(
+                components if required_components is None else required_components
+            ),
             installed_at=installed_at or _utc_now(),
+            installed_versions=(
+                dict(installed_versions) if installed_versions is not None else {}
+            ),
+            bundle_references=(
+                tuple(bundle_references) if bundle_references is not None else ()
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "bundle_id": self.bundle_id,
             "version": self.version,
             "installed_at": self.installed_at,
             "contributed_components": [
                 _component_to_dict(c) for c in self.contributed_components
             ],
+            "required_components": [
+                _component_to_dict(c) for c in self.required_components
+            ],
         }
+        if self.installed_versions:
+            data["installed_versions"] = dict(self.installed_versions)
+        if self.bundle_references:
+            data["bundle_references"] = [
+                _bundle_reference_to_dict(reference)
+                for reference in self.bundle_references
+            ]
+        return data
 
     @classmethod
     def from_dict(cls, data: Any) -> "InstalledBundleRecord":
@@ -64,6 +93,13 @@ class InstalledBundleRecord:
             # absent/None value means "no components".
             raise BundlerError(
                 "Corrupt record: 'contributed_components' must be a list."
+            )
+        # Older records contain only contributed components. Retain those
+        # known pins until a successful reinstall writes the full requirements.
+        required_raw = data.get("required_components", components_raw)
+        if not isinstance(required_raw, list):
+            raise BundlerError(
+                "Corrupt record: 'required_components' must be a list."
             )
         # ``.get(key, "")`` defaults only a *missing* key. A key that is
         # present but null -- how a hand-edited or corrupt record spells an
@@ -83,13 +119,43 @@ class InstalledBundleRecord:
                 f"Corrupt records file: record for bundle '{bundle_id}' is "
                 "missing its 'version'."
             )
+        contributed = tuple(_component_from_dict(c) for c in components_raw)
+        required = tuple(
+            _component_from_dict(c, label="required") for c in required_raw
+        )
+        if not set(contributed).issubset(required):
+            raise BundlerError(
+                "Corrupt record: 'required_components' must include all "
+                "'contributed_components'."
+            )
+        installed_versions = data.get("installed_versions", {})
+        if not isinstance(installed_versions, dict):
+            raise BundlerError("Corrupt record: 'installed_versions' must be a mapping.")
+        bundle_references_raw = data.get("bundle_references")
+        if bundle_references_raw is None:
+            bundle_references: tuple[BundleRef, ...] = ()
+        elif not isinstance(bundle_references_raw, list):
+            raise BundlerError("Corrupt record: 'bundle_references' must be a list.")
+        else:
+            bundle_references = tuple(
+                _bundle_reference_from_dict(reference)
+                for reference in bundle_references_raw
+            )
+        keys = {f"{c.kind}:{c.id}" for c in required}
+        for key, actual in installed_versions.items():
+            if key not in keys or not isinstance(actual, str) or not actual.strip():
+                raise BundlerError(
+                    "Corrupt record: 'installed_versions' must map required "
+                    "component keys (kind:id) to non-empty version strings."
+                )
         return cls(
             bundle_id=bundle_id,
             version=version,
             installed_at=_text(data.get("installed_at")),
-            contributed_components=tuple(
-                _component_from_dict(c) for c in components_raw
-            ),
+            contributed_components=contributed,
+            required_components=required,
+            installed_versions=dict(installed_versions),
+            bundle_references=bundle_references,
         )
 
 
@@ -178,6 +244,39 @@ def remove_record(
     return [r for r in records if r.bundle_id != bundle_id]
 
 
+def transfer_contributions(
+    records: list[InstalledBundleRecord],
+    released: list[ComponentRef] | tuple[ComponentRef, ...],
+) -> list[InstalledBundleRecord]:
+    """Keep a bundle-installed component attributed while another bundle needs it."""
+    updated = list(records)
+    owned = {
+        (component.kind, component.id)
+        for record in updated
+        for component in record.contributed_components
+    }
+    for component in released:
+        key = component.kind, component.id
+        if key in owned:
+            continue
+        for index, record in enumerate(updated):
+            required = next(
+                (
+                    ref for ref in record.required_components
+                    if (ref.kind, ref.id) == key
+                ),
+                None,
+            )
+            if required is not None:
+                updated[index] = replace(
+                    record,
+                    contributed_components=(*record.contributed_components, required),
+                )
+                owned.add(key)
+                break
+    return updated
+
+
 def components_still_needed(
     records: list[InstalledBundleRecord], exclude_bundle_id: str
 ) -> set[tuple[str, str]]:
@@ -186,7 +285,7 @@ def components_still_needed(
     for record in records:
         if record.bundle_id == exclude_bundle_id:
             continue
-        for component in record.contributed_components:
+        for component in record.required_components:
             needed.add((component.kind, component.id))
     return needed
 
@@ -204,9 +303,48 @@ def _component_to_dict(ref: ComponentRef) -> dict[str, Any]:
     return data
 
 
-def _component_from_dict(data: Any) -> ComponentRef:
+def _bundle_reference_to_dict(reference: BundleRef) -> dict[str, Any]:
+    return {
+        "id": reference.id,
+        "version": reference.version,
+        "source": reference.source,
+    }
+
+
+def _bundle_reference_from_dict(data: Any) -> BundleRef:
     if not isinstance(data, dict):
-        raise BundlerError("Each contributed component must be a mapping.")
+        raise BundlerError(
+            "Corrupt record: 'bundle_references' entries must be mappings."
+        )
+    bundle_id = data.get("id")
+    version = data.get("version")
+    if (
+        not isinstance(bundle_id, str)
+        or not bundle_id.strip()
+        or not isinstance(version, str)
+        or not version.strip()
+    ):
+        raise BundlerError(
+            "Corrupt record: 'bundle_references' entries must have non-empty "
+            "string 'id' and 'version'."
+        )
+    source = data.get("source")
+    if source == "":
+        source = None
+    elif source is not None and not isinstance(source, str):
+        raise BundlerError(
+            "Corrupt record: 'bundle_references' entry 'source' must be a string."
+        )
+    return BundleRef(
+        id=bundle_id,
+        version=version,
+        source=source,
+    )
+
+
+def _component_from_dict(data: Any, *, label: str = "contributed") -> ComponentRef:
+    if not isinstance(data, dict):
+        raise BundlerError(f"Each {label} component must be a mapping.")
     kind = _text(data.get("kind"))
     cid = _text(data.get("id"))
     if kind not in COMPONENT_KINDS:
@@ -216,7 +354,7 @@ def _component_from_dict(data: Any) -> ComponentRef:
         )
     if not cid:
         raise BundlerError(
-            "Corrupt records file: a contributed component is missing its 'id'."
+            f"Corrupt records file: a {label} component is missing its 'id'."
         )
     return ComponentRef(
         kind=kind,

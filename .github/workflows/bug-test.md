@@ -69,7 +69,7 @@ network:
 
 steps:
   - name: Setup uv
-    uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+    uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
   - name: Set up Python
     uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
     with:
@@ -89,6 +89,7 @@ safe-outputs:
   add-labels:
     allowed: [tests-passing, tests-failing, tests-inconclusive]
     max: 1
+    issue-intent: false
 ---
 
 # Test a Bug Fix from a Labeled Issue
@@ -107,6 +108,14 @@ comment *is* the report maintainers read directly on the issue.
 This workflow is intentionally **decoupled from any one project's specifics**.
 Detect the project's own test stack and run its own test command; do not assume a
 particular language or framework.
+
+## Label Responsibilities
+
+Applying the outcome labels is your responsibility, not a recommendation for a
+maintainer. Use the `add_labels` safe output on source issue
+#${{ github.event.issue.number }}, with plain strings in its `labels` array.
+Never emit label objects with `suggest: true` or suggestion-only output.
+Follow the outcome rules below for label selection, limits, and missing labels.
 
 ## Triggering Conditions
 

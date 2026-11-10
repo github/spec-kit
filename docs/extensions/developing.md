@@ -1,0 +1,875 @@
+# Developing extensions
+
+A guide for creating Spec Kit extensions using GitHub Copilot's skills layout.
+Invoke skills in Copilot chat with hyphenated names such as
+`/speckit-my-ext-hello`. Extension manifests still use dotted command identifiers
+such as `speckit.my-ext.hello`; Spec Kit renders them as Copilot skills during
+installation.
+
+---
+
+## Quick Start
+
+### 1. Create Extension Directory
+
+```bash
+mkdir my-extension
+cd my-extension
+```
+
+### 2. Create `extension.yml` Manifest
+
+```yaml
+schema_version: "1.0"
+
+extension:
+  id: "my-ext"                          # Lowercase, alphanumeric + hyphens only
+  name: "My Extension"
+  version: "1.0.0"                      # SemVer recommended; PEP 440 accepted
+  description: "My custom extension"
+  author: "Your Name"
+  repository: "https://github.com/you/spec-kit-my-ext"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.1.0"            # Minimum spec-kit version
+  tools:                                # Optional: External tools required
+    - name: "my-tool"
+      required: true
+      version: ">=1.0.0"
+  commands:                             # Optional: Core commands needed
+    - "speckit.tasks"
+
+provides:
+  commands:
+    - name: "speckit.my-ext.hello"      # Must follow pattern: speckit.{ext-id}.{cmd}
+      file: "commands/hello.md"
+      description: "Say hello"
+
+  config:                               # Optional: Config files
+    - name: "my-ext-config.yml"
+      template: "my-ext-config.template.yml"
+      description: "Extension configuration"
+      required: false
+
+hooks:                                  # Optional: Integration hooks
+  after_tasks:
+    command: "speckit.my-ext.hello"
+    optional: true
+    prompt: "Run hello command?"
+
+tags:                                   # Optional: For catalog search
+  - "example"
+  - "utility"
+```
+
+### 3. Create Commands Directory
+
+```bash
+mkdir commands
+```
+
+### 4. Create Command File
+
+**File**: `commands/hello.md`
+
+````markdown
+---
+description: "Say hello command"
+tools:                              # Optional: AI tools this command uses
+  - 'some-tool/function'
+scripts:                            # Optional: Helper scripts
+  sh: ../../scripts/bash/helper.sh
+  ps: ../../scripts/powershell/helper.ps1
+---
+
+# Hello Command
+
+This command says hello!
+
+## User Input
+
+$ARGUMENTS
+
+## Steps
+
+1. Greet the user
+2. Show extension is working
+
+```bash
+echo "Hello from my extension!"
+echo "Arguments: $ARGUMENTS"
+```
+
+## Extension Configuration
+
+Load extension config from `.specify/extensions/my-ext/my-ext-config.yml`.
+````
+
+### 5. Test Locally
+
+```bash
+cd /path/to/spec-kit-project
+specify integration install copilot --integration-options="--skills"
+specify extension add --dev /path/to/my-extension
+```
+
+For a new project, initialize it with
+`specify init my-project --integration copilot --integration-options="--skills"`.
+If Copilot is already installed in a commands layout, follow the
+[Copilot migration guidance](../integrations/copilot.md#commands-layout)
+instead of installing it again.
+
+### 6. Verify Installation
+
+```bash
+specify extension list
+
+# Should show:
+#  ✓ My Extension (v1.0.0)
+#     My custom extension
+#     Commands: 1 | Hooks: 1 | Status: Enabled
+```
+
+### 7. Test Skill
+
+Open GitHub Copilot chat and invoke the skill:
+
+```text
+/speckit-my-ext-hello world
+```
+
+The generated skill is available in
+`.github/skills/speckit-my-ext-hello/SKILL.md`. This invocation belongs in
+Copilot chat, not in your terminal.
+
+---
+
+## Manifest Schema Reference
+
+### Required Fields
+
+#### `schema_version`
+
+Extension manifest schema version. Currently: `"1.0"`
+
+#### `extension`
+
+Extension metadata block.
+
+**Required sub-fields**:
+
+- `id`: Extension identifier (lowercase, alphanumeric, hyphens)
+- `name`: Human-readable name
+- `version`: PEP 440 version (SemVer recommended, e.g., "1.0.0")
+- `description`: Short description
+
+**Optional sub-fields**:
+
+- `author`: Extension author
+- `repository`: Source code URL
+- `license`: SPDX license identifier
+- `homepage`: Extension homepage URL
+
+#### `requires`
+
+Compatibility requirements.
+
+**Required sub-fields**:
+
+- `speckit_version`: Semantic version specifier (e.g., ">=0.1.0,<2.0.0")
+
+**Optional sub-fields**:
+
+- `tools`: External tools required (array of tool objects)
+- `commands`: Core spec-kit commands needed (array of command names)
+- `scripts`: Core scripts required (array of script names)
+
+#### `provides`
+
+What the extension provides.
+
+**Optional sub-fields:**
+
+- `commands`: Array of command objects
+- `templates`: Array of template objects
+- `scripts`: Array of script objects
+
+`hooks` and `events` are separate top-level manifest fields (siblings of
+`provides`, not nested under it — see [`hooks`](#hooks) below). At least one
+of `provides.commands`, `provides.templates`, `provides.scripts`, `hooks`, or
+`events` is required.
+
+**Command object**:
+
+- `name`: Command name (must match `speckit.{ext-id}.{command}`)
+- `file`: Path to command file (relative to extension root)
+- `description`: Command description (optional)
+
+**Template object**:
+
+- `name`: Template name (lowercase, alphanumeric, hyphens — e.g. `myext-template`)
+- `file`: Path to template file (relative to extension root)
+- `description`: Template description (optional)
+
+**Script object**:
+
+- `name`: Script name (lowercase, alphanumeric, hyphens — e.g. `myext-collect`)
+- `file`: Path to script file (relative to extension root)
+- `description`: Script description (optional)
+- `runtimes`: Runtimes the script supports (optional, array; subset of `bash`, `powershell`, `python` — informational only, not used to select or invoke the script)
+
+Extension-provided templates and scripts always resolve as `replace`; a manifest that includes a `strategy` key on one of these entries is rejected with a `ValidationError`. Composable strategies (`wrap`/`prepend`/`append`) are preset-only.
+
+### Optional Fields
+
+#### `hooks`
+
+Integration hooks for automatic execution.
+
+Available hook points:
+
+- `before_specify` / `after_specify`: Before/after specification generation
+- `before_plan` / `after_plan`: Before/after implementation planning
+- `before_tasks` / `after_tasks`: Before/after task generation
+- `before_implement` / `after_implement`: Before/after implementation
+- `before_analyze` / `after_analyze`: Before/after cross-artifact analysis
+- `before_checklist` / `after_checklist`: Before/after checklist generation
+- `before_clarify` / `after_clarify`: Before/after spec clarification
+- `before_constitution` / `after_constitution`: Before/after constitution update
+- `before_bug_assess` / `after_bug_assess`: Before/after bug assessment (bundled `bug` extension)
+- `before_bug_fix` / `after_bug_fix`: Before/after bug remediation (bundled `bug` extension)
+- `before_bug_test` / `after_bug_test`: Before/after bug verification (bundled `bug` extension)
+
+Each event accepts a single hook object or a list of hook objects (multiple commands on one event).
+
+Hook object:
+
+- `command`: Command to execute (typically from `provides.commands`, but can reference any registered command)
+- `priority`: Sort metadata for `HookExecutor` (integer ≥ 1, default 10);
+  current command templates surface hooks in configured YAML order instead
+- `optional`: If true, prompt user before executing
+- `prompt`: Prompt text for optional hooks
+- `description`: Hook description
+- `condition`: Expression evaluated by `HookExecutor`; current command
+  templates skip hooks with non-empty conditions rather than evaluating them
+
+See the [hook configuration contract](api.md#hook-configuration) for all fields
+and the distinction between the Python API and command-template behavior.
+
+#### `events`
+
+Runtime events react to the coding agent's lifecycle, rather than a Spec Kit
+command. Declare canonical names at the top level and reference command
+templates with runnable `scripts` entries:
+
+```yaml
+events:
+  session_start:
+    command: speckit.my-ext.initialize
+```
+
+For example, `commands/initialize.md` can declare:
+
+```yaml
+---
+description: "Initialize the extension session"
+scripts:
+  sh: scripts/initialize.sh
+  ps: scripts/initialize.ps1
+---
+```
+
+Include that command in `provides.commands` and supply the scripts in your
+extension. Runtime events execute the script directly; they do not send the
+command's Markdown body to the coding agent. Each integration supports a subset
+of canonical events. See the [runtime event contract](api.md#extension-runtime-events).
+
+#### `tags`
+
+Array of tags for catalog discovery.
+
+#### `defaults`
+
+Default extension configuration values.
+
+---
+
+## Command File Format
+
+### Frontmatter (YAML)
+
+```yaml
+---
+description: "Command description"          # Recommended
+tools:                                      # Optional
+  - 'tool-name/function'
+scripts:                                    # Optional
+  sh: ../../scripts/bash/helper.sh
+  ps: ../../scripts/powershell/helper.ps1
+---
+```
+
+### Body (Markdown)
+
+Use standard Markdown with special placeholders:
+
+- `$ARGUMENTS`: User-provided arguments
+- `{SCRIPT}`: Replaced with script path during registration
+- `__SPECKIT_COMMAND_<NAME>__`: Replaced with the invocation of another command, rendered using the active integration's separator (see [Referencing other commands](#referencing-other-commands))
+
+**Example**:
+
+````markdown
+## Steps
+
+1. Parse arguments
+2. Execute logic
+
+```bash
+args="$ARGUMENTS"
+echo "Running with args: $args"
+```
+````
+
+### Referencing other commands
+
+A command body is a *template* that Spec Kit renders as a Copilot skill.
+When referencing another command from that body, **do not hard-code its
+invocation**. Use a command-reference token so Spec Kit renders the correct
+skill syntax and the extension remains portable.
+
+Use the token `__SPECKIT_COMMAND_<NAME>__`. In Copilot's skills layout,
+Spec Kit resolves it to a `/speckit-...` invocation.
+
+Encode the command name in upper case, dropping the `speckit.` prefix and turning each dotted segment separator into an underscore. A hyphen inside a segment is kept as a hyphen:
+
+| Command file | Token |
+| --- | --- |
+| `speckit.plan.md` | `__SPECKIT_COMMAND_PLAN__` |
+| `speckit.bug.fix.md` | `__SPECKIT_COMMAND_BUG_FIX__` |
+| `speckit.git.commit.md` | `__SPECKIT_COMMAND_GIT_COMMIT__` |
+| `speckit.agent-context.update.md` | `__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__` |
+
+An underscore separates command segments and a hyphen belongs to the segment
+it sits in, so `AGENT-CONTEXT_UPDATE` is the two segments `agent-context` and
+`update` rather than three. Copilot renders this as
+`/speckit-agent-context-update`.
+
+**Example** — a command body that points the user at the next step:
+
+```markdown
+Once the assessment exists, the next step is `__SPECKIT_COMMAND_BUG_FIX__ slug=<slug>`.
+```
+
+This renders as `/speckit-bug-fix slug=<slug>` in Copilot chat. The first-party
+`bug` and `git` extensions use this token exclusively; see
+`extensions/bug/commands/` for working examples.
+
+For other integrations' invocation formats, see the shared
+[command invocation reference](../integrations/cli.md#command-invocation).
+
+### Script Path Rewriting
+
+The registrar normalizes helper paths while rendering commands. A
+repository-root reference with two or more `../` segments targets the
+project's core scripts.
+
+**In extension**:
+
+```yaml
+scripts:
+  sh: ../../scripts/bash/helper.sh
+```
+
+Use `{SCRIPT}` in the command body to invoke the selected script variant.
+For this example, the generated invocation is:
+
+```bash
+.specify/scripts/bash/helper.sh
+```
+
+Bare `scripts/helper.sh` instead targets
+`.specify/extensions/<extension-id>/scripts/helper.sh` for an extension-owned
+script. The generated output format may omit the original `scripts`
+frontmatter after resolving `{SCRIPT}`; do not rely on that metadata surviving
+in the installed command or skill.
+
+---
+
+## Configuration Files
+
+### Config Template
+
+**File**: `my-ext-config.template.yml`
+
+```yaml
+# My Extension Configuration
+# Copy this to my-ext-config.yml and customize
+
+# Example configuration
+api:
+  endpoint: "https://api.example.com"
+  timeout: 30
+  key: ""  # Set with SPECKIT_MY_EXT_API_KEY; do not commit credentials
+
+features:
+  feature_a: true
+  feature_b: false
+```
+
+### Config Loading
+
+In your command, load config with layered precedence:
+
+1. Extension defaults (`extension.yml` → `defaults`, then `config.defaults`
+   for any conflicting keys)
+2. Project config (`.specify/extensions/my-ext/my-ext-config.yml`)
+3. Local overrides (`.specify/extensions/my-ext/local-config.yml` - gitignored)
+4. Environment variables (`SPECKIT_MY_EXT_*`)
+
+For Python code running in an environment with `specify-cli` installed, use
+the existing loader rather than duplicating the merge:
+
+```python
+from pathlib import Path
+from specify_cli.extensions import ConfigManager
+
+config = ConfigManager(Path.cwd(), "my-ext").get_config()
+endpoint = config.get("api", {}).get("endpoint")
+```
+
+Run this from the project root, or pass that root explicitly. Environment
+variable components become nested keys: `SPECKIT_MY_EXT_API_KEY` overrides
+`api.key`. Values remain strings; YAML `${...}` placeholders are not expanded.
+Commands implemented in other languages must provide their own loading if they
+need this layering.
+
+Spec Kit does not consume `config_schema` to validate configuration.
+Validate required values and types in your extension's commands or scripts.
+
+---
+
+## Excluding Files with `.extensionignore`
+
+Extension authors can create a `.extensionignore` file in the extension root to exclude files and folders from being copied when a user installs the extension with `specify extension add`. This is useful for keeping development-only files (tests, CI configs, docs source, etc.) out of the installed copy.
+
+### Format
+
+The file uses `.gitignore`-compatible patterns (one per line), powered by the [`pathspec`](https://pypi.org/project/pathspec/) library:
+
+- Blank lines are ignored
+- Lines starting with `#` are comments
+- `*` matches anything **except** `/` (does not cross directory boundaries)
+- `**` matches zero or more directories (e.g., `docs/**/*.draft.md`)
+- `?` matches any single character except `/`
+- A trailing `/` restricts a pattern to directories only
+- Patterns containing `/` (other than a trailing slash) are anchored to the extension root
+- Patterns without `/` match at any depth in the tree
+- `!` negates a previously excluded pattern (re-includes a file)
+- Backslashes in patterns are normalised to forward slashes for cross-platform compatibility
+- The `.extensionignore` file itself is always excluded automatically
+
+### Example
+
+```gitignore
+# .extensionignore
+
+# Development files
+tests/
+.github/
+.gitignore
+
+# Build artifacts
+__pycache__/
+*.pyc
+dist/
+
+# Documentation source (keep only the built README)
+docs/
+CONTRIBUTING.md
+```
+
+### Pattern Matching
+
+| Pattern | Matches | Does NOT match |
+|---------|---------|----------------|
+| `*.pyc` | Any `.pyc` file in any directory | — |
+| `tests/` | The `tests` directory (and all its contents) | A file named `tests` |
+| `docs/*.draft.md` | `docs/api.draft.md` (directly inside `docs/`) | `docs/sub/api.draft.md` (nested) |
+| `.env` | The `.env` file at any level | — |
+| `!README.md` | Re-includes `README.md` even if matched by an earlier pattern | — |
+| `docs/**/*.draft.md` | `docs/api.draft.md`, `docs/sub/api.draft.md` | — |
+
+### Unsupported Features
+
+The following `.gitignore` features are **not applicable** in this context:
+
+- **Multiple `.extensionignore` files**: Only a single file at the extension root is supported (`.gitignore` supports files in subdirectories)
+- **`$GIT_DIR/info/exclude` and `core.excludesFile`**: These are Git-specific and have no equivalent here
+- **Negation inside excluded directories**: Because file copying uses `shutil.copytree`, excluding a directory prevents recursion into it entirely. A negation pattern cannot re-include a file inside a directory that was itself excluded. For example, the combination `tests/` followed by `!tests/important.py` will **not** preserve `tests/important.py` — the `tests/` directory is skipped at the root level and its contents are never evaluated. To work around this, exclude the directory's contents individually instead of the directory itself (e.g., `tests/*.pyc` and `tests/.cache/` rather than `tests/`).
+
+---
+
+## Validation Rules
+
+### Extension ID
+
+- **Pattern**: `^[a-z0-9-]+$`
+- **Valid**: `my-ext`, `tool-123`, `awesome-plugin`
+- **Invalid**: `MyExt` (uppercase), `my_ext` (underscore), `my ext` (space)
+
+### Extension Version
+
+- **Format**: PEP 440; SemVer (`MAJOR.MINOR.PATCH`) is recommended for releases
+- **Valid**: `1.0.0`, `0.1.0`, `2.5.3`
+- **Also accepted by the CLI**: `1.0`, `v1.0.0`, `1.0.0-beta`
+- **Invalid**: `latest`, `not-a-version`
+
+Community submissions have stricter release-version requirements; see
+[Submission validation](publishing.md#submission-validation).
+
+### Command Name
+
+- **Pattern**: `^speckit\.[a-z0-9-]+\.[a-z0-9-]+$`
+- **Valid**: `speckit.my-ext.hello`, `speckit.tool.cmd`
+- **Invalid**: `other-ext.hello` (wrong namespace), `speckit.my-ext.Create` (uppercase)
+
+Legacy `my-ext.hello` and `speckit.hello` are normalized to
+`speckit.my-ext.hello` with warnings. Use canonical names in new manifests.
+
+### Command File Path
+
+- **Must be** relative to extension root
+- **Valid**: `commands/hello.md`, `commands/subdir/cmd.md`
+- **Invalid**: `/absolute/path.md`, `../outside.md`
+
+---
+
+## Testing Extensions
+
+### Manual Testing
+
+1. **Create test extension** in a project configured for
+   [Copilot skills](../integrations/copilot.md#setup).
+2. **Install locally**:
+
+   ```bash
+   specify extension add --dev /path/to/extension
+   ```
+
+3. **Verify installation**:
+
+   ```bash
+   specify extension list
+   ```
+
+4. **Test skills** in Copilot chat, for example `/speckit-my-ext-hello world`.
+5. **Check skill registration**:
+
+   ```bash
+   ls .github/skills/speckit-my-ext-*/SKILL.md
+   ```
+
+6. **Remove extension**:
+
+   ```bash
+   specify extension remove my-ext
+   ```
+
+### Automated Testing
+
+Create tests for your extension:
+
+```python
+# tests/test_my_extension.py
+import pytest
+from pathlib import Path
+from specify_cli.extensions import ExtensionManifest
+
+def test_manifest_valid():
+    """Test extension manifest is valid."""
+    manifest = ExtensionManifest(Path("extension.yml"))
+    assert manifest.id == "my-ext"
+    assert len(manifest.commands) >= 1
+
+def test_command_files_exist():
+    """Test all command files exist."""
+    manifest = ExtensionManifest(Path("extension.yml"))
+    for cmd in manifest.commands:
+        cmd_file = Path(cmd["file"])
+        assert cmd_file.exists(), f"Command file not found: {cmd_file}"
+```
+
+---
+
+## Distribution
+
+### Option 1: GitHub Repository
+
+1. **Create repository**: `spec-kit-my-ext`
+2. **Add files**:
+
+   ```text
+   spec-kit-my-ext/
+   ├── extension.yml
+   ├── commands/
+   ├── scripts/
+   ├── docs/
+   ├── README.md
+   ├── LICENSE
+   └── CHANGELOG.md
+   ```
+
+3. **Create release**: Tag with version (e.g., `v1.0.0`)
+4. **Install from repo**:
+
+   ```bash
+   git clone https://github.com/you/spec-kit-my-ext
+   specify extension add --dev spec-kit-my-ext/
+   ```
+
+### Option 2: ZIP Archive
+
+Create ZIP archive and host on GitHub Releases:
+
+```bash
+zip -r spec-kit-my-ext-1.0.0.zip extension.yml commands/ scripts/ docs/
+```
+
+Users install with:
+
+```bash
+specify extension add <extension-name> --from https://github.com/.../spec-kit-my-ext-1.0.0.zip
+```
+
+### Option 3: Community Reference Catalog
+
+Submit to the community catalog for public discovery:
+
+1. **Create a GitHub release** for your extension
+2. **File an issue** using the [Extension Submission](https://github.com/github/spec-kit/issues/new?template=extension_submission.yml) template
+3. **After review**, a maintainer updates the catalog and your extension becomes available:
+   - Users can browse `catalog.community.json` to discover your extension
+   - Users vet the release archive before installing it directly or adding it
+     to their own trusted catalog
+   - Users install with `--from <archive-url>` or from their vetted catalog
+
+See the [Extension Publishing Guide](publishing.md) for detailed submission instructions.
+
+---
+
+## Best Practices
+
+### Naming Conventions
+
+- **Extension ID**: Use descriptive, hyphenated names (`jira-integration`, not `ji`)
+- **Commands**: Use verb-noun pattern (`create-issue`, `sync-status`)
+- **Config files**: Match extension ID (`jira-config.yml`)
+
+### Documentation
+
+- **README.md**: Overview, installation, usage
+- **CHANGELOG.md**: Version history
+- **docs/**: Detailed guides
+- **Command descriptions**: Clear, concise
+
+### Versioning
+
+- **Follow SemVer**: `MAJOR.MINOR.PATCH`
+- **MAJOR**: Breaking changes
+- **MINOR**: New features
+- **PATCH**: Bug fixes
+- **Bump on every content change**: update offers from `specify extension
+  update` are version-driven, so a content change shipped without a
+  version bump is never delivered automatically to already-installed
+  copies. For the bundled extensions in this repository the bump is
+  enforced by CI (`extension-version-guard.yml`): a PR that changes
+  files under `extensions/<id>/` must also bump that extension's
+  `extension.yml` version and keep `extensions/catalog.json` in sync.
+
+### Security
+
+- **Never commit secrets**: Use environment variables
+- **Validate input**: Sanitize user arguments
+- **Document permissions**: What files/APIs are accessed
+
+### Compatibility
+
+- **Specify version range**: Don't require exact version
+- **Test with multiple versions**: Ensure compatibility
+- **Graceful degradation**: Handle missing features
+
+---
+
+## Example Extensions
+
+### Minimal Extension
+
+Smallest possible extension:
+
+```yaml
+# extension.yml
+schema_version: "1.0"
+extension:
+  id: "minimal"
+  name: "Minimal Extension"
+  version: "1.0.0"
+  description: "Minimal example"
+requires:
+  speckit_version: ">=0.1.0"
+provides:
+  commands:
+    - name: "speckit.minimal.hello"
+      file: "commands/hello.md"
+```
+
+````markdown
+<!-- commands/hello.md -->
+---
+description: "Hello command"
+---
+
+# Hello World
+
+```bash
+echo "Hello, $ARGUMENTS!"
+```
+````
+
+### Extension with Config
+
+Extension using configuration:
+
+```yaml
+# extension.yml
+# ... metadata ...
+provides:
+  config:
+    - name: "tool-config.yml"
+      template: "tool-config.template.yml"
+      required: true
+```
+
+```yaml
+# tool-config.template.yml
+api_endpoint: "https://api.example.com"
+timeout: 30
+```
+
+````markdown
+<!-- commands/use-config.md -->
+# Use Config
+
+Load config:
+```bash
+config_file=".specify/extensions/tool/tool-config.yml"
+endpoint=$(yq eval '.api_endpoint' "$config_file")
+echo "Using endpoint: $endpoint"
+```
+````
+
+### Extension with Hooks
+
+Extension that runs automatically:
+
+```yaml
+# extension.yml
+hooks:
+  after_tasks:
+    command: "speckit.auto.analyze"
+    optional: false  # Always run
+    description: "Analyze tasks after generation"
+```
+
+Multiple commands on one event, surfaced in YAML order by current command
+templates (`HookExecutor` instead sorts by `priority`, lower first):
+
+```yaml
+# extension.yml
+hooks:
+  after_plan:
+    - command: "speckit.my-ext.verify"
+      priority: 5
+      optional: false
+      description: "Verify the plan"
+    - command: "speckit.my-ext.report"
+      priority: 10
+      optional: true
+      prompt: "Generate the report?"
+      description: "Generate a report from the plan"
+```
+
+---
+
+## Troubleshooting
+
+### Extension won't install
+
+**Error**: `Invalid extension ID`
+
+- **Fix**: Use lowercase, alphanumeric + hyphens only
+
+**Error**: `Extension requires spec-kit >=0.2.0`
+
+- **Fix**: Upgrade Spec Kit using the [Upgrade Guide](../upgrade.md). `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git` remains available as a source-install fallback. If you installed from PyPI and want to stay on that route, follow the [PyPI upgrade guidance](../install/pypi.md#upgrade).
+
+**Error**: `Command file not found`
+
+- **Fix**: Ensure command files exist at paths specified in manifest
+
+### Skills not registered
+
+**Symptom**: Skills don't appear in GitHub Copilot chat
+
+**Check**:
+
+1. The generated skill exists at `.github/skills/speckit-my-ext-hello/SKILL.md`
+2. Extension installed successfully
+3. Commands registered in registry:
+
+   ```bash
+   cat .specify/extensions/.registry
+   ```
+
+**Fix**: Confirm Copilot is configured for the
+[skills layout](../integrations/copilot.md#default-skills-layout), then
+reinstall the extension to trigger registration.
+
+### Config not loading
+
+**Check**:
+
+1. Config file exists: `.specify/extensions/{ext-id}/{ext-id}-config.yml`
+2. YAML syntax is valid: `yq eval '.' config.yml`
+3. Environment variables set correctly
+
+---
+
+## Getting Help
+
+- **Issues**: Report bugs at GitHub repository
+- **Discussions**: Ask questions in GitHub Discussions
+- **Examples**: See the bundled [GitHub](https://github.com/github/spec-kit/tree/main/extensions/github)
+  and [bug](https://github.com/github/spec-kit/tree/main/extensions/bug) extensions
+
+---
+
+## Next Steps
+
+1. **Create your extension** following this guide
+2. **Test locally** with `--dev` flag
+3. **Share with community** (GitHub, catalog)
+4. **Iterate** based on feedback
+
+Happy extending! 🚀
+
+> Agent invocation examples on this page use GitHub Copilot's default skills syntax (`/speckit-*`). For other integrations and modes, see [Command invocation](../integrations/cli.md#command-invocation).
+
+## See also
+
+- [Extension API reference](api.md)
+- [Extension CLI reference](cli.md)
+- [Extension catalogs](catalogs.md)
+- [Publishing extensions](publishing.md)
+- [Extension user guide](overview.md)

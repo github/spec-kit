@@ -1,6 +1,41 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-28T00:00:00Z",
+  "updated_at": "2026-10-07T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/step-catalog.community.json",
-  "steps": {}
+  "steps": {
+    "decision": {
+      "id": "decision",
+      "name": "Decision",
+      "description": "Typed bounded choice, score, and noul decisions with native probabilities and score legends using Jev and Laya backends.",
+      "author": "spec-kit-decision-step contributors",
+      "version": "0.9.0",
+      "repository": "https://github.com/markuswondrak/spec-kit-decision-step",
+      "download_url": "https://github.com/markuswondrak/spec-kit-decision-step/releases/download/v0.9.0/decision-0.9.0.zip",
+      "step_yml_url": "https://raw.githubusercontent.com/markuswondrak/spec-kit-decision-step/v0.9.0/step.yml",
+      "init_url": "https://raw.githubusercontent.com/markuswondrak/spec-kit-decision-step/v0.9.0/__init__.py",
+      "extra_files": {
+        "backends.py": "https://raw.githubusercontent.com/markuswondrak/spec-kit-decision-step/v0.9.0/backends.py",
+        "config.py": "https://raw.githubusercontent.com/markuswondrak/spec-kit-decision-step/v0.9.0/config.py",
+        "defaults.yml": "https://raw.githubusercontent.com/markuswondrak/spec-kit-decision-step/v0.9.0/defaults.yml"
+      },
+      "sha256": {
+        "step.yml": "f00568ffb1d44b961480c43bb175c2f63e0c8e66fda2780e4cf5530b80222a2e",
+        "__init__.py": "5fc65c099e37483d050e8c03e4b205597dc8e78a30611137e167e47762349d99",
+        "backends.py": "97e4ea31aaf84dedd5b5bd6039defdd35b6aba39a02ccfe911f5bc45326edb02",
+        "config.py": "442529d9b1d1ce6f9bb50d7feba8e2a5ab5b302dcb9e2a1bdd68213c13d255f2",
+        "defaults.yml": "849cd30fcee714e2edbf588a4736f27aae2dce2f71268407ffb71cad3a41d03f"
+      },
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.11.0"
+      },
+      "tags": [
+        "decision",
+        "branching",
+        "probability"
+      ],
+      "created_at": "2026-10-07T00:00:00Z",
+      "updated_at": "2026-10-07T00:00:00Z"
+    }
+  }
 }

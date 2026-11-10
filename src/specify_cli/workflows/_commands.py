@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import os
 import re
 import sys
 from pathlib import Path, PurePosixPath as PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 import yaml
@@ -31,6 +32,9 @@ from .._download_security import (
 from .._project import _resolve_init_dir_override as _resolve_init_dir_override
 from ..shared_infra import verify_archive_sha256
 
+if TYPE_CHECKING:
+    from .engine import RunState
+
 workflow_app = typer.Typer(
     name="workflow",
     help="Manage and run automation workflows",
@@ -44,6 +48,57 @@ def _error_console(json_output: bool):
     stderr-only error routing already used by ``specify bundle``.
     """
     return err_console if json_output else console
+
+
+def _fail_integration_load(exc: Exception, *, json_output: bool, run_id: str | None = None):
+    """Surface adapter failures before a workflow run state can be created."""
+    if json_output:
+        _emit_workflow_json({
+            "run_id": run_id,
+            "workflow_id": None,
+            "status": "failed",
+            "current_step_id": None,
+            "current_step_index": None,
+            "error": str(exc),
+        })
+    else:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+    raise typer.Exit(1) from exc
+
+
+def _fail_workflow_execution(
+    exc: Exception, *, json_output: bool, state: Any, resume: bool = False,
+):
+    """Report execution failures with the actual, context-local run state."""
+    if json_output:
+        payload = _workflow_run_payload(state) if state is not None else {
+            "run_id": None, "workflow_id": None,
+            "current_step_id": None, "current_step_index": None,
+        }
+        payload.update(status="failed", error=str(exc))
+        _emit_workflow_json(payload)
+    else:
+        label = "Resume failed" if resume else "Workflow failed"
+        console.print(f"[red]{label}:[/red] {_escape_markup(str(exc))}")
+    raise typer.Exit(1) from exc
+
+
+def _fail_recorded_run(
+    exc: Exception, *, json_output: bool, state: Any, resume: bool = False,
+) -> None:
+    """Report *exc* as the run's outcome when the engine recorded it as one.
+
+    ``WorkflowEngine.execute``/``resume`` persist an exception raised while
+    steps run (an expression error, say) as the run's ``failed`` status and
+    error, and mark that exception on the in-memory state, before re-raising
+    it. Errors raised before that point, such as input validation or a refused
+    resume, are not marked even when a loaded failed run carries the same
+    message, so this returns and the caller reports them as before.
+    """
+    if state is not None and getattr(state, "_recorded_exception", None) is exc:
+        _fail_workflow_execution(
+            exc, json_output=json_output, state=state, resume=resume
+        )
 
 
 def _open_workflow_registry(project_root: Path, out=None):
@@ -132,16 +187,13 @@ def _reject_unsafe_dir(path: Path, label: str) -> None:
 
 def _reject_unsafe_workflow_storage(project_root: Path) -> None:
     """Refuse symlinked workflow storage directories before workflow commands run."""
-    _reject_unsafe_dir(project_root / ".specify", ".specify")
-    _reject_unsafe_dir(project_root / ".specify" / "workflows", ".specify/workflows")
-    _reject_unsafe_dir(
-        project_root / ".specify" / "workflows" / "runs",
-        ".specify/workflows/runs",
-    )
-    _reject_unsafe_dir(
-        project_root / ".specify" / "workflows" / "overlays",
-        ".specify/workflows/overlays",
-    )
+    from ._storage import WorkflowStorageError, validate_workflow_storage
+
+    try:
+        validate_workflow_storage(project_root)
+    except WorkflowStorageError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
 
 
 def _resolve_installed_workflow_ownership(
@@ -434,51 +486,12 @@ def _stage_workflow_file(
 @contextlib.contextmanager
 def _workflow_install_transaction(project_root: Path):
     """Serialize workflow file swaps with their registry updates."""
-    from ..shared_infra import _ensure_safe_shared_directory
+    from ..shared_infra import _exclusive_project_lock
 
-    lock_dir = project_root / ".specify"
-    try:
-        _ensure_safe_shared_directory(
-            project_root, lock_dir, context="workflow install lock directory"
-        )
-    except ValueError as exc:
-        raise OSError(str(exc)) from exc
-    lock_file = lock_dir / ".workflow-install.lock"
-    if lock_file.is_symlink():
-        raise OSError(f"Refusing to use symlinked workflow install lock: {lock_file}")
-
-    flags = os.O_RDWR | os.O_CREAT
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    flags |= getattr(os, "O_CLOEXEC", 0)
-    fd = os.open(lock_file, flags, 0o600)
-    try:
-        if lock_file.is_symlink():
-            raise OSError(
-                f"Refusing to use symlinked workflow install lock: {lock_file}"
-            )
-        if os.name == "nt":
-            import errno
-            import msvcrt
-            import time
-
-            if os.fstat(fd).st_size == 0:
-                os.write(fd, b"\0")
-            while True:
-                os.lseek(fd, 0, os.SEEK_SET)
-                try:
-                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-                    break
-                except OSError as exc:
-                    if exc.errno not in (errno.EACCES, errno.EDEADLK):
-                        raise
-                    time.sleep(0.05)
-        else:
-            import fcntl
-
-            fcntl.flock(fd, fcntl.LOCK_EX)
+    with _exclusive_project_lock(
+        project_root, ".workflow-install.lock", context="workflow install"
+    ):
         yield
-    finally:
-        os.close(fd)
 
 
 def _commit_workflow_file(
@@ -716,6 +729,16 @@ def _validate_local_workflow_package(package_dir: Path) -> None:
                 raise ValueError(f"Workflow package contains unsupported file: {path}")
 
 
+def _workflow_versions_match(actual: object, expected: str) -> bool:
+    """Compare workflow versions without treating equivalent spellings as changes."""
+    from packaging import version as pkg_version
+
+    try:
+        return pkg_version.Version(str(actual)) == pkg_version.Version(expected)
+    except pkg_version.InvalidVersion:
+        return str(actual) == expected
+
+
 def _install_workflow_package(
     project_root: Path,
     workflows_dir: Path,
@@ -724,6 +747,8 @@ def _install_workflow_package(
     *,
     expected_id: str | None = None,
     expected_version: str | None = None,
+    expected_requires: dict[str, Any] | None = None,
+    exact_version: bool = False,
     expected_installed_version: str | None = None,
     catalog_info: dict[str, Any] | None = None,
 ) -> None:
@@ -761,11 +786,21 @@ def _install_workflow_package(
             f"workflow ID ({_escape_markup(repr(expected_id))})."
         )
         raise typer.Exit(1)
-    if expected_version is not None and str(definition.version) != expected_version:
+    if expected_version is not None and not (
+        str(definition.version) == expected_version
+        if exact_version
+        else _workflow_versions_match(definition.version, expected_version)
+    ):
         console.print(
             f"[red]Error:[/red] Downloaded workflow version "
             f"({_escape_markup(str(definition.version))}) does not match the catalog "
             f"version ({_escape_markup(expected_version)})."
+        )
+        raise typer.Exit(1)
+    if expected_requires is not None and definition.requires != expected_requires:
+        console.print(
+            "[red]Error:[/red] Downloaded workflow requirements do not match "
+            "the selected catalog release."
         )
         raise typer.Exit(1)
 
@@ -805,7 +840,9 @@ def _install_workflow_package(
             if expected_installed_version is not None and (
                 not isinstance(existing, dict)
                 or existing.get("source") != "catalog"
-                or str(existing.get("version")) != expected_installed_version
+                or not _workflow_versions_match(
+                    existing.get("version"), expected_installed_version
+                )
             ):
                 console.print(
                     f"[yellow]Warning:[/yellow] Workflow "
@@ -940,6 +977,12 @@ def _workflow_run_payload(state: Any) -> dict[str, Any]:
     error = _failed_step_error(state)
     if error is not None:
         payload["error"] = error
+    if getattr(state, "execution", None):
+        from ._execution import scope_summaries
+
+        scopes = scope_summaries(state.execution, state.status.value)
+        if scopes:
+            payload["workflow_scopes"] = scopes
     return payload
 
 
@@ -978,21 +1021,35 @@ def _gate_outcome(state: Any) -> dict[str, Any] | None:
     if getattr(state.status, "value", state.status) not in ("paused", "aborted"):
         return None
     step = (getattr(state, "step_results", None) or {}).get(state.current_step_id)
+    step_id = state.current_step_id
+    scope_path = None
+    if getattr(state, "execution", None):
+        from ._execution import active_step
+
+        active = active_step(state.execution)
+        if active is None:
+            return None
+        path, node, step_id = active
+        scope_path = path[:-1]
+        step = node.get("result")
     if not isinstance(step, dict) or not _is_gate_step(step):
         return None
     output = step.get("output") or {}
-    # `message`, `options`, and `choice` may be non-string YAML literals in an
-    # unvalidated workflow (GateStep coerces none of them for the payload), so
+    # `message`, `options`, and `choice` may be non-string YAML literals in
+    # legacy or synthetic records, so
     # normalise all three for a stable JSON schema: message → str, options →
     # list[str] | None, choice → str | None (None means no decision yet).
     message = output.get("message")
     choice = output.get("choice")
-    return {
-        "step_id": state.current_step_id,
+    detail = {
+        "step_id": step_id,
         "message": None if message is None else str(message),
         "options": _normalize_gate_options(output.get("options")),
         "choice": None if choice is None else str(choice),
     }
+    if scope_path:
+        detail["scope_path"] = scope_path
+    return detail
 
 
 def _normalize_gate_options(options: Any) -> list[str] | None:
@@ -1021,14 +1078,222 @@ def _run_outcome_exit_code(status_value: str) -> int:
     return 1 if status_value in ("failed", "aborted") else 0
 
 
-def _emit_workflow_json(payload: dict[str, Any]) -> None:
+# Real workflow definitions are tiny (largest shipped: ~67 nodes); this leaves
+# >1000x headroom while capping the expansion of alias graphs. Callers that
+# emit user-authored definitions pass it as ``max_nodes``.
+_MAX_JSON_NODES = 100000
+
+# Byte cap on each emitted definition. Nodes do not bound size: one alias can
+# repeat a large scalar or deeply indented container many times, so the cap is
+# enforced on the encoded output itself rather than estimated per value type.
+_MAX_JSON_BYTES = 5 * 1024 * 1024
+
+# Response-wide cap across all definitions of one response. Generous on
+# purpose: many small bound workflow calls must pass, while a loop or fan-out
+# repeating a near-limit definition must not multiply into gigabytes.
+_MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+
+# Character cap on a non-string mapping key once stringified. Aliases rebuild
+# every mapping, so an oversized key would otherwise be re-created per alias
+# before the byte budget runs.
+_MAX_JSON_KEY_CHARS = 256
+
+
+class _ResponseBudget:
+    """Bytes a whole response may use across several converted payloads."""
+
+    def __init__(self, max_bytes: int | None = None) -> None:
+        self.max_bytes = _MAX_RESPONSE_BYTES if max_bytes is None else max_bytes
+        self.used = 0
+
+
+def _check_json_byte_budget(
+    plain: Any, response: _ResponseBudget | None = None
+) -> None:
+    """Raise ``ValueError`` once *plain* encodes to more than the byte cap.
+
+    The encoding is streamed and discarded, so memory stays bounded even when
+    aliases expand a small input into a huge document, and no value type can
+    escape the budget. When *response* is given, the encoded size also counts
+    against that shared response-wide budget.
+    """
+    total = 0
+    for chunk in json.JSONEncoder(indent=2).iterencode(plain):
+        total += len(chunk)
+        if total > _MAX_JSON_BYTES:
+            raise ValueError(
+                "Workflow JSON output is too large to represent: it "
+                f"exceeds {_MAX_JSON_BYTES} bytes"
+            )
+    if response is not None:
+        response.used += total
+        if response.used > response.max_bytes:
+            raise ValueError(
+                "Workflow JSON output is too large to represent: the "
+                f"response exceeds {response.max_bytes} bytes"
+            )
+
+
+def _plain_workflow_json(
+    payload: Any,
+    *,
+    max_nodes: int | None = None,
+    response: _ResponseBudget | None = None,
+) -> Any:
+    """Convert *payload* to plain JSON-representable values.
+
+    YAML-native scalars that JSON cannot represent (e.g. dates), mapping
+    keys, and non-finite floats are stringified, so output is always plain
+    JSON. Binary values are replaced by a ``<binary: N bytes>`` placeholder
+    rather than emitted, and sets become lists sorted so that output does
+    not depend on hash randomization.
+
+    JSON has no way to share a reference, so a YAML alias graph must be
+    duplicated into a tree; a non-recursive alias DAG can therefore expand
+    exponentially even though it is linear on disk. Cycle detection alone
+    lets that terminate, so a caller emitting user-authored definitions passes
+    ``max_nodes`` to bound the expansion instead of rejecting every reused
+    alias. The byte budget is measured by streaming the encoded output, so it
+    covers every value type. Each call has its own node and byte budget, so
+    independent definitions can be budgeted separately; an optional shared
+    ``response`` budget additionally caps their combined encoded size. The budget is opt-in:
+    payloads such as ``workflow status --json`` grow with the number of runs
+    and must not be capped. Excessive nesting depth is always reported as
+    ``ValueError``.
+    """
+    remaining_nodes = max_nodes
+    # Set members are encoded once as sort keys; this total spans alias visits.
+    set_key_bytes = 0
+
+    def json_key(key: Any) -> str:
+        """Canonicalize a mapping key to the property name json.dumps emits."""
+        if isinstance(key, str):
+            return key
+        if isinstance(key, (bytes, bytearray)):
+            return f"<binary: {len(key)} bytes>"
+        if isinstance(key, (int, float, bool)) or key is None:
+            text = json.dumps(key)
+        else:
+            text = str(key)
+        if max_nodes is not None and len(text) > _MAX_JSON_KEY_CHARS:
+            raise ValueError(
+                "Workflow JSON output is too large to represent: a mapping "
+                f"key exceeds {_MAX_JSON_KEY_CHARS} characters"
+            )
+        return text
+
+    def plain_json(value: Any, active_containers: set[int]) -> Any:
+        nonlocal remaining_nodes, set_key_bytes
+        if remaining_nodes is not None:
+            remaining_nodes -= 1
+            if remaining_nodes < 0:
+                raise ValueError(
+                    "Workflow JSON output is too large to represent: it "
+                    f"exceeds {max_nodes} nodes"
+                )
+        if isinstance(value, dict):
+            container_id = id(value)
+            if container_id in active_containers:
+                raise ValueError(
+                    "Workflow JSON output cannot represent recursive YAML aliases"
+                )
+            active_containers.add(container_id)
+            try:
+                result: dict[str, Any] = {}
+                for key, item in value.items():
+                    canonical = json_key(key)
+                    if canonical in result:
+                        raise ValueError(
+                            "Workflow JSON output cannot represent duplicate "
+                            f"mapping key {canonical!r}"
+                        )
+                    result[canonical] = plain_json(item, active_containers)
+                return result
+            finally:
+                active_containers.remove(container_id)
+        if isinstance(value, float) and not math.isfinite(value):
+            return str(value)
+        if isinstance(value, (list, tuple)):
+            container_id = id(value)
+            if container_id in active_containers:
+                raise ValueError(
+                    "Workflow JSON output cannot represent recursive YAML aliases"
+                )
+            active_containers.add(container_id)
+            try:
+                return [plain_json(item, active_containers) for item in value]
+            finally:
+                active_containers.remove(container_id)
+        if isinstance(value, (bytes, bytearray)):
+            return f"<binary: {len(value)} bytes>"
+        if isinstance(value, (set, frozenset)):
+            items = [plain_json(item, active_containers) for item in value]
+            keyed = []
+            for item in items:
+                encoded = json.dumps(item)
+                if max_nodes is not None:
+                    set_key_bytes += len(encoded)
+                    if set_key_bytes > _MAX_JSON_BYTES:
+                        raise ValueError(
+                            "Workflow JSON output is too large to represent: "
+                            f"it exceeds {_MAX_JSON_BYTES} bytes"
+                        )
+                keyed.append((encoded, item))
+            keyed.sort(key=lambda pair: pair[0])
+            return [item for _, item in keyed]
+        if isinstance(value, (str, int, float)) or value is None:
+            return value
+        return str(value)
+
+    try:
+        plain = plain_json(payload, set())
+        if max_nodes is not None:
+            _check_json_byte_budget(plain, response)
+        return plain
+    except RecursionError:
+        raise ValueError(
+            "Workflow JSON output is nested too deeply to represent"
+        ) from None
+
+
+def _emit_workflow_json(
+    payload: dict[str, Any], *, max_nodes: int | None = None
+) -> None:
     """Write a workflow payload as machine-readable JSON to stdout.
 
     Uses the builtin ``print`` rather than ``console.print`` so Rich
     markup interpretation, syntax highlighting, and line-wrapping can
-    never alter the emitted JSON.
+    never alter the emitted JSON. See ``_plain_workflow_json`` for the
+    value conversion and the opt-in ``max_nodes`` budget.
     """
-    print(json.dumps(payload, indent=2))
+    plain = _plain_workflow_json(payload, max_nodes=max_nodes)
+    try:
+        text = json.dumps(plain, indent=2)
+    except RecursionError:
+        raise ValueError(
+            "Workflow JSON output is nested too deeply to represent"
+        ) from None
+    print(text)
+
+
+def _load_run_state(run_id: str, project_root: Path) -> RunState:
+    """Load a run's state; raise ValueError with a user-facing message on failure."""
+    from .engine import RunState
+
+    try:
+        return RunState.load(run_id, project_root)
+    except FileNotFoundError:
+        raise ValueError(f"Run not found: {run_id}") from None
+    except OSError as exc:
+        raise ValueError(str(exc)) from exc
+    except json.JSONDecodeError as exc:
+        # Newer interpreters report pathological nesting as a decode error
+        # rather than RecursionError.
+        raise ValueError(f"Invalid run state for {run_id}: {exc}") from None
+    except RecursionError:
+        raise ValueError(
+            f"Invalid run state for {run_id}: nested too deeply"
+        ) from None
 
 
 @contextlib.contextmanager
@@ -1067,6 +1332,8 @@ def _install_workflow_from_catalog(
     workflow_id: str,
     expected_version: str | None = None,
     expected_installed_version: str | None = None,
+    requested_version: str | None = None,
+    selected_info: dict | None = None,
 ) -> None:
     """Download, validate, and register a catalog workflow.
 
@@ -1076,32 +1343,40 @@ def _install_workflow_from_catalog(
     version does not match the catalog version that triggered the install.
     ``expected_installed_version``, when given by ``workflow update``, aborts
     if another process changes the installed source or version before commit.
+    ``selected_info`` is a bundle-selected catalog record, used without a
+    second catalog lookup while retaining the same download and commit checks.
     """
     from .catalog import WorkflowCatalog, WorkflowCatalogError
     from .engine import WorkflowDefinition
 
-    def versions_match(actual: object, expected: str) -> bool:
-        from packaging import version as pkg_version
-
-        try:
-            return pkg_version.Version(str(actual)) == pkg_version.Version(
-                expected
-            )
-        except pkg_version.InvalidVersion:
-            return str(actual) == expected
-
     safe_wf_id = _escape_markup(workflow_id)
 
-    catalog = WorkflowCatalog(project_root)
-    try:
-        info = catalog.get_workflow_info(workflow_id)
-    except WorkflowCatalogError as exc:
-        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
-        raise typer.Exit(1)
+    if selected_info is not None:
+        info = selected_info
+    else:
+        catalog = WorkflowCatalog(project_root)
+        try:
+            info = (
+                catalog.get_workflow_info(workflow_id, requested_version)
+                if requested_version is not None
+                else catalog.get_workflow_info(workflow_id)
+            )
+        except WorkflowCatalogError as exc:
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1)
 
     if not info:
+        if requested_version is not None:
+            console.print(
+                f"[red]Error:[/red] Workflow '{safe_wf_id}' version "
+                f"'{_escape_markup(requested_version)}' not found in the winning catalog."
+            )
+            raise typer.Exit(1)
         console.print(f"[red]Error:[/red] Workflow '{safe_wf_id}' not found in catalog")
         raise typer.Exit(1)
+
+    if requested_version is not None:
+        expected_version = info["version"]
 
     if not info.get("_install_allowed", True):
         console.print(f"[yellow]Warning:[/yellow] Workflow '{safe_wf_id}' is from a discovery-only catalog")
@@ -1235,14 +1510,17 @@ def _install_workflow_from_catalog(
         console.print(f"[red]Error:[/red] Failed to install workflow '{safe_wf_id}' from catalog: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
+    try:
+        verify_archive_sha256(
+            downloaded_content, info.get("sha256"), workflow_id, ValueError
+        )
+    except ValueError as exc:
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+        raise typer.Exit(1)
+
     if downloaded_archive_format is not None:
         try:
-            verify_archive_sha256(
-                downloaded_content,
-                info.get("sha256"),
-                workflow_id,
-                ValueError,
-            )
             import tempfile
             from io import BytesIO
 
@@ -1270,6 +1548,10 @@ def _install_workflow_from_catalog(
                     workflow_url,
                     expected_id=workflow_id,
                     expected_version=expected_version,
+                    expected_requires=(
+                        info.get("requires") if requested_version is not None else None
+                    ),
+                    exact_version=requested_version is not None,
                     expected_installed_version=expected_installed_version,
                     catalog_info={**info, "url": workflow_url},
                 )
@@ -1321,15 +1603,31 @@ def _install_workflow_from_catalog(
     # A stale or misconfigured URL can serve a different version than the
     # catalog advertised; without this check `update` would report success
     # while leaving the old version installed (or even downgrading).
-    if expected_version is not None:
-        if not versions_match(definition.version, expected_version):
-            _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
-            console.print(
-                f"[red]Error:[/red] Downloaded workflow version ({_escape_markup(str(definition.version))}) "
-                f"does not match the catalog version ({_escape_markup(expected_version)}). "
-                f"The catalog entry may be stale or misconfigured."
-            )
-            raise typer.Exit(1)
+    if expected_version is not None and not (
+        str(definition.version) == expected_version
+        if requested_version is not None
+        else _workflow_versions_match(definition.version, expected_version)
+    ):
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
+        console.print(
+            f"[red]Error:[/red] Downloaded workflow version ({_escape_markup(str(definition.version))}) "
+            f"does not match the catalog version ({_escape_markup(expected_version)}). "
+            f"The catalog entry may be stale or misconfigured."
+        )
+        raise typer.Exit(1)
+    if (
+        requested_version is not None
+        and "requires" in info
+        and definition.requires != info["requires"]
+    ):
+        _safe_discard_staged_workflow_file(
+            staged_file, workflow_dir, existed_before
+        )
+        console.print(
+            "[red]Error:[/red] Downloaded workflow requirements do not match "
+            "the selected catalog release."
+        )
+        raise typer.Exit(1)
 
     try:
         transaction = _workflow_install_transaction(project_root)
@@ -1343,7 +1641,7 @@ def _install_workflow_from_catalog(
                 if (
                     not isinstance(current, dict)
                     or current.get("source") != "catalog"
-                    or not versions_match(
+                    or not _workflow_versions_match(
                         current.get("version"), expected_installed_version
                     )
                 ):
@@ -1521,6 +1819,7 @@ def register(app: typer.Typer) -> None:
     from . import command_run  # noqa: F401 -- registers handler
     from . import command_resume  # noqa: F401 -- registers handler
     from . import command_status  # noqa: F401 -- registers handler
+    from . import command_definition  # noqa: F401 -- registers handler
     from . import command_list  # noqa: F401 -- registers handler
     from . import command_add  # noqa: F401 -- registers handler
     from . import command_remove  # noqa: F401 -- registers handler

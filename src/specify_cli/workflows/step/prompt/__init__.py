@@ -7,8 +7,26 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from specify_cli.integrations._capture import run_captured
+from specify_cli.integrations.base import (
+    DispatchSettingsError,
+    check_dispatch_settings,
+    requested_dispatch_settings,
+)
+from specify_cli.integrations.installer import project_dispatch
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
+from specify_cli.workflows.step._capture import (
+    capture_errors,
+    capture_failure,
+    capture_limit,
+    record_capture,
+)
+from specify_cli.workflows.step._dispatch_settings import (
+    dispatch_setting_errors,
+    dispatch_settings_failure,
+    resolve_dispatch_settings,
+)
 
 
 class PromptStep(StepBase):
@@ -24,8 +42,9 @@ class PromptStep(StepBase):
 
         CLI output is streamed to the terminal for live progress.
         ``output.exit_code`` is always captured and can be referenced
-        by later steps.  Full response text capture is a planned
-        enhancement.
+        by later steps.  ``capture: true`` retains the CLI's textual
+        stdout and stderr in ``output.stdout``/``output.stderr`` instead
+        of streaming them, capped per stream by ``capture_max_bytes``.
 
     Example YAML::
 
@@ -89,6 +108,10 @@ class PromptStep(StepBase):
                 ),
             )
 
+        dispatch = resolve_dispatch_settings(config, context, "Prompt")
+        if isinstance(dispatch, str):
+            return StepResult(status=StepStatus.FAILED, error=dispatch)
+
         # An invalid timeout reaches subprocess.run() and raises a raw
         # TypeError ("unsupported operand type(s) for +: 'float' and 'str'")
         # or ValueError, which the engine re-raises — taking down the whole
@@ -98,31 +121,67 @@ class PromptStep(StepBase):
         if timeout_error is not None:
             return StepResult(status=StepStatus.FAILED, error=timeout_error)
 
-        # Attempt CLI dispatch
-        timeout = config.get("timeout", 300)
-        dispatch_result = self._try_dispatch(
-            prompt, integration, model, context, timeout=timeout
-        )
+        # Same rationale: fail the step on a malformed capture config rather
+        # than silently streaming or capturing with a coerced limit.
+        capture_config_errors = capture_errors(config, "Prompt")
+        if capture_config_errors:
+            return StepResult(
+                status=StepStatus.FAILED, error=capture_config_errors[0]
+            )
+        capture_max_bytes = capture_limit(config)
 
         output: dict[str, Any] = {
             "prompt": prompt,
             "integration": integration,
             "model": model,
+            **dispatch.outputs,
         }
+
+        # Attempt CLI dispatch. A rejected dispatch setting fails the step;
+        # any other error propagates.
+        timeout = config.get("timeout", 300)
+        try:
+            dispatch_result = self._try_dispatch(
+                prompt,
+                integration,
+                model,
+                context,
+                timeout=timeout,
+                capture_max_bytes=capture_max_bytes,
+                **dispatch.settings,
+            )
+        except DispatchSettingsError as exc:
+            output["exit_code"] = 1
+            output["dispatched"] = False
+            return StepResult(
+                status=StepStatus.FAILED,
+                output=output,
+                error=dispatch_settings_failure(
+                    "Prompt", config, exc, dispatch.sources
+                ),
+            )
 
         if dispatch_result is not None:
             output["exit_code"] = dispatch_result["exit_code"]
             output["stdout"] = dispatch_result["stdout"]
             output["stderr"] = dispatch_result["stderr"]
             output["dispatched"] = True
+            if capture_max_bytes is not None:
+                record_capture(output, dispatch_result)
             if dispatch_result["exit_code"] != 0:
+                if capture_max_bytes is not None:
+                    error = capture_failure(
+                        dispatch_result, subject="Prompt", timeout=timeout
+                    )
+                else:
+                    error = (
+                        dispatch_result["stderr"]
+                        or f"Prompt exited with code {dispatch_result['exit_code']}"
+                    )
                 return StepResult(
                     status=StepStatus.FAILED,
                     output=output,
-                    error=(
-                        dispatch_result["stderr"]
-                        or f"Prompt exited with code {dispatch_result['exit_code']}"
-                    ),
+                    error=error,
                 )
             return StepResult(
                 status=StepStatus.COMPLETED,
@@ -137,7 +196,11 @@ class PromptStep(StepBase):
                 error=(
                     f"Cannot dispatch prompt: "
                     f"integration {integration!r} "
-                    f"CLI not found or not installed."
+                    f"CLI not found or not installed, "
+                    f"or the integration does not support CLI dispatch. "
+                    f"If the CLI is missing, install it; if the integration "
+                    f"does not support CLI dispatch, set the step's "
+                    f"'integration' to one that does."
                 ),
             )
 
@@ -177,14 +240,28 @@ class PromptStep(StepBase):
         return None
 
     @staticmethod
+    @project_dispatch
     def _try_dispatch(
         prompt: str,
         integration_key: str | None,
         model: str | None,
         context: StepContext,
         timeout: int = 300,
+        capture_max_bytes: int | None = None,
+        *,
+        reasoning_effort: str | None = None,
+        context_size: str | None = None,
     ) -> dict[str, Any] | None:
-        """Dispatch *prompt* directly through the integration CLI."""
+        """Dispatch *prompt* directly through the integration CLI.
+
+        With *capture_max_bytes* set, stdout and stderr are captured (bounded
+        by that limit) and returned instead of streamed to the terminal.
+
+        *reasoning_effort* and *context_size* are checked by
+        ``check_dispatch_settings`` before executable detection and forwarded
+        to ``build_exec_args`` only when set; a rejected setting raises
+        ``DispatchSettingsError``.
+        """
         if not integration_key or not isinstance(integration_key, str) or not prompt:
             # A non-string integration would raise TypeError: unhashable type
             # from get_integration's dict lookup and abort the run; treat it as
@@ -200,6 +277,12 @@ class PromptStep(StepBase):
         if impl is None:
             return None
 
+        dispatch_settings = requested_dispatch_settings(
+            reasoning_effort=reasoning_effort, context_size=context_size
+        )
+        if dispatch_settings:
+            check_dispatch_settings(impl, dispatch_settings, via="build_exec_args")
+
         project_root = (
             Path(context.project_root) if context.project_root else Path.cwd()
         )
@@ -209,6 +292,7 @@ class PromptStep(StepBase):
             model=model,
             output_json=False,
             project_root=project_root,
+            **dispatch_settings,
         )
 
         # Check if the CLI tool is actually installed.
@@ -235,6 +319,17 @@ class PromptStep(StepBase):
             exec_args = [fallback_cli_path, *exec_args[1:]]
 
         import subprocess
+
+        if capture_max_bytes is not None:
+            try:
+                return run_captured(
+                    exec_args,
+                    cwd=str(project_root),
+                    timeout=timeout,
+                    max_bytes=capture_max_bytes,
+                ).as_dispatch_result()
+            except OSError:
+                return None
 
         try:
             result = subprocess.run(
@@ -300,7 +395,9 @@ class PromptStep(StepBase):
                 f"Prompt step {config.get('id', '?')!r}: 'model' must be a "
                 f"string, got {type(model).__name__}."
             )
+        errors.extend(dispatch_setting_errors(config, "Prompt"))
         timeout_error = self._timeout_error(config)
         if timeout_error is not None:
             errors.append(timeout_error)
+        errors.extend(capture_errors(config, "Prompt"))
         return errors

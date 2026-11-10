@@ -12,6 +12,7 @@ this layout and handles two distinct changes: the directory move from
 from __future__ import annotations
 
 import shutil
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,34 @@ class KimiIntegration(SkillsIntegration):
     def post_process_skill_content(self, content: str) -> str:
         """Ensure in-skill cross-command references use Kimi's `/skill:` syntax."""
         return super().post_process_skill_content(content)
+
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
+    ) -> list[str] | None:
+        """Build CLI arguments for non-interactive ``kimi`` execution.
+
+        ``SkillsIntegration``'s default requests ``--output-format json``,
+        which Kimi Code CLI does not accept: the option only allows ``text``
+        and ``stream-json``, so the CLI exits 1 before the prompt runs.
+        Structured output maps to ``stream-json`` (JSONL events) instead.
+        """
+        self.validate_runtime_config(integration_args, integration_options)
+        if not self.config or not self.config.get("requires_cli"):
+            return None
+        args = [self._resolve_executable(), "-p", prompt]
+        self._apply_extra_args_env_var(args)
+        if model:
+            args.extend(["--model", model])
+        if output_json:
+            args.extend(["--output-format", "stream-json"])
+        return args
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
@@ -146,17 +175,28 @@ class KimiIntegration(SkillsIntegration):
                     continue
                 if _is_speckit_generated_skill(legacy_dir):
                     try:
-                        shutil.rmtree(legacy_dir)
+                        from .._file_changes import changing_file
+
+                        with changing_file(legacy_dir, removal=True):
+                            shutil.rmtree(legacy_dir)
                         removed.append(legacy_dir)
                     except OSError:
                         skipped.append(legacy_dir)
 
-            try:
-                old_skills_dir.rmdir()
-            except OSError:
-                pass
+            _remove_empty_legacy_directory(old_skills_dir)
 
         return removed, skipped
+
+
+def _remove_empty_legacy_directory(path: Path) -> None:
+    from .._file_changes import changing_file
+
+    try:
+        if not any(path.iterdir()):
+            with changing_file(path, removal=True):
+                path.rmdir()
+    except OSError:
+        pass
 
 
 def _has_symlinked_component(path: Path, project_root: Path) -> bool:
@@ -258,7 +298,10 @@ def _migrate_legacy_kimi_skills_dir(
 
         if not target_dir.exists():
             target_dir.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(legacy_dir), str(target_dir))
+            from .._file_changes import changing_file
+
+            with changing_file(legacy_dir, removal=True), changing_file(target_dir):
+                shutil.move(str(legacy_dir), str(target_dir))
             migrated_count += 1
             continue
 
@@ -278,16 +321,16 @@ def _migrate_legacy_kimi_skills_dir(
                     child.name != "SKILL.md" for child in legacy_dir.iterdir()
                 )
                 if not has_extra:
-                    shutil.rmtree(legacy_dir)
+                    from .._file_changes import changing_file
+
+                    with changing_file(legacy_dir, removal=True):
+                        shutil.rmtree(legacy_dir)
                     removed_count += 1
         except OSError:
             pass
 
     # Remove the legacy skills directory if it is now empty.
-    try:
-        old_skills_dir.rmdir()
-    except OSError:
-        pass
+    _remove_empty_legacy_directory(old_skills_dir)
 
     return (migrated_count, removed_count)
 

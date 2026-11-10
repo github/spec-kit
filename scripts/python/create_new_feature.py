@@ -43,6 +43,9 @@ _STOP_WORDS = frozenset(
 
 _MAX_BRANCH_LENGTH = 244
 _MAX_FEATURE_NUMBER = 2**63 - 1
+_ASCII_LOWER = str.maketrans(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"
+)
 
 
 def _int64_from_digits(value: str) -> int | None:
@@ -167,18 +170,25 @@ def _parse_args(argv: list[str], argv0: str) -> Args:
 
 
 def _clean_branch_name(name: str) -> str:
-    cleaned = re.sub(r"[^a-z0-9]", "-", name.lower())
+    cleaned = _unicode_words(name, "-")
     cleaned = re.sub(r"-+", "-", cleaned)
     return cleaned.strip("-")
 
 
+def _unicode_words(name: str, separator: str) -> str:
+    return "".join(
+        char if char.isalpha() or char.isdecimal() else separator
+        for char in name.translate(_ASCII_LOWER)
+    )
+
+
 def _generate_branch_name(description: str) -> str:
-    clean = re.sub(r"[^a-z0-9]", " ", description.lower())
+    clean = _unicode_words(description, " ")
     meaningful: list[str] = []
     for word in clean.split():
         if word in _STOP_WORDS:
             continue
-        if len(word) >= 3:
+        if len(word) >= 3 or not word.isascii():
             meaningful.append(word)
         # Keep short words that appear as an uppercase acronym in the original,
         # mirroring the bash twin's case-sensitive `grep -qw` check.
@@ -217,11 +227,13 @@ def _get_highest_from_specs(specs_dir: Path) -> int:
 def _fit_branch_name(feature_num: str, branch_suffix: str) -> str:
     """Fit a feature prefix and suffix within GitHub's branch-name limit."""
     branch_name = f"{feature_num}-{branch_suffix}"
-    if len(branch_name) <= _MAX_BRANCH_LENGTH:
+    if len(branch_name.encode("utf-8")) <= _MAX_BRANCH_LENGTH:
         return branch_name
 
     max_suffix_length = _MAX_BRANCH_LENGTH - (len(feature_num) + 1)
-    truncated_suffix = re.sub(r"-$", "", branch_suffix[:max_suffix_length])
+    truncated_suffix = branch_suffix.encode("utf-8")[:max_suffix_length].decode(
+        "utf-8", errors="ignore"
+    ).rstrip("-")
     return f"{feature_num}-{truncated_suffix}"
 
 
@@ -268,7 +280,7 @@ def main(argv: list[str] | None = None) -> int:
     if not branch_suffix:
         print(
             "[specify] Warning: Feature name is empty after removing unsupported characters. "
-            "Use --short-name with ASCII letters or digits (for example, user-auth).",
+            "Use --short-name with letters or digits (for example, user-auth).",
             file=sys.stderr,
         )
 
@@ -363,11 +375,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(
             f"[specify] Original: {original_branch_name} "
-            f"({len(original_branch_name)} bytes)",
+            f"({len(original_branch_name.encode('utf-8'))} bytes)",
             file=sys.stderr,
         )
         print(
-            f"[specify] Truncated to: {branch_name} ({len(branch_name)} bytes)",
+            f"[specify] Truncated to: {branch_name} "
+            f"({len(branch_name.encode('utf-8'))} bytes)",
             file=sys.stderr,
         )
 
@@ -448,4 +461,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     raise SystemExit(main())

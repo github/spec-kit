@@ -58,16 +58,23 @@ def test_git_ignores_the_intended_paths(tmp_path: Path) -> None:
     ext_local = project / ".specify" / "extensions" / "git" / "local-config.yml"
     ext_local.parent.mkdir(parents=True, exist_ok=True)
     ext_local.write_text("x\n", encoding="utf-8")
+    packages = project / ".specify/integrations/packages/sample-agent"
+    packages.mkdir(parents=True)
+    (packages / "__init__.py").write_text("# sample adapter\n")
+    (packages.parent.parent / "packages.json").write_text("{}")
 
     for rel in (
         ".specify/feature.json",
         ".specify/extensions/git/local-config.yml",
+        ".specify/integrations/packages/sample-agent/__init__.py",
+        ".specify/integrations/packages.json",
     ):
         result = subprocess.run(
             ["git", "check-ignore", rel],
             cwd=project,
             capture_output=True,
             text=True,
+            check=False,
         )
         assert result.returncode == 0, f"{rel} was not ignored"
 
@@ -77,6 +84,7 @@ def test_git_ignores_the_intended_paths(tmp_path: Path) -> None:
         cwd=project,
         capture_output=True,
         text=True,
+        check=False,
     )
     assert tracked.returncode == 1
 

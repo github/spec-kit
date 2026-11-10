@@ -27,20 +27,10 @@ def workflow_status(
         # parseable (mirrors `workflow run`/`workflow resume`); both handlers
         # fire before the json_output branch below.
         err = cli._error_console(json_output)
-        try:
-            from .engine import RunState
 
-            state = RunState.load(run_id, project_root)
-        except FileNotFoundError:
-            err.print(f"[red]Error:[/red] Run not found: {run_id}")
-            raise cli.typer.Exit(1)
+        try:
+            state = cli._load_run_state(run_id, project_root)
         except ValueError as exc:
-            err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
-            raise cli.typer.Exit(1)
-        except OSError as exc:
-            # An unreadable state.json (bad permissions, a directory in its
-            # place, I/O error) must fail as cleanly as the malformed-JSON
-            # case above -- `workflow resume` already handles OSError here.
             err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
             raise cli.typer.Exit(1)
 
@@ -90,6 +80,15 @@ def workflow_status(
                     s, "white"
                 )
                 cli.console.print(f"    [{sc}]●[/{sc}] {step_id}: {s}")
+        if state.execution:
+            from ._execution import scope_summaries
+
+            for scope in scope_summaries(state.execution, state.status.value):
+                path = " / ".join(scope["scope_path"])
+                cli.console.print(
+                    f"  {cli._escape_markup(path)} → "
+                    f"{cli._escape_markup(scope['workflow_id'])}: {scope['status']}"
+                )
     else:
         runs = engine.list_runs()
 

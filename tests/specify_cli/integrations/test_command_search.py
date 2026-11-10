@@ -29,8 +29,8 @@ class TestIntegrationSearch(IntegrationCatalogCliTestBase):
         assert "Found 2 integration(s)" in result.output
         assert "acme-coder" in result.output
         assert "stellar-agent" in result.output
-        assert "specify integration install stellar-agent" not in normalized_output
-        assert "Only built-in integration IDs can be installed" in normalized_output
+        assert "specify integration install stellar-agent" in normalized_output
+        assert "Only built-in integration IDs can be installed" not in normalized_output
 
     def test_search_validates_integration_json_before_catalog_lookup(
         self, tmp_path, monkeypatch
@@ -113,6 +113,7 @@ class TestIntegrationSearch(IntegrationCatalogCliTestBase):
         assert result.exit_code == 0, result.output
         # acme-coder is flagged _install_allowed=False, so we should warn
         assert "Not directly installable" in result.output
+        assert "specify integration install acme-coder" not in _normalize_cli_output(result.output)
 
     def test_search_escapes_catalog_markup(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)

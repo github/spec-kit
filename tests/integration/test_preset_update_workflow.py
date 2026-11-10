@@ -162,7 +162,8 @@ def test_preset_update_cli_contract():
     assert "--dry-run" not in help_output
 
 
-def test_preset_update_replaces_installed_preset(project: Path, tmp_path: Path):
+@pytest.mark.parametrize("use_ignore", [False, True])
+def test_preset_update_replaces_installed_preset(project: Path, tmp_path: Path, use_ignore):
     """A successful update really swaps the installed preset on disk."""
     runner = CliRunner()
 
@@ -178,6 +179,9 @@ def test_preset_update_replaces_installed_preset(project: Path, tmp_path: Path):
         body="# Version Two Template\n",
         extra_file="only-in-v2.md",
     )
+    (replacement / "dev-only.txt").write_text("development notes\n", encoding="utf-8")
+    if use_ignore:
+        (replacement / ".presetignore").write_text("dev-only.txt\n", encoding="utf-8")
 
     install = runner.invoke(
         app, ["preset", "add", "--dev", str(original), "--priority", "20"]
@@ -201,6 +205,8 @@ def test_preset_update_replaces_installed_preset(project: Path, tmp_path: Path):
     template = installed_dir / "templates" / "spec-template.md"
     assert template.read_text(encoding="utf-8") == "# Version Two Template\n"
     assert (installed_dir / "only-in-v2.md").exists()
+    assert (installed_dir / "dev-only.txt").exists() is not use_ignore
+    assert not (installed_dir / ".presetignore").exists()
     assert not (installed_dir / "only-in-v1.md").exists(), (
         "the previous preset's files must be removed, not merged with the "
         "replacement"

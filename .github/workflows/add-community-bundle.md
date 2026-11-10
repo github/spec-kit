@@ -62,6 +62,7 @@ safe-outputs:
   add-labels:
     allowed: [bundle-submission, validation-passed, validation-failed, needs-info]
     max: 3
+    issue-intent: false
   remove-labels:
     allowed: [validation-passed, validation-failed, needs-info]
 
@@ -93,11 +94,29 @@ Community bundles are untrusted. Validate metadata and distribution evidence,
 but do not claim to audit, endorse, or support bundle code or the components it
 installs. Never register a submitted companion catalog automatically.
 
+## Label Responsibilities
+
+Applying the outcome labels is your responsibility, not a recommendation for a
+maintainer. Use the `add_labels` safe output on source issue
+#${{ github.event.issue.number }}, with plain strings in its `labels` array.
+Never emit label objects with `suggest: true` or suggestion-only output.
+For a Passed outcome, emit `labels: ["validation-passed"]`; for a Failed
+outcome, emit `labels: ["validation-failed"]`. Follow the outcome rules below
+for timing, stale-label removal, and Blocked validation; this requirement does
+not turn environment blockers into submission failures.
+
 ## Triggering Conditions
 
 This workflow is triggered by an `issues: labeled` event and is gated to the
 `bundle-submission` label. Before processing, verify that the issue title starts
-with `[Bundle]:`. If it does not, stop without commenting.
+with `[Bundle]:`.
+If it does not, emit one `add_comment` on the issue:
+
+> The bundle-submission workflow stopped before validation because the issue title does not start with `[Bundle]:`.
+
+Include `[Workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
+then stop without validation, label changes, catalog/docs edits, or PR creation.
+Do not substitute `noop` for this comment. Otherwise, continue to Step 1.
 
 ## Step 1 - Read and Parse the Issue
 

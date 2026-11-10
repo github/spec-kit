@@ -57,3 +57,26 @@ class TestIntegrationLifecycle:
             assert plan_file.read_text(encoding="utf-8") == "# user customization\n"
         finally:
             os.chdir(old_cwd)
+
+
+@pytest.mark.parametrize("change", ["none", "changed-file", "new-file", "deleted-directory", "nonempty-sibling"])
+def test_directory_identity_ignores_only_new_empty_destination_parents(tmp_path, change):
+    from specify_cli.integrations._lifecycle import _file_identity, _matches_directory_before_write
+
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "original.txt").write_text("original")
+    (package / "original-empty").mkdir()
+    expected = _file_identity(package)
+    (package / ".cache/nested").mkdir(parents=True)
+    if change == "changed-file":
+        (package / "original.txt").write_text("concurrent edit")
+    elif change == "new-file":
+        (package / "user.txt").write_text("concurrent user file")
+    elif change == "deleted-directory":
+        (package / "original-empty").rmdir()
+    elif change == "nonempty-sibling":
+        (package / ".cache/user.txt").write_text("concurrent user cache file")
+    assert _matches_directory_before_write(
+        _file_identity(package), expected, (".cache", "nested"),
+    ) == (change == "none")

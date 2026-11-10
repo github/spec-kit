@@ -191,7 +191,7 @@ check_existing_branches() {
             highest_branch=$highest_remote
         fi
     else
-        git fetch --all --prune >/dev/null 2>&1 || true
+        GIT_TERMINAL_PROMPT=0 git fetch --all --prune >/dev/null 2>&1 || true
         local highest_branch=$(get_highest_from_branches "$scope_prefix")
     fi
 

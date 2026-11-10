@@ -3,7 +3,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .._project import _resolve_init_dir_override
+from .._project import (
+    ProjectResolutionError,
+    _resolve_init_dir_override_unrendered,
+    render_project_error,
+)
+from .._file_policy import ProjectPolicyError, project_files
+from ..integration_state import clean_integration_key, dedupe_integration_keys
 from . import BundlerError
 from .yamlio import ensure_within, load_json
 
@@ -13,9 +19,10 @@ DEFAULT_INTEGRATION = "copilot"
 def find_project_root(start: Path | None = None) -> Path | None:
     """Return the nearest ancestor (incl. *start*) containing a ``.specify/`` dir, or None.
 
-    A symlinked ``.specify`` is not accepted as a project root: following it
-    could read/write outside the intended tree, and other CLI surfaces refuse
-    it for the same reason.
+    A present ``.specify`` entry establishes the candidate boundary. Forbidden
+    links/reparse entries, non-directory markers and corrupt policy fail there
+    instead of silently selecting an ancestor. Only absent markers continue
+    ancestor discovery.
 
     When *start* is ``None`` the ``SPECIFY_INIT_DIR`` override is honored first
     (see :func:`specify_cli._project._resolve_init_dir_override`). With an
@@ -25,23 +32,37 @@ def find_project_root(start: Path | None = None) -> Path | None:
     ``bundle init``/``install`` silently fall back to the current directory.
     """
     if start is None:
-        override = _resolve_init_dir_override()
+        try:
+            override = _resolve_init_dir_override_unrendered()
+        except ProjectResolutionError as exc:
+            if isinstance(exc.__cause__, ProjectPolicyError):
+                raise BundlerError(str(exc)) from exc.__cause__
+            render_project_error(exc)
         if override is not None:
             # An explicit override is strict: do not return None here, because
             # bundle install treats None as "init the current directory".
-            if (override / ".specify").is_symlink():
-                raise BundlerError(
-                    "SPECIFY_INIT_DIR is not a safe Spec Kit project "
-                    f"(symlinked .specify/ directory is not allowed): {override}"
-                )
             return override
 
     current = Path(start or Path.cwd()).resolve()
     for candidate in (current, *current.parents):
         marker = candidate / ".specify"
-        if marker.is_dir() and not marker.is_symlink():
-            return candidate
+        try:
+            marker.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            error = ProjectPolicyError(f"Cannot inspect project marker {marker}: {exc}")
+            raise BundlerError(str(error)) from error
+        _preflight_policy(candidate)
+        return candidate
     return None
+
+
+def _preflight_policy(root: Path) -> None:
+    try:
+        project_files(root)
+    except ProjectPolicyError as exc:
+        raise BundlerError(str(exc)) from exc
 
 
 def require_project_root(start: Path | None = None) -> Path:
@@ -82,21 +103,44 @@ def active_integration(project_root: Path) -> str | None:
     except BundlerError:
         return None
     if isinstance(data, dict):
-        # ``default_integration`` first, matching the canonical reader in
-        # ``integration_state`` (line 199):
-        # ``state.get("default_integration") or state.get("integration")``.
-        # ``write_integration_json`` writes both keys, so a marker produced by
-        # the current CLI already resolved through the ``integration`` alias --
-        # this is about which field is authoritative when they disagree, and
-        # about resolving a marker that carries only ``default_integration``
-        # (hand-edited, or written by anything that follows the canonical
-        # reader's shape). ``integration``/``id``/``active`` stay as fallbacks.
-        value = (
-            data.get("default_integration")
-            or data.get("integration")
-            or data.get("id")
-            or data.get("active")
-        )
-        if isinstance(value, str) and value:
-            return value
+        # Resolve the way the canonical path does: normalize first
+        # (``normalize_integration_state``), then read the default
+        # (``default_integration_key``). ``default_integration_key`` alone is
+        # not that reader -- it expects *normalized* state, and on a raw marker
+        # its ``state.get("default_integration") or state.get("integration")``
+        # picks a whitespace-only default (truthy) over a valid legacy key
+        # behind it.
+        #
+        # ``default_integration`` is authoritative; ``integration`` (the legacy
+        # alias ``write_integration_json`` also writes), then ``id``/``active``,
+        # are fallbacks. Clean EACH candidate before selecting it, as
+        # ``normalize_integration_state`` does with
+        # ``clean_integration_key(data.get("default_integration")) or
+        # legacy_key``, rather than picking the first truthy raw value and
+        # normalizing only that one:
+        #     {"default_integration": "   ", "integration": "copilot"}
+        #         raw-then-clean -> None      canonical -> 'copilot'
+        #
+        # Normalizing through the shared helper also fixes the original
+        # divergence: ``isinstance(value, str) and value`` accepted a
+        # whitespace-only key as real -- truthy, so it suppressed the "not
+        # determinable" fallback -- and returned a padded key verbatim, which
+        # matches no registered integration.
+        for field in ("default_integration", "integration", "id", "active"):
+            cleaned = clean_integration_key(data.get(field))
+            if cleaned:
+                return cleaned
+        # Installed-only state -- ``installed_integrations`` populated but no
+        # default recorded -- still has an active integration: the canonical
+        # ``normalize_integration_state`` promotes ``installed_integrations[0]``
+        # to the default. Returning None here instead told callers the
+        # integration "cannot be determined", which lets an explicit
+        # ``--integration`` bypass the FR-019 integration-clash guard in
+        # ``bundle install`` / ``bundle update``. Checked last, so a marker
+        # that already resolved through the fields above is unaffected.
+        installed = data.get("installed_integrations")
+        if isinstance(installed, list):
+            installed_keys = dedupe_integration_keys(installed)
+            if installed_keys:
+                return installed_keys[0]
     return None

@@ -8,15 +8,34 @@ from __future__ import annotations
 import typer
 from rich.markup import escape as _escape_markup
 
+from .._installed_info_json import extension_info_item
+from .._installed_list_json import InstalledListJSONCommand, emit_json, emit_json_error
+from .._project import resolve_specify_project_root
 from . import _commands
 
 
-@_commands.extension_app.command("info")
+@_commands.extension_app.command("info", cls=InstalledListJSONCommand)
 def extension_info(
     extension: str = typer.Argument(help="Extension ID or name"),
+    versions: bool = typer.Option(False, "--versions", help="List catalog versions"),
+    json_output: bool = typer.Option(
+        False, "--json", help="Output the installed extension as JSON"
+    ),
 ):
     """Show detailed information about an extension."""
-    from . import ExtensionCatalog, ExtensionManager, normalize_priority
+    from . import ExtensionCatalog, ExtensionManager, ExtensionError, normalize_priority
+
+    # Direct compatibility callers receive Typer's OptionInfo default rather
+    # than a parsed bool; only the CLI's explicit True enables these views.
+    if json_output is True:
+        if versions is True:
+            emit_json_error(ValueError("--json cannot be combined with --versions"), exit_code=2)
+        try:
+            manager = ExtensionManager(resolve_specify_project_root())
+            emit_json(extension_info_item(manager.list_installed(), manager, extension))
+            return
+        except Exception as error:  # noqa: BLE001 - emit the JSON error contract
+            emit_json_error(error)
 
     project_root = _commands._require_specify_project()
     catalog = ExtensionCatalog(project_root)
@@ -36,11 +55,42 @@ def extension_info(
     ext_info, catalog_error = _commands._resolve_catalog_extension(
         lookup_key, catalog, "info"
     )
+    # Direct compatibility callers receive Typer's OptionInfo default rather
+    # than a parsed bool; only the CLI's explicit True enables this view.
+    show_versions = versions is True
 
     # Case 1: Found in catalog - show full catalog info
     if ext_info:
+        if show_versions:
+            try:
+                from ._catalog_versions import available_versions
+
+                available = available_versions(ext_info)
+            except ExtensionError as exc:
+                _commands.console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+                raise typer.Exit(1) from exc
+            _commands.console.print(
+                f"Catalog versions for {_escape_markup(str(ext_info['id']))}:"
+            )
+            for index, available_version in enumerate(available):
+                current = " (current)" if index == 0 else ""
+                _commands.console.print(f"  {_escape_markup(available_version)}{current}")
+            if not ext_info.get("_install_allowed", True):
+                _commands.console.print("[yellow]Discovery only; catalog installation is disabled.[/yellow]")
+            return
         _print_extension_info(ext_info, manager)
         return
+
+    if show_versions:
+        if catalog_error:
+            _commands.console.print(
+                f"[red]Error:[/red] Could not query extension catalog: {_escape_markup(str(catalog_error))}"
+            )
+            raise typer.Exit(1)
+        _commands.console.print(
+            f"[red]Error:[/red] No catalog versions found for {_escape_markup(extension)}."
+        )
+        raise typer.Exit(1)
 
     # Case 2: Installed locally but catalog lookup failed or not in catalog
     if resolved_installed_id:
@@ -73,29 +123,14 @@ def extension_info(
             _commands.console.print()
 
             if ext_manifest.commands:
-                # Print each command the way the active agent registers it.
-                # Cline and Forge hyphenate command names (e.g. Forge invokes
-                # `/speckit-jira-sync`, not the manifest's dotted
-                # `speckit.jira.sync`), so mirror the same formatting used by
-                # `extension add`'s "Provided commands" listing — otherwise the
-                # names shown here don't match what the user actually types.
-                selected_ai = _commands.load_init_options(project_root).get("ai")
-                if selected_ai == "cline":
-                    from specify_cli.integrations.cline import (
-                        format_cline_command_name as _format_command_name,
-                    )
-                elif selected_ai == "forge":
-                    from specify_cli.integrations.forge import (
-                        format_forge_command_name as _format_command_name,
-                    )
-                else:
-                    _format_command_name = None
-
+                # Print each command the way the active agent registers it
+                # (e.g. Codex registers `speckit-jira-sync`, not the manifest's
+                # dotted `speckit.jira.sync`), matching `extension add`'s
+                # "Provided commands" listing, so the names shown here are the
+                # ones the user actually types.
                 _commands.console.print("[bold]Commands:[/bold]")
                 for cmd in ext_manifest.commands:
-                    cmd_name = cmd['name']
-                    if _format_command_name is not None:
-                        cmd_name = _format_command_name(cmd_name)
+                    cmd_name = _commands._registered_command_name(project_root, cmd['name'])
                     _commands.console.print(f"  • {_escape_markup(str(cmd_name))}: {_escape_markup(str(cmd.get('description', '')))}")
                 _commands.console.print()
 

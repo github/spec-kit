@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -11,6 +13,8 @@ import yaml
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli.bundler import BundlerError
+from specify_cli.bundles import _commands, command_install
 from specify_cli.bundles._commands import _resolve_init_integration
 from specify_cli.bundles.manifest import BundleManifest
 from specify_cli.bundles.packager import build_bundle
@@ -20,12 +24,86 @@ from tests.specify_cli.bundles.helpers import (
     catalog_entry_dict,
     make_project,
     valid_manifest_dict,
+    reference_manifest_dict,
     write_catalog_file,
     write_manifest,
 )
 
 runner = CliRunner()
 REPO_ROOT = Path(__file__).parents[3]
+
+
+@pytest.mark.parametrize("refresh", [False, True])
+def test_bundled_patch_upgrade_warns_and_records_actual_version(
+    project: Path, monkeypatch, refresh: bool,
+):
+    import specify_cli._assets as assets
+    from specify_cli.bundles.records import load_records
+
+    source = project / "packaged-bug"
+    shutil.copytree(REPO_ROOT / "extensions" / "bug", source)
+    source_manifest = source / "extension.yml"
+    data = yaml.safe_load(source_manifest.read_text(encoding="utf-8"))
+    data["extension"]["version"] = "1.0.0" if refresh else "1.0.1"
+    source_manifest.write_text(yaml.safe_dump(data), encoding="utf-8")
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: source)
+    bundle = write_manifest(
+        project / "custom-bundle",
+        valid_manifest_dict(provides={"extensions": [{"id": "bug", "version": "1.0.0"}]}),
+    )
+    args = ["bundle", "install", str(bundle), "--offline"]
+    if refresh:
+        initial = runner.invoke(app, args)
+        assert initial.exit_code == 0, initial.output
+        data["extension"]["version"] = "1.0.1"
+        source_manifest.write_text(yaml.safe_dump(data), encoding="utf-8")
+        args.append("--refresh")
+
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(result.output.split())
+    assert "Warning:" in output
+    assert "1.0.0" in output and "1.0.1" in output
+    record = load_records(project)[0]
+    assert record.contributed_components[0].version == "1.0.0"
+    assert record.installed_versions == {"extensions:bug": "1.0.1"}
+    installed = yaml.safe_load(
+        (project / ".specify/extensions/bug/extension.yml").read_text(encoding="utf-8")
+    )
+    assert installed["extension"]["version"] == "1.0.1"
+    listed = runner.invoke(app, ["bundle", "list", "--json"])
+    assert listed.exit_code == 0, listed.output
+    assert json.loads(listed.stdout)[0]["installed_versions"] == record.installed_versions
+    repeated = runner.invoke(app, ["bundle", "install", str(bundle), "--offline"])
+    assert repeated.exit_code == 0, repeated.output
+    assert load_records(project)[0].installed_versions == record.installed_versions
+    shared_data = valid_manifest_dict(
+        provides={"extensions": [{"id": "bug", "version": "1.0.0"}]},
+    )
+    shared_data["bundle"]["id"] = "shared-bundle"
+    shared = write_manifest(project / "shared-bundle", shared_data)
+    shared_result = runner.invoke(app, ["bundle", "install", str(shared), "--offline"])
+    assert shared_result.exit_code == 0, shared_result.output
+    shared_refresh = runner.invoke(
+        app, ["bundle", "install", str(bundle), "--offline", "--refresh"],
+    )
+    assert shared_refresh.exit_code == 0, shared_refresh.output
+    shared_data["bundle"]["id"] = "conflicting-bundle"
+    shared_data["provides"]["extensions"][0]["version"] = "1.0.1"
+    conflicting = write_manifest(project / "conflicting-bundle", shared_data)
+    rejected = runner.invoke(
+        app, ["bundle", "install", str(conflicting), "--offline"],
+    )
+    assert rejected.exit_code == 1, rejected.output
+    assert {r.bundle_id for r in load_records(project)} == {"demo-bundle", "shared-bundle"}
+    removed = runner.invoke(app, ["bundle", "remove", "demo-bundle"])
+    assert removed.exit_code == 0, removed.output
+    assert (project / ".specify/extensions/bug").exists()
+    assert load_records(project)[0].installed_versions == record.installed_versions
+    removed_shared = runner.invoke(app, ["bundle", "remove", "shared-bundle"])
+    assert removed_shared.exit_code == 0, removed_shared.output
+    assert not (project / ".specify/extensions/bug").exists()
 
 
 def _bundled_workflow_manifest(workflow_id: str, version: str = "1.0.0") -> dict:
@@ -58,6 +136,359 @@ def test_local_firstparty_bundle_installs_bundled_components_offline(
     assert registry["workflows"][bundle_id]["version"] == "1.0.0"
 
 
+def test_local_parent_installs_referenced_catalog_components(
+    project: Path, monkeypatch
+):
+    """A local parent expands through the same catalog stack as a catalog root."""
+    child_version = bundled_extension_version("agent-context")
+    child = BundleManifest.from_dict(
+        valid_manifest_dict(
+            bundle={
+                "id": "child-pack",
+                "name": "Child Pack",
+                "version": "1.0.0",
+                "role": "developer",
+                "description": "child",
+                "author": "tests",
+                "license": "MIT",
+            },
+            provides={
+                "extensions": [{"id": "agent-context", "version": child_version}]
+            },
+        )
+    )
+    parent_path = write_manifest(
+        project / "parent-pack",
+        reference_manifest_dict(
+            [{"id": "child-pack", "version": "1.0.0"}],
+            bundle_id="parent-pack",
+        ),
+    )
+
+    resolved = SimpleNamespace(
+        entry=SimpleNamespace(id="child-pack", verified=True),
+        source=SimpleNamespace(id="test-catalog"),
+        install_allowed=True,
+    )
+
+    class Stack:
+        def resolve(self, bundle_id, version=None):
+            assert (bundle_id, version) == ("child-pack", "1.0.0")
+            return resolved
+
+    monkeypatch.setattr(_commands, "_build_stack", lambda *args, **kwargs: Stack())
+    monkeypatch.setattr(
+        command_install,
+        "_download_manifest",
+        lambda selected, *, offline: child,
+    )
+
+    result = runner.invoke(app, ["bundle", "add", str(parent_path), "--offline"])
+
+    assert result.exit_code == 0, result.output
+    assert (project / ".specify/extensions/agent-context/extension.yml").is_file()
+    from specify_cli.bundles.records import load_records
+
+    record = load_records(project)[0]
+    assert record.bundle_id == "parent-pack"
+    assert [(c.kind, c.id) for c in record.required_components] == [
+        ("extensions", "agent-context")
+    ]
+    assert record.bundle_references[0].id == "child-pack"
+
+
+def test_install_rejects_reference_source_mismatch(project: Path, monkeypatch):
+    parent_path = write_manifest(
+        project / "parent-pack",
+        reference_manifest_dict(
+            [{"id": "child-pack", "version": "1.0.0", "source": "X"}],
+            bundle_id="parent-pack",
+        ),
+    )
+    selected = SimpleNamespace(
+        entry=SimpleNamespace(id="child-pack", verified=True),
+        source=SimpleNamespace(id="winner"),
+        install_allowed=True,
+    )
+
+    class Stack:
+        def resolve(self, bundle_id, version=None):
+            return selected
+
+    monkeypatch.setattr(_commands, "_build_stack", lambda *a, **k: Stack())
+    result = runner.invoke(app, ["bundle", "install", str(parent_path), "--offline"])
+
+    assert result.exit_code == 1, result.output
+    assert "requires source" in result.output
+
+
+def test_catalog_root_reference_install_builds_stack_once(
+    project: Path, monkeypatch
+):
+    child_version = bundled_extension_version("agent-context")
+    parent = BundleManifest.from_dict(
+        reference_manifest_dict(
+            [{"id": "child-pack", "version": "1.0.0"}], bundle_id="parent-pack"
+        )
+    )
+    child_data = valid_manifest_dict(
+        provides={"extensions": [{"id": "agent-context", "version": child_version}]}
+    )
+    child_data["bundle"] = {
+        "id": "child-pack", "name": "Child", "version": "1.0.0",
+        "role": "developer", "description": "child", "author": "tests",
+        "license": "MIT",
+    }
+    child = BundleManifest.from_dict(child_data)
+    selected = {
+        "parent-pack": SimpleNamespace(
+            entry=SimpleNamespace(id="parent-pack", verified=True),
+            source=SimpleNamespace(id="default"),
+            install_allowed=True,
+        ),
+        "child-pack": SimpleNamespace(
+            entry=SimpleNamespace(id="child-pack", verified=True),
+            source=SimpleNamespace(id="default"),
+            install_allowed=True,
+        ),
+    }
+    builds = 0
+
+    class Stack:
+        def resolve(self, bundle_id, version=None):
+            return selected[bundle_id]
+
+    def build_stack(*args, **kwargs):
+        nonlocal builds
+        builds += 1
+        return Stack()
+
+    monkeypatch.setattr(command_install, "_build_stack", build_stack)
+    monkeypatch.setattr(
+        command_install,
+        "_download_manifest",
+        lambda resolved, *, offline: parent if resolved.entry.id == "parent-pack" else child,
+    )
+
+    result = runner.invoke(app, ["bundle", "install", "parent-pack", "--offline"])
+
+    assert result.exit_code == 0, result.output
+    assert builds == 1
+    assert (project / ".specify/extensions/agent-context/extension.yml").is_file()
+
+
+def test_flat_local_install_never_builds_catalog_stack(project: Path, monkeypatch):
+    bundle = write_manifest(project / "flat", valid_manifest_dict(provides={}))
+
+    def fail(*args, **kwargs):
+        pytest.fail("flat local install built a catalog stack")
+
+    # Both namespaces: command_install's alias and the one _expand_manifest uses.
+    monkeypatch.setattr(command_install, "_build_stack", fail)
+    monkeypatch.setattr(_commands, "_build_stack", fail)
+
+    result = runner.invoke(app, ["bundle", "install", str(bundle), "--offline"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_reference_only_parent_installs_without_own_components(
+    project: Path, monkeypatch
+):
+    child = BundleManifest.from_dict(
+        valid_manifest_dict(
+            bundle={
+                "id": "child-pack", "name": "Child", "version": "1.0.0",
+                "role": "developer", "description": "child", "author": "tests",
+                "license": "MIT",
+            },
+            provides={"extensions": [{"id": "child-ext", "version": "1.0.0"}]},
+        )
+    )
+    parent_path = write_manifest(
+        project / "reference-only-parent",
+        reference_manifest_dict(
+            [{"id": "child-pack", "version": "1.0.0"}],
+            bundle_id="reference-only-parent",
+        ),
+    )
+    resolved = SimpleNamespace(
+        entry=SimpleNamespace(id="child-pack", verified=True),
+        source=SimpleNamespace(id="test-catalog"),
+        install_allowed=True,
+    )
+
+    class Stack:
+        def resolve(self, bundle_id, version=None):
+            return resolved
+
+    monkeypatch.setattr(_commands, "_build_stack", lambda *a, **k: Stack())
+    monkeypatch.setattr(command_install, "_download_manifest", lambda *a, **k: child)
+    installer = FakeInstaller()
+    monkeypatch.setattr(
+        "specify_cli.bundles.adapters.DefaultPrimitiveInstaller",
+        lambda **kwargs: installer,
+    )
+    result = runner.invoke(app, ["bundle", "install", str(parent_path), "--offline"])
+    assert result.exit_code == 0, result.output
+    assert installer.install_calls == [("extensions", "child-ext")]
+
+
+def test_no_project_reference_gate_runs_before_init(tmp_path: Path, monkeypatch):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.chdir(empty)
+    child_data = valid_manifest_dict(
+        bundle={
+            "id": "child-pack", "name": "Child", "version": "1.0.0",
+            "role": "developer", "description": "child", "author": "tests",
+            "license": "MIT",
+        },
+        requires={"speckit_version": ">=999.0.0"},
+        provides={"extensions": []},
+    )
+    child = BundleManifest.from_dict(child_data)
+    parent = write_manifest(
+        tmp_path / "parent",
+        reference_manifest_dict(
+            [{"id": "child-pack", "version": "1.0.0"}], bundle_id="parent"
+        ),
+    )
+    resolved = SimpleNamespace(
+        entry=SimpleNamespace(id="child-pack", verified=True),
+        source=SimpleNamespace(id="test-catalog"),
+        install_allowed=True,
+    )
+
+    class Stack:
+        def resolve(self, bundle_id, version=None):
+            return resolved
+
+    monkeypatch.setattr(_commands, "_build_stack", lambda *a, **k: Stack())
+    monkeypatch.setattr(command_install, "_download_manifest", lambda *a, **k: child)
+    with patch("specify_cli.bundles.command_install._run_init") as run_init:
+        result = runner.invoke(app, ["bundle", "install", str(parent), "--offline"])
+    assert result.exit_code == 1
+    assert "Bundle 'child-pack'" in result.output
+    run_init.assert_not_called()
+    assert not (empty / ".specify").exists()
+
+
+def test_discovery_only_reference_is_rejected_with_parent_chain(
+    project: Path, monkeypatch
+):
+    child = BundleManifest.from_dict(
+        valid_manifest_dict(
+            bundle={
+                "id": "child-pack", "name": "Child", "version": "1.0.0",
+                "role": "developer", "description": "child", "author": "tests",
+                "license": "MIT",
+            },
+            provides={"extensions": []},
+        )
+    )
+    parent = write_manifest(
+        project / "parent",
+        reference_manifest_dict(
+            [{"id": "child-pack", "version": "1.0.0"}], bundle_id="parent"
+        ),
+    )
+    resolved = SimpleNamespace(
+        entry=SimpleNamespace(id="child-pack", verified=True),
+        source=SimpleNamespace(id="community"),
+        install_allowed=False,
+    )
+
+    class Stack:
+        def resolve(self, bundle_id, version=None):
+            return resolved
+
+    monkeypatch.setattr(_commands, "_build_stack", lambda *a, **k: Stack())
+    monkeypatch.setattr(command_install, "_download_manifest", lambda *a, **k: child)
+    result = runner.invoke(app, ["bundle", "install", str(parent), "--offline"])
+    assert result.exit_code == 1
+    assert "discovery-only" in result.output
+    assert "parent → child-pack" in result.output
+    assert not (project / ".specify/bundle-records.json").exists()
+
+
+def test_offline_reference_failure_names_reference_and_chain(
+    project: Path, monkeypatch
+):
+    parent = write_manifest(
+        project / "parent",
+        reference_manifest_dict(
+            [{"id": "child", "version": "1.0.0"}], bundle_id="parent"
+        ),
+    )
+    resolved = SimpleNamespace(
+        entry=SimpleNamespace(id="child", verified=True),
+        source=SimpleNamespace(id="default"),
+        install_allowed=True,
+    )
+
+    class Stack:
+        def resolve(self, bundle_id, version=None):
+            return resolved
+
+    def offline_download(selected, *, offline):
+        raise BundlerError("Network access disabled")
+
+    monkeypatch.setattr(_commands, "_build_stack", lambda *a, **k: Stack())
+    monkeypatch.setattr(command_install, "_download_manifest", offline_download)
+    result = runner.invoke(app, ["bundle", "install", str(parent), "--offline"])
+    assert result.exit_code == 1
+    assert "Cannot resolve bundle reference child@1.0.0" in result.output
+    assert "child@1.0.0 (parent):" in result.output
+    assert "Network access" in result.output
+    assert not (project / ".specify/bundle-records.json").exists()
+
+
+def test_local_reference_bundle_offline_names_reference_and_network_limit(project: Path):
+    parent = write_manifest(
+        project / "parent",
+        reference_manifest_dict(
+            [{"id": "missing-child", "version": "1.0.0"}], bundle_id="parent"
+        ),
+    )
+
+    result = runner.invoke(app, ["bundle", "install", str(parent), "--offline"])
+
+    assert result.exit_code == 1, result.output
+    output = " ".join(result.output.split())
+    assert "Cannot resolve bundle reference missing-child@1.0.0 (parent)" in output
+    assert "Bundle 'missing-child' was not found in any configured catalog." in output
+    assert "built-in catalog may be outdated" in output
+    assert "Re-run without --offline." in output
+
+
+@pytest.mark.parametrize("filename", ["demo-bundle.zip", "DEMO-BUNDLE.ZIP"])
+def test_local_zip_artifact_installs_regardless_of_extension_case(
+    project: Path, filename: str
+):
+    from specify_cli.bundles.records import load_records
+
+    artifact = project / filename
+    with zipfile.ZipFile(artifact, "w") as archive:
+        archive.writestr("bundle.yml", yaml.safe_dump(valid_manifest_dict(provides={})))
+
+    result = runner.invoke(app, ["bundle", "install", str(artifact), "--offline"])
+
+    assert result.exit_code == 0, result.output
+    assert [record.bundle_id for record in load_records(project)] == ["demo-bundle"]
+
+
+def test_local_uppercase_zip_without_manifest_is_rejected(project: Path):
+    artifact = project / "broken.ZIP"
+    with zipfile.ZipFile(artifact, "w") as archive:
+        archive.writestr("README.md", "No manifest")
+
+    result = runner.invoke(app, ["bundle", "install", str(artifact), "--offline"])
+
+    assert result.exit_code == 1
+    assert "does not contain a bundle.yml" in " ".join(result.output.split())
+
+
 def test_local_bundle_rejects_mismatched_bundled_workflow_pin_offline(project: Path):
     bundle_dir = project / "mismatched-workflow-pin"
     (bundle_dir / "bundle.yml").parent.mkdir()
@@ -73,6 +504,37 @@ def test_local_bundle_rejects_mismatched_bundled_workflow_pin_offline(project: P
     assert not (project / ".specify" / "workflows" / "bugfix").exists()
 
 
+def test_local_bundle_with_non_positive_priority_is_rejected_before_any_install(
+    project: Path,
+):
+    """A priority the preset installer refuses must fail before earlier components install."""
+    bundle_dir = project / "zero-priority"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yml").write_text(
+        yaml.safe_dump(
+            valid_manifest_dict(
+                provides={
+                    "extensions": [
+                        {"id": "bug", "version": bundled_extension_version("bug")}
+                    ],
+                    "presets": [
+                        {"id": "lean", "version": "1.0.0", "priority": 0, "strategy": "replace"}
+                    ],
+                }
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["bundle", "install", str(bundle_dir), "--offline"])
+
+    assert result.exit_code == 1
+    assert "preset 'lean' priority must be 1 or higher, got 0" in " ".join(
+        result.output.split()
+    )
+    assert not (project / ".specify" / "extensions").exists()
+
+
 def test_local_bundle_refuses_unbundled_workflow_offline(project: Path):
     bundle_dir = project / "unbundled-workflow"
     (bundle_dir / "bundle.yml").parent.mkdir()
@@ -84,6 +546,44 @@ def test_local_bundle_refuses_unbundled_workflow_offline(project: Path):
 
     assert result.exit_code == 1
     assert "network access is disabled" in " ".join(result.output.lower().split())
+
+
+def test_local_bundle_refuses_independently_installed_extension_at_other_version(
+    project: Path,
+):
+    from specify_cli.bundles.records import records_path
+
+    older = project / "bug-older"
+    shutil.copytree(REPO_ROOT / "extensions" / "bug", older)
+    ext_manifest = yaml.safe_load((older / "extension.yml").read_text(encoding="utf-8"))
+    ext_manifest["extension"]["version"] = "0.0.1"
+    (older / "extension.yml").write_text(yaml.safe_dump(ext_manifest), encoding="utf-8")
+    added = runner.invoke(app, ["extension", "add", str(older), "--dev"])
+    assert added.exit_code == 0, added.output
+
+    pinned = bundled_extension_version("bug")
+    bundle_dir = project / "pins-bug"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yml").write_text(
+        yaml.safe_dump(
+            valid_manifest_dict(
+                provides={"extensions": [{"id": "bug", "version": pinned}]}
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["bundle", "install", str(bundle_dir), "--offline"])
+
+    assert result.exit_code == 1
+    assert f"extension 'bug' to {pinned}, but 0.0.1 is installed" in " ".join(
+        result.output.split()
+    )
+    assert not records_path(project).exists()
+    registry = json.loads(
+        (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+    )
+    assert registry["extensions"]["bug"]["version"] == "0.0.1"
 
 
 def test_install_refuses_discovery_only_source(project: Path, monkeypatch):
@@ -107,6 +607,49 @@ def test_install_refuses_discovery_only_source(project: Path, monkeypatch):
     result = runner.invoke(app, ["bundle", "install", "demo", "--offline"])
     assert result.exit_code == 1
     assert "discovery-only" in result.output
+
+
+@pytest.mark.parametrize("command", ["install", "add"])
+@pytest.mark.parametrize("source_kind", ["directory", "manifest", "broken-zip"])
+def test_version_rejects_local_bundle_source_before_reading(
+    tmp_path: Path, monkeypatch, command: str, source_kind: str
+):
+    workdir = tmp_path / "outside-project"
+    workdir.mkdir()
+    monkeypatch.chdir(workdir)
+    if source_kind == "directory":
+        source = tmp_path / "broken-bundle"
+        source.mkdir()
+    elif source_kind == "manifest":
+        source = tmp_path / "bundle.yml"
+        source.write_text("bundle: [not, a, mapping", encoding="utf-8")
+    else:
+        source = tmp_path / "broken.zip"
+        source.write_bytes(b"not a zip archive")
+
+    with patch("specify_cli.bundles.command_install._run_init") as run_init:
+        result = runner.invoke(
+            app, ["bundle", command, str(source), "--version", "1.0.0", "--offline"]
+        )
+
+    assert result.exit_code == 1
+    assert "--version requires a catalog bundle ID" in result.output
+    run_init.assert_not_called()
+    assert not (workdir / ".specify").exists()
+
+
+def test_version_rejects_blank_and_refresh_before_resolution(project: Path):
+    blank = runner.invoke(
+        app, ["bundle", "install", "history", "--version", " ", "--offline"]
+    )
+    refresh = runner.invoke(
+        app, ["bundle", "install", "history", "--version", "1.0.0", "--refresh", "--offline"]
+    )
+
+    assert blank.exit_code == 1
+    assert "--version must not be blank" in blank.output
+    assert refresh.exit_code == 1
+    assert "--version cannot be used with --refresh" in refresh.output
 
 
 def test_install_integration_override_cannot_bypass_clash_guard(project: Path):
@@ -370,7 +913,8 @@ def test_local_refresh_catalog_extension_requires_network(
     version = "1.0.0"
     downloads = []
 
-    def download_extension(self, extension_id):
+    def download_extension_info(self, info):
+        extension_id = info["id"]
         downloads.append((extension_id, version))
         artifact = tmp_path / "extension.zip"
         extension = {
@@ -397,10 +941,15 @@ def test_local_refresh_catalog_extension_requires_network(
 
     monkeypatch.setattr(
         ExtensionCatalog,
-        "get_extension_info",
-        lambda self, cid: {"id": cid, "version": version, "_install_allowed": True},
+        "_fetch_single_catalog",
+        lambda self, entry, force_refresh=False: {
+            "schema_version": "1.0",
+            "extensions": {"catalog-ext": {"version": version}},
+        },
     )
-    monkeypatch.setattr(ExtensionCatalog, "download_extension", download_extension)
+    monkeypatch.setattr(
+        ExtensionCatalog, "download_extension_info", download_extension_info
+    )
     data = valid_manifest_dict(
         provides={"extensions": [{"id": "catalog-ext", "version": version}]}
     )

@@ -54,6 +54,11 @@ try {
 } catch { }
 
 # Initialize
+# Relax ErrorActionPreference so git warnings on stderr (e.g. CRLF notices)
+# do not become terminating errors in Windows PowerShell 5.1; real failures
+# are still caught through $LASTEXITCODE.
+$savedEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 try {
     $out = git init -q 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) { throw "git init failed: $out" }
@@ -64,6 +69,8 @@ try {
 } catch {
     Write-Warning "[specify] Error: $_"
     exit 1
+} finally {
+    $ErrorActionPreference = $savedEAP
 }
 
 Write-Host "[OK] Git repository initialized"

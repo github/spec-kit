@@ -194,19 +194,22 @@ class TestInitOptions:
     def test_save_uses_utf8_encoding(self, project_dir, monkeypatch):
         from specify_cli import save_init_options
 
-        original_write_text = Path.write_text
+        from specify_cli.file_helper import FileHelper
+
+        original_write_text = FileHelper.overwrite_text
         seen: dict[str, str | None] = {}
 
-        def spy_write_text(path, data, *args, **kwargs):
-            if path == project_dir / ".specify" / "init-options.json":
-                seen["encoding"] = kwargs.get("encoding")
-            return original_write_text(path, data, *args, **kwargs)
+        def spy_write_text(files, path, data, *args, **kwargs):
+            if files.root / path == project_dir / ".specify" / "init-options.json":
+                seen["encoding"] = kwargs.get("encoding", "utf-8")
+            return original_write_text(files, path, data, *args, **kwargs)
 
-        monkeypatch.setattr(Path, "write_text", spy_write_text)
+        monkeypatch.setattr(FileHelper, "overwrite_text", spy_write_text)
 
         save_init_options(project_dir, {"label": "中文测试"})
 
         assert seen["encoding"] == "utf-8"
+        assert json.loads((project_dir / ".specify/init-options.json").read_bytes().decode("utf-8")) == {"label": "中文测试"}
 
     def test_load_uses_utf8_encoding(self, project_dir, monkeypatch):
         from specify_cli import load_init_options
@@ -501,6 +504,21 @@ def test_core_checklist_command_resolves_template_at_runtime():
     assert "--template checklist-template" in content
     assert "TEMPLATE_CONTENT" in content
     assert "Use TEMPLATE_CONTENT as the structural template" in content
+
+
+def test_core_specify_command_writes_composed_spec_template():
+    """The specify command must start spec.md from the composed spec-template."""
+    content = (CORE_CONSTITUTION_COMMAND.parent / "specify.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "resolve-template.sh spec-template --json" in content
+    assert "resolve-template.ps1 spec-template -Json" in content
+    assert "resolve_template.py spec-template --json" in content
+    assert "parse `TEMPLATE_CONTENT` as the active `spec-template`" in content
+    assert "Write `TEMPLATE_CONTENT` to `SPECIFY_FEATURE_DIRECTORY/spec.md`" in content
+    assert "do not continue with only one contributing template layer" in content
+    assert "Copy the resolved `spec-template` file" not in content
 
 
 class TestLeanPreset:

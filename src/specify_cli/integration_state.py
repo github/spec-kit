@@ -7,9 +7,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .file_helper import FileHelper, FileHelperError, SymlinkDeniedError
+
 
 INTEGRATION_JSON = ".specify/integration.json"
 INTEGRATION_STATE_SCHEMA = 1
+_SYMLINK_STATE_ERROR = (
+    f"Refusing symlinked integration state at {INTEGRATION_JSON}. "
+    "Replace linked entries in this path with a real directory or regular file; "
+    "allow_symlinks does not apply to integration state."
+)
 
 
 @dataclass(frozen=True)
@@ -35,6 +42,14 @@ def _read_integration_json_data(
     schema, encoding, or filesystem failures.
     """
     path = project_root / INTEGRATION_JSON
+    try:
+        files = FileHelper(project_root)
+    except FileNotFoundError:
+        return None, None
+    except (OSError, RuntimeError) as exc:
+        return None, IntegrationReadError(
+            kind="os", detail=f"Cannot establish project root for {INTEGRATION_JSON}: {exc}"
+        )
     # Avoid Path.exists() / Path.is_file() as a pre-check: both return False
     # on some OSErrors (e.g. permission errors during stat), which would
     # silently treat an unreadable-but-present file as missing. Attempt the
@@ -42,7 +57,7 @@ def _read_integration_json_data(
     # other OSErrors (which become loud errors via the IntegrationReadError
     # path).
     try:
-        raw = path.read_text(encoding="utf-8")
+        raw = files.read_text(INTEGRATION_JSON, encoding="utf-8")
     except FileNotFoundError:
         return None, None
     except IsADirectoryError as exc:
@@ -52,7 +67,9 @@ def _read_integration_json_data(
         )
     except UnicodeDecodeError as exc:
         return None, IntegrationReadError(kind="decode", detail=str(exc))
-    except OSError as exc:
+    except SymlinkDeniedError:
+        return None, IntegrationReadError(kind="os", detail=_SYMLINK_STATE_ERROR)
+    except (OSError, FileHelperError) as exc:
         return None, IntegrationReadError(kind="os", detail=str(exc))
     try:
         data = json.loads(raw)
@@ -223,9 +240,20 @@ def write_integration_json(
     installed_integrations: list[str] | None = None,
     settings: dict[str, dict[str, Any]] | None = None,
 ) -> None:
-    """Write ``.specify/integration.json`` with legacy-compatible state."""
+    """Write legacy-compatible state beneath the trusted, existing project root.
+
+    State reads and writes deny links below that root, independently of any
+    lifecycle transaction or operational symlink opt-in.
+    """
+    files = FileHelper(project_root)
+    # Reject the full destination before an observer can snapshot its target.
+    try:
+        files.read_bytes(INTEGRATION_JSON)
+    except FileNotFoundError:
+        pass
+    except SymlinkDeniedError as exc:
+        raise SymlinkDeniedError(_SYMLINK_STATE_ERROR) from exc
     dest = project_root / INTEGRATION_JSON
-    dest.parent.mkdir(parents=True, exist_ok=True)
 
     integration_key = clean_integration_key(integration_key)
     installed = dedupe_integration_keys(installed_integrations or [])
@@ -249,4 +277,12 @@ def write_integration_json(
         data["integration"] = integration_key
         data["default_integration"] = integration_key
 
-    dest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    from .integrations._file_changes import after_file_change, before_file_change
+
+    try:
+        before_file_change(dest)
+        files.mkdir(".specify", exist_ok=True)
+        files.overwrite_text(INTEGRATION_JSON, json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        after_file_change(dest)
+    except SymlinkDeniedError as exc:
+        raise SymlinkDeniedError(_SYMLINK_STATE_ERROR) from exc

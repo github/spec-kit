@@ -18,6 +18,10 @@ from specify_cli import app
 from specify_cli.extensions import (
     ExtensionManager,
 )
+from tests.specify_cli.extensions._helpers import (
+    LISTED_COMMAND_NAME_CASES,
+    write_listing_project_options,
+)
 
 
 class TestExtensionInfoRendering:
@@ -239,3 +243,50 @@ def test_forge_extension_info_hyphenates_command_names(
     # not the manifest's dotted name.
     assert "speckit-test-ext-hello" in output, output
     assert "speckit.test-ext.hello" not in output, output
+
+
+@pytest.mark.parametrize(
+    ("init_options", "listed", "not_listed"), LISTED_COMMAND_NAME_CASES
+)
+def test_extension_info_listing_matches_registered_command_names(
+    extension_dir, project_dir, monkeypatch, init_options, listed, not_listed
+):
+    """`extension info` for an installed extension must show each command the
+    way the active agent registers it, for every integration rather than only
+    the agents special-cased by name."""
+
+    from rich.console import Console
+
+    from specify_cli.extensions import _commands
+
+    write_listing_project_options(project_dir, init_options)
+
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(
+        extension_dir, "1.0.0", register_commands=False
+    )
+
+    # Force the "installed locally, not in catalog" branch, which prints the
+    # local manifest's Commands section, and avoid any network catalog lookup.
+    monkeypatch.setattr(
+        _commands, "_resolve_catalog_extension", lambda *a, **k: (None, None)
+    )
+
+    buf = io.StringIO()
+    monkeypatch.setattr(
+        _commands, "console", Console(file=buf, force_terminal=False, width=200)
+    )
+    # Restore the cwd before the temp_dir fixture removes the project; Windows
+    # cannot delete the current working directory.
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        _commands.extension_info("test-ext")
+    except SystemExit:
+        pass
+    finally:
+        os.chdir(old_cwd)
+
+    output = buf.getvalue()
+    assert f"• {listed}: " in output, output
+    assert f"• {not_listed}: " not in output, output

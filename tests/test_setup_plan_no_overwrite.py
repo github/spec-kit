@@ -200,9 +200,11 @@ def test_ps_setup_plan_creates_plan_when_missing(plan_repo: Path) -> None:
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
-def test_ps_setup_plan_preserves_existing_plan(plan_repo: Path) -> None:
+@pytest.mark.parametrize("feature_name", ["001-my-feature", "001-my-feature [v2]"])
+def test_ps_setup_plan_preserves_existing_plan(plan_repo: Path, feature_name: str) -> None:
     """Rerun must not overwrite an existing plan.md."""
-    feat = plan_repo / "specs" / "001-my-feature"
+    _write_feature_json(plan_repo, f"specs/{feature_name}")
+    feat = plan_repo / "specs" / feature_name
     feat.mkdir(parents=True)
     existing_content = "# My carefully authored plan\n\nDo not overwrite me.\n"
     (feat / "plan.md").write_text(existing_content, encoding="utf-8")
@@ -224,6 +226,35 @@ def test_ps_setup_plan_preserves_existing_plan(plan_repo: Path) -> None:
     assert "IMPL_PLAN" in data
     # The skip message should be on stderr
     assert "already exists" in result.stderr
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_ps_setup_plan_does_not_match_another_features_plan(plan_repo: Path) -> None:
+    """A wildcard-shaped feature path must not match a neighboring plan."""
+    feature_name = "001-my-feature [v2]"
+    _write_feature_json(plan_repo, f"specs/{feature_name}")
+    neighbor = plan_repo / "specs" / "001-my-feature v"
+    neighbor.mkdir(parents=True)
+    existing_content = "# Another feature's plan\n"
+    (neighbor / "plan.md").write_text(existing_content, encoding="utf-8")
+
+    script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-Json"],
+        cwd=plan_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    plan_path = plan_repo / "specs" / feature_name / "plan.md"
+    assert Path(data["IMPL_PLAN"]) == plan_path
+    assert plan_path.read_text(encoding="utf-8") == PLAN_TEMPLATE.read_text(encoding="utf-8")
+    assert (neighbor / "plan.md").read_text(encoding="utf-8") == existing_content
+    assert "Copied plan template" in result.stderr
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
@@ -250,10 +281,7 @@ def test_ps_setup_plan_copied_message_on_stderr_in_json_mode(plan_repo: Path) ->
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_ps_setup_plan_template_not_found_warning_matches_bash(plan_repo: Path) -> None:
-    """When no plan template resolves, -Json mode must emit 'Warning: Plan template
-    not found' on stderr (matching the bash twin's wording and stream routing) while
-    keeping stdout pure JSON. Before the fix the PowerShell script used Write-Warning,
-    producing a different 'WARNING:' prefix on the warning stream instead."""
+    """When no plan template resolves, setup must fail without creating plan.md."""
     # Remove the template the fixture installs so resolution finds nothing.
     (plan_repo / ".specify" / "templates" / "plan-template.md").unlink()
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
@@ -266,7 +294,10 @@ def test_ps_setup_plan_template_not_found_warning_matches_bash(plan_repo: Path) 
         check=False,
         env=_clean_env(),
     )
-    assert result.returncode == 0, result.stderr
-    data = json.loads(result.stdout)
-    assert "IMPL_PLAN" in data
-    assert "Warning: Plan template not found" in result.stderr
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == (
+        "ERROR: Plan template not found; no new plan.md was created.\n"
+        "Restore a valid plan template and rerun plan setup.\n"
+    )
+    assert not (plan_repo / "specs" / "001-my-feature" / "plan.md").exists()

@@ -2,6 +2,431 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.3.3] - 2026-11-09
+
+### Changed
+
+- test: make script help assertion resilient to wrapping (#5347)
+- Add Spec Kit for Azure DevOps bundle to community catalog (#5335)
+- fix(workflows): reject non-standard JSON in shell output (#5330)
+- fix(presets): keep user files when removing preset skills (#5233)
+- Add ado-lifecycle to community workflow catalog (#5312)
+- fix(presets): render missing preset IDs as literal text (#5314)
+- fix(presets): report catalog fallback order after removal (#5313)
+- fix(workflows): coerce numeric strings for == and != like ordering operators (#5310)
+- Update Model Routing Governance preset to v0.2.8 (#5341)
+- ci: consolidate lint and dependency audit jobs (#5301)
+- feat(workflows): add per-step reasoning effort and context size settings (#5248)
+- [extension] Update Quality Gates (Enforcement Layer) extension to v0.6.1 (#5264)
+- ci: focus default Python matrix on minimum and maintained releases (#5302)
+- [extension] Add Sanduq Progress Report extension to community catalog (#5300)
+- docs: document shared integration and workflow-step APIs (#5296)
+- docs: add constitution-only persistence and separate evolution guidance (#5299)
+- fix: use printf instead of echo for feature description to avoid -n/-e/-E option interpretation (#5247)
+- Add User Manual extension to community catalog (#5295)
+- docs: add Project Room to community friends (#5298)
+- chore: release 1.3.2, begin 1.3.3.dev0 development (#5297)
+
+## [1.3.2] - 2026-11-06
+
+### Changed
+
+- [extension] Add Assure extension to community catalog (#5293)
+- Update Sanduq Workflow to v2.3.2 (#5292)
+- docs: clarify uvx environment caching (#5291)
+- ci: streamline routine Python test matrix (#5290)
+- docs: align existing-project examples with Copilot skills (#5288)
+- docs: link installation prerequisites to integration directory (#5287)
+- chore(deps): bump astral-sh/setup-uv from 10.0.1 to 10.3.3 (#5280)
+- community: update Model Routing Governance to v0.2.6 (#5279)
+- chore(deps): bump actions/setup-dotnet from 6.0.0 to 6.1.0 (#5281)
+- docs: correct offline Windows PowerShell prerequisite (#5277)
+- ci: add Python 3.15 to test and audit matrices (#5278)
+- docs: standardize local development on a checkout virtualenv (#5276)
+- fix(integrations): refresh the fallback's manifest hashes on uninstall (#5274)
+- Add deja-vu session recall extension to community catalog (#5255)
+- docs: align installation verification with Copilot skills (#5275)
+- Add Illustrate extension to community catalog (#5273)
+- Add Pull Request Workflow extension to community catalog (#5268)
+- Add Sanduq Workflow extension to community catalog (#5266)
+- Add GitHub Project Lifecycle Sync extension to community catalog (#5265)
+- chore: release 1.3.1, begin 1.3.2.dev0 development (#5271)
+
+## [1.3.1] - 2026-11-05
+
+### Changed
+
+- Update Quality Gates (Enforcement Layer) extension to v0.6.0 (#5253)
+- fix(catalogs): name a scheme-less catalog URL instead of reporting "got ://" (#5251)
+- fix(extensions): keep git warnings from failing initialize-repo.ps1 on Windows PowerShell 5.1 (#5252)
+- fix(workflows): reject non-JSON constants in from_json (#5250)
+- docs: give workflow steps a dedicated category (#5243)
+- docs: refresh homepage figures and community examples (#5242)
+- Update DocGuard — CDD Enforcement to v0.46.0 (#5238)
+- Update Agent Parity Governance preset to v0.4.5 (#5236)
+- docs: consolidate overview navigation and source pages (#5234)
+- fix(agent-context): skip non-file plan candidates (#5222)
+- docs: add October 2026 newsletter (#5235)
+- docs: organize usage guides under How to (#5230)
+- docs: extend project history through early November 2026 (#5231)
+- docs: simplify integrations navigation dropdown (#5229)
+- Update Quality Gates (Enforcement Layer) extension to v0.5.1 (#5228)
+- docs: consolidate bundle documentation and remove unusable examples (#5226)
+- Update Cross-Platform Governance preset to v0.2.5 (#5218)
+- docs: consolidate and correct workflow documentation (#5225)
+- fix(cli): don't self-upgrade uv tool installs on Windows (#5149)
+- chore: release 1.3.0, begin 1.3.1.dev0 development (#5224)
+
+## [1.3.0] - 2026-11-03
+
+### Changed
+
+- docs: consolidate and correct preset documentation (#5223)
+- [bug-fix] Fix oversized-number-crash: bound Python --number parsing (#5200)
+- docs: consolidate and correct extension documentation (#5221)
+- fix: detect relocated uv and pipx tool installations (#5103)
+- chore(ci): test Python 3.11 and 3.12 (#5220)
+- fix: invoke registered command hook only once (#5219)
+- [Copilot Dreams] Avoid rejecting supported extension submissions (#5216)
+- fix(cline): keep .md extension on speckit.* file names in command bodies (#5168)
+- feat(integrations): add process_registered_command hook with source_id (#5215)
+- [preset] Update A11Y Governance preset to v0.4.6 (#5212)
+- feat!: remove taskstoissues from core (#5053)
+- Add Guildwork: request, verdict, register extension to community catalog (#5214)
+- fix(extensions): stop the git extension's fetch from waiting on a credential prompt (#5201)
+- fix(workflows): decode code-page shell output in Python's UTF-8 mode (#5209)
+- feat(workflows): parse workflow expressions with a Lark LALR grammar (#5171)
+- feat(copilot): add --no-model-invocation integration option (#5118)
+- fix: preserve Windows drive paths in bundle catalog config (#5205)
+- fix(extensions): skip catalog entries without a version on update (#5108)
+- feat(integrations): add a preflight_setup() hook that runs before shared writes (#5198)
+- chore: release 1.2.6, begin 1.2.7.dev0 development (#5211)
+
+## [1.2.6] - 2026-11-02
+
+### Changed
+
+- feat(droid): add --no-model-invocation integration option (#5116)
+- fix(extensions): make extension add name optional with --from (#5197)
+- fix(extensions): skip non-UTF-8 catalog responses (#5196)
+- feat: add `specify workflow definition` for run-scoped definitions (#4912)
+- fix(integrations): refresh manifest hashes after init --force and switch rollback (#5193)
+- fix(workflows): stop dispatching "None" as command step arguments (#5016)
+- feat(workflows): add opt-in strict shell execution (#5181)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action (#5191)
+- chore(deps): bump the codeql-action group with 2 updates (#5189)
+- fix: reject symlinked integration state (#5176)
+- fix: reject trailing newlines in extension IDs (#5186)
+- fix: reject trailing newlines in preset IDs (#5188)
+- fix(templates): start spec.md from the composed spec-template (#5187)
+- docs: move extension API reference into documentation (#5174)
+- Update iSAQB Architecture Governance preset to v0.2.5 (#5183)
+- fix: reject unsafe self-upgrade installer paths (#5172)
+- fix(bundles): refuse to build when bundle.yml or README.md is a symlink (#5169)
+- docs(assess): clarify README invocation guidance (#5068)
+- fix(integrations): refresh manifest hashes after preset registration on switch and use (#5145)
+- chore: release 1.2.5, begin 1.2.6.dev0 development (#5167)
+
+## [1.2.5] - 2026-10-28
+
+### Changed
+
+- docs: publish extension development guide on docs site (#5166)
+- docs: publish extensions overview and navigation (#5165)
+- fix(extensions): load top-level defaults from extension.yml (#5164)
+- fix(bundles): reject integration mappings without an id (#5161)
+- docs: publish extension publishing guide on the docs site (#5163)
+- feat(workflows): expose installed workflow listing through MCP (#5115)
+- fix(extensions): reject hook commands that are not strings (#5146)
+- fix(workflows): accept equivalent version spellings in archive updates (#5155)
+- Add Domain Spec Maintenance extension to community catalog (#5162)
+- Update Architecture Governance preset to v0.6.5 (#5153)
+- Update Quality Gates (Enforcement Layer) extension to v0.5.0 (#5151)
+- Update SFSpeckit — Salesforce Spec-Driven Development to v2.0.1 (#5154)
+- docs(workflows): correct filtered-count comparison guidance (#5148)
+- fix: validate collected extension events (#5133)
+- test(workflows): pin untested workflow expression behavior (#5130)
+- fix(presets): treat non-mapping command frontmatter as empty (#5125)
+- fix(workflows): handle undecodable shell output as a step failure (#5064)
+- fix(vibe): keep user comments that follow a managed hook block (#5109)
+- [extension] Add Shared Knowledge extension to community catalog (#5140)
+- chore: release 1.2.4, begin 1.2.5.dev0 development (#5142)
+
+## [1.2.4] - 2026-10-27
+
+### Changed
+
+- Update Secure Development Assurance Governance preset to v0.1.8 (#5139)
+- feat(bundles): allow bundles to reference other bundles (#5067)
+- fix: report a non-file .extensionignore or .presetignore as a validation error (#5131)
+- fix(presets): attribute core templates with overrides-prefixed names correctly (#5129)
+- ci: select pytest worker count automatically (#5132)
+- feat(vibe): add --no-model-invocation integration option (#5119)
+- refactor(workflows): split the expression evaluator into a package (#5114)
+- fix: make bundle step refresh rollback transactional (#4827)
+- Update Security Governance preset to v0.7.4 (#5128)
+- Update Quality Gates (Enforcement Layer) extension to v0.4.2 (#5127)
+- Update Product Spec Extension to v2.1.0 (#5126)
+- Fix local bundle installation for uppercase .ZIP artifacts (#5106)
+- fix: preserve feature numbering during reinitialization (#5101)
+- fix: retain event hooks when override omits events (#5102)
+- feat(auth): support GitHub CLI credentials (#4960)
+- fix(integrations): pass the Junie dispatch prompt via --task (#5065)
+- chore(deps): bump the codeql-action group with 2 updates (#5066)
+- Add CSDD — Controlled Spec-Driven Development extension to community catalog (#5062)
+- Add Entalpa to Community Friends (#4993)
+- chore: release 1.2.3, begin 1.2.4.dev0 development (#5063)
+
+## [1.2.3] - 2026-10-22
+
+### Changed
+
+- Feat/4913 workflow mcp inventory (#5054)
+- docs: correct built-in workflow step source paths (#5059)
+- fix(events): preserve dispatcher ownership during cleanup (#5055)
+- feat: add .presetignore support (#5020)
+- fix(scripts): write --json output of the Python helpers as ASCII (#5048)
+- Update Linear Weave extension to v1.0.2 (#5049)
+- fix(events): preserve unowned Vibe hooks files (#4646)
+- ci: shorten test runs with two workers and faster fixture shutdown (#5051)
+- fix(powershell): treat bracketed feature paths literally (#4970)
+- fix(cli): align integration guidance with available output (#5041)
+- fix(integrations): map Pi JSON dispatch to --mode json (#5043)
+- docs: organize agent-specific integration documentation (#5034)
+- feat(integration): add none for shared scaffolding only (#5030)
+- fix(extensions): reject malformed catalog entries before removal (#5033)
+- fix(integrations): map Kimi Code JSON dispatch to --output-format stream-json (#5031)
+- docs: streamline README onboarding and process guides (#5029)
+- docs: distinguish extension events from hooks (#5026)
+- fix(workflows): keep integer number inputs exact instead of rounding them (#5027)
+- docs: say how to replace an older install before specify init (#5004)
+- chore: release 1.2.2, begin 1.2.3.dev0 development (#5024)
+
+## [1.2.2] - 2026-10-19
+
+### Changed
+
+- Update SpecKit Grill Me extension to v1.0.2 (#5023)
+- fix(workflows): report a run failed by a raised step error under --json (#5015)
+- docs: point the upgrade guide's Copilot checks at .github/skills (#5010)
+- fix(events): leave JSON hook configs untouched when nothing is owned (#5017)
+- fix(extensions): scaffold new config templates on extension update (#5011)
+- fix(integrations): drop unsupported --model flag from ZCode dispatch (#5009)
+- fix(bundles): reject non-positive preset and extension priorities in validation (#5012)
+- fix(integrations): validate required options before switch uninstalls (#5008)
+- fix(presets): reject malformed catalog entries before removal (#4992)
+- Document the implemented extension architecture (#4978)
+- fix(bundles): don't refresh installed components on a repeated bundle init (#4963)
+- chore(deps): bump actions/download-artifact from 8.0.1 to 8.0.2 (#4989)
+- chore(deps): bump actions/setup-node from 7.0.0 to 7.1.0 (#4987)
+- Update Applied Epistemic Engineering extension to v1.5.2 (#5000)
+- Update DocGuard — CDD Enforcement to v0.45.1 (#5001)
+- Update Evaluator Contract extension to v1.1.2 (#4999)
+- Update Applied Epistemic Engineering extension to v1.5.1 (#4995)
+- chore(deps): bump the codeql-action group with 2 updates (#4985)
+- docs: define shared catalog contracts (#4977)
+- chore: release 1.2.1, begin 1.2.2.dev0 development (#4996)
+
+## [1.2.1] - 2026-10-16
+
+### Changed
+
+- docs: add catalog reference (#4976)
+- Update Applied Epistemic Engineering extension to v1.5.0 (#4982)
+- Update Evaluator Contract extension to v1.1.1 (#4980)
+- test(integrations): characterize delivery boundaries (#4975)
+- fix(extensions): list commands the way the active agent registers them (#4964)
+- feat(workflows): add opt-in output capture to command and prompt steps (#4957)
+- docs: add README capability map (#4974)
+- docs: target Windows PowerShell 5.1 (#4973)
+- docs(mcp): document the first-class version and artifact tools (#4969)
+- fix(workflows): load custom steps before update (#4768)
+- Add gh-address-cr extension to community catalog (#4971)
+- [bug-fix] Fix missing-plan-template: reject empty plan setup (#4962)
+- fix(powershell): preserve plans in literal feature paths (#4956)
+- fix(extensions): delete the catalog config when the last entry is removed (#4909)
+- fix(integrations): move extension artifacts on integration uninstall (#4911)
+- fix(integrations): show hyphenated command names for docker-agent and junie (#4910)
+- Update Reconcile Extension to v1.3.1 (#4950)
+- docs: add Korean (한국어) README (#4939)
+- docs: distinguish extension reconciliation from core SDD (#4948)
+- chore: release 1.2.0, begin 1.2.1.dev0 development (#4949)
+
+## [1.2.0] - 2026-10-13
+
+### Changed
+
+- fix: explain community submission title mismatches (#4946)
+- fix(workflows): confine workflow and step catalog cache writes (#4931)
+- docs: clarify delivery versus post-delivery spec persistence (#4945)
+- fix(bundles): allow newer packaged patch releases with warnings (#4942)
+- Update Applied Epistemic Engineering extension to v1.4.0 (#4941)
+- Update Applied Epistemic Engineering extension to v1.3.0 (#4936)
+- Persist project symlink policy at command boundaries (#4934)
+- [extension] Update DocGuard — CDD Enforcement extension to v0.44.3 (#4927)
+- fix(workflows): skip the right side of and/or when the left side decides (#4923)
+- Update OpenProject preset to v1.0.3 (#4928)
+- fix: narrow exceptions in get_speckit_version() from Exception to specific types (#3917)
+- Update adrkit extension to v0.1.5 (#4932)
+- Update OpenProject Integration extension to v0.2.0 (#4929)
+- feat(claude): add --no-model-invocation integration option (#4919)
+- Add built-in GitHub workflow step (#4905)
+- Add scoped FileHelper foundation for filesystem policy (#4908)
+- feat: add maintainer-triggered PR description assessment (#4902)
+- Update Architecture Governance preset to v0.6.2 (#4907)
+- Update Security Governance preset to v0.7.1 (#4903)
+- chore: release 1.1.3, begin 1.1.4.dev0 development (#4904)
+
+## [1.1.3] - 2026-10-09
+
+### Changed
+
+- Update Intake Sequencing Governance preset to v0.2.8 (#4900)
+- feat(bundles): reconcile exact component pins and version conflicts (#4844)
+- feat(workflows): compose workflows with a unified execution tree (#4764)
+- [extension] Update Applied Epistemic Engineering extension to v1.2.0 (#4895)
+- Update Intake Review Governance preset to v0.2.4 (#4894)
+- Add Epic extension to community catalog (#4896)
+- feat: automate community workflow step submissions (#4873)
+- Add OpenProject Integration extension to community catalog (#4893)
+- Add OpenProject Work Packages preset to community catalog (#4897)
+- Update Verified Codebase Context preset to v1.1.0 (#4898)
+- feat: support catalog-installed external agent adapters (#4862)
+- feat(mcp): add artifact info adapter (#4885)
+- Add lifecycle hooks to the bug workflow (#4878)
+- refactor(artifact): extract info operation (#4882)
+- Deprecate the core taskstoissues command (#4879)
+- [extension] Update Quality Gates (Enforcement Layer) extension to v0.4.1 (#4880)
+- docs: define integration delivery and design review boundaries (#4881)
+- fix(workflows): keep non-ASCII text readable in run artifacts (#4877)
+- community: add decision v0.9.0 workflow step catalog entry (#4872)
+- chore: release 1.1.2, begin 1.1.3.dev0 development (#4871)
+
+## [1.1.2] - 2026-10-07
+
+### Changed
+
+- feat(mcp): add first-class artifact list tool (#4867)
+- fix(workflows): remove the catalog source shown at the listed index (#4870)
+- fix(bundler): resolve the active integration like the canonical reader (#4541)
+- fix(workflows): an interrupted gate prompt must not approve the gate (#4529)
+- [preset] Update Intake Authoring Governance preset to v0.3.7 (#4838)
+- fix(workflows): state the equal-priority tie-break in 'workflow resolve' output (#4542)
+- feat: add --json to preset info and extension info (#4833)
+- feat(bundles): select exact bundle catalog releases (#4849)
+- fix(bundler): treat an explicitly null catalog field as empty, not "None" (#4532)
+- refactor(artifact): extract list operation (#4866)
+- fix(bundler): report a newline-containing version constraint instead of crashing (#4538)
+- feat(mcp): add first-class version tool (#4864)
+- refactor(version): extract shared operation (#4863)
+- feat(workflows): add workflow step submission intake (#4861)
+- docs: define shared CLI and MCP command architecture (#4847)
+- Add AttackTree extension to community catalog (#4859)
+- Update SpecKit Companion extension to v0.24.0 (#4858)
+- Automatically prioritize bundle submissions (#4856)
+- Update SpecAssay preset to v0.5.6 (#4854)
+- chore: release 1.1.1, begin 1.1.2.dev0 development (#4860)
+
+## [1.1.1] - 2026-10-06
+
+### Changed
+
+- Update SpecAssay bundle to v0.5.6 (#4855)
+- Update SpecAssay Check extension to v0.5.6 (#4853)
+- chore(triage): prioritize preset submissions (#4848)
+- Automatically prioritize extension submissions (#4845)
+- fix(bundles): install pinned catalog releases via exact-release selection (#4753)
+- feat(integrations): expose versioned catalog metadata (#4841)
+- fix(workflows): init step must not replace init's own error with "SystemExit: 1" (#4530)
+- feat(workflows): select exact step catalog releases (#4840)
+- feat(presets): select exact catalog releases (#4823)
+- fix(bundler): let 'catalog remove' delete a project source overriding a built-in (#4533)
+- Update Quality Gates (Enforcement Layer) extension to v0.3.6 (#4837)
+- fix(bundles): reject non-ASCII digits in SemVer identifiers (#4835)
+- Updating the ad hoc project to the tenant url (#4828)
+- feat(workflows): add upper, lower, split, length, and to_json expression filters (#4766)
+- Revert community submission intake and outcome reporting changes (#4831)
+- fix: recognize community submission types and report workflow outcomes (#4829)
+- feat(mcp): add experimental version-only stdio server (#4822)
+- fix: apply required agentic workflow labels (#4824)
+- feat(version): print complete version information as JSON (#4821)
+- chore: release 1.1.0, begin 1.1.1.dev0 development (#4820)
+
+## [1.1.0] - 2026-10-02
+
+### Changed
+
+- chore(deps): bump the codeql-action group with 2 updates (#4809)
+- Validate community preset submissions before opening catalog PRs (#4787)
+- fix: use bounded read for workflow catalog HTTP responses (#3766)
+- [extension] Update Archive Extension to v1.4.0 (#4818)
+- [bug-fix] Fix non-latin-feature-names: preserve Unicode feature names (#4780)
+- [extension] Add Conformidad Software Humano extension to community catalog (#4812)
+- Add Software Humano preset to community catalog (#4816)
+- [extension] Add Log Intake (logreduce) extension to community catalog (#4813)
+- Update Quality Gates extension to v0.3.5 (#4814)
+- feat(workflows): install custom step types from local dirs and archives (#4769)
+- fix(integrations): stop dispatching workflow steps to SHAI (#4791)
+- Add September 2026 newsletter (#4811)
+- fix(workflows): split expression operators across any whitespace (#4801)
+- fix(authentication): support GHE.com release asset downloads (#4807)
+- feat(extensions): select exact catalog releases (#4726)
+- Register extension commands and skills for generic integration (#4785)
+- feat(workflows): select exact workflow catalog releases (#4788)
+- fix(bundles): verify pins of independently installed components (#4789)
+- Update Intake Authoring Governance to v0.3.5 (#4779)
+- chore: release 1.0.13, begin 1.0.14.dev0 development (#4790)
+
+## [1.0.13] - 2026-09-29
+
+### Changed
+
+- community: add Raaghu Spec Kit Azure DevOps extension to friends (#4782)
+- feat(extensions): add bundled `github` extension for taskstoissues (#4488)
+- fix(integrations): drop invalid --model/--output-format flags from Vibe dispatch (#4784)
+- Update Superpowers Implementation Bridge extension to v1.3.0 (#4783)
+- fix(workflows): evaluate parenthesised expressions (#4417)
+- fix(workflows): resolve negative list indices in expressions (#4416)
+- docs: explain how Spec Kit uses an agentic SDLC (#4774)
+- fix(copilot): detect copilot.exe on Windows instead of assuming copilot.cmd (#4758)
+- fix: keep non-ASCII text readable in merged JSON settings files (#4773)
+- Added openspec extension (#4765)
+- feat(integrations): add MiniMax Code (mcode) integration (#4644) (#4645)
+- docs(community): add Specstride to Community Friends (#4762)
+- docs: clarify feature directories may live outside the project root (#4739)
+- fix(scripts): honor SPECKIT_PYTHON override for preset manifest parsing (#4445)
+- chore: clarify stale issue and PR guidance (#4772)
+- Update OWASP LLM Threat Model extension to v2.1.2 (#4771)
+- docs: correct workflow publishing security-review claim, add catalog vetting notes (#4736)
+- [preset] Update Intake Sequencing Governance preset to v0.2.6 (#4761)
+- [extension] Add Test Validation extension to community catalog (#4760)
+- chore: release 1.0.12, begin 1.0.13.dev0 development (#4759)
+
+## [1.0.12] - 2026-09-25
+
+### Changed
+
+- fix(workflows): reject a multi-argument filter call in expressions (#3893)
+- feat(auth): add Bitbucket authentication provider (#4629)
+- Add Agentstandards bundle to community catalog (#4751)
+- docs: consolidate design guidance and contribution guidelines (#4752)
+- Add Agentstandards Task Gate preset to community catalog (#4749)
+- fix(alquimia): render `/speckit-<name>` invocations for the skills-only Alquimia agent (#4137)
+- [preset] Update Intake Review Governance preset to v0.2.3 (#4748)
+- refactor(presets): split domain internals into private modules (#4747)
+- chore(deps): bump the codeql-action group with 2 updates (#4742)
+- Add Agentstandards Architecture Council extension to community catalog (#4730)
+- fix(ci): make the markdownlint job lint files again (#4526) (#4584)
+- Update SpecAssay community bundle to v0.5.2 (#4737)
+- Update SpecAssay Check extension to v0.5.2 (#4735)
+- [preset] Update SpecAssay preset to v0.5.2 (#4717)
+- fix: sync integration manifest hashes after preset re-registration on upgrade (#4697)
+- [extension] Update OKF Knowledge Bundle Generator to v0.9.2 (#4700)
+- Update Intake Authoring Governance preset to v0.3.4 (#4716)
+- fix: eliminate TOCTOU races in catalog_fetch() for file:// and bare path URLs (#3910)
+- fix: add ValueError guard for timeout in _build_opencode_plugin (#3973)
+- chore: release 1.0.11, begin 1.0.12.dev0 development (#4723)
+
 ## [1.0.11] - 2026-09-24
 
 ### Changed

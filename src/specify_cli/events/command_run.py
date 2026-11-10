@@ -48,6 +48,16 @@ def event_run(
 
     # Run the event command
     project_root = Path.cwd()  # The agent runs events from project root
+    from .._project import (
+        ProjectResolutionError,
+        preflight_project_policy,
+        render_project_error,
+    )
+
+    try:
+        preflight_project_policy(project_root)
+    except ProjectResolutionError as exc:
+        render_project_error(exc)
     exit_code = resolve_and_run_event_command(
         command_name, event_name, payload, project_root, timeout=timeout
     )
