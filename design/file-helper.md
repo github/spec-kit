@@ -173,7 +173,10 @@ helpers for independent project/source/managed boundaries.
   its child, keeping the number of live directory descriptors independent of
   path depth.
   Windows pins the canonical root and every resolved parent with non-reparse
-  handles withholding delete sharing.
+  handles withholding delete sharing. Each anchored directory must permit
+  `FILE_LIST_DIRECTORY` and `FILE_READ_ATTRIBUTES` access. An ACL that permits
+  creating files but denies directory listing can therefore cause creation to
+  fail before opening the leaf.
   Allowed contained parent links and trusted root aliases are resolved before
   anchoring; they are not banned. Parents must already exist, and the supplied
   mode remains filtered by the process umask. Unsupported anchoring primitives
@@ -222,7 +225,9 @@ entries, not reject a whole project for excluded/unrelated links.
 
 Preflight detects static policy failures before recursive deletion or parent
 creation. Atomic writes recheck the original path before replacement, and
-deletion rechecks each accessed entry. Those path-based operations are **not**
+deletion rechecks each accessed entry. For all operations that still use
+validated paths (reads, directory creation, atomic writes, non-atomic
+overwrites, symlink creation, and deletion), portable path checks are **not**
 a race-free sandbox: another process can exchange parents or entries between
 checks and syscalls, and an I/O failure during mutation can leave partial
 results. Protect against concurrent untrusted mutation separately.
