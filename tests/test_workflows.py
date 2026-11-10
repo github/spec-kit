@@ -1762,44 +1762,100 @@ class TestExpressions:
         # Explicit grouping overrides the default and flips the result.
         assert evaluate_expression("{{ (inputs.a or inputs.b) and inputs.c }}", ctx) is False
 
-    def test_comparisons_share_one_level_and_group_left_to_right(self):
-        """No comparison operator has priority over another.
+    def test_comparisons_chain_like_python(self):
+        """Comparisons share one level and chain as in Python and Jinja2 (#5071).
 
-        The former engine's operator scan order made ``==``/``!=`` bind looser
-        than ``<``/``>``/``in`` and grouped repeated comparisons from the right.
-        The grammar puts every comparison on one level, left-associative, so
-        ``a == b > 0`` is ``(a == b) > 0``. Each case is checked against its
-        explicit grouping and against the other grouping, which gives a
-        different result, so the assertion fails if the precedence moves.
+        ``a OP b OP c`` means ``a OP b and b OP c`` with the shared operand
+        evaluated once -- not ``(a OP b) OP c``. The former left-to-right
+        grouping compared a boolean with the next operand, so the range check
+        ``0 <= inputs.n <= 10`` answered True for ``n = 50`` and an
+        ``if``/``while`` step silently took the wrong branch. Every case is
+        asserted against Python's own result for the same expression.
         """
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext(
-            inputs={"enabled": True, "count": 5, "mode": "x", "tags": ["x"]}
+            inputs={"n": 50, "m": 5, "enabled": True, "count": 5,
+                    "mode": "x", "tags": ["x"]}
         )
-        cases = [
-            ("inputs.enabled == inputs.count > 0",
-             "(inputs.enabled == inputs.count) > 0",
-             "inputs.enabled == (inputs.count > 0)"),
-            ("true == inputs.mode in inputs.tags",
-             "(true == inputs.mode) in inputs.tags",
-             "true == (inputs.mode in inputs.tags)"),
-            ("inputs.enabled != inputs.count >= 10",
-             "(inputs.enabled != inputs.count) >= 10",
-             "inputs.enabled != (inputs.count >= 10)"),
-            ("1 < 2 < 3", "(1 < 2) < 3", "1 < (2 < 3)"),
-            ("3 > 2 > 1", "(3 > 2) > 1", "3 > (2 > 1)"),
+        chained = [
+            # The #5071 repro: out of range must be False.
+            ("0 <= inputs.n <= 10", 0 <= 50 <= 10),
+            ("0 <= inputs.m <= 10", 0 <= 5 <= 10),
+            ("1 < 2 < 3", 1 < 2 < 3),
+            ("3 > 2 > 1", 3 > 2 > 1),
+            ("1 < 2 > 1", 1 < 2 > 1),
+            ("'a' < 'b' < 'c'", "a" < "b" < "c"),
+            ("inputs.count == 5 == 5", 5 == 5 == 5),
+            # Mixed operators chain pairwise instead of comparing a boolean.
+            ("inputs.enabled == inputs.count > 0", True == 5 > 0),
+            ("inputs.enabled != inputs.count >= 10", True != 5 >= 10),
+            ("true == inputs.mode in inputs.tags", True == "x" in ["x"]),
+            # Four operands, three pairs.
+            ("1 <= 1 == 1 != 2", 1 <= 1 == 1 != 2),
         ]
-        for plain, left, right in cases:
-            result = evaluate_expression("{{ " + plain + " }}", ctx)
-            assert result == evaluate_expression("{{ " + left + " }}", ctx), plain
-            assert result != evaluate_expression("{{ " + right + " }}", ctx), plain
+        for expr, want in chained:
+            assert evaluate_expression("{{ " + expr + " }}", ctx) is want, expr
+        # A chain is its explicit and-form.
+        assert evaluate_expression(
+            "{{ 0 <= inputs.n <= 10 }}", ctx
+        ) == evaluate_expression("{{ 0 <= inputs.n and inputs.n <= 10 }}", ctx)
+        # Explicit parentheses end a chain, exactly as in Python: the grouped
+        # boolean is the operand of the next comparison.
+        assert evaluate_expression(
+            "{{ (0 <= inputs.n) <= 10 }}", ctx
+        ) is ((0 <= 50) <= 10)
+        assert evaluate_expression("{{ 1 < (2 < 3) }}", ctx) is (1 < (2 < 3))
         # Comparisons still bind tighter than not/and/or.
         assert evaluate_expression("{{ not inputs.count > 9 }}", ctx) is True
         assert evaluate_expression(
             "{{ inputs.count > 9 or inputs.mode == 'x' }}", ctx
         ) is True
+
+    def test_chained_comparison_short_circuits_like_and(self):
+        """A failing pair stops the chain before later operands run (#5071).
+
+        Mirrors the ``and`` guard: a later operand is evaluated only when
+        every pair before it held, so a chain can guard a filter that would
+        fail on an empty or invalid value. When the operand is reached, its
+        errors still fail the run.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"payload": "not json", "n": 0})
+        # 5 <= 0 fails first, so the raising filter operand is never reached.
+        assert evaluate_expression(
+            "{{ 5 <= inputs.n <= (inputs.payload | from_json | length) }}", ctx
+        ) is False
+        # A reached operand still raises.
+        with pytest.raises(ValueError, match="from_json"):
+            evaluate_expression(
+                "{{ 0 <= inputs.n <= (inputs.payload | from_json | length) }}",
+                ctx,
+            )
+
+    def test_chained_comparison_evaluates_the_shared_operand_once(self, monkeypatch):
+        """``a <= b <= c`` resolves ``b`` once, as Python does (#5071).
+
+        The explicit and-form resolves it twice; the chain must not.
+        """
+        import specify_cli.workflows.expressions.engine as engine_mod
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        calls: list[str] = []
+        real = engine_mod._resolve_dot_path
+
+        def counting(namespace_, path):
+            calls.append(path)
+            return real(namespace_, path)
+
+        monkeypatch.setattr(engine_mod, "_resolve_dot_path", counting)
+        ctx = StepContext(inputs={"m": 5})
+        assert evaluate_expression("{{ 0 <= inputs.m <= 10 }}", ctx) is True
+        assert calls.count("inputs.m") == 1
 
     def test_number_literal_forms(self):
         """Every number form the former engine read through ``int()``/``float()``.

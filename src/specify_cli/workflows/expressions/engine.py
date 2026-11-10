@@ -4,9 +4,12 @@ The grammar replaces the former hand-written parser. Only the block body is
 parsed here. The language is the same with these deliberate differences, all
 documented in https://github.github.io/spec-kit/workflows/expressions.html:
 
-* All comparison operators share one precedence level and group left to right
-  (``a == b > 0`` is ``(a == b) > 0``). The former engine's operator scan order
-  gave them accidental priorities; parenthesize to combine comparisons.
+* All comparison operators share one precedence level and chain like Python
+  and Jinja2 (``0 <= n <= 10`` is ``0 <= n and n <= 10``, with ``n`` evaluated
+  once and evaluation stopping at the first false pair). The former engine's
+  operator scan order gave them accidental priorities and compared a boolean
+  to the next operand; explicit parentheses still end a chain, so
+  ``(0 <= n) <= 10`` compares the grouped result, exactly as in Python.
 * Text that is not an expression -- prose inside ``{{ }}``, path keys with
   characters outside ``[\\w-]`` -- is a syntax error instead of a path lookup,
   which could resolve an existing key.
@@ -207,6 +210,13 @@ class _BuildAst(Transformer_NonRecursive):
         return ("path", str(token))
 
     def group(self, inner: Any) -> Any:
+        # Parentheses end a comparison chain: ``(0 <= n) <= 10`` compares the
+        # grouped result instead of extending the chain, as in Python. The
+        # marker is unwrapped by ``_eval`` and ``_visit``; every other node is
+        # safe to splice in directly (re-grouping ``and``/``or`` operands does
+        # not change their result).
+        if inner[0] == "chain":
+            return ("group", inner)
         return inner
 
     def list_body(self, *items: Any) -> tuple[Any, ...]:
@@ -228,7 +238,14 @@ class _BuildAst(Transformer_NonRecursive):
         return ("pipe", head, (filt,))
 
     def cmp(self, left: Any, op: Token, right: Any) -> tuple[str, ...]:
-        return ("cmp", " ".join(str(op).split()), left, right)
+        # As for ``filtered`` and ``and_op``/``or_op``: the grammar nests a
+        # chain to the left; flatten it into one node so ``a < b < c`` keeps
+        # all its operands and operators side by side. ``("group", chain)``
+        # does not flatten, so a parenthesized comparison is one operand.
+        op_text = " ".join(str(op).split())
+        if left[0] == "chain":
+            return ("chain", left[1] + (right,), left[2] + (op_text,))
+        return ("chain", (left, right), (op_text,))
 
     def or_op(self, left: Any, _op: Token, right: Any) -> tuple[str, tuple[Any, ...]]:
         # As for ``filtered``: the grammar nests a chain to the left; flatten it
@@ -399,6 +416,19 @@ def _apply_filter(
     )
 
 
+def _compare_pair(left: Any, right: Any, op: str) -> bool:
+    """One comparison of a chain, with the shared operator semantics."""
+    if op == "==":
+        return _safe_equals(left, right, negate=False)
+    if op == "!=":
+        return _safe_equals(left, right, negate=True)
+    if op == "in":
+        return _safe_membership(left, right, negate=False)
+    if op == "not in":
+        return _safe_membership(left, right, negate=True)
+    return _safe_compare(left, right, op)
+
+
 def _eval(node: Any, namespace_: dict[str, Any]) -> Any:
     """Evaluate a tuple AST node against *namespace_*."""
     tag = node[0]
@@ -426,19 +456,23 @@ def _eval(node: Any, namespace_: dict[str, Any]) -> Any:
     if tag == "not":
         return not bool(_eval(node[1], namespace_))
 
-    if tag == "cmp":
-        op = node[1]
-        left = _eval(node[2], namespace_)
-        right = _eval(node[3], namespace_)
-        if op == "==":
-            return _safe_equals(left, right, negate=False)
-        if op == "!=":
-            return _safe_equals(left, right, negate=True)
-        if op == "in":
-            return _safe_membership(left, right, negate=False)
-        if op == "not in":
-            return _safe_membership(left, right, negate=True)
-        return _safe_compare(left, right, op)
+    if tag == "group":
+        return _eval(node[1], namespace_)
+
+    if tag == "chain":
+        # Python/Jinja2 chained-comparison semantics: ``a < b < c`` is
+        # ``a < b and b < c`` with ``b`` evaluated once, left to right,
+        # stopping at the first false pair, so a later operand is only
+        # evaluated when every pair before it held. Validation walks the
+        # parse tree instead, so it still visits every operand.
+        operands, ops = node[1], node[2]
+        left = _eval(operands[0], namespace_)
+        for op, operand in zip(ops, operands[1:]):
+            right = _eval(operand, namespace_)
+            if not _compare_pair(left, right, op):
+                return False
+            left = right
+        return True
 
     if tag in ("and", "or"):
         # Left to right, stopping at the first operand that decides the result,
@@ -551,9 +585,11 @@ def _visit(node: Any, paths: list[str] | None = None, filters: list[Any] | None 
     elif tag in ("and", "or"):
         for operand in node[1]:
             _visit(operand, paths, filters)
-    elif tag == "cmp":
-        _visit(node[2], paths, filters)
-        _visit(node[3], paths, filters)
+    elif tag == "group":
+        _visit(node[1], paths, filters)
+    elif tag == "chain":
+        for operand in node[1]:
+            _visit(operand, paths, filters)
 
 
 def _collect_leaves(text: str) -> list[str]:
