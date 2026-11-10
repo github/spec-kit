@@ -197,91 +197,6 @@
       "created_at": "2026-03-31T00:00:00Z",
       "updated_at": "2026-03-31T00:00:00Z"
     },
-    "aide": {
-      "name": "AI-Driven Engineering (AIDE)",
-      "id": "aide",
-      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation.",
-      "author": "mnriem",
-      "version": "1.0.0",
-      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/aide-v1.0.0/aide.zip",
-      "repository": "https://github.com/mnriem/spec-kit-extensions",
-      "homepage": "https://github.com/mnriem/spec-kit-extensions",
-      "documentation": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/README.md",
-      "changelog": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/CHANGELOG.md",
-      "license": "MIT",
-      "category": "process",
-      "effect": "read-write",
-      "requires": {
-        "speckit_version": ">=0.2.0"
-      },
-      "provides": {
-        "commands": 7,
-        "hooks": 0
-      },
-      "tags": [
-        "workflow",
-        "project-management",
-        "ai-driven",
-        "new-project",
-        "planning",
-        "experimental"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-18T00:00:00Z",
-      "updated_at": "2026-03-18T00:00:00Z"
-    },
-    "aididit": {
-      "name": "A·I·DID·IT — Agile Expansion Pack",
-      "id": "aididit",
-      "description": "Runs every work item through Assemble, Ideate, Draft, Iterate, Deliver, Investigate and Tidy, with a simulated agile team and a web-cited practitioner panel in place of human gates.",
-      "author": "Rubber Duck Engineering",
-      "version": "0.2.0",
-      "download_url": "https://github.com/RubberDuckEngineering/rubber-duck-engineering-ai-did-it/releases/download/v0.2.0/aididit-v0.2.0.zip",
-      "sha256": "22facf22e39a7c29fb10fd552ba30561255a965263b78c8fcc61e23a0bd2a3a2",
-      "repository": "https://github.com/RubberDuckEngineering/rubber-duck-engineering-ai-did-it",
-      "homepage": "https://github.com/RubberDuckEngineering/rubber-duck-engineering-ai-did-it",
-      "documentation": "https://github.com/RubberDuckEngineering/rubber-duck-engineering-ai-did-it/blob/v0.2.0/README.md",
-      "changelog": "https://github.com/RubberDuckEngineering/rubber-duck-engineering-ai-did-it/blob/v0.2.0/CHANGELOG.md",
-      "license": "MIT",
-      "category": "process",
-      "effect": "read-write",
-      "requires": {
-        "speckit_version": ">=1.3.0,<2.0.0",
-        "tools": [
-          {
-            "name": "git",
-            "required": true
-          },
-          {
-            "name": "gh",
-            "required": true
-          },
-          {
-            "name": "claude",
-            "required": false
-          }
-        ]
-      },
-      "provides": {
-        "commands": 14,
-        "hooks": 0
-      },
-      "tags": [
-        "agile",
-        "xp",
-        "workflow",
-        "orchestration",
-        "tdd",
-        "review"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-11-10T00:00:00Z",
-      "updated_at": "2026-11-10T00:00:00Z"
-    },
     "agent-governance": {
       "name": "Agent Governance",
       "id": "agent-governance",
@@ -485,6 +400,91 @@
       "stars": 0,
       "created_at": "2026-09-24T00:00:00Z",
       "updated_at": "2026-09-24T00:00:00Z"
+    },
+    "aide": {
+      "name": "AI-Driven Engineering (AIDE)",
+      "id": "aide",
+      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation.",
+      "author": "mnriem",
+      "version": "1.0.0",
+      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/aide-v1.0.0/aide.zip",
+      "repository": "https://github.com/mnriem/spec-kit-extensions",
+      "homepage": "https://github.com/mnriem/spec-kit-extensions",
+      "documentation": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/README.md",
+      "changelog": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 0
+      },
+      "tags": [
+        "workflow",
+        "project-management",
+        "ai-driven",
+        "new-project",
+        "planning",
+        "experimental"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-18T00:00:00Z",
+      "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "aididit": {
+      "name": "A·I·DID·IT — Agile Expansion Pack",
+      "id": "aididit",
+      "description": "Runs every work item through Assemble, Ideate, Draft, Iterate, Deliver, Investigate and Tidy, with a simulated agile team and a web-cited practitioner panel in place of human gates.",
+      "author": "Rubber Duck Engineering",
+      "version": "0.2.0",
+      "download_url": "https://github.com/RubberDuckEngineering/rubber-duck-engineering-ai-did-it/releases/download/v0.2.0/aididit-v0.2.0.zip",
+      "sha256": "22facf22e39a7c29fb10fd552ba30561255a965263b78c8fcc61e23a0bd2a3a2",
+      "repository": "https://github.com/RubberDuckEngineering/rubber-duck-engineering-ai-did-it",
+      "homepage": "https://github.com/RubberDuckEngineering/rubber-duck-engineering-ai-did-it",
+      "documentation": "https://github.com/RubberDuckEngineering/rubber-duck-engineering-ai-did-it/blob/v0.2.0/README.md",
+      "changelog": "https://github.com/RubberDuckEngineering/rubber-duck-engineering-ai-did-it/blob/v0.2.0/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.3.0,<2.0.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "gh",
+            "required": true
+          },
+          {
+            "name": "claude",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 14,
+        "hooks": 0
+      },
+      "tags": [
+        "agile",
+        "xp",
+        "workflow",
+        "orchestration",
+        "tdd",
+        "review"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-10T00:00:00Z",
+      "updated_at": "2026-11-10T00:00:00Z"
     },
     "analytics": {
       "name": "Analytics",
