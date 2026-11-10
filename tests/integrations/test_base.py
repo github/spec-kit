@@ -1,8 +1,10 @@
 """Tests for IntegrationOption, IntegrationBase, MarkdownIntegration, and primitives."""
 
 import inspect
+import os
 import shlex
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -241,7 +243,9 @@ class TestBasePrimitives:
         src = tmp_path / "source.md"
         src.write_text("content", encoding="utf-8")
         dest_dir = tmp_path / "output"
-        result = IntegrationBase.copy_command_to_directory(src, dest_dir, "speckit.plan.md")
+        result = IntegrationBase.copy_command_to_directory(
+            src, dest_dir, "speckit.plan.md", project_root=tmp_path
+        )
         assert result == dest_dir / "speckit.plan.md"
         assert result.read_text(encoding="utf-8") == "content"
 
@@ -969,3 +973,135 @@ class TestDestinationContainment:
             integration.install_scripts(project, manifest)
 
         assert outside.read_text(encoding="utf-8") == "original"
+
+    # -- never write through a symlink at the destination -------------------
+
+    def test_copy_requires_project_root(self, tmp_path):
+        """The containment check is not optional: omitting project_root is an error."""
+        project = self._project(tmp_path)
+        src = tmp_path / "template.md"
+        src.write_text("template", encoding="utf-8")
+        with pytest.raises(TypeError):
+            IntegrationBase.copy_command_to_directory(  # type: ignore[call-arg]
+                src, project / ".stub" / "commands", "speckit.specify.md"
+            )
+        assert not (project / ".stub").exists()
+
+    def test_write_replaces_inside_symlink_instead_of_following_it(self, tmp_path):
+        project = self._project(tmp_path)
+        target = project / "elsewhere.md"
+        target.write_text("keep", encoding="utf-8")
+        dest = project / ".stub" / "commands" / "speckit.plan.md"
+        dest.parent.mkdir(parents=True)
+        _symlink_or_skip(dest, target)
+        manifest = IntegrationManifest("stub", project.resolve())
+
+        IntegrationBase.write_file_and_record("new body", dest, project, manifest)
+
+        assert not dest.is_symlink()
+        assert dest.read_text(encoding="utf-8") == "new body"
+        assert target.read_text(encoding="utf-8") == "keep"
+        assert ".stub/commands/speckit.plan.md" in manifest.files
+
+    def test_copy_replaces_inside_symlink_instead_of_following_it(self, tmp_path):
+        project = self._project(tmp_path)
+        src = tmp_path / "template.md"
+        src.write_text("template", encoding="utf-8")
+        target = project / "elsewhere.md"
+        target.write_text("keep", encoding="utf-8")
+        dest_dir = project / ".stub" / "commands"
+        dest_dir.mkdir(parents=True)
+        _symlink_or_skip(dest_dir / "speckit.plan.md", target)
+
+        dst = IntegrationBase.copy_command_to_directory(
+            src, dest_dir, "speckit.plan.md", project_root=project
+        )
+
+        assert not dst.is_symlink()
+        assert dst.read_text(encoding="utf-8") == "template"
+        assert target.read_text(encoding="utf-8") == "keep"
+
+    def test_write_does_not_follow_link_planted_after_the_check(self, tmp_path, monkeypatch):
+        """Simulate a symlink appearing between validation and the write."""
+        project = self._project(tmp_path)
+        outside = tmp_path / "victim.md"
+        outside.write_text("original", encoding="utf-8")
+        dest = project / ".stub" / "commands" / "speckit.plan.md"
+        dest.parent.mkdir(parents=True)
+        real_check = IntegrationBase.resolve_destination_inside
+        state = {"planted": False}
+
+        def planting_check(dest_arg, root):
+            resolved = real_check(dest_arg, root)  # dest does not exist yet: inside
+            if not state["planted"]:
+                _symlink_or_skip(dest, outside)
+                state["planted"] = True
+            return resolved
+
+        monkeypatch.setattr(
+            IntegrationBase, "resolve_destination_inside", staticmethod(planting_check)
+        )
+        manifest = IntegrationManifest("stub", project.resolve())
+
+        IntegrationBase.write_file_and_record("payload", dest, project, manifest)
+
+        assert outside.read_text(encoding="utf-8") == "original"
+        assert not dest.is_symlink()
+        assert dest.read_text(encoding="utf-8") == "payload"
+
+    def test_copy_does_not_follow_link_planted_after_the_check(self, tmp_path, monkeypatch):
+        project = self._project(tmp_path)
+        src = tmp_path / "template.md"
+        src.write_text("template", encoding="utf-8")
+        outside = tmp_path / "victim.md"
+        outside.write_text("original", encoding="utf-8")
+        dest_dir = project / ".stub" / "commands"
+        dest_dir.mkdir(parents=True)
+        dest = dest_dir / "speckit.plan.md"
+        real_check = IntegrationBase.resolve_destination_inside
+
+        def planting_check(dest_arg, root):
+            resolved = real_check(dest_arg, root)
+            if not dest.is_symlink():
+                _symlink_or_skip(dest, outside)
+            return resolved
+
+        monkeypatch.setattr(
+            IntegrationBase, "resolve_destination_inside", staticmethod(planting_check)
+        )
+
+        IntegrationBase.copy_command_to_directory(src, dest_dir, "speckit.plan.md", project_root=project)
+
+        assert outside.read_text(encoding="utf-8") == "original"
+        assert not dest.is_symlink()
+        assert dest.read_text(encoding="utf-8") == "template"
+
+    @pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="O_NOFOLLOW not available")
+    def test_open_refuses_symlink_that_survives_the_unlink_step(self, tmp_path, monkeypatch):
+        """If the link check is bypassed entirely, O_NOFOLLOW still refuses."""
+        project = self._project(tmp_path)
+        outside = tmp_path / "victim.md"
+        outside.write_text("original", encoding="utf-8")
+        dest = project / "speckit.plan.md"
+        _symlink_or_skip(dest, outside)
+        monkeypatch.setattr(Path, "is_symlink", lambda self: False)
+
+        with pytest.raises(ValueError, match="refusing to write through"):
+            IntegrationBase._write_bytes_nofollow(dest, b"payload")
+
+        assert outside.read_text(encoding="utf-8") == "original"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+    def test_copy_preserves_source_mode_and_mtime(self, tmp_path):
+        project = self._project(tmp_path)
+        src = tmp_path / "template.md"
+        src.write_text("template", encoding="utf-8")
+        src.chmod(0o640)
+        os.utime(src, ns=(1_600_000_000_000_000_000, 1_600_000_000_000_000_000))
+
+        dst = IntegrationBase.copy_command_to_directory(
+            src, project / ".stub" / "commands", "speckit.plan.md", project_root=project
+        )
+
+        assert dst.stat().st_mode & 0o777 == 0o640
+        assert dst.stat().st_mtime_ns == 1_600_000_000_000_000_000

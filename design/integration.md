@@ -291,7 +291,8 @@ or the host's before-write primitives, such as
 destination with `IntegrationBase.resolve_destination_inside()` and refuse one
 that escapes the project before creating directories or writing, so a
 symlink planted at an output path cannot redirect a write outside the
-project. `record_existing()` alone remains
+project; the write itself replaces an existing link at the destination and
+opens the file without following links. `record_existing()` alone remains
 supported for new files and unchanged existing files; it cannot recover bytes
 already overwritten outside the journal. Such an unobserved overwrite fails
 explicitly, retains the resulting file rather than deleting it, and reports

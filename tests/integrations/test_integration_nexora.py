@@ -616,3 +616,22 @@ class TestNexoraSymlinkContainment:
         assert (real / "SKILL.md").exists()
         assert any(p.name == "SKILL.md" and p.parent.name == "speckit-specify" for p in created)
         assert m.check_modified() == []
+
+    def test_setup_replaces_inside_symlinked_skill_file_instead_of_following(self, tmp_path):
+        """An inside-project link at SKILL.md is replaced by a regular file;
+        its former target is left untouched."""
+        project = self._project(tmp_path)
+        target = project / "elsewhere.md"
+        target.write_text("keep\n", encoding="utf-8")
+        planted = project / ".nexora" / "skills" / "speckit-specify" / "SKILL.md"
+        planted.parent.mkdir(parents=True)
+        _symlink_or_skip(planted, target)
+        i = get_integration("nexora")
+        m = IntegrationManifest("nexora", project.resolve())
+
+        i.setup(project, m, script_type="sh")
+
+        assert not planted.is_symlink()
+        assert planted.read_text(encoding="utf-8").startswith("---\nname: \"speckit-specify\"")
+        assert target.read_text(encoding="utf-8") == "keep\n"
+        assert ".nexora/skills/speckit-specify/SKILL.md" in m.files

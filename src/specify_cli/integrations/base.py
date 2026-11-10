@@ -13,11 +13,13 @@ Provides:
 
 from __future__ import annotations
 
+import errno
 import os
 import platform
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 from abc import ABC
@@ -676,11 +678,61 @@ class IntegrationBase(ABC):
         return resolved
 
     @staticmethod
+    def _write_bytes_nofollow(
+        dst: Path,
+        data: bytes,
+        *,
+        mode: int | None = None,
+        times_ns: tuple[int, int] | None = None,
+    ) -> None:
+        """Write *data* to *dst* without ever writing through a symlink.
+
+        Closes the window between a containment check and the write: an
+        existing symlink at *dst* is replaced (unlinked) rather than written
+        through, and the file is opened with ``O_NOFOLLOW`` where the
+        platform provides it, so a link planted after the check is refused
+        instead of followed.  *mode* and *times_ns* let callers that copy a
+        source file preserve its permission bits and timestamps, as
+        ``shutil.copy2`` would, without a path-based ``chmod``/``utime``.
+        """
+        if dst.is_symlink():
+            dst.unlink()
+        flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_TRUNC
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+        )
+        try:
+            fd = os.open(dst, flags, 0o666)
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, getattr(errno, "EMLINK", -1)):
+                raise ValueError(
+                    f"Integration destination {dst} is a symlink; refusing to "
+                    "write through it"
+                ) from exc
+            raise
+        try:
+            with os.fdopen(fd, "wb", closefd=False) as fh:
+                fh.write(data)
+            if mode is not None:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(fd, mode)
+                else:
+                    os.chmod(dst, mode)
+            if times_ns is not None and os.utime in os.supports_fd:
+                os.utime(fd, ns=times_ns)
+        finally:
+            os.close(fd)
+
+    @staticmethod
     def copy_command_to_directory(
         src: Path,
         dest_dir: Path,
         filename: str,
-        project_root: Path | None = None,
+        project_root: Path,
     ) -> Path:
         """Copy a command template to *dest_dir* with the given *filename*.
 
@@ -688,19 +740,27 @@ class IntegrationBase(ABC):
         written file.  The caller can post-process the file before
         recording it in the manifest.
 
-        When *project_root* is given, the destination is checked with
-        ``resolve_destination_inside()`` before any directory is created
-        or bytes are copied, so a pre-existing symlink at the destination
-        (or on its path) cannot redirect the copy outside the project.
+        The destination is checked with ``resolve_destination_inside()``
+        against *project_root* before any directory is created or bytes
+        are copied, so a pre-existing symlink at the destination (or on
+        its path) cannot redirect the copy outside the project.  The copy
+        itself never writes through a symlink at the destination: an
+        existing link is replaced and the file is opened without following
+        links.  Permission bits and timestamps are copied from *src*.
         """
         dst = dest_dir / filename
         from ._file_changes import after_file_change, before_file_change
 
-        if project_root is not None:
-            IntegrationBase.resolve_destination_inside(dst, project_root)
+        IntegrationBase.resolve_destination_inside(dst, project_root)
         before_file_change(dst)
         dest_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
+        src_stat = src.stat()
+        IntegrationBase._write_bytes_nofollow(
+            dst,
+            src.read_bytes(),
+            mode=stat.S_IMODE(src_stat.st_mode),
+            times_ns=(src_stat.st_atime_ns, src_stat.st_mtime_ns),
+        )
         after_file_change(dst)
         return dst
 
@@ -734,7 +794,10 @@ class IntegrationBase(ABC):
         The destination is checked with ``resolve_destination_inside()``
         before any directory is created or bytes are written, so a
         pre-existing symlink at *dest* or on an ancestor cannot redirect
-        the write outside the project.
+        the write outside the project.  The write itself never goes
+        through a symlink at *dest*: an existing link is replaced and the
+        file is opened without following links, so a link planted between
+        the check and the write is refused rather than followed.
         """
         normalized = content.replace("\r\n", "\n")
         from ._file_changes import after_file_change, before_file_change
@@ -742,7 +805,7 @@ class IntegrationBase(ABC):
         IntegrationBase.resolve_destination_inside(dest, project_root)
         before_file_change(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(normalized.encode("utf-8"))
+        IntegrationBase._write_bytes_nofollow(dest, normalized.encode("utf-8"))
         after_file_change(dest)
         resolved = IntegrationBase.resolve_destination_inside(dest, project_root)
         manifest.record_existing(resolved.relative_to(project_root.resolve()))
@@ -791,9 +854,16 @@ class IntegrationBase(ABC):
             self.resolve_destination_inside(dst_script, project_root)
             before_file_change(dst_script)
             scripts_dest.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src_script, dst_script)
+            src_stat = src_script.stat()
+            mode = stat.S_IMODE(src_stat.st_mode)
             if dst_script.suffix in (".sh", ".py"):
-                dst_script.chmod(dst_script.stat().st_mode | 0o111)
+                mode |= 0o111
+            self._write_bytes_nofollow(
+                dst_script,
+                src_script.read_bytes(),
+                mode=mode,
+                times_ns=(src_stat.st_atime_ns, src_stat.st_mtime_ns),
+            )
             self.record_file_in_manifest(dst_script, project_root, manifest)
             created.append(dst_script)
 

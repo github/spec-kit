@@ -2558,7 +2558,8 @@ def test_round2_leaf_symlink_never_redirects_transaction_writes(tmp_path, server
         body = f"""    def setup(self, project_root, manifest, **kwargs):
         from pathlib import Path
         self.copy_command_to_directory(
-            Path({str(source)!r}), project_root / ".sample-agent/skills", "SKILL.md"
+            Path({str(source)!r}), project_root / ".sample-agent/skills", "SKILL.md",
+            project_root=project_root,
         )
         return []
 """
