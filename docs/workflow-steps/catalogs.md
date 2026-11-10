@@ -50,6 +50,22 @@ allowed and a priority after existing entries. It does not expose preset-style
 configuration when a discovery-only source is intended. Adding a project stack
 replaces implicit defaults unless you include them explicitly.
 
+### Migrating legacy HTTP sources
+
+Older configurations may contain loopback HTTP URLs that are no longer accepted.
+`specify workflow step catalog remove` validates the project configuration before
+deleting an entry, so it cannot remove an invalid HTTP source. Instead, edit
+`.specify/step-catalogs.yml` for project sources or
+`~/.specify/step-catalogs.yml` for user sources. Replace the source's `url` with
+a working HTTPS catalog URL, or remove its entire item from `catalogs`.
+Local HTTPS servers need a trusted certificate; changing the URL scheme alone
+does not enable HTTPS.
+
+If no custom sources remain in a file, delete that configuration file to fall
+through to the next level. Built-in defaults apply when no higher level supplies
+a stack. Also update or unset `SPECKIT_STEP_CATALOG_URL` if it still selects
+an HTTP source.
+
 ## Step entry schema
 
 Catalog JSON contains `schema_version` and a `steps` collection. Entries identify

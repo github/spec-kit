@@ -43,6 +43,22 @@ before network access. Lower numeric priorities win; the first source wins ties.
 
 `specify workflow catalog add` creates project entries with installation allowed and a priority after existing entries. It does not expose preset-style `--install-allowed` or `--priority` flags. Add only vetted sources; edit the configuration when a discovery-only source is intended. Adding a project stack replaces implicit defaults unless you include them explicitly.
 
+### Migrating legacy HTTP sources
+
+Older configurations may contain loopback HTTP URLs that are no longer accepted.
+`specify workflow catalog remove` validates the project configuration before
+deleting an entry, so it cannot remove an invalid HTTP source. Instead, edit
+`.specify/workflow-catalogs.yml` for project sources or
+`~/.specify/workflow-catalogs.yml` for user sources. Replace the source's `url`
+with a working HTTPS catalog URL, or remove its entire item from `catalogs`.
+Local HTTPS servers need a trusted certificate; changing the URL scheme alone
+does not enable HTTPS.
+
+If no custom sources remain in a file, delete that configuration file to fall
+through to the next level. Built-in defaults apply when no higher level supplies
+a stack. Also update or unset `SPECKIT_WORKFLOW_CATALOG_URL` if it still selects
+an HTTP source.
+
 ## Workflow entry schema
 
 Catalog JSON contains `schema_version` and a `workflows` mapping keyed by workflow ID. Entries carry `id`, `name`, `description`, `author`, `version`, `url`, and optional `sha256`, `requires`, `repository`, `license`, `tags`, and timestamps. A download can be raw YAML or a complete workflow archive. First-party entries marked `bundled: true` use packaged definitions rather than a network download.
