@@ -465,7 +465,7 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked on extension restore"
         assert "/speckit-plan" in content
         assert "../../../.specify/extensions/fakeext/skills/example/references/template.md." in content
-        assert 'Run ../../../.specify/extensions/fakeext/scripts/run.sh "$ARGUMENTS"' in content
+        assert 'Run .specify/extensions/fakeext/scripts/run.sh "$ARGUMENTS"' in content
 
     def test_core_command_override_skill_uses_preset_command_description(self, project_dir, temp_dir):
         """Preset skill overrides for core commands should keep preset frontmatter descriptions."""

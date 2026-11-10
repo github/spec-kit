@@ -1089,10 +1089,10 @@ class TestExtensionSkillRegistration:
         assert "{SCRIPT}" not in content
         assert "{ARGS}" not in content
         assert (
-            '../../../.specify/extensions/scripted-ext/scripts/bash/resolve-skill.sh "$ARGUMENTS"'
+            'Run .specify/extensions/scripted-ext/scripts/bash/resolve-skill.sh "$ARGUMENTS"'
             in content
         )
-        assert "../../../.specify/extensions/scripted-ext/scripts/bash/ensure-skills.sh." in content
+        assert "Then run .specify/extensions/scripted-ext/scripts/bash/ensure-skills.sh." in content
         assert ".specify/scripts/bash/resolve-skill.sh" not in content
         assert ".specify/scripts/bash/ensure-skills.sh" not in content
 
@@ -1284,9 +1284,42 @@ class TestExtensionSkillRegistration:
         content = skill_file.read_text()
         prefix = "../../../.specify/extensions/nested-ext/"
         assert content.count(prefix + "skills/example/references/template.md.") == 2
-        assert f'Run {prefix}scripts/run.sh "$ARGUMENTS"' in content
+        assert 'Run .specify/extensions/nested-ext/scripts/run.sh "$ARGUMENTS"' in content
         assert "Leave references/missing.md and specs/plan.md unchanged." in content
         assert (skill_file.parent / prefix / "skills/example/references/template.md").is_file()
+
+    @pytest.mark.parametrize("ai", ["copilot", "codex"])
+    def test_extension_script_invocations_run_from_project_root(
+        self, project_dir, temp_dir, ai
+    ):
+        import re
+        import subprocess
+        import sys
+
+        _create_init_options(project_dir, ai=ai, ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai=ai)
+        extension_dir = _create_extension_dir(temp_dir, ext_id="root-ext")
+        script = extension_dir / "scripts" / "check_root.py"
+        script.parent.mkdir()
+        script.write_text("from pathlib import Path\nprint(Path.cwd())\n")
+        (extension_dir / "commands" / "hello.md").write_text(
+            "---\ndescription: Check working directory\nscripts:\n"
+            "  py: scripts/check_root.py\n---\n\n"
+            "Run `{SCRIPT}` from repo root.\n"
+            "Run `.specify/extensions/root-ext/scripts/check_root.py` from project root.\n"
+        )
+        ExtensionManager(project_dir).install_from_directory(
+            extension_dir, "0.1.0", register_commands=True
+        )
+        content = (skills_dir / "speckit-root-ext-hello" / "SKILL.md").read_text()
+        invocations = re.findall(r"([^\s`]+/scripts/check_root\.py)", content)
+        assert len(invocations) == 2
+        for invocation in invocations:
+            result = subprocess.run(
+                [sys.executable, invocation], cwd=project_dir,
+                capture_output=True, text=True, check=True,
+            )
+            assert Path(result.stdout.strip()) == project_dir.resolve()
 
     @pytest.mark.parametrize(
         ("ai", "expected_invocation"),
@@ -1603,6 +1636,41 @@ class TestExtensionSkillRegistration:
         assert skills_dir == home / ".hermes" / "skills"
         assert skills_dir.is_dir()
         assert (project_dir / ".hermes" / "skills").is_dir()
+
+    def test_hermes_cross_drive_resource_references_use_absolute_paths(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        import ntpath
+
+        home = temp_dir / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        _create_init_options(project_dir, ai="hermes", ai_skills=True)
+        extension_dir = _create_extension_dir(temp_dir, ext_id="cross-drive-ext")
+        (extension_dir / "agents").mkdir()
+        (extension_dir / "agents" / "reviewer.md").write_text("# Reviewer\n")
+        (extension_dir / "commands" / "hello.md").write_text(
+            "---\ndescription: Resource reference\n---\n\nRead agents/reviewer.md.\n"
+        )
+        original_relpath = os.path.relpath
+
+        def cross_drive(path, start=None):
+            if (
+                start is not None
+                and Path(start).resolve().is_relative_to(home.resolve())
+                and ".specify" in Path(path).parts
+            ):
+                return ntpath.relpath("D:/project/resource.md", "C:/home/skills")
+            return original_relpath(path, start)
+
+        monkeypatch.setattr("specify_cli.agents.os.path.relpath", cross_drive)
+        ExtensionManager(project_dir).install_from_directory(
+            extension_dir, "0.1.0", register_commands=True
+        )
+        skill_file = home / ".hermes" / "skills" / "speckit-cross-drive-ext-hello" / "SKILL.md"
+        target = project_dir / ".specify" / "extensions" / "cross-drive-ext" / "agents" / "reviewer.md"
+        assert f"Read {target.absolute().as_posix()}." in skill_file.read_text()
+        assert target.is_file()
 
     def test_unusable_hermes_global_skills_dir_skips_skill_registration(
         self, project_dir, temp_dir, monkeypatch, capsys

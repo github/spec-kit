@@ -255,6 +255,8 @@ class CommandRegistrar:
         project artifacts) and dot-directories are never rewritten. With a
         destination ``skill_dir``, output is relative to that directory rather
         than the project root, including already-normalized extension paths.
+        Paths under ``scripts/`` stay project-root-relative for execution.
+        Cross-drive resource references use absolute installed paths.
         """
         if not isinstance(text, str) or not text:
             return text
@@ -288,7 +290,7 @@ class CommandRegistrar:
 
         tokens = {match.group("path") for match in pattern.finditer(text)}
         candidates: dict[str, Optional[str]] = {}
-        token_parts: dict[str, tuple[str, str]] = {}
+        token_parts: dict[str, list[tuple[str, bool, str]]] = {}
         for token in tokens:
             relative_token = token[2:] if token.startswith("./") else token
             if any(part in {".", ".."} for part in relative_token.split("/")):
@@ -303,25 +305,35 @@ class CommandRegistrar:
                 if path_text[-1] not in ".:]":
                     break
                 path_text = path_text[:-1]
-            candidate = candidate_for(path_text)
-            if candidate is None:
-                continue
-            token_parts[token] = (path_text, token[len(path_text):])
-            candidates[candidate] = (
-                candidate if contained_target(extension_root / candidate) else None
-            )
+            punctuation = token[len(path_text):]
+            alternatives = [(path_text, punctuation)]
+            if "#" in path_text:
+                fragment_path, marker, fragment = path_text.partition("#")
+                alternatives.append((fragment_path, marker + fragment + punctuation))
+            for path_text, suffix in alternatives:
+                candidate = candidate_for(path_text)
+                if candidate is None:
+                    continue
+                token_parts.setdefault(token, []).append(
+                    (candidate, path_text.endswith("/"), suffix)
+                )
+                candidates[candidate] = (
+                    candidate if contained_target(extension_root / candidate) else None
+                )
 
         # Index only shorthand actually referenced by this body, not every
         # suffix of every installed path (which grows with directory depth).
         unresolved = {candidate for candidate, target in candidates.items() if target is None}
+        ambiguous: set[str] = set()
         if unresolved:
-            ambiguous: set[str] = set()
             for entry in extension_root.rglob("*"):
                 relative = entry.relative_to(extension_root).as_posix()
                 if candidate_for(relative) is None:
                     continue
-                for candidate in unresolved:
-                    if relative.endswith("/" + candidate) and contained_target(entry):
+                parts = relative.split("/")
+                for index in range(1, len(parts)):
+                    candidate = "/".join(parts[index:])
+                    if candidate in unresolved and contained_target(entry):
                         if candidates[candidate] is not None:
                             ambiguous.add(candidate)
                         else:
@@ -331,19 +343,28 @@ class CommandRegistrar:
 
         def replace(match: re.Match) -> str:
             token = match.group("path")
-            if token not in token_parts:
-                return match.group(0)
-            path_text, punctuation = token_parts[token]
-            candidate = candidate_for(path_text)
-            target = candidates.get(candidate) if candidate is not None else None
-            if target is None:
-                return match.group(0)
-            rewritten = installed_prefix + target
-            if skill_dir is not None and project_root is not None:
-                rewritten = Path(os.path.relpath(project_root / rewritten, skill_dir)).as_posix()
-            if path_text.endswith("/"):
-                rewritten += "/"
-            return match.group(1) + rewritten + punctuation
+            # Prefer a literal '#' filename over interpreting it as a fragment.
+            for candidate, trailing_slash, suffix in token_parts.get(token, []):
+                if candidate in ambiguous:
+                    return match.group(0)
+                target = candidates.get(candidate)
+                if target is None:
+                    continue
+                rewritten = installed_prefix + target
+                if (
+                    skill_dir is not None
+                    and project_root is not None
+                    and not target.startswith("scripts/")
+                ):
+                    installed_path = project_root / rewritten
+                    try:
+                        rewritten = Path(os.path.relpath(installed_path, skill_dir)).as_posix()
+                    except ValueError:
+                        rewritten = installed_path.absolute().as_posix()
+                if trailing_slash:
+                    rewritten += "/"
+                return match.group(1) + rewritten + suffix
+            return match.group(0)
 
         return pattern.sub(replace, text)
 

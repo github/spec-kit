@@ -110,12 +110,18 @@ Reference bundled files using extension-relative paths, such as
 `agents/reviewer.md` or `skills/example/references/template.md`. Only existing
 targets are rewritten. A shorthand such as `references/template.md` also works
 when exactly one bundled path has that suffix; ambiguous shorthand stays
-unchanged, so use the full extension-relative path to disambiguate it.
+unchanged, so use the full extension-relative path to disambiguate it. Markdown
+link fragments such as `references/template.md#checks` are preserved; an existing
+filename containing a literal `#` takes precedence over fragment interpretation.
 
-Generated skills use paths relative to their `SKILL.md` directory, including
-extension-local scripts expanded from `{SCRIPT}`. For example, a Copilot skill
+Generated skills use resource paths relative to their `SKILL.md` directory.
+For example, a Copilot skill
 references `../../../.specify/extensions/my-ext/agents/reviewer.md`; command-layout
 outputs retain project-root-relative `.specify/extensions/my-ext/` paths.
+When the skill and project are on different Windows drives, resource references
+use absolute installed paths instead. Bundled paths under `scripts/`, including
+invocations expanded from `{SCRIPT}`, remain project-root-relative: run them
+from the project root so their working-directory requirements stay intact.
 References under `commands/`, `specs/`, or hidden directories are not rewritten.
 
 ### 5. Test Locally

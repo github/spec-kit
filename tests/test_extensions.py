@@ -4620,6 +4620,10 @@ Run {SCRIPT}
             ("references/template.md.", "skills/example/references/template.md."),
             ("`references/template.md`", "`skills/example/references/template.md`"),
             ("[template](references/template.md)", "[template](skills/example/references/template.md)"),
+            ("[agent](agents/one.md#checks)", "[agent](agents/one.md#checks)"),
+            ("[template](references/template.md#checks)", "[template](skills/example/references/template.md#checks)"),
+            ("references/template.md#literal", "skills/literal/references/template.md#literal"),
+            ("assets/notes#draft.md", "assets/notes#draft.md"),
             ("agents/", "agents/"),
             ("./agents/one.md", "agents/one.md"),
             ("assets[q]/file.md", "assets[q]/file.md"),
@@ -4637,6 +4641,8 @@ Run {SCRIPT}
             "agents/one.md",
             "assets[q]/file.md",
             "assets/\u00fcber.md",
+            "skills/literal/references/template.md#literal",
+            "assets/notes#draft.md",
         ):
             target = ext_dir / name
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -4645,7 +4651,7 @@ Run {SCRIPT}
         installed = ".specify/extensions/ext/"
         if expected.startswith("`"):
             expected = "`" + installed + expected[1:]
-        elif expected.startswith("[template]("):
+        elif "](" in expected:
             expected = expected.replace("](", "](" + installed)
         else:
             expected = installed + expected
@@ -4668,6 +4674,7 @@ Run {SCRIPT}
             target.touch()
         unchanged = (
             "references/template.md", "../references/template.md",
+            "references/template.md#checks", "references/missing.md#checks",
             "skills/first/../first/references/template.md",
             "skills/./first/references/template.md", "/references/template.md",
             "skills/.", "skills/..",
@@ -4729,6 +4736,63 @@ Run {SCRIPT}
             )
             == text
         )
+
+    def test_rewrite_extension_paths_cross_drive_uses_absolute_target(
+        self, temp_dir, monkeypatch
+    ):
+        from specify_cli.agents import CommandRegistrar
+
+        extension_dir = temp_dir / "source"
+        (extension_dir / "agents").mkdir(parents=True)
+        (extension_dir / "agents" / "one.md").touch()
+        project_root = temp_dir / "project"
+        target = project_root / ".specify" / "extensions" / "ext" / "agents" / "one.md"
+
+        def cross_drive(*args):
+            raise ValueError("path is on mount 'D:', start on mount 'C:'")
+
+        monkeypatch.setattr("specify_cli.agents.os.path.relpath", cross_drive)
+        result = CommandRegistrar.rewrite_extension_paths(
+            "Read agents/one.md.", "ext", extension_dir,
+            project_root=project_root, skill_dir=temp_dir / "home" / "skills" / "example",
+        )
+        assert result == f"Read {target.absolute().as_posix()}."
+
+        def unexpected_error(*args):
+            raise PermissionError("cannot compute relative path")
+
+        monkeypatch.setattr("specify_cli.agents.os.path.relpath", unexpected_error)
+        with pytest.raises(PermissionError, match="cannot compute relative path"):
+            CommandRegistrar.rewrite_extension_paths(
+                "Read agents/one.md.", "ext", extension_dir,
+                project_root=project_root, skill_dir=temp_dir / "home" / "skills" / "example",
+            )
+
+    def test_rewrite_extension_paths_does_not_compare_each_reference_to_each_entry(
+        self, temp_dir, monkeypatch
+    ):
+        from specify_cli.agents import CommandRegistrar
+
+        extension_dir = temp_dir / "ext"
+        for index in range(50):
+            target = extension_dir / "bundled" / f"reference{index}.md"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.touch()
+        text = " ".join(f"missing/reference{index}.md" for index in range(250))
+        comparisons = 0
+        original_as_posix = Path.as_posix
+
+        class CountedPath(str):
+            def endswith(self, *args):
+                nonlocal comparisons
+                comparisons += 1
+                return super().endswith(*args)
+
+        monkeypatch.setattr(
+            Path, "as_posix", lambda path: CountedPath(original_as_posix(path))
+        )
+        assert CommandRegistrar.rewrite_extension_paths(text, "ext", extension_dir) == text
+        assert comparisons <= 4 * 51
 
     def test_register_commands_for_copilot(self, extension_dir, project_dir):
         """Test registering commands for Copilot agent with .agent.md extension."""
