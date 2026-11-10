@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
+from copy import copy
 from dataclasses import dataclass, field
 import codecs
 import errno
@@ -13,7 +14,7 @@ import tempfile
 from typing import TypeVar
 from weakref import finalize
 
-from specify_cli._file_handles import _windows_file_id, _windows_handle
+from specify_cli._file_handles import _windows_file_id, _windows_handle, _windows_stat
 
 
 _PathType = TypeVar("_PathType", bound=PurePath)
@@ -113,6 +114,7 @@ class FileHelper:
                         handle = reference.enter_context(
                             _windows_handle(canonical, directory=True, pin=False)
                         )
+                        self._check_deletion_root(_windows_stat(handle))
                         windows_root_id = _windows_file_id(handle)
                     except OSError as exc:
                         # Other operations do not require deletion's handle capability.
@@ -404,7 +406,7 @@ class FileHelper:
         self._require_open()
         if self._root_anchor is None:
             if self._root_anchor_error is not None:
-                raise self._root_anchor_error
+                raise copy(self._root_anchor_error)
             raise OSError(errno.ENOTSUP, "Handle-based deletion is unsupported on this platform")
         self._check_deletion_root(self._canonical_root.stat())
         if isinstance(self._root_anchor, Path):

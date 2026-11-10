@@ -1,6 +1,7 @@
 """Private platform handles for confined filesystem operations."""
 
 import errno
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -82,3 +83,23 @@ def _windows_file_id(handle: int) -> tuple[int, bytes]:
     if not info(handle, 18, ctypes.byref(identity), ctypes.sizeof(identity)):
         raise ctypes.WinError(ctypes.get_last_error())
     return identity.volume, bytes(identity.file_id)
+
+
+def _windows_stat(handle: int) -> os.stat_result:
+    """Get Python's native metadata without taking ownership of a borrowed handle."""
+    import _winapi
+    import msvcrt
+
+    process = _winapi.GetCurrentProcess()
+    duplicate = _winapi.DuplicateHandle(
+        process, handle, process, 0, False, _winapi.DUPLICATE_SAME_ACCESS
+    )
+    try:
+        fd = msvcrt.open_osfhandle(duplicate, os.O_RDONLY | os.O_NOINHERIT)
+    except BaseException:
+        _winapi.CloseHandle(duplicate)
+        raise
+    try:
+        return os.fstat(fd)
+    finally:
+        os.close(fd)

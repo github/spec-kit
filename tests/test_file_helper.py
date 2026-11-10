@@ -1201,6 +1201,7 @@ def test_windows_delete_rejects_replaced_root_during_acquisition_portably(
     monkeypatch.setattr(module, "os", backend)
     monkeypatch.setattr(module, "_windows_handle", handle)
     monkeypatch.setattr(module, "_windows_file_id", lambda _: (1, b"root"))
+    monkeypatch.setattr(module, "_windows_stat", lambda _: project.stat())
     with pytest.raises(FileHelperError, match="root changed"):
         with FileHelper(project) as files:
             files.delete("victim")
@@ -1208,6 +1209,72 @@ def test_windows_delete_rejects_replaced_root_during_acquisition_portably(
     assert active == []
     assert (outside / "project/victim").read_text() == "keep"
     assert (retained / "project/victim").read_text() == "selected"
+
+
+def test_windows_constructor_rejects_replaced_then_restored_root(root, monkeypatch):
+    project = root / "project"
+    replacement = root / "replacement"
+    saved = root / "saved"
+    project.mkdir()
+    replacement.mkdir()
+    (project / "victim").write_text("selected")
+    (replacement / "victim").write_text("keep")
+    acquired = {}
+    active = []
+
+    @contextmanager
+    def handle(path, *, directory, pin=True):
+        assert path == project and directory and not pin
+        project.rename(saved)
+        replacement.rename(project)
+        acquired[123] = project.stat()
+        project.rename(replacement)
+        saved.rename(project)
+        active.append(123)
+        try:
+            yield 123
+        finally:
+            assert active.pop() == 123
+
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
+    monkeypatch.setattr(file_helper, "_windows_handle", handle)
+    monkeypatch.setattr(file_helper, "_windows_file_id", lambda _: (1, b"replacement"))
+    monkeypatch.setattr(file_helper, "_windows_stat", lambda value: acquired[value], raising=False)
+    with pytest.raises(FileHelperError, match="root changed"):
+        with FileHelper(project):
+            pytest.fail("A handle to the replacement root must not be accepted")
+    assert active == []
+    assert (project / "victim").read_text() == "selected"
+    assert (replacement / "victim").read_text() == "keep"
+
+
+def test_windows_cached_capability_error_has_independent_tracebacks(root, monkeypatch):
+    native = PermissionError(errno.EACCES, "reference denied", "source", 5, "destination")
+    if not hasattr(native, "winerror"):
+        native.winerror = 5
+
+    @contextmanager
+    def denied(*args, **kwargs):
+        raise native
+        yield
+
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
+    monkeypatch.setattr(file_helper, "_windows_handle", denied)
+    with FileHelper(root) as files:
+        errors = []
+        for _ in range(3):
+            with pytest.raises(PermissionError) as raised:
+                files.delete("victim")
+            errors.append(raised.value)
+            assert files._root_anchor_error is native
+            assert native.__traceback__ is None
+        assert len({id(error) for error in errors}) == 3
+        for error in errors:
+            assert error is not native and type(error) is type(native)
+            assert (error.errno, error.strerror, error.filename, error.filename2, error.winerror) == (
+                native.errno, native.strerror, native.filename, native.filename2, native.winerror,
+            )
+            assert error.__traceback__ is not None
 
 
 def test_windows_read_does_not_require_ancestor_listing_portably(root, monkeypatch):
@@ -1228,6 +1295,7 @@ def test_windows_read_does_not_require_ancestor_listing_portably(root, monkeypat
     monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
     monkeypatch.setattr(file_helper, "_windows_handle", handle)
     monkeypatch.setattr(file_helper, "_windows_file_id", lambda _: (1, b"root"), raising=False)
+    monkeypatch.setattr(file_helper, "_windows_stat", lambda _: root.stat())
     with FileHelper(root) as files:
         assert files.read_text("victim") == "keep"
         with pytest.raises(PermissionError, match="ancestor listing denied"):
@@ -1257,6 +1325,7 @@ def test_windows_read_preserves_native_deletion_capability_error(root, monkeypat
     monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
     monkeypatch.setattr(file_helper, "_windows_handle", denied)
     monkeypatch.setattr(file_helper, "_windows_file_id", identity)
+    monkeypatch.setattr(file_helper, "_windows_stat", lambda _: root.stat())
     with FileHelper(root) as files:
         assert active == []
         assert files.read_text("victim") == "keep"
@@ -1283,6 +1352,7 @@ def test_windows_delete_checks_retained_handle_identity_portably(root, monkeypat
     monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
     monkeypatch.setattr(file_helper, "_windows_handle", handle)
     monkeypatch.setattr(file_helper, "_windows_file_id", lambda handle: identities[handle])
+    monkeypatch.setattr(file_helper, "_windows_stat", lambda _: root.stat())
     with FileHelper(root) as files:
         with pytest.raises(FileHelperError, match="root changed"):
             files.delete("victim")
@@ -1393,6 +1463,7 @@ def test_windows_delete_holds_ancestors_until_io_completes_portably(
     monkeypatch.setattr(module, "os", backend)
     monkeypatch.setattr(module, "_windows_handle", handle)
     monkeypatch.setattr(module, "_windows_file_id", lambda _: (1, b"root"))
+    monkeypatch.setattr(module, "_windows_stat", lambda _: root.stat())
     files = FileHelper(root, allow_symlinks=True)
     selected = alias / "nested" if recursive else alias / "nested/victim"
     if failure:

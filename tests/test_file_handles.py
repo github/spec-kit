@@ -3,12 +3,15 @@
 import ctypes
 from ctypes import wintypes
 import errno
+import os
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 import pytest
 
-from specify_cli._file_handles import _windows_file_id, _windows_handle
+from specify_cli import _file_handles as handles
+from specify_cli._file_handles import _windows_file_id, _windows_handle, _windows_stat
 
 
 @pytest.mark.parametrize("directory", [False, True])
@@ -93,6 +96,59 @@ def test_windows_file_identity_uses_full_volume_and_file_id(monkeypatch, failure
         assert _windows_file_id(0x1FFFFFFFF) == (0x1FFFFFFFF, bytes(range(16)))
     assert info.argtypes == [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
     assert info.restype is wintypes.BOOL
+
+
+@pytest.mark.parametrize("failure", [None, "duplicate", "convert", "stat"])
+def test_windows_stat_preserves_borrowed_handle_and_closes_duplicate(tmp_path, monkeypatch, failure):
+    expected = tmp_path.stat()
+    closed = []
+
+    def duplicate(source_process, handle, target_process, access, inherit, options):
+        assert source_process == target_process == 0x1FFFFFFFF
+        assert handle == 0x2FFFFFFFF
+        assert access == 0 and inherit is False and options == 2
+        if failure == "duplicate":
+            raise OSError("duplicate failed")
+        return 456
+
+    def convert(handle, flags):
+        assert handle == 456 and flags == 128
+        if failure == "convert":
+            raise OSError("convert failed")
+        return 789
+
+    def fstat(fd):
+        assert fd == 789
+        if failure == "stat":
+            raise OSError("stat failed")
+        return expected
+
+    monkeypatch.setitem(sys.modules, "_winapi", SimpleNamespace(
+        GetCurrentProcess=lambda: 0x1FFFFFFFF,
+        DuplicateHandle=duplicate,
+        DUPLICATE_SAME_ACCESS=2,
+        CloseHandle=lambda handle: closed.append(("handle", handle)),
+    ))
+    monkeypatch.setitem(sys.modules, "msvcrt", SimpleNamespace(open_osfhandle=convert))
+    monkeypatch.setattr(handles, "os", SimpleNamespace(
+        O_RDONLY=0, O_NOINHERIT=128, fstat=fstat, close=lambda fd: closed.append(("fd", fd)),
+    ))
+    if failure:
+        with pytest.raises(OSError, match=f"{failure} failed"):
+            _windows_stat(0x2FFFFFFFF)
+    else:
+        assert _windows_stat(0x2FFFFFFFF) is expected
+    assert closed == {
+        None: [("fd", 789)], "duplicate": [], "convert": [("handle", 456)], "stat": [("fd", 789)],
+    }[failure]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows directory-handle metadata")
+def test_native_windows_stat_matches_path_metadata_without_closing_reference(tmp_path):
+    with _windows_handle(tmp_path, directory=True, pin=False) as handle:
+        identity = _windows_file_id(handle)
+        assert os.path.samestat(tmp_path.stat(), _windows_stat(handle))
+        assert _windows_file_id(handle) == identity
 
 
 @pytest.mark.parametrize("directory", [False, True])

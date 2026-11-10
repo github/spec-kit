@@ -154,8 +154,15 @@ the handle uses search-only access where available. On Windows, construction
 requests only root metadata access (`FILE_READ_ATTRIBUTES`) and permits delete
 sharing; it does not request directory-list access on the canonical ancestors.
 The retained reference records the full volume/file identity from that handle.
+Before accepting it, construction compares Python-native metadata obtained from
+the acquired handle with the initially observed root metadata. This comparison
+does not reopen the root pathname, so replacement followed by restoration cannot
+substitute a different retained object. The metadata query uses a temporary
+non-inheritable duplicate and leaves the original reference open.
 If that reference or identity query is unavailable, the native capability error
 is deferred to `delete()` rather than preventing ordinary read/write operations.
+The cached error remains traceback-free; each failed deletion raises an
+independent shallow copy retaining the native error type and filesystem details.
 
 Windows deletion separately pins the canonical ancestry through the drive/share
 root without delete sharing, then compares the opened root's full identity with
