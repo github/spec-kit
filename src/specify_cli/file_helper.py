@@ -406,7 +406,11 @@ class FileHelper:
         self._require_open()
         if self._root_anchor is None:
             if self._root_anchor_error is not None:
-                raise copy(self._root_anchor_error)
+                error = copy(self._root_anchor_error)
+                # OSError's copy protocol omits its native Windows error slot.
+                if hasattr(self._root_anchor_error, "winerror"):
+                    error.winerror = self._root_anchor_error.winerror
+                raise error
             raise OSError(errno.ENOTSUP, "Handle-based deletion is unsupported on this platform")
         self._check_deletion_root(self._canonical_root.stat())
         if isinstance(self._root_anchor, Path):

@@ -1248,10 +1248,22 @@ def test_windows_constructor_rejects_replaced_then_restored_root(root, monkeypat
     assert (replacement / "victim").read_text() == "keep"
 
 
-def test_windows_cached_capability_error_has_independent_tracebacks(root, monkeypatch):
+@pytest.mark.parametrize("simulate_missing_winerror", [False, True])
+def test_windows_cached_capability_error_has_independent_tracebacks(
+    root, monkeypatch, simulate_missing_winerror
+):
     native = PermissionError(errno.EACCES, "reference denied", "source", 5, "destination")
     if not hasattr(native, "winerror"):
         native.winerror = 5
+    if simulate_missing_winerror:
+        original_copy = file_helper.copy
+
+        def copy_without_winerror(error):
+            result = original_copy(error)
+            result.winerror = None
+            return result
+
+        monkeypatch.setattr(file_helper, "copy", copy_without_winerror)
 
     @contextmanager
     def denied(*args, **kwargs):
