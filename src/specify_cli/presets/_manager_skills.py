@@ -1511,13 +1511,21 @@ class _PresetSkillMethods:
                 )
                 if isinstance(selected_ai, str):
                     body = registrar.resolve_skill_placeholders(
-                        selected_ai, frontmatter, body, self.project_root
+                        selected_ai, frontmatter, body, self.project_root,
+                        extension_id=extension_restore["extension_id"],
                     )
                     body = self._resolve_skill_command_refs(
                         body, registrar, selected_ai, self.project_root
                     )
 
                 command_name = extension_restore["command_name"]
+                body = registrar.rewrite_extension_paths(
+                    body,
+                    extension_restore["extension_id"],
+                    extension_restore["extension_dir"],
+                    project_root=self.project_root,
+                    skill_dir=skill_file.parent,
+                )
                 title_name = self._skill_title_from_command(command_name)
 
                 frontmatter_data = registrar.build_skill_frontmatter(

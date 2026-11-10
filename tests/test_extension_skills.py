@@ -1092,7 +1092,7 @@ class TestExtensionSkillRegistration:
             '../../../.specify/extensions/scripted-ext/scripts/bash/resolve-skill.sh "$ARGUMENTS"'
             in content
         )
-        assert "../../../.specify/extensions/scripted-ext/scripts/bash/ensure-skills.sh" in content
+        assert "../../../.specify/extensions/scripted-ext/scripts/bash/ensure-skills.sh." in content
         assert ".specify/scripts/bash/resolve-skill.sh" not in content
         assert ".specify/scripts/bash/ensure-skills.sh" not in content
 
@@ -1148,10 +1148,7 @@ class TestExtensionSkillRegistration:
 
         content = (skills_dir / "speckit-path-ext-run" / "SKILL.md").read_text()
         assert "../../../.specify/extensions/path-ext/agents/control/commander.md" in content
-        assert (
-            "../../../.specify/extensions/path-ext/knowledge-base/agent-scores.yaml"
-            in content
-        )
+        assert "../../../.specify/extensions/path-ext/knowledge-base/agent-scores.yaml." in content
         # extension's own templates/ dir must resolve under the extension,
         # not the project-level .specify/templates/
         assert "../../../.specify/extensions/path-ext/templates/kill-report.md" in content
@@ -1258,6 +1255,38 @@ class TestExtensionSkillRegistration:
         content = (skills_dir / "speckit-copilot-path-ext-run" / "SKILL.md").read_text()
         assert "../../../.specify/extensions/copilot-path-ext/skills/copilot/references/guide.md" in content
         assert "Read skills/copilot/references/guide.md." not in content
+
+    @pytest.mark.parametrize("ai", ["claude", "copilot", "codex"])
+    @pytest.mark.parametrize("register_commands", [False, True])
+    def test_skill_registration_rewrites_nested_refs_and_scripts(
+        self, project_dir, temp_dir, ai, register_commands
+    ):
+        _create_init_options(project_dir, ai=ai, ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai=ai)
+        ext_dir = _create_extension_dir(temp_dir, ext_id="nested-ext")
+        target = ext_dir / "skills" / "example" / "references" / "template.md"
+        target.parent.mkdir(parents=True)
+        target.write_text("# Template\n")
+        script = ext_dir / "scripts" / "run.sh"
+        script.parent.mkdir()
+        script.write_text("#!/bin/sh\n")
+        (ext_dir / "commands" / "hello.md").write_text(
+            "---\ndescription: Nested refs\nscripts:\n"
+            '  sh: scripts/run.sh "{ARGS}"\n---\n\n'
+            "Read references/template.md.\n"
+            "Read skills/example/references/template.md.\n"
+            "Run {SCRIPT}\n"
+            "Leave references/missing.md and specs/plan.md unchanged.\n"
+        )
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=register_commands)
+        skill_file = skills_dir / "speckit-nested-ext-hello" / "SKILL.md"
+        content = skill_file.read_text()
+        prefix = "../../../.specify/extensions/nested-ext/"
+        assert content.count(prefix + "skills/example/references/template.md.") == 2
+        assert f'Run {prefix}scripts/run.sh "$ARGUMENTS"' in content
+        assert "Leave references/missing.md and specs/plan.md unchanged." in content
+        assert (skill_file.parent / prefix / "skills/example/references/template.md").is_file()
 
     @pytest.mark.parametrize(
         ("ai", "expected_invocation"),

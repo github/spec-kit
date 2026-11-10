@@ -1683,6 +1683,10 @@ class ExtensionManager:
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
             )
+            body = registrar.rewrite_extension_paths(
+                body, manifest.id, extension_dir,
+                project_root=self.project_root, skill_dir=skill_subdir,
+            )
             body = _resolve_command_ref_tokens(body)
 
             original_desc = frontmatter.get("description", "")

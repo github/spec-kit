@@ -250,101 +250,102 @@ class CommandRegistrar:
         references would resolve against the workspace root and never be
         found (#2101).
 
-        Only existing extension-relative paths are rewritten, keeping the
-        behaviour conservative and avoiding false positives on prose.
-        ``commands`` (slash-command sources), ``specs`` (user project
-        artifacts), and dot-directories are never rewritten.
-
-        When ``skill_dir`` and ``project_root`` are provided, rewritten paths
-        are emitted relative to the generated ``SKILL.md`` directory instead
-        of repository-root relative.
+        Only existing paths are rewritten; nested shorthand must identify a
+        unique suffix. ``commands`` (slash-command sources), ``specs`` (user
+        project artifacts) and dot-directories are never rewritten. With a
+        destination ``skill_dir``, output is relative to that directory rather
+        than the project root, including already-normalized extension paths.
         """
         if not isinstance(text, str) or not text:
             return text
 
-        skip = {"commands", ".git", "specs"}
-        try:
-            extension_root = extension_dir.resolve()
-        except OSError:
+        if not extension_dir.is_dir():
             return text
-
-        existing_paths: set[str] = set()
-        suffix_map: dict[str, Optional[str]] = {}
-
-        try:
-            for entry in extension_root.rglob("*"):
-                try:
-                    rel_path = entry.relative_to(extension_root).as_posix()
-                except ValueError:
-                    continue
-                if not rel_path:
-                    continue
-                parts = rel_path.split("/")
-                if parts[0] in skip or any(part.startswith(".") for part in parts):
-                    continue
-                existing_paths.add(rel_path)
-                for idx in range(1, len(parts)):
-                    suffix = "/".join(parts[idx:])
-                    prior = suffix_map.get(suffix)
-                    if prior is None and suffix in suffix_map:
-                        continue
-                    if prior is None:
-                        suffix_map[suffix] = rel_path
-                    elif prior != rel_path:
-                        suffix_map[suffix] = None
-        except OSError:
-            return text
-
-        def _normalize_sep(path_text: str) -> str:
-            if os.sep != "/":
-                path_text = path_text.replace(os.sep, "/")
-            if os.altsep and os.altsep != "/":
-                path_text = path_text.replace(os.altsep, "/")
-            return path_text
-
-        def _installed_prefix(path_in_extension: str, has_trailing_slash: bool) -> str:
-            default_prefix = f".specify/extensions/{extension_id}/{path_in_extension}"
-            target = default_prefix + "/" if has_trailing_slash else default_prefix
-            if skill_dir is None or project_root is None:
-                return target
-
-            installed_abs = project_root / ".specify" / "extensions" / extension_id / path_in_extension
-            try:
-                relative = os.path.relpath(installed_abs, skill_dir)
-            except ValueError:
-                return target
-            rel_path = _normalize_sep(relative)
-            if has_trailing_slash and not rel_path.endswith("/"):
-                rel_path += "/"
-            return rel_path
-
+        extension_root = extension_dir.resolve()
+        installed_prefix = f".specify/extensions/{extension_id}/"
+        skip = {"commands", "specs"}
         pattern = re.compile(
-            r'(^|[\s`"\'(\[{<=])(?:\./)?(?P<path>[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+(?:/)?)'
+            r"""(^|[\s`"'(\[{<=])(?P<path>[^\s`"'(){}<>=,;!?]+/[^\s`"'(){}<>=,;!?]*)"""
         )
 
-        def _replace(m: re.Match) -> str:
-            prefix = m.group(1)
-            matched_path = m.group("path")
-            has_trailing_slash = matched_path.endswith("/")
-            candidate = matched_path[:-1] if has_trailing_slash else matched_path
+        def candidate_for(token: str) -> Optional[str]:
+            if token.startswith("./"):
+                token = token[2:]
+            if token.startswith(installed_prefix):
+                token = token[len(installed_prefix):]
+            token = token.rstrip("/")
+            parts = token.split("/")
+            if (
+                relative_extension_path_violation(token)
+                or parts[0] in skip
+                or any(part.startswith(".") for part in parts)
+            ):
+                return None
+            return token
 
-            if candidate.startswith(".specify/"):
-                return m.group(0)
-            if relative_extension_path_violation(candidate):
-                return m.group(0)
+        def contained_target(path: Path) -> bool:
+            return path.exists() and path.resolve().is_relative_to(extension_root)
 
-            first_segment = candidate.split("/", 1)[0]
-            if first_segment in skip or first_segment.startswith("."):
-                return m.group(0)
+        tokens = {match.group("path") for match in pattern.finditer(text)}
+        candidates: dict[str, Optional[str]] = {}
+        token_parts: dict[str, tuple[str, str]] = {}
+        for token in tokens:
+            relative_token = token[2:] if token.startswith("./") else token
+            if any(part in {".", ".."} for part in relative_token.split("/")):
+                continue
+            # Keep prose/Markdown punctuation out of the lookup, but prefer an
+            # actual filename (e.g. assets[q]/) over stripping its brackets.
+            path_text = token
+            while path_text:
+                candidate = candidate_for(path_text)
+                if candidate is not None and contained_target(extension_root / candidate):
+                    break
+                if path_text[-1] not in ".:]":
+                    break
+                path_text = path_text[:-1]
+            candidate = candidate_for(path_text)
+            if candidate is None:
+                continue
+            token_parts[token] = (path_text, token[len(path_text):])
+            candidates[candidate] = (
+                candidate if contained_target(extension_root / candidate) else None
+            )
 
-            candidate_rel = candidate if candidate in existing_paths else suffix_map.get(candidate)
-            if not candidate_rel:
-                return m.group(0)
+        # Index only shorthand actually referenced by this body, not every
+        # suffix of every installed path (which grows with directory depth).
+        unresolved = {candidate for candidate, target in candidates.items() if target is None}
+        if unresolved:
+            ambiguous: set[str] = set()
+            for entry in extension_root.rglob("*"):
+                relative = entry.relative_to(extension_root).as_posix()
+                if candidate_for(relative) is None:
+                    continue
+                for candidate in unresolved:
+                    if relative.endswith("/" + candidate) and contained_target(entry):
+                        if candidates[candidate] is not None:
+                            ambiguous.add(candidate)
+                        else:
+                            candidates[candidate] = relative
+            for candidate in ambiguous:
+                candidates[candidate] = None
 
-            rewritten = _installed_prefix(candidate_rel, has_trailing_slash)
-            return f"{prefix}{rewritten}"
+        def replace(match: re.Match) -> str:
+            token = match.group("path")
+            if token not in token_parts:
+                return match.group(0)
+            path_text, punctuation = token_parts[token]
+            candidate = candidate_for(path_text)
+            target = candidates.get(candidate) if candidate is not None else None
+            if target is None:
+                return match.group(0)
+            rewritten = installed_prefix + target
+            if skill_dir is not None and project_root is not None:
+                rewritten = Path(os.path.relpath(project_root / rewritten, skill_dir)).as_posix()
+            if path_text.endswith("/"):
+                rewritten += "/"
+            return match.group(1) + rewritten + punctuation
 
-        return pattern.sub(_replace, text)
+        return pattern.sub(replace, text)
 
     def render_markdown_command(
         self, frontmatter: dict, body: str, source_id: str, context_note: Optional[str] = None
@@ -475,6 +476,9 @@ class CommandRegistrar:
         project_root: Path,
         extension_id: Optional[str] = None,
         author: object = "github-spec-kit",
+        *,
+        extension_dir: Optional[Path] = None,
+        skill_dir: Optional[Path] = None,
     ) -> str:
         """Render a command override as a SKILL.md file.
 
@@ -496,6 +500,11 @@ class CommandRegistrar:
             body = self.resolve_skill_placeholders(
                 agent_name, frontmatter, body, project_root, extension_id=extension_id
             )
+            if extension_id and extension_dir is not None:
+                body = self.rewrite_extension_paths(
+                    body, extension_id, extension_dir,
+                    project_root=project_root, skill_dir=skill_dir,
+                )
 
         description = frontmatter.get(
             "description", f"Spec-kit workflow command: {skill_name}"
@@ -905,6 +914,8 @@ class CommandRegistrar:
                     project_root,
                     extension_id=extension_id,
                     author=author,
+                    extension_dir=source_root,
+                    skill_dir=commands_dir / output_name,
                 )
             elif agent_config["format"] == "markdown":
                 body = self.resolve_skill_placeholders(
@@ -997,6 +1008,8 @@ class CommandRegistrar:
                             project_root,
                             extension_id=extension_id,
                             author=author,
+                            extension_dir=source_root,
+                            skill_dir=commands_dir / alias_output_name,
                         )
                     elif agent_config["format"] == "markdown":
                         alias_output = self.render_markdown_command(
@@ -1031,6 +1044,8 @@ class CommandRegistrar:
                             project_root,
                             extension_id=extension_id,
                             author=author,
+                            extension_dir=source_root,
+                            skill_dir=commands_dir / alias_output_name,
                         )
 
                 alias_file = (

@@ -417,9 +417,16 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
         (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
         (extension_dir / "commands" / "cmd.md").write_text(
-            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "---\ndescription: Extension fakeext cmd\nscripts:\n"
+            '  sh: scripts/run.sh "{ARGS}"\n---\n\n'
             "Then run `__SPECKIT_COMMAND_PLAN__`.\n"
+            "Read references/template.md.\nRun {SCRIPT}\n"
         )
+        reference = extension_dir / "skills" / "example" / "references" / "template.md"
+        reference.parent.mkdir(parents=True)
+        reference.touch()
+        (extension_dir / "scripts").mkdir()
+        (extension_dir / "scripts" / "run.sh").touch()
         extension_manifest = {
             "schema_version": "1.0",
             "extension": {
@@ -457,6 +464,8 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "source: extension:fakeext" in content, "skill should be restored from the extension"
         assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked on extension restore"
         assert "/speckit-plan" in content
+        assert "../../../.specify/extensions/fakeext/skills/example/references/template.md." in content
+        assert 'Run ../../../.specify/extensions/fakeext/scripts/run.sh "$ARGUMENTS"' in content
 
     def test_core_command_override_skill_uses_preset_command_description(self, project_dir, temp_dir):
         """Preset skill overrides for core commands should keep preset frontmatter descriptions."""

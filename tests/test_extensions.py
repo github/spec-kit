@@ -4451,6 +4451,9 @@ Run {SCRIPT}
         (ext_dir / "knowledge-base").mkdir()
         (ext_dir / "templates").mkdir()
         (ext_dir / "specs" / "001-internal").mkdir(parents=True)
+        (ext_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (ext_dir / "knowledge-base" / "agent-scores.yaml").write_text("scores: {}\n")
+        (ext_dir / "templates" / "kill-report.md").write_text("# Report\n")
 
         command = {
             "name": f"speckit.{ext_id}.run",
@@ -4497,7 +4500,7 @@ Run {SCRIPT}
         registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
 
         content = (skills_dir / "speckit-echelon-run" / "SKILL.md").read_text()
-        assert ".specify/extensions/echelon/agents/control/commander.md" in content
+        assert "../../../.specify/extensions/echelon/agents/control/commander.md" in content
         assert ".specify/extensions/echelon/knowledge-base/agent-scores.yaml" in content
         assert ".specify/extensions/echelon/templates/kill-report.md" in content
         assert "Read agents/" not in content
@@ -4526,7 +4529,7 @@ Run {SCRIPT}
             skills_dir / "speckit-ext-alias-paths-go" / "SKILL.md"
         ).read_text()
         assert (
-            ".specify/extensions/ext-alias-paths/agents/control/commander.md"
+            "../../../.specify/extensions/ext-alias-paths/agents/control/commander.md"
             in alias_content
         )
         assert "Read agents/" not in alias_content
@@ -4549,17 +4552,20 @@ Run {SCRIPT}
         assert "Read agents/" not in content
 
     def test_rewrite_extension_paths_only_rewrites_existing_subdirs(self, temp_dir):
-        """Only directories present in the extension are rewritten."""
+        """Only existing targets in eligible extension directories are rewritten."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
 
         ext_dir = temp_dir / "ext-existing"
         (ext_dir / "agents").mkdir(parents=True)
         (ext_dir / ".hidden").mkdir()
+        (ext_dir / "agents" / "one.md").touch()
+        (ext_dir / "agents" / "three.md").touch()
 
         text = (
             "Read agents/one.md then knowledge-base/two.md.\n"
             "Also ./agents/three.md but not /agents/abs.md.\n"
             "Keep .hidden/secret.md alone.\n"
+            "Leave agents/missing.md unchanged.\n"
         )
         rewritten = AgentCommandRegistrar.rewrite_extension_paths(
             text, "ext-existing", ext_dir
@@ -4573,6 +4579,7 @@ Run {SCRIPT}
         assert "then knowledge-base/two.md" in rewritten
         assert ".hidden/secret.md" in rewritten
         assert ".specify/extensions/ext-existing/.hidden/" not in rewritten
+        assert "Leave agents/missing.md unchanged." in rewritten
 
     def test_rewrite_extension_paths_handles_regex_special_replacement_text(
         self, temp_dir
@@ -4596,6 +4603,7 @@ Run {SCRIPT}
         (ext_dir / weird_subdir).mkdir(parents=True)
         # sanity-check the cross-platform assumption above
         assert [p.name for p in ext_dir.iterdir()] == [weird_subdir]
+        (ext_dir / weird_subdir / "file.md").touch()
 
         text = f"Read {weird_subdir}/file.md but not /{weird_subdir}/abs.md.\n"
         rewritten = AgentCommandRegistrar.rewrite_extension_paths(
@@ -4605,6 +4613,110 @@ Run {SCRIPT}
         assert f".specify/extensions/ext\\1/{weird_subdir}/file.md" in rewritten
         # absolute paths are still left untouched
         assert f"/{weird_subdir}/abs.md" in rewritten
+
+    @pytest.mark.parametrize(
+        ("reference", "expected"),
+        [
+            ("references/template.md.", "skills/example/references/template.md."),
+            ("`references/template.md`", "`skills/example/references/template.md`"),
+            ("[template](references/template.md)", "[template](skills/example/references/template.md)"),
+            ("agents/", "agents/"),
+            ("./agents/one.md", "agents/one.md"),
+            ("assets[q]/file.md", "assets[q]/file.md"),
+            ("assets/\u00fcber.md", "assets/\u00fcber.md"),
+        ],
+    )
+    def test_rewrite_extension_paths_resolves_existing_references(
+        self, temp_dir, reference, expected
+    ):
+        from specify_cli.agents import CommandRegistrar
+
+        ext_dir = temp_dir / "ext"
+        for name in (
+            "skills/example/references/template.md",
+            "agents/one.md",
+            "assets[q]/file.md",
+            "assets/\u00fcber.md",
+        ):
+            target = ext_dir / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.touch()
+        result = CommandRegistrar.rewrite_extension_paths(f"Read {reference}", "ext", ext_dir)
+        installed = ".specify/extensions/ext/"
+        if expected.startswith("`"):
+            expected = "`" + installed + expected[1:]
+        elif expected.startswith("[template]("):
+            expected = expected.replace("](", "](" + installed)
+        else:
+            expected = installed + expected
+        assert result == f"Read {expected}"
+        assert CommandRegistrar.rewrite_extension_paths(result, "ext", ext_dir) == result
+
+    def test_rewrite_extension_paths_ambiguous_suffix_and_unsafe_paths(self, temp_dir):
+        from specify_cli.agents import CommandRegistrar
+
+        ext_dir = temp_dir / "ext"
+        for name in (
+            "skills/first/references/template.md",
+            "skills/second/references/template.md",
+            "commands/run.md",
+            "specs/plan.md",
+            ".hidden/private.md",
+        ):
+            target = ext_dir / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.touch()
+        unchanged = (
+            "references/template.md", "../references/template.md",
+            "skills/first/../first/references/template.md",
+            "skills/./first/references/template.md", "/references/template.md",
+            "skills/.", "skills/..",
+            "https://example.com/references/template.md", "commands/run.md",
+            "specs/plan.md", ".hidden/private.md", "skills/missing.md",
+            ".specify/extensions/other/skills/first/references/template.md",
+        )
+        for reference in unchanged:
+            text = f"Read {reference}"
+            assert CommandRegistrar.rewrite_extension_paths(text, "ext", ext_dir) == text
+        for name in ("first", "second"):
+            path = f"skills/{name}/references/template.md"
+            assert CommandRegistrar.rewrite_extension_paths(path, "ext", ext_dir) == (
+                f".specify/extensions/ext/{path}"
+            )
+
+    def test_rewrite_extension_paths_relative_to_actual_skill_directory(self, temp_dir):
+        from specify_cli.agents import CommandRegistrar
+
+        extension_dir = temp_dir / "source"
+        (extension_dir / "agents").mkdir(parents=True)
+        (extension_dir / "agents" / "one.md").touch()
+        skill_dir = temp_dir / "custom" / "deep" / "skills" / "example"
+        text = "Read .specify/extensions/ext/agents/one.md."
+        result = CommandRegistrar.rewrite_extension_paths(
+            text, "ext", extension_dir, project_root=temp_dir, skill_dir=skill_dir
+        )
+        assert result == "Read ../../../../.specify/extensions/ext/agents/one.md."
+        assert CommandRegistrar.rewrite_extension_paths(
+            result, "ext", extension_dir, project_root=temp_dir, skill_dir=skill_dir
+        ) == result
+
+    def test_rewrite_extension_paths_does_not_index_unreferenced_suffixes(
+        self, temp_dir, monkeypatch
+    ):
+        from specify_cli.agents import CommandRegistrar
+
+        extension_dir = temp_dir / "ext"
+        (extension_dir / "nested").mkdir(parents=True)
+        (extension_dir / "nested" / "file.md").touch()
+
+        def unexpected_scan(*args, **kwargs):
+            pytest.fail("Existing paths must not trigger recursive suffix indexing")
+
+        monkeypatch.setattr(Path, "rglob", unexpected_scan)
+        result = CommandRegistrar.rewrite_extension_paths(
+            "Read nested/file.md.", "ext", extension_dir
+        )
+        assert result == "Read .specify/extensions/ext/nested/file.md."
 
     def test_rewrite_extension_paths_missing_dir_returns_text(self, temp_dir):
         """A missing extension directory leaves the text unchanged."""

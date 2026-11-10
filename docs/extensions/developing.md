@@ -106,6 +106,18 @@ echo "Arguments: $ARGUMENTS"
 Load extension config from `.specify/extensions/my-ext/my-ext-config.yml`.
 ````
 
+Reference bundled files using extension-relative paths, such as
+`agents/reviewer.md` or `skills/example/references/template.md`. Only existing
+targets are rewritten. A shorthand such as `references/template.md` also works
+when exactly one bundled path has that suffix; ambiguous shorthand stays
+unchanged, so use the full extension-relative path to disambiguate it.
+
+Generated skills use paths relative to their `SKILL.md` directory, including
+extension-local scripts expanded from `{SCRIPT}`. For example, a Copilot skill
+references `../../../.specify/extensions/my-ext/agents/reviewer.md`; command-layout
+outputs retain project-root-relative `.specify/extensions/my-ext/` paths.
+References under `commands/`, `specs/`, or hidden directories are not rewritten.
+
 ### 5. Test Locally
 
 ```bash
