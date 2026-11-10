@@ -329,6 +329,16 @@ You can configure multiple entries for different hosts or organizations:
 
 ## How it works
 
+The shared HTTP helpers require initial request URLs to use HTTPS with a
+hostname. They allow HTTP only for unambiguous loopback hosts, such as
+`localhost`, `127.0.0.1`, and `::1`. Catalog sources have a stricter policy:
+they require HTTPS even on loopback hosts.
+Unsafe URLs are rejected before credentials are resolved or any request is
+made, including when no authentication is configured.
+Online bundle catalog fetching and reference validation treat URL-policy
+rejections as definitive errors, not as availability fallbacks to packaged
+snapshots or unchecked references.
+
 1. For each outbound HTTP request, the URL hostname is matched against
    the `hosts` patterns in `auth.json`.
 2. If a match is found, the corresponding provider resolves the token
