@@ -1,4 +1,4 @@
-"""Windows non-reparse handles for scoped filesystem operations."""
+"""Private platform handles for confined filesystem operations."""
 
 import errno
 import os
@@ -64,9 +64,9 @@ def _open_windows_handle(
         ):
             raise ctypes.WinError(ctypes.get_last_error())
         if attributes.attributes & 0x400:
-            raise OSError(errno.ELOOP, "Refusing a reparse-point path", str(path))
+            raise OSError(errno.ELOOP, "Refusing a reparse-point filesystem path", str(path))
         if bool(attributes.attributes & 0x10) != directory:
-            raise OSError(errno.EINVAL, "Unexpected file type", str(path))
+            raise OSError(errno.EINVAL, "Unexpected filesystem object type", str(path))
         return handle
     except BaseException:
         kernel.CloseHandle(handle)
