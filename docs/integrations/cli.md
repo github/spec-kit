@@ -164,7 +164,7 @@ can supply an external adapter:
 specify init my-project --integration sample-agent --trust-integration
 ```
 
-Review the [external adapter API](https://github.com/github/spec-kit/blob/main/design/integration.md#external-adapter-package-contract)
+Review the [external adapter API](api.md)
 before publishing a package. No pip installation or source-registry edit is
 needed for adapters using the host API and standard library.
 
@@ -285,8 +285,8 @@ Recovery does not bypass catalog policy or replacement-package trust.
 Failed operations roll back their own changes, not unrelated user files or
 workflow progress. Conflicting concurrent edits are reported with recovery
 snapshots retained. Adapter authors should follow the
-[storage, loading, and lifecycle contract](https://github.com/github/spec-kit/blob/main/design/integration.md#storage-loading-and-lifecycle)
-for ownership, journaling, and recovery requirements.
+[setup and file ownership contract](api.md#setup-and-file-ownership)
+and [lifecycle guarantees](api.md#external-adapter-lifecycle-guarantees) for safe writes and recovery.
 
 ## Report Integration Status
 
@@ -485,6 +485,13 @@ Adapters reject non-empty per-step configuration unless they implement it;
 Docker Agent currently exposes structured agent/safety configuration.
 Headless approval flags, model forwarding, and structured-output support are
 also adapter-specific, not universal guarantees.
+
+The [`reasoning_effort` and `context_size`](../workflow-steps/types.md#reasoning-effort-and-context-size)
+settings of `command` and `prompt` steps instead follow one shared contract.
+Spec Kit checks each value and passes it only to an integration that declares
+and translates that setting; with any other integration, the step fails before
+the CLI runs. Adapter authors opt in as described in the
+[integration API reference](api.md#per-step-dispatch-settings).
 
 ## FAQ
 

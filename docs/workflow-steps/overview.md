@@ -46,7 +46,7 @@ runs the step; there is no separate step-run command.
 - [Built-in step types](types.md)
 - [Step management CLI](cli.md)
 - [Developing custom steps](developing.md)
-- [Python API and registry](api.md)
+- [Python API reference](api.md)
 - [Step catalogs](catalogs.md)
 - [Publishing steps](publishing.md)
 - [Community workflow step types](../community/workflow-steps.md)

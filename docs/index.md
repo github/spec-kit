@@ -199,7 +199,7 @@ Community extensions like Quality Gates and Architecture Guard add policy checks
     <strong>Community</strong>
     <span>Community integrations, extensions, presets, workflows, steps, bundles, and companion resources</span>
   </a>
-  <a href="local-development.md" class="nav-card">
+  <a href="how-to/local-development.md" class="nav-card">
     <strong>Develop Spec Kit locally</strong>
     <span>Run, debug, and check changes to Spec Kit itself</span>
   </a>

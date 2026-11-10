@@ -35,7 +35,9 @@ Invoke an installed Spec Kit command by name via the integration CLI:
 ```
 
 For positional arguments and named runtime options, see
-[Per-step integration configuration](#per-step-integration-configuration).
+[Per-step integration configuration](#per-step-integration-configuration). For
+`reasoning_effort` and `context_size`, see
+[Reasoning effort and context size](#reasoning-effort-and-context-size).
 
 ## Prompt Steps
 
@@ -195,6 +197,89 @@ or paused command is resumed, the complete dispatch configuration is re-resolved
 from the current inputs, so values supplied with `workflow resume --input` take
 effect consistently. A resume without updated inputs reproduces the same values.
 
+A command step's `options` mapping, merged over `workflow.options`, is recorded
+as `steps.<id>.output.options` but is not passed to the integration CLI. To
+change the invocation, use `integration_args`, `integration_options`, `model`,
+or [`reasoning_effort` and `context_size`](#reasoning-effort-and-context-size).
+
+## Reasoning Effort and Context Size
+
+`command` and `prompt` steps can set `reasoning_effort` and `context_size` for
+the integration CLI they invoke. `workflow.reasoning_effort` and
+`workflow.context_size` set defaults for both step types:
+
+```yaml
+workflow:
+  id: plan-and-review
+  name: Plan and review
+  reasoning_effort: "medium"   # Default for command and prompt steps
+
+inputs:
+  review_effort:
+    type: string
+    default: ""                # Empty: the review step sends no effort
+
+steps:
+  - id: plan
+    command: speckit.plan
+    reasoning_effort: "high"   # Overrides the workflow default
+    context_size: "200000"     # Quoted: values are strings
+
+  - id: review
+    type: prompt
+    prompt: "Review the plan for gaps"
+    reasoning_effort: "{{ inputs.review_effort }}"
+```
+
+**Resolution.** Each setting resolves like `model`: the step's value, then the
+workflow default, then unset. The step value and the default can both be
+expressions. A step value that is missing, `null`, or `""` inherits the
+default. An expression that resolves to `""` or null unsets the setting for
+that step, without falling back to the default; this is how a step opts out of
+a default. In the example, `review` sends no reasoning effort unless the run
+supplies `--input review_effort=<value>`.
+
+**Values.** Values are strings. Quote numbers and words that YAML reads as
+booleans, such as `on`, `off`, `yes`, and `no`: write `context_size: "200000"`,
+not `context_size: 200000`. An expression must resolve to a string too, so
+read a number from an input declared with `type: string`, not `type: number`.
+A value must be 1 to 64 letters, digits, `.`, `_`, or `-`, starting with a
+letter or digit. Literal values are checked when the workflow is validated, and
+expression results when the step runs. An error about a malformed value reports
+only its type and length, not its text. Spec Kit passes the value to the
+integration unchanged. Its meaning and accepted values are defined by the
+integration's CLI, and an integration can reject a value before the CLI runs.
+
+**Support.** An integration translates a setting only if it declares support
+for it. Otherwise the step fails before the CLI runs, with an error that names
+the setting, its source (the step or the workflow default), and any
+integrations that support it. Workflow defaults are not exempt: a default fails
+each inheriting step whose integration does not support it. No built-in
+integration supports these settings yet; see
+[Workflow CLI dispatch](../integrations/cli.md#workflow-cli-dispatch) for how
+integrations opt in.
+
+**CLI rejections.** When the CLI rejects a value and exits with a non-zero code,
+the step fails like any other CLI failure. The step error reports the exit
+code, and the CLI's message appears on the terminal, or in `output.stderr` with
+[`capture: true`](#capturing-command-and-prompt-output).
+
+**Recording and resume.** The resolved values are recorded in
+`steps.<id>.output.reasoning_effort` and `steps.<id>.output.context_size`, which
+are `null` when unset. When `specify workflow resume` re-executes a step, it
+resolves both again from the current inputs, so values supplied with `--input`
+take effect.
+
+**Extra arguments.** An integration that supports these settings adds their
+flags after any arguments from `SPECKIT_INTEGRATION_<KEY>_EXTRA_ARGS`. If both
+set the same CLI flag, the CLI decides which value wins, so set each flag in
+only one place.
+
+**Compatibility.** Spec Kit versions without this feature ignore these fields,
+including the workflow defaults, and run steps without them.
+`requires.speckit_version` does not prevent this: it is advisory and is not
+enforced.
+
 ## Shell step
 
 `type: shell` executes `run` through the platform shell, retaining support for
@@ -224,6 +309,11 @@ for the remaining trust boundary.
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
 
 Shell `timeout` must be a positive number and defaults to `300` seconds. A timeout kills the command and fails the step. Shell output is captured for later expressions.
+
+Set `output_format: json` to parse stdout into typed `output.data`. Invalid JSON,
+including bare `NaN`, `Infinity`, and `-Infinity` constants, fails the step while
+preserving `stdout`, `stderr`, and `exit_code`. Quoted strings such as `"NaN"`
+remain valid. Without `output_format`, stdout remains raw text with no `data` field.
 
 ## Shell Step Environment Variables
 
@@ -628,9 +718,10 @@ preserved across workflow boundaries.
 
 ## Defaults and Errors at the Call Boundary
 
-Parent `integration`, `model`, and `options` defaults apply only to steps in
-the parent workflow. A child uses its own defaults or automatic resolution. To
-make a value common to both, declare it as a child input and map it explicitly.
+Parent `integration`, `model`, `options`, `reasoning_effort`, and
+`context_size` defaults apply only to steps in the parent workflow. A child
+uses its own defaults or automatic resolution. To make a value common to both,
+declare it as a child input and map it explicitly.
 The call result intentionally has an empty `input` field and does not expose
 the child's private inputs, step records, or logs.
 

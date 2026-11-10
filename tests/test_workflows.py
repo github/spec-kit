@@ -640,6 +640,48 @@ class TestExpressions:
         with pytest.raises(ValueError, match="expected a JSON string"):
             evaluate_expression("{{ steps.emit.output.exit_code | from_json }}", ctx)
 
+    @pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+    @pytest.mark.parametrize("location", ["root", "array", "object"])
+    def test_filter_from_json_rejects_non_json_constants(self, constant, location):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        payload = {
+            "root": constant,
+            "array": f"[{constant}]",
+            "object": f'{{"value": {constant}}}',
+        }[location]
+        ctx = StepContext(steps={"emit": {"output": {"stdout": payload}}})
+        with pytest.raises(ValueError, match=f"from_json: invalid JSON.*{constant}"):
+            evaluate_expression("{{ steps.emit.output.stdout | from_json }}", ctx)
+
+    @pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+    def test_condition_from_json_rejects_non_json_constants(self, constant):
+        from specify_cli.workflows.expressions import evaluate_condition
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"payload": constant})
+        with pytest.raises(ValueError, match="from_json: invalid JSON"):
+            evaluate_condition("{{ inputs.payload | from_json }}", ctx)
+
+    @pytest.mark.parametrize(("payload", "expected"), [
+        ('"NaN"', "NaN"),
+        ('["Infinity", "-Infinity"]', ["Infinity", "-Infinity"]),
+        ('{"NaN": "Infinity"}', {"NaN": "Infinity"}),
+        ("0", 0),
+        ("-1.5", -1.5),
+        ("1e3", 1000.0),
+        ("null", None),
+        ("true", True),
+        ('{"values": [0, 1.5, null]}', {"values": [0, 1.5, None]}),
+    ])
+    def test_filter_from_json_preserves_valid_json(self, payload, expected):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"payload": payload})
+        assert evaluate_expression("{{ inputs.payload | from_json }}", ctx) == expected
+
     def test_filter_from_json_rejects_malformed_forms(self):
         # `from_json` is strict: no arguments and no trailing tokens. Every
         # mis-wired form must raise rather than silently fall through to the
@@ -1587,6 +1629,31 @@ class TestExpressions:
         # A number against a non-numeric string is incomparable -> False.
         assert evaluate_expression("{{ inputs.n >= 'abc' }}", ctx) is False
         assert evaluate_expression("{{ inputs.n <= 'abc' }}", ctx) is False
+
+    def test_equality_coerces_numeric_strings_like_ordering(self):
+        """``==``/``!=`` agree with ``>=``/``<=`` for numeric strings.
+
+        Captured stdout ``"10"`` was both ``>= 10`` and ``<= 10`` but not
+        ``== 10``, because only the ordering operators coerced numeric strings.
+        """
+        from specify_cli.workflows.expressions import evaluate_condition
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            steps={"count": {"output": {"stdout": "10"}}},
+            inputs={"s10": "10", "f10": "10.0", "name": "10x"},
+        )
+        assert evaluate_condition("{{ steps.count.output.stdout >= 10 }}", ctx) is True
+        assert evaluate_condition("{{ steps.count.output.stdout <= 10 }}", ctx) is True
+        assert evaluate_condition("{{ steps.count.output.stdout == 10 }}", ctx) is True
+        assert evaluate_condition("{{ steps.count.output.stdout != 10 }}", ctx) is False
+        assert evaluate_condition("{{ steps.count.output.stdout == 11 }}", ctx) is False
+        assert evaluate_condition("{{ steps.count.output.stdout != 11 }}", ctx) is True
+        # Two numeric strings compare as numbers, as they do for ordering.
+        assert evaluate_condition("{{ inputs.s10 == inputs.f10 }}", ctx) is True
+        # A non-numeric string is still compared as-is.
+        assert evaluate_condition("{{ inputs.name == 10 }}", ctx) is False
+        assert evaluate_condition("{{ inputs.name == '10x' }}", ctx) is True
 
     def test_boolean_literals_are_case_insensitive(self):
         """``{{ True }}``/``{{ TRUE }}`` resolve as booleans, as the ``.lower()``
@@ -10348,6 +10415,17 @@ class TestWorkflowCatalog:
         catalog = WorkflowCatalog(project_dir)
         with pytest.raises(WorkflowValidationError, match="HTTPS"):
             catalog._validate_catalog_url("http://evil.com/catalog.json")
+
+    def test_validate_url_schemeless_names_the_value(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
+
+        for catalog, error in (
+            (WorkflowCatalog(project_dir), WorkflowValidationError),
+            (StepCatalog(project_dir), StepValidationError),
+        ):
+            with pytest.raises(error, match=r"\(got a URL with no scheme\)"):
+                catalog._validate_catalog_url("example.com/catalog.json")
 
     def test_validate_url_localhost_http_allowed(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog

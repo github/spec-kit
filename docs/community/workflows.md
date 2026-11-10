@@ -15,6 +15,7 @@ Entries in the [community workflow catalog](https://github.com/github/spec-kit/b
 
 | Workflow | Version | Description |
 | --- | --- | --- |
+| [ADO story lifecycle](https://github.com/praveenlavu/spec-kit-ado/tree/v0.3.1/workflows/ado-lifecycle) (`ado-lifecycle`) | 0.3.1 | Takes an Azure DevOps story to an open pull request with a preview, a human gate and an apply for every Azure Boards or PR change |
 | [Guided SDD Pipeline](https://github.com/domattioli/spec-kit-workflow-pipeline) (`pipeline`) | 1.1.0 | Chains specify, clarify, plan, tasks, analyze, implement, and converge, with a clarify gate and post-implementation convergence loop |
 | [Full SDD Cycle - no gates](https://github.com/clintcparker/speckit-addons/tree/yolo-v0.1.0/workflows/yolo) (`yolo`) | 0.1.0 | Runs specify, plan, tasks, and implement without review gates |
 

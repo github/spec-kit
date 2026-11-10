@@ -141,6 +141,7 @@ is not a security endorsement; the default community catalog is discovery-only.
 See [catalog-installed external adapters](cli.md#catalog-installed-external-adapters)
 for trust and installation requirements.
 
+The [API reference](api.md) documents the supported Python adapter contract.
 The [catalog reference](catalog.md) describes descriptor and catalog metadata.
 See [contributing integrations](contributing.md) to develop a built-in
 integration or publish an external adapter.

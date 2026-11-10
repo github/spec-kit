@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import locale
 import os
 import sys
@@ -11,7 +12,8 @@ import pytest
 import yaml
 
 from specify_cli.workflows.base import RunStatus, StepContext, StepStatus
-from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+from specify_cli.workflows.engine import RunState, WorkflowDefinition, WorkflowEngine
+from specify_cli.workflows.expressions import evaluate_expression
 from specify_cli.workflows.step.shell import ShellStep
 
 
@@ -25,6 +27,170 @@ def _python_run(project_dir: Path, body: str) -> str:
     script = project_dir / "emit.py"
     script.write_text(body, encoding="utf-8")
     return f'"{sys.executable}" "{script}"'
+
+
+class TestJsonOutput:
+    """The opted-in stdout decoder rejects constants without losing raw output."""
+
+    @staticmethod
+    def _execute(project_dir, stdout, *, output_format="json", exit_code=0):
+        run = _python_run(
+            project_dir,
+            f"import sys\nsys.stdout.write({stdout!r})\n"
+            f"sys.stderr.write('producer diagnostic')\nsys.exit({exit_code})\n",
+        )
+        config = {"id": "emit", "run": run}
+        if output_format is not None:
+            config["output_format"] = output_format
+        return ShellStep().execute(config, StepContext(project_root=str(project_dir)))
+
+    @pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity"])
+    @pytest.mark.parametrize("template", [
+        " %s \n", "[%s]", '{"value":%s}', '{"outer":[{"inner":%s}]}',
+        "[%s,0,%s]", '{"value":%s,"value":0}',
+    ], ids=["root", "array", "object", "nested", "repeated", "overwritten"])
+    def test_rejects_constants(self, project_dir, token, template):
+        stdout = template % ((token, token) if template.count("%s") == 2 else token)
+        result = self._execute(project_dir, stdout)
+
+        assert result.status == StepStatus.FAILED
+        assert result.output == {
+            "exit_code": 0, "stdout": stdout, "stderr": "producer diagnostic",
+        }
+        assert result.error.startswith(
+            "Shell step 'emit' declared output_format: json but stdout is not valid JSON: "
+        )
+        assert token in result.error
+
+    def test_rejects_mixed_constants(self, project_dir):
+        result = self._execute(project_dir, "[NaN,Infinity,-Infinity]")
+        assert result.status == StepStatus.FAILED
+        assert "data" not in result.output
+        assert "NaN" in result.error
+
+    @pytest.mark.parametrize("stdout, expected", [
+        ('{"items":[1,false,null]}', {"items": [1, False, None]}),
+        ("[0,true,{}]", [0, True, {}]),
+        ('"hello"', "hello"), ("42", 42), ("-2.5e2", -250.0),
+        ("true", True), ("false", False), ("null", None), ("0", 0),
+        ("[]", []), ("{}", {}), ('""', ""),
+        ('"\\u5b8c\\u6210"', "\u5b8c\u6210"),
+        ('["NaN","Infinity","-Infinity","\\u004eaN"]',
+         ["NaN", "Infinity", "-Infinity", "NaN"]),
+        ('{"NaN":1,"Infinity":2,"-Infinity":3}', {"NaN": 1, "Infinity": 2, "-Infinity": 3}),
+        ('{"value":1,"value":2}', {"value": 2}),
+    ])
+    def test_preserves_valid_values(self, project_dir, stdout, expected):
+        result = self._execute(project_dir, stdout)
+        assert result.status == StepStatus.COMPLETED
+        assert result.error is None
+        assert result.output == {
+            "exit_code": 0, "stdout": stdout, "stderr": "producer diagnostic", "data": expected,
+        }
+        assert type(result.output["data"]) is type(expected)
+        context = StepContext(steps={"emit": {"output": result.output}})
+        assert evaluate_expression("{{ steps.emit.output.data }}", context) == expected
+        encoded = evaluate_expression("{{ steps.emit.output.data | to_json }}", context)
+        assert json.loads(encoded) == expected
+
+    @pytest.mark.parametrize("stdout", [
+        "not-json", "", " \n\t", "{} trailing", "nan", "inf", "+Infinity", "-NaN",
+        "01", "[1,]", '{"v":1,}', '"unescaped\x01"',
+    ])
+    def test_malformed_json_still_fails(self, project_dir, stdout):
+        result = self._execute(project_dir, stdout)
+        assert result.status == StepStatus.FAILED
+        assert "output_format: json but stdout is not valid JSON:" in result.error
+        assert result.output == {
+            "exit_code": 0, "stdout": stdout, "stderr": "producer diagnostic",
+        }
+
+    @pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity"])
+    def test_raw_default_preserves_constants(self, project_dir, token):
+        result = self._execute(project_dir, token, output_format=None)
+        assert result.status == StepStatus.COMPLETED
+        assert result.error is None
+        assert result.output == {
+            "exit_code": 0, "stdout": token, "stderr": "producer diagnostic",
+        }
+
+    @pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity"])
+    def test_nonzero_exit_precedes_json_parsing(self, project_dir, token):
+        result = self._execute(project_dir, token, exit_code=7)
+        assert result.status == StepStatus.FAILED
+        assert result.error == "Shell command exited with code 7."
+        assert result.output == {
+            "exit_code": 7, "stdout": token, "stderr": "producer diagnostic",
+        }
+
+    def test_integer_conversion_error_is_contained(self, project_dir):
+        limit = sys.get_int_max_str_digits()
+        if not limit:
+            pytest.skip("Python integer string conversion limit is disabled")
+        stdout = "1" * (limit + 1)
+        result = self._execute(project_dir, stdout)
+        assert result.status == StepStatus.FAILED
+        assert "output_format: json but stdout is not valid JSON:" in result.error
+        assert "integer string conversion" in result.error
+        assert result.output == {
+            "exit_code": 0, "stdout": stdout, "stderr": "producer diagnostic",
+        }
+
+    @pytest.mark.parametrize("continue_on_error", [False, True], ids=["halt", "continue"])
+    def test_failure_persistence_and_retry(self, project_dir, continue_on_error):
+        run = _python_run(
+            project_dir, "import sys\nprint('NaN')\nsys.stderr.write('producer diagnostic')\n",
+        )
+        definition = WorkflowDefinition.from_string(yaml.safe_dump({
+            "schema_version": "1.0",
+            "workflow": {"id": "json-failure", "name": "JSON failure", "version": "1.0.0"},
+            "steps": [
+                {"id": "emit", "type": "shell", "run": run, "output_format": "json",
+                 "continue_on_error": continue_on_error},
+                {"id": "after", "type": "shell", "run": "echo recovered"},
+            ],
+        }))
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+        failed = state.step_results["emit"]
+        assert failed["status"] == "failed"
+        assert "NaN" in failed["error"]
+        assert failed["output"] == {
+            "exit_code": 0, "stdout": "NaN\n", "stderr": "producer diagnostic",
+        }
+        loaded = RunState.load(state.run_id, project_dir)
+        assert loaded.step_results["emit"] == failed
+        if continue_on_error:
+            assert loaded.status == RunStatus.COMPLETED
+            assert loaded.step_results["after"]["output"]["stdout"].strip() == "recovered"
+        else:
+            assert loaded.status == RunStatus.FAILED
+            assert "after" not in loaded.step_results
+            _python_run(project_dir, "print('[1,2]')\n")
+            resumed = engine.resume(state.run_id)
+            assert resumed.status == RunStatus.COMPLETED
+            assert resumed.step_results["emit"]["output"]["data"] == [1, 2]
+            assert resumed.step_results["after"]["status"] == "completed"
+
+    def test_completed_valid_producer_replays(self, project_dir):
+        run = _python_run(project_dir, "print('[1,2]')\n")
+        definition = WorkflowDefinition.from_string(yaml.safe_dump({
+            "schema_version": "1.0",
+            "workflow": {"id": "json-replay", "name": "JSON replay", "version": "1.0.0"},
+            "inputs": {"command": {"type": "string", "default": "exit 7"}},
+            "steps": [
+                {"id": "emit", "type": "shell", "run": run, "output_format": "json"},
+                {"id": "after", "type": "shell", "run": "{{ inputs.command }}"},
+            ],
+        }))
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+        assert state.status == RunStatus.FAILED
+        assert state.step_results["emit"]["output"]["data"] == [1, 2]
+        _python_run(project_dir, "raise RuntimeError('completed producer must not rerun')\n")
+        resumed = engine.resume(state.run_id, {"command": "exit 0"})
+        assert resumed.status == RunStatus.COMPLETED
+        assert resumed.step_results["emit"] == state.step_results["emit"]
 
 
 @pytest.mark.parametrize("run", [

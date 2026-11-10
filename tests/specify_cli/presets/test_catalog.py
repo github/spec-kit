@@ -187,6 +187,12 @@ class TestPresetCatalog:
         with pytest.raises(PresetValidationError, match="must use HTTPS"):
             catalog._validate_catalog_url("http://example.com/catalog.json")
 
+    def test_validate_catalog_url_schemeless_names_the_value(self, project_dir):
+        """A URL without a scheme is named instead of reported as "got ://"."""
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match=r"\(got a URL with no scheme\)"):
+            catalog._validate_catalog_url("example.com/catalog.json")
+
     def test_validate_catalog_url_localhost_http_allowed(self, project_dir):
         """Test that HTTP is allowed for localhost."""
         catalog = PresetCatalog(project_dir)

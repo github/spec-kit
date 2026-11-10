@@ -139,6 +139,6 @@ unset the variable to manage project sources.
 - [Step overview](overview.md)
 - [Built-in step types](types.md)
 - [Package development and validation](developing.md)
-- [Python API and registry](api.md)
+- [Python API reference](api.md)
 - [Catalog schemas and trust](catalogs.md)
 - [Workflow execution CLI](../workflows/cli.md)

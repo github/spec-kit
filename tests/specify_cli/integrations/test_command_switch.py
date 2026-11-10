@@ -25,6 +25,12 @@ from tests.specify_cli.integrations._helpers import (
     _write_invalid_manifest,  # noqa: F401
     runner,  # noqa: F401
 )
+from tests.specify_cli.presets._skill_cleanup_helpers import (
+    INTEGRATION_SWITCH,
+    check_cleanup_preserves_swapped_link_target,
+    check_cleanup_preserves_user_files,
+    check_cleanup_rollback_preserves_directory_mode,
+)
 
 class TestIntegrationSwitch:
     @pytest.mark.parametrize("installed", [False, True])
@@ -1188,3 +1194,29 @@ class TestIntegrationSwitchDiagnostics(IntegrationCatalogCliTestBase):
         assert "Failed to clean up extension artifacts for integration 'copilot'" in normalized
         assert "cleanup exploded" in normalized
         assert "Switched to integration" in normalized
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+@pytest.mark.parametrize("ancestor", [False, True])
+def test_switch_preset_skill_cleanup_preserves_swapped_link_target(tmp_path, monkeypatch, fallback, ancestor):
+    check_cleanup_preserves_swapped_link_target(tmp_path, monkeypatch, INTEGRATION_SWITCH, fallback, ancestor)
+
+
+@pytest.mark.parametrize(
+    "user_reference,layout",
+    [(False, "project"), (True, "project"), (False, "linked-parent")],
+    ids=["empty", "user-files", "linked-parent"],
+)
+@pytest.mark.parametrize("fallback", [False, True])
+def test_switch_preset_skill_cleanup_preserves_user_files(tmp_path, monkeypatch, user_reference, layout, fallback):
+    check_cleanup_preserves_user_files(tmp_path, monkeypatch, INTEGRATION_SWITCH, user_reference, layout, fallback)
+
+
+@pytest.mark.parametrize("user_reference", [False, True])
+@pytest.mark.parametrize("fallback", [False, True])
+def test_switch_preset_skill_cleanup_rollback_preserves_directory_mode(
+    tmp_path, monkeypatch, capsys, user_reference, fallback,
+):
+    check_cleanup_rollback_preserves_directory_mode(
+        tmp_path, monkeypatch, capsys, INTEGRATION_SWITCH, user_reference, fallback
+    )
