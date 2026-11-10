@@ -8,6 +8,7 @@ import errno
 import os
 from pathlib import Path, PurePath, PureWindowsPath
 import stat
+import sys
 import tempfile
 from typing import TypeVar
 
@@ -191,7 +192,10 @@ class FileHelper:
             and os.open in os.supports_dir_fd
         ):
             raise OSError(errno.ENOTSUP, "Anchored file creation is unsupported on this platform")
-        access = getattr(os, "O_PATH", 0) or getattr(os, "O_SEARCH", 0) or os.O_RDONLY
+        access = getattr(os, "O_PATH", 0) or getattr(os, "O_SEARCH", 0)
+        if not access:
+            # Darwin's O_SEARCH ABI is missing from some older Python builds.
+            access = (0x40000000 | os.O_DIRECTORY) if sys.platform == "darwin" else os.O_RDONLY
         flags = access | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
         parent = os.open(self._canonical_root, flags)
         try:

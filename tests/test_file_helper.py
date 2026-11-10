@@ -6,6 +6,7 @@ import errno
 import os
 from pathlib import Path, PureWindowsPath
 import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -765,11 +766,26 @@ def test_exclusive_create_preserves_mode_and_umask(root, operation, allow):
 @pytest.mark.parametrize("allow", [False, True])
 @pytest.mark.parametrize("ancestor", [".", "parent", "parent/nested"])
 @pytest.mark.parametrize("permissions", [0o300, 0o200])
+@pytest.mark.parametrize(
+    "search_api",
+    [
+        "default",
+        pytest.param(
+            "legacy-macos",
+            marks=pytest.mark.skipif(
+                sys.platform != "darwin", reason="macOS search-only directory handles"
+            ),
+        ),
+    ],
+)
 def test_exclusive_create_respects_write_and_search_permissions(
-    root, operation, allow, ancestor, permissions
+    root, monkeypatch, operation, allow, ancestor, permissions, search_api
 ):
     if os.geteuid() == 0:
         pytest.skip("Root bypasses directory permission checks")
+    if search_api == "legacy-macos":
+        monkeypatch.delattr(os, "O_PATH", raising=False)
+        monkeypatch.delattr(os, "O_SEARCH", raising=False)
     (root / "parent/nested").mkdir(parents=True)
     files = FileHelper(root, allow_symlinks=allow)
     restricted = root / ancestor

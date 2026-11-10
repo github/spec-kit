@@ -168,8 +168,10 @@ helpers for independent project/source/managed boundaries.
   opens each resolved directory without following links and creates the leaf
   relative to the final directory descriptor. Search-only handles (`O_PATH`
   or `O_SEARCH`, where available) avoid adding a directory-read permission
-  requirement. Traversal closes each previous parent after opening its child,
-  keeping the number of live directory descriptors independent of path depth.
+  requirement; macOS uses the native `O_SEARCH` value when an older Python
+  build does not expose it. Traversal closes each previous parent after opening
+  its child, keeping the number of live directory descriptors independent of
+  path depth.
   Windows pins the canonical root and every resolved parent with non-reparse
   handles withholding delete sharing.
   Allowed contained parent links and trusted root aliases are resolved before
