@@ -96,6 +96,53 @@ def test_leaf_replacement_at_open_is_checked_before_truncation(tmp_path, monkeyp
     assert (root / "original").read_text() == "original"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX FIFO open semantics required")
+@pytest.mark.parametrize("allow", [False, True])
+def test_fifo_without_reader_at_leaf_open_does_not_block(tmp_path, allow):
+    result = subprocess.run(
+        [
+            sys.executable, "-c",
+            """
+import errno
+import os
+import stat
+import sys
+from pathlib import Path
+from specify_cli.file_helper import FileHelper
+
+root = Path(sys.argv[1])
+leaf = root / "file"
+leaf.write_text("original")
+files = FileHelper(root, allow_symlinks=sys.argv[2] == "True")
+original = os.open
+swapped = False
+
+def swap(path, flags, *args, **kwargs):
+    global swapped
+    if Path(path).name == "file":
+        leaf.rename(root / "original")
+        os.mkfifo(leaf)
+        swapped = True
+    return original(path, flags, *args, **kwargs)
+
+os.open = swap
+try:
+    files.overwrite_text("file", "new")
+except OSError as exc:
+    assert exc.errno == errno.ENXIO, repr(exc)
+else:
+    raise AssertionError("Overwrite accepted a FIFO without a reader")
+assert swapped
+assert stat.S_ISFIFO(leaf.lstat().st_mode)
+assert (root / "original").read_text() == "original"
+""",
+            str(tmp_path), str(allow),
+        ],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize("allow", [False, True])
 @pytest.mark.parametrize("encoding", ["utf-8", "utf-16", "cp1252"])
 def test_overwrite_matches_native_text_and_preserves_hardlinks(tmp_path, allow, encoding):
