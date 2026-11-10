@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.4.0] - 2026-11-10
+
+### Changed
+
+- Use handle-based reads in FileHelper (#5351)
+- chore: limit automatic Python 3.11 tests to Linux (#5367)
+- Harden initial URL validation in HTTP helpers (#5350)
+- Update SpecKit Companion extension to v0.26.0 (#5365)
+- Use handle-based text overwrites in FileHelper (#5353)
+- Require HTTPS consistently for catalog sources (#5355)
+- feat(workflows): workflow functions - project-installed custom pipe filters (#5303)
+- feat(integrations): map reasoning effort and context size for Copilot, Codex, and Claude Code (#5249)
+- [bundle] Update Spec Kit for Azure DevOps bundle to v0.3.2 (#5346)
+- [extension] Add T-Shirt Sizing Gate extension to community catalog (#5332)
+- fix(scripts): treat option-like feature descriptions as text in create-new-feature.sh (#5245)
+- fix(self-upgrade): don't offer a .dev0/.post0 build's base tag as the rollback version (#5358)
+- fix: preserve existing priority from registry when installing/refreshing bundles (#5331)
+- test(workflows): pin numeric equality on captured shell stdout with trailing newline (#5357)
+- fix(extensions): show catalog entries missing name, version or description (#5308)
+- Use handle-based exclusive creation in FileHelper (#5354)
+- Validate release tags before running release steps (#5356)
+- feat(omp): support integration args and options in build_exec_args (#4876)
+- Add Spec Kit for Azure DevOps — human-gated lifecycle extension to community catalog (#5348)
+- chore: release 1.3.3, begin 1.3.4.dev0 development (#5349)
+
 ## [1.3.3] - 2026-11-09
 
 ### Changed
