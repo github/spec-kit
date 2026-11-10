@@ -8,6 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -97,12 +98,35 @@ def clean_env() -> dict[str, str]:
     # leaves PATH untouched, and an ambient python3 without PyYAML then
     # fails every composed-template test with "PyYAML is required".
     # Prepend the running interpreter's own directory so subprocesses see
-    # the same Python under either invocation.
+    # the same Python under either invocation. A Windows venv ships
+    # ``python.exe`` but no ``python3.exe``, so the bin directory alone
+    # cannot shadow an ambient ``python3`` — the first name the script
+    # resolvers probe — and a cached ``python3`` shim (see
+    # :func:`make_python3_path_shim`, shell shim plus a ``.cmd`` for
+    # PowerShell) covers that first candidate on every platform.
     env["PATH"] = (
+        f"{_python3_shim_dir()}{os.pathsep}"
         f"{Path(sys.executable).absolute().parent}"
         f"{os.pathsep}{env.get('PATH', '')}"
     )
     return env
+
+
+_PYTHON3_SHIM_DIR: Path | None = None
+
+
+def _python3_shim_dir() -> Path:
+    """A cached directory whose ``python3`` execs the suite interpreter.
+
+    Built once per pytest process with :func:`make_python3_path_shim`, which
+    deliberately does not resolve the interpreter so the venv's
+    ``site-packages`` (PyYAML among them) stay reachable.
+    """
+    global _PYTHON3_SHIM_DIR
+    if _PYTHON3_SHIM_DIR is None:
+        _PYTHON3_SHIM_DIR = Path(tempfile.mkdtemp(prefix="spec-kit-parity-shim-"))
+        make_python3_path_shim(_PYTHON3_SHIM_DIR)
+    return _PYTHON3_SHIM_DIR
 
 
 def venv_python3_exe(venv_dir: Path) -> Path:
