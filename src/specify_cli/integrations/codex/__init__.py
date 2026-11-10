@@ -6,18 +6,19 @@ Commands are deprecated; ``--skills`` defaults to ``True``.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import logging
 import os
 import re
 import stat
-import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
 
+from ...file_helper import FileHelper
 from .._file_changes import changing_file
 from ..base import IntegrationOption, SkillsIntegration
 # The manifest has no public validator; this is the check ``record_file`` and
@@ -31,7 +32,8 @@ logger = logging.getLogger(__name__)
 # schema. PyYAML's YAML 1.1 rules would turn ``display_name: On`` into ``True``
 # and ``010`` into 8, changing user values on a round trip.
 _YAML11_ONLY_TAGS = {
-    f"tag:yaml.org,2002:{name}" for name in ("bool", "int", "float", "timestamp")
+    f"tag:yaml.org,2002:{name}"
+    for name in ("bool", "int", "float", "timestamp", "value", "merge")
 }
 _YAML12_RESOLVERS = (
     ("tag:yaml.org,2002:bool", r"true|True|TRUE|false|False|FALSE", "tTfF"),
@@ -43,7 +45,6 @@ _YAML12_RESOLVERS = (
         "-+0123456789.",
     ),
 )
-_YAML12_INT = re.compile(_YAML12_RESOLVERS[1][1])
 
 
 class _Yaml12Loader(yaml.SafeLoader):
@@ -65,39 +66,44 @@ for _tag, _pattern, _first in _YAML12_RESOLVERS:
         _cls.add_implicit_resolver(_tag, re.compile(f"^(?:{_pattern})$"), list(_first))
 
 
-def _construct_yaml12_int(loader: _Yaml12Loader, node: yaml.ScalarNode) -> int:
-    value = loader.construct_scalar(node)
-    if not _YAML12_INT.fullmatch(value):  # an explicit ``!!int`` in another form
-        return loader.construct_yaml_int(node)
-    if value.startswith("0o"):
-        return int(value[2:], 8)
-    if value.startswith("0x"):
-        return int(value[2:], 16)
-    return int(value, 10)
+class _Number(str):
+    """A number kept as its source text, so ``1.10`` or ``007`` is written back unchanged."""
+
+    tag: str
 
 
-_Yaml12Loader.add_constructor("tag:yaml.org,2002:int", _construct_yaml12_int)
+def _construct_number(loader: _Yaml12Loader, node: yaml.ScalarNode) -> _Number:
+    number = _Number(loader.construct_scalar(node))
+    number.tag = node.tag
+    return number
+
+
+def _represent_number(dumper: _Yaml12Dumper, data: _Number) -> yaml.ScalarNode:
+    # Written plain when its text still resolves to ``tag``, else with the tag.
+    return dumper.represent_scalar(data.tag, str(data))
+
+
+for _tag in ("tag:yaml.org,2002:int", "tag:yaml.org,2002:float"):
+    _Yaml12Loader.add_constructor(_tag, _construct_number)
+_Yaml12Dumper.add_representer(_Number, _represent_number)
 
 
 def _dump_openai_yaml(data: dict[str, Any]) -> str:
     return yaml.dump(data, Dumper=_Yaml12Dumper, sort_keys=False, allow_unicode=True)
 
 
-def _replace_file(path: Path, content: bytes) -> None:
-    """Replace ``path`` through a sibling file, so a failed write leaves it intact."""
+def _replace_file(root: Path, rel: str, content: bytes) -> None:
+    """Replace an existing file through a sibling, so a failed write leaves it intact.
+
+    The swap would also replace a read-only file, so that is refused as an
+    in-place write would be.
+    """
+    path = root / rel
+    if not os.access(path, os.W_OK):
+        raise PermissionError(errno.EACCES, "File is not writable", str(path))
+    mode = stat.S_IMODE(path.stat().st_mode)
     with changing_file(path):
-        fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-        temporary_path = Path(temporary)
-        try:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(content)
-            try:
-                temporary_path.chmod(stat.S_IMODE(path.stat().st_mode))
-            except OSError:
-                pass  # best effort: keeping the content matters more than the mode
-            os.replace(temporary_path, path)
-        finally:
-            temporary_path.unlink(missing_ok=True)
+        FileHelper(root).write_bytes(rel, content, mode=mode)
 
 
 # Container shapes from Codex's ``SkillMetadataFile`` (codex-rs/skills/src/
@@ -220,14 +226,22 @@ class CodexIntegration(SkillsIntegration):
                 return False
             if hashlib.sha256(path.read_bytes()).hexdigest() == prior.files[rel]:
                 return True
-            return self._load_openai_yaml(path, rel) == self._GENERATED_POLICY
+            loaded = self._load_openai_yaml(path, rel)
+            # ``0 == False`` in Python, so check the value's type as well.
+            return loaded == self._GENERATED_POLICY and (
+                loaded["policy"]["allow_implicit_invocation"] is False
+            )
         except (OSError, ValueError):
             return False
 
     def _plan_policy(
         self, project_root: Path, rel: str, prior: IntegrationManifest | None
-    ) -> tuple[str, str, str] | None:
-        """Return ``(rel, content, ownership)`` to write, or ``None`` to leave a user file alone."""
+    ) -> tuple[str, str | None, str] | None:
+        """Return ``(rel, content, ownership)`` to record, or ``None`` to leave a user file alone.
+
+        ``content`` is ``None`` when the existing file already holds the policy,
+        so it is recorded without being rewritten.
+        """
         path = project_root / rel
         # Checks every ancestor for symlinks before anything is read or written.
         _validate_record_path(Path(rel), project_root)
@@ -244,7 +258,8 @@ class CodexIntegration(SkillsIntegration):
             data = self._load_openai_yaml(path, rel)
             ownership = "whole" if self._is_generated(project_root, rel, prior) else "partial"
         policy = data.get("policy") or {}
-        if ownership == "partial" and not tracked and policy.get("allow_implicit_invocation") is False:
+        already_set = policy.get("allow_implicit_invocation") is False
+        if ownership == "partial" and not tracked and already_set:
             # The user already set it; claiming it would let cleanup remove their setting.
             return None
         policy["allow_implicit_invocation"] = False
@@ -255,6 +270,8 @@ class CodexIntegration(SkillsIntegration):
                 f"Cannot update {rel}: Codex would ignore this file, including the "
                 f"policy: {'; '.join(errors)}"
             )
+        if already_set and path.exists():
+            return rel, None, ownership
         return rel, _dump_openai_yaml(data), ownership
 
     def _remove_policy(self, project_root: Path, rel: str) -> bool:
@@ -270,7 +287,7 @@ class CodexIntegration(SkillsIntegration):
                 del policy["allow_implicit_invocation"]
                 if not policy:
                     del data["policy"]
-                _replace_file(path, _dump_openai_yaml(data).encode("utf-8"))
+                _replace_file(project_root, rel, _dump_openai_yaml(data).encode("utf-8"))
         except (OSError, ValueError) as exc:
             logger.warning("Leaving %s unchanged: %s", rel, exc)
             return False
@@ -409,6 +426,7 @@ class CodexIntegration(SkillsIntegration):
             from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
 
             skills_rel = self.registrar_config["dir"]
+            plans: dict[str, tuple[str, str | None, str] | None] = {}
             for name in sorted(CORE_COMMAND_NAMES):
                 rel = self._policy_rel(name)
                 try:
@@ -418,18 +436,19 @@ class CodexIntegration(SkillsIntegration):
                     _validate_record_path(Path(rel), root)
                 except ValueError as exc:
                     raise ValueError(f"Cannot use --no-model-invocation: {exc}") from exc
-                self._plan_policy(root, rel, prior)
+                # ``super().setup`` writes only SKILL.md, so these plans stay valid.
+                plans[name] = self._plan_policy(root, rel, prior)
         created = super().setup(
             project_root, manifest, parsed_options=parsed_options, **opts
         )
-        planned: list[tuple[str, str, str]] = []
+        planned: list[tuple[str, str | None, str]] = []
         if enabled:
             for skill_file in [f for f in created if f.name == "SKILL.md"]:
                 name = skill_file.parent.name
                 if skill_file.parent.parent != root / skills_rel:
                     continue
                 if self._is_core_command_skill_dir(name):
-                    plan = self._plan_policy(root, self._policy_rel(name.removeprefix("speckit-")), prior)
+                    plan = plans[name.removeprefix("speckit-")]
                     if plan is not None:
                         planned.append(plan)
         for rel, content, ownership in planned:
@@ -438,7 +457,8 @@ class CodexIntegration(SkillsIntegration):
                 # ``record_file`` truncates in place; keep the user's file
                 # intact if the write fails.
                 _validate_record_path(Path(rel), root)
-                _replace_file(path, content.encode("utf-8"))
+                if content is not None:
+                    _replace_file(root, rel, content.encode("utf-8"))
                 manifest.record_existing(rel, ownership=ownership)
                 created.append(path)
             else:
@@ -469,6 +489,13 @@ class CodexIntegration(SkillsIntegration):
             if mode != "whole":
                 if self._remove_policy(root, rel):
                     cleaned.add(root / rel)
+                elif self._may_still_exist(root, rel):
+                    # Uninstall drops the manifest, so nothing can retry this.
+                    logger.warning(
+                        "%s may still set policy.allow_implicit_invocation: false; "
+                        "remove it by hand to let Codex invoke the skill implicitly",
+                        rel,
+                    )
             elif self._is_generated(root, rel, manifest):
                 manifest.record_existing(rel)
             elif not force:

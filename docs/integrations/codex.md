@@ -56,11 +56,17 @@ description in Codex's context.
   codex`) deletes the `agents/openai.yaml` files Spec Kit generated. An
   `agents/openai.yaml` that already existed, or that you edited, keeps its other
   keys: only `policy.allow_implicit_invocation` is set, and later removed again.
-  Such a file is rewritten as plain YAML, so its comments and formatting are
-  not kept; its values are read and written by the YAML 1.2 rules Codex uses,
-  so unquoted values such as `On` or `no` stay strings. One that already sets it
-  to `false` is left untouched. If an existing file cannot be read, is not valid
-  YAML, is not a mapping, or has a field Codex would reject (for example
+  The exception is `uninstall --force` or `switch --force`, which deletes a
+  generated file you edited as it does any other modified file. When the
+  policy is added or removed, such a file is rewritten as plain YAML, so its
+  comments and formatting are not kept; a read-only file is refused instead.
+  Its values are read and written by the YAML 1.2 rules Codex uses, so
+  unquoted values such as `On` or `no` stay strings and numbers such as `007`
+  keep their text. One that already sets it to `false` is left untouched, and
+  so is a tracked file that still holds it. If uninstall cannot remove the
+  policy from your own file, it logs a warning naming the file so you can
+  remove it by hand. If an existing file cannot be read, is not valid YAML, is
+  not a mapping, or has a field Codex would reject (for example
   `interface` or `dependencies.tools` of the wrong type, which makes Codex
   ignore the whole file), setup stops with an error naming the file and leaves
   it unchanged. Setup with the option also stops before writing anything if

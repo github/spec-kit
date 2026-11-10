@@ -799,6 +799,7 @@ class TestCodexNoModelInvocationOwnership:
             "  short_description: no\n"
             "  default_prompt: 1:30\n"
             "  brand_color: '0o12'\n"
+            "  icon_small: =\n"
             "custom:\n"
             "  count: 010\n"
             "  big: 1_000\n"
@@ -817,12 +818,67 @@ class TestCodexNoModelInvocationOwnership:
 
         original = yaml.load(content, Loader=_Yaml12Loader)
         assert original["interface"]["display_name"] == "On"
-        assert original["custom"]["count"] == 10
         written = path.read_text(encoding="utf-8")
         assert yaml.load(written, Loader=_Yaml12Loader) == {**original, "policy": self.POLICY}
+        assert "count: 010\n" in written and "ratio: 1e3\n" in written
 
         get_integration("codex").teardown(tmp_path, manifest)
         assert yaml.load(path.read_text(encoding="utf-8"), Loader=_Yaml12Loader) == original
+
+    def test_round_trip_keeps_the_text_of_numbers(self, tmp_path):
+        content = (
+            b"interface:\n  display_name: 1.10\n  short_description: 007\n"
+            b"  brand_color: 0x1F\n  default_prompt: +1\n"
+            b"dependencies:\n  tools:\n  - type: mcp\n    value: docs\n"
+            b"    oauth:\n      callbackPort: 8080\n"
+        )
+        path = self._seed(tmp_path, content)
+        manifest = self._setup(tmp_path)
+        assert path.read_bytes().startswith(content)
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert path.read_bytes() == content
+
+    def test_tracked_file_already_holding_the_policy_is_not_rewritten(self, tmp_path):
+        path = self._seed(tmp_path)
+        self._setup(tmp_path).save()
+        commented = b"# my note\n" + path.read_bytes()
+        path.write_bytes(commented)
+        manifest = self._setup(tmp_path)
+        assert path.read_bytes() == commented
+        assert manifest.ownership_modes[self.PLAN_REL] == "partial"
+
+    @pytest.mark.skipif(
+        os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+        reason="needs POSIX permissions enforced for the current user",
+    )
+    def test_read_only_user_file_is_not_replaced(self, tmp_path):
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        path.chmod(0o444)
+        try:
+            with pytest.raises(PermissionError):
+                self._setup(tmp_path)
+            assert path.read_bytes() == original
+        finally:
+            path.chmod(0o644)
+
+    def test_generated_file_with_a_non_boolean_policy_is_not_deleted(self, tmp_path):
+        manifest = self._setup(tmp_path)
+        path = tmp_path / self.PLAN_REL
+        edited = b"policy:\n  allow_implicit_invocation: 0  # keep off\n"
+        path.write_bytes(edited)
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert path.read_bytes() == edited
+
+    def test_teardown_warns_when_a_user_file_keeps_the_policy(self, tmp_path, caplog):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        broken = path.read_bytes() + b"interface: [broken\n"
+        path.write_bytes(broken)
+        with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
+            get_integration("codex").teardown(tmp_path, manifest)
+        assert path.read_bytes() == broken
+        assert "remove it by hand" in caplog.text
 
     @pytest.mark.parametrize(
         "content",
