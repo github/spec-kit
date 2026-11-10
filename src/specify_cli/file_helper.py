@@ -54,20 +54,31 @@ class UnsupportedPathError(FileHelperError):
 @dataclass
 class _WalkDirectories:
     root: Path
-    root_fd: int
+    root_handle: int | Path
     flags: int
     resources: ExitStack
-    opened: dict[Path, int] = field(default_factory=dict)
+    opened: dict[Path, int | Path] = field(default_factory=dict)
 
-    def directory(self, path: Path) -> int:
+    def directory(self, path: Path) -> int | Path:
         if path == self.root:
-            return self.root_fd
+            return self.root_handle
         path.relative_to(self.root)
         if path not in self.opened:
             parent = self.directory(path.parent)
-            fd = os.open(path.name, self.flags, dir_fd=parent)
-            self.resources.callback(os.close, fd)
-            self.opened[path] = fd
+            if isinstance(parent, Path):
+                try:
+                    self.resources.enter_context(_windows_handle(path, directory=True))
+                except OSError as exc:
+                    if exc.errno == errno.EINVAL and getattr(exc, "winerror", None) is None:
+                        raise NotADirectoryError(
+                            errno.ENOTDIR, "Expected a directory", str(path)
+                        ) from exc
+                    raise
+                self.opened[path] = path
+            else:
+                fd = os.open(path.name, self.flags, dir_fd=parent)
+                self.resources.callback(os.close, fd)
+                self.opened[path] = fd
         return self.opened[path]
 
 
@@ -195,7 +206,8 @@ class FileHelper:
     ) -> Path:
         current = self._canonical_root
         for index, part in enumerate(parts):
-            directory_fd = directories.directory(current) if directories is not None else None
+            directory = directories.directory(current) if directories is not None else None
+            directory_fd = directory if isinstance(directory, int) else None
             if directories is None and not current.is_dir():
                 if not (allow_missing and not current.exists()):
                     raise NotADirectoryError(current)
@@ -241,7 +253,7 @@ class FileHelper:
 
     def _path(
         self, path: Path | str, *, allow_missing: bool = False, follow_leaf: bool = True,
-        root_fd: int | None = None,
+        root_handle: int | Path | None = None,
     ) -> Path:
         self._require_open()
         original = Path(path)
@@ -250,8 +262,11 @@ class FileHelper:
             raise PathEscapeError(f"Parent traversal is not an operation path: {original}")
         with ExitStack() as resources:
             directories = (
-                _WalkDirectories(self._canonical_root, root_fd, self._directory_flags(), resources)
-                if root_fd is not None else None
+                _WalkDirectories(
+                    self._canonical_root, root_handle,
+                    0 if isinstance(root_handle, Path) else self._directory_flags(), resources,
+                )
+                if root_handle is not None else None
             )
             return self._walk(
                 parts, allow_missing=allow_missing, follow_leaf=follow_leaf, directories=directories
@@ -508,8 +523,7 @@ class FileHelper:
     def delete(self, path: Path | str, *, recursive: bool = False) -> None:
         """Delete an entry; recursive deletion never follows descendant links."""
         with self._deletion_root() as root:
-            root_fd = None if isinstance(root, Path) else root
-            destination = self._path(path, follow_leaf=False, root_fd=root_fd)
+            destination = self._path(path, follow_leaf=False, root_handle=root)
             if destination == self._canonical_root:
                 raise FileHelperError(f"Refusing to delete the established root: {self.root}")
             with self._deletion_directory(destination.parent, root=root) as parent:

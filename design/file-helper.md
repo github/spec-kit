@@ -170,7 +170,13 @@ the retained reference. Those operation-time handles require both
 `FILE_LIST_DIRECTORY` and `FILE_READ_ATTRIBUTES` on every canonical ancestor,
 including those above the helper root, and reject reparse points. An ACL allowing
 traversal but not listing can therefore prevent deletion while still allowing
-bootstrap reads. These locks are released at the end of deletion; the
+bootstrap reads. Windows deletion also retains non-reparse handles to accessed
+parent directories throughout link resolution, before classifying child entries
+or reading link targets. Resolving a contained parent link does not consult
+metadata through an unpinned replacement parent. These accessed directories also
+require directory-list/read-attribute access. The resolution handles are released
+after selection; resolved mutation parents and root ancestry remain pinned during
+preflight and removal. These locks are released at the end of deletion; the
 metadata-only reference remains until the helper closes. Automatic
 finalization is a compatibility fallback, not a substitute for deterministic
 cleanup. Bootstrap configuration and managed integration-state consumers close

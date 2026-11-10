@@ -1179,20 +1179,25 @@ def test_windows_delete_rejects_replaced_root_during_acquisition_portably(
     (outside / "project/victim").write_text("keep")
     retained = root / "retained"
     active = []
+    identities = {}
+    metadata = {}
     attempted = False
 
     @contextmanager
     def handle(path, *, directory, pin=True):
         nonlocal attempted
         assert directory
+        value = len(identities) + 1
         active.append(path)
         try:
-            if path == project:
+            if pin and path == project:
                 # Simulate a replacement just before the root handle is acquired.
                 attempted = True
                 ancestor.rename(retained)
                 link(ancestor, outside)
-            yield 123
+            metadata[value] = path.stat()
+            identities[value] = (1, b"replacement" if attempted else b"original")
+            yield value
         finally:
             assert active.pop() == path
 
@@ -1200,15 +1205,123 @@ def test_windows_delete_rejects_replaced_root_during_acquisition_portably(
     backend.name = "nt"
     monkeypatch.setattr(module, "os", backend)
     monkeypatch.setattr(module, "_windows_handle", handle)
-    monkeypatch.setattr(module, "_windows_file_id", lambda _: (1, b"root"))
-    monkeypatch.setattr(module, "_windows_stat", lambda _: project.stat())
-    with pytest.raises(FileHelperError, match="root changed"):
-        with FileHelper(project) as files:
+    monkeypatch.setattr(module, "_windows_file_id", lambda value: identities[value])
+    monkeypatch.setattr(module, "_windows_stat", lambda value: metadata[value])
+    with FileHelper(project) as files:
+        assert not attempted
+        with pytest.raises(FileHelperError, match="root changed"):
             files.delete("victim")
+        assert active == [project]
     assert attempted
     assert active == []
     assert (outside / "project/victim").read_text() == "keep"
     assert (retained / "project/victim").read_text() == "selected"
+
+
+@pytest.mark.parametrize("kind", ["file", "directory", "recursive"])
+def test_windows_link_resolution_pins_accessed_parents_portably(
+    root, link, monkeypatch, kind
+):
+    parent = root / "parent"
+    parent.mkdir()
+    outside = root.parent / "outside"
+    outside.mkdir()
+    selected = root / "selected"
+    unrelated = root / "unrelated"
+    for directory in (selected, unrelated):
+        directory.mkdir()
+        if kind == "file":
+            (directory / "victim").write_text("keep")
+        else:
+            (directory / "victim").mkdir()
+            if kind == "recursive":
+                (directory / "victim/child").write_text("keep")
+    link(parent / "alias", selected)
+    link(outside / "alias", unrelated)
+    retained = root / "retained"
+    pinned = []
+    attempted = False
+    blocked = False
+    lstat = Path.lstat
+
+    @contextmanager
+    def handle(path, *, directory, pin=True):
+        assert directory
+        if pin:
+            pinned.append(path)
+        try:
+            yield 123
+        finally:
+            if pin:
+                assert pinned.pop() == path
+
+    def exchange(path, **kwargs):
+        nonlocal attempted, blocked
+        if path == parent / "alias" and not attempted:
+            attempted = True
+            blocked = parent in pinned
+            if not blocked:
+                parent.rename(retained)
+                link(parent, outside)
+        return lstat(path, **kwargs)
+
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
+    monkeypatch.setattr(file_helper, "_windows_handle", handle)
+    monkeypatch.setattr(file_helper, "_windows_file_id", lambda _: (1, b"root"))
+    monkeypatch.setattr(file_helper, "_windows_stat", lambda _: root.stat())
+    monkeypatch.setattr(Path, "lstat", exchange)
+    with FileHelper(root, allow_symlinks=True) as files:
+        files.delete("parent/alias/victim", recursive=kind == "recursive")
+    assert attempted
+    assert (unrelated / "victim").exists()
+    assert not (selected / "victim").exists()
+    assert blocked
+    assert (parent / "alias").is_symlink()
+    assert pinned == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows directory-handle semantics")
+def test_native_windows_link_resolution_blocks_accessed_parent_exchange(root, link, monkeypatch):
+    parent = root / "parent"
+    parent.mkdir()
+    selected = root / "selected"
+    selected.mkdir()
+    (selected / "victim").write_text("selected")
+    link(parent / "alias", selected)
+    attempted = False
+    lstat = Path.lstat
+
+    def exchange(path, **kwargs):
+        nonlocal attempted
+        if path == parent / "alias" and not attempted:
+            attempted = True
+            with pytest.raises(PermissionError):
+                parent.rename(root / "retained")
+        return lstat(path, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", exchange)
+    with FileHelper(root, allow_symlinks=True) as files:
+        files.delete("parent/alias/victim")
+    assert attempted
+    assert not (selected / "victim").exists()
+    parent.rename(root / "retained")
+
+
+@pytest.mark.parametrize("error_number", [errno.EINVAL, errno.EACCES])
+def test_windows_walk_preserves_parent_type_and_access_errors_portably(
+    root, monkeypatch, error_number
+):
+    @contextmanager
+    def denied(*args, **kwargs):
+        raise OSError(error_number, "directory unavailable")
+        yield
+
+    monkeypatch.setattr(file_helper, "_windows_handle", denied)
+    expected = NotADirectoryError if error_number == errno.EINVAL else PermissionError
+    with file_helper.ExitStack() as resources:
+        directories = file_helper._WalkDirectories(root, root, 0, resources)
+        with pytest.raises(expected):
+            directories.directory(root / "child")
 
 
 def test_windows_constructor_rejects_replaced_then_restored_root(root, monkeypatch):
