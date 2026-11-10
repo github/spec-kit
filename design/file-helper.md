@@ -67,7 +67,9 @@ the policy. `specify_cli._project.resolve_specify_project_files()` performs the
 normal existing-project resolution and returns the same handoff for new CLI
 adapters. Commands using another established root call `project_files` on
 their actually selected root. Retain a helper only for the current operation;
-a later invocation resolves a new helper, so manual edits take effect.
+a later invocation resolves a new helper, so manual edits take effect. Use the
+returned owner as a context manager, or call `close()` in the owner's cleanup
+path, to release retained root handles at that operation boundary.
 
 The `specify_cli.integration_state` helpers are an explicit managed-metadata
 exception to this handoff. Their reads and writes of `.specify/integration.json`
@@ -101,12 +103,12 @@ existing lifecycle rollback, including prior policy and unrelated options.
 ```python
 from specify_cli.file_helper import FileHelper
 
-files = FileHelper(project_root)  # deny symlinks by default
-files.mkdir("generated", exist_ok=True)
-files.create_text("generated/config.txt", "initial\n")
-files.write_text("generated/config.txt", "updated\n")
-content = files.read_text("generated/config.txt")
-files.delete("generated", recursive=True)
+with FileHelper(project_root) as files:  # deny symlinks by default
+    files.mkdir("generated", exist_ok=True)
+    files.create_text("generated/config.txt", "initial\n")
+    files.write_text("generated/config.txt", "updated\n")
+    content = files.read_text("generated/config.txt")
+    files.delete("generated", recursive=True)
 ```
 
 ## Boundary and policy
@@ -144,6 +146,19 @@ any followed target hierarchy. An unrelated project symlink does not prevent
 an operation. A helper cannot cross to another root; callers establish separate
 helpers for independent project/source/managed boundaries.
 
+On supported deletion backends, construction pins the canonical root with an
+open directory handle. That handle remains owned by the helper until `close()`
+or context-manager exit. Keeping the original directory open also prevents its
+identity from being reused for a different directory while the helper is alive;
+stored device/inode numbers alone are not the binding. Windows additionally
+retains the canonical ancestors without delete sharing. Close the helper before
+external code renames or removes that root or its ancestors. Automatic
+finalization is a compatibility fallback, not a substitute for deterministic
+cleanup. Bootstrap configuration and managed integration-state consumers close
+their own helpers explicitly; consumers receiving `project_files()` own its
+lifetime. Pinning the root does not make other pathname-based operations
+descriptor-relative or change their documented concurrency limitations.
+
 | Operation | Default deny | Explicit allow |
 |---|---|---|
 | Read file | Reject accessed parent or leaf links | Follow only existing contained regular-file targets |
@@ -157,6 +172,9 @@ helpers for independent project/source/managed boundaries.
 
 ## API and failures
 
+- `close()` releases the helper's retained root handles and is idempotent.
+  `with FileHelper(...) as files:` closes on both success and failure. Operations
+  on an explicitly closed helper raise `FileHelperError`.
 - `mkdir(path, parents=False, exist_ok=False)` creates directories.
 - `read_bytes(path)` / `read_text(path, encoding="utf-8")` read regular files.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
@@ -182,8 +200,8 @@ helpers for independent project/source/managed boundaries.
 - `delete(path, recursive=False)` unlinks files/links or removes directories.
   Nonrecursive directory deletion requires an empty directory. The established
   root cannot be deleted. Recursive enumeration and each removal use anchored
-  directories. Each deletion acquires its root once, checks that it matches the
-  root identity recorded at construction, and retains that anchor through
+  directories. Each deletion borrows the root handle retained at construction,
+  checks the currently named root for replacement, and uses that original anchor through
   preflight and all removals. POSIX uses this retained root for component
   classification, link-target reads and resolution, recursive preflight, and
   per-entry revalidation, as well as descriptor-relative enumeration and
@@ -201,6 +219,15 @@ helpers for independent project/source/managed boundaries.
   being enumerated; systems without search/path-only flags retain read-capable
   traversal. Recursive enumeration still requires directory read permission, and
   removal still requires the operating system's normal directory permissions.
+  On systems using the read-capable fallback, root establishment also requires
+  read permission on the root.
+  Component resolution retains opened parent descriptors instead of reopening
+  every prefix. Recursive preflight and mutation carry each parent descriptor
+  through its children, opening directories a bounded number of times across
+  the two passes. Descriptor-open counts grow linearly with visited directories
+  and operation-path components; recursive descriptor lifetimes grow with tree
+  depth rather than total tree size. The complete plan is still preflighted
+  before any removal.
 - `symlink(target, path)` creates a link exclusively. Relative targets are
   interpreted relative to the link parent, not the helper root.
 
@@ -231,7 +258,8 @@ creation. Atomic writes recheck the original path before replacement, and
 deletion rechecks each accessed entry. Deletion also anchors directory
 enumeration and removal so exchanging an accessed parent for a link cannot
 redirect those operations. Reopening the absolute root pathname for each entry is
-avoided; a replaced root is rejected before use. POSIX removal stays attached to
+avoided; the established root handle is never rebound to a replacement, even if
+device/inode values are reused. POSIX removal stays attached to
 the opened directory even if that directory is renamed; validation continues to
 inspect that same directory tree. Windows prevents ancestor renames while handles
 are held. Concurrent changes may still cause deletion to fail or leave

@@ -10,6 +10,7 @@ from pathlib import Path, PurePath, PureWindowsPath
 import stat
 import tempfile
 from typing import TypeVar
+from weakref import finalize
 
 from specify_cli._file_handles import _windows_handle
 
@@ -48,6 +49,33 @@ class UnsupportedPathError(FileHelperError):
     """An accessed object cannot be used by the requested operation."""
 
 
+@dataclass
+class _WalkDirectories:
+    root: Path
+    root_fd: int
+    flags: int
+    resources: ExitStack
+    opened: dict[Path, int] = field(default_factory=dict)
+
+    def directory(self, path: Path) -> int:
+        if path == self.root:
+            return self.root_fd
+        path.relative_to(self.root)
+        if path not in self.opened:
+            parent = self.directory(path.parent)
+            fd = os.open(path.name, self.flags, dir_fd=parent)
+            self.resources.callback(os.close, fd)
+            self.opened[path] = fd
+        return self.opened[path]
+
+
+@dataclass(frozen=True)
+class _DeletionEntry:
+    path: Path
+    directory: bool
+    children: tuple["_DeletionEntry", ...] = ()
+
+
 @dataclass(frozen=True)
 class FileHelper:
     """Own operations beneath one trusted root with an immutable link policy.
@@ -60,6 +88,8 @@ class FileHelper:
     allow_symlinks: bool = False
     _canonical_root: Path = field(init=False, repr=False)
     _root_stat: os.stat_result = field(init=False, repr=False, compare=False)
+    _root_anchor: int | Path | None = field(init=False, repr=False, compare=False)
+    _root_cleanup: finalize = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         root = Path(self.root).absolute()
@@ -70,6 +100,38 @@ class FileHelper:
         object.__setattr__(self, "root", root)
         object.__setattr__(self, "_canonical_root", canonical)
         object.__setattr__(self, "_root_stat", root_stat)
+        with ExitStack() as resources:
+            anchor: int | Path | None = None
+            if os.name == "nt":
+                for current in reversed([canonical, *canonical.parents]):
+                    resources.enter_context(_windows_handle(current, directory=True))
+                self._check_deletion_root(canonical.stat())
+                anchor = canonical
+            elif (
+                _DELETE_DIR_FD_SUPPORTED
+                and getattr(os, "O_NOFOLLOW", 0)
+                and getattr(os, "O_DIRECTORY", 0)
+            ):
+                anchor = os.open(canonical, self._deletion_flags())
+                resources.callback(os.close, anchor)
+                self._check_deletion_root(os.fstat(anchor))
+            object.__setattr__(self, "_root_anchor", anchor)
+            object.__setattr__(self, "_root_cleanup", finalize(self, resources.pop_all().close))
+
+    def close(self) -> None:
+        """Release retained root handles; closing more than once is harmless."""
+        self._root_cleanup()
+
+    def _require_open(self) -> None:
+        if not self._root_cleanup.alive:
+            raise FileHelperError("FileHelper is closed")
+
+    def __enter__(self) -> "FileHelper":
+        self._require_open()
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
 
     def _parts(self, path: PurePath) -> tuple[str, ...]:
         original = path
@@ -110,15 +172,12 @@ class FileHelper:
         allow_missing: bool = False,
         follow_leaf: bool = True,
         links: tuple[Path, ...] = (),
-        root_fd: int | None = None,
+        directories: _WalkDirectories | None = None,
     ) -> Path:
         current = self._canonical_root
         for index, part in enumerate(parts):
-            if root_fd is not None and part == "..":
-                # Do not let ".." skip a non-directory link-target component.
-                with self._deletion_directory(current, root=root_fd):
-                    pass
-            elif root_fd is None and not current.is_dir():
+            directory_fd = directories.directory(current) if directories is not None else None
+            if directories is None and not current.is_dir():
                 if not (allow_missing and not current.exists()):
                     raise NotADirectoryError(current)
             if part == "..":
@@ -128,10 +187,7 @@ class FileHelper:
                 continue
             candidate = current / part
             try:
-                mode = (
-                    self._entry_mode(candidate) if root_fd is None
-                    else self._deletion_entry_mode(candidate, root=root_fd)
-                )
+                mode = self._entry_mode(candidate, dir_fd=directory_fd)
             except FileNotFoundError:
                 if not allow_missing:
                     raise
@@ -147,19 +203,16 @@ class FileHelper:
                     return candidate
                 if candidate in links or len(links) >= 40:
                     raise UnsupportedPathError(f"Symlink cycle or excessive chain: {candidate}")
-                if root_fd is None:
+                if directory_fd is None:
                     target = Path(os.readlink(candidate))
                 else:
-                    with self._deletion_directory(current, root=root_fd) as directory:
-                        leaf = directory / part if isinstance(directory, Path) else part
-                        directory_fd = None if isinstance(directory, Path) else directory
-                        target = Path(os.readlink(leaf, dir_fd=directory_fd))
+                    target = Path(os.readlink(part, dir_fd=directory_fd))
                 target_parts = self._parts(target)
                 if not target.is_absolute():
                     target_parts = current.relative_to(self._canonical_root).parts + target_parts
                 # Resolve the link target strictly, even when creating a new child.
                 current = self._walk(
-                    target_parts, links=links + (candidate,), root_fd=root_fd
+                    target_parts, links=links + (candidate,), directories=directories
                 )
             elif stat.S_ISDIR(mode) or stat.S_ISREG(mode):
                 current = candidate
@@ -171,13 +224,19 @@ class FileHelper:
         self, path: Path | str, *, allow_missing: bool = False, follow_leaf: bool = True,
         root_fd: int | None = None,
     ) -> Path:
+        self._require_open()
         original = Path(path)
         parts = self._parts(original)
         if ".." in parts:
             raise PathEscapeError(f"Parent traversal is not an operation path: {original}")
-        return self._walk(
-            parts, allow_missing=allow_missing, follow_leaf=follow_leaf, root_fd=root_fd
-        )
+        with ExitStack() as resources:
+            directories = (
+                _WalkDirectories(self._canonical_root, root_fd, self._deletion_flags(), resources)
+                if root_fd is not None else None
+            )
+            return self._walk(
+                parts, allow_missing=allow_missing, follow_leaf=follow_leaf, directories=directories
+            )
 
     @staticmethod
     def _require_file(path: Path) -> None:
@@ -281,87 +340,89 @@ class FileHelper:
 
     @contextmanager
     def _deletion_root(self) -> Iterator[int | Path]:
-        """Bind the whole deletion to the root identity established at construction."""
-        if os.name == "nt":
-            with ExitStack() as stack:
-                # Absolute Windows I/O also needs stable ancestors above the root.
-                for current in reversed([self._canonical_root, *self._canonical_root.parents]):
-                    stack.enter_context(_windows_handle(current, directory=True))
-                self._check_deletion_root(self._canonical_root.stat())
-                yield self._canonical_root
-            return
-
-        if not (
-            _DELETE_DIR_FD_SUPPORTED
-            and getattr(os, "O_NOFOLLOW", 0)
-            and getattr(os, "O_DIRECTORY", 0)
-        ):
+        """Borrow the root pinned when this helper was established."""
+        self._require_open()
+        if self._root_anchor is None:
             raise OSError(errno.ENOTSUP, "Handle-based deletion is unsupported on this platform")
-        root = os.open(self._canonical_root, self._deletion_flags())
-        try:
-            self._check_deletion_root(os.fstat(root))
-            yield root
-        finally:
-            os.close(root)
+        self._check_deletion_root(self._canonical_root.stat())
+        yield self._root_anchor
 
     @contextmanager
-    def _deletion_directory(
-        self, path: Path, *, root: int | Path, enumerate_entries: bool = False
+    def _child_deletion_directory(
+        self, parent: int | Path, name: str, *, readable: bool = False
     ) -> Iterator[int | Path]:
-        """Traverse from the operation's root, requesting read access only for scans."""
-        parts = path.relative_to(self._canonical_root).parts
-        if isinstance(root, Path):
-            with ExitStack() as stack:
-                current = root
-                for part in parts:
-                    current = current / part
-                    stack.enter_context(_windows_handle(current, directory=True))
-                yield current
+        if isinstance(parent, Path):
+            child = parent / name
+            with _windows_handle(child, directory=True):
+                yield child
             return
-
-        flags = self._deletion_flags()
-        parent = os.dup(root)
+        flags = (
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+            if readable else self._deletion_flags()
+        )
+        child = os.open(name, flags, dir_fd=parent)
         try:
-            for part in parts:
-                child = os.open(part, flags, dir_fd=parent)
-                os.close(parent)
-                parent = child
-            if enumerate_entries:
-                read_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
-                child = os.open(".", read_flags, dir_fd=parent)
-                os.close(parent)
-                parent = child
-            yield parent
+            yield child
         finally:
-            os.close(parent)
+            os.close(child)
 
-    def _deletion_entry_mode(self, path: Path, *, root: int | Path) -> int:
-        with self._deletion_directory(path.parent, root=root) as directory:
-            if isinstance(directory, Path):
-                return self._entry_mode(directory / path.name)
-            return self._entry_mode(path, dir_fd=directory)
+    @contextmanager
+    def _deletion_directory(self, path: Path, *, root: int | Path) -> Iterator[int | Path]:
+        parts = path.relative_to(self._canonical_root).parts
+        with ExitStack() as resources:
+            parent = root
+            for part in parts:
+                parent = resources.enter_context(self._child_deletion_directory(parent, part))
+            yield parent
 
-    def _deletion_plan(
-        self, path: Path, *, recursive: bool, root: int | Path
-    ) -> list[tuple[Path, bool]]:
-        mode = self._deletion_entry_mode(path, root=root)
+    def _deletion_entry_mode(self, path: Path, *, parent: int | Path) -> int:
+        if isinstance(parent, Path):
+            return self._entry_mode(parent / path.name)
+        return self._entry_mode(path, dir_fd=parent)
+
+    def _deletion_kind(self, path: Path, mode: int) -> bool:
         if stat.S_ISLNK(mode):
             if not self.allow_symlinks:
                 raise SymlinkDeniedError(f"Refusing to delete symlink: {path}")
-            return [(path, False)]
+            return False
         if stat.S_ISREG(mode):
-            return [(path, False)]
+            return False
         if not stat.S_ISDIR(mode):
             raise UnsupportedPathError(f"Unsupported filesystem object: {path}")
-        plan: list[tuple[Path, bool]] = []
-        if recursive:
-            with self._deletion_directory(path, root=root, enumerate_entries=True) as directory:
-                with os.scandir(directory) as entries:
-                    children = sorted(path / entry.name for entry in entries)
-            for child in children:
-                plan.extend(self._deletion_plan(child, recursive=True, root=root))
-        plan.append((path, True))
-        return plan
+        return True
+
+    def _deletion_plan(
+        self, path: Path, *, recursive: bool, parent: int | Path
+    ) -> _DeletionEntry:
+        directory = self._deletion_kind(path, self._deletion_entry_mode(path, parent=parent))
+        children: tuple[_DeletionEntry, ...] = ()
+        if directory and recursive:
+            with self._child_deletion_directory(parent, path.name) as child_directory:
+                with self._child_deletion_directory(child_directory, ".", readable=True) as readable:
+                    with os.scandir(readable) as entries:
+                        names = sorted(entry.name for entry in entries)
+                children = tuple(
+                    self._deletion_plan(path / name, recursive=True, parent=child_directory)
+                    for name in names
+                )
+        return _DeletionEntry(path, directory, children)
+
+    def _delete_plan(self, entry: _DeletionEntry, *, parent: int | Path) -> None:
+        directory = self._deletion_kind(
+            entry.path, self._deletion_entry_mode(entry.path, parent=parent)
+        )
+        if directory != entry.directory:
+            raise FileHelperError(f"Destination changed during deletion: {entry.path}")
+        if directory and entry.children:
+            with self._child_deletion_directory(parent, entry.path.name) as child_directory:
+                for child in entry.children:
+                    self._delete_plan(child, parent=child_directory)
+        leaf = parent / entry.path.name if isinstance(parent, Path) else entry.path.name
+        directory_fd = None if isinstance(parent, Path) else parent
+        if directory:
+            os.rmdir(leaf, dir_fd=directory_fd)
+        else:
+            os.unlink(leaf, dir_fd=directory_fd)
 
     def delete(self, path: Path | str, *, recursive: bool = False) -> None:
         """Delete an entry; recursive deletion never follows descendant links."""
@@ -370,16 +431,6 @@ class FileHelper:
             destination = self._path(path, follow_leaf=False, root_fd=root_fd)
             if destination == self._canonical_root:
                 raise FileHelperError(f"Refusing to delete the established root: {self.root}")
-            plan = self._deletion_plan(destination, recursive=recursive, root=root)
-            for entry, directory in plan:
-                # Recheck accessed parents/leaf before each mutation, not just preflight.
-                checked = self._path(entry, follow_leaf=False, root_fd=root_fd)
-                if checked != entry:
-                    raise FileHelperError(f"Destination changed during deletion: {entry}")
-                with self._deletion_directory(entry.parent, root=root) as parent:
-                    leaf = parent / entry.name if isinstance(parent, Path) else entry.name
-                    directory_fd = None if isinstance(parent, Path) else parent
-                    if directory:
-                        os.rmdir(leaf, dir_fd=directory_fd)
-                    else:
-                        os.unlink(leaf, dir_fd=directory_fd)
+            with self._deletion_directory(destination.parent, root=root) as parent:
+                plan = self._deletion_plan(destination, recursive=recursive, parent=parent)
+                self._delete_plan(plan, parent=parent)
