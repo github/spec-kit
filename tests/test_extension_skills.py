@@ -1089,10 +1089,10 @@ class TestExtensionSkillRegistration:
         assert "{SCRIPT}" not in content
         assert "{ARGS}" not in content
         assert (
-            '.specify/extensions/scripted-ext/scripts/bash/resolve-skill.sh "$ARGUMENTS"'
+            '../../../.specify/extensions/scripted-ext/scripts/bash/resolve-skill.sh "$ARGUMENTS"'
             in content
         )
-        assert ".specify/extensions/scripted-ext/scripts/bash/ensure-skills.sh" in content
+        assert "../../../.specify/extensions/scripted-ext/scripts/bash/ensure-skills.sh" in content
         assert ".specify/scripts/bash/resolve-skill.sh" not in content
         assert ".specify/scripts/bash/ensure-skills.sh" not in content
 
@@ -1147,13 +1147,117 @@ class TestExtensionSkillRegistration:
         manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
         content = (skills_dir / "speckit-path-ext-run" / "SKILL.md").read_text()
-        assert ".specify/extensions/path-ext/agents/control/commander.md" in content
-        assert ".specify/extensions/path-ext/knowledge-base/agent-scores.yaml" in content
+        assert "../../../.specify/extensions/path-ext/agents/control/commander.md" in content
+        assert (
+            "../../../.specify/extensions/path-ext/knowledge-base/agent-scores.yaml"
+            in content
+        )
         # extension's own templates/ dir must resolve under the extension,
         # not the project-level .specify/templates/
-        assert ".specify/extensions/path-ext/templates/kill-report.md" in content
+        assert "../../../.specify/extensions/path-ext/templates/kill-report.md" in content
         assert "Read agents/control" not in content
         assert "and knowledge-base/" not in content
+
+    def test_skill_registration_rewrites_nested_extension_refs(self, project_dir, temp_dir):
+        """Nested extension-relative references should be rewritten too."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+
+        ext_dir = temp_dir / "nested-ref-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "nested-ref-ext",
+                "name": "Nested Ref Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.nested-ref-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "skills" / "example" / "references").mkdir(parents=True)
+        (ext_dir / "skills" / "example" / "references" / "template.md").write_text(
+            "# Template\n"
+        )
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Read references/template.md.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (skills_dir / "speckit-nested-ref-ext-run" / "SKILL.md").read_text()
+        assert (
+            "../../../.specify/extensions/nested-ref-ext/skills/example/references/template.md"
+            in content
+        )
+        assert "Read references/template.md." not in content
+
+    def test_copilot_skill_registration_rewrites_relative_to_skill_dir(
+        self, project_dir, temp_dir
+    ):
+        """Copilot skills should use skill-dir-relative extension paths."""
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="copilot")
+
+        ext_dir = temp_dir / "copilot-path-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "copilot-path-ext",
+                "name": "Copilot Path Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.copilot-path-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "skills" / "copilot" / "references").mkdir(parents=True)
+        (ext_dir / "skills" / "copilot" / "references" / "guide.md").write_text(
+            "# Guide\n"
+        )
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Read skills/copilot/references/guide.md.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (skills_dir / "speckit-copilot-path-ext-run" / "SKILL.md").read_text()
+        assert "../../../.specify/extensions/copilot-path-ext/skills/copilot/references/guide.md" in content
+        assert "Read skills/copilot/references/guide.md." not in content
 
     @pytest.mark.parametrize(
         ("ai", "expected_invocation"),

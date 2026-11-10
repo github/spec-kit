@@ -1506,6 +1506,8 @@ class _PresetSkillMethods:
                     body,
                     extension_restore["extension_id"],
                     extension_restore["extension_dir"],
+                    project_root=self.project_root,
+                    skill_dir=skill_file.parent,
                 )
                 if isinstance(selected_ai, str):
                     body = registrar.resolve_skill_placeholders(

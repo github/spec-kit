@@ -1673,7 +1673,13 @@ class ExtensionManager:
             # extension-relative subdir references (agents/, knowledge-base/,
             # etc.) to their installed .specify/extensions/<id>/ location
             # before the generic placeholder/path resolution below.
-            body = registrar.rewrite_extension_paths(body, manifest.id, extension_dir)
+            body = registrar.rewrite_extension_paths(
+                body,
+                manifest.id,
+                extension_dir,
+                project_root=self.project_root,
+                skill_dir=skill_subdir,
+            )
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
             )
