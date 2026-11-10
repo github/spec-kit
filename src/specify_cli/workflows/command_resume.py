@@ -20,15 +20,16 @@ def workflow_resume(
 ):
     """Resume a paused or failed workflow run."""
     from ..integrations.installer import IntegrationInstallError
-    from . import load_custom_steps
     from ._execution import CheckpointError
     from .engine import RunState, WorkflowEngine
 
     project_root = cli._require_specify_project(load_integrations=False)
+    cli._load_project_workflow_plugins_or_exit(
+        project_root, json_output=json_output, run_id=run_id
+    )
     try:
+        engine = WorkflowEngine(project_root)
         with cli._stdout_to_stderr_when(json_output):
-            load_custom_steps(project_root)
-            engine = WorkflowEngine(project_root)
             engine._load_integrations()
     except (IntegrationInstallError, OSError) as exc:
         cli._fail_integration_load(exc, json_output=json_output, run_id=run_id)

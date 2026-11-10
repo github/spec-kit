@@ -19,24 +19,6 @@ from . import step_app
 _MAX_STEP_CATALOG_RESPONSE_BYTES = 50 * 1024 * 1024
 
 
-def _cleanup_download_tmp_path(tmp_path: cli.Path | None) -> None:
-    """Best-effort unlink of a partially-downloaded step archive temp file.
-
-    A cleanup ``OSError`` must never replace/mask whatever error or interrupt is
-    already propagating -- warn about it and keep going.
-    """
-    if tmp_path is None:
-        return
-    try:
-        tmp_path.unlink(missing_ok=True)
-    except OSError as cleanup_exc:
-        cli.console.print(
-            "[yellow]Warning:[/yellow] Could not remove temporary "
-            f"step download file: {cli._escape_markup(str(cleanup_exc))} "
-            f"(path: {cli._escape_markup(str(tmp_path))})"
-        )
-
-
 def _print_installed(step_id: str, entry: dict) -> None:
     step_name = entry.get("name") or step_id
     cli.console.print(
@@ -76,185 +58,22 @@ def _install_from_url(
     project_root: cli.Path, step_id: str, from_url: str, *, force: bool
 ) -> None:
     """Install a step package archive from a direct URL."""
-    import tempfile
-    from urllib.parse import urlparse
-
-    from rich.panel import Panel
-
-    from specify_cli.authentication.github_http import (
-        resolve_github_release_asset_api_url as _resolve_gh_asset,
-    )
-    from specify_cli.authentication.http import (
-        github_provider_hosts as _github_provider_hosts,
-    )
-    from specify_cli.authentication.http import open_url as _open_url
-
+    from .. import _archive_install as archive
     from . import installer
 
-    try:
-        parsed = urlparse(from_url)
-        hostname = parsed.hostname
-        _ = parsed.port
-    except ValueError:
-        raise installer.StepInstallError(
-            f"Invalid URL: {from_url}"
-        ) from None
-    if not hostname:
-        raise installer.StepInstallError(
-            f"Invalid URL: {from_url}"
-        )
-    if not cli.is_https_or_localhost_http(from_url):
-        raise installer.StepInstallError(
-            "URL must use HTTPS for security. HTTP is only allowed for "
-            "loopback URLs."
-        )
-
-    # Reject before the trust prompt and before any network request.
-    installer.check_installable(project_root, step_id, force=force)
-
-    # Prompt BEFORE any request (and before any spinner) so the user can see
-    # and answer it; a declined prompt issues no request and exits 0.
-    cli.console.print()
-    cli.console.print(
-        Panel(
-            "[bold]You are installing a workflow step type directly from an "
-            "external URL.\nA step package contains executable Python.[/bold]\n\n"
-            f"URL: {cli._escape_markup(from_url)}\n\n"
-            "Only install step packages from sources you trust.",
-            title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
-            border_style="yellow",
-            padding=(1, 2),
-        )
+    entry = archive.install_from_archive_url(
+        archive.ArchiveRequest(project_root, step_id, from_url, force),
+        installer._step_spec(),
+        archive.ArchiveHooks(
+            preflight=lambda root, sid, force: installer.check_installable(
+                root, sid, force=force
+            ),
+            resolve_root=lambda extracted: installer.resolve_package_root(extracted),
+            install=lambda root, sid, package, force: installer.install_step_package(
+                root, sid, package, source="url", force=force
+            ),
+        ),
     )
-    cli.console.print()
-    if not cli.typer.confirm("Continue with installation?", default=False):
-        cli.console.print("Cancelled")
-        raise cli.typer.Exit(0)
-
-    download_url = from_url
-    extra_headers = None
-    tmp_path: cli.Path | None = None
-    extract_tmp: tempfile.TemporaryDirectory[str] | None = None
-    committed = False
-    try:
-        resolved_url = _resolve_gh_asset(
-            from_url,
-            _open_url,
-            timeout=30,
-            github_hosts=_github_provider_hosts(),
-            redirect_validator=cli._reject_insecure_download_redirect,
-        )
-        if resolved_url:
-            download_url = resolved_url
-            extra_headers = {"Accept": "application/octet-stream"}
-
-        with _open_url(
-            download_url,
-            timeout=30,
-            extra_headers=extra_headers,
-            redirect_validator=cli._reject_insecure_download_redirect,
-        ) as resp:
-            final_url = resp.geturl()
-            if not cli.is_https_or_localhost_http(final_url):
-                raise installer.StepInstallError(
-                    f"URL redirected to non-HTTPS: {final_url}"
-                )
-            content_type = (
-                resp.getheader("Content-Type")
-                if hasattr(resp, "getheader")
-                else None
-            )
-            declarations = [
-                ("requested URL", from_url, cli.archive_format_from_name(from_url)),
-                ("final URL", final_url, cli.archive_format_from_name(final_url)),
-                (
-                    "Content-Type",
-                    content_type or "",
-                    cli.archive_format_from_content_type(content_type),
-                ),
-            ]
-            recognized = [item for item in declarations if item[2] is not None]
-            archive_format = recognized[0][2] if recognized else None
-            if any(item[2] != archive_format for item in recognized):
-                details = ", ".join(
-                    f"{label} declares {declared}"
-                    for label, _value, declared in recognized
-                )
-                raise installer.StepInstallError(
-                    f"Archive format mismatch: {details}"
-                )
-            downloaded = cli.read_response_limited(
-                resp,
-                error_type=ValueError,
-                label="step archive download",
-            )
-
-        with tempfile.NamedTemporaryFile(
-            suffix=cli.archive_suffix(archive_format) if archive_format else ".archive",
-            delete=False,
-        ) as tmp:
-            tmp_path = cli.Path(tmp.name)
-            tmp.write(downloaded)
-
-        try:
-            extract_tmp = tempfile.TemporaryDirectory(
-                prefix="speckit-step-archive-"
-            )
-        except OSError as exc:
-            raise installer.StepInstallError(
-                f"Failed to create temporary step archive directory: {exc}"
-            ) from exc
-        extracted_root = cli.Path(extract_tmp.name)
-        try:
-            # safe_extract_archive re-detects and confirms the archive bytes.
-            cli.safe_extract_archive(
-                tmp_path,
-                extracted_root,
-                source_name=recognized[0][1] if recognized else None,
-                content_type=content_type,
-            )
-            package_root = installer.resolve_package_root(extracted_root)
-            entry = installer.install_step_package(
-                project_root,
-                step_id,
-                package_root,
-                source="url",
-                force=force,
-            )
-            committed = True
-        finally:
-            primary_error = sys.exc_info()[1]
-            try:
-                extract_tmp.cleanup()
-            except OSError as cleanup_exc:
-                if extract_tmp.name and cli.Path(extract_tmp.name).exists():
-                    detail = (
-                        f"{cli._escape_markup(str(cleanup_exc))} "
-                        f"(path: {cli._escape_markup(extract_tmp.name)})"
-                    )
-                    cli.console.print(
-                        "[yellow]Warning:[/yellow] Could not remove temporary "
-                        f"step archive directory: {detail}"
-                    )
-                if primary_error is None and not committed:
-                    raise installer.StepInstallError(
-                        "Failed to remove temporary step archive directory: "
-                        f"{cleanup_exc}"
-                    ) from cleanup_exc
-                # Do not raise from cleanup: the primary installation error
-                # (if any) is already propagating, and after commit the install
-                # has succeeded. The warning above reports the residual path.
-    except cli.typer.Exit:
-        raise
-    except installer.StepInstallError:
-        raise
-    except Exception as exc:
-        raise installer.StepInstallError(
-            f"Failed to install step from URL: {exc}"
-        ) from exc
-    finally:
-        _cleanup_download_tmp_path(tmp_path)
-
     _print_installed(step_id, entry)
 
 
@@ -598,10 +417,5 @@ def workflow_step_add(
         else:
             _install_from_catalog(project_root, step_id, force=force, version=version)
     except installer.StepInstallError as exc:
-        notes = getattr(exc, "__notes__", ())
-        for note in notes:
-            cli.console.print(
-                f"[yellow]Warning:[/yellow] {cli._escape_markup(note)}"
-            )
-        cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
+        cli._print_package_error(exc)
         raise cli.typer.Exit(1) from exc
