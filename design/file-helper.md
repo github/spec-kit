@@ -240,10 +240,11 @@ and handles withhold delete sharing. Reads duplicate the validated leaf handle
 into an independently owned descriptor, never reopen its pathname.
 Both paths validate the opened file with `fstat` before reading its descriptor,
 and release all handles on success or failure. Windows child-open ABI
-structures and pointer types are defined once and reused, avoiding type retention
-in older supported Python versions. Handle values and path buffers remain
-operation-local. Platforms without
-the required safe-open primitives fail explicitly rather than fall back to
+structures and pointer types are initialized lazily in a Windows-only module
+and reused through Python's import cache. This avoids type retention in older
+supported Python versions without requiring `ctypes` for POSIX startup.
+Handle values and path buffers remain operation-local. Platforms without the
+required safe-open primitives fail explicitly rather than fall back to
 unchecked pathname reads. A concurrent replacement can fail the read or leave
 it reading the already-open original file, but cannot redirect it through a
 substituted symlink. This does not freeze file contents against in-place edits.

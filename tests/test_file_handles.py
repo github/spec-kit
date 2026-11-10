@@ -19,6 +19,52 @@ from specify_cli._file_handles import _windows_handle
 from specify_cli.file_helper import FileHelper, UnsupportedPathError
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX startup must not require Windows ctypes support")
+@pytest.mark.parametrize("operation", ["help", "files"])
+def test_posix_usage_without_optional_ctypes(tmp_path, operation):
+    result = subprocess.run(
+        [sys.executable, "-c", """
+import sys
+
+class NoCtypes:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "_ctypes":
+            raise ModuleNotFoundError("optional _ctypes unavailable", name="_ctypes")
+
+for name in tuple(sys.modules):
+    if name == "_ctypes" or name == "ctypes" or name.startswith("ctypes."):
+        sys.modules.pop(name)
+sys.meta_path.insert(0, NoCtypes())
+
+if sys.argv[1] == "help":
+    from specify_cli import main
+    sys.argv = ["specify", "--help"]
+    main()
+else:
+    from pathlib import Path
+    from specify_cli.file_helper import FileHelper
+
+    root = Path(sys.argv[2])
+    for allow in (False, True):
+        files = FileHelper(root, allow_symlinks=allow)
+        files.mkdir("nested")
+        files.create_text("nested/file", "inside")
+        assert files.read_text("nested/file") == "inside"
+        files.write_text("nested/file", "updated")
+        if allow:
+            files.symlink("file", "nested/alias")
+            assert files.read_text("nested/alias") == "updated"
+        files.delete("nested", recursive=True)
+    assert "specify_cli._windows_abi" not in sys.modules
+    assert "_ctypes" not in sys.modules
+""", operation, str(tmp_path)],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    if operation == "help":
+        assert "Usage" in result.stdout
+
+
 @pytest.mark.parametrize("failure", [None, "duplicate", "convert", "body"])
 def test_windows_read_fd_duplicates_and_closes_only_its_owned_handle(tmp_path, monkeypatch, failure):
     selected = tmp_path / "file"
@@ -369,17 +415,19 @@ def test_repeated_windows_reads_do_not_accumulate_abi_types(tmp_path, allow):
     selected.parent.mkdir(parents=True)
     selected.write_bytes(b"inside")
     files = FileHelper(root, allow_symlinks=allow)
+    abi_modules = {_file_handles.__name__, f"{_file_handles.__package__}._windows_abi"}
 
     def live_abi_types():
         return {
             weakref.ref(obj) for obj in gc.get_objects()
-            if isinstance(obj, type) and getattr(obj, "__module__", None) == _file_handles.__name__
+            if isinstance(obj, type) and getattr(obj, "__module__", None) in abi_modules
         }
 
     for _ in range(32):
         assert files.read_bytes("nested/file") == b"inside"
     gc.collect()
     baseline = live_abi_types()
+    assert baseline
     for _ in range(256):
         assert files.read_bytes("nested/file") == b"inside"
     gc.collect()

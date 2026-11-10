@@ -2,48 +2,9 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-import ctypes
-from ctypes import wintypes
 import errno
 import os
 from pathlib import Path, PureWindowsPath
-
-
-# Older Python versions retain POINTER types globally; reuse these ABI classes.
-class _UnicodeString(ctypes.Structure):
-    _fields_ = [
-        ("Length", ctypes.c_uint16),
-        ("MaximumLength", ctypes.c_uint16),
-        ("Buffer", wintypes.LPWSTR),
-    ]
-
-
-_UnicodeStringPointer = ctypes.POINTER(_UnicodeString)
-
-
-class _ObjectAttributes(ctypes.Structure):
-    _fields_ = [
-        ("Length", ctypes.c_uint32),
-        ("RootDirectory", wintypes.HANDLE),
-        ("ObjectName", _UnicodeStringPointer),
-        ("Attributes", ctypes.c_uint32),
-        ("SecurityDescriptor", wintypes.LPVOID),
-        ("SecurityQualityOfService", wintypes.LPVOID),
-    ]
-
-
-_ObjectAttributesPointer = ctypes.POINTER(_ObjectAttributes)
-
-
-class _StatusValue(ctypes.Union):
-    _fields_ = [("Status", ctypes.c_int32), ("Pointer", wintypes.LPVOID)]
-
-
-class _IoStatusBlock(ctypes.Structure):
-    _fields_ = [("Value", _StatusValue), ("Information", ctypes.c_size_t)]
-
-
-_IoStatusBlockPointer = ctypes.POINTER(_IoStatusBlock)
 
 
 def _open_windows_child(parent: int, name: str, *, directory: bool, access: int, sharing: int) -> int:
@@ -54,11 +15,15 @@ def _open_windows_child(parent: int, name: str, *, directory: bool, access: int,
     if encoded_length > 65532:
         raise OSError(errno.ENAMETOOLONG, "Windows path component is too long", name)
 
+    import ctypes
+    from ctypes import wintypes
+    from . import _windows_abi as abi
+
     native = ctypes.WinDLL("ntdll")
     create = native.NtCreateFile
     create.argtypes = [
         ctypes.POINTER(wintypes.HANDLE), ctypes.c_uint32,
-        _ObjectAttributesPointer, _IoStatusBlockPointer,
+        abi._ObjectAttributesPointer, abi._IoStatusBlockPointer,
         wintypes.LPVOID, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32,
         ctypes.c_uint32, wintypes.LPVOID, ctypes.c_uint32,
     ]
@@ -67,16 +32,16 @@ def _open_windows_child(parent: int, name: str, *, directory: bool, access: int,
     dos_error.argtypes = [ctypes.c_int32]
     dos_error.restype = ctypes.c_uint32
     buffer = ctypes.create_unicode_buffer(name)
-    unicode_name = _UnicodeString(
+    unicode_name = abi._UnicodeString(
         encoded_length, encoded_length + 2, ctypes.cast(buffer, wintypes.LPWSTR)
     )
     # OBJ_DONT_REPARSE and FILE_OPEN_REPARSE_POINT keep resolution on this handle.
-    attributes = _ObjectAttributes(
-        ctypes.sizeof(_ObjectAttributes), parent, ctypes.pointer(unicode_name),
+    attributes = abi._ObjectAttributes(
+        ctypes.sizeof(abi._ObjectAttributes), parent, ctypes.pointer(unicode_name),
         0x40 | 0x1000, None, None,
     )
     handle = wintypes.HANDLE()
-    status = _IoStatusBlock()
+    status = abi._IoStatusBlock()
     options = 0x00200000 | (0x1 if directory else 0x40 | 0x20)
     result = create(
         ctypes.byref(handle), access | (0 if directory else 0x100000),
@@ -96,6 +61,9 @@ def _windows_handle(
     parent: int | None = None, traverse: bool = False,
 ) -> Iterator[int]:
     """Pin a non-reparse path by withholding Windows delete sharing."""
+    import ctypes
+    from ctypes import wintypes
+
     class AttributeTagInfo(ctypes.Structure):
         _fields_ = [("attributes", wintypes.DWORD), ("tag", wintypes.DWORD)]
 
