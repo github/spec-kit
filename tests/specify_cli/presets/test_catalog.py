@@ -477,7 +477,7 @@ class TestPresetCatalog:
                 raise OSError("catalog unavailable")
             if kind == "redirect":
                 redirect_validator(url, "http://localhost:8080/catalog.json")
-                raise AssertionError("HTTP redirect should have been rejected")
+                pytest.fail("HTTP redirect should have been rejected")
             return Response(url)
 
         monkeypatch.setattr(catalog, "_open_url", open_url)

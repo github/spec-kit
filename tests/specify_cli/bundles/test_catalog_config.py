@@ -402,7 +402,10 @@ def test_derive_id_ignores_credentials_and_port():
 def test_add_source_rejects_unsupported_scheme(tmp_path: Path):
     project = tmp_path / "proj"
     (project / ".specify").mkdir(parents=True)
-    with pytest.raises(BundlerError, match="Unsupported catalog url scheme"):
+    with pytest.raises(
+        BundlerError,
+        match=r"Use https://, file://, builtin://, or a local path\.",
+    ):
         cc.add_source(project, "ssh://host/catalog.json", policy="install-allowed", priority=50)
 
 

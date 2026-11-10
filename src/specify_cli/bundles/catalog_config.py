@@ -167,7 +167,7 @@ def add_source(
     if "://" in url and parsed.scheme.lower() not in _REMOTE_SCHEMES:
         raise BundlerError(
             f"Unsupported catalog url scheme '{parsed.scheme}://' in '{url}'. "
-            "Use http(s)://, file://, builtin://, or a local path."
+            "Use https://, file://, builtin://, or a local path."
         )
     if parsed.scheme.lower() in {"http", "https"}:
         # Mirror specify_cli.catalogs._validate_catalog_url (#3209/#3210):
