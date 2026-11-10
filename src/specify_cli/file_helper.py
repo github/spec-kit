@@ -169,12 +169,16 @@ class FileHelper:
         parts = destination.relative_to(self._canonical_root).parts
         with ExitStack() as stack:
             if os.name == "nt":
-                current = self._canonical_root
-                stack.enter_context(_windows_handle(current, directory=True, share_write=False))
+                parent = stack.enter_context(_windows_handle(
+                    self._canonical_root, directory=True, traverse=True,
+                ))
                 for part in parts[:-1]:
-                    current /= part
-                    stack.enter_context(_windows_handle(current, directory=True, share_write=False))
-                handle = stack.enter_context(_windows_handle(destination, directory=False))
+                    parent = stack.enter_context(_windows_handle(
+                        Path(part), directory=True, parent=parent, traverse=True,
+                    ))
+                handle = stack.enter_context(_windows_handle(
+                    Path(parts[-1]), directory=False, parent=parent,
+                ))
                 fd = stack.enter_context(windows_read_fd(handle))
             else:
                 if not (

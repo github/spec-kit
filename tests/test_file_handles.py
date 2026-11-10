@@ -3,9 +3,11 @@
 from contextlib import contextmanager
 import ctypes
 from ctypes import wintypes
+import errno
 import os
 from pathlib import Path
 import sys
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -70,7 +72,9 @@ def test_windows_read_fd_duplicates_and_closes_only_its_owned_handle(tmp_path, m
         os.close(original)
 
 
-def _set_windows_symlink_reparse(path: Path, target: Path) -> None:
+def _set_windows_symlink_reparse(
+    path: Path, target: Path, *, junction: bool = False, access: int = 0x40000000,
+) -> None:
     import ctypes
     from ctypes import wintypes
     import _winapi
@@ -83,7 +87,10 @@ def _set_windows_symlink_reparse(path: Path, target: Path) -> None:
     ]
     control.restype = wintypes.BOOL
     template = target.with_name("reparse-template")
-    template.symlink_to(target)
+    if junction:
+        _winapi.CreateJunction(str(target), str(template))
+    else:
+        template.symlink_to(target)
     try:
         buffer = ctypes.create_string_buffer(16 * 1024)
         returned = wintypes.DWORD()
@@ -93,36 +100,41 @@ def _set_windows_symlink_reparse(path: Path, target: Path) -> None:
                 raise ctypes.WinError(ctypes.get_last_error())
         finally:
             _winapi.CloseHandle(source)
-        handle = _winapi.CreateFile(str(path), 0x40000000, 0x7, 0, 3, 0x02200000, 0)
+        handle = _winapi.CreateFile(str(path), access, 0x7, 0, 3, 0x02200000, 0)
         try:
             if not control(handle, 0x900A4, buffer, returned.value, None, 0, ctypes.byref(returned), None):
                 raise ctypes.WinError(ctypes.get_last_error())
         finally:
             _winapi.CloseHandle(handle)
     finally:
-        template.unlink()
+        if junction:
+            template.rmdir()
+        else:
+            template.unlink()
 
 
 @pytest.mark.parametrize("failure", [None, "get", "set"])
-def test_reparse_fixture_copies_native_buffer_and_cleans_up(tmp_path, monkeypatch, failure):
+@pytest.mark.parametrize("junction", [False, True])
+def test_reparse_fixture_copies_native_buffer_and_cleans_up(tmp_path, monkeypatch, failure, junction):
     import ctypes
     from ctypes import wintypes
 
     target = tmp_path / "outside"
     target.write_bytes(b"outside")
-    probe = tmp_path / "probe"
-    try:
-        probe.symlink_to(target)
-    except (NotImplementedError, OSError) as exc:
-        pytest.skip(f"Symlink creation unavailable: {exc}")
-    probe.unlink()
+    if not junction:
+        probe = tmp_path / "probe"
+        try:
+            probe.symlink_to(target)
+        except (NotImplementedError, OSError) as exc:
+            pytest.skip(f"Symlink creation unavailable: {exc}")
+        probe.unlink()
     opened = []
     closed = []
     payload = b"OS-generated reparse buffer"
 
     def create(path, access, sharing, security, disposition, flags, template):
         assert (sharing, security, disposition, flags, template) == (7, 0, 3, 0x02200000, 0)
-        assert access == (0 if not opened else 0x40000000)
+        assert access == (0 if not opened else 0x100 if junction else 0x40000000)
         opened.append(len(opened) + 1)
         return opened[-1]
 
@@ -141,17 +153,25 @@ def test_reparse_fixture_copies_native_buffer_and_cleans_up(tmp_path, monkeypatc
                     return False
             return True
 
-    monkeypatch.setitem(sys.modules, "_winapi", SimpleNamespace(CreateFile=create, CloseHandle=closed.append))
+    monkeypatch.setitem(sys.modules, "_winapi", SimpleNamespace(
+        CreateFile=create, CloseHandle=closed.append,
+        CreateJunction=lambda target, path: Path(path).mkdir(),
+    ))
     monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: SimpleNamespace(DeviceIoControl=Control()), raising=False)
     monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
     monkeypatch.setattr(ctypes, "WinError", lambda code: OSError("injected native failure"), raising=False)
     if failure:
         with pytest.raises(OSError, match="injected native failure"):
-            _set_windows_symlink_reparse(tmp_path / "file", target)
+            _set_windows_symlink_reparse(
+                tmp_path / "file", target, junction=junction, access=0x100 if junction else 0x40000000,
+            )
     else:
-        _set_windows_symlink_reparse(tmp_path / "file", target)
+        _set_windows_symlink_reparse(
+            tmp_path / "file", target, junction=junction, access=0x100 if junction else 0x40000000,
+        )
     assert closed == opened
     assert not (tmp_path / "reparse-template").is_symlink()
+    assert not (tmp_path / "reparse-template").exists()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows reparse changes required")
@@ -171,12 +191,12 @@ def test_windows_read_never_reopens_leaf_after_in_place_reparse_change(tmp_path,
         with _file_handles._windows_handle(path, **kwargs) as handle:
             if not kwargs["directory"]:
                 try:
-                    _set_windows_symlink_reparse(path, outside)
+                    _set_windows_symlink_reparse(selected, outside)
                 except OSError as exc:
                     if exc.winerror in (50, 1314):
                         pytest.skip(f"Symlink reparse updates unavailable: {exc}")
                     raise
-                assert path.read_bytes() == b"outside"
+                assert selected.read_bytes() == b"outside"
                 changed = True
             yield handle
 
@@ -191,20 +211,21 @@ def test_windows_read_never_reopens_leaf_after_in_place_reparse_change(tmp_path,
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows sharing semantics required")
-def test_windows_read_directory_pin_prevents_writable_reparse_handle(tmp_path):
+def test_windows_traversal_pin_allows_writes_but_prevents_rename(tmp_path):
     import _winapi
 
     def writable_handle():
         return _winapi.CreateFile(str(tmp_path), 0x40000000, 0x7, 0, 3, 0x02200000, 0)
 
     _winapi.CloseHandle(writable_handle())
-    with _file_handles._windows_handle(tmp_path, directory=True, share_write=False):
+    with _file_handles._windows_handle(tmp_path, directory=True, traverse=True):
+        _winapi.CloseHandle(writable_handle())
         with pytest.raises(OSError) as error:
-            writable_handle()
+            tmp_path.rename(tmp_path.with_name(tmp_path.name + "-renamed"))
         assert error.value.winerror == 32
     _winapi.CloseHandle(writable_handle())
-@pytest.mark.parametrize("directory", [False, True])
-def test_windows_handle_declares_complete_createfile_prototype(tmp_path, monkeypatch, directory):
+@pytest.mark.parametrize("directory,traverse", [(False, False), (True, False), (True, True)])
+def test_windows_handle_declares_complete_createfile_prototype(tmp_path, monkeypatch, directory, traverse):
     closed = []
 
     def create(*args):
@@ -220,7 +241,7 @@ def test_windows_handle_declares_complete_createfile_prototype(tmp_path, monkeyp
         assert create.restype is wintypes.HANDLE
         assert args == (
             str(tmp_path),
-            (0x80 | 0x1) if directory else 0x80000000,
+            (0x80 | (0x20 if traverse else 0x1)) if directory else 0x80000000,
             0x3,
             None,
             3,
@@ -247,7 +268,170 @@ def test_windows_handle_declares_complete_createfile_prototype(tmp_path, monkeyp
         )
 
     monkeypatch.setattr(ctypes, "WinDLL", load_kernel, raising=False)
-    with _windows_handle(tmp_path, directory=directory) as handle:
+    with _windows_handle(tmp_path, directory=directory, traverse=traverse) as handle:
         assert handle == 123
         assert closed == []
     assert closed == [123]
+
+
+@pytest.mark.parametrize("directory", [False, True])
+@pytest.mark.parametrize("failure", [None, "status", "reparse", "type", "info", "empty"])
+@pytest.mark.parametrize("child_name", ["caf\u00e9", "face \U0001f600", "surrogate\ud800"])
+def test_windows_child_open_is_relative_and_closes_handles(monkeypatch, directory, failure, child_name):
+    closed = []
+
+    def create_path(*args):
+        pytest.fail("A child must not be opened by absolute pathname")
+
+    def create_child(output, access, attributes, status, allocation, file_attributes,
+                     sharing, disposition, options, ea, ea_length):
+        assert create_child.restype is ctypes.c_int32
+        attributes = attributes._obj
+        assert attributes.Length == ctypes.sizeof(type(attributes))
+        assert attributes.RootDirectory == 51
+        assert attributes.Attributes == 0x1040
+        assert attributes.SecurityDescriptor is None
+        assert attributes.SecurityQualityOfService is None
+        name = attributes.ObjectName.contents
+        length = len(child_name.encode("utf-16-le", errors="surrogatepass"))
+        assert (name.Buffer, name.Length, name.MaximumLength) == (child_name, length, length + 2)
+        assert access == (0xA0 if directory else 0x80100000)
+        assert sharing == 3 and disposition == 1
+        assert options == (0x200001 if directory else 0x200060)
+        assert allocation is None and file_attributes == 0 and ea is None and ea_length == 0
+        assert ctypes.sizeof(status._obj) == 2 * ctypes.sizeof(ctypes.c_void_p)
+        if failure == "status":
+            return -1073741790
+        if failure != "empty":
+            output._obj.value = 77
+        return 0
+
+    def info(handle, info_class, buffer, size):
+        assert handle == 77 and info_class == 9
+        attributes = ctypes.cast(buffer, ctypes.POINTER(wintypes.DWORD))
+        attributes[0] = 0x10 if directory else 0
+        if failure == "reparse":
+            attributes[0] |= 0x400
+        if failure == "type":
+            attributes[0] ^= 0x10
+        return failure != "info"
+
+    def close(handle):
+        closed.append(handle)
+        return True
+
+    def error(status):
+        assert status == -1073741790
+        return 5
+
+    def load(name, **kwargs):
+        if name == "ntdll":
+            return SimpleNamespace(NtCreateFile=create_child, RtlNtStatusToDosError=error)
+        assert name == "kernel32" and kwargs == {"use_last_error": True}
+        return SimpleNamespace(
+            CreateFileW=create_path, GetFileInformationByHandleEx=info, CloseHandle=close,
+        )
+
+    monkeypatch.setattr(ctypes, "WinDLL", load, raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
+    monkeypatch.setattr(ctypes, "WinError", lambda code: PermissionError(errno.EACCES, "native denied"), raising=False)
+    if failure:
+        with pytest.raises(OSError):
+            with _windows_handle(Path(child_name), directory=directory, traverse=directory, parent=51):
+                pytest.fail("A failing native open must not yield a handle")
+    else:
+        with _windows_handle(Path(child_name), directory=directory, traverse=directory, parent=51) as handle:
+            assert handle == 77 and closed == []
+    assert closed == ([] if failure in ("status", "empty") else [77])
+
+
+@pytest.mark.parametrize("name", ["", ".", "..", "../file", "dir/file", "dir\\file", "C:outside", "C:\\outside", "\0"])
+def test_windows_child_open_rejects_non_component_names(name):
+    with pytest.raises(ValueError, match="single relative"):
+        _file_handles._open_windows_child(51, name, directory=False, access=0, sharing=3)
+
+
+def test_windows_child_open_rejects_oversized_unicode_name():
+    with pytest.raises(OSError) as error:
+        _file_handles._open_windows_child(51, "a" * 32767, directory=False, access=0, sharing=3)
+    assert error.value.errno == errno.ENAMETOOLONG
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows attribute-only junction changes required")
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("level", ["root", "parent"])
+def test_windows_read_anchors_children_after_attribute_only_junction_change(tmp_path, monkeypatch, allow, level):
+    root = tmp_path / "project"
+    root.mkdir()
+    root = root.resolve()
+    directory = root / "directory"
+    directory.mkdir()
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    outside = tmp_path / "outside"
+    outside_directory = outside / "directory" if level == "root" else outside
+    outside_directory.mkdir(parents=True)
+    (outside_directory / "file").write_bytes(b"outside")
+    locations = {}
+    changed = False
+
+    @contextmanager
+    def exchange(path, **kwargs):
+        nonlocal changed
+        parent = kwargs.get("parent")
+        actual = path if parent is None else locations[parent] / path
+        with _file_handles._windows_handle(path, **kwargs) as handle:
+            locations[handle] = actual
+            try:
+                if kwargs["directory"] and actual == (root if level == "root" else directory):
+                    displaced = directory if level == "root" else selected
+                    displaced.rename(tmp_path / "retained")
+                    _set_windows_symlink_reparse(actual, outside, junction=True, access=0x100)
+                    changed = True
+                    # The former full-path open follows this same converted parent.
+                    with _windows_handle(selected, directory=False) as old_handle:
+                        with _file_handles.windows_read_fd(old_handle) as fd:
+                            assert os.read(fd, 7) == b"outside"
+                yield handle
+            finally:
+                locations.pop(handle)
+
+    monkeypatch.setattr(file_helper, "_windows_handle", exchange)
+    try:
+        content = FileHelper(root, allow_symlinks=allow).read_bytes(selected)
+    except (OSError, ValueError):
+        pass
+    else:
+        assert content == b"inside"
+    assert changed
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows ACL semantics required")
+@pytest.mark.parametrize("restricted", ["root", "parent"])
+@pytest.mark.parametrize("allow", [False, True])
+def test_windows_reads_do_not_require_folder_listing(tmp_path, restricted, allow):
+    from specify_cli._file_policy import read_project_options
+
+    root = tmp_path / "project"
+    directory = root / ".specify"
+    directory.mkdir(parents=True)
+    selected = directory / "init-options.json"
+    payload = b'{"allow_symlinks": false}'
+    selected.write_bytes(payload)
+    limited = root if restricted == "root" else directory
+    subprocess.run(
+        ["icacls", str(limited), "/deny", "*S-1-1-0:(RD)"], check=True, capture_output=True,
+    )
+    try:
+        assert selected.read_bytes() == payload
+        with pytest.raises(PermissionError):
+            list(limited.iterdir())
+        with pytest.raises(PermissionError):
+            with _windows_handle(limited, directory=True):
+                pytest.fail("The former listing-mode pin must be denied by this ACL")
+        assert FileHelper(root, allow_symlinks=allow).read_bytes(selected) == payload
+        assert read_project_options(root)["allow_symlinks"] is False
+    finally:
+        subprocess.run(
+            ["icacls", str(limited), "/remove:d", "*S-1-1-0"], check=True, capture_output=True,
+        )

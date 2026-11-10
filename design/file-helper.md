@@ -230,11 +230,14 @@ Directory descriptors use `O_SEARCH` or `O_PATH` where available so searchable
 directories need not be listable, including Darwin's native `O_SEARCH` value
 when a Python build uses an older SDK that omits the constant. Each superseded
 parent is closed as soon as its child is open. The leaf uses `O_NOFOLLOW` and
-`O_NONBLOCK`. Windows reads
-pin each resolved directory and leaf with non-reparse handles that withhold
-delete sharing; directory handles also withhold write sharing to prevent
-in-place reparse changes during traversal. Reads duplicate the validated leaf
-handle into an independently owned descriptor, never reopen its pathname.
+`O_NONBLOCK`. Windows reads open the canonical root with `FILE_TRAVERSE` and
+`FILE_READ_ATTRIBUTES`, then open each resolved child relative to its validated
+parent handle with `NtCreateFile`. Directory opens do not request enumeration
+access. Relative opens prevent an in-place junction change on an already-open
+parent from redirecting the next open; write-sharing restrictions alone cannot
+prevent attribute-only reparse updates. Each new handle rejects reparse points,
+and handles withhold delete sharing. Reads duplicate the validated leaf handle
+into an independently owned descriptor, never reopen its pathname.
 Both paths validate the opened file with `fstat` before reading its descriptor,
 and release all handles on success or failure. Platforms without
 the required safe-open primitives fail explicitly rather than fall back to

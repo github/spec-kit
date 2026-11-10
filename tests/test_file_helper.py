@@ -205,21 +205,28 @@ def test_windows_read_pins_entire_resolved_hierarchy(root, monkeypatch, failure)
     seen = []
 
     @contextmanager
-    def pin(path, *, directory, share_write=True):
-        if path.name == {"parent": "directory", "leaf": "file"}.get(failure):
+    def pin(path, *, directory, parent=None, traverse=False):
+        if parent is None:
+            assert directory and path == root.resolve()
+            actual = path
+        else:
+            assert parent == len(pinned) + 10
+            assert path.parts == (path.name,)
+            actual = pinned[-1] / path
+        if actual.name == {"parent": "directory", "leaf": "file"}.get(failure):
             raise OSError("injected handle failure")
         if directory:
-            assert not share_write
-        pinned.append(path)
-        seen.append((path, directory))
+            assert traverse
+        pinned.append(actual)
+        seen.append((actual, directory))
         try:
-            yield 1
+            yield len(pinned) + 10
         finally:
-            assert pinned.pop() == path
+            assert pinned.pop() == actual
 
     @contextmanager
     def duplicate(handle):
-        assert handle == 1
+        assert handle == 13
         assert pinned == [root.resolve(), directory.resolve(), selected.resolve()]
         if failure == "duplicate":
             raise OSError("injected duplicate failure")
@@ -275,16 +282,18 @@ def test_windows_read_keeps_validated_object_when_path_changes(root, link, monke
     changed = False
 
     @contextmanager
-    def pin(path, *, directory, share_write=True):
+    def pin(path, *, directory, parent=None, traverse=False):
         nonlocal changed
         if directory:
+            assert parent is None and traverse
             yield 1
         else:
-            fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+            assert parent == 1 and path == Path("file")
+            fd = os.open(selected, os.O_RDONLY | getattr(os, "O_BINARY", 0))
             try:
                 # Model reparse changes after validation without changing the opened object.
-                path.unlink()
-                link(path, outside)
+                selected.unlink()
+                link(selected, outside)
                 changed = True
                 yield fd
             finally:
@@ -340,20 +349,46 @@ def test_read_through_search_only_directories(root, monkeypatch, allow, restrict
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions required")
 @pytest.mark.parametrize("restricted", ["root", "parent"])
-def test_read_rejects_non_searchable_directories(root, restricted):
+@pytest.mark.parametrize("after_validation", [False, True])
+def test_read_rejects_non_searchable_directories(root, monkeypatch, restricted, after_validation):
     if os.geteuid() == 0:
         pytest.skip("Root bypasses directory permission checks")
     directory = root / "directory"
     directory.mkdir()
     selected = directory / "file"
     selected.write_bytes(b"inside")
+    expected = selected.resolve()
     files = FileHelper(root)
     limited = root if restricted == "root" else directory
     previous_mode = limited.stat().st_mode & 0o777
-    limited.chmod(0)
+    checked = []
+    opened = []
+    original_check = FileHelper._require_file
+    original_open = os.open
+
+    def revoke(path):
+        original_check(path)
+        checked.append(path)
+        limited.chmod(0)
+
+    def recording_open(*args, **kwargs):
+        opened.append((args, kwargs))
+        return original_open(*args, **kwargs)
+
+    if after_validation:
+        monkeypatch.setattr(FileHelper, "_require_file", staticmethod(revoke))
+        monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {recording_open})
+        monkeypatch.setattr(os, "open", recording_open)
+    else:
+        limited.chmod(0)
     try:
         with pytest.raises(PermissionError):
             files.read_bytes(selected)
+        if after_validation:
+            assert checked == [expected]
+            assert opened
+            if restricted == "parent":
+                assert any(kwargs.get("dir_fd") is not None for args, kwargs in opened)
     finally:
         limited.chmod(previous_mode)
 

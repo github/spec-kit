@@ -4,11 +4,84 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 import errno
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+
+
+def _open_windows_child(parent: int, name: str, *, directory: bool, access: int, sharing: int) -> int:
+    """Open one component relative to an already validated directory handle."""
+    import ctypes
+    from ctypes import wintypes
+
+    if PureWindowsPath(name).parts != (name,) or PureWindowsPath(name).anchor or name == ".." or "\0" in name:
+        raise ValueError(f"Expected a single relative Windows path component: {name!r}")
+    encoded_length = len(name.encode("utf-16-le", errors="surrogatepass"))
+    if encoded_length > 65532:
+        raise OSError(errno.ENAMETOOLONG, "Windows path component is too long", name)
+
+    class UnicodeString(ctypes.Structure):
+        _fields_ = [
+            ("Length", ctypes.c_uint16),
+            ("MaximumLength", ctypes.c_uint16),
+            ("Buffer", wintypes.LPWSTR),
+        ]
+
+    class ObjectAttributes(ctypes.Structure):
+        _fields_ = [
+            ("Length", ctypes.c_uint32),
+            ("RootDirectory", wintypes.HANDLE),
+            ("ObjectName", ctypes.POINTER(UnicodeString)),
+            ("Attributes", ctypes.c_uint32),
+            ("SecurityDescriptor", wintypes.LPVOID),
+            ("SecurityQualityOfService", wintypes.LPVOID),
+        ]
+
+    class StatusValue(ctypes.Union):
+        _fields_ = [("Status", ctypes.c_int32), ("Pointer", wintypes.LPVOID)]
+
+    class IoStatusBlock(ctypes.Structure):
+        _fields_ = [("Value", StatusValue), ("Information", ctypes.c_size_t)]
+
+    native = ctypes.WinDLL("ntdll")
+    create = native.NtCreateFile
+    create.argtypes = [
+        ctypes.POINTER(wintypes.HANDLE), ctypes.c_uint32,
+        ctypes.POINTER(ObjectAttributes), ctypes.POINTER(IoStatusBlock),
+        wintypes.LPVOID, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32,
+        ctypes.c_uint32, wintypes.LPVOID, ctypes.c_uint32,
+    ]
+    create.restype = ctypes.c_int32
+    dos_error = native.RtlNtStatusToDosError
+    dos_error.argtypes = [ctypes.c_int32]
+    dos_error.restype = ctypes.c_uint32
+    buffer = ctypes.create_unicode_buffer(name)
+    unicode_name = UnicodeString(
+        encoded_length, encoded_length + 2, ctypes.cast(buffer, wintypes.LPWSTR)
+    )
+    # OBJ_DONT_REPARSE and FILE_OPEN_REPARSE_POINT keep resolution on this handle.
+    attributes = ObjectAttributes(
+        ctypes.sizeof(ObjectAttributes), parent, ctypes.pointer(unicode_name),
+        0x40 | 0x1000, None, None,
+    )
+    handle = wintypes.HANDLE()
+    status = IoStatusBlock()
+    options = 0x00200000 | (0x1 if directory else 0x40 | 0x20)
+    result = create(
+        ctypes.byref(handle), access | (0 if directory else 0x100000),
+        ctypes.byref(attributes), ctypes.byref(status), None, 0,
+        sharing, 1, options, None, 0,
+    )
+    if result < 0:
+        raise ctypes.WinError(dos_error(result))
+    if not handle.value:
+        raise OSError(errno.EBADF, "Native child open returned no handle", name)
+    return handle.value
 
 
 @contextmanager
-def _windows_handle(path: Path, *, directory: bool, share_write: bool = True) -> Iterator[int]:
+def _windows_handle(
+    path: Path, *, directory: bool,
+    parent: int | None = None, traverse: bool = False,
+) -> Iterator[int]:
     """Pin a non-reparse path by withholding Windows delete sharing."""
     import ctypes
     from ctypes import wintypes
@@ -35,19 +108,17 @@ def _windows_handle(path: Path, *, directory: bool, share_write: bool = True) ->
     close.argtypes = [wintypes.HANDLE]
     close.restype = wintypes.BOOL
 
-    # OPEN_REPARSE_POINT checks the entry itself. Directory handles need
-    # FILE_LIST_DIRECTORY: attribute-only handles do not prevent renaming.
-    handle = create(
-        str(path),
-        (0x80 | 0x1) if directory else 0x80000000,
-        0x1 | (0x2 if share_write else 0),
-        None,
-        3,
-        0x00200000 | 0x02000000,
-        None,
-    )
-    if handle == wintypes.HANDLE(-1).value:
-        raise ctypes.WinError(ctypes.get_last_error())
+    access = (0x80 | (0x20 if traverse else 0x1)) if directory else 0x80000000
+    sharing = 0x3
+    if parent is None:
+        # FILE_TRAVERSE also participates in sharing checks, unlike attributes alone.
+        handle = create(
+            str(path), access, sharing, None, 3, 0x00200000 | 0x02000000, None,
+        )
+        if handle == wintypes.HANDLE(-1).value:
+            raise ctypes.WinError(ctypes.get_last_error())
+    else:
+        handle = _open_windows_child(parent, str(path), directory=directory, access=access, sharing=sharing)
     try:
         attributes = AttributeTagInfo()
         if not info(handle, 9, ctypes.byref(attributes), ctypes.sizeof(attributes)):
