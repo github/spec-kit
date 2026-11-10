@@ -182,7 +182,23 @@ descriptor-relative or change their documented concurrency limitations.
   existing leaves, including dangling links, before opening the destination.
   This avoids target creation on backends that follow dangling links despite
   exclusive-open flags. `O_EXCL` and `O_NOFOLLOW` (where available) remain in use;
-  the static preflight does not eliminate concurrent path-change races.
+  the policy-resolved parent hierarchy is anchored through creation. POSIX
+  opens each resolved directory without following links and creates the leaf
+  relative to the final directory descriptor. Search-only handles (`O_PATH`
+  or `O_SEARCH`, where available) avoid adding a directory-read permission
+  requirement; macOS uses the native `O_SEARCH` value when an older Python
+  build does not expose it. Traversal closes each previous parent after opening
+  its child, keeping the number of live directory descriptors independent of
+  path depth.
+  Windows pins the canonical root and every resolved parent with non-reparse
+  handles withholding delete sharing. Each anchored directory must permit
+  `FILE_LIST_DIRECTORY` and `FILE_READ_ATTRIBUTES` access. An ACL that permits
+  creating files but denies directory listing can therefore cause creation to
+  fail before opening the leaf.
+  Allowed contained parent links and trusted root aliases are resolved before
+  anchoring; they are not banned. Parents must already exist, and the supplied
+  mode remains filtered by the process umask. Unsupported anchoring primitives
+  fail explicitly rather than falling back to unanchored creation.
 - `write_bytes(path, content, mode=0o644)` / `write_text(...)` atomically
   create or update files with existing parents. Text variants also accept
   `encoding="utf-8"`. Replacement files use the supplied mode; metadata and
@@ -265,10 +281,19 @@ inspect that same directory tree. Windows prevents ancestor renames while handle
 are held. Concurrent changes may still cause deletion to fail or leave
 partial results, and preflight is not a transaction or an immutable tree snapshot.
 Leaf removal acts on the current entry in the anchored parent, not a pinned leaf
-identity. Other mutations retain pathname-based checks and are **not** a race-free
-sandbox. Protect those operations against concurrent untrusted mutation
-separately. The helper does not constrain subprocesses or third-party code.
-Exclusive creation uses `O_EXCL` and `O_NOFOLLOW` where available.
+identity. For operations that still use
+validated paths (reads, directory creation, atomic writes, non-atomic
+overwrites, and symlink creation), portable path checks are **not**
+a race-free sandbox: another process can exchange parents or entries between
+checks and syscalls, and an I/O failure during mutation can leave partial
+results. Protect against concurrent untrusted mutation separately.
+Exclusive file creation anchors its resolved parent hierarchy as described
+above. On POSIX, renaming an opened directory does not redirect creation to
+its replacement: creation stays with the opened directory, even if it is
+renamed out of the root. This is not a guarantee of stable namespace membership
+under concurrent renames, nor does parent anchoring make every leaf preflight
+atomic with the subsequent open. The helper does not constrain subprocesses
+or third-party code.
 
 Existing safe-write mechanisms informed this helper, but existing shared
 infrastructure warning/skip behavior and development-mode link creation are
@@ -284,4 +309,7 @@ regression tests. Native Windows path and junction tests also exist and are
 skipped on other hosts; running the portable cases on macOS does not validate
 Windows filesystem syscalls or junction behavior. Deletion replacement tests
 exercise swaps at enumeration and removal boundaries on the native host; Windows
-handle-sharing behavior requires a native Windows run.
+handle-sharing behavior requires a native Windows run. Exclusive-creation tests
+cover parent replacement before anchoring and at the final open, along with
+native Windows parent-handle pinning and portable handle-lifetime checks;
+portable checks do not substitute for native Windows execution.

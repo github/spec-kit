@@ -7,11 +7,13 @@ from contextlib import contextmanager, nullcontext
 import os
 from pathlib import Path, PureWindowsPath
 import subprocess
+import sys
 from types import SimpleNamespace
 import weakref
 
 import pytest
 
+from specify_cli import file_helper
 from specify_cli.file_helper import (
     FileHelper,
     FileHelperError,
@@ -652,6 +654,8 @@ def test_file_helper_finalizer_does_not_retain_helper_or_leak_root(root):
 def test_file_helper_reuses_root_handle_across_deletions(root, monkeypatch):
     open_directory = os.open
     roots = []
+    for name in ("first", "second"):
+        (root / name).write_text("selected")
 
     def observe(path, *args, **kwargs):
         fd = open_directory(path, *args, **kwargs)
@@ -662,7 +666,6 @@ def test_file_helper_reuses_root_handle_across_deletions(root, monkeypatch):
     monkeypatch.setattr(os, "open", observe)
     with FileHelper(root) as files:
         for name in ("first", "second"):
-            files.create_text(name, "selected")
             files.delete(name)
         assert len(roots) == 1
         assert os.fstat(roots[0]).st_ino == root.stat().st_ino
@@ -1442,6 +1445,395 @@ def test_exclusive_create_rejects_dangling_leaf_with_windows_backend(
     assert not os.path.lexists(target)
 
 
+@pytest.mark.parametrize("operation", ["create_bytes", "create_text"])
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("ancestor", ["parent", "parent/nested"])
+def test_exclusive_create_rejects_parent_exchange_after_validation(
+    root, link, monkeypatch, operation, allow, ancestor
+):
+    destination = root / "parent/nested/new"
+    destination.parent.mkdir(parents=True)
+    parent = root / ancestor
+    retained = parent.with_name("retained")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    redirected = outside / destination.relative_to(parent)
+    redirected.parent.mkdir(parents=True, exist_ok=True)
+    files = FileHelper(root, allow_symlinks=allow)
+    original_path = FileHelper._path
+
+    def exchange_after_validation(self, path, **kwargs):
+        destination = original_path(self, path, **kwargs)
+        parent.rename(retained)
+        link(parent, outside)
+        return destination
+
+    monkeypatch.setattr(FileHelper, "_path", exchange_after_validation)
+    content = b"new" if operation == "create_bytes" else "new"
+    with pytest.raises(OSError):
+        getattr(files, operation)(destination, content)
+    assert not redirected.exists()
+    assert not (retained / destination.relative_to(parent)).exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative creation")
+@pytest.mark.parametrize("operation", ["create_bytes", "create_text"])
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("ancestor", ["parent", "parent/nested"])
+def test_exclusive_create_uses_open_parent_after_exchange(
+    root, link, monkeypatch, operation, allow, ancestor
+):
+    destination = root / "parent/nested/new"
+    destination.parent.mkdir(parents=True)
+    parent = root / ancestor
+    retained = parent.with_name("retained")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    redirected = outside / destination.relative_to(parent)
+    redirected.parent.mkdir(parents=True, exist_ok=True)
+    original_open = os.open
+    exchanged = False
+
+    def exchange_before_create(path, flags, *args, **kwargs):
+        nonlocal exchanged
+        if flags & os.O_CREAT:
+            parent.rename(retained)
+            link(parent, outside)
+            exchanged = True
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", exchange_before_create)
+    monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {exchange_before_create})
+    content = b"new" if operation == "create_bytes" else "new"
+    getattr(FileHelper(root, allow_symlinks=allow), operation)(destination, content)
+    assert exchanged
+    assert not redirected.exists()
+    assert (retained / destination.relative_to(parent)).read_bytes() == b"new"
+
+
+@pytest.mark.parametrize("operation", ["create_bytes", "create_text"])
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("absolute", [False, True])
+def test_exclusive_create_preserves_contained_parent_chain(
+    root, link, operation, allow, absolute
+):
+    target = root / "target/nested"
+    target.mkdir(parents=True)
+    first = link(root / "first", root / "target" if absolute else "target")
+    second = link(root / "second", first if absolute else "first")
+    path = second / "nested/new"
+    files = FileHelper(root, allow_symlinks=allow)
+    content = b"\x00\xff" if operation == "create_bytes" else "caf\u00e9\n"
+    if allow:
+        kwargs = {"encoding": "utf-16"} if operation == "create_text" else {}
+        getattr(files, operation)(path, content, **kwargs)
+        expected = content if isinstance(content, bytes) else content.encode("utf-16")
+        assert (target / "new").read_bytes() == expected
+    else:
+        with pytest.raises(SymlinkDeniedError):
+            getattr(files, operation)(path, content)
+        assert not (target / "new").exists()
+    assert first.is_symlink() and second.is_symlink()
+
+
+@pytest.mark.parametrize("operation", ["create_bytes", "create_text"])
+@pytest.mark.parametrize("allow", [False, True])
+def test_exclusive_create_accepts_trusted_root_alias(root, link, operation, allow):
+    alias = link(root.parent / "root-alias", root)
+    ancestor = link(root.parent / "ancestor-alias", root.parent)
+    content = b"new" if operation == "create_bytes" else "new"
+    for index, supplied in enumerate((alias, ancestor / root.name)):
+        files = FileHelper(supplied, allow_symlinks=allow)
+        getattr(files, operation)(supplied / f"new-{index}", content)
+        assert (root / f"new-{index}").read_bytes() == b"new"
+    assert alias.is_symlink() and ancestor.is_symlink()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX exclusive no-follow leaf open")
+@pytest.mark.parametrize("operation", ["create_bytes", "create_text"])
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("kind", ["file", "directory", "symlink", "dangling"])
+def test_exclusive_create_rejects_leaf_inserted_at_open(
+    root, link, monkeypatch, operation, allow, kind
+):
+    (root / "parent").mkdir()
+    outside = root.parent / "outside"
+    if kind != "dangling":
+        outside.write_bytes(b"keep")
+    destination = root / "parent/new"
+    real_open = os.open
+    attempted = False
+
+    def insert_leaf(path, flags, *args, **kwargs):
+        nonlocal attempted
+        if flags & os.O_CREAT:
+            attempted = True
+            if kind == "file":
+                destination.write_bytes(b"keep")
+            elif kind == "directory":
+                destination.mkdir()
+            else:
+                link(destination, outside)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", insert_leaf)
+    monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {insert_leaf})
+    content = b"new" if operation == "create_bytes" else "new"
+    with pytest.raises(FileExistsError):
+        getattr(FileHelper(root, allow_symlinks=allow), operation)(destination, content)
+    assert attempted
+    if kind == "file":
+        assert destination.read_bytes() == b"keep"
+    elif kind == "directory":
+        assert list(destination.iterdir()) == []
+    else:
+        assert destination.is_symlink()
+    if kind == "dangling":
+        assert not outside.exists()
+    else:
+        assert outside.read_bytes() == b"keep"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode and umask semantics")
+@pytest.mark.parametrize("operation", ["create_bytes", "create_text"])
+@pytest.mark.parametrize("allow", [False, True])
+def test_exclusive_create_preserves_mode_and_umask(root, operation, allow):
+    previous = os.umask(0o027)
+    try:
+        content = b"new" if operation == "create_bytes" else "new"
+        getattr(FileHelper(root, allow_symlinks=allow), operation)("new", content, mode=0o666)
+    finally:
+        os.umask(previous)
+    assert (root / "new").stat().st_mode & 0o777 == 0o640
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions")
+@pytest.mark.parametrize("operation", ["create_bytes", "create_text"])
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("ancestor", [".", "parent", "parent/nested"])
+@pytest.mark.parametrize("permissions", [0o300, 0o200])
+@pytest.mark.parametrize(
+    "search_api",
+    [
+        "default",
+        pytest.param(
+            "legacy-macos",
+            marks=pytest.mark.skipif(
+                sys.platform != "darwin", reason="macOS search-only directory handles"
+            ),
+        ),
+    ],
+)
+def test_exclusive_create_respects_write_and_search_permissions(
+    root, monkeypatch, operation, allow, ancestor, permissions, search_api
+):
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses directory permission checks")
+    if search_api == "legacy-macos":
+        monkeypatch.delattr(os, "O_PATH", raising=False)
+        monkeypatch.delattr(os, "O_SEARCH", raising=False)
+    (root / "parent/nested").mkdir(parents=True)
+    files = FileHelper(root, allow_symlinks=allow)
+    restricted = root / ancestor
+    content = b"new" if operation == "create_bytes" else "new"
+    restricted.chmod(permissions)
+    try:
+        if permissions == 0o300:
+            getattr(files, operation)("parent/nested/new", content)
+            assert (root / "parent/nested/new").read_bytes() == b"new"
+        else:
+            with pytest.raises(PermissionError):
+                getattr(files, operation)("parent/nested/new", content)
+    finally:
+        restricted.chmod(0o700)
+    if permissions == 0o200:
+        assert not (root / "parent/nested/new").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory descriptor traversal")
+@pytest.mark.parametrize("operation", ["create_bytes", "create_text"])
+@pytest.mark.parametrize("allow", [False, True])
+def test_exclusive_create_bounds_live_parent_descriptors(root, monkeypatch, operation, allow):
+    destination = root.joinpath(*("nested" for _ in range(32)), "new")
+    destination.parent.mkdir(parents=True)
+    files = FileHelper(root, allow_symlinks=allow)
+    real_open = os.open
+    real_close = os.close
+    live = set()
+    maximum = 0
+
+    def limited_open(path, flags, *args, **kwargs):
+        nonlocal maximum
+        if len(live) >= 2:
+            raise OSError(errno.EMFILE, "parent descriptor budget exhausted")
+        fd = real_open(path, flags, *args, **kwargs)
+        if flags & os.O_DIRECTORY:
+            live.add(fd)
+            maximum = max(maximum, len(live))
+        return fd
+
+    def observe_close(fd):
+        real_close(fd)
+        live.remove(fd)
+
+    monkeypatch.setattr(os, "open", limited_open)
+    monkeypatch.setattr(os, "close", observe_close)
+    monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {limited_open})
+    content = b"new" if operation == "create_bytes" else "new"
+    getattr(files, operation)(destination, content)
+    assert destination.read_bytes() == b"new"
+    assert maximum == 2
+    assert live == set()
+
+
+@pytest.mark.parametrize("encoding", ["ascii", "unknown-encoding"])
+def test_exclusive_create_text_encoding_failure_precedes_creation(root, encoding):
+    with pytest.raises((UnicodeEncodeError, LookupError)):
+        FileHelper(root).create_text("new", "caf\u00e9", encoding=encoding)
+    assert not (root / "new").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX capability checks")
+@pytest.mark.parametrize("capability", ["O_NOFOLLOW", "O_DIRECTORY", "supports_dir_fd"])
+def test_exclusive_create_requires_anchored_io(root, monkeypatch, capability):
+    monkeypatch.setattr(os, capability, set() if capability == "supports_dir_fd" else 0)
+    with pytest.raises(OSError) as error:
+        FileHelper(root).create_bytes("new", b"new")
+    assert error.value.errno == errno.ENOTSUP
+    assert not (root / "new").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory descriptor lifetimes")
+@pytest.mark.parametrize("failure", ["parent", "open", "fdopen", "write", None])
+def test_exclusive_create_releases_directory_handles(root, monkeypatch, failure):
+    (root / "parent/nested").mkdir(parents=True)
+    real_open = os.open
+    real_fdopen = os.fdopen
+    opened = []
+
+    def observe_open(path, flags, *args, **kwargs):
+        if failure == "parent" and path == "nested":
+            raise PermissionError("parent denied")
+        if failure == "open" and flags & os.O_CREAT:
+            raise PermissionError("open denied")
+        fd = real_open(path, flags, *args, **kwargs)
+        opened.append(fd)
+        return fd
+
+    class FailedWriter:
+        def __init__(self, fd):
+            self.stream = real_fdopen(fd, "wb")
+
+        def __enter__(self):
+            return self
+
+        def write(self, content):
+            raise OSError("write failed")
+
+        def __exit__(self, *args):
+            self.stream.close()
+
+    def observe_fdopen(fd, *args):
+        if failure == "fdopen":
+            raise OSError("fdopen failed")
+        if failure == "write":
+            return FailedWriter(fd)
+        return real_fdopen(fd, *args)
+
+    monkeypatch.setattr(os, "open", observe_open)
+    monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {observe_open})
+    monkeypatch.setattr(os, "fdopen", observe_fdopen)
+    if failure:
+        with pytest.raises(OSError, match=failure):
+            FileHelper(root).create_bytes("parent/nested/new", b"new")
+    else:
+        FileHelper(root).create_bytes("parent/nested/new", b"new")
+        assert (root / "parent/nested/new").read_bytes() == b"new"
+    assert opened
+    for fd in opened:
+        with pytest.raises(OSError) as error:
+            os.fstat(fd)
+        assert error.value.errno == errno.EBADF
+
+
+@pytest.mark.parametrize("failure", ["parent", "open", None])
+def test_exclusive_create_windows_pins_resolved_hierarchy_portably(
+    root, link, monkeypatch, failure
+):
+    (root / "parent/nested").mkdir(parents=True)
+    alias = link(root / "alias", root / "parent")
+    files = FileHelper(root, allow_symlinks=True)
+    pinned = []
+    acquired = []
+    real_open = os.open
+    expected = [root, root / "parent", root / "parent/nested"]
+
+    @contextmanager
+    def pin(path, *, directory):
+        assert directory
+        if failure == "parent" and path == expected[-1]:
+            raise PermissionError("parent denied")
+        pinned.append(path)
+        acquired.append(path)
+        try:
+            yield 1
+        finally:
+            assert pinned.pop() == path
+
+    def open_pinned(path, flags, mode):
+        assert pinned == expected
+        assert path == root / "parent/nested/new"
+        assert flags & os.O_CREAT and flags & os.O_EXCL
+        if failure == "open":
+            raise PermissionError("open denied")
+        return real_open(path, flags, mode)
+
+    windows_os = SimpleNamespace(**{**vars(os), "name": "nt", "open": open_pinned})
+    monkeypatch.setattr(file_helper, "os", windows_os)
+    monkeypatch.setattr(file_helper, "_windows_handle", pin)
+    if failure:
+        with pytest.raises(PermissionError, match=failure):
+            files.create_bytes(alias / "nested/new", b"new")
+        assert not (root / "parent/nested/new").exists()
+    else:
+        files.create_bytes(alias / "nested/new", b"new")
+        assert (root / "parent/nested/new").read_bytes() == b"new"
+    assert acquired == (expected[:-1] if failure == "parent" else expected)
+    assert pinned == []
+    assert alias.is_symlink()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows directory handle semantics")
+@pytest.mark.parametrize("ancestor", [".", "parent", "parent/nested"])
+@pytest.mark.parametrize("operation", ["create_bytes", "create_text"])
+@pytest.mark.parametrize("allow", [False, True])
+def test_exclusive_create_windows_blocks_parent_exchange(
+    root, monkeypatch, ancestor, operation, allow
+):
+    (root / "parent/nested").mkdir(parents=True)
+    parent = root / ancestor
+    retained = parent.with_name(parent.name + "-retained")
+    real_open = os.open
+    attempted = False
+
+    def try_exchange(path, flags, *args, **kwargs):
+        nonlocal attempted
+        if flags & os.O_CREAT:
+            attempted = True
+            with pytest.raises(OSError):
+                parent.rename(retained)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", try_exchange)
+    content = b"new" if operation == "create_bytes" else "new"
+    with FileHelper(root, allow_symlinks=allow) as files:
+        getattr(files, operation)("parent/nested/new", content)
+    assert attempted
+    assert (root / "parent/nested/new").read_bytes() == b"new"
+    parent.rename(retained)
+    assert retained.is_dir()
+
+
 def test_symlink_creation_requires_permission_and_contained_target(root, link):
     (root / "file").write_text("ok")
     with pytest.raises(SymlinkDeniedError):
@@ -1526,6 +1918,7 @@ def test_native_permission_failure_is_not_suppressed(root, monkeypatch):
         raise PermissionError("creation denied")
 
     monkeypatch.setattr("specify_cli.file_helper.os.open", fail)
+    monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {fail})
     with pytest.raises(PermissionError, match="creation denied"):
         files.create_bytes("file", b"bad")
     assert list(root.iterdir()) == []

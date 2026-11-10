@@ -1,4 +1,4 @@
-"""Private platform handles for scoped filesystem operations."""
+"""Private platform handles for confined filesystem operations."""
 
 import errno
 from collections.abc import Iterator
@@ -34,8 +34,11 @@ def _windows_handle(path: Path, *, directory: bool) -> Iterator[int]:
     close.argtypes = [wintypes.HANDLE]
     close.restype = wintypes.BOOL
 
-    # Attribute-only handles do not prevent directory renames. Include
-    # FILE_LIST_DIRECTORY, and inspect reparse entries without following them.
+    # OPEN_REPARSE_POINT inspects the link itself; BACKUP_SEMANTICS permits
+    # directory handles. Holding every ancestor without FILE_SHARE_DELETE
+    # prevents a junction/symlink swap during path-based create/replace.
+    # Attribute-only handles bypass share checking: include FILE_LIST_DIRECTORY
+    # with FILE_READ_ATTRIBUTES so even an empty directory cannot be renamed.
     handle = create(
         str(path),
         (0x80 | 0x1) if directory else 0x80000000,
@@ -52,9 +55,9 @@ def _windows_handle(path: Path, *, directory: bool) -> Iterator[int]:
         if not info(handle, 9, ctypes.byref(attributes), ctypes.sizeof(attributes)):
             raise ctypes.WinError(ctypes.get_last_error())
         if attributes.attributes & 0x400:
-            raise OSError(errno.ELOOP, "Refusing a reparse-point path", str(path))
+            raise OSError(errno.ELOOP, "Refusing a reparse-point filesystem path", str(path))
         if bool(attributes.attributes & 0x10) != directory:
-            raise OSError(errno.EINVAL, "Unexpected file type", str(path))
+            raise OSError(errno.EINVAL, "Unexpected filesystem object type", str(path))
         yield handle
     finally:
         close(handle)
