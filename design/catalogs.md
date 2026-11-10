@@ -113,7 +113,10 @@ All six types reject plain HTTP catalog sources, including localhost and
 loopback addresses, before network access. This intentionally removes the
 former local-development HTTP exception so every source layer follows the
 same HTTPS policy. Local HTTPS development servers need a certificate trusted
-by the system. Archive download policies are separate and unchanged.
+by Python's TLS client using its default OpenSSL trust configuration, which may
+differ from browser or operating-system trust. `SSL_CERT_FILE` can select a PEM
+CA bundle containing the development CA. Archive download policies are separate
+and unchanged.
 
 ## Configuration semantics
 

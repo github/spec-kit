@@ -58,8 +58,10 @@ deleting an entry, so it cannot remove an invalid HTTP source. Instead, edit
 `.specify/step-catalogs.yml` for project sources or
 `~/.specify/step-catalogs.yml` for user sources. Replace the source's `url` with
 a working HTTPS catalog URL, or remove its entire item from `catalogs`.
-Local HTTPS servers need a trusted certificate; changing the URL scheme alone
-does not enable HTTPS.
+Local HTTPS servers need a certificate trusted by Python's TLS client; browser
+or operating-system trust alone may not suffice. See
+[TLS certificates](../reference/authentication.md#tls-certificates) for
+`SSL_CERT_FILE` configuration. Changing the URL scheme alone does not enable HTTPS.
 
 If no custom sources remain in a file, delete that configuration file to fall
 through to the next level. Built-in defaults apply when no higher level supplies
