@@ -85,7 +85,7 @@ Write `ASSESS_DIR/decision.md`:
 - The path `.specify/assessments/<ASSESS_SLUG>/decision.md`.
 - The next step, by verdict:
   - **go** → `__SPECKIT_COMMAND_SPECIFY__` using the handoff summary as its input.
-  - **needs-clarification** → refine the named artifact in place with the missing information (edit the Markdown directly, or ask in free-form chat), then revise `decision.md` if that clears the blocker. Re-run a stage (e.g. `__SPECKIT_COMMAND_ASSESS_RESEARCH__ slug=<ASSESS_SLUG>`) only when the answer changes that stage's inputs.
+  - **needs-clarification** → report the blocking questions and stop — do not resolve them here. The user supplies the missing information by refining the named artifact in place (editing the Markdown directly, or explicitly directing an agent), then requests reassessment by re-running `__SPECKIT_COMMAND_ASSESS_DECIDE__ slug=<ASSESS_SLUG>`, which consumes the updated artifacts. Re-run an earlier stage (e.g. `__SPECKIT_COMMAND_ASSESS_RESEARCH__ slug=<ASSESS_SLUG>`) only when the answer changes that stage's inputs.
   - **kill** → none; the assessment is closed. The record remains for future reference.
 
 ## Guardrails

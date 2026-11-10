@@ -69,18 +69,22 @@ class TestExtensionLayout:
             cmd = EXT_DIR / "commands" / f"{name}.md"
             assert cmd.is_file(), f"Missing command file: {cmd}"
 
-    def test_decide_needs_clarification_step_refines_in_place(self):
-        """The decide report-back must match the assessment guide (#5325).
+    def test_decide_needs_clarification_step_reports_and_stops(self):
+        """The decide report-back must keep refinement and reassessment apart
+        (#5325, maintainer direction on PR #5329).
 
-        docs/guides/assessment.md says answering a [NEEDS CLARIFICATION]
-        question is artifact refinement -- edit the Markdown in place -- and
-        that re-running a command is an exception. The decide command used to
-        tell the agent the opposite ("re-run the named stage"), so tools
-        offering a next-step answer box had to pick a side, and a re-run also
-        triggers the overwrite confirmation. Pin the guide's side: the
-        needs-clarification next step names in-place refinement, and any
-        mention of re-running is conditional on the answer changing a stage's
-        inputs rather than the unconditional next step.
+        A needs-clarification verdict means decide reports the blocking
+        questions and stops. The *user* supplies the missing information by
+        refining the named artifact in place (editing the Markdown directly,
+        or explicitly directing an agent), and reassessment then goes through
+        re-running the decide command against the updated artifacts -- never
+        through the agent revising decision.md on its own. The command used to
+        say the unconditional next step was "re-run the named stage" (skipping
+        refinement); an interim wording swung the other way and told the agent
+        to "revise decision.md" in place (skipping the command). Pin the
+        middle: refinement is in place and user-driven, reassessment is an
+        explicit decide re-run, and re-running an *earlier* stage stays the
+        guarded exception.
         """
         text = (EXT_DIR / "commands" / "speckit.assess.decide.md").read_text(
             encoding="utf-8"
@@ -93,14 +97,20 @@ class TestExtensionLayout:
             for line in text.splitlines()
             if line.lstrip().startswith("- **needs-clarification** →")
         )
-        assert "refine the named artifact in place" in step
+        # decide reports and stops; it does not resolve the unknowns itself.
+        assert "report the blocking questions and stop" in step
+        # Refinement happens in the artifact, driven by the user.
+        assert "refining the named artifact in place" in step
+        # Reassessment goes through the command, not in-place decision edits.
+        assert "__SPECKIT_COMMAND_ASSESS_DECIDE__" in step
+        assert "revise `decision.md`" not in step
         assert "re-run the named stage" not in step
-        # A re-run may be offered only as the guarded exception, never first:
-        # the refinement wording must precede any re-run mention.
-        rerun = step.lower().find("re-run")
-        assert rerun == -1 or rerun > step.find("refine the named artifact")
-        if rerun != -1:
-            assert "only when" in step[rerun:]
+        # An earlier-stage re-run may be offered only as the guarded
+        # exception, after the decide re-run, never as the default next step.
+        decide_rerun = step.find("__SPECKIT_COMMAND_ASSESS_DECIDE__")
+        earlier = step.find("Re-run an earlier stage")
+        assert earlier != -1 and earlier > decide_rerun
+        assert "only when" in step[earlier:]
 
 
 # ── Catalog registration ─────────────────────────────────────────────────────
