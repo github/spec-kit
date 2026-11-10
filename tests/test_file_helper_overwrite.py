@@ -1,6 +1,7 @@
 """Handle-based non-atomic text overwrite behavior."""
 
 import csv
+import errno
 import os
 import subprocess
 import sys
@@ -354,17 +355,112 @@ def test_missing_parent_and_invalid_codec_do_not_create_or_truncate(tmp_path, al
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor capability required")
 @pytest.mark.parametrize("existing", [False, True])
-def test_unsupported_descriptor_backend_fails_without_path_fallback(tmp_path, monkeypatch, existing):
+@pytest.mark.parametrize(
+    ("capability", "value"),
+    [
+        ("dir_fd", False),
+        ("O_NOFOLLOW", 0), ("O_NOFOLLOW", None),
+        ("O_DIRECTORY", 0), ("O_DIRECTORY", None),
+        ("O_NONBLOCK", 0), ("O_NONBLOCK", None),
+    ],
+)
+def test_unsupported_descriptor_backend_fails_without_path_fallback(
+    tmp_path, monkeypatch, existing, capability, value
+):
     path = tmp_path / "file"
     if existing:
         path.write_text("old")
-    monkeypatch.setattr(file_helper, "_OVERWRITE_DIR_FD_SUPPORTED", False)
-    with pytest.raises(OSError, match="unsupported"):
+
+    def unexpected_open(*args, **kwargs):
+        raise AssertionError("An unsupported backend must not open a destination")
+
+    attributes = {**vars(os), "open": unexpected_open}
+    if capability == "dir_fd":
+        monkeypatch.setattr(file_helper, "_OVERWRITE_DIR_FD_SUPPORTED", False)
+    elif value is None:
+        attributes.pop(capability, None)
+    else:
+        attributes[capability] = value
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**attributes))
+    with pytest.raises(OSError, match="unsupported") as caught:
         FileHelper(tmp_path).overwrite_text("file", "new")
+    assert caught.value.errno == errno.ENOTSUP
     if existing:
         assert path.read_text() == "old"
     else:
         assert not path.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX upsert open semantics required")
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("writable", [False, True])
+def test_regular_file_created_at_leaf_open_retains_native_upsert_behavior(
+    tmp_path, monkeypatch, allow, writable
+):
+    if not writable and os.geteuid() == 0:
+        pytest.skip("Root bypasses file write permissions")
+    leaf = tmp_path / "file"
+    alias = tmp_path / "hardlink"
+    original = os.open
+    created = []
+    mode = 0o600 if writable else 0o400
+
+    def create_before_open(path, flags, *args, **kwargs):
+        if Path(path).name == "file":
+            assert not leaf.exists()
+            assert flags & os.O_CREAT and not flags & os.O_TRUNC
+            leaf.write_text("created immediately before open")
+            leaf.chmod(mode)
+            os.link(leaf, alias)
+            created.append(leaf.stat().st_ino)
+        return original(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(
+        file_helper, "os", SimpleNamespace(**{**vars(os), "open": create_before_open})
+    )
+    files = FileHelper(tmp_path, allow_symlinks=allow)
+    if writable:
+        files.overwrite_text("file", "new")
+    else:
+        with pytest.raises(PermissionError):
+            files.overwrite_text("file", "new")
+    assert len(created) == 1
+    assert leaf.stat().st_ino == alias.stat().st_ino == created[0]
+    assert leaf.stat().st_mode & 0o777 == mode
+    expected = "new" if writable else "created immediately before open"
+    assert leaf.read_text() == alias.read_text() == expected
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows overwrite backend required")
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("allow", [False, True])
+def test_native_windows_creation_probe_is_only_required_for_missing_leaf(
+    tmp_path, monkeypatch, existing, allow
+):
+    leaf = tmp_path / "file"
+    if existing:
+        leaf.write_text("longer old content")
+        before = leaf.stat()
+    probes = []
+
+    def unavailable_probe():
+        probes.append(True)
+        raise PermissionError("Runtime permissions probe unavailable")
+
+    monkeypatch.setattr(_file_handles, "_windows_creation_attributes", unavailable_probe)
+    files = FileHelper(tmp_path, allow_symlinks=allow)
+    if existing:
+        files.overwrite_text("file", "new")
+        assert leaf.read_text() == "new"
+        assert leaf.stat().st_ino == before.st_ino
+        assert leaf.stat().st_mode == before.st_mode
+        assert probes == []
+    else:
+        with pytest.raises(PermissionError, match="Runtime permissions probe unavailable"):
+            files.overwrite_text("file", "new")
+        assert not leaf.exists()
+        assert probes == [True]
+    assert {path.name for path in tmp_path.iterdir()} == ({"file"} if existing else set())
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor cleanup required")

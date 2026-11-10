@@ -138,6 +138,10 @@ def test_overwrite_descriptor_ownership_and_binary_mode(kernel, monkeypatch, fai
             raise OSError("conversion failed")
         return 42
 
+    def unexpected_probe():
+        raise AssertionError("Existing-file overwrites must not probe creation attributes")
+
+    monkeypatch.setattr(_file_handles, "_windows_creation_attributes", unexpected_probe)
     monkeypatch.setitem(sys.modules, "msvcrt", SimpleNamespace(open_osfhandle=convert))
     monkeypatch.setattr(
         _file_handles, "os",
