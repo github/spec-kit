@@ -9,6 +9,49 @@ import yaml
 class TestPresetCatalogRemove:
     """Test multi-catalog support in PresetCatalog."""
 
+    def test_catalog_remove_last_entry_reports_fallback_precedence(
+        self, project_dir, tmp_path, monkeypatch
+    ):
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        monkeypatch.delenv("SPECKIT_PRESET_CATALOG_URL", raising=False)
+        home = tmp_path / "home"
+        monkeypatch.setattr(Path, "home", lambda: home)
+        user_config = home / ".specify" / "preset-catalogs.yml"
+        user_config.parent.mkdir(parents=True)
+        user_config.write_text(
+            "catalogs:\n- name: team-fallback\n  url: https://example.com/team.json\n",
+            encoding="utf-8",
+        )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            add = runner.invoke(
+                app,
+                [
+                    "preset",
+                    "catalog",
+                    "add",
+                    "https://example.com/only.json",
+                    "--name",
+                    "only",
+                ],
+            )
+            assert add.exit_code == 0, add.output
+            remove = runner.invoke(app, ["preset", "catalog", "remove", "only"])
+            listing = runner.invoke(app, ["preset", "catalog", "list"])
+
+        assert remove.exit_code == 0, remove.output
+        assert listing.exit_code == 0, listing.output
+        assert "team-fallback" in listing.output
+        assert "environment override, user configuration, then built-in defaults" in (
+            " ".join(remove.output.split())
+        )
+
     @pytest.mark.parametrize(
         "invalid_entry",
         [

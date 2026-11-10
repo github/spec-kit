@@ -2,7 +2,6 @@
 
 import copy
 import os
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
@@ -216,7 +215,7 @@ class _PresetSkillMethods:
                 managed_skill_names if managed_names is None else managed_names
             )
             # Restore skills for commands whose winner is non-preset.
-            # _unregister_skills_in_dir can rmtree the skill dir, so
+            # _unregister_skills_in_dir can remove the skill file, so
             # overrides must be handled directly (create dir + write)
             # without that call.
             dir_core_ext_names = [
@@ -1275,11 +1274,12 @@ class _PresetSkillMethods:
             if override_source:
                 owned_sources.add(override_source)
             if source in owned_sources:
-                from ..integrations._file_changes import after_file_change, before_file_change
+                from ..integrations._file_changes import unlink_in_directory
 
-                before_file_change(skill_subdir, removal=True)
-                shutil.rmtree(skill_subdir)
-                after_file_change(skill_subdir)
+                unlink_in_directory(
+                    skill_file,
+                    root=self.project_root if skill_file.is_relative_to(self.project_root) else skills_dir,
+                )
 
     @staticmethod
     def _warn_unrestored_skill(
@@ -1370,7 +1370,7 @@ class _PresetSkillMethods:
             # is_dir() follows symlinks, so a symlinked skill subdirectory
             # (with a safe, non-symlinked parent) would otherwise slip past
             # _safe_skills_dir_for_agent's parent-only check and have
-            # write_text/rmtree operate through it (#2948).
+            # writes/removals operate through it (#2948).
             if not self._validate_skill_subdir(
                 skill_subdir, create=False, skills_root=skills_dir
             ):
@@ -1435,7 +1435,7 @@ class _PresetSkillMethods:
                 # source cannot produce restored content, so leave the
                 # existing skill untouched rather than leaking a raw
                 # OSError/UnicodeDecodeError out of `preset remove` — and
-                # rather than falling through to the rmtree below, which
+                # rather than falling through to the removal below, which
                 # would delete a skill precisely when its replacement
                 # cannot be generated. Matches the `continue` guards above
                 # (unsafe name, missing subdir, foreign owner), which also
@@ -1541,12 +1541,13 @@ class _PresetSkillMethods:
                 _write_shared_text(skills_dir, skill_file, skill_content)
                 mutated_names.append(skill_name)
             else:
-                # No core or extension template — remove the skill entirely
-                from ..integrations._file_changes import after_file_change, before_file_change
+                # No core or extension template — remove only the generated file
+                from ..integrations._file_changes import unlink_in_directory
 
-                before_file_change(skill_subdir, removal=True)
-                shutil.rmtree(skill_subdir)
-                after_file_change(skill_subdir)
+                unlink_in_directory(
+                    skill_file,
+                    root=self.project_root if skill_file.is_relative_to(self.project_root) else skills_dir,
+                )
                 mutated_names.append(skill_name)
 
         return mutated_names

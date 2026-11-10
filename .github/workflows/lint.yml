@@ -1,4 +1,4 @@
-name: Lint
+name: Lint & Security
 permissions:
   contents: read
 
@@ -6,9 +6,14 @@ on:
   push:
     branches: ["main"]
   pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
 
 jobs:
-  markdownlint:
+  checks:
+    name: Lint & dependency audit
+    if: ${{ github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     env:
       DOC_GLOBS: |
@@ -27,11 +32,45 @@ jobs:
         workflows/*.md
     steps:
       - name: Checkout
+        id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 1
+          fetch-depth: 0
+
+      - name: Install uv
+        id: uv
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Set up Python
+        id: python
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      # Explicit prerequisites let independent checks finish after a failure
+      # without masking that failure or continuing after cancellation.
+      # Audit committed inputs before Markdownlint can execute repository
+      # JavaScript configuration in this shared workspace.
+      - name: Check committed audit requirements are current
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.uv.outcome == 'success' && steps.python.outcome == 'success' }}
+        env:
+          DEPENDENCY_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          DEPENDENCY_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          GENERATED_REQUIREMENTS: ${{ runner.temp }}/security-audit-requirements.txt
+        run: python .github/scripts/check_security_requirements.py
+
+      - name: Run pip-audit (committed requirements)
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.uv.outcome == 'success' && steps.python.outcome == 'success' }}
+        run: uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r .github/security-audit-requirements.txt --progress-spinner off
+
+      - name: Run ruff check
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.uv.outcome == 'success' && steps.python.outcome == 'success' }}
+        run: uvx ruff@0.15.0 check src tests
 
       - name: Run git diff --check
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -42,12 +81,14 @@ jobs:
           set -euo pipefail
 
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            git fetch --no-tags --depth=1 origin "+${PR_BASE_SHA}:refs/checks/pr-base"
+            git fetch --no-tags origin "+${PR_BASE_SHA}:refs/checks/pr-base"
             git diff --check refs/checks/pr-base HEAD
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            git diff-tree --check --no-commit-id --root --diff-merges=first-parent -r "$GITHUB_SHA"
           elif [ "$PUSH_BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
             git diff-tree --check --no-commit-id --root -r "$GITHUB_SHA"
           else
-            git fetch --no-tags --depth=1 origin "+${PUSH_BEFORE_SHA}:refs/checks/push-before"
+            git fetch --no-tags origin "+${PUSH_BEFORE_SHA}:refs/checks/push-before"
             git diff --check refs/checks/push-before HEAD
           fi
 
@@ -57,6 +98,8 @@ jobs:
       # documentation pass never reformats them. Add new documentation
       # paths to the DOC_GLOBS list above.
       - name: Verify the documentation globs match files
+        id: documentation-globs
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -88,20 +131,16 @@ jobs:
           fi
 
       - name: Run markdownlint-cli2
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.documentation-globs.outcome == 'success' }}
         uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34 # v25.0.0
         with:
           globs: ${{ env.DOC_GLOBS }}
-
-  shellcheck:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # shellcheck is preinstalled on ubuntu-latest runners.
       # Start at --severity=error to block real bugs without flagging style
       # (notably SC2155). Tighten in a follow-up after cleanup.
       - name: Run shellcheck on shell scripts
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         run: git ls-files -z -- '*.sh' | xargs -0 shellcheck --severity=error
 
       # macOS ships bash 3.2, where bash 4+ case-modification parameter
@@ -109,6 +148,7 @@ jobs:
       # from the shebang and cannot flag these, so guard explicitly; use tr
       # for portable case conversion.
       - name: Reject bash 4+ case-modification expansions
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         run: |
           matches=$(git ls-files -z -- '*.sh' | xargs -0 grep -nE '\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(\^\^?|,,?|~~?|@[UuLl])[^}]*\}' || true)
           if [ -n "$matches" ]; then
@@ -116,3 +156,33 @@ jobs:
             echo "$matches"
             exit 1
           fi
+
+  dependency-audit-scheduled:
+    name: Dependency audit scheduled (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    if: ${{ github.event_name == 'schedule' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Keep live per-platform resolution separate from the deterministic
+      # committed snapshot used by push, pull request, and manual runs.
+      - name: Compile scheduled audit requirements
+        run: |
+          uv pip compile pyproject.toml --extra test --python-version "${{ matrix.python-version }}" --upgrade --generate-hashes --quiet --output-file "${{ runner.temp }}/spec-kit-audit-requirements.txt"
+
+      - name: Run pip-audit (scheduled live resolution)
+        run: uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r "${{ runner.temp }}/spec-kit-audit-requirements.txt" --progress-spinner off

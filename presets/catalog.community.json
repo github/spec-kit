@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-05T00:00:00Z",
+  "updated_at": "2026-11-09T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -672,14 +672,14 @@
     "model-routing-governance": {
       "name": "Model Routing Governance",
       "id": "model-routing-governance",
-      "version": "0.2.6",
+      "version": "0.2.8",
       "description": "Discovers harness-local models and maps provider-neutral Spec Kit roles to validated local runner profiles without storing credentials or machine-specific availability in Git.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-model-routing-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-model-routing-governance/archive/refs/tags/v0.2.6.zip",
-      "sha256": "ed2bf38dda728f9b8be4df7e539367b1a3eea56b74402c283587e0fca571f17f",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-model-routing-governance/archive/refs/tags/v0.2.8.zip",
+      "sha256": "8decfabfd2f59f3ddfa44e8e4744adafa3d04acda508c85dcfd4501d1b1489fb",
       "homepage": "https://github.com/hindermath/spec-kit-preset-model-routing-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-model-routing-governance/blob/v0.2.6/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-model-routing-governance/blob/v0.2.8/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -697,7 +697,7 @@
         "cross-platform"
       ],
       "created_at": "2026-08-10T00:00:00Z",
-      "updated_at": "2026-11-05T00:00:00Z"
+      "updated_at": "2026-11-09T00:00:00Z"
     },
     "multi-repo-branching": {
       "name": "Multi-Repo Branching",

@@ -45,8 +45,8 @@ def extension_search(
         for ext in results:
             # Extension header
             verified_badge = " [green]✓ Verified[/green]" if ext.get("verified") else ""
-            console.print(f"[bold]{_escape_markup(str(ext['name']))}[/bold] (v{_escape_markup(str(ext['version']))}){verified_badge}")
-            console.print(f"  {_escape_markup(str(ext['description']))}")
+            console.print(f"[bold]{_escape_markup(str(ext.get('name', ext['id'])))}[/bold] (v{_escape_markup(str(ext.get('version', 'unknown')))}){verified_badge}")
+            console.print(f"  {_escape_markup(str(ext.get('description', '')))}")
 
             # Metadata
             console.print(f"\n  [dim]Author:[/dim] {_escape_markup(str(ext.get('author', 'Unknown')))}")

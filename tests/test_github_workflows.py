@@ -400,6 +400,210 @@ def test_publish_tag_validation_uses_environment_variable():
         assert "${{ inputs.tag }}" not in step["run"]
 
 
+def _release_workflow_steps():
+    workflow = yaml.safe_load(
+        (WORKFLOWS_DIR / "release.yml").read_text(encoding="utf-8")
+    )
+    return {step["name"]: step for step in workflow["jobs"]["release"]["steps"]}
+
+
+RELEASE_VERSION_STEPS = (
+    "Check if release already exists",
+    "Generate release notes",
+    "Create GitHub Release",
+)
+
+
+def test_release_version_uses_environment_variables():
+    steps = _release_workflow_steps()
+    for name in RELEASE_VERSION_STEPS:
+        step = steps[name]
+        assert step["env"]["VERSION"] == "${{ steps.version.outputs.tag }}"
+        assert "${{ steps.version.outputs.tag }}" not in step["run"]
+
+
+@requires_bash
+@pytest.mark.parametrize("tag", ["v0.1.11", "v0.2.0", "v1.0.0"])
+def test_release_tag_validation_accepts_valid_tag(tmp_path, tag):
+    output = tmp_path / "github output"
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c",
+         _release_workflow_steps()["Extract version from tag"]["run"]],
+        cwd=tmp_path,
+        env={**os.environ, "GITHUB_REF": f"refs/tags/{tag}", "GITHUB_OUTPUT": str(output)},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert output.read_text() == f"tag={tag}\n"
+    assert f"Building release for {tag}" in result.stdout
+
+
+@requires_bash
+@pytest.mark.parametrize("tag", [
+    "", "1.2.3", "v1.2", "v1.2.3.4", "v1.2.3-rc1", "v1.2.3+build",
+    "v1.a.3", "v1.2.3\nother=value", "v1.2.3$(touch${IFS}injected)",
+    "v1.2.3`touch${IFS}injected`", 'v1.2.3";touch${IFS}injected;#',
+])
+def test_release_tag_validation_rejects_invalid_tag_before_output(tmp_path, tag):
+    output = tmp_path / "github-output"
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c",
+         _release_workflow_steps()["Extract version from tag"]["run"]],
+        cwd=tmp_path,
+        env={**os.environ, "GITHUB_REF": f"refs/tags/{tag}", "GITHUB_OUTPUT": str(output)},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode != 0
+    assert "is not a valid release tag" in result.stdout
+    assert not output.exists()
+    assert not (tmp_path / "injected").exists()
+
+
+@requires_bash
+@pytest.mark.parametrize("step_name", RELEASE_VERSION_STEPS)
+@pytest.mark.parametrize("tag", ["v1.2.3", "v1.2.3$(touch${IFS}injected)"])
+def test_release_steps_treat_version_as_data(tmp_path, step_name, tag):
+    step = _release_workflow_steps()[step_name]
+    script = step["run"].replace("${{ steps.version.outputs.tag }}", tag)
+    stubs = """
+gh() { printf '%s\\n' "$@" >> gh-args; }
+git() {
+  case "$1" in
+    tag) echo v0.0.1 ;;
+    rev-list) echo 1 ;;
+    log) echo '- Example change' ;;
+    *) return 1 ;;
+  esac
+}
+"""
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", stubs + script],
+        cwd=tmp_path,
+        env={**os.environ, "VERSION": tag, "GITHUB_TOKEN": "test-token",
+             "GITHUB_OUTPUT": str(tmp_path / "github-output")},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "injected").exists()
+    if step_name == "Generate release notes":
+        assert f"spec-kit.git@{tag}" in (tmp_path / "release_notes.md").read_text()
+    else:
+        assert (tmp_path / "gh-args").read_text().splitlines()[:3] == [
+            "release", "view" if step_name.startswith("Check") else "create", tag,
+        ]
+
+
+@requires_bash
+@pytest.mark.parametrize(("tag", "previous_tag", "commit_count", "release_exists"), [
+    ("v0.1.11", True, 2, False),
+    ("v0.2.0", True, 2, False),
+    ("v1.0.0", True, 2, False),
+    ("v1.2.3", False, 2, False),
+    ("v1.2.3", False, 22, False),
+    ("v1.2.3", True, 2, True),
+    ("v1.2", True, 2, False),
+    ("v1.2.3$(touch${IFS}injected)", True, 2, False),
+    ("v1.2.3`touch${IFS}injected`", True, 2, False),
+    pytest.param(
+        'v1.2.3";touch${IFS}injected;#', True, 2, False,
+        marks=pytest.mark.skipif(
+            sys.platform == "win32",
+            reason="Windows disallows double quotes in loose-ref filenames",
+        ),
+    ),
+])
+def test_release_workflow_simulation(
+    tmp_path, tag, previous_tag, commit_count, release_exists
+):
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Release Test", "GIT_AUTHOR_EMAIL": "test@example.invalid",
+        "GIT_COMMITTER_NAME": "Release Test", "GIT_COMMITTER_EMAIL": "test@example.invalid",
+        "GITHUB_REF": f"refs/tags/{tag}",
+        "TEST_PYTHON": sys.executable,
+        "GH_CALLS": str(tmp_path / "gh-calls"),
+        "RELEASE_VIEW_STATUS": "0" if release_exists else "1",
+    }
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", *args],
+            cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
+        )
+
+    git("init", "--quiet")
+    for index in range(commit_count):
+        git("commit", "--quiet", "--allow-empty", "-m", f"Release change {index}")
+        if previous_tag and index == 0:
+            git("tag", "v0.1.0")
+    git("tag", tag)
+    git("checkout", "--quiet", "--detach", f"refs/tags/{tag}")
+
+    steps = _release_workflow_steps()
+    values = {"${{ secrets.GITHUB_TOKEN }}": "test-token"}
+    ran = []
+    stub = """
+gh() {
+  "$TEST_PYTHON" -c 'import json, sys; print(json.dumps(sys.argv[1:]))' "$@" >> "$GH_CALLS"
+  if [ "$2" = view ]; then return "$RELEASE_VIEW_STATUS"; fi
+}
+"""
+    for index, (name, step) in enumerate(steps.items()):
+        if "run" not in step:
+            continue
+        if "if" in step:
+            assert step["if"] == "steps.check_release.outputs.exists == 'false'"
+            if values["${{ steps.check_release.outputs.exists }}"] != "false":
+                continue
+        output = tmp_path / f"output-{index}"
+        step_env = {key: values.get(value, value) for key, value in step.get("env", {}).items()}
+        assert "shell" not in step
+        # An unspecified shell on Linux uses bash -e, without pipefail.
+        result = subprocess.run(
+            ["bash", "-e", "-c", stub + step["run"]],
+            cwd=tmp_path, env={**env, **step_env, "GITHUB_OUTPUT": str(output)},
+            capture_output=True, text=True, check=False,
+        )
+        ran.append(name)
+        if result.returncode:
+            break
+        if output.exists():
+            for line in output.read_text().splitlines():
+                key, value = line.split("=", 1)
+                values[f"${{{{ steps.{step['id']}.outputs.{key} }}}}"] = value
+
+    calls_path = tmp_path / "gh-calls"
+    calls = [json.loads(line) for line in calls_path.read_text().splitlines()] if calls_path.exists() else []
+    assert not (tmp_path / "injected").exists()
+    notes_path = tmp_path / "release_notes.md"
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
+        assert result.returncode != 0
+        assert "is not a valid release tag" in result.stdout
+        assert ran == ["Extract version from tag"]
+        assert not calls
+        assert not notes_path.exists()
+        return
+
+    assert result.returncode == 0, f"{ran[-1]}: {result.stdout}\n{result.stderr}"
+    assert calls[0] == ["release", "view", tag]
+    if release_exists:
+        assert ran == ["Extract version from tag", "Check if release already exists"]
+        assert len(calls) == 1
+        assert not notes_path.exists()
+    else:
+        assert ran == ["Extract version from tag", *RELEASE_VERSION_STEPS]
+        assert calls[1:] == [[
+            "release", "create", tag, "--title", f"Spec Kit - {tag[1:]}",
+            "--notes-file", "release_notes.md",
+        ]]
+        notes = notes_path.read_text()
+        assert f"spec-kit.git@{tag}" in notes
+        assert "## What's Changed" in notes
+        assert f"- Release change {commit_count - 1}" in notes
+        expected_count = min(commit_count, 20) if not previous_tag else commit_count - 1
+        assert notes.count("- Release change ") == expected_count
+
+
 @requires_bash
 def test_publish_tag_validation_accepts_valid_tag(tmp_path):
     _write_project_version(tmp_path, "1.2.3")
@@ -2286,7 +2490,7 @@ def test_bug_test_install_preserves_editable_extras_and_failure(compiled_step, e
 
 def _markdownlint_job() -> dict:
     workflow = yaml.safe_load(LINT_WORKFLOW.read_text(encoding="utf-8"))
-    return workflow["jobs"]["markdownlint"]
+    return workflow["jobs"]["checks"]
 
 
 def _documentation_globs() -> list[str]:
@@ -2321,3 +2525,78 @@ def test_markdownlint_step_lints_the_documentation_globs():
     ]
     assert len(linters) == 1
     assert linters[0]["with"]["globs"] == "${{ env.DOC_GLOBS }}"
+
+
+@requires_bash
+@pytest.mark.parametrize("event", [
+    "pull_request", "push", "initial_push", "workflow_dispatch", "manual_root", "manual_merge",
+])
+@pytest.mark.parametrize("contents,exit_code", [("line\n", 0), ("line \n", 2)])
+def test_combined_lint_run_checks_commit_whitespace(tmp_path, event, contents, exit_code):
+    env = os.environ.copy()
+    env.update({
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@example.com",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@example.com",
+        "EVENT_NAME": (
+            "workflow_dispatch" if event.startswith("manual_")
+            else "push" if event == "initial_push" else event
+        ),
+        "PR_BASE_SHA": "",
+        "PUSH_BEFORE_SHA": "",
+        "GITHUB_SHA": "HEAD",
+    })
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, env=env, check=True)
+    if event not in {"initial_push", "manual_root"}:
+        (tmp_path / "example.txt").write_text("original\n", encoding="utf-8")
+        subprocess.run(["git", "add", "example.txt"], cwd=tmp_path, env=env, check=True)
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Base"],
+            cwd=tmp_path, env=env, check=True,
+        )
+        base = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=tmp_path, env=env,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        env["PR_BASE_SHA"] = base
+        env["PUSH_BEFORE_SHA"] = base
+        if event == "manual_merge":
+            subprocess.run(
+                ["git", "checkout", "--quiet", "-b", "whitespace-change"],
+                cwd=tmp_path, env=env, check=True,
+            )
+    else:
+        env["PUSH_BEFORE_SHA"] = "0" * 40
+    (tmp_path / "example.txt").write_text(contents, encoding="utf-8")
+    subprocess.run(["git", "add", "example.txt"], cwd=tmp_path, env=env, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Change"],
+        cwd=tmp_path, env=env, check=True,
+    )
+    if event == "manual_merge":
+        subprocess.run(
+            ["git", "checkout", "--quiet", "--detach", base],
+            cwd=tmp_path, env=env, check=True,
+        )
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "merge", "--quiet", "--no-ff",
+             "-m", "Merge change", "whitespace-change"],
+            cwd=tmp_path, env=env, check=True,
+        )
+        parents = subprocess.run(
+            ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
+            cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
+        ).stdout.split()
+        assert len(parents) == 3
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(tmp_path)],
+        cwd=tmp_path, env=env, check=True,
+    )
+    step = _workflow_step(_markdownlint_job()["steps"], "Run git diff --check")
+    result = subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", step["run"]],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == exit_code, result.stderr
+    assert ("trailing whitespace" in result.stdout) is (exit_code != 0)
