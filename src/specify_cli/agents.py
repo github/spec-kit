@@ -266,9 +266,48 @@ class CommandRegistrar:
         extension_root = extension_dir.resolve()
         installed_prefix = f".specify/extensions/{extension_id}/"
         skip = {"commands", "specs"}
-        pattern = re.compile(
-            r"""(^|[\s`"'(\[{<=])(?P<path>[^\s`"'(){}<>=,;!?]+/[^\s`"'(){}<>=,;!?]*)"""
-        )
+        spans: list[tuple[int, int]] = []
+        position = 0
+        boundaries = "`\"'([{<="
+        stops = "`\"'{}<>=,;!?"
+        while position < len(text):
+            char = text[position]
+            if char in "`\"'":
+                if char == "'" and position > 0 and text[position - 1].isalnum():
+                    position += 1
+                    continue
+                start = position + 1
+                position = start
+                while position < len(text) and text[position] not in {char, "\n", "\r"}:
+                    position += 1
+                if position < len(text) and text[position] == char:
+                    if "/" in text[start:position]:
+                        spans.append((start, position))
+                    position += 1
+                continue
+            if char.isspace() or char in boundaries + stops + ")":
+                position += 1
+                continue
+            start = position
+            eligible = start == 0 or text[start - 1].isspace() or text[start - 1] in boundaries
+            has_slash = False
+            parentheses = 0
+            while position < len(text):
+                char = text[position]
+                if char.isspace() or char in stops:
+                    break
+                if char == "(":
+                    if not has_slash:
+                        break
+                    parentheses += 1
+                elif char == ")":
+                    if not parentheses:
+                        break
+                    parentheses -= 1
+                has_slash = has_slash or char == "/"
+                position += 1
+            if eligible and has_slash:
+                spans.append((start, position))
 
         def candidate_for(token: str) -> Optional[str]:
             if token.startswith("./"):
@@ -288,28 +327,28 @@ class CommandRegistrar:
         def contained_target(path: Path) -> bool:
             return path.exists() and path.resolve().is_relative_to(extension_root)
 
-        tokens = {match.group("path") for match in pattern.finditer(text)}
+        tokens = {text[start:end] for start, end in spans}
         candidates: dict[str, Optional[str]] = {}
         token_parts: dict[str, list[tuple[str, bool, str]]] = {}
         for token in tokens:
             relative_token = token[2:] if token.startswith("./") else token
             if any(part in {".", ".."} for part in relative_token.split("/")):
                 continue
-            # Keep prose/Markdown punctuation out of the lookup, but prefer an
-            # actual filename (e.g. assets[q]/) over stripping its brackets.
-            path_text = token
-            while path_text:
-                candidate = candidate_for(path_text)
-                if candidate is not None and contained_target(extension_root / candidate):
-                    break
-                if path_text[-1] not in ".:]":
-                    break
-                path_text = path_text[:-1]
-            punctuation = token[len(path_text):]
-            alternatives = [(path_text, punctuation)]
-            if "#" in path_text:
-                fragment_path, marker, fragment = path_text.partition("#")
-                alternatives.append((fragment_path, marker + fragment + punctuation))
+            # Use a fixed set of punctuation interpretations, never rescan a
+            # long malformed token once per trailing punctuation character.
+            without_prose = token.rstrip(".:")
+            paths = [token]
+            if without_prose != token:
+                paths.append(without_prose)
+            if without_prose.endswith("]"):
+                paths.append(without_prose[:-1].rstrip(".:"))
+            alternatives = [(path, token[len(path):]) for path in paths]
+            for path_text in paths:
+                if "#" in path_text:
+                    fragment_path, marker, fragment = path_text.partition("#")
+                    alternatives.append(
+                        (fragment_path, marker + fragment + token[len(path_text):])
+                    )
             for path_text, suffix in alternatives:
                 candidate = candidate_for(path_text)
                 if candidate is None:
@@ -341,12 +380,11 @@ class CommandRegistrar:
             for candidate in ambiguous:
                 candidates[candidate] = None
 
-        def replace(match: re.Match) -> str:
-            token = match.group("path")
+        def replace(token: str) -> str:
             # Prefer a literal '#' filename over interpreting it as a fragment.
             for candidate, trailing_slash, suffix in token_parts.get(token, []):
                 if candidate in ambiguous:
-                    return match.group(0)
+                    return token
                 target = candidates.get(candidate)
                 if target is None:
                     continue
@@ -363,10 +401,16 @@ class CommandRegistrar:
                         rewritten = installed_path.absolute().as_posix()
                 if trailing_slash:
                     rewritten += "/"
-                return match.group(1) + rewritten + suffix
-            return match.group(0)
+                return rewritten + suffix
+            return token
 
-        return pattern.sub(replace, text)
+        parts: list[str] = []
+        previous = 0
+        for start, end in spans:
+            parts.extend((text[previous:start], replace(text[start:end])))
+            previous = end
+        parts.append(text[previous:])
+        return "".join(parts)
 
     def render_markdown_command(
         self, frontmatter: dict, body: str, source_id: str, context_note: Optional[str] = None

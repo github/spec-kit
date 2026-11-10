@@ -1319,7 +1319,7 @@ class TestExtensionSkillRegistration:
                 [sys.executable, invocation], cwd=project_dir,
                 capture_output=True, text=True, check=True,
             )
-            assert Path(result.stdout.strip()) == project_dir.resolve()
+            assert Path(result.stdout.strip()).samefile(project_dir)
 
     @pytest.mark.parametrize(
         ("ai", "expected_invocation"),

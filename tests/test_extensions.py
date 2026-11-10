@@ -4621,6 +4621,7 @@ Run {SCRIPT}
             ("`references/template.md`", "`skills/example/references/template.md`"),
             ("[template](references/template.md)", "[template](skills/example/references/template.md)"),
             ("[agent](agents/one.md#checks)", "[agent](agents/one.md#checks)"),
+            ("[template](references/reviewer(v2).md)", "[template](skills/example/references/reviewer(v2).md)"),
             ("[template](references/template.md#checks)", "[template](skills/example/references/template.md#checks)"),
             ("references/template.md#literal", "skills/literal/references/template.md#literal"),
             ("assets/notes#draft.md", "assets/notes#draft.md"),
@@ -4643,6 +4644,7 @@ Run {SCRIPT}
             "assets/\u00fcber.md",
             "skills/literal/references/template.md#literal",
             "assets/notes#draft.md",
+            "skills/example/references/reviewer(v2).md",
         ):
             target = ext_dir / name
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -4690,6 +4692,67 @@ Run {SCRIPT}
             assert CommandRegistrar.rewrite_extension_paths(path, "ext", ext_dir) == (
                 f".specify/extensions/ext/{path}"
             )
+
+    @pytest.mark.parametrize("quote", ['"', "'", "`"])
+    @pytest.mark.parametrize("filename", ["reviewer guide.md", "reviewer(v2).md"])
+    @pytest.mark.parametrize("nested", [False, True])
+    def test_rewrite_extension_paths_delimited_filenames(
+        self, temp_dir, quote, filename, nested
+    ):
+        from specify_cli.agents import CommandRegistrar
+
+        extension_dir = temp_dir / "ext"
+        relative = f"skills/example/references/{filename}" if nested else f"agents/{filename}"
+        reference = f"references/{filename}" if nested else relative
+        target = extension_dir / relative
+        target.parent.mkdir(parents=True)
+        target.touch()
+        text = f"Read {quote}{reference}{quote}."
+        result = CommandRegistrar.rewrite_extension_paths(text, "ext", extension_dir)
+        assert result == f"Read {quote}.specify/extensions/ext/{relative}{quote}."
+
+    def test_rewrite_extension_paths_missing_delimited_filename_is_not_partially_rewritten(
+        self, temp_dir
+    ):
+        from specify_cli.agents import CommandRegistrar
+
+        extension_dir = temp_dir / "ext"
+        (extension_dir / "agents").mkdir(parents=True)
+        (extension_dir / "agents" / "reviewer").touch()
+        for reference in ('"agents/reviewer missing.md"', "`agents/reviewer(missing).md`"):
+            text = f"Read {reference}."
+            assert CommandRegistrar.rewrite_extension_paths(text, "ext", extension_dir) == text
+
+    def test_rewrite_extension_paths_apostrophe_in_prose_does_not_hide_references(
+        self, temp_dir
+    ):
+        from specify_cli.agents import CommandRegistrar
+
+        extension_dir = temp_dir / "ext"
+        (extension_dir / "agents").mkdir(parents=True)
+        (extension_dir / "agents" / "reviewer.md").touch()
+        text = "Read the extension's agents/reviewer.md."
+        assert CommandRegistrar.rewrite_extension_paths(text, "ext", extension_dir) == (
+            "Read the extension's .specify/extensions/ext/agents/reviewer.md."
+        )
+
+    def test_rewrite_extension_paths_bounds_malformed_token_scanning(self, temp_dir):
+        import subprocess
+        import sys
+
+        result = subprocess.run(
+            [
+                sys.executable, "-c",
+                "import sys\n"
+                "from pathlib import Path\n"
+                "from specify_cli.agents import CommandRegistrar\n"
+                "text = '[' * 100_000\n"
+                "assert CommandRegistrar.rewrite_extension_paths(text, 'ext', Path(sys.argv[1])) == text\n",
+                str(temp_dir),
+            ],
+            capture_output=True, text=True, timeout=15, check=True,
+        )
+        assert result.stdout == ""
 
     def test_rewrite_extension_paths_relative_to_actual_skill_directory(self, temp_dir):
         from specify_cli.agents import CommandRegistrar
