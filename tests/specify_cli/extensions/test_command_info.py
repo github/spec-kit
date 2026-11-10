@@ -67,6 +67,17 @@ class TestExtensionInfoRendering:
 class TestExtensionInfoCLI:
     """CLI tests for ``specify extension info``."""
 
+    def test_info_shows_incomplete_catalog_entry(self, incomplete_catalog_entry):
+        result = CliRunner().invoke(app, ["extension", "info", "example"])
+
+        assert result.exit_code == 0, result.output
+        assert incomplete_catalog_entry in result.output
+        assert "ID: example" in result.output
+
+        healthy = CliRunner().invoke(app, ["extension", "info", "healthy"])
+        assert healthy.exit_code == 0, healthy.output
+        assert "Healthy (v2.0.0)" in healthy.output
+
     def test_info_discovery_only_shows_candidate_archive_url(self, tmp_path):
         """For a discovery-only entry that carries a ``download_url``, ``info``
         surfaces the candidate archive URL (flagged for vetting) and the vetted

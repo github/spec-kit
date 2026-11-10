@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -324,6 +325,72 @@ def normalize_repo_paths(text: str, repo: Path) -> str:
     for repo_path in repo_paths:
         text = text.replace(repo_path, "<REPO>")
     return text.replace("\r\n", "\n")
+
+
+_PS_PERSISTENCE_HINT = re.compile(r"\$env:(SPECIFY[A-Z0-9_]*) = '((?:[^']|'')*)'")
+_BASH_PERSISTENCE_HINT = re.compile(
+    r"export (SPECIFY[A-Z0-9_]*)=((?:'[^']*'|\"(?:[^\"\\]|\\.)*\"|\\.|[^\s'\"\\])+)"
+)
+
+
+def _unquote_bash_word(word: str) -> str:
+    """Canonicalize one POSIX shell word to its literal value.
+
+    ``shlex.quote`` spells an embedded apostrophe as the ``'"'"'`` seam, so
+    ``'/tmp/O'"'"'Brien'`` is a concatenation of quoted segments: the whole
+    word must be parsed, not stopped at the first apostrophe. The regex above
+    only admits balanced segments, so the index scans below cannot fail.
+    """
+    parts: list[str] = []
+    i = 0
+    while i < len(word):
+        ch = word[i]
+        if ch == "'":
+            end = word.index("'", i + 1)
+            parts.append(word[i + 1 : end])
+            i = end + 1
+        elif ch == '"':
+            i += 1
+            while word[i] != '"':
+                if word[i] == "\\" and word[i + 1] in '"$`\\':
+                    i += 1
+                parts.append(word[i])
+                i += 1
+            i += 1
+        elif ch == "\\":
+            parts.append(word[i + 1])
+            i += 2
+        else:
+            end = i
+            while end < len(word) and word[end] not in "'\"\\":
+                end += 1
+            parts.append(word[i:end])
+            i = end
+    return "".join(parts)
+
+
+def fold_persistence_hints(text: str) -> str:
+    """Reduce shell persistence hints to bare ``KEY=VALUE`` pairs.
+
+    The Python variant prints PowerShell-style hints when running on Windows
+    while the bash variant always prints ``export``-style ones, so a cross-style
+    comparison must fold both spellings (and their quoting) together first.
+    The bash form is parsed as a complete POSIX shell word, so shlex.quote's
+    apostrophe spelling (``'/tmp/O'"'"'Brien'``) collapses to the literal
+    value instead of stopping at the first apostrophe.
+    Cross-variant equality checks only; never bake this into
+    ``normalize_repo_paths``, whose output tests assert on verbatim.
+    """
+
+    def from_powershell(match: re.Match[str]) -> str:
+        value = match.group(2).replace("''", "'")
+        return f"{match.group(1)}={value}"
+
+    def from_bash(match: re.Match[str]) -> str:
+        return f"{match.group(1)}={_unquote_bash_word(match.group(2))}"
+
+    text = _PS_PERSISTENCE_HINT.sub(from_powershell, text)
+    return _BASH_PERSISTENCE_HINT.sub(from_bash, text)
 
 
 def normalize_script_names(text: str, repo: Path, script: str) -> str:
