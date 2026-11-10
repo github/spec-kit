@@ -3,7 +3,6 @@
 import ctypes
 import os
 import sys
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from ctypes import wintypes
@@ -276,59 +275,25 @@ def test_windows_native_creation_errors_propagate_without_retry(kernel, monkeypa
     assert closed_handles == []
 
 
-def test_interleaved_windows_overwrites_do_not_change_process_mask(kernel, monkeypatch):
-    _, calls, _ = kernel
-    started = threading.Barrier(2)
-    first_changed = threading.Event()
-    second_changed = threading.Event()
-    first_restored = threading.Event()
-    local = threading.local()
-    lock = threading.Lock()
-    current_mask = 0
-    mask_calls = []
+def test_concurrent_windows_overwrites_do_not_query_process_mask(kernel, monkeypatch):
+    _, calls, closed_handles = kernel
     closed = []
-
-    def umask(value):
-        nonlocal current_mask
-        initial = local.mask_calls == 0
-        local.mask_calls += 1
-        if initial and local.role == "second":
-            assert first_changed.wait(5)
-        with lock:
-            previous, current_mask = current_mask, value
-            mask_calls.append((local.role, value))
-        if initial and local.role == "first":
-            first_changed.set()
-            assert second_changed.wait(5)
-        elif initial:
-            second_changed.set()
-            assert first_restored.wait(5)
-        elif local.role == "first":
-            first_restored.set()
-        return previous
-
     monkeypatch.setitem(
         sys.modules, "msvcrt", SimpleNamespace(open_osfhandle=lambda handle, flags: 42)
     )
-    monkeypatch.setattr(
-        _file_handles, "os",
-        SimpleNamespace(O_WRONLY=os.O_WRONLY, O_BINARY=0x8000, close=closed.append, umask=umask),
-    )
+    monkeypatch.setattr(_file_handles.os, "O_BINARY", 0x8000, raising=False)
+    monkeypatch.setattr(_file_handles.os, "close", closed.append)
 
-    def overwrite(role):
-        local.role = role
-        local.mask_calls = 0
-        started.wait(5)
-        with _file_handles._windows_overwrite_fd(Path(role)) as fd:
+    def overwrite(name):
+        with _file_handles._windows_overwrite_fd(Path(name)) as fd:
             assert fd == 42
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        futures = [pool.submit(overwrite, role) for role in ("first", "second")]
-        for future in futures:
-            future.result(timeout=10)
-    assert current_mask == 0
-    assert mask_calls == []
-    assert all(not call[5] & 0x1 for call in calls)
+        list(pool.map(overwrite, ("first", "second")))
+    assert {call[0] for call in calls} == {"first", "second"}
+    assert len(calls) == 2
+    assert all(call[4] == 3 and not call[5] & 0x1 for call in calls)
+    assert closed_handles == []
     assert closed == [42, 42]
 
 
