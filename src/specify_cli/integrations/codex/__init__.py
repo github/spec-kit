@@ -66,26 +66,49 @@ for _tag, _pattern, _first in _YAML12_RESOLVERS:
         _cls.add_implicit_resolver(_tag, re.compile(f"^(?:{_pattern})$"), list(_first))
 
 
-class _Number(str):
-    """A number kept as its source text, so ``1.10`` or ``007`` is written back unchanged."""
-
-    tag: str
+_YAML12_INT = re.compile(_YAML12_RESOLVERS[1][1])
+_YAML12_FLOAT = re.compile(_YAML12_RESOLVERS[2][1])
 
 
-def _construct_number(loader: _Yaml12Loader, node: yaml.ScalarNode) -> _Number:
-    number = _Number(loader.construct_scalar(node))
-    number.tag = node.tag
+# Numbers remember their source text, so ``1.10`` or ``007`` is written back
+# unchanged rather than as ``1.1`` or ``7``.
+class _Int(int):
+    text: str
+
+
+class _Float(float):
+    text: str
+
+
+def _construct_int(loader: _Yaml12Loader, node: yaml.ScalarNode) -> int:
+    text = loader.construct_scalar(node)
+    if not _YAML12_INT.fullmatch(text):  # an explicit ``!!int`` in another form
+        return loader.construct_yaml_int(node)
+    if text.startswith(("0o", "0x")):
+        number = _Int(int(text[2:], 8 if text[1] == "o" else 16))
+    else:
+        number = _Int(int(text, 10))
+    number.text = text
     return number
 
 
-def _represent_number(dumper: _Yaml12Dumper, data: _Number) -> yaml.ScalarNode:
-    # Written plain when its text still resolves to ``tag``, else with the tag.
-    return dumper.represent_scalar(data.tag, str(data))
+def _construct_float(loader: _Yaml12Loader, node: yaml.ScalarNode) -> float:
+    text = loader.construct_scalar(node)
+    if not _YAML12_FLOAT.fullmatch(text):  # an explicit ``!!float`` in another form
+        return loader.construct_yaml_float(node)
+    number = _Float(float(text.lower().replace(".inf", "inf").replace(".nan", "nan")))
+    number.text = text
+    return number
 
 
-for _tag in ("tag:yaml.org,2002:int", "tag:yaml.org,2002:float"):
-    _Yaml12Loader.add_constructor(_tag, _construct_number)
-_Yaml12Dumper.add_representer(_Number, _represent_number)
+_Yaml12Loader.add_constructor("tag:yaml.org,2002:int", _construct_int)
+_Yaml12Loader.add_constructor("tag:yaml.org,2002:float", _construct_float)
+_Yaml12Dumper.add_representer(
+    _Int, lambda dumper, data: dumper.represent_scalar("tag:yaml.org,2002:int", data.text)
+)
+_Yaml12Dumper.add_representer(
+    _Float, lambda dumper, data: dumper.represent_scalar("tag:yaml.org,2002:float", data.text)
+)
 
 
 def _dump_openai_yaml(data: dict[str, Any]) -> str:
@@ -99,11 +122,16 @@ def _replace_file(root: Path, rel: str, content: bytes) -> None:
     in-place write would be.
     """
     path = root / rel
-    if not os.access(path, os.W_OK):
-        raise PermissionError(errno.EACCES, "File is not writable", str(path))
+    _require_writable(path)
     mode = stat.S_IMODE(path.stat().st_mode)
     with changing_file(path):
         FileHelper(root).write_bytes(rel, content, mode=mode)
+
+
+def _require_writable(path: Path) -> None:
+    # The mode bits catch a read-only file even when running as root.
+    if not os.access(path, os.W_OK) or not path.stat().st_mode & 0o222:
+        raise PermissionError(errno.EACCES, "File is read-only", str(path))
 
 
 # Container shapes from Codex's ``SkillMetadataFile`` (codex-rs/skills/src/
@@ -117,7 +145,8 @@ def _schema_errors(data: dict[str, Any]) -> list[str]:
         if value is None or isinstance(value, kind):
             return value is not None
         name = "a mapping" if kind is dict else "a list"
-        errors.append(f"'{label}' must be {name}, got {type(value).__name__}")
+        got = {_Int: "int", _Float: "float"}.get(type(value), type(value).__name__)
+        errors.append(f"'{label}' must be {name}, got {got}")
         return False
 
     expect(data.get("interface"), dict, "interface")
@@ -172,7 +201,7 @@ class CodexIntegration(SkillsIntegration):
         """Parse an existing ``openai.yaml``; raise rather than guess at unusable content."""
         try:
             loaded = yaml.load(path.read_text(encoding="utf-8"), Loader=_Yaml12Loader)
-        except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
+        except (yaml.YAMLError, OSError, ValueError) as exc:  # ValueError covers decoding and bad numbers
             raise ValueError(f"Cannot update {rel}: {exc}") from exc
         if loaded is None:  # an empty file holds nothing to preserve
             return {}
@@ -257,6 +286,11 @@ class CodexIntegration(SkillsIntegration):
         else:
             data = self._load_openai_yaml(path, rel)
             ownership = "whole" if self._is_generated(project_root, rel, prior) else "partial"
+            if (data.get("policy") or {}).get("allow_implicit_invocation") is not False:
+                try:
+                    _require_writable(path)
+                except OSError as exc:
+                    raise ValueError(f"Cannot update {rel}: {exc}") from exc
         policy = data.get("policy") or {}
         already_set = policy.get("allow_implicit_invocation") is False
         if ownership == "partial" and not tracked and already_set:
@@ -274,7 +308,7 @@ class CodexIntegration(SkillsIntegration):
             return rel, None, ownership
         return rel, _dump_openai_yaml(data), ownership
 
-    def _remove_policy(self, project_root: Path, rel: str) -> bool:
+    def _remove_policy(self, project_root: Path, rel: str, *, final: bool = False) -> bool:
         """Drop the managed policy from a user-owned file; return whether it is now policy-free."""
         path = project_root / rel
         try:
@@ -289,7 +323,13 @@ class CodexIntegration(SkillsIntegration):
                     del data["policy"]
                 _replace_file(project_root, rel, _dump_openai_yaml(data).encode("utf-8"))
         except (OSError, ValueError) as exc:
-            logger.warning("Leaving %s unchanged: %s", rel, exc)
+            # ``final``: nothing will retry, as uninstall drops the manifest.
+            hint = (
+                "; it may still set policy.allow_implicit_invocation: false, "
+                "so remove it by hand to allow implicit invocation"
+                if final else ""
+            )
+            logger.warning("Leaving %s unchanged: %s%s", rel, exc, hint)
             return False
         return True
 
@@ -487,19 +527,12 @@ class CodexIntegration(SkillsIntegration):
             if not self._is_policy_rel(rel):
                 continue
             if mode != "whole":
-                if self._remove_policy(root, rel):
+                if self._remove_policy(root, rel, final=True):
                     cleaned.add(root / rel)
-                elif self._may_still_exist(root, rel):
-                    # Uninstall drops the manifest, so nothing can retry this.
-                    logger.warning(
-                        "%s may still set policy.allow_implicit_invocation: false; "
-                        "remove it by hand to let Codex invoke the skill implicitly",
-                        rel,
-                    )
             elif self._is_generated(root, rel, manifest):
                 manifest.record_existing(rel)
             elif not force:
-                self._remove_policy(root, rel)
+                self._remove_policy(root, rel, final=True)
         removed, skipped = super().teardown(project_root, manifest, force=force)
         return removed, [path for path in skipped if path not in cleaned]
 

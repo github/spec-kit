@@ -838,6 +838,26 @@ class TestCodexNoModelInvocationOwnership:
         get_integration("codex").teardown(tmp_path, manifest)
         assert path.read_bytes() == content
 
+    def test_int_and_string_keys_with_the_same_text_are_both_kept(self, tmp_path):
+        content = b"custom:\n  1: a\n  '1': b\n"
+        path = self._seed(tmp_path, content)
+        manifest = self._setup(tmp_path)
+        assert self._yaml(path)["custom"] == {1: "a", "1": "b"}
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert path.read_bytes() == content
+
+    @pytest.mark.parametrize("content", [b"x: !!int abc\n", b"x: !!float abc\n"])
+    def test_invalid_tagged_number_aborts_without_overwriting(self, tmp_path, content):
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+
+    def test_schema_error_names_the_yaml_type(self, tmp_path):
+        self._seed(tmp_path, b"interface: 5\n")
+        with pytest.raises(ValueError, match="'interface' must be a mapping, got int$"):
+            self._setup(tmp_path)
+
     def test_tracked_file_already_holding_the_policy_is_not_rewritten(self, tmp_path):
         path = self._seed(tmp_path)
         self._setup(tmp_path).save()
@@ -856,9 +876,10 @@ class TestCodexNoModelInvocationOwnership:
         original = path.read_bytes()
         path.chmod(0o444)
         try:
-            with pytest.raises(PermissionError):
+            with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*read-only"):
                 self._setup(tmp_path)
             assert path.read_bytes() == original
+            assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
         finally:
             path.chmod(0o644)
 
