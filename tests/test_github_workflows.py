@@ -336,7 +336,7 @@ def test_github_actions_are_pinned_to_full_commit_shas():
 
 
 @pytest.mark.parametrize("event_name", ["push", "pull_request", "schedule", "workflow_dispatch"])
-def test_pytest_matrix_covers_supported_python_versions_on_all_platforms(event_name):
+def test_pytest_matrix_limits_python_311_to_linux_unless_manually_dispatched(event_name):
     workflow = yaml.safe_load(
         (WORKFLOWS_DIR / "test.yml").read_text(encoding="utf-8")
     )
@@ -345,7 +345,7 @@ def test_pytest_matrix_covers_supported_python_versions_on_all_platforms(event_n
     assert triggers["push"]["branches"] == ["main"]
     job = workflow["jobs"]["pytest"]
     matrix = job["strategy"]["matrix"]
-    assert set(matrix) == {"os", "python-version"}
+    assert set(matrix) == {"os", "python-version", "exclude"}
     assert matrix["os"] == ["ubuntu-latest", "windows-latest", "macos-latest"]
     expression = re.fullmatch(
         r"\$\{\{ fromJSON\(\(github\.event_name == 'schedule' \|\| "
@@ -358,6 +358,28 @@ def test_pytest_matrix_covers_supported_python_versions_on_all_platforms(event_n
         expression.group(1 if event_name in {"schedule", "workflow_dispatch"} else 2)
     )
     combinations = [(os_name, version) for os_name in matrix["os"] for version in versions]
+    exclusion_expression = re.fullmatch(
+        r"\$\{\{ fromJSON\(github\.event_name == 'workflow_dispatch' "
+        r"&& '([^']+)' \|\| '([^']+)'\) \}\}",
+        matrix["exclude"],
+    )
+    assert exclusion_expression is not None
+    exclusions = json.loads(
+        exclusion_expression.group(1 if event_name == "workflow_dispatch" else 2)
+    )
+    assert exclusions == (
+        []
+        if event_name == "workflow_dispatch"
+        else [
+            {"os": "windows-latest", "python-version": "3.11"},
+            {"os": "macos-latest", "python-version": "3.11"},
+        ]
+    )
+    combinations = [
+        (os_name, version)
+        for os_name, version in combinations
+        if {"os": os_name, "python-version": version} not in exclusions
+    ]
     expected_versions = (
         ["3.11", "3.12", "3.13", "3.14", "3.15"]
         if event_name in {"schedule", "workflow_dispatch"}
@@ -367,9 +389,13 @@ def test_pytest_matrix_covers_supported_python_versions_on_all_platforms(event_n
         (os_name, version)
         for os_name in ["ubuntu-latest", "windows-latest", "macos-latest"]
         for version in expected_versions
+        if event_name == "workflow_dispatch" or version != "3.11" or os_name == "ubuntu-latest"
     }
     assert set(combinations) == expected
-    assert len(combinations) == (15 if event_name in {"schedule", "workflow_dispatch"} else 9)
+    assert len(combinations) == {"workflow_dispatch": 15, "schedule": 13}.get(event_name, 7)
+    assert ("ubuntu-latest", "3.11") in combinations
+    for os_name in ["windows-latest", "macos-latest"]:
+        assert ((os_name, "3.11") in combinations) == (event_name == "workflow_dispatch")
     assert job["runs-on"] == "${{ matrix.os }}"
     setup_python = next(
         step for step in job["steps"]
