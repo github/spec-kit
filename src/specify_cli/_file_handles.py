@@ -2,6 +2,8 @@
 
 import errno
 import os
+import secrets
+import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -31,7 +33,9 @@ def _windows_api():
     return kernel
 
 
-def _open_windows_handle(path: Path, *, directory: bool, overwrite: bool = False) -> int:
+def _open_windows_handle(
+    path: Path, *, directory: bool, overwrite: bool = False, create_attributes: int | None = None
+) -> int:
     import ctypes
     from ctypes import wintypes
 
@@ -46,8 +50,8 @@ def _open_windows_handle(path: Path, *, directory: bool, overwrite: bool = False
         (0x40000000 | 0x80) if overwrite else ((0x80 | 0x1) if directory else 0x80000000),
         0x3,
         None,
-        3,  # OPEN_EXISTING never creates or truncates a file.
-        0x00200000 | 0x02000000,
+        3 if create_attributes is None else 1,  # OPEN_EXISTING or CREATE_NEW.
+        0x00200000 | 0x02000000 | (create_attributes or 0),
         None,
     )
     if handle == wintypes.HANDLE(-1).value:
@@ -80,22 +84,37 @@ def _windows_handle(path: Path, *, directory: bool) -> Iterator[int]:
 
 @contextmanager
 def _windows_overwrite_fd(path: Path) -> Iterator[int]:
-    """Open an existing target, or exclusively create it through the CRT."""
+    """Open/create without following a new leaf or changing the CRT mask."""
     try:
         handle = _open_windows_handle(path, directory=False, overwrite=True)
     except FileNotFoundError:
-        # Exclusive CRT creation applies the process mask without following
-        # a leaf introduced after the existing-file open.
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_BINARY, 0o666)
-    else:
-        try:
-            import msvcrt
+        attributes = _windows_creation_attributes(path.parent)
+        handle = _open_windows_handle(
+            path, directory=False, overwrite=True, create_attributes=attributes
+        )
+    try:
+        import msvcrt
 
-            fd = msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
-        except BaseException:
-            _windows_api().CloseHandle(handle)
-            raise
+        fd = msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
+    except BaseException:
+        _windows_api().CloseHandle(handle)
+        raise
     try:
         yield fd
     finally:
         os.close(fd)
+
+
+def _windows_creation_attributes(parent: Path) -> int:
+    """Capture CRT-masked permissions using a private, empty creation probe."""
+    probe = parent / f".specify-mode-{secrets.token_hex(16)}.tmp"
+    fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_BINARY, 0o666)
+    try:
+        readonly = not os.fstat(fd).st_mode & stat.S_IWRITE
+    finally:
+        try:
+            os.chmod(probe, 0o600)
+        finally:
+            os.close(fd)
+            os.unlink(probe)
+    return 0x1 if readonly else 0

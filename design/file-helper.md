@@ -187,9 +187,11 @@ helpers for independent project/source/managed boundaries.
   stays bounded independently of path depth. It then opens the leaf without
   truncation. Windows retains every resolved directory's non-reparse handle,
   withholding delete sharing, and opens an existing non-reparse leaf without
-  truncation. For a missing leaf, it uses exclusive CRT creation so the CRT
-  applies the process mask without querying or changing it in the helper. A
-  leaf introduced between these calls causes an explicit creation error.
+  truncation. For a missing leaf, an empty, randomly named CRT-created probe
+  in the pinned parent captures the masked creation attributes without
+  changing the process mask. The probe is removed before native no-follow
+  exclusive creation of the destination. A leaf introduced between these
+  calls causes an explicit creation error.
   The opened leaf remains held through text I/O. Both paths check the opened
   file type before truncating that same descriptor. An exchanged parent cannot
   redirect creation or truncation through a new link. Allowed links are still

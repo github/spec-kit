@@ -213,6 +213,7 @@ def test_native_windows_overwrite_creation_matches_masked_native_creation(tmp_pa
                     path.write_text("again")
             else:
                 path.write_text("again")
+        assert {path.name for path in tmp_path.iterdir()} == {"native", "file", "existing"}
     finally:
         os.umask(previous_mask)
         for path in (native, leaf):
@@ -452,7 +453,7 @@ def test_native_windows_leaf_swap_at_open_never_follows_new_link(
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows CRT exclusive-create semantics required")
 @pytest.mark.parametrize("kind", ["file", "existing-target-link", "missing-target-link"])
 @pytest.mark.parametrize("allow", [False, True])
-def test_native_windows_leaf_introduced_before_crt_creation_is_not_followed(
+def test_native_windows_leaf_introduced_during_mode_probe_is_not_followed(
     tmp_path, monkeypatch, kind, allow
 ):
     root = tmp_path / "project"
@@ -472,14 +473,14 @@ def test_native_windows_leaf_introduced_before_crt_creation_is_not_followed(
     attempted = []
 
     def insert(path, flags, mode):
-        assert Path(path) == leaf
         assert flags & os.O_EXCL and not flags & os.O_TRUNC
-        attempted.append(path)
+        fd = original(path, flags, mode)
+        attempted.append(leaf)
         if kind == "file":
             leaf.write_text("introduced")
         else:
             leaf.symlink_to(outside)
-        return original(path, flags, mode)
+        return fd
 
     monkeypatch.setattr(_file_handles, "os", SimpleNamespace(**{**vars(os), "open": insert}))
     with pytest.raises(OSError):

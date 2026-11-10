@@ -18,14 +18,14 @@ from specify_cli import _file_handles
 def kernel(monkeypatch):
     calls = []
     closed = []
-    state = SimpleNamespace(attributes=0, query_ok=True, handle=123)
+    state = SimpleNamespace(attributes=0, query_ok=True, handle=123, handles=None)
 
     def umask(value):
         raise AssertionError("Handle operations must not change the process mask")
 
     def create(*args):
         calls.append(args)
-        return state.handle
+        return state.handles.pop(0) if state.handles is not None else state.handle
 
     def query(handle, info_class, output, size):
         assert handle == 123 and info_class == 9
@@ -133,31 +133,70 @@ def test_overwrite_descriptor_ownership_and_binary_mode(kernel, monkeypatch, fai
 
 @pytest.mark.parametrize("mask", [0, 0o200, 0o400, 0o600])
 @pytest.mark.parametrize("body_failure", [False, True])
-def test_missing_windows_leaf_uses_exclusive_crt_creation(
-    kernel, monkeypatch, mask, body_failure
-):
-    state, calls, closed_handles = kernel
-    state.handle = wintypes.HANDLE(-1).value
-    monkeypatch.setattr(ctypes, "get_last_error", lambda: 2)
+def test_windows_creation_probe_uses_crt_mask_without_changing_it(monkeypatch, mask, body_failure):
     created = []
     closed_fds = []
+    chmods = []
+    removed = []
 
     def create(path, flags, mode):
-        created.append((path, flags, mode, mode & ~mask))
+        created.append((path, flags, mode))
         return 42
 
     def umask(value):
         raise AssertionError("Creation must let the CRT apply the mask")
 
+    def inspect(fd):
+        assert fd == 42
+        if body_failure:
+            raise OSError("query failed")
+        return SimpleNamespace(st_mode=0o666 & ~mask)
+
     monkeypatch.setattr(_file_handles, "os", SimpleNamespace(**{
         **vars(os), "O_BINARY": 0x8000, "open": create,
-        "close": closed_fds.append, "umask": umask,
+        "close": closed_fds.append, "umask": umask, "fstat": inspect,
+        "chmod": lambda path, mode: chmods.append((path, mode)), "unlink": removed.append,
     }))
+    monkeypatch.setattr(_file_handles.secrets, "token_hex", lambda size: "a" * (size * 2))
+    probe = Path("parent") / f".specify-mode-{'a' * 32}.tmp"
+    if body_failure:
+        with pytest.raises(OSError, match="query failed"):
+            _file_handles._windows_creation_attributes(Path("parent"))
+    else:
+        assert _file_handles._windows_creation_attributes(Path("parent")) == (
+            0x1 if mask & 0o200 else 0
+        )
+    assert created == [(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL | 0x8000, 0o666)]
+    assert chmods == [(probe, 0o600)]
+    assert removed == [probe]
+    assert closed_fds == [42]
+
+
+@pytest.mark.parametrize("attributes", [0, 0x1])
+@pytest.mark.parametrize("body_failure", [False, True])
+def test_missing_windows_leaf_uses_native_no_follow_creation(
+    kernel, monkeypatch, attributes, body_failure
+):
+    state, calls, closed_handles = kernel
+    state.handles = [wintypes.HANDLE(-1).value, 123]
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 2)
+    closed_fds = []
+    parents = []
+
+    def probe(parent):
+        parents.append(parent)
+        return attributes
+
+    monkeypatch.setattr(_file_handles, "_windows_creation_attributes", probe)
+    monkeypatch.setattr(_file_handles.os, "O_BINARY", 0x8000, raising=False)
+    monkeypatch.setattr(_file_handles.os, "close", closed_fds.append)
+    monkeypatch.setitem(
+        sys.modules, "msvcrt", SimpleNamespace(open_osfhandle=lambda handle, flags: 42)
+    )
 
     def write():
-        with _file_handles._windows_overwrite_fd(Path("new")) as fd:
+        with _file_handles._windows_overwrite_fd(Path("parent/new")) as fd:
             assert fd == 42
-            assert closed_fds == []
             if body_failure:
                 raise OSError("write failed")
 
@@ -166,35 +205,34 @@ def test_missing_windows_leaf_uses_exclusive_crt_creation(
             write()
     else:
         write()
-    assert created == [
-        (Path("new"), os.O_WRONLY | os.O_CREAT | os.O_EXCL | 0x8000, 0o666, 0o666 & ~mask)
-    ]
+    assert parents == [Path("parent")]
     assert calls[0][4] == 3
+    assert calls[1][4:6] == (1, 0x02200000 | attributes)
     assert closed_handles == []
     assert closed_fds == [42]
 
 
 @pytest.mark.parametrize("error", [FileExistsError, PermissionError, FileNotFoundError])
-def test_windows_crt_creation_errors_propagate_without_retry(kernel, monkeypatch, error):
-    state, calls, closed_handles = kernel
-    state.handle = wintypes.HANDLE(-1).value
-    monkeypatch.setattr(ctypes, "get_last_error", lambda: 2)
+def test_windows_native_creation_errors_propagate_without_retry(kernel, monkeypatch, error):
+    _, _, closed_handles = kernel
     attempted = []
-    closed_fds = []
 
-    def create(path, flags, mode):
-        attempted.append(path)
+    def open_handle(path, **kwargs):
+        attempted.append(kwargs)
+        if len(attempted) == 1:
+            raise FileNotFoundError("missing")
         raise error("creation failed")
 
-    monkeypatch.setattr(_file_handles, "os", SimpleNamespace(**{
-        **vars(os), "O_BINARY": 0x8000, "open": create, "close": closed_fds.append,
-    }))
+    monkeypatch.setattr(_file_handles, "_open_windows_handle", open_handle)
+    monkeypatch.setattr(_file_handles, "_windows_creation_attributes", lambda parent: 0)
     with pytest.raises(error, match="creation failed"):
         with _file_handles._windows_overwrite_fd(Path("new")):
             pytest.fail("A failed creation yielded a descriptor")
-    assert attempted == [Path("new")]
-    assert len(calls) == 1
-    assert closed_handles == closed_fds == []
+    assert attempted == [
+        {"directory": False, "overwrite": True},
+        {"directory": False, "overwrite": True, "create_attributes": 0},
+    ]
+    assert closed_handles == []
 
 
 def test_interleaved_windows_overwrites_do_not_change_process_mask(kernel, monkeypatch):
