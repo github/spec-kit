@@ -188,7 +188,10 @@ parent directories throughout link resolution, before classifying child entries
 or reading link targets. Each child is opened relative to its native parent
 handle, not by reconstructing an absolute pathname. Metadata and symbolic-link
 targets are read from opened leaf handles; directory names are enumerated from
-the directory handle. These accessed directories also require
+the directory handle. Relative native opens request both
+`FILE_SYNCHRONOUS_IO_NONALERT` and `SYNCHRONIZE`, including directories, so
+enumeration cannot consume a buffer before a pending directory query completes.
+These accessed directories also require
 directory-list/read-attribute access. The resolution handles are released after
 selection; native mutation parents and root ancestry remain retained during
 preflight and removal. Directory sharing locks alone do not prevent in-place

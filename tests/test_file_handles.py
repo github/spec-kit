@@ -1043,9 +1043,9 @@ def test_windows_child_open_is_relative_and_closes_handles(monkeypatch, director
         name = attributes.ObjectName.contents
         length = len(child_name.encode("utf-16-le", errors="surrogatepass"))
         assert (name.Buffer, name.Length, name.MaximumLength) == (child_name, length, length + 2)
-        assert access == (0xA0 if directory else 0x80100000)
+        assert access == (0x1000A0 if directory else 0x80100000)
         assert sharing == 3 and disposition == 1
-        assert options == (0x200001 if directory else 0x200060)
+        assert options == (0x200021 if directory else 0x200060)
         assert allocation is None and file_attributes == 0 and ea is None and ea_length == 0
         assert ctypes.sizeof(status._obj) == 2 * ctypes.sizeof(ctypes.c_void_p)
         if failure == "status":
@@ -1094,6 +1094,34 @@ def test_windows_child_open_is_relative_and_closes_handles(monkeypatch, director
     assert closed == ([] if failure in ("status", "empty") else [77] * 32)
     gc.collect()
     assert {role: len(declarations) for role, declarations in abi_types.items()} == dict.fromkeys(abi_types, 1)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows synchronous directory I/O")
+@pytest.mark.parametrize("traverse", [False, True])
+def test_native_windows_relative_directory_handle_has_synchronous_mode(tmp_path, traverse):
+    from specify_cli import _windows_abi as abi
+
+    directory = tmp_path / "directory"
+    directory.mkdir()
+    (directory / "file").write_text("selected")
+    native = ctypes.WinDLL("ntdll")
+    query = native.NtQueryInformationFile
+    query.argtypes = [
+        wintypes.HANDLE, abi._IoStatusBlockPointer, wintypes.LPVOID,
+        ctypes.c_uint32, ctypes.c_int,
+    ]
+    query.restype = ctypes.c_int32
+    status = abi._IoStatusBlock()
+    mode = ctypes.c_uint32()
+    with _windows_handle(tmp_path, directory=True) as parent:
+        with _windows_handle(
+            Path("directory"), directory=True, parent=parent, traverse=traverse,
+        ) as child:
+            result = query(child, ctypes.byref(status), ctypes.byref(mode), 4, 16)
+            assert result == 0
+            assert mode.value & 0x20  # FILE_SYNCHRONOUS_IO_NONALERT.
+            if not traverse:
+                assert handles._windows_directory_names(child) == ["file"]
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows repeated-read lifetime regression")

@@ -59,11 +59,11 @@ def _open_windows_child(
     )
     handle = wintypes.HANDLE()
     status = abi._IoStatusBlock()
-    options = 0x00200000 | (
-        0x1 if directory is True else (0x40 | 0x20 if directory is False else 0x20)
-    )
+    options = 0x00200000 | 0x20  # FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT.
+    if directory is not None:
+        options |= 0x1 if directory else 0x40
     result = create(
-        ctypes.byref(handle), access | (0 if directory else 0x100000),
+        ctypes.byref(handle), access | 0x100000,  # SYNCHRONIZE is required for synchronous I/O.
         ctypes.byref(attributes), ctypes.byref(status), None, 0,
         sharing, 1, options, None, 0,
     )
