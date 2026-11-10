@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from specify_cli._file_handles import windows_handle as _windows_handle
+from specify_cli._file_handles import _windows_handle
 
 
 @contextmanager

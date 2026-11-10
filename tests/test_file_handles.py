@@ -1,6 +1,8 @@
 """Ownership and native Windows evidence for shared handle primitives."""
 
 from contextlib import contextmanager
+import ctypes
+from ctypes import wintypes
 import os
 from pathlib import Path
 import sys
@@ -9,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from specify_cli import _file_handles, file_helper
+from specify_cli._file_handles import _windows_handle
 from specify_cli.file_helper import FileHelper, UnsupportedPathError
 
 
@@ -165,7 +168,7 @@ def test_windows_read_never_reopens_leaf_after_in_place_reparse_change(tmp_path,
     @contextmanager
     def change_after_validation(path, **kwargs):
         nonlocal changed
-        with _file_handles.windows_handle(path, **kwargs) as handle:
+        with _file_handles._windows_handle(path, **kwargs) as handle:
             if not kwargs["directory"]:
                 try:
                     _set_windows_symlink_reparse(path, outside)
@@ -177,7 +180,7 @@ def test_windows_read_never_reopens_leaf_after_in_place_reparse_change(tmp_path,
                 changed = True
             yield handle
 
-    monkeypatch.setattr(file_helper, "windows_handle", change_after_validation)
+    monkeypatch.setattr(file_helper, "_windows_handle", change_after_validation)
     try:
         content = FileHelper(root, allow_symlinks=allow).read_bytes(selected)
     except UnsupportedPathError:
@@ -195,8 +198,56 @@ def test_windows_read_directory_pin_prevents_writable_reparse_handle(tmp_path):
         return _winapi.CreateFile(str(tmp_path), 0x40000000, 0x7, 0, 3, 0x02200000, 0)
 
     _winapi.CloseHandle(writable_handle())
-    with _file_handles.windows_handle(tmp_path, directory=True, share_write=False):
+    with _file_handles._windows_handle(tmp_path, directory=True, share_write=False):
         with pytest.raises(OSError) as error:
             writable_handle()
         assert error.value.winerror == 32
     _winapi.CloseHandle(writable_handle())
+@pytest.mark.parametrize("directory", [False, True])
+def test_windows_handle_declares_complete_createfile_prototype(tmp_path, monkeypatch, directory):
+    closed = []
+
+    def create(*args):
+        assert create.argtypes == [
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        ]
+        assert create.restype is wintypes.HANDLE
+        assert args == (
+            str(tmp_path),
+            (0x80 | 0x1) if directory else 0x80000000,
+            0x3,
+            None,
+            3,
+            0x00200000 | 0x02000000,
+            None,
+        )
+        return 123
+
+    def info(handle, info_class, buffer, size):
+        assert handle == 123 and info_class == 9
+        assert size == 2 * ctypes.sizeof(wintypes.DWORD)
+        attributes = ctypes.cast(buffer, ctypes.POINTER(wintypes.DWORD))
+        attributes[0] = 0x10 if directory else 0
+        return True
+
+    def close(handle):
+        closed.append(handle)
+        return True
+
+    def load_kernel(name, *, use_last_error):
+        assert name == "kernel32" and use_last_error
+        return SimpleNamespace(
+            CreateFileW=create, GetFileInformationByHandleEx=info, CloseHandle=close
+        )
+
+    monkeypatch.setattr(ctypes, "WinDLL", load_kernel, raising=False)
+    with _windows_handle(tmp_path, directory=directory) as handle:
+        assert handle == 123
+        assert closed == []
+    assert closed == [123]

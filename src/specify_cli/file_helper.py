@@ -1,7 +1,8 @@
 """Scoped filesystem operations; see design/file-helper.md for the contract."""
 
 from dataclasses import dataclass, field
-from contextlib import ExitStack
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 import codecs
 import errno
 import os
@@ -11,7 +12,7 @@ import sys
 import tempfile
 from typing import TypeVar
 
-from specify_cli._file_handles import windows_handle, windows_read_fd
+from specify_cli._file_handles import _windows_handle, windows_read_fd
 
 _PathType = TypeVar("_PathType", bound=PurePath)
 
@@ -169,11 +170,11 @@ class FileHelper:
         with ExitStack() as stack:
             if os.name == "nt":
                 current = self._canonical_root
-                stack.enter_context(windows_handle(current, directory=True, share_write=False))
+                stack.enter_context(_windows_handle(current, directory=True, share_write=False))
                 for part in parts[:-1]:
                     current /= part
-                    stack.enter_context(windows_handle(current, directory=True, share_write=False))
-                handle = stack.enter_context(windows_handle(destination, directory=False))
+                    stack.enter_context(_windows_handle(current, directory=True, share_write=False))
+                handle = stack.enter_context(_windows_handle(destination, directory=False))
                 fd = stack.enter_context(windows_read_fd(handle))
             else:
                 if not (
@@ -211,6 +212,41 @@ class FileHelper:
     def read_text(self, path: Path | str, *, encoding: str = "utf-8") -> str:
         return self.read_bytes(path).decode(encoding)
 
+    @contextmanager
+    def _creation_directory(self, directory: Path) -> Iterator[int | Path]:
+        """Anchor an already policy-resolved parent without following new links."""
+        parts = directory.relative_to(self._canonical_root).parts
+        if os.name == "nt":
+            with ExitStack() as stack:
+                current = self._canonical_root
+                stack.enter_context(_windows_handle(current, directory=True))
+                for part in parts:
+                    current = current / part
+                    stack.enter_context(_windows_handle(current, directory=True))
+                yield current
+            return
+
+        if not (
+            getattr(os, "O_NOFOLLOW", 0)
+            and getattr(os, "O_DIRECTORY", 0)
+            and os.open in os.supports_dir_fd
+        ):
+            raise OSError(errno.ENOTSUP, "Anchored file creation is unsupported on this platform")
+        access = getattr(os, "O_PATH", 0) or getattr(os, "O_SEARCH", 0)
+        if not access:
+            # Darwin's O_SEARCH ABI is missing from some older Python builds.
+            access = (0x40000000 | os.O_DIRECTORY) if sys.platform == "darwin" else os.O_RDONLY
+        flags = access | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        parent = os.open(self._canonical_root, flags)
+        try:
+            for part in parts:
+                child = os.open(part, flags, dir_fd=parent)
+                os.close(parent)
+                parent = child
+            yield parent
+        finally:
+            os.close(parent)
+
     def create_bytes(self, path: Path | str, content: bytes, *, mode: int = 0o644) -> None:
         """Exclusively create a file; never overwrite an existing entry."""
         destination = self._path(path, allow_missing=True, follow_leaf=False)
@@ -222,9 +258,18 @@ class FileHelper:
             raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), str(destination))
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         flags |= getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(destination, flags, mode)
-        with os.fdopen(fd, "wb") as stream:
-            stream.write(content)
+        with self._creation_directory(destination.parent) as directory:
+            if isinstance(directory, Path):
+                fd = os.open(directory / destination.name, flags, mode)
+            else:
+                fd = os.open(destination.name, flags, mode, dir_fd=directory)
+            try:
+                stream = os.fdopen(fd, "wb")
+            except BaseException:
+                os.close(fd)
+                raise
+            with stream:
+                stream.write(content)
 
     def create_text(
         self, path: Path | str, content: str, *, encoding: str = "utf-8", mode: int = 0o644

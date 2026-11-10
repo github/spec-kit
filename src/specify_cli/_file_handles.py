@@ -1,4 +1,4 @@
-"""Handle-based filesystem primitives shared by confined I/O consumers."""
+"""Private platform handles for confined filesystem operations."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 @contextmanager
-def windows_handle(path: Path, *, directory: bool, share_write: bool = True) -> Iterator[int]:
+def _windows_handle(path: Path, *, directory: bool, share_write: bool = True) -> Iterator[int]:
     """Pin a non-reparse path by withholding Windows delete sharing."""
     import ctypes
     from ctypes import wintypes
@@ -53,7 +53,7 @@ def windows_handle(path: Path, *, directory: bool, share_write: bool = True) -> 
         if not info(handle, 9, ctypes.byref(attributes), ctypes.sizeof(attributes)):
             raise ctypes.WinError(ctypes.get_last_error())
         if attributes.attributes & 0x400:
-            raise OSError(errno.ELOOP, "Refusing a reparse-point path", str(path))
+            raise OSError(errno.ELOOP, "Refusing a reparse-point filesystem path", str(path))
         if bool(attributes.attributes & 0x10) != directory:
             raise OSError(errno.EINVAL, "Unexpected filesystem object type", str(path))
         yield handle
