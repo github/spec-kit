@@ -249,9 +249,10 @@ def test_native_windows_overwrite_does_not_require_project_delete_rights(
         assert result.returncode == 0, result.stdout + result.stderr
 
     try:
-        icacls("/deny", f"*{sid}:(OI)(CI)(D,DC)")
+        icacls("/deny", f"*{sid}:(OI)(CI)(DE,DC)")
         native = parent / "native"
         native.write_text("native")
+        assert native.read_text() == "native"
         with pytest.raises(PermissionError):
             native.unlink()
         FileHelper(root, allow_symlinks=allow).overwrite_text("parent/file", "new")
