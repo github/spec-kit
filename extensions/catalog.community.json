@@ -163,6 +163,40 @@
       "created_at": "2026-09-15T00:00:00Z",
       "updated_at": "2026-10-16T00:00:00Z"
     },
+    "agent-assign": {
+      "name": "Agent Assign",
+      "id": "agent-assign",
+      "description": "Assign specialized Claude Code agents to spec-kit tasks for targeted execution",
+      "author": "xuyang",
+      "version": "1.0.0",
+      "download_url": "https://github.com/xymelon/spec-kit-agent-assign/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/xymelon/spec-kit-agent-assign",
+      "homepage": "https://github.com/xymelon/spec-kit-agent-assign",
+      "documentation": "https://github.com/xymelon/spec-kit-agent-assign/blob/main/README.md",
+      "changelog": "https://github.com/xymelon/spec-kit-agent-assign/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "agent",
+        "automation",
+        "implementation",
+        "multi-agent",
+        "task-routing"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-31T00:00:00Z",
+      "updated_at": "2026-03-31T00:00:00Z"
+    },
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
       "id": "aide",
@@ -247,40 +281,6 @@
       "stars": 0,
       "created_at": "2026-11-10T00:00:00Z",
       "updated_at": "2026-11-10T00:00:00Z"
-    },
-    "agent-assign": {
-      "name": "Agent Assign",
-      "id": "agent-assign",
-      "description": "Assign specialized Claude Code agents to spec-kit tasks for targeted execution",
-      "author": "xuyang",
-      "version": "1.0.0",
-      "download_url": "https://github.com/xymelon/spec-kit-agent-assign/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/xymelon/spec-kit-agent-assign",
-      "homepage": "https://github.com/xymelon/spec-kit-agent-assign",
-      "documentation": "https://github.com/xymelon/spec-kit-agent-assign/blob/main/README.md",
-      "changelog": "https://github.com/xymelon/spec-kit-agent-assign/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "category": "process",
-      "effect": "read-write",
-      "requires": {
-        "speckit_version": ">=0.3.0"
-      },
-      "provides": {
-        "commands": 3,
-        "hooks": 1
-      },
-      "tags": [
-        "agent",
-        "automation",
-        "implementation",
-        "multi-agent",
-        "task-routing"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-31T00:00:00Z",
-      "updated_at": "2026-03-31T00:00:00Z"
     },
     "agent-governance": {
       "name": "Agent Governance",
