@@ -397,7 +397,7 @@ class CommandRegistrar:
             for candidate in ambiguous:
                 candidates[candidate] = None
 
-        def replace(token: str) -> tuple[Optional[str], bool]:
+        def replace(token: str, *, command_context: bool = False) -> tuple[Optional[str], bool]:
             # Prefer a literal '#' filename over interpreting it as a fragment.
             for candidate, trailing_slash, suffix in token_parts.get(token, []):
                 if candidate in ambiguous:
@@ -406,11 +406,14 @@ class CommandRegistrar:
                 if target is None:
                     continue
                 rewritten = installed_prefix + target
-                project_relative = False
+                project_relative = (
+                    command_context and skill_dir is not None and project_root is not None
+                )
                 if (
                     skill_dir is not None
                     and project_root is not None
                     and not target.startswith("scripts/")
+                    and not command_context
                 ):
                     installed_path = project_root / rewritten
                     try:
@@ -423,12 +426,14 @@ class CommandRegistrar:
             return None, False
 
         replacements = {token: replace(token) for token in tokens}
+        command_replacements: dict[str, tuple[Optional[str], bool]] = {}
         output = StringIO()
         used_project_relative = False
+        used_command_paths = False
 
-        output_scans = [(iter(path_spans(0, len(text))), 0, len(text))]
+        output_scans = [(iter(path_spans(0, len(text))), 0, len(text), False)]
         while output_scans:
-            scan, previous, end = output_scans[-1]
+            scan, previous, end, command_context = output_scans[-1]
             span = next(scan, None)
             if span is None:
                 output.write(text[previous:end])
@@ -436,14 +441,20 @@ class CommandRegistrar:
                 continue
             left, right, quoted = span
             output.write(text[previous:left])
-            output_scans[-1] = (scan, right, end)
+            output_scans[-1] = (scan, right, end, command_context)
             token = text[left:right]
-            replacement, project_relative = replacements[token]
+            if command_context:
+                if token not in command_replacements:
+                    command_replacements[token] = replace(token, command_context=True)
+                replacement, project_relative = command_replacements[token]
+            else:
+                replacement, project_relative = replacements[token]
             if replacement is not None:
                 output.write(replacement)
                 used_project_relative = used_project_relative or project_relative
+                used_command_paths = used_command_paths or (command_context and project_relative)
             elif quoted and has_command_word(token):
-                output_scans.append((iter(path_spans(left, right)), left, right))
+                output_scans.append((iter(path_spans(left, right)), left, right, True))
             else:
                 output.write(token)
         if used_project_relative:
@@ -453,6 +464,10 @@ class CommandRegistrar:
             )
             if note not in text:
                 output.write("\n\n" + note)
+        if used_command_paths:
+            command_note = "Run commands containing these paths from the project root."
+            if command_note not in text:
+                output.write("\n\n" + command_note)
         return output.getvalue()
 
     def render_markdown_command(

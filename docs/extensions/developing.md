@@ -117,6 +117,9 @@ Enclose filenames containing spaces or parentheses in backticks or quotes, for
 example `agents/reviewer guide.md` or `agents/reviewer(v2).md`.
 Paths used as arguments in inline commands, such as `cat agents/reviewer.md`,
 are also rewritten; a matching complete delimited filename takes precedence.
+In skills, inline commands keep both executable and operand paths
+project-root-relative, with explicit instructions to run them from the project
+root. Standalone resource references remain skill-directory-relative.
 
 Generated skills use resource paths relative to their `SKILL.md` directory.
 For example, a Copilot skill

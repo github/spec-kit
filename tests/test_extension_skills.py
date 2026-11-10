@@ -1285,7 +1285,7 @@ class TestExtensionSkillRegistration:
         content = skill_file.read_text()
         prefix = "../../../.specify/extensions/nested-ext/"
         assert content.count(prefix + "skills/example/references/template.md.") == 2
-        assert f"Run `cat {prefix}skills/example/references/template.md`." in content
+        assert "Run `cat .specify/extensions/nested-ext/skills/example/references/template.md`." in content
         assert 'Run .specify/extensions/nested-ext/scripts/run.sh "$ARGUMENTS"' in content
         assert "Leave references/missing.md and specs/plan.md unchanged." in content
         assert (skill_file.parent / prefix / "skills/example/references/template.md").is_file()
@@ -1322,6 +1322,51 @@ class TestExtensionSkillRegistration:
                 capture_output=True, text=True, check=True,
             )
             assert Path(result.stdout.strip()).samefile(project_dir)
+
+    @pytest.mark.parametrize("ai", ["copilot", "codex"])
+    @pytest.mark.parametrize("script_dir", ["scripts", "tools"])
+    def test_inline_command_executable_and_operands_share_project_root(
+        self, project_dir, temp_dir, ai, script_dir
+    ):
+        import re
+        import shlex
+        import subprocess
+        import sys
+
+        _create_init_options(project_dir, ai=ai, ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai=ai)
+        extension_dir = _create_extension_dir(temp_dir, ext_id="command-ext")
+        script = extension_dir / script_dir / "check.py"
+        script.parent.mkdir()
+        script.write_text(
+            "import sys\nfrom pathlib import Path\n"
+            "print(Path(sys.argv[1]).read_text())\n"
+        )
+        reference = extension_dir / "agents" / "reviewer.md"
+        reference.parent.mkdir()
+        reference.write_text("bundled reviewer")
+        (extension_dir / "commands" / "hello.md").write_text(
+            "---\ndescription: Check command operands\n---\n\n"
+            f"Run `python {script_dir}/check.py agents/reviewer.md` from project root.\n"
+            "Read `agents/reviewer.md` separately.\n"
+        )
+        ExtensionManager(project_dir).install_from_directory(
+            extension_dir, "0.1.0", register_commands=True
+        )
+        content = (skills_dir / "speckit-command-ext-hello" / "SKILL.md").read_text()
+        invocation = re.search(r"Run `python ([^`]+)` from project root", content)
+        assert invocation is not None
+        arguments = shlex.split(invocation.group(1))
+        assert arguments == [
+            f".specify/extensions/command-ext/{script_dir}/check.py",
+            ".specify/extensions/command-ext/agents/reviewer.md",
+        ]
+        result = subprocess.run(
+            [sys.executable, *arguments], cwd=project_dir,
+            capture_output=True, text=True, check=True,
+        )
+        assert result.stdout.strip() == "bundled reviewer"
+        assert "Read `../../../.specify/extensions/command-ext/agents/reviewer.md` separately." in content
 
     @pytest.mark.parametrize(
         ("ai", "expected_invocation"),
