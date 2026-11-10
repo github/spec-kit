@@ -2,6 +2,8 @@
 
 import json
 import os
+import shutil
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,9 +11,22 @@ import pytest
 import yaml
 
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
-from specify_cli.integrations.base import IntegrationBase, SkillsIntegration
-from specify_cli.integrations.claude import ARGUMENT_HINTS, FORK_CONTEXT_COMMANDS
+from specify_cli.integrations.base import (
+    DispatchSettingsError,
+    IntegrationBase,
+    SkillsIntegration,
+    check_dispatch_settings,
+    effective_dispatch_settings,
+)
+from specify_cli.integrations.claude import (
+    ARGUMENT_HINTS,
+    EFFORT_LEVELS,
+    FORK_CONTEXT_COMMANDS,
+)
 from specify_cli.integrations.manifest import IntegrationManifest
+from specify_cli.workflows.base import StepContext, StepStatus
+from specify_cli.workflows.step.command import CommandStep
+from specify_cli.workflows.step.prompt import PromptStep
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -1248,3 +1263,252 @@ class TestSpeckitManifestRecordsSkippedFiles:
         assert real_template in text, (
             "directory-at-template-dst path must surface in the skipped warning"
         )
+
+
+_COMMAND_STEP = (CommandStep, {"command": "speckit.plan", "input": {"args": "body"}})
+_PROMPT_STEP = (PromptStep, {"type": "prompt", "prompt": "Summarise"})
+# Captured agent output that passes the host's value pattern, so only Claude's
+# own rule rejects it.
+_SECRET_OUTPUT = "FAKEsecret0123456789"
+
+
+class TestClaudeDispatchSettings:
+    """Per-step ``reasoning_effort`` maps to ``--effort`` (#4916)."""
+
+    @pytest.fixture
+    def runs(self, monkeypatch):
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append(list(args))
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        return calls
+
+    @pytest.mark.parametrize("via", ["dispatch_command", "build_exec_args"])
+    def test_build_exec_args_owns_reasoning_effort_only(self, via):
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        assert "build_exec_args" in vars(ClaudeIntegration)
+        assert effective_dispatch_settings(
+            ClaudeIntegration(), via=via
+        ) == frozenset({"reasoning_effort"})
+
+    def test_effort_levels_match_claude_code(self):
+        assert EFFORT_LEVELS == ("low", "medium", "high", "xhigh", "max")
+
+    @pytest.mark.parametrize("level", ["low", "medium", "high", "xhigh", "max"])
+    def test_every_effort_level_becomes_the_effort_flag(self, level):
+        claude = get_integration("claude")
+        check_dispatch_settings(
+            claude, {"reasoning_effort": level}, via="build_exec_args"
+        )
+        assert claude.build_exec_args(
+            "do it", model="sonnet", reasoning_effort=level
+        ) == [
+            "claude", "-p", "do it",
+            "--model", "sonnet",
+            "--output-format", "json",
+            "--effort", level,
+        ]
+
+    def test_dispatch_command_passes_effort(self, runs):
+        get_integration("claude").dispatch_command(
+            "speckit.plan", "body", stream=False, reasoning_effort="max"
+        )
+        (args,) = runs
+        assert args[1:] == [
+            "-p", "/speckit-plan body", "--output-format", "json", "--effort", "max"
+        ]
+
+    @pytest.mark.parametrize("level", ["bogus", "none", "minimal", "HIGH"])
+    def test_unknown_effort_fails_before_the_cli_starts(self, runs, level):
+        with pytest.raises(DispatchSettingsError) as excinfo:
+            get_integration("claude").dispatch_command(
+                "speckit.plan", stream=False, reasoning_effort=level
+            )
+        assert runs == []
+        assert excinfo.value.setting == "reasoning_effort"
+        message = str(excinfo.value)
+        assert "must be one of low, medium, high, xhigh, max" in message
+        assert 'SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS="--effort <value>"' in message
+
+    def test_direct_build_rejects_unknown_effort(self):
+        with pytest.raises(
+            DispatchSettingsError, match="SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS"
+        ) as excinfo:
+            get_integration("claude").build_exec_args(
+                "do it", reasoning_effort="bogus"
+            )
+        assert excinfo.value.setting == "reasoning_effort"
+
+    def test_rejected_effort_is_not_echoed(self):
+        with pytest.raises(DispatchSettingsError) as excinfo:
+            get_integration("claude").build_exec_args(
+                "do it", reasoning_effort=_SECRET_OUTPUT
+            )
+        message = str(excinfo.value)
+        assert _SECRET_OUTPUT not in message
+        assert "must be one of low, medium, high, xhigh, max." in message
+
+    def test_context_size_is_rejected_with_a_model_hint(self, runs):
+        claude = get_integration("claude")
+        with pytest.raises(DispatchSettingsError) as excinfo:
+            claude.dispatch_command(
+                "speckit.plan", stream=False, context_size="long_context"
+            )
+        assert runs == []
+        assert excinfo.value.setting == "context_size"
+        message = str(excinfo.value)
+        assert "does not support per-step 'context_size'" in message
+        assert (
+            "Choose a long-context model with the step's 'model' field instead."
+            in message
+        )
+        assert claude.dispatch_setting_hint("reasoning_effort") is None
+
+    def test_context_size_is_attributed_when_both_settings_are_set(self):
+        with pytest.raises(DispatchSettingsError, match="'model' field") as excinfo:
+            get_integration("claude").build_exec_args(
+                "do it", reasoning_effort="high", context_size="long_context"
+            )
+        assert excinfo.value.setting == "context_size"
+
+    def test_unset_settings_leave_argv_unchanged(self):
+        claude = get_integration("claude")
+        baseline = [
+            "claude", "-p", "do it", "--model", "sonnet", "--output-format", "json"
+        ]
+        assert claude.build_exec_args("do it", model="sonnet") == baseline
+        assert claude.build_exec_args(
+            "do it", model="sonnet", reasoning_effort=None, context_size=None
+        ) == baseline
+
+    def test_runtime_config_is_validated_once(self, monkeypatch):
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        claude = ClaudeIntegration()
+        calls = []
+        monkeypatch.setattr(
+            claude,
+            "validate_runtime_config",
+            lambda *args: calls.append(args),
+        )
+
+        claude.build_exec_args("do it", integration_args=["a"])
+        assert calls == [(["a"], None)]
+
+        calls.clear()
+        claude.build_exec_args(
+            "do it", integration_args=["a"], reasoning_effort="high"
+        )
+        assert calls == [(["a"], None)]
+
+    def test_runtime_config_errors_precede_setting_errors(self):
+        with pytest.raises(ValueError, match="'integration_args'"):
+            get_integration("claude").build_exec_args(
+                "do it", integration_args=["x"], reasoning_effort="bogus"
+            )
+
+    def test_extra_args_escape_hatch_passes_newer_levels(self, monkeypatch):
+        monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS", "--effort ultra")
+        assert get_integration("claude").build_exec_args("do it") == [
+            "claude", "-p", "do it", "--effort", "ultra", "--output-format", "json"
+        ]
+
+    def test_effort_follows_extra_args(self, monkeypatch, runs):
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS", "--permission-mode acceptEdits"
+        )
+        claude = get_integration("claude")
+        tail = ["--model", "sonnet", "--output-format", "json", "--effort", "high"]
+        assert claude.build_exec_args(
+            "do it", model="sonnet", reasoning_effort="high"
+        ) == ["claude", "-p", "do it", "--permission-mode", "acceptEdits", *tail]
+        claude.dispatch_command(
+            "speckit.plan",
+            "body",
+            model="sonnet",
+            stream=False,
+            reasoning_effort="high",
+        )
+        (args,) = runs
+        assert args[1:] == [
+            "-p", "/speckit-plan body", "--permission-mode", "acceptEdits", *tail
+        ]
+
+    @staticmethod
+    def _execute(monkeypatch, tmp_path, step, config, *, steps=None, **settings):
+        monkeypatch.setattr(shutil, "which", lambda name, *a, **k: f"/bin/{name}")
+        return step().execute(
+            {"id": "ask", **config, **settings},
+            StepContext(
+                default_integration="claude",
+                project_root=str(tmp_path),
+                steps=steps or {},
+            ),
+        )
+
+    @pytest.mark.parametrize(
+        ("step", "config", "prompt"),
+        [(*_COMMAND_STEP, "/speckit-plan body"), (*_PROMPT_STEP, "Summarise")],
+        ids=["command", "prompt"],
+    )
+    def test_workflow_steps_dispatch_effort(
+        self, monkeypatch, tmp_path, runs, step, config, prompt
+    ):
+        result = self._execute(
+            monkeypatch, tmp_path, step, config, reasoning_effort="high"
+        )
+        assert result.status == StepStatus.COMPLETED, result.error
+        assert result.output["reasoning_effort"] == "high"
+        assert result.output["context_size"] is None
+        (args,) = runs
+        assert args[1:] == ["-p", prompt, "--effort", "high"]
+
+    @pytest.mark.parametrize(
+        ("step", "config"), [_COMMAND_STEP, _PROMPT_STEP], ids=["command", "prompt"]
+    )
+    @pytest.mark.parametrize(
+        ("settings", "expected"),
+        [
+            (
+                {"reasoning_effort": "bogus"},
+                'SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS="--effort <value>"',
+            ),
+            (
+                {"context_size": "long_context"},
+                "Choose a long-context model with the step's 'model' field",
+            ),
+        ],
+        ids=["unknown-effort", "context-size"],
+    )
+    def test_workflow_steps_fail_before_the_cli_starts(
+        self, monkeypatch, tmp_path, runs, step, config, settings, expected
+    ):
+        result = self._execute(monkeypatch, tmp_path, step, config, **settings)
+        assert result.status == StepStatus.FAILED
+        assert result.output["dispatched"] is False
+        assert expected in result.error
+        assert runs == []
+
+    @pytest.mark.parametrize(
+        ("step", "config"), [_COMMAND_STEP, _PROMPT_STEP], ids=["command", "prompt"]
+    )
+    def test_workflow_steps_do_not_echo_captured_output(
+        self, monkeypatch, tmp_path, runs, step, config
+    ):
+        result = self._execute(
+            monkeypatch,
+            tmp_path,
+            step,
+            config,
+            steps={"probe": {"output": {"stdout": _SECRET_OUTPUT}}},
+            reasoning_effort="{{ steps.probe.output.stdout }}",
+        )
+        assert result.status == StepStatus.FAILED
+        assert _SECRET_OUTPUT not in result.error
+        assert "must be one of low, medium, high, xhigh, max." in result.error
+        assert result.error.endswith(" (set by step)")
+        assert runs == []

@@ -580,7 +580,7 @@ def test_overwrite_text_io_errors_propagate(root, monkeypatch, allow):
     def denied(*args, **kwargs):
         raise PermissionError("denied")
 
-    monkeypatch.setattr("specify_cli.file_helper.os.open", denied)
+    monkeypatch.setattr(FileHelper, "_overwrite_descriptor", denied)
     with pytest.raises(PermissionError, match="denied"):
         FileHelper(root, allow_symlinks=allow).overwrite_text("new", "text")
     assert not (root / "new").exists()

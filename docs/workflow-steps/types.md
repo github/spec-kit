@@ -32,6 +32,7 @@ Invoke an installed Spec Kit command by name via the integration CLI:
     args: "{{ inputs.spec }}"
   integration: claude        # Optional: override workflow default
   model: "claude-sonnet-4-20250514"   # Optional: override model
+  reasoning_effort: "high"   # Optional: requires integration support
 ```
 
 For positional arguments and named runtime options, see
@@ -222,6 +223,7 @@ inputs:
 steps:
   - id: plan
     command: speckit.plan
+    integration: codex         # Codex takes context_size as a token count
     reasoning_effort: "high"   # Overrides the workflow default
     context_size: "200000"     # Quoted: values are strings
 
@@ -254,8 +256,17 @@ integration's CLI, and an integration can reject a value before the CLI runs.
 for it. Otherwise the step fails before the CLI runs, with an error that names
 the setting, its source (the step or the workflow default), and any
 integrations that support it. Workflow defaults are not exempt: a default fails
-each inheriting step whose integration does not support it. No built-in
-integration supports these settings yet; see
+each inheriting step whose integration does not support it. These built-in
+integrations support the settings:
+
+| Integration | `reasoning_effort` | `context_size` |
+| --- | --- | --- |
+| [GitHub Copilot](../integrations/copilot.md#workflow-dispatch-settings) | Yes | Yes |
+| [Codex CLI](../integrations/codex.md#workflow-dispatch-settings) | Yes | Yes |
+| [Claude Code](../integrations/claude.md#workflow-dispatch-settings) | Yes | No |
+
+Other built-in integrations support neither setting. Each integration's guide
+describes its CLI arguments and accepted values; see
 [Workflow CLI dispatch](../integrations/cli.md#workflow-cli-dispatch) for how
 integrations opt in.
 

@@ -61,7 +61,7 @@ catalogs:
 
 | Entry field | Meaning |
 | --- | --- |
-| `url` | HTTPS catalog URL; loopback HTTP is allowed for local development |
+| `url` | HTTPS catalog URL, including for local development; plain HTTP is rejected |
 | `name` | Source name displayed by the CLI and used for provenance |
 | `priority` | Lower numbers are checked first |
 | `install_allowed` | Whether ID-based installation is permitted; default `false` |

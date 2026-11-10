@@ -81,8 +81,9 @@ CLI add/remove operations write project scope only. Both readers accept a
 missing schema version for compatibility and reject an unsupported major
 version.
 
-Source URLs can be HTTPS, HTTP on localhost, `file://`, local paths, or known
-`builtin://` URLs. Added local paths are stored as absolute paths. This
+Source URLs can be HTTPS, `file://`, local paths, or known
+`builtin://` URLs. Plain HTTP is rejected before network access, including on
+localhost. Added local paths are stored as absolute paths. This
 flexibility applies to the catalog file, not its bundle download URLs.
 
 ### Precedence

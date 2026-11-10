@@ -150,6 +150,7 @@ helpers for independent project/source/managed boundaries.
 | Create directory | Reject accessed links before creating parents | Follow contained directory links; reject dangling targets |
 | Exclusively create file | Reject accessed links | Follow contained parents; reject an existing leaf without opening its target |
 | Atomic write/upsert | Reject accessed links | Replace the resolved regular-file target and preserve every link |
+| Non-atomic text overwrite/upsert | Reject accessed links | Update the resolved regular-file target in place and preserve every link |
 | Delete leaf link | Reject without mutation | Unlink the link, including dangling, cyclic, or external-target links |
 | Delete through linked parent | Reject without mutation | Delete the contained target entry, leaving the parent link intact |
 | Recursive delete | Preflight all descendants and reject any link before mutation | Preflight all descendants; unlink links without traversing their targets |
@@ -195,6 +196,32 @@ helpers for independent project/source/managed boundaries.
   translation match the previous configuration writer. An encoding or I/O
   failure propagates, and a write failure can leave truncated/partial content.
   This is not hard-link confinement: a hard-linked alias can observe updates.
+  After policy resolution, POSIX opens each resolved directory relative to an
+  already-open parent descriptor with no-follow flags, using search/path-only
+  access where supported so unreadable but searchable parents remain usable,
+  and closes the previous directory after opening its child. Descriptor usage
+  stays bounded independently of path depth. It then opens the leaf without
+  truncation. Windows pins the canonical root and every resolved parent with
+  non-reparse handles withholding delete sharing. Each anchored directory must
+  permit `FILE_LIST_DIRECTORY` and `FILE_READ_ATTRIBUTES` access. An ACL that
+  permits file writing but denies directory listing can therefore cause an
+  overwrite to fail before opening the leaf. Existing non-reparse leaves are
+  opened without truncation. For a missing leaf, an empty, randomly named
+  CRT-created probe in an independently owned runtime temporary directory
+  captures the masked creation attributes without changing the process mask. This scratch root is
+  pinned separately, contains no project data, and is removed before native
+  no-follow exclusive creation of the destination. No disposable sibling is
+  created in the project, so destination creation does not require project
+  deletion rights. Runtime temporary-storage failures remain explicit errors.
+  A leaf introduced between these calls causes an explicit creation error.
+  The opened leaf remains held through text I/O. Both paths check the opened
+  file type before truncating that same descriptor. On POSIX, an exchanged
+  parent cannot redirect creation or truncation through a new link. Allowed
+  links are still resolved by the normal policy walk; the anchored traversal
+  operates on their resolved target, not on the original link spelling.
+  Windows creation also honors the CRT process mask: masking the owner-write
+  bit creates a read-only file, matching native text creation, without changing
+  the attributes of an existing file.
 - `delete(path, recursive=False)` unlinks files/links or removes directories.
   Nonrecursive directory deletion requires an empty directory. The established
   root cannot be deleted.
@@ -251,12 +278,10 @@ substituted symlink. This does not freeze file contents against in-place edits.
 
 Preflight detects static policy failures before recursive deletion or parent
 creation. Atomic writes recheck the original path before replacement, and
-deletion rechecks each accessed entry. For all operations that still use
-validated paths (directory creation, atomic writes, non-atomic overwrites,
-symlink creation, deletion, and Windows exclusive file creation), portable
-path checks are **not** a race-free sandbox: another process can exchange
-parents or entries between checks and syscalls, and an I/O failure during
-mutation can leave partial results. Protect against concurrent untrusted
+deletion rechecks each accessed entry. No operation is a general race-free
+sandbox. For operations that still use validated paths, another process can
+exchange parents or entries between checks and syscalls. An I/O failure during
+any mutation can leave partial results. Protect against concurrent untrusted
 mutation separately.
 Exclusive file creation anchors its resolved parent hierarchy as described
 above. On POSIX, renaming an opened directory does not redirect creation to
@@ -264,9 +289,10 @@ its replacement: creation stays with the opened directory, even if it is
 renamed out of the root. This is not a guarantee of stable namespace membership
 under concurrent renames, nor does parent anchoring make every leaf preflight
 atomic with the subsequent open.
-On Windows, exclusive creation still opens its leaf by pathname after pinning
-the parent hierarchy. Attribute-only reparse updates can redirect that open;
-it does not have the read path's parent-relative handle protection.
+On Windows, exclusive creation and text overwrite still open their leaf by
+pathname after pinning the parent hierarchy. Attribute-only reparse updates
+can redirect those opens; they do not have the read path's parent-relative
+handle protection.
 The helper does not constrain subprocesses or third-party code.
 
 Existing safe-write mechanisms informed this helper, but existing shared
@@ -274,9 +300,14 @@ infrastructure warning/skip behavior and development-mode link creation are
 unchanged. Migrate one owned operation boundary at a time, carrying original
 paths and an explicit root/policy into the helper before any early resolution.
 Linked command directories and development-mode registration remain dependent
-stages. Non-atomic configuration writes preserve legacy metadata semantics;
-portable preflight does not guarantee race-free protection against concurrent
-path replacement.
+stages. Non-atomic configuration writes preserve legacy metadata semantics.
+`overwrite_text` keeps the resolved directory/file objects open, but does not
+freeze directory membership on POSIX: an opened directory or file may be
+renamed, and the operation continues against that opened object. The trusted
+root's OS ancestors remain outside the helper's policy boundary. This is not
+a general sandbox against concurrent namespace changes or hard-linked aliases.
+Platforms without the required descriptor/handle primitives fail explicitly
+rather than falling back to path-based overwrite.
 
 Windows path classification and directory-mode reparse rejection have portable
 regression tests. Native Windows path and junction tests also exist and are
