@@ -6,6 +6,7 @@ import json
 import builtins
 import copy
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -411,13 +412,23 @@ def test_fetch_keeps_malicious_text_in_one_argument_even_if_validation_is_bypass
 ):
     curl = tmp_path / "curl"
     arguments = tmp_path / "arguments.json"
-    curl.write_text(
-        f"#!{sys.executable}\n"
+    python_code = (
         "import json, sys\n"
         "from pathlib import Path\n"
         f"Path({str(arguments)!r}).write_text(json.dumps(sys.argv[1:]))\n"
         "Path(sys.argv[sys.argv.index('--output') + 1]).write_bytes(b'fixture bytes')\n"
         "print('200', end='')\n"
+    )
+    # A `#!<interpreter>` shebang breaks when the interpreter path contains
+    # whitespace: the macOS kernel splits the shebang line on spaces, so a
+    # checkout living in e.g. "GitHub Contribution/" makes every lookup of
+    # `curl` fail with ENOENT. Route through /bin/sh, which quotes the
+    # interpreter path properly; with `-c`, sys.argv[1:] is exactly the
+    # argument list `curl` was invoked with.
+    curl.write_text(
+        "#!/bin/sh\n"
+        f"exec {shlex.quote(str(sys.executable))} -c {shlex.quote(python_code)} \"$@\"\n",
+        encoding="utf-8",
     )
     curl.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path))
