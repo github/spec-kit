@@ -831,3 +831,57 @@ class TestCodexNoModelInvocationPresets:
         assert overridden
         assert during == []
         assert not (project / self.SKILL / "agents").exists()
+
+
+class TestCodexManifestInternals:
+    """Pins the manifest internals the Codex policy cleanup depends on.
+
+    The public manifest API cannot record a prior hash without re-reading the
+    file, and has no public path validator, so the Codex package uses
+    ``IntegrationManifest._files`` and ``_validate_record_path``. A change to
+    either should fail here rather than silently in cleanup.
+    """
+
+    REL = ".agents/skills/speckit-plan/agents/openai.yaml"
+
+    def test_retained_entry_is_public_and_survives_save_and_load(self, tmp_path):
+        codex = get_integration("codex")
+        manifest = IntegrationManifest("codex", tmp_path)
+        codex._retain(manifest, self.REL, "0" * 64, "partial")
+        assert manifest.files == {self.REL: "0" * 64}
+        assert manifest.ownership_modes == {self.REL: "partial"}
+
+        manifest.save()
+        loaded = IntegrationManifest.load("codex", tmp_path)
+        assert loaded.files == {self.REL: "0" * 64}
+        assert loaded.ownership_modes == {self.REL: "partial"}
+
+    def test_uninstall_honours_retained_entries(self, tmp_path):
+        import hashlib
+
+        codex = get_integration("codex")
+        kept = tmp_path / ".agents/skills/speckit-specify/agents/openai.yaml"
+        removed = tmp_path / self.REL
+        for path in (kept, removed):
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"policy:\n  allow_implicit_invocation: false\n")
+        digest = hashlib.sha256(removed.read_bytes()).hexdigest()
+        manifest = IntegrationManifest("codex", tmp_path)
+        codex._retain(manifest, kept.relative_to(tmp_path).as_posix(), digest, "partial")
+        codex._retain(manifest, self.REL, digest, "whole")
+
+        manifest.uninstall(tmp_path, remove_manifest=False)
+        assert kept.exists()
+        assert not removed.exists()
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_validate_record_path_accepts_missing_file_and_rejects_symlinked_ancestor(self, tmp_path):
+        from specify_cli.integrations.manifest import _validate_record_path
+
+        assert _validate_record_path(Path(self.REL), tmp_path) == tmp_path / self.REL
+
+        real = tmp_path / "elsewhere"
+        real.mkdir()
+        (tmp_path / ".agents").symlink_to(real, target_is_directory=True)
+        with pytest.raises(ValueError):
+            _validate_record_path(Path(self.REL), tmp_path)

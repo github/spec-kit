@@ -16,6 +16,9 @@ import yaml
 
 from .._file_changes import write_bytes
 from ..base import IntegrationOption, SkillsIntegration
+# The manifest has no public validator; this is the check ``record_file`` and
+# ``record_existing`` apply, so policies are planned, cleaned up and recorded by
+# the same lexical path. Pinned by ``TestCodexManifestInternals``.
 from ..manifest import IntegrationManifest, _validate_record_path
 
 logger = logging.getLogger(__name__)
@@ -183,7 +186,7 @@ class CodexIntegration(SkillsIntegration):
             if rel in keep or not self._is_policy_rel(rel):
                 continue
             if self._is_generated(project_root, rel, prior):
-                generated._files[rel] = recorded_hash
+                self._retain(generated, rel, recorded_hash, "whole")
                 continue
             path = project_root / rel
             if self._remove_policy(project_root, rel):
@@ -223,9 +226,14 @@ class CodexIntegration(SkillsIntegration):
 
     @staticmethod
     def _retain(manifest: IntegrationManifest, rel: str, recorded_hash: str, ownership: str) -> None:
-        """Keep tracking ``rel`` without reading it, which may be what failed."""
+        """Keep tracking ``rel`` without reading it, which may be what failed.
+
+        ``record_existing`` re-reads and re-hashes the file, and ``record_file``
+        rewrites it, so neither can carry the prior hash forward. This is the
+        only write to manifest internals; ``TestCodexManifestInternals`` pins it.
+        """
         manifest._files[rel] = recorded_hash
-        manifest._ownership_modes[rel] = ownership
+        manifest.set_ownership(rel, ownership)
 
     def stale_cleanup_exclusions(self) -> set[str]:
         # ``setup`` releases policy files itself and drops a file from the
