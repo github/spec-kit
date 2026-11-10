@@ -472,6 +472,7 @@ def test_overwrite_closes_descriptors_on_failure(tmp_path, monkeypatch, failure)
     parent.mkdir()
     (parent / "file").write_text("old")
     opened = []
+    opened_leaves = []
     original = os.open
     fstat = os.fstat
 
@@ -480,6 +481,8 @@ def test_overwrite_closes_descriptors_on_failure(tmp_path, monkeypatch, failure)
             raise PermissionError("test failure")
         fd = original(path, flags, *args, **kwargs)
         opened.append(fd)
+        if Path(path).name == "file":
+            opened_leaves.append(fd)
         return fd
 
     def fail(*args, **kwargs):
@@ -499,10 +502,13 @@ def test_overwrite_closes_descriptors_on_failure(tmp_path, monkeypatch, failure)
         replacements["fdopen"] = lambda *args, **kwargs: FailedStream()
     elif failure != "open":
         replacements[failure] = fail
-    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), **replacements}))
-    with pytest.raises(OSError, match="test failure"):
-        FileHelper(tmp_path).overwrite_text("parent/file", "new")
+    with FileHelper(tmp_path) as files:
+        monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), **replacements}))
+        with pytest.raises(OSError, match="test failure"):
+            files.overwrite_text("parent/file", "new")
     assert opened
+    if failure != "open":
+        assert len(opened_leaves) == 1
     for fd in opened:
         with pytest.raises(OSError):
             fstat(fd)

@@ -7,6 +7,7 @@ from contextlib import contextmanager, nullcontext
 import os
 from pathlib import Path, PureWindowsPath
 import shutil
+import stat
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -47,6 +48,51 @@ def link(root):
         return path
 
     return create
+
+
+@pytest.fixture
+def windows_delete_model(monkeypatch):
+    locations = {}
+    next_handle = 0
+
+    @contextmanager
+    def opened(path, *, parent=None):
+        nonlocal next_handle
+        actual = path if parent is None else locations[parent] / path
+        next_handle += 1
+        handle = next_handle
+        locations[handle] = actual
+        try:
+            yield handle
+        finally:
+            del locations[handle]
+
+    @contextmanager
+    def entry(parent, name, *, deleting=False):
+        with opened(Path(name), parent=parent) as handle:
+            yield handle
+
+    def mode(handle):
+        return FileHelper._entry_mode(locations[handle])
+
+    def names(handle):
+        with os.scandir(locations[handle]) as entries:
+            return [item.name for item in entries]
+
+    def remove(handle):
+        if stat.S_ISDIR(mode(handle)):
+            os.rmdir(locations[handle])
+        else:
+            os.unlink(locations[handle])
+
+    monkeypatch.setattr(file_helper, "_windows_entry", entry)
+    monkeypatch.setattr(file_helper, "_windows_mode", mode)
+    monkeypatch.setattr(file_helper, "_windows_readlink", lambda handle: os.readlink(locations[handle]))
+    monkeypatch.setattr(file_helper, "_windows_directory_names", names)
+    monkeypatch.setattr(file_helper, "_windows_delete", remove)
+    return SimpleNamespace(
+        opened=opened, locations=locations, names=names, remove=remove,
+    )
 
 
 @pytest.mark.parametrize("allow", [False, True])
@@ -538,6 +584,7 @@ def test_read_closes_descriptors_on_failure(root, monkeypatch, failure):
     selected = root / "directory/file"
     selected.write_bytes(b"inside")
     opened = []
+    opened_leaves = []
     original_open = os.open
 
     def recording_open(path, flags, *args, **kwargs):
@@ -545,6 +592,8 @@ def test_read_closes_descriptors_on_failure(root, monkeypatch, failure):
             raise PermissionError("injected open failure")
         fd = original_open(path, flags, *args, **kwargs)
         opened.append(fd)
+        if str(path) == "file":
+            opened_leaves.append(fd)
         return fd
 
     def fail(*args, **kwargs):
@@ -559,7 +608,7 @@ def test_read_closes_descriptors_on_failure(root, monkeypatch, failure):
 
         read = fail
 
-    with monkeypatch.context() as patch:
+    with FileHelper(root) as files, monkeypatch.context() as patch:
         patch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {recording_open})
         patch.setattr(os, "open", recording_open)
         if failure in ("fstat", "fdopen"):
@@ -567,8 +616,10 @@ def test_read_closes_descriptors_on_failure(root, monkeypatch, failure):
         elif failure == "read":
             patch.setattr(os, "fdopen", lambda *args, **kwargs: FailedRead())
         with pytest.raises(OSError, match="injected"):
-            FileHelper(root).read_bytes(selected)
+            files.read_bytes(selected)
     assert opened
+    if failure in ("fstat", "fdopen", "read"):
+        assert len(opened_leaves) == 1
     for fd in opened:
         with pytest.raises(OSError) as error:
             os.fstat(fd)
@@ -2078,7 +2129,7 @@ def test_windows_delete_rejects_replaced_root_during_acquisition_portably(
 
 @pytest.mark.parametrize("kind", ["file", "directory", "recursive"])
 def test_windows_link_resolution_pins_accessed_parents_portably(
-    root, link, monkeypatch, kind
+    root, link, monkeypatch, kind, windows_delete_model
 ):
     parent = root / "parent"
     parent.mkdir()
@@ -2103,15 +2154,17 @@ def test_windows_link_resolution_pins_accessed_parents_portably(
     lstat = Path.lstat
 
     @contextmanager
-    def handle(path, *, directory, pin=True):
+    def handle(path, *, directory, pin=True, parent=None):
         assert directory
+        actual = path if parent is None else windows_delete_model.locations[parent] / path
         if pin:
-            pinned.append(path)
+            pinned.append(actual)
         try:
-            yield 123
+            with windows_delete_model.opened(path, parent=parent) as value:
+                yield value
         finally:
             if pin:
-                assert pinned.pop() == path
+                assert pinned.pop() == actual
 
     def exchange(path, **kwargs):
         nonlocal attempted, blocked
@@ -2180,7 +2233,9 @@ def test_windows_walk_preserves_parent_type_and_access_errors_portably(
     monkeypatch.setattr(file_helper, "_windows_handle", denied)
     expected = NotADirectoryError if error_number == errno.EINVAL else PermissionError
     with file_helper.ExitStack() as resources:
-        directories = file_helper._WalkDirectories(root, root, 0, resources)
+        directories = file_helper._WalkDirectories(
+            root, file_helper._WindowsDirectory(root, 123), 0, resources
+        )
         with pytest.raises(expected):
             directories.directory(root / "child")
 
@@ -2374,7 +2429,7 @@ def test_windows_delete_checks_retained_handle_identity_portably(
 @pytest.mark.parametrize("scenario", ["same", "renamed-reference", "replacement-reused-id"])
 @pytest.mark.parametrize("recursive", [False, True])
 def test_windows_legacy_root_identity_is_compared_live_with_the_selected_scheme(
-    root, monkeypatch, scenario, recursive
+    root, monkeypatch, scenario, recursive, windows_delete_model
 ):
     (root / "tree").mkdir()
     (root / "tree/victim").write_text("keep")
@@ -2384,17 +2439,17 @@ def test_windows_legacy_root_identity_is_compared_live_with_the_selected_scheme(
     changed = False
 
     @contextmanager
-    def handle(path, *, directory, pin=True):
+    def handle(path, *, directory, pin=True, parent=None):
         nonlocal reference
         assert directory
-        value = len(queries) + len(active) + 1
-        active.append(value)
-        if not pin:
-            reference = value
-        try:
-            yield value
-        finally:
-            assert active.pop() == value
+        with windows_delete_model.opened(path, parent=parent) as value:
+            active.append(value)
+            if not pin:
+                reference = value
+            try:
+                yield value
+            finally:
+                assert active.pop() == value
 
     def identity(value, *, kind=None):
         queries.append((value, kind))
@@ -2467,7 +2522,7 @@ def test_windows_readonly_helper_supports_traverse_only_ancestor(root, consumer)
 @pytest.mark.parametrize("failure", [False, True])
 @pytest.mark.parametrize("recursive", [False, True])
 def test_windows_delete_holds_ancestors_until_io_completes_portably(
-    root, link, monkeypatch, failure, recursive
+    root, link, monkeypatch, failure, recursive, windows_delete_model
 ):
     import specify_cli.file_helper as module
 
@@ -2478,57 +2533,42 @@ def test_windows_delete_holds_ancestors_until_io_completes_portably(
     active = []
     references = []
     events = []
-    unlink = os.unlink
-    rmdir = os.rmdir
-    scan = os.scandir
 
     @contextmanager
-    def handle(path, *, directory, pin=True):
+    def handle(path, *, directory, pin=True, parent=None):
         assert directory
-        if not pin:
-            references.append(path)
-            try:
-                yield 123
-            finally:
-                assert references.pop() == path
-            return
-        active.append(path)
+        actual = path if parent is None else windows_delete_model.locations[parent] / path
+        selected_handles = active if pin else references
+        selected_handles.append(actual)
         try:
-            yield 123
+            with windows_delete_model.opened(path, parent=parent) as value:
+                yield value
         finally:
-            assert active.pop() == path
+            assert selected_handles.pop() == actual
 
-    def assert_anchored(path):
-        path = Path(path)
+    def assert_anchored(handle):
+        assert handle in windows_delete_model.locations
         assert active[0] == Path(root.anchor)
         assert root.resolve() in active
-        assert active[-1] == path
         assert all(not part.is_symlink() for part in active)
-        events.append(path)
+        events.append(windows_delete_model.locations[handle])
 
-    def observe_scan(path):
-        assert_anchored(path)
-        return scan(path)
+    def observe_scan(handle):
+        assert_anchored(handle)
+        return windows_delete_model.names(handle)
 
-    def remove(path, *, dir_fd=None):
-        assert dir_fd is None
-        assert_anchored(Path(path).parent)
+    def remove(handle):
+        assert_anchored(handle)
         if failure:
             raise PermissionError("removal denied")
-        unlink(path)
-
-    def remove_directory(path, *, dir_fd=None):
-        assert dir_fd is None
-        assert_anchored(Path(path).parent)
-        rmdir(path)
+        windows_delete_model.remove(handle)
 
     backend = SimpleNamespace(**vars(os))
     backend.name = "nt"
-    backend.unlink = remove
-    backend.rmdir = remove_directory
-    backend.scandir = observe_scan
     monkeypatch.setattr(module, "os", backend)
     monkeypatch.setattr(module, "_windows_handle", handle)
+    monkeypatch.setattr(module, "_windows_directory_names", observe_scan)
+    monkeypatch.setattr(module, "_windows_delete", remove)
     monkeypatch.setattr(
         module, "_windows_file_id",
         lambda _, **kwargs: _WindowsFileIdentity("fileid128", 1, b"root"),
@@ -2549,6 +2589,90 @@ def test_windows_delete_holds_ancestors_until_io_completes_portably(
     files.close()
     assert references == []
     assert alias.is_symlink()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor model of native Windows handles")
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("recursive", [False, True])
+def test_windows_deletion_does_not_reopen_changed_parent_path(
+    root, link, monkeypatch, allow, recursive
+):
+    parent = root / "tree"
+    parent.mkdir()
+    victim = parent / "victim"
+    victim.write_text("selected")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "victim").write_text("keep")
+    retained = root / "retained"
+    opened = {}
+    changed = False
+
+    @contextmanager
+    def handle(path, *, directory, parent=None, **kwargs):
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+        try:
+            yield fd
+        finally:
+            os.close(fd)
+
+    @contextmanager
+    def entry(parent, name, *, deleting=False):
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+        opened[fd] = (parent, name)
+        try:
+            yield fd
+        finally:
+            del opened[fd]
+            os.close(fd)
+
+    @contextmanager
+    def anchored_root(self):
+        with handle(root, directory=True) as fd:
+            wrapper = getattr(file_helper, "_WindowsDirectory", None)
+            yield root if wrapper is None else wrapper(root, fd)
+
+    def names(fd):
+        with os.scandir(fd) as entries:
+            return [item.name for item in entries]
+
+    def remove(fd):
+        directory, name = opened[fd]
+        selected = os.fstat(fd)
+        current = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        if not os.path.samestat(selected, current):
+            raise OSError(errno.ESTALE, "Model cannot remove an object renamed after opening")
+        if stat.S_ISDIR(selected.st_mode):
+            os.rmdir(name, dir_fd=directory)
+        else:
+            os.unlink(name, dir_fd=directory)
+
+    original_delete = FileHelper._delete_plan
+
+    def exchange(self, selected, **kwargs):
+        nonlocal changed
+        if selected.path == victim and not changed:
+            changed = True
+            parent.rename(retained)
+            link(parent, outside)
+        return original_delete(self, selected, **kwargs)
+
+    monkeypatch.setattr(file_helper, "_windows_handle", handle)
+    monkeypatch.setattr(file_helper, "_windows_entry", entry, raising=False)
+    monkeypatch.setattr(file_helper, "_windows_mode", lambda fd: os.fstat(fd).st_mode, raising=False)
+    monkeypatch.setattr(file_helper, "_windows_directory_names", names, raising=False)
+    monkeypatch.setattr(file_helper, "_windows_delete", remove, raising=False)
+    monkeypatch.setattr(FileHelper, "_deletion_root", anchored_root)
+    monkeypatch.setattr(FileHelper, "_delete_plan", exchange)
+    with FileHelper(root, allow_symlinks=allow) as files:
+        try:
+            files.delete(parent if recursive else victim, recursive=recursive)
+        except OSError:
+            assert changed
+    assert changed
+    assert (outside / "victim").read_text() == "keep"
+    assert not (retained / "victim").exists()
+    assert opened == {}
 
 
 @pytest.mark.parametrize("allow", [False, True])

@@ -185,12 +185,16 @@ including those above the helper root, and reject reparse points. An ACL allowin
 traversal but not listing can therefore prevent deletion while still allowing
 bootstrap reads. Windows deletion also retains non-reparse handles to accessed
 parent directories throughout link resolution, before classifying child entries
-or reading link targets. Resolving a contained parent link does not consult
-metadata through an unpinned replacement parent. These accessed directories also
-require directory-list/read-attribute access. The resolution handles are released
-after selection; resolved mutation parents and root ancestry remain pinned during
-preflight and removal. These locks are released at the end of deletion; the
-metadata-only reference remains until the helper closes. Automatic
+or reading link targets. Each child is opened relative to its native parent
+handle, not by reconstructing an absolute pathname. Metadata and symbolic-link
+targets are read from opened leaf handles; directory names are enumerated from
+the directory handle. These accessed directories also require
+directory-list/read-attribute access. The resolution handles are released after
+selection; native mutation parents and root ancestry remain retained during
+preflight and removal. Directory sharing locks alone do not prevent in-place
+reparse changes: handle-relative operations retain the opened directory object
+instead of following its changed pathname. These locks are released at the end of
+deletion; the metadata-only reference remains until the helper closes. Automatic
 finalization is a compatibility fallback, not a substitute for deterministic
 cleanup. Bootstrap configuration and managed integration-state consumers close
 their own helpers explicitly. Installed-workflow listing also closes its
@@ -289,9 +293,12 @@ descriptor-relative or change their documented concurrency limitations.
   classification, link-target reads and resolution, recursive preflight, and
   per-entry revalidation, as well as descriptor-relative enumeration and
   `unlink`/`rmdir`. Canonical pathnames identify root-relative entries but are not
-  reopened for metadata or link resolution. Windows holds the full canonical
-  ancestry, including ancestors above the root, without delete sharing while using
-  absolute paths. This does not change the trusted treatment of aliases resolved
+  reopened for metadata or link resolution. Windows verifies the full canonical
+  ancestry during root acquisition and then carries native directory handles
+  through child opens, metadata queries, link-target reads, and enumeration.
+  Removal opens the leaf itself with `DELETE` access and marks that same handle
+  with `FileDispositionInfo`; it does not call pathname `unlink` or `rmdir`.
+  This does not change the trusted treatment of aliases resolved
   at root establishment. Allowed contained parent links are resolved within the
   retained boundary, and leaf links are still unlinked rather than followed.
   Platforms lacking the required directory-descriptor operations fail with
@@ -316,8 +323,8 @@ descriptor-relative or change their documented concurrency limitations.
   Their live descriptor count is bounded independently of operation-path depth,
   in addition to the helper's retained root. Link-target jumps and `..` are
   re-anchored through that root rather than following an opened directory's
-  physical parent after a rename. Windows retains the accessed ancestor handles
-  because its path-based access requires those directories to stay pinned.
+  physical parent after a rename. Windows retains native directory handles for
+  its child-relative traversal, including during recursive preflight and removal.
   POSIX recursive preflight and mutation use explicit worklists and separate
   eight-directory handle caches. The selected parent and established root remain
   anchored outside those caches. An uncached parent is reacquired component by
@@ -329,7 +336,7 @@ descriptor-relative or change their documented concurrency limitations.
   Reacquiring evicted prefixes trades additional opens for that fixed handle
   budget. Total opens can grow with the sum of visited path lengths, rather than
   being unconditionally linear in the directory count. Windows retains its
-  ancestry-locking traversal instead of evicting handles needed for path-based
+  native-handle traversal instead of evicting handles needed for child-relative
   operations. The complete plan is still preflighted before any removal.
 - `symlink(target, path)` creates a link exclusively. Relative targets are
   interpreted relative to the link parent, not the helper root.
@@ -398,8 +405,9 @@ the opened directory even if that directory is renamed; validation continues to
 inspect that same directory tree. Windows prevents ancestor renames while handles
 are held. Concurrent changes may still cause deletion to fail or leave
 partial results, and preflight is not a transaction or an immutable tree snapshot.
-Leaf removal acts on the current entry in the anchored parent, not a pinned leaf
-identity. No operation is a general race-free sandbox. For operations that still
+POSIX leaf removal acts on the current entry in the anchored parent; Windows
+removal acts on its opened leaf handle. No operation is a general race-free
+sandbox. For operations that still
 use validated paths (reads, directory creation, atomic writes, and symlink
 creation), portable path checks are **not**
 a race-free sandbox: another process can exchange parents or entries between

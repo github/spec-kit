@@ -16,8 +16,9 @@ from typing import TypeVar
 from weakref import finalize
 
 from specify_cli._file_handles import (
-    _WindowsFileIdentity, _windows_file_id, _windows_handle,
-    _windows_overwrite_fd, _windows_stat, windows_read_fd,
+    _WindowsFileIdentity, _windows_delete, _windows_directory_names, _windows_entry,
+    _windows_file_id, _windows_handle, _windows_mode, _windows_overwrite_fd,
+    _windows_readlink, _windows_stat, windows_read_fd,
 )
 
 
@@ -58,13 +59,19 @@ class UnsupportedPathError(FileHelperError):
     """An accessed object cannot be used by the requested operation."""
 
 
+@dataclass(frozen=True)
+class _WindowsDirectory:
+    path: Path
+    handle: int
+
+
 @dataclass
 class _WalkDirectories:
     root: Path
-    root_handle: int | Path
+    root_handle: int | _WindowsDirectory
     flags: int
     resources: ExitStack
-    opened: dict[Path, Path] = field(default_factory=dict)
+    opened: dict[Path, _WindowsDirectory] = field(default_factory=dict)
     current: tuple[Path, int] | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
@@ -95,23 +102,27 @@ class _WalkDirectories:
             parent = child
         return parent
 
-    def directory(self, path: Path) -> int | Path:
+    def directory(self, path: Path) -> int | _WindowsDirectory:
         path.relative_to(self.root)
         if isinstance(self.root_handle, int):
             return self._posix_directory(path, self.root_handle)
         if path == self.root:
             return self.root_handle
         if path not in self.opened:
-            self.directory(path.parent)
+            parent = self.directory(path.parent)
+            if not isinstance(parent, _WindowsDirectory):
+                raise FileHelperError("Expected a native Windows directory")
             try:
-                self.resources.enter_context(_windows_handle(path, directory=True))
+                handle = self.resources.enter_context(_windows_handle(
+                    Path(path.name), directory=True, parent=parent.handle
+                ))
             except OSError as exc:
                 if exc.errno == errno.EINVAL and getattr(exc, "winerror", None) is None:
                     raise NotADirectoryError(
                         errno.ENOTDIR, "Expected a directory", str(path)
                     ) from exc
                 raise
-            self.opened[path] = path
+            self.opened[path] = _WindowsDirectory(path, handle)
         return self.opened[path]
 
 
@@ -297,7 +308,9 @@ class FileHelper:
                 continue
             candidate = current / part
             try:
-                mode = self._entry_mode(candidate, dir_fd=directory_fd)
+                mode = self._deletion_entry_mode(candidate, parent=directory) if (
+                    isinstance(directory, _WindowsDirectory)
+                ) else self._entry_mode(candidate, dir_fd=directory_fd)
             except FileNotFoundError:
                 if not allow_missing:
                     raise
@@ -313,7 +326,10 @@ class FileHelper:
                     return candidate
                 if candidate in links or len(links) >= 40:
                     raise UnsupportedPathError(f"Symlink cycle or excessive chain: {candidate}")
-                if directory_fd is None:
+                if isinstance(directory, _WindowsDirectory):
+                    with _windows_entry(directory.handle, part) as handle:
+                        target = Path(_windows_readlink(handle))
+                elif directory_fd is None:
                     target = Path(os.readlink(candidate))
                 else:
                     target = Path(os.readlink(part, dir_fd=directory_fd))
@@ -332,7 +348,7 @@ class FileHelper:
 
     def _path(
         self, path: Path | str, *, allow_missing: bool = False, follow_leaf: bool = True,
-        root_handle: int | Path | None = None,
+        root_handle: int | _WindowsDirectory | None = None,
     ) -> Path:
         self._require_open()
         original = Path(path)
@@ -343,7 +359,7 @@ class FileHelper:
             directories = (
                 _WalkDirectories(
                     self._canonical_root, root_handle,
-                    0 if isinstance(root_handle, Path) else self._directory_flags(), resources,
+                    0 if isinstance(root_handle, _WindowsDirectory) else self._directory_flags(), resources,
                 )
                 if root_handle is not None else None
             )
@@ -561,7 +577,7 @@ class FileHelper:
             raise FileHelperError(f"Established root changed during deletion: {self.root}")
 
     @contextmanager
-    def _deletion_root(self) -> Iterator[int | Path]:
+    def _deletion_root(self) -> Iterator[int | _WindowsDirectory]:
         """Borrow the root pinned when this helper was established."""
         self._require_open()
         if self._root_anchor is None:
@@ -587,19 +603,20 @@ class FileHelper:
                 retained = _windows_file_id(reference, kind=identity.kind)
                 if selected != retained:
                     raise FileHelperError(f"Established root changed during deletion: {self.root}")
-                yield self._root_anchor
+                yield _WindowsDirectory(self._canonical_root, handle)
         else:
             self._check_deletion_root(self._canonical_root.stat())
             yield self._root_anchor
 
     @contextmanager
     def _child_deletion_directory(
-        self, parent: int | Path, name: str, *, readable: bool = False
-    ) -> Iterator[int | Path]:
-        if isinstance(parent, Path):
-            child = parent / name
-            with _windows_handle(child, directory=True):
-                yield child
+        self, parent: int | _WindowsDirectory, name: str, *, readable: bool = False
+    ) -> Iterator[int | _WindowsDirectory]:
+        if isinstance(parent, _WindowsDirectory):
+            with _windows_handle(
+                Path(name), directory=True, parent=parent.handle
+            ) as handle:
+                yield _WindowsDirectory(parent.path / name, handle)
             return
         flags = (
             os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
@@ -612,7 +629,9 @@ class FileHelper:
             os.close(child)
 
     @contextmanager
-    def _deletion_directory(self, path: Path, *, root: int | Path) -> Iterator[int | Path]:
+    def _deletion_directory(
+        self, path: Path, *, root: int | _WindowsDirectory
+    ) -> Iterator[int | _WindowsDirectory]:
         parts = path.relative_to(self._canonical_root).parts
         if isinstance(root, int):
             with ExitStack() as resources:
@@ -627,9 +646,19 @@ class FileHelper:
                 parent = resources.enter_context(self._child_deletion_directory(parent, part))
             yield parent
 
-    def _deletion_entry_mode(self, path: Path, *, parent: int | Path) -> int:
-        if isinstance(parent, Path):
-            return self._entry_mode(parent / path.name)
+    @staticmethod
+    def _windows_entry_mode(handle: int, path: Path) -> int:
+        try:
+            return _windows_mode(handle)
+        except OSError as exc:
+            if exc.errno == errno.ELOOP and getattr(exc, "winerror", None) is None:
+                raise UnsupportedPathError(f"Unsupported Windows reparse point: {path}") from exc
+            raise
+
+    def _deletion_entry_mode(self, path: Path, *, parent: int | _WindowsDirectory) -> int:
+        if isinstance(parent, _WindowsDirectory):
+            with _windows_entry(parent.handle, path.name) as handle:
+                return self._windows_entry_mode(handle, path)
         return self._entry_mode(path, dir_fd=parent)
 
     def _deletion_kind(self, path: Path, mode: int) -> bool:
@@ -644,7 +673,7 @@ class FileHelper:
         return True
 
     def _deletion_plan(
-        self, path: Path, *, recursive: bool, parent: int | Path
+        self, path: Path, *, recursive: bool, parent: int | _WindowsDirectory
     ) -> _DeletionEntry:
         if isinstance(parent, int):
             return self._posix_deletion_plan(path, recursive=recursive, parent=parent)
@@ -652,8 +681,9 @@ class FileHelper:
         children: tuple[_DeletionEntry, ...] = ()
         if directory and recursive:
             with self._child_deletion_directory(parent, path.name, readable=True) as child_directory:
-                with os.scandir(child_directory) as entries:
-                    names = sorted(entry.name for entry in entries)
+                if not isinstance(child_directory, _WindowsDirectory):
+                    raise FileHelperError("Expected a native Windows directory")
+                names = sorted(_windows_directory_names(child_directory.handle))
                 child_plans = []
                 for name in names:
                     child_plans.append(
@@ -695,25 +725,21 @@ class FileHelper:
                     pending.append((entry / name, None))
         return completed[path]
 
-    def _delete_plan(self, entry: _DeletionEntry, *, parent: int | Path) -> None:
+    def _delete_plan(self, entry: _DeletionEntry, *, parent: int | _WindowsDirectory) -> None:
         if isinstance(parent, int):
             self._posix_delete_plan(entry, parent=parent)
             return
-        directory = self._deletion_kind(
-            entry.path, self._deletion_entry_mode(entry.path, parent=parent)
-        )
-        if directory != entry.directory:
-            raise FileHelperError(f"Destination changed during deletion: {entry.path}")
-        if directory and entry.children:
-            with self._child_deletion_directory(parent, entry.path.name) as child_directory:
+        with _windows_entry(parent.handle, entry.path.name, deleting=True) as handle:
+            directory = self._deletion_kind(
+                entry.path, self._windows_entry_mode(handle, entry.path)
+            )
+            if directory != entry.directory:
+                raise FileHelperError(f"Destination changed during deletion: {entry.path}")
+            if directory and entry.children:
+                child_directory = _WindowsDirectory(entry.path, handle)
                 for child in entry.children:
                     self._delete_plan(child, parent=child_directory)
-        leaf = parent / entry.path.name if isinstance(parent, Path) else entry.path.name
-        directory_fd = None if isinstance(parent, Path) else parent
-        if directory:
-            os.rmdir(leaf, dir_fd=directory_fd)
-        else:
-            os.unlink(leaf, dir_fd=directory_fd)
+            _windows_delete(handle)
 
     def _posix_delete_plan(self, entry: _DeletionEntry, *, parent: int) -> None:
         pending = [(entry, False)]
