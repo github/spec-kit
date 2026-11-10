@@ -260,10 +260,10 @@ descriptor-relative or change their documented concurrency limitations.
   deletion rights. Runtime temporary-storage failures remain explicit errors.
   A leaf introduced between these calls causes an explicit creation error.
   The opened leaf remains held through text I/O. Both paths check the opened
-  file type before truncating that same descriptor. An exchanged parent cannot
-  redirect creation or truncation through a new link. Allowed links are still
-  resolved by the normal policy walk; the anchored traversal operates on their
-  resolved target, not on the original link spelling.
+  file type before truncating that same descriptor. On POSIX, an exchanged
+  parent cannot redirect creation or truncation through a new link. Allowed
+  links are still resolved by the normal policy walk; the anchored traversal
+  operates on their resolved target, not on the original link spelling.
   Windows creation also honors the CRT process mask: masking the owner-write
   bit creates a read-only file, matching native text creation, without changing
   the attributes of an existing file.
@@ -343,6 +343,37 @@ entries, not reject a whole project for excluded/unrelated links.
 
 ## Safety limits and migration
 
+POSIX reads, exclusive file creation, and text overwrites share one parent
+directory walk for capability checks, search flags, no-follow traversal, and
+descriptor cleanup. Leaf open flags, file-type validation, and truncation
+remain operation-specific.
+
+Reads resolve supported contained links under the existing policy, then open
+the resolved hierarchy without following substituted links. POSIX reads use
+descriptor-relative directory traversal with `O_DIRECTORY` and `O_NOFOLLOW`.
+Directory descriptors use `O_SEARCH` or `O_PATH` where available so searchable
+directories need not be listable, including Darwin's native `O_SEARCH` value
+when a Python build uses an older SDK that omits the constant. Each superseded
+parent is closed as soon as its child is open. The leaf uses `O_NOFOLLOW` and
+`O_NONBLOCK`. Windows reads open the canonical root with `FILE_TRAVERSE` and
+`FILE_READ_ATTRIBUTES`, then open each resolved child relative to its validated
+parent handle with `NtCreateFile`. Directory opens do not request enumeration
+access. Relative opens prevent an in-place junction change on an already-open
+parent from redirecting the next open; write-sharing restrictions alone cannot
+prevent attribute-only reparse updates. Each new handle rejects reparse points,
+and handles withhold delete sharing. Reads duplicate the validated leaf handle
+into an independently owned descriptor, never reopen its pathname.
+Both paths validate the opened file with `fstat` before reading its descriptor,
+and release all handles on success or failure. Windows child-open ABI
+structures and pointer types are initialized lazily in a Windows-only module
+and reused through Python's import cache. This avoids type retention in older
+supported Python versions without requiring `ctypes` for POSIX startup.
+Handle values and path buffers remain operation-local. Platforms without the
+required safe-open primitives fail explicitly rather than fall back to
+unchecked pathname reads. A concurrent replacement can fail the read or leave
+it reading the already-open original file, but cannot redirect it through a
+substituted symlink. This does not freeze file contents against in-place edits.
+
 Preflight detects static policy failures before recursive deletion or parent
 creation. Atomic writes recheck the original path before replacement, and
 deletion rechecks each accessed entry. Deletion also anchors directory
@@ -366,8 +397,12 @@ above. On POSIX, renaming an opened directory does not redirect creation to
 its replacement: creation stays with the opened directory, even if it is
 renamed out of the root. This is not a guarantee of stable namespace membership
 under concurrent renames, nor does parent anchoring make every leaf preflight
-atomic with the subsequent open. The helper does not constrain subprocesses
-or third-party code.
+atomic with the subsequent open.
+On Windows, exclusive creation and text overwrite still open their leaf by
+pathname after pinning the parent hierarchy. Attribute-only reparse updates
+can redirect those opens; they do not have the read path's parent-relative
+handle protection.
+The helper does not constrain subprocesses or third-party code.
 
 Existing safe-write mechanisms informed this helper, but existing shared
 infrastructure warning/skip behavior and development-mode link creation are

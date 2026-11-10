@@ -1,13 +1,61 @@
 """Private platform handles for confined filesystem operations."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 import errno
 import os
 import secrets
 import stat
 import tempfile
-from collections.abc import Iterator
-from contextlib import contextmanager
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+
+
+def _open_windows_child(parent: int, name: str, *, directory: bool, access: int, sharing: int) -> int:
+    """Open one component relative to an already validated directory handle."""
+    if PureWindowsPath(name).parts != (name,) or PureWindowsPath(name).anchor or name == ".." or "\0" in name:
+        raise ValueError(f"Expected a single relative Windows path component: {name!r}")
+    encoded_length = len(name.encode("utf-16-le", errors="surrogatepass"))
+    if encoded_length > 65532:
+        raise OSError(errno.ENAMETOOLONG, "Windows path component is too long", name)
+
+    import ctypes
+    from ctypes import wintypes
+    from . import _windows_abi as abi
+
+    native = ctypes.WinDLL("ntdll")
+    create = native.NtCreateFile
+    create.argtypes = [
+        ctypes.POINTER(wintypes.HANDLE), ctypes.c_uint32,
+        abi._ObjectAttributesPointer, abi._IoStatusBlockPointer,
+        wintypes.LPVOID, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32,
+        ctypes.c_uint32, wintypes.LPVOID, ctypes.c_uint32,
+    ]
+    create.restype = ctypes.c_int32
+    dos_error = native.RtlNtStatusToDosError
+    dos_error.argtypes = [ctypes.c_int32]
+    dos_error.restype = ctypes.c_uint32
+    buffer = ctypes.create_unicode_buffer(name)
+    unicode_name = abi._UnicodeString(
+        encoded_length, encoded_length + 2, ctypes.cast(buffer, wintypes.LPWSTR)
+    )
+    # OBJ_DONT_REPARSE and FILE_OPEN_REPARSE_POINT keep resolution on this handle.
+    attributes = abi._ObjectAttributes(
+        ctypes.sizeof(abi._ObjectAttributes), parent, ctypes.pointer(unicode_name),
+        0x40 | 0x1000, None, None,
+    )
+    handle = wintypes.HANDLE()
+    status = abi._IoStatusBlock()
+    options = 0x00200000 | (0x1 if directory else 0x40 | 0x20)
+    result = create(
+        ctypes.byref(handle), access | (0 if directory else 0x100000),
+        ctypes.byref(attributes), ctypes.byref(status), None, 0,
+        sharing, 1, options, None, 0,
+    )
+    if result < 0:
+        raise ctypes.WinError(dos_error(result))
+    if not handle.value:
+        raise OSError(errno.EBADF, "Native child open returned no handle", name)
+    return handle.value
 
 
 def _windows_api():
@@ -36,8 +84,11 @@ def _windows_api():
 
 def _open_windows_handle(
     path: Path, *, directory: bool, overwrite: bool = False,
-    create_attributes: int | None = None, pin: bool = True,
+    create_attributes: int | None = None, parent: int | None = None, traverse: bool = False,
+    pin: bool = True,
 ) -> int:
+    if parent is not None and (overwrite or create_attributes is not None):
+        raise ValueError("Relative Windows handle opens do not support creation or overwrite")
     import ctypes
     from ctypes import wintypes
 
@@ -45,21 +96,25 @@ def _open_windows_handle(
         _fields_ = [("attributes", wintypes.DWORD), ("tag", wintypes.DWORD)]
 
     kernel = _windows_api()
-    # Pinning needs directory-list access and withholds delete sharing.
-    # Metadata-only references retain identity without locking ancestors.
-    handle = kernel.CreateFileW(
-        str(path),
-        (0x40000000 | 0x80) if overwrite else (
-            ((0x80 | 0x1) if directory else 0x80000000) if pin else 0x80
-        ),
-        0x3 if pin else 0x7,
-        None,
-        3 if create_attributes is None else 1,  # OPEN_EXISTING or CREATE_NEW.
-        0x00200000 | 0x02000000 | (create_attributes or 0),
-        None,
-    )
-    if handle == wintypes.HANDLE(-1).value:
-        raise ctypes.WinError(ctypes.get_last_error())
+    access = (0x80 | (0x20 if traverse else 0x1)) if directory else 0x80000000
+    if not pin:
+        access = 0x80
+    if overwrite:
+        access = 0x40000000 | 0x80
+    sharing = 0x3 if pin else 0x7
+    if parent is None:
+        # FILE_TRAVERSE participates in sharing checks without requiring enumeration.
+        handle = kernel.CreateFileW(
+            str(path), access, sharing, None,
+            3 if create_attributes is None else 1,  # OPEN_EXISTING or CREATE_NEW.
+            0x00200000 | 0x02000000 | (create_attributes or 0), None,
+        )
+        if handle == wintypes.HANDLE(-1).value:
+            raise ctypes.WinError(ctypes.get_last_error())
+    else:
+        handle = _open_windows_child(
+            parent, str(path), directory=directory, access=access, sharing=sharing
+        )
     try:
         attributes = AttributeTagInfo()
         if not kernel.GetFileInformationByHandleEx(
@@ -77,9 +132,19 @@ def _open_windows_handle(
 
 
 @contextmanager
-def _windows_handle(path: Path, *, directory: bool, pin: bool = True) -> Iterator[int]:
-    """Open a non-reparse object, optionally preventing directory replacement."""
-    handle = _open_windows_handle(path, directory=directory, pin=pin)
+def _windows_handle(
+    path: Path, *, directory: bool, parent: int | None = None, traverse: bool = False,
+    pin: bool = True,
+) -> Iterator[int]:
+    """Open a non-reparse object, optionally relative to a retained parent."""
+    if not pin:
+        handle = _open_windows_handle(
+            path, directory=directory, parent=parent, traverse=traverse, pin=False
+        )
+    elif parent is None and not traverse:
+        handle = _open_windows_handle(path, directory=directory)
+    else:
+        handle = _open_windows_handle(path, directory=directory, parent=parent, traverse=traverse)
     try:
         yield handle
     finally:
@@ -123,6 +188,27 @@ def _windows_stat(handle: int) -> os.stat_result:
         raise
     try:
         return os.fstat(fd)
+    finally:
+        os.close(fd)
+
+
+@contextmanager
+def windows_read_fd(handle: int) -> Iterator[int]:
+    """Read the validated object through an independently owned duplicate."""
+    import _winapi
+    import msvcrt
+
+    process = _winapi.GetCurrentProcess()
+    duplicate = _winapi.DuplicateHandle(
+        process, handle, process, 0, False, _winapi.DUPLICATE_SAME_ACCESS
+    )
+    try:
+        fd = msvcrt.open_osfhandle(duplicate, os.O_RDONLY | os.O_BINARY)
+    except BaseException:
+        _winapi.CloseHandle(duplicate)
+        raise
+    try:
+        yield fd
     finally:
         os.close(fd)
 

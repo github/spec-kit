@@ -66,6 +66,540 @@ def test_plain_operations(root, allow):
     assert list(root.iterdir()) == []
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX shared directory traversal")
+@pytest.mark.parametrize("operation", ["read_bytes", "create_bytes", "overwrite_text"])
+def test_posix_operations_share_parent_walk_and_preserve_leaf_flags(root, monkeypatch, operation):
+    parent = root / "parent/nested"
+    parent.mkdir(parents=True)
+    selected = parent / "file"
+    if operation != "create_bytes":
+        selected.write_bytes(b"inside")
+    files = FileHelper(root)
+    parents = []
+    opened = []
+    original_walk = FileHelper._posix_directory
+    original_open = os.open
+
+    @contextmanager
+    def observe_walk(self, directory, **kwargs):
+        parents.append(directory)
+        with original_walk(self, directory, **kwargs) as fd:
+            yield fd
+
+    def observe_open(path, flags, *args, **kwargs):
+        opened.append((path, flags, args, kwargs))
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(FileHelper, "_posix_directory", observe_walk)
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "open": observe_open}))
+    cloexec = getattr(os, "O_CLOEXEC", 0)
+    if operation == "read_bytes":
+        assert files.read_bytes(selected) == b"inside"
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | cloexec
+        mode = ()
+    elif operation == "create_bytes":
+        files.create_bytes(selected, b"new")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        mode = (0o644,)
+    else:
+        files.overwrite_text(selected, "new")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK | cloexec
+        mode = (0o666,)
+    assert parents == [parent.resolve()]
+    directory_calls = [call for call in opened if call[1] & os.O_DIRECTORY]
+    assert len(directory_calls) == 3
+    assert len({call[1] for call in directory_calls}) == 1
+    assert all(call[1] & os.O_NOFOLLOW for call in directory_calls)
+    leaf_calls = [call for call in opened if not call[1] & os.O_DIRECTORY]
+    assert len(leaf_calls) == 1
+    assert leaf_calls[0][:3] == ("file", flags, mode)
+    assert leaf_calls[0][3]["dir_fd"] is not None
+    assert selected.read_bytes() == (b"inside" if operation == "read_bytes" else b"new")
+    files.close()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX shared directory cleanup")
+@pytest.mark.parametrize("operation", ["read_bytes", "create_bytes", "overwrite_text"])
+@pytest.mark.parametrize("failure", ["root", "parent", "leaf"])
+def test_posix_parent_walk_closes_descriptors_after_open_failures(root, monkeypatch, operation, failure):
+    parent = root / "parent/nested"
+    parent.mkdir(parents=True)
+    selected = parent / "file"
+    if operation != "create_bytes":
+        selected.write_bytes(b"inside")
+    original_open = os.open
+    original_close = os.close
+    live = set()
+    failed = []
+
+    def observe_open(path, flags, *args, **kwargs):
+        fail_here = (
+            (failure == "root" and Path(path) == root.resolve())
+            or (failure == "parent" and path == "nested")
+            or (failure == "leaf" and path == "file")
+        )
+        if fail_here:
+            failed.append(path)
+            raise PermissionError("injected open failure")
+        fd = original_open(path, flags, *args, **kwargs)
+        live.add(fd)
+        return fd
+
+    def observe_close(fd):
+        original_close(fd)
+        live.remove(fd)
+
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{
+        **vars(os), "open": observe_open, "close": observe_close,
+    }))
+    with pytest.raises(PermissionError, match="injected"):
+        if operation == "read_bytes":
+            FileHelper(root).read_bytes(selected)
+        elif operation == "create_bytes":
+            FileHelper(root).create_bytes(selected, b"new")
+        else:
+            FileHelper(root).overwrite_text(selected, "new")
+    assert len(failed) == 1
+    assert live == set()
+    if operation == "create_bytes":
+        assert not selected.exists()
+    else:
+        assert selected.read_bytes() == b"inside"
+
+
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("operation", ["read_bytes", "read_text"])
+@pytest.mark.parametrize("kind", ["leaf", "parent", "resolved-link"])
+def test_read_does_not_follow_replacements_after_validation(
+    root, link, monkeypatch, allow, operation, kind
+):
+    if kind == "resolved-link" and not allow:
+        pytest.skip("Contained links require allow mode")
+    directory = root / "directory"
+    directory.mkdir()
+    (directory / "file").write_bytes(b"inside")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "file").write_bytes(b"outside-secret")
+    selected = directory / "file"
+    if kind == "resolved-link":
+        selected = link(root / "alias", selected)
+    original_path = FileHelper._path
+
+    def exchange(self, path, **kwargs):
+        destination = original_path(self, path, **kwargs)
+        if kind == "parent":
+            directory.rename(root / "retained")
+            link(directory, outside)
+        else:
+            destination.unlink()
+            link(destination, outside / "file")
+        return destination
+
+    monkeypatch.setattr(FileHelper, "_path", exchange)
+    try:
+        content = getattr(FileHelper(root, allow_symlinks=allow), operation)(selected)
+    except (OSError, FileHelperError):
+        pass
+    else:
+        assert content in (b"inside", "inside")
+
+
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("kind", ["leaf", "parent"])
+def test_read_uses_opened_file_after_replacement(root, link, monkeypatch, allow, kind):
+    directory = root / "directory"
+    directory.mkdir()
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "file").write_bytes(b"outside-secret")
+    original_fstat = os.fstat
+    swapped = False
+    files = FileHelper(root, allow_symlinks=allow)
+
+    def exchange(fd):
+        nonlocal swapped
+        info = original_fstat(fd)
+        if swapped:
+            return info
+        if kind == "leaf":
+            source, replacement = selected, outside / "file"
+        else:
+            source, replacement = directory, outside
+        if os.name == "nt":
+            with pytest.raises(OSError):
+                source.rename(root / "retained")
+        else:
+            source.rename(root / "retained")
+            link(source, replacement)
+        swapped = True
+        return info
+
+    monkeypatch.setattr("specify_cli.file_helper.os.fstat", exchange)
+    with files:
+        assert files.read_bytes(selected) == b"inside"
+    assert swapped
+    if os.name == "nt":
+        source = selected if kind == "leaf" else directory
+        source.rename(root / "retained")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative open regression")
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("phase", ["parent", "leaf"])
+def test_read_rejects_replacement_during_open(root, link, monkeypatch, allow, phase):
+    directory = root / "directory"
+    directory.mkdir()
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "file").write_bytes(b"outside-secret")
+    original_open = os.open
+    swapped = False
+
+    def exchange(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if path == ("directory" if phase == "parent" else "file"):
+            source = directory if phase == "parent" else selected
+            source.rename(root / "retained")
+            link(source, outside if phase == "parent" else outside / "file")
+            swapped = True
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {exchange})
+    monkeypatch.setattr("specify_cli.file_helper.os.open", exchange)
+    with pytest.raises(OSError):
+        FileHelper(root, allow_symlinks=allow).read_bytes(selected)
+    assert swapped
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative open regression")
+def test_read_pins_parent_before_opening_leaf(root, link, monkeypatch):
+    directory = root / "directory"
+    directory.mkdir()
+    (directory / "file").write_bytes(b"inside")
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "file").write_bytes(b"outside-secret")
+    original_open = os.open
+    swapped = False
+
+    def exchange(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if path == "file":
+            directory.rename(root / "retained")
+            link(directory, outside)
+            swapped = True
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {exchange})
+    monkeypatch.setattr("specify_cli.file_helper.os.open", exchange)
+    assert FileHelper(root).read_bytes("directory/file") == b"inside"
+    assert swapped
+
+
+@pytest.mark.parametrize("failure", [None, "parent", "leaf", "duplicate", "fstat"])
+def test_windows_read_pins_entire_resolved_hierarchy(root, monkeypatch, failure):
+    directory = root / "directory"
+    directory.mkdir()
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    pinned = []
+    seen = []
+
+    @contextmanager
+    def pin(path, *, directory, parent=None, traverse=False):
+        if parent is None:
+            assert directory and path == root.resolve()
+            actual = path
+        else:
+            assert parent == len(pinned) + 10
+            assert path.parts == (path.name,)
+            actual = pinned[-1] / path
+        if actual.name == {"parent": "directory", "leaf": "file"}.get(failure):
+            raise OSError("injected handle failure")
+        if directory:
+            assert traverse
+        pinned.append(actual)
+        seen.append((actual, directory))
+        try:
+            yield len(pinned) + 10
+        finally:
+            assert pinned.pop() == actual
+
+    @contextmanager
+    def duplicate(handle):
+        assert handle == 13
+        assert pinned == [root.resolve(), directory.resolve(), selected.resolve()]
+        if failure == "duplicate":
+            raise OSError("injected duplicate failure")
+        fd = os.open(selected, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        try:
+            yield fd
+        finally:
+            os.close(fd)
+
+    def no_path_open(*args, **kwargs):
+        assert pinned == [root.resolve(), directory.resolve(), selected.resolve()]
+        pytest.fail("Windows reads must duplicate the validated handle, not reopen its path")
+
+    def checked_fstat(fd):
+        assert pinned == [root.resolve(), directory.resolve(), selected.resolve()]
+        if failure == "fstat":
+            raise OSError("injected fstat failure")
+        return os.fstat(fd)
+
+    windows_os = SimpleNamespace(
+        name="nt",
+        O_RDONLY=os.O_RDONLY,
+        O_BINARY=getattr(os, "O_BINARY", 0),
+        open=no_path_open,
+        close=os.close,
+        fdopen=os.fdopen,
+        fstat=checked_fstat,
+    )
+    files = FileHelper(root)
+    monkeypatch.setattr(file_helper, "os", windows_os)
+    monkeypatch.setattr(file_helper, "_windows_handle", pin)
+    monkeypatch.setattr(file_helper, "windows_read_fd", duplicate, raising=False)
+    with files:
+        if failure:
+            with pytest.raises(OSError, match="injected"):
+                files.read_bytes(selected)
+        else:
+            assert files.read_bytes(selected) == b"inside"
+            assert seen == [
+                (root.resolve(), True),
+                (directory.resolve(), True),
+                (selected.resolve(), False),
+            ]
+    assert pinned == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Portable replacement model; native reparse coverage is separate")
+@pytest.mark.parametrize("allow", [False, True])
+def test_windows_read_keeps_validated_object_when_path_changes(root, link, monkeypatch, allow):
+    selected = root / "file"
+    selected.write_bytes(b"inside")
+    outside = root.parent / "outside"
+    outside.write_bytes(b"outside")
+    changed = False
+
+    @contextmanager
+    def pin(path, *, directory, parent=None, traverse=False):
+        nonlocal changed
+        if directory:
+            assert parent is None and traverse
+            yield 1
+        else:
+            assert parent == 1 and path == Path("file")
+            fd = os.open(selected, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+            try:
+                # Model reparse changes after validation without changing the opened object.
+                selected.unlink()
+                link(selected, outside)
+                changed = True
+                yield fd
+            finally:
+                os.close(fd)
+
+    @contextmanager
+    def duplicate(handle):
+        fd = os.dup(handle)
+        try:
+            yield fd
+        finally:
+            os.close(fd)
+
+    files = FileHelper(root, allow_symlinks=allow)
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(
+        name="nt", open=os.open, O_RDONLY=os.O_RDONLY,
+        O_BINARY=getattr(os, "O_BINARY", 0), close=os.close,
+        fstat=os.fstat, fdopen=os.fdopen,
+    ))
+    monkeypatch.setattr(file_helper, "_windows_handle", pin)
+    monkeypatch.setattr(file_helper, "windows_read_fd", duplicate, raising=False)
+    with files:
+        assert files.read_bytes(selected) == b"inside"
+    assert changed
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions required")
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("restricted", ["root", "parent"])
+@pytest.mark.parametrize("older_darwin_sdk", [
+    False,
+    pytest.param(True, marks=pytest.mark.skipif(sys.platform != "darwin", reason="Darwin SDK regression")),
+])
+def test_read_through_search_only_directories(root, monkeypatch, allow, restricted, older_darwin_sdk):
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses directory permission checks")
+    if older_darwin_sdk:
+        for flag in ("O_SEARCH", "O_PATH", "O_EXEC"):
+            monkeypatch.delattr(os, flag, raising=False)
+    directory = root / "directory"
+    directory.mkdir()
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    limited = root if restricted == "root" else directory
+    previous_mode = limited.stat().st_mode & 0o777
+    limited.chmod(0o111)
+    try:
+        assert selected.read_bytes() == b"inside"
+        with pytest.raises(PermissionError):
+            list(limited.iterdir())
+        assert FileHelper(root, allow_symlinks=allow).read_bytes(selected) == b"inside"
+    finally:
+        limited.chmod(previous_mode)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions required")
+@pytest.mark.parametrize("restricted", ["root", "parent"])
+@pytest.mark.parametrize("after_validation", [False, True])
+def test_read_rejects_non_searchable_directories(root, monkeypatch, restricted, after_validation):
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses directory permission checks")
+    directory = root / "directory"
+    directory.mkdir()
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    expected = selected.resolve()
+    files = FileHelper(root)
+    limited = root if restricted == "root" else directory
+    previous_mode = limited.stat().st_mode & 0o777
+    checked = []
+    opened = []
+    original_check = FileHelper._require_file
+    original_open = os.open
+
+    def revoke(path):
+        original_check(path)
+        checked.append(path)
+        limited.chmod(0)
+
+    def recording_open(*args, **kwargs):
+        opened.append((args, kwargs))
+        return original_open(*args, **kwargs)
+
+    if after_validation:
+        monkeypatch.setattr(FileHelper, "_require_file", staticmethod(revoke))
+        monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {recording_open})
+        monkeypatch.setattr(os, "open", recording_open)
+    else:
+        limited.chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            files.read_bytes(selected)
+        if after_validation:
+            assert checked == [expected]
+            assert opened
+            if restricted == "parent":
+                assert any(kwargs.get("dir_fd") is not None for args, kwargs in opened)
+    finally:
+        limited.chmod(previous_mode)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor limits required")
+@pytest.mark.parametrize("allow", [False, True])
+def test_read_deep_path_with_small_descriptor_limit(root, allow):
+    directory = root
+    for _ in range(96):
+        directory /= "d"
+        directory.mkdir()
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    result = subprocess.run(
+        [sys.executable, "-c", """
+import resource
+import sys
+from pathlib import Path
+from specify_cli.file_helper import FileHelper
+
+root, selected = map(Path, sys.argv[1:3])
+soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+limit = 64 if soft == resource.RLIM_INFINITY else min(64, soft)
+resource.setrlimit(resource.RLIMIT_NOFILE, (limit, hard))
+assert selected.read_bytes() == b"inside"
+assert FileHelper(root, allow_symlinks=sys.argv[3] == "True").read_bytes(selected) == b"inside"
+""", str(root), str(selected), str(allow)],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor cleanup regression")
+@pytest.mark.parametrize("failure", ["parent", "leaf", "fstat", "fdopen", "read"])
+def test_read_closes_descriptors_on_failure(root, monkeypatch, failure):
+    (root / "directory").mkdir()
+    selected = root / "directory/file"
+    selected.write_bytes(b"inside")
+    opened = []
+    original_open = os.open
+
+    def recording_open(path, flags, *args, **kwargs):
+        if str(path) == {"parent": "directory", "leaf": "file"}.get(failure):
+            raise PermissionError("injected open failure")
+        fd = original_open(path, flags, *args, **kwargs)
+        opened.append(fd)
+        return fd
+
+    def fail(*args, **kwargs):
+        raise OSError("injected read failure")
+
+    class FailedRead:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        read = fail
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {recording_open})
+        patch.setattr(os, "open", recording_open)
+        if failure in ("fstat", "fdopen"):
+            patch.setattr(os, failure, fail)
+        elif failure == "read":
+            patch.setattr(os, "fdopen", lambda *args, **kwargs: FailedRead())
+        with pytest.raises(OSError, match="injected"):
+            FileHelper(root).read_bytes(selected)
+    assert opened
+    for fd in opened:
+        with pytest.raises(OSError) as error:
+            os.fstat(fd)
+        assert error.value.errno == errno.EBADF
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX special-file replacement regression")
+def test_read_checks_opened_type_without_blocking_on_fifo(root, monkeypatch):
+    selected = root / "file"
+    selected.write_bytes(b"inside")
+    original_check = FileHelper._require_file
+
+    def exchange(path):
+        original_check(path)
+        path.unlink()
+        os.mkfifo(path)
+
+    monkeypatch.setattr(FileHelper, "_require_file", staticmethod(exchange))
+    with pytest.raises(UnsupportedPathError, match="regular file"):
+        FileHelper(root).read_bytes(selected)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX capability refusal regression")
+@pytest.mark.parametrize("capability", ["O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK", "supports_dir_fd"])
+def test_read_refuses_unsafe_platform_fallback(root, monkeypatch, capability):
+    (root / "file").write_bytes(b"inside")
+    monkeypatch.setattr(os, capability, set() if capability == "supports_dir_fd" else 0)
+    with pytest.raises(OSError) as error:
+        FileHelper(root).read_bytes("file")
+    assert error.value.errno == errno.ENOTSUP
+
+
 @pytest.mark.parametrize("allow", [False, True])
 def test_overwrite_text_preserves_inode_and_native_text_behavior(root, allow):
     files = FileHelper(root, allow_symlinks=allow)
@@ -1722,14 +2256,25 @@ def test_windows_cached_capability_error_has_independent_tracebacks(
             assert error.__traceback__ is not None
 
 
-def test_windows_read_does_not_require_ancestor_listing_portably(root, monkeypatch):
+@pytest.fixture
+def windows_victim_read_fd(root, monkeypatch):
+    @contextmanager
+    def duplicate(handle):
+        with (root / "victim").open("rb") as stream:
+            yield stream.fileno()
+
+    monkeypatch.setattr(file_helper, "windows_read_fd", duplicate)
+
+
+def test_windows_read_does_not_require_ancestor_listing_portably(
+    root, monkeypatch, windows_victim_read_fd
+):
     (root / "victim").write_text("keep")
     active = []
 
     @contextmanager
-    def handle(path, *, directory, pin=True):
-        assert directory
-        if pin and path != root:
+    def handle(path, *, directory, pin=True, parent=None, traverse=False):
+        if pin and directory and not traverse and path != root:
             raise PermissionError("ancestor listing denied")
         active.append((path, pin))
         try:
@@ -1750,13 +2295,15 @@ def test_windows_read_does_not_require_ancestor_listing_portably(root, monkeypat
 
 
 @pytest.mark.parametrize("failure", ["open", "identity"])
-def test_windows_read_preserves_native_deletion_capability_error(root, monkeypatch, failure):
+def test_windows_read_preserves_native_deletion_capability_error(
+    root, monkeypatch, failure, windows_victim_read_fd
+):
     (root / "victim").write_text("keep")
     active = []
 
     @contextmanager
     def denied(*args, **kwargs):
-        if failure == "open":
+        if failure == "open" and not kwargs.get("pin", True):
             raise PermissionError("root reference denied")
         active.append(123)
         try:
@@ -1779,13 +2326,15 @@ def test_windows_read_preserves_native_deletion_capability_error(root, monkeypat
     assert not files._root_cleanup.alive
 
 
-def test_windows_delete_checks_retained_handle_identity_portably(root, monkeypatch):
+def test_windows_delete_checks_retained_handle_identity_portably(
+    root, monkeypatch, windows_victim_read_fd
+):
     (root / "victim").write_text("keep")
     active = []
     identities = {}
 
     @contextmanager
-    def handle(path, *, directory, pin=True):
+    def handle(path, *, directory, pin=True, parent=None, traverse=False):
         value = len(identities) + 1
         identities[value] = (1, b"replacement" if pin else b"original")
         active.append(value)

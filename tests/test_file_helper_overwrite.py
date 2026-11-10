@@ -377,7 +377,7 @@ def test_unsupported_descriptor_backend_fails_without_path_fallback(
 
     attributes = {**vars(os), "open": unexpected_open}
     if capability == "dir_fd":
-        monkeypatch.setattr(file_helper, "_OVERWRITE_DIR_FD_SUPPORTED", False)
+        attributes["supports_dir_fd"] = set()
     elif value is None:
         attributes.pop(capability, None)
     else:
