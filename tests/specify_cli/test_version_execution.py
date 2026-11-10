@@ -545,6 +545,43 @@ class TestInstallerFailed:
         assert "https://github.com/github/spec-kit/releases" in out
         assert "git+https://github.com/github/spec-kit.git@v1.0.0rc1" not in out
 
+    def test_dev0_failure_does_not_suggest_unreleased_tag_as_rollback(
+        self, uv_tool_argv0, clean_environ
+    ):
+        # `packaging` reports `.dev0` as `dev == 0`, which is falsy; a
+        # main-branch install (`1.3.4.dev0`) must not be pinned "back" to the
+        # very release that just failed to install.
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.shutil.which", return_value=sys.executable
+        ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
+            "specify_cli._version._get_installed_version", return_value="1.3.4.dev0"
+        ):
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v1.3.4"})
+            mock_run.side_effect = [_completed_process(2)]
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        assert result.exit_code == 2
+        out = strip_ansi(result.output)
+        assert "Previous version was not an exact stable release tag" in out
+        assert "To pin back to the previous version" not in out
+
+    def test_post0_failure_degrades_rollback_hint_to_releases_page(
+        self, uv_tool_argv0, clean_environ
+    ):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.shutil.which", return_value=sys.executable
+        ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
+            "specify_cli._version._get_installed_version", return_value="1.3.3.post0"
+        ):
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v1.3.4"})
+            mock_run.side_effect = [_completed_process(2)]
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        assert result.exit_code == 2
+        out = strip_ansi(result.output)
+        assert "Previous version was not an exact stable release tag" in out
+        assert "To pin back to the previous version" not in out
+
 
 class TestWindowsUvToolEnvironment:
     """Windows uv-tool installs cannot reinstall the environment they run from."""

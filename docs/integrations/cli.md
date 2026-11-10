@@ -335,7 +335,9 @@ specify integration catalog add <url>
 | --------------- | ----------------------------- |
 | `--name <name>` | Optional name for the catalog |
 
-Adds a custom catalog URL to the project's `.specify/integration-catalogs.yml`. The URL must use HTTPS (except `http://localhost`, `http://127.0.0.1`, or `http://[::1]` for local testing).
+Adds a custom catalog URL to the project's `.specify/integration-catalogs.yml`.
+The URL must use HTTPS, including for local testing. Plain HTTP is rejected
+before network access, including on localhost and loopback addresses.
 
 Re-adding the same URL with the same name succeeds without changing the configuration; a different name is rejected.
 
@@ -490,7 +492,9 @@ The [`reasoning_effort` and `context_size`](../workflow-steps/types.md#reasoning
 settings of `command` and `prompt` steps instead follow one shared contract.
 Spec Kit checks each value and passes it only to an integration that declares
 and translates that setting; with any other integration, the step fails before
-the CLI runs. Adapter authors opt in as described in the
+the CLI runs. GitHub Copilot and Codex CLI translate both settings, and Claude
+Code translates `reasoning_effort`; the agent guides describe each mapping.
+Adapter authors opt in as described in the
 [integration API reference](api.md#per-step-dispatch-settings).
 
 ## FAQ

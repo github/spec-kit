@@ -134,7 +134,7 @@ GitHub Release creation may finish before or after the development bump and PR c
 **Steps**:
 
 1. Checkout repository at tag
-2. Extract version from tag name
+2. Extract and validate the tag as `vX.Y.Z`; fail immediately on a malformed tag, before publishing the version output or running release commands
 3. Check if release already exists
 4. Generate release notes from commits
 5. Create the GitHub Release without additional uploaded assets
@@ -160,6 +160,7 @@ GitHub Release creation may finish before or after the development bump and PR c
 
 - Tags must follow format: `v{MAJOR}.{MINOR}.{PATCH}`
 - Example valid versions: `v0.1.11`, `v0.2.0`, `v1.0.0`
+- The release workflow rejects malformed tags before checking or creating a release, and passes the validated version to later shell steps through environment variables rather than interpolating it into shell source
 - Auto-increment only bumps patch version
 - Cannot create duplicate tags (workflow will fail)
 

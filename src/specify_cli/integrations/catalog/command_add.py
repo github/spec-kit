@@ -14,10 +14,7 @@ from . import catalog_app
 def integration_catalog_add(
     url: str = typer.Argument(
         ...,
-        help=(
-            "Catalog URL to add (HTTPS required, except http://localhost, "
-            "http://127.0.0.1, or http://[::1] for local testing)"
-        ),
+        help="Catalog URL to add (HTTPS required, including localhost)",
     ),
     name: Optional[str] = typer.Option(None, "--name", help="Catalog name"),
 ):

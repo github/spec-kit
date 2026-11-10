@@ -107,9 +107,16 @@ catalogs:
     install_policy: discovery-only
 ```
 
-Supported bundle source schemes are `https`, localhost `http`, `file`,
-`builtin`, and local filesystem paths. The other five catalog types accept
-remote HTTPS URLs, with HTTP allowed only for localhost.
+Supported bundle source schemes are `https`, `file`, `builtin`, and local
+filesystem paths. The other five catalog types accept remote HTTPS URLs.
+All six types reject plain HTTP catalog sources, including localhost and
+loopback addresses, before network access. This intentionally removes the
+former local-development HTTP exception so every source layer follows the
+same HTTPS policy. Local HTTPS development servers need a certificate trusted
+by Python's TLS client using its default OpenSSL trust configuration, which may
+differ from browser or operating-system trust. `SSL_CERT_FILE` can select a PEM
+CA bundle containing the development CA. Archive download policies are separate
+and unchanged.
 
 ## Configuration semantics
 
@@ -125,12 +132,17 @@ phase and accepted values otherwise differ:
   while `remove_source()` intentionally filters raw mappings by ID or URL
   without validating their other fields. This lets users remove a hand-edited
   invalid source instead of being trapped by the invalid entry.
+- Workflow and workflow-step catalog removal retains configuration-shape and
+  priority validation, but skips URL validation. Removal never fetches a source,
+  so legacy HTTP entries do not prevent removing either that source or an
+  unrelated HTTPS entry. Discovery and fetching still require HTTPS. Removal
+  retains priority order, with YAML declaration order breaking ties.
 - All readers reject boolean priorities. Replacement-layer loaders otherwise
   call `int(value)`, so a fractional numeric value such as `1.9` is truncated
   to `1`. Bundle `CatalogSource` materialization rejects booleans and floats
   rather than coercing them, but `_read()` and `remove_source()` can carry or
   remove those raw values without materializing them.
-- Replacement-layer loaders reject malformed remote URLs and non-localhost
+- Replacement-layer loaders reject malformed remote URLs and all plain
   HTTP while resolving the active stack. Bundle source validation depends on
   the path: catalog commands validate supported schemes and remote security
   before writing, while a hand-edited stack is revalidated by the fetcher when
@@ -171,12 +183,11 @@ Current behavior differs by primitive:
 - Extensions and presets use one-hour per-URL caches, retain legacy cache names
   for the official source, validate every redirect hop, validate cached payload
   shape, and treat cache read/write failures as best-effort.
-- Integrations use one-hour per-URL caches. The shared HTTP redirect handler
-  applies its strict scheme, host, and remote-to-local policy on every hop;
-  integrations do not add their catalog-specific URL validator per hop, but do
-  apply it to a changed terminal URL. They validate cached payload shape,
-  discard invalid cache entries when possible, and treat cache writes as
-  best-effort.
+- Integrations use one-hour per-URL caches and apply their catalog-specific URL
+  validator on every redirect hop and to a changed terminal URL. The shared HTTP
+  redirect handler also applies its strict scheme, host, and remote-to-local
+  policy on every hop. Integrations validate cached payload shape, discard
+  invalid cache entries when possible, and treat cache writes as best-effort.
 - Workflows use one-hour per-URL caches, validate every redirect hop, and fall
   back to any readable stale cache after transport, bounded-read, UTF-8 decoding,
   or JSON parsing errors. Initial URL, redirect, and final URL validation
@@ -240,7 +251,10 @@ usable. Validation errors are not uniformly recoverable:
   an `IntegrationCatalogError`, so the merge warns, skips that source, and can
   expose a lower-precedence copy.
 - Preset lookup preserves the first fetch error when no source is readable;
-  preset search currently converts ordinary fetch failures to an empty result.
+  preset search converts recoverable fetch failures, including rejected
+  redirects, to an empty result when no source is readable, regardless of source
+  order. Invalid source configuration (`PresetValidationError`) is fatal in
+  search and is validated before fetching, including rejected HTTP catalog URLs.
   `PresetCatalogValidationError` remains fatal: search can fail on invalid
   lower-precedence content even after reading a valid higher source, while a
   targeted lookup can return as soon as it finds the requested higher entry.

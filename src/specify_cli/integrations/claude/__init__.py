@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from ..base import IntegrationOption, SkillsIntegration
+from ..base import (
+    IntegrationOption,
+    SkillsIntegration,
+    check_dispatch_settings,
+    requested_dispatch_settings,
+)
 from ..manifest import IntegrationManifest
 from ..._utils import dump_frontmatter
+
+# ``--effort`` levels accepted by Claude Code 2.1.318. The CLI only warns about
+# any other value and runs with its default effort, so per-step
+# ``reasoning_effort`` is limited to these.
+EFFORT_LEVELS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
 
 # Mapping of command template stem → argument-hint text shown inline
 # when a user invokes the slash command in Claude Code.
@@ -65,6 +76,7 @@ class ClaudeIntegration(SkillsIntegration):
     }
     events_config_file = ".claude/settings.json"
     events_format = "json-nested"
+    supported_dispatch_settings = frozenset({"reasoning_effort"})
 
     # Set by ``setup()`` from ``--no-model-invocation``; applies to core
     # command skills only, since mandatory extension hooks rely on the model
@@ -90,6 +102,59 @@ class ClaudeIntegration(SkillsIntegration):
             )
         )
         return opts
+
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
+        reasoning_effort: str | None = None,
+        context_size: str | None = None,
+    ) -> list[str] | None:
+        """Build ``claude -p`` arguments, adding ``--effort`` when requested."""
+        # super() validates the runtime config, once, before the gate runs, so
+        # its errors come first, as in dispatch_command().
+        args = super().build_exec_args(
+            prompt,
+            model=model,
+            output_json=output_json,
+            integration_args=integration_args,
+            integration_options=integration_options,
+            project_root=project_root,
+        )
+        settings = requested_dispatch_settings(
+            reasoning_effort=reasoning_effort, context_size=context_size
+        )
+        if settings:
+            check_dispatch_settings(self, settings, via="build_exec_args")
+        if args is not None and reasoning_effort is not None:
+            args.extend(["--effort", reasoning_effort])
+        return args
+
+    def validate_dispatch_setting(self, name: str, value: str) -> None:
+        """Reject effort levels that Claude Code would silently ignore.
+
+        The value can be captured agent output, so the error does not repeat it.
+        """
+        if name == "reasoning_effort" and value not in EFFORT_LEVELS:
+            raise ValueError(
+                "Claude Code 'reasoning_effort' must be one of "
+                f"{', '.join(EFFORT_LEVELS)}. To pass a newer level, set "
+                'SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS="--effort <value>" '
+                "instead of 'reasoning_effort'."
+            )
+
+    def dispatch_setting_hint(self, setting: str) -> str | None:
+        if setting == "context_size":
+            return (
+                "Choose a long-context model with the step's 'model' field "
+                "instead."
+            )
+        return None
 
     def setup(
         self,

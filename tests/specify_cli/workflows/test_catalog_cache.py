@@ -217,13 +217,16 @@ def test_regular_cache_fresh_refresh_and_stale_fallback(
 @pytest.mark.parametrize("rejection,target", [
     ("initial", "https://ex%61mple.com/catalog.json"),
     ("initial", "http://example.com/catalog.json"),
+    ("initial", "http://localhost/catalog.json"),
     ("initial", "https://[::1"),
     ("redirect", "https://localhost/catalog.json"),
     ("redirect", "http://example.com/catalog.json"),
+    ("redirect", "http://localhost/catalog.json"),
     ("redirect", "https://[::1"),
     ("redirect", "https:///catalog.json"),
     ("redirect", "https://example.com:invalid/catalog.json"),
     ("final", "http://example.com/catalog.json"),
+    ("final", "http://localhost/catalog.json"),
     ("final", "https://[::1"),
     ("final", "https:///catalog.json"),
 ])

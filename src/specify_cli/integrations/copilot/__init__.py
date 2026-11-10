@@ -30,7 +30,13 @@ from typing import Any
 import typer
 
 from .._capture import run_captured
-from ..base import IntegrationBase, IntegrationOption, SkillsIntegration
+from ..base import (
+    IntegrationBase,
+    IntegrationOption,
+    SkillsIntegration,
+    check_dispatch_settings,
+    requested_dispatch_settings,
+)
 from ..manifest import IntegrationManifest
 
 _COPILOT_CORE_COMMANDS = {
@@ -44,6 +50,15 @@ _COPILOT_CORE_COMMANDS = {
     "specify",
     "tasks",
 }
+
+# ``--reasoning-effort`` levels and ``--context`` tiers accepted by GitHub
+# Copilot CLI 1.0.106. The CLI rejects any other value with an error that
+# repeats it, and a value can be captured agent output, so per-step
+# ``reasoning_effort`` and ``context_size`` are limited to these.
+REASONING_EFFORT_LEVELS: tuple[str, ...] = (
+    "none", "minimal", "low", "medium", "high", "xhigh", "max"
+)
+CONTEXT_TIERS: tuple[str, ...] = ("default", "long_context")
 
 
 def _copilot_executable() -> str:
@@ -152,6 +167,9 @@ class CopilotIntegration(IntegrationBase):
         "extension": ".agent.md",
     }
     invoke_separator = "-"
+    # Translated by both receiving methods defined below: build_exec_args()
+    # for prompt steps and dispatch_command() for command steps.
+    supported_dispatch_settings = frozenset({"reasoning_effort", "context_size"})
 
     CANONICAL_TO_NATIVE = {
         "session_start": "sessionStart",
@@ -332,6 +350,54 @@ class CopilotIntegration(IntegrationBase):
         override = os.environ.get(env_name, "").strip()
         return override if override else _copilot_executable()
 
+    def _dispatch_setting_args(
+        self,
+        *,
+        via: str,
+        reasoning_effort: str | None,
+        context_size: str | None,
+    ) -> list[str]:
+        """Gate per-step dispatch settings and return their Copilot CLI flags.
+
+        *via* names the method that received the settings, as for
+        :func:`check_dispatch_settings`. The gate calls
+        :meth:`validate_dispatch_setting`, so only values the CLI accepts
+        reach it.
+        """
+        settings = requested_dispatch_settings(
+            reasoning_effort=reasoning_effort, context_size=context_size
+        )
+        if not settings:
+            return []
+        check_dispatch_settings(self, settings, via=via)
+        args: list[str] = []
+        if reasoning_effort is not None:
+            args.extend(["--reasoning-effort", reasoning_effort])
+        if context_size is not None:
+            args.extend(["--context", context_size])
+        return args
+
+    def validate_dispatch_setting(self, name: str, value: str) -> None:
+        """Reject values that Copilot CLI does not accept.
+
+        Copilot CLI repeats a rejected value in its error, and the value can be
+        captured agent output, so Spec Kit rejects it first without repeating it.
+        """
+        if name == "reasoning_effort" and value not in REASONING_EFFORT_LEVELS:
+            raise ValueError(
+                "GitHub Copilot 'reasoning_effort' must be one of "
+                f"{', '.join(REASONING_EFFORT_LEVELS)}. To pass a newer level, "
+                'set SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS="--reasoning-effort '
+                "<value>\" instead of 'reasoning_effort'."
+            )
+        if name == "context_size" and value not in CONTEXT_TIERS:
+            raise ValueError(
+                "GitHub Copilot 'context_size' must be one of "
+                f"{', '.join(CONTEXT_TIERS)}. To pass a newer tier, set "
+                'SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS="--context <value>" '
+                "instead of 'context_size'."
+            )
+
     def build_exec_args(
         self,
         prompt: str,
@@ -341,8 +407,15 @@ class CopilotIntegration(IntegrationBase):
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
         project_root: Path | None = None,
+        reasoning_effort: str | None = None,
+        context_size: str | None = None,
     ) -> list[str] | None:
         self.validate_runtime_config(integration_args, integration_options)
+        setting_args = self._dispatch_setting_args(
+            via="build_exec_args",
+            reasoning_effort=reasoning_effort,
+            context_size=context_size,
+        )
         # GitHub Copilot CLI uses ``copilot -p "prompt"`` for
         # non-interactive mode.  --yolo enables all permissions
         # (tools, paths, and URLs) so the agent can perform file
@@ -356,6 +429,7 @@ class CopilotIntegration(IntegrationBase):
             args.append("--yolo")
         if model:
             args.extend(["--model", model])
+        args.extend(setting_args)
         if output_json:
             args.extend(["--output-format", "json"])
         return args
@@ -389,6 +463,8 @@ class CopilotIntegration(IntegrationBase):
         integration_options: Mapping[str, Any] | None = None,
         output_json: bool | None = None,
         capture_max_bytes: int | None = None,
+        reasoning_effort: str | None = None,
+        context_size: str | None = None,
     ) -> dict[str, Any]:
         """Dispatch via ``--agent speckit.<stem>`` instead of slash-commands.
 
@@ -407,6 +483,11 @@ class CopilotIntegration(IntegrationBase):
             output_json = not stream
 
         self.validate_runtime_config(integration_args, integration_options)
+        setting_args = self._dispatch_setting_args(
+            via="dispatch_command",
+            reasoning_effort=reasoning_effort,
+            context_size=context_size,
+        )
 
         stem = command_name
         if stem.startswith("speckit."):
@@ -438,6 +519,7 @@ class CopilotIntegration(IntegrationBase):
             cli_args.append("--yolo")
         if model:
             cli_args.extend(["--model", model])
+        cli_args.extend(setting_args)
         if output_json:
             cli_args.extend(["--output-format", "json"])
 
