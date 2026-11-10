@@ -171,19 +171,27 @@ def _bash_posix_path(path: Path) -> str:
     resolved = os.path.abspath(path)
     if os.name != "nt":
         return resolved
-    converted = subprocess.run(
-        [
-            "bash",
-            "-lc",
-            'command -v cygpath >/dev/null 2>&1 && cygpath -u "$1"',
-            "bash",
-            resolved,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if converted.returncode == 0 and converted.stdout.strip():
+    try:
+        converted = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                'command -v cygpath >/dev/null 2>&1 && cygpath -u "$1"',
+                "bash",
+                resolved,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except OSError:
+        # Bash is not on PATH (e.g. a Windows machine without Git-for-Windows
+        # in it). The converted form is only needed by bash-invoked tests,
+        # which skip when bash is unavailable, so fall through to the static
+        # /mnt/ form rather than failing environment setup for every parity
+        # test, including the ones that never invoke bash.
+        converted = None
+    if converted is not None and converted.returncode == 0 and converted.stdout.strip():
         return converted.stdout.strip()
     drive = path.drive.rstrip(":").lower()
     posix = path.as_posix()
