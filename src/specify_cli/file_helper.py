@@ -16,7 +16,8 @@ from typing import TypeVar
 from weakref import finalize
 
 from specify_cli._file_handles import (
-    _windows_file_id, _windows_handle, _windows_overwrite_fd, _windows_stat, windows_read_fd,
+    _WindowsFileIdentity, _windows_file_id, _windows_handle,
+    _windows_overwrite_fd, _windows_stat, windows_read_fd,
 )
 
 
@@ -177,7 +178,8 @@ class FileHelper:
     _root_stat: os.stat_result = field(init=False, repr=False, compare=False)
     _root_anchor: int | Path | None = field(init=False, repr=False, compare=False)
     _root_anchor_error: OSError | None = field(init=False, repr=False, compare=False)
-    _windows_root_id: tuple[int, bytes] | None = field(init=False, repr=False, compare=False)
+    _windows_root_id: _WindowsFileIdentity | None = field(init=False, repr=False, compare=False)
+    _windows_root_handle: int | None = field(init=False, repr=False, compare=False)
     _root_cleanup: finalize = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -192,7 +194,8 @@ class FileHelper:
         with ExitStack() as resources:
             anchor: int | Path | None = None
             anchor_error: OSError | None = None
-            windows_root_id: tuple[int, bytes] | None = None
+            windows_root_id: _WindowsFileIdentity | None = None
+            windows_root_handle: int | None = None
             if os.name == "nt":
                 with ExitStack() as reference:
                     try:
@@ -209,6 +212,7 @@ class FileHelper:
                         self._check_deletion_root(canonical.stat())
                         resources.enter_context(reference.pop_all())
                         anchor = canonical
+                        windows_root_handle = handle
             elif (
                 _DELETE_DIR_FD_SUPPORTED
                 and getattr(os, "O_NOFOLLOW", 0)
@@ -220,6 +224,7 @@ class FileHelper:
             object.__setattr__(self, "_root_anchor", anchor)
             object.__setattr__(self, "_root_anchor_error", anchor_error)
             object.__setattr__(self, "_windows_root_id", windows_root_id)
+            object.__setattr__(self, "_windows_root_handle", windows_root_handle)
             object.__setattr__(self, "_root_cleanup", finalize(self, resources.pop_all().close))
 
     def close(self) -> None:
@@ -567,18 +572,24 @@ class FileHelper:
                     error.winerror = self._root_anchor_error.winerror
                 raise error
             raise OSError(errno.ENOTSUP, "Handle-based deletion is unsupported on this platform")
-        self._check_deletion_root(self._canonical_root.stat())
         if isinstance(self._root_anchor, Path):
+            reference = self._windows_root_handle
+            identity = self._windows_root_id
+            if reference is None or identity is None:
+                raise FileHelperError("Missing retained Windows root identity")
             with ExitStack() as resources:
                 for ancestor in reversed(self._root_anchor.parents):
                     resources.enter_context(_windows_handle(ancestor, directory=True))
                 handle = resources.enter_context(
                     _windows_handle(self._root_anchor, directory=True)
                 )
-                if _windows_file_id(handle) != self._windows_root_id:
+                selected = _windows_file_id(handle, kind=identity.kind)
+                retained = _windows_file_id(reference, kind=identity.kind)
+                if selected != retained:
                     raise FileHelperError(f"Established root changed during deletion: {self.root}")
                 yield self._root_anchor
         else:
+            self._check_deletion_root(self._canonical_root.stat())
             yield self._root_anchor
 
     @contextmanager

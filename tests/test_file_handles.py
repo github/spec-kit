@@ -17,7 +17,9 @@ import pytest
 
 from specify_cli import _file_handles, file_helper
 from specify_cli import _file_handles as handles
-from specify_cli._file_handles import _windows_file_id, _windows_handle, _windows_stat
+from specify_cli._file_handles import (
+    _WindowsFileIdentity, _windows_file_id, _windows_handle, _windows_stat,
+)
 from specify_cli.file_helper import FileHelper, UnsupportedPathError
 
 
@@ -100,9 +102,185 @@ def test_windows_file_identity_uses_full_volume_and_file_id(monkeypatch, failure
         with pytest.raises(PermissionError, match="identity denied"):
             _windows_file_id(0x1FFFFFFFF)
     else:
-        assert _windows_file_id(0x1FFFFFFFF) == (0x1FFFFFFFF, bytes(range(16)))
+        assert _windows_file_id(0x1FFFFFFFF) == _WindowsFileIdentity(
+            "fileid128", 0x1FFFFFFFF, bytes(range(16))
+        )
     assert info.argtypes == [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
     assert info.restype is wintypes.BOOL
+
+
+@pytest.fixture
+def identity_kernel(monkeypatch):
+    state = SimpleNamespace(
+        extended_error=87, legacy_error=0, last_error=0, filesystem="FAT32",
+        volume=0xABCDEF12, index=0x123456789ABCDEF, zero_extended=False,
+    )
+    calls = []
+
+    def extended(handle, kind, output, size):
+        assert handle == 0x1FFFFFFFF and kind == 18 and size == 24
+        calls.append("extended")
+        if state.extended_error:
+            state.last_error = state.extended_error
+            return False
+        output._obj.volume = state.volume
+        output._obj.file_id[:] = bytes(16) if state.zero_extended else bytes(range(16))
+        return True
+
+    def legacy(handle, output):
+        assert handle == 0x1FFFFFFFF
+        assert ctypes.sizeof(output._obj) == 52
+        calls.append("legacy")
+        if state.legacy_error:
+            state.last_error = state.legacy_error
+            return False
+        output._obj.volume = state.volume
+        output._obj.index_high = state.index >> 32
+        output._obj.index_low = state.index & 0xFFFFFFFF
+        return True
+
+    def native_error(code):
+        error = OSError(errno.EACCES if code == 5 else errno.ENOTSUP, f"native error {code}")
+        error.winerror = code
+        return error
+
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: SimpleNamespace(
+        GetFileInformationByHandleEx=extended, GetFileInformationByHandle=legacy,
+    ), raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: state.last_error, raising=False)
+    monkeypatch.setattr(ctypes, "WinError", native_error, raising=False)
+    monkeypatch.setattr(
+        handles, "_windows_filesystem", lambda _: state.filesystem, raising=False
+    )
+    return state, calls
+
+
+@pytest.mark.parametrize("unsupported", [1, 50, 87])
+@pytest.mark.parametrize("filesystem", ["FAT", "FAT32", "exFAT", "NTFS"])
+def test_windows_identity_falls_back_only_for_supported_legacy_filesystems(
+    identity_kernel, unsupported, filesystem
+):
+    state, calls = identity_kernel
+    state.extended_error = unsupported
+    state.filesystem = filesystem
+    identity = _windows_file_id(0x1FFFFFFFF)
+    assert identity.kind == "legacy64"
+    assert identity.volume == state.volume
+    assert identity.file_id == state.index.to_bytes(8, "little")
+    assert calls == ["extended", "legacy"]
+
+
+@pytest.mark.parametrize("error_code", [5, 6, 32])
+def test_windows_identity_does_not_hide_unrelated_native_errors(identity_kernel, error_code):
+    state, calls = identity_kernel
+    state.extended_error = error_code
+    with pytest.raises(OSError) as raised:
+        _windows_file_id(0x1FFFFFFFF)
+    assert raised.value.winerror == error_code
+    assert calls == ["extended"]
+
+
+@pytest.mark.parametrize("filesystem", ["ReFS", "unknown"])
+def test_windows_identity_rejects_unreliable_legacy_scheme(identity_kernel, filesystem):
+    state, calls = identity_kernel
+    state.filesystem = filesystem
+    with pytest.raises(OSError, match="legacy.*identity"):
+        _windows_file_id(0x1FFFFFFFF)
+    assert calls == ["extended"]
+
+
+@pytest.mark.parametrize("scheme", ["legacy64", "fileid128"])
+def test_windows_identity_uses_selected_scheme_without_renegotiating(identity_kernel, scheme):
+    state, calls = identity_kernel
+    state.extended_error = 0
+    identity = _windows_file_id(0x1FFFFFFFF, kind=scheme)
+    assert identity.kind == scheme
+    assert calls == (["legacy"] if scheme == "legacy64" else ["extended"])
+
+
+def test_windows_identity_selected_extended_scheme_does_not_downgrade(identity_kernel):
+    state, calls = identity_kernel
+    with pytest.raises(OSError) as raised:
+        _windows_file_id(0x1FFFFFFFF, kind="fileid128")
+    assert raised.value.winerror == state.extended_error
+    assert calls == ["extended"]
+
+
+@pytest.mark.parametrize("invalid", [False, True])
+def test_windows_filesystem_query_is_handle_relative_and_preserves_abi(monkeypatch, invalid):
+    from specify_cli import _windows_abi as abi
+
+    def query(handle, status, output, size, kind):
+        assert handle == 0x1FFFFFFFF and size == 536 and kind == 5
+        assert isinstance(status._obj, abi._IoStatusBlock)
+        name = "exFAT".encode("utf-16-le")
+        output._obj.name_length = 1 if invalid else len(name)
+        ctypes.memmove(output._obj.name, name, len(name))
+        return 0
+
+    def dos_error(status):
+        pytest.fail("A successful native query must not query an error")
+
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args: SimpleNamespace(
+        NtQueryVolumeInformationFile=query, RtlNtStatusToDosError=dos_error,
+    ), raising=False)
+    if invalid:
+        with pytest.raises(OSError, match="Invalid filesystem name"):
+            handles._windows_filesystem(0x1FFFFFFFF)
+    else:
+        assert handles._windows_filesystem(0x1FFFFFFFF) == "exFAT"
+    assert query.argtypes == [
+        wintypes.HANDLE, abi._IoStatusBlockPointer, wintypes.LPVOID,
+        ctypes.c_uint32, ctypes.c_int,
+    ]
+    assert query.restype is ctypes.c_int32
+
+
+def test_windows_filesystem_query_preserves_native_failure(monkeypatch):
+    def query(*args):
+        return -1
+
+    def dos_error(status):
+        assert status == -1
+        return 5
+
+    def win_error(code):
+        assert code == 5
+        error = PermissionError("volume query denied")
+        error.winerror = code
+        return error
+
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args: SimpleNamespace(
+        NtQueryVolumeInformationFile=query, RtlNtStatusToDosError=dos_error,
+    ), raising=False)
+    monkeypatch.setattr(ctypes, "WinError", win_error, raising=False)
+    with pytest.raises(PermissionError, match="volume query denied"):
+        handles._windows_filesystem(123)
+
+
+def test_windows_identity_zero_extended_id_uses_reliable_legacy_identity(identity_kernel):
+    state, calls = identity_kernel
+    state.extended_error = 0
+    state.zero_extended = True
+    identity = _windows_file_id(0x1FFFFFFFF)
+    assert identity.kind == "legacy64"
+    assert calls == ["extended", "legacy"]
+
+
+def test_windows_identity_zero_legacy_id_is_not_accepted(identity_kernel):
+    state, calls = identity_kernel
+    state.index = 0
+    with pytest.raises(OSError, match="identity"):
+        _windows_file_id(0x1FFFFFFFF)
+    assert calls == ["extended", "legacy"]
+
+
+def test_windows_identity_legacy_query_error_remains_native(identity_kernel):
+    state, _ = identity_kernel
+    state.legacy_error = 5
+    with pytest.raises(OSError) as raised:
+        _windows_file_id(0x1FFFFFFFF)
+    assert raised.value.winerror == 5
 
 
 @pytest.mark.parametrize("failure", [None, "duplicate", "convert", "stat"])
@@ -156,6 +334,45 @@ def test_native_windows_stat_matches_path_metadata_without_closing_reference(tmp
         identity = _windows_file_id(handle)
         assert os.path.samestat(tmp_path.stat(), _windows_stat(handle))
         assert _windows_file_id(handle) == identity
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows legacy identity APIs")
+@pytest.mark.parametrize("recursive", [False, True])
+@pytest.mark.parametrize("allow", [False, True])
+def test_native_windows_delete_uses_legacy_identity_when_extended_query_is_unsupported(
+    tmp_path, monkeypatch, recursive, allow
+):
+    parent = tmp_path / "tree/nested"
+    parent.mkdir(parents=True)
+    (parent / "victim").write_text("selected")
+    native = handles._windows_api()
+    win_dll = ctypes.WinDLL
+    extended_queries = []
+
+    def query(handle, kind, output, size):
+        if kind == 18:
+            extended_queries.append(handle)
+            ctypes.set_last_error(87)
+            return False
+        return native.GetFileInformationByHandleEx(handle, kind, output, size)
+
+    kernel = SimpleNamespace(
+        CreateFileW=native.CreateFileW,
+        CloseHandle=native.CloseHandle,
+        GetFileInformationByHandleEx=query,
+        GetFileInformationByHandle=native.GetFileInformationByHandle,
+    )
+
+    def load(name, *args, **kwargs):
+        return kernel if name == "kernel32" else win_dll(name, *args, **kwargs)
+
+    monkeypatch.setattr(ctypes, "WinDLL", load)
+    with FileHelper(tmp_path, allow_symlinks=allow) as files:
+        assert files._windows_root_id is not None
+        assert files._windows_root_id.kind == "legacy64"
+        files.delete("tree" if recursive else "tree/nested/victim", recursive=recursive)
+    assert len(extended_queries) == 1
+    assert not (parent / "victim").exists()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX startup must not require Windows ctypes support")

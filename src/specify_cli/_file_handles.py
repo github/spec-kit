@@ -8,6 +8,16 @@ import secrets
 import stat
 import tempfile
 from pathlib import Path, PureWindowsPath
+from typing import Literal, NamedTuple
+
+
+_IdentityKind = Literal["fileid128", "legacy64"]
+
+
+class _WindowsFileIdentity(NamedTuple):
+    kind: _IdentityKind
+    volume: int
+    file_id: bytes
 
 
 def _open_windows_child(parent: int, name: str, *, directory: bool, access: int, sharing: int) -> int:
@@ -151,8 +161,85 @@ def _windows_handle(
         _windows_api().CloseHandle(handle)
 
 
-def _windows_file_id(handle: int) -> tuple[int, bytes]:
-    """Read the volume and complete file identity from an already opened object."""
+def _windows_filesystem(handle: int) -> str:
+    """Query the opened volume, including network filesystems, without a pathname."""
+    import ctypes
+    from ctypes import wintypes
+    from . import _windows_abi as abi
+
+    class FilesystemAttributes(ctypes.Structure):
+        _fields_ = [
+            ("attributes", ctypes.c_uint32),
+            ("maximum_component", ctypes.c_int32),
+            ("name_length", ctypes.c_uint32),
+            ("name", ctypes.c_uint16 * 261),
+        ]
+
+    native = ctypes.WinDLL("ntdll")
+    query = native.NtQueryVolumeInformationFile
+    query.argtypes = [
+        wintypes.HANDLE, abi._IoStatusBlockPointer, wintypes.LPVOID,
+        ctypes.c_uint32, ctypes.c_int,
+    ]
+    query.restype = ctypes.c_int32
+    dos_error = native.RtlNtStatusToDosError
+    dos_error.argtypes = [ctypes.c_int32]
+    dos_error.restype = ctypes.c_uint32
+    attributes = FilesystemAttributes()
+    status = abi._IoStatusBlock()
+    result = query(
+        handle, ctypes.byref(status), ctypes.byref(attributes),
+        ctypes.sizeof(attributes), 5,  # FileFsAttributeInformation.
+    )
+    if result != 0:
+        raise ctypes.WinError(dos_error(result))
+    length = attributes.name_length
+    if not length or length % 2 or length > ctypes.sizeof(attributes.name):
+        raise OSError(errno.EINVAL, "Invalid filesystem name from volume query")
+    return bytes(attributes.name)[:length].decode("utf-16-le")
+
+
+def _windows_legacy_file_id(handle: int) -> _WindowsFileIdentity:
+    """Query a live legacy identity only on filesystems with usable 64-bit IDs."""
+    import ctypes
+    from ctypes import wintypes
+
+    filesystem = _windows_filesystem(handle).upper()
+    # ReFS needs 128 bits; unknown drivers may report non-identifying indexes.
+    if filesystem not in {"FAT", "FAT32", "EXFAT", "NTFS"}:
+        raise OSError(errno.ENOTSUP, f"No reliable legacy file identity for {filesystem}")
+
+    class FileInformation(ctypes.Structure):
+        _fields_ = [
+            ("attributes", ctypes.c_uint32),
+            ("times", ctypes.c_uint32 * 6),
+            ("volume", ctypes.c_uint32),
+            ("size_high", ctypes.c_uint32),
+            ("size_low", ctypes.c_uint32),
+            ("links", ctypes.c_uint32),
+            ("index_high", ctypes.c_uint32),
+            ("index_low", ctypes.c_uint32),
+        ]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    query = kernel.GetFileInformationByHandle
+    query.argtypes = [wintypes.HANDLE, wintypes.LPVOID]
+    query.restype = wintypes.BOOL
+    information = FileInformation()
+    if not query(handle, ctypes.byref(information)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    index = (information.index_high << 32) | information.index_low
+    if not index:
+        raise OSError(errno.ENOTSUP, "No usable legacy file identity")
+    return _WindowsFileIdentity("legacy64", information.volume, index.to_bytes(8, "little"))
+
+
+def _windows_file_id(
+    handle: int, *, kind: _IdentityKind | None = None
+) -> _WindowsFileIdentity:
+    """Select a supported identity once, or query the already selected scheme."""
+    if kind == "legacy64":
+        return _windows_legacy_file_id(handle)
     import ctypes
     from ctypes import wintypes
 
@@ -168,8 +255,16 @@ def _windows_file_id(handle: int) -> tuple[int, bytes]:
     info.restype = wintypes.BOOL
     identity = FileIdInfo()
     if not info(handle, 18, ctypes.byref(identity), ctypes.sizeof(identity)):
-        raise ctypes.WinError(ctypes.get_last_error())
-    return identity.volume, bytes(identity.file_id)
+        error = ctypes.get_last_error()
+        if kind is None and error in (1, 50, 87):
+            return _windows_legacy_file_id(handle)
+        raise ctypes.WinError(error)
+    value = bytes(identity.file_id)
+    if not any(value):
+        if kind is None:
+            return _windows_legacy_file_id(handle)
+        raise OSError(errno.ENOTSUP, "No usable extended file identity")
+    return _WindowsFileIdentity("fileid128", identity.volume, value)
 
 
 def _windows_stat(handle: int) -> os.stat_result:

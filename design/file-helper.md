@@ -153,7 +153,17 @@ helper is alive; stored device/inode numbers alone are not the binding. On POSIX
 the handle uses search-only access where available. On Windows, construction
 requests only root metadata access (`FILE_READ_ATTRIBUTES`) and permits delete
 sharing; it does not request directory-list access on the canonical ancestors.
-The retained reference records the full volume/file identity from that handle.
+The retained reference selects a tagged identity scheme from that handle.
+The full 128-bit `FileIdInfo` identity is preferred. If that query reports
+`ERROR_INVALID_FUNCTION`, `ERROR_NOT_SUPPORTED`, or `ERROR_INVALID_PARAMETER`,
+or returns an all-zero ID, the helper queries the opened volume's filesystem
+and uses `GetFileInformationByHandle`'s volume serial plus nonzero 64-bit file
+index only for FAT, FAT32, exFAT, or NTFS. The volume query is handle-relative
+and works through the filesystem driver rather than a pathname-based volume
+lookup, including when a network driver exposes the necessary information.
+ReFS and unrecognized filesystems do not fall back to potentially ambiguous
+64-bit indexes. Access-denied, sharing, and other unrelated errors still
+propagate rather than selecting a weaker identity.
 Before accepting it, construction compares Python-native metadata obtained from
 the acquired handle with the initially observed root metadata. This comparison
 does not reopen the root pathname, so replacement followed by restoration cannot
@@ -165,8 +175,11 @@ The cached error remains traceback-free; each failed deletion raises an
 independent shallow copy retaining the native error type and filesystem details.
 
 Windows deletion separately pins the canonical ancestry through the drive/share
-root without delete sharing, then compares the opened root's full identity with
-the retained reference. Those operation-time handles require both
+root without delete sharing, then queries both that root handle and the retained
+reference using the already selected scheme. It compares their live identities,
+not a cached legacy index: FAT IDs can change after renaming. It neither
+renegotiates identity schemes mid-operation nor compares identities from
+different schemes. Those operation-time handles require both
 `FILE_LIST_DIRECTORY` and `FILE_READ_ATTRIBUTES` on every canonical ancestor,
 including those above the helper root, and reject reparse points. An ACL allowing
 traversal but not listing can therefore prevent deletion while still allowing

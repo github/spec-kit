@@ -15,6 +15,7 @@ import weakref
 import pytest
 
 from specify_cli import file_helper
+from specify_cli._file_handles import _WindowsFileIdentity
 from specify_cli.file_helper import (
     FileHelper,
     FileHelperError,
@@ -2059,7 +2060,10 @@ def test_windows_delete_rejects_replaced_root_during_acquisition_portably(
     backend.name = "nt"
     monkeypatch.setattr(module, "os", backend)
     monkeypatch.setattr(module, "_windows_handle", handle)
-    monkeypatch.setattr(module, "_windows_file_id", lambda value: identities[value])
+    monkeypatch.setattr(
+        module, "_windows_file_id",
+        lambda value, **kwargs: _WindowsFileIdentity("fileid128", *identities[value]),
+    )
     monkeypatch.setattr(module, "_windows_stat", lambda value: metadata[value])
     with FileHelper(project) as files:
         assert not attempted
@@ -2121,7 +2125,10 @@ def test_windows_link_resolution_pins_accessed_parents_portably(
 
     monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
     monkeypatch.setattr(file_helper, "_windows_handle", handle)
-    monkeypatch.setattr(file_helper, "_windows_file_id", lambda _: (1, b"root"))
+    monkeypatch.setattr(
+        file_helper, "_windows_file_id",
+        lambda _, **kwargs: _WindowsFileIdentity("fileid128", 1, b"root"),
+    )
     monkeypatch.setattr(file_helper, "_windows_stat", lambda _: root.stat())
     monkeypatch.setattr(Path, "lstat", exchange)
     with FileHelper(root, allow_symlinks=True) as files:
@@ -2205,7 +2212,10 @@ def test_windows_constructor_rejects_replaced_then_restored_root(root, monkeypat
 
     monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
     monkeypatch.setattr(file_helper, "_windows_handle", handle)
-    monkeypatch.setattr(file_helper, "_windows_file_id", lambda _: (1, b"replacement"))
+    monkeypatch.setattr(
+        file_helper, "_windows_file_id",
+        lambda _, **kwargs: _WindowsFileIdentity("fileid128", 1, b"replacement"),
+    )
     monkeypatch.setattr(file_helper, "_windows_stat", lambda value: acquired[value], raising=False)
     with pytest.raises(FileHelperError, match="root changed"):
         with FileHelper(project):
@@ -2284,7 +2294,10 @@ def test_windows_read_does_not_require_ancestor_listing_portably(
 
     monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
     monkeypatch.setattr(file_helper, "_windows_handle", handle)
-    monkeypatch.setattr(file_helper, "_windows_file_id", lambda _: (1, b"root"), raising=False)
+    monkeypatch.setattr(
+        file_helper, "_windows_file_id",
+        lambda _, **kwargs: _WindowsFileIdentity("fileid128", 1, b"root"),
+    )
     monkeypatch.setattr(file_helper, "_windows_stat", lambda _: root.stat())
     with FileHelper(root) as files:
         assert files.read_text("victim") == "keep"
@@ -2345,7 +2358,10 @@ def test_windows_delete_checks_retained_handle_identity_portably(
 
     monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
     monkeypatch.setattr(file_helper, "_windows_handle", handle)
-    monkeypatch.setattr(file_helper, "_windows_file_id", lambda handle: identities[handle])
+    monkeypatch.setattr(
+        file_helper, "_windows_file_id",
+        lambda value, **kwargs: _WindowsFileIdentity("fileid128", *identities[value]),
+    )
     monkeypatch.setattr(file_helper, "_windows_stat", lambda _: root.stat())
     with FileHelper(root) as files:
         with pytest.raises(FileHelperError, match="root changed"):
@@ -2353,6 +2369,63 @@ def test_windows_delete_checks_retained_handle_identity_portably(
         assert len(active) == 1
         assert files.read_text("victim") == "keep"
     assert active == []
+
+
+@pytest.mark.parametrize("scenario", ["same", "renamed-reference", "replacement-reused-id"])
+@pytest.mark.parametrize("recursive", [False, True])
+def test_windows_legacy_root_identity_is_compared_live_with_the_selected_scheme(
+    root, monkeypatch, scenario, recursive
+):
+    (root / "tree").mkdir()
+    (root / "tree/victim").write_text("keep")
+    active = []
+    reference = None
+    queries = []
+    changed = False
+
+    @contextmanager
+    def handle(path, *, directory, pin=True):
+        nonlocal reference
+        assert directory
+        value = len(queries) + len(active) + 1
+        active.append(value)
+        if not pin:
+            reference = value
+        try:
+            yield value
+        finally:
+            assert active.pop() == value
+
+    def identity(value, *, kind=None):
+        queries.append((value, kind))
+        assert kind in (None, "legacy64")
+        index = 1
+        if changed and scenario != "same":
+            index = 2 if value == reference or scenario == "renamed-reference" else 1
+        return _WindowsFileIdentity("legacy64", 1, index.to_bytes(8, "little"))
+
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
+    monkeypatch.setattr(file_helper, "_windows_handle", handle)
+    monkeypatch.setattr(file_helper, "_windows_file_id", identity)
+    monkeypatch.setattr(file_helper, "_windows_stat", lambda _: root.stat())
+    with FileHelper(root) as files:
+        assert files._windows_root_id is not None
+        assert files._windows_root_id.kind == "legacy64"
+        changed = True
+        selected = "tree" if recursive else "tree/victim"
+        if scenario == "replacement-reused-id":
+            with pytest.raises(FileHelperError, match="root changed"):
+                files.delete(selected, recursive=recursive)
+            assert (root / "tree/victim").read_text() == "keep"
+        else:
+            files.delete(selected, recursive=recursive)
+            assert not (root / "tree/victim").exists()
+        assert active == [reference]
+    assert active == []
+    assert queries[0] == (reference, None)
+    assert len(queries) == 3
+    assert queries[-1] == (reference, "legacy64")
+    assert all(kind == "legacy64" for _, kind in queries[1:])
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows directory ACL semantics")
@@ -2456,7 +2529,10 @@ def test_windows_delete_holds_ancestors_until_io_completes_portably(
     backend.scandir = observe_scan
     monkeypatch.setattr(module, "os", backend)
     monkeypatch.setattr(module, "_windows_handle", handle)
-    monkeypatch.setattr(module, "_windows_file_id", lambda _: (1, b"root"))
+    monkeypatch.setattr(
+        module, "_windows_file_id",
+        lambda _, **kwargs: _WindowsFileIdentity("fileid128", 1, b"root"),
+    )
     monkeypatch.setattr(module, "_windows_stat", lambda _: root.stat())
     files = FileHelper(root, allow_symlinks=True)
     selected = alias / "nested" if recursive else alias / "nested/victim"
