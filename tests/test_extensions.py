@@ -4862,7 +4862,7 @@ Run {SCRIPT}
             == text
         )
 
-    def test_rewrite_extension_paths_cross_drive_uses_absolute_target(
+    def test_rewrite_extension_paths_cross_drive_uses_explicit_project_relative_target(
         self, temp_dir, monkeypatch
     ):
         from specify_cli.agents import CommandRegistrar
@@ -4871,7 +4871,6 @@ Run {SCRIPT}
         (extension_dir / "agents").mkdir(parents=True)
         (extension_dir / "agents" / "one.md").touch()
         project_root = temp_dir / "project"
-        target = project_root / ".specify" / "extensions" / "ext" / "agents" / "one.md"
 
         def cross_drive(*args):
             raise ValueError("path is on mount 'D:', start on mount 'C:'")
@@ -4881,7 +4880,21 @@ Run {SCRIPT}
             "Read agents/one.md.", "ext", extension_dir,
             project_root=project_root, skill_dir=temp_dir / "home" / "skills" / "example",
         )
-        assert result == f"Read {target.absolute().as_posix()}."
+        note = (
+            "Resolve `.specify/extensions/ext/` paths from the project root, "
+            "not from this skill directory."
+        )
+        assert result == f"Read .specify/extensions/ext/agents/one.md.\n\n{note}"
+        assert project_root.as_posix() not in result
+        assert str(project_root) not in result
+        assert CommandRegistrar.rewrite_extension_paths(
+            result, "ext", extension_dir,
+            project_root=project_root, skill_dir=temp_dir / "home" / "skills" / "example",
+        ) == result
+        assert CommandRegistrar.rewrite_extension_paths(
+            "Read agents/missing.md.", "ext", extension_dir,
+            project_root=project_root, skill_dir=temp_dir / "home" / "skills" / "example",
+        ) == "Read agents/missing.md."
 
         def unexpected_error(*args):
             raise PermissionError("cannot compute relative path")

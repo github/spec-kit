@@ -257,7 +257,7 @@ class CommandRegistrar:
         destination ``skill_dir``, output is relative to that directory rather
         than the project root, including already-normalized extension paths.
         Paths under ``scripts/`` stay project-root-relative for execution.
-        Cross-drive resource references use absolute installed paths.
+        Cross-drive resource references carry explicit project-root guidance.
         """
         if not isinstance(text, str) or not text:
             return text
@@ -397,15 +397,16 @@ class CommandRegistrar:
             for candidate in ambiguous:
                 candidates[candidate] = None
 
-        def replace(token: str) -> Optional[str]:
+        def replace(token: str) -> tuple[Optional[str], bool]:
             # Prefer a literal '#' filename over interpreting it as a fragment.
             for candidate, trailing_slash, suffix in token_parts.get(token, []):
                 if candidate in ambiguous:
-                    return token
+                    return token, False
                 target = candidates.get(candidate)
                 if target is None:
                     continue
                 rewritten = installed_prefix + target
+                project_relative = False
                 if (
                     skill_dir is not None
                     and project_root is not None
@@ -415,14 +416,15 @@ class CommandRegistrar:
                     try:
                         rewritten = Path(os.path.relpath(installed_path, skill_dir)).as_posix()
                     except ValueError:
-                        rewritten = installed_path.absolute().as_posix()
+                        project_relative = True
                 if trailing_slash:
                     rewritten += "/"
-                return rewritten + suffix
-            return None
+                return rewritten + suffix, project_relative
+            return None, False
 
         replacements = {token: replace(token) for token in tokens}
         output = StringIO()
+        used_project_relative = False
 
         output_scans = [(iter(path_spans(0, len(text))), 0, len(text))]
         while output_scans:
@@ -436,13 +438,21 @@ class CommandRegistrar:
             output.write(text[previous:left])
             output_scans[-1] = (scan, right, end)
             token = text[left:right]
-            replacement = replacements[token]
+            replacement, project_relative = replacements[token]
             if replacement is not None:
                 output.write(replacement)
+                used_project_relative = used_project_relative or project_relative
             elif quoted and has_command_word(token):
                 output_scans.append((iter(path_spans(left, right)), left, right))
             else:
                 output.write(token)
+        if used_project_relative:
+            note = (
+                f"Resolve `{installed_prefix}` paths from the project root, "
+                "not from this skill directory."
+            )
+            if note not in text:
+                output.write("\n\n" + note)
         return output.getvalue()
 
     def render_markdown_command(

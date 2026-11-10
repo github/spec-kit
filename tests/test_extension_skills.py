@@ -1639,7 +1639,7 @@ class TestExtensionSkillRegistration:
         assert skills_dir.is_dir()
         assert (project_dir / ".hermes" / "skills").is_dir()
 
-    def test_hermes_cross_drive_resource_references_use_absolute_paths(
+    def test_hermes_cross_drive_resource_references_use_explicit_project_relative_paths(
         self, project_dir, temp_dir, monkeypatch
     ):
         import ntpath
@@ -1671,7 +1671,16 @@ class TestExtensionSkillRegistration:
         )
         skill_file = home / ".hermes" / "skills" / "speckit-cross-drive-ext-hello" / "SKILL.md"
         target = project_dir / ".specify" / "extensions" / "cross-drive-ext" / "agents" / "reviewer.md"
-        assert f"Read {target.absolute().as_posix()}." in skill_file.read_text()
+        content = skill_file.read_text()
+        assert "Read .specify/extensions/cross-drive-ext/agents/reviewer.md." in content
+        assert (
+            "Resolve `.specify/extensions/cross-drive-ext/` paths from the project root, "
+            "not from this skill directory."
+        ) in content
+        assert project_dir.as_posix() not in content
+        assert home.as_posix() not in content
+        assert str(project_dir) not in content
+        assert str(home) not in content
         assert target.is_file()
 
     def test_unusable_hermes_global_skills_dir_skips_skill_registration(

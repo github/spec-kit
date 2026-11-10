@@ -123,7 +123,9 @@ For example, a Copilot skill
 references `../../../.specify/extensions/my-ext/agents/reviewer.md`; command-layout
 outputs retain project-root-relative `.specify/extensions/my-ext/` paths.
 When the skill and project are on different Windows drives, resource references
-use absolute installed paths instead. Bundled paths under `scripts/`, including
+remain project-root-relative, and the generated skill explicitly instructs the
+agent to resolve them from the project root. Local absolute filesystem paths
+are not emitted by this fallback. Bundled paths under `scripts/`, including
 invocations expanded from `{SCRIPT}`, remain project-root-relative: run them
 from the project root so their working-directory requirements stay intact.
 References under `commands/`, `specs/`, or hidden directories are not rewritten.
