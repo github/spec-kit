@@ -482,9 +482,10 @@ def test_read_checks_opened_type_without_blocking_on_fifo(root, monkeypatch):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX capability refusal regression")
-def test_read_refuses_unsafe_platform_fallback(root, monkeypatch):
+@pytest.mark.parametrize("capability", ["O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK", "supports_dir_fd"])
+def test_read_refuses_unsafe_platform_fallback(root, monkeypatch, capability):
     (root / "file").write_bytes(b"inside")
-    monkeypatch.setattr(os, "supports_dir_fd", set())
+    monkeypatch.setattr(os, capability, set() if capability == "supports_dir_fd" else 0)
     with pytest.raises(OSError) as error:
         FileHelper(root).read_bytes("file")
     assert error.value.errno == errno.ENOTSUP

@@ -248,18 +248,22 @@ substituted symlink. This does not freeze file contents against in-place edits.
 Preflight detects static policy failures before recursive deletion or parent
 creation. Atomic writes recheck the original path before replacement, and
 deletion rechecks each accessed entry. For all operations that still use
-validated paths (directory creation, atomic writes, non-atomic
-overwrites, symlink creation, and deletion), portable path checks are **not**
-a race-free sandbox: another process can exchange parents or entries between
-checks and syscalls, and an I/O failure during mutation can leave partial
-results. Protect against concurrent untrusted mutation separately.
+validated paths (directory creation, atomic writes, non-atomic overwrites,
+symlink creation, deletion, and Windows exclusive file creation), portable
+path checks are **not** a race-free sandbox: another process can exchange
+parents or entries between checks and syscalls, and an I/O failure during
+mutation can leave partial results. Protect against concurrent untrusted
+mutation separately.
 Exclusive file creation anchors its resolved parent hierarchy as described
 above. On POSIX, renaming an opened directory does not redirect creation to
 its replacement: creation stays with the opened directory, even if it is
 renamed out of the root. This is not a guarantee of stable namespace membership
 under concurrent renames, nor does parent anchoring make every leaf preflight
-atomic with the subsequent open. The helper does not constrain subprocesses
-or third-party code.
+atomic with the subsequent open.
+On Windows, exclusive creation still opens its leaf by pathname after pinning
+the parent hierarchy. Attribute-only reparse updates can redirect that open;
+it does not have the read path's parent-relative handle protection.
+The helper does not constrain subprocesses or third-party code.
 
 Existing safe-write mechanisms informed this helper, but existing shared
 infrastructure warning/skip behavior and development-mode link creation are
