@@ -603,6 +603,118 @@ def test_delete_exchange_during_parent_open(root, link, monkeypatch, allow):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor lifetime")
+@pytest.mark.parametrize("stage", ["preflight", "mutation", "delete"])
+@pytest.mark.parametrize("depth", [80, 160])
+@pytest.mark.parametrize("allow", [False, True])
+def test_recursive_delete_with_low_descriptor_limit(root, stage, depth, allow):
+    import resource
+
+    if resource.getrlimit(resource.RLIMIT_NOFILE)[1] < 64:
+        pytest.skip("Hard descriptor limit is below the regression budget")
+    deepest = root / "tree"
+    for _ in range(depth):
+        deepest /= "d"
+    deepest.mkdir(parents=True)
+    (deepest / "direct").write_text("control")
+    (deepest / "victim").write_text("selected")
+    if allow:
+        (root / "alias").symlink_to(".", target_is_directory=True)
+    script = """
+import os
+from pathlib import Path
+import resource
+import sys
+from specify_cli.file_helper import FileHelper
+
+root, deepest = map(Path, sys.argv[1:3])
+stage, allow = sys.argv[3], sys.argv[4] == "True"
+_, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+(deepest / "direct").unlink()
+original_open, original_close = os.open, os.close
+active = set()
+peak = 0
+
+def observe_open(*args, **kwargs):
+    global peak
+    fd = original_open(*args, **kwargs)
+    active.add(fd)
+    peak = max(peak, len(active))
+    return fd
+
+def observe_close(fd):
+    original_close(fd)
+    active.discard(fd)
+
+with FileHelper(root, allow_symlinks=allow) as files:
+    with files._deletion_root() as anchor:
+        if stage == "mutation":
+            plan = files._deletion_plan(root / "tree", recursive=True, parent=anchor)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (64, hard))
+        os.open, os.close = observe_open, observe_close
+        try:
+            if stage == "preflight":
+                files._deletion_plan(root / "tree", recursive=True, parent=anchor)
+            elif stage == "mutation":
+                files._delete_plan(plan, parent=anchor)
+            else:
+                files.delete("alias/tree" if allow else "tree", recursive=True)
+        finally:
+            os.open, os.close = original_open, original_close
+        assert not active, active
+        assert peak <= 12, peak
+assert (root / "tree").exists() == (stage == "preflight")
+if allow:
+    assert (root / "alias").is_symlink()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(root), str(deepest), stage, str(allow)],
+        capture_output=True, text=True, timeout=60, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (deepest / "victim").exists() == (stage == "preflight")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX bounded directory cache")
+def test_recursive_cache_eviction_reacquires_without_following_replacement(root, link):
+    branch = root / "branch"
+    deepest = branch.joinpath(*("d" for _ in range(20)))
+    deepest.mkdir(parents=True)
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "victim").write_text("keep")
+    with FileHelper(root) as files, files._deletion_root() as anchor:
+        assert isinstance(anchor, int)
+        with file_helper.ExitStack() as resources:
+            directories = file_helper._DeletionDirectories(
+                root, anchor, files._directory_flags(), resources
+            )
+            directories.directory(deepest)
+            assert branch not in directories.opened
+            branch.rename(root / "retained")
+            link(branch, outside)
+            with pytest.raises(OSError):
+                directories.directory(branch)
+    assert (outside / "victim").read_text() == "keep"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX bounded recursive preflight")
+def test_recursive_cache_eviction_keeps_deny_preflight_before_any_removal(root, link):
+    tree = root / "tree"
+    deepest = tree.joinpath(*("d" for _ in range(20)))
+    deepest.mkdir(parents=True)
+    (tree / "a-first").write_text("keep")
+    outside = root.parent / "outside"
+    outside.write_text("keep")
+    alias = link(deepest / "link", outside)
+    with FileHelper(root) as files:
+        with pytest.raises(SymlinkDeniedError):
+            files.delete(tree, recursive=True)
+    assert alias.is_symlink()
+    assert (tree / "a-first").read_text() == "keep"
+    assert outside.read_text() == "keep"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor lifetime")
 @pytest.mark.parametrize("stage", ["resolve", "anchor", "delete"])
 @pytest.mark.parametrize("allow", [False, True])
 def test_deep_nonrecursive_delete_with_low_descriptor_limit(root, stage, allow):
@@ -775,25 +887,42 @@ def test_legacy_darwin_establishes_write_search_only_root(root, monkeypatch, ope
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor lifetime")
-@pytest.mark.parametrize("depth", [8, 32, 64])
+@pytest.mark.parametrize("depth", [8, 32, 64, 160])
 @pytest.mark.parametrize("recursive", [False, True])
-def test_delete_directory_open_count_is_linear(root, monkeypatch, depth, recursive):
+def test_delete_directory_open_work_and_live_descriptors_stay_bounded(
+    root, monkeypatch, depth, recursive
+):
     tree = root / "tree"
-    deepest = tree.joinpath(*("nested" for _ in range(depth)))
+    deepest = tree.joinpath(*("d" for _ in range(depth)))
     deepest.mkdir(parents=True)
     (deepest / "victim").write_text("selected")
     open_directory = os.open
+    close_directory = os.close
     opened = 0
+    active = set()
+    peak = 0
 
     def observe(*args, **kwargs):
-        nonlocal opened
+        nonlocal opened, peak
+        fd = open_directory(*args, **kwargs)
         opened += 1
-        return open_directory(*args, **kwargs)
+        active.add(fd)
+        peak = max(peak, len(active))
+        return fd
+
+    def close(fd):
+        close_directory(fd)
+        active.discard(fd)
 
     monkeypatch.setattr(os, "open", observe)
-    FileHelper(root).delete(tree if recursive else deepest / "victim", recursive=recursive)
+    monkeypatch.setattr(os, "close", close)
+    with FileHelper(root) as files:
+        files.delete(tree if recursive else deepest / "victim", recursive=recursive)
     assert not (deepest / "victim").exists()
-    assert opened <= 8 * depth + 16
+    assert not active
+    assert peak <= 12
+    budget = 4 * depth + depth * depth // 8 + 32 if recursive else 8 * depth + 16
+    assert opened <= budget
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX retained root after unlink")
@@ -899,18 +1028,22 @@ def test_delete_without_search_flags_reports_unreadable_parent(root, monkeypatch
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor lifetime")
+@pytest.mark.parametrize("depth", [2, 20])
 @pytest.mark.parametrize(
     ("recursive", "failure"),
     [(False, None), (False, "unlink"), (True, None), (True, "unlink"), (True, "scan")],
 )
-def test_delete_closes_directory_descriptors(root, monkeypatch, recursive, failure):
+def test_delete_closes_directory_descriptors(root, monkeypatch, depth, recursive, failure):
     parent = root / "parent"
-    (parent / "nested").mkdir(parents=True)
-    victim = parent / "nested/victim"
+    deepest = parent.joinpath(*("d" for _ in range(depth)))
+    deepest.mkdir(parents=True)
+    victim = deepest / "victim"
     victim.write_text("selected")
     opened = []
     root_opens = []
     open_directory = os.open
+    scan_directory = os.scandir
+    scans = 0
 
     def observe(*args, **kwargs):
         fd = open_directory(*args, **kwargs)
@@ -922,11 +1055,18 @@ def test_delete_closes_directory_descriptors(root, monkeypatch, recursive, failu
     def denied(*args, **kwargs):
         raise PermissionError("removal denied")
 
+    def scan(path):
+        nonlocal scans
+        scans += 1
+        if scans == min(depth + 1, 12):
+            raise PermissionError("removal denied")
+        return scan_directory(path)
+
     monkeypatch.setattr(os, "open", observe)
     if failure == "unlink":
         monkeypatch.setattr(os, "unlink", denied)
     elif failure == "scan":
-        monkeypatch.setattr(os, "scandir", denied)
+        monkeypatch.setattr(os, "scandir", scan)
     with FileHelper(root) as files:
         expected = pytest.raises(PermissionError, match="removal denied") if failure else nullcontext()
         with expected:

@@ -305,12 +305,19 @@ descriptor-relative or change their documented concurrency limitations.
   re-anchored through that root rather than following an opened directory's
   physical parent after a rename. Windows retains the accessed ancestor handles
   because its path-based access requires those directories to stay pinned.
-  Recursive preflight and mutation carry each parent descriptor
-  through its children, opening directories a bounded number of times across
-  the two passes. Descriptor-open counts grow linearly with visited directories
-  and operation-path components; recursive descriptor lifetimes grow with tree
-  depth rather than total tree size. The complete plan is still preflighted
-  before any removal.
+  POSIX recursive preflight and mutation use explicit worklists and separate
+  eight-directory handle caches. The selected parent and established root remain
+  anchored outside those caches. An uncached parent is reacquired component by
+  component from the nearest retained prefix with no-follow flags, releasing
+  least-recently-used handles as the cache fills. Removed directories are evicted,
+  and preflight handles are not reused for mutation. Live descriptors are bounded
+  independently of recursive depth, including transient opens and enumeration;
+  worklist and complete-plan memory still scale with the selected tree.
+  Reacquiring evicted prefixes trades additional opens for that fixed handle
+  budget. Total opens can grow with the sum of visited path lengths, rather than
+  being unconditionally linear in the directory count. Windows retains its
+  ancestry-locking traversal instead of evicting handles needed for path-based
+  operations. The complete plan is still preflighted before any removal.
 - `symlink(target, path)` creates a link exclusively. Relative targets are
   interpreted relative to the link parent, not the helper root.
 

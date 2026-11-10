@@ -6,6 +6,7 @@ import os
 import stat
 import sys
 import tempfile
+from collections import OrderedDict
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from copy import copy
@@ -26,6 +27,7 @@ _DELETE_DIR_FD_SUPPORTED = (
     and os.scandir in os.supports_fd
 )
 _OVERWRITE_DIR_FD_SUPPORTED = os.open in os.supports_dir_fd
+_DELETE_DIRECTORY_CACHE_SIZE = 8
 
 
 def _strip_extended_length_prefix(path: _PathType) -> _PathType:
@@ -116,6 +118,48 @@ class _DeletionEntry:
     path: Path
     directory: bool
     children: tuple["_DeletionEntry", ...] = ()
+
+
+@dataclass
+class _DeletionDirectories:
+    root: Path
+    root_fd: int
+    flags: int
+    resources: ExitStack
+    opened: OrderedDict[Path, int] = field(default_factory=OrderedDict)
+
+    def __post_init__(self) -> None:
+        self.resources.callback(self.close)
+
+    def close(self) -> None:
+        while self.opened:
+            _, fd = self.opened.popitem()
+            os.close(fd)
+
+    def discard(self, path: Path) -> None:
+        fd = self.opened.pop(path, None)
+        if fd is not None:
+            os.close(fd)
+
+    def directory(self, path: Path) -> int:
+        path.relative_to(self.root)
+        ancestor = path
+        suffix = []
+        while ancestor != self.root and ancestor not in self.opened:
+            suffix.append(ancestor.name)
+            ancestor = ancestor.parent
+        parent = self.root_fd if ancestor == self.root else self.opened[ancestor]
+        if ancestor in self.opened:
+            self.opened.move_to_end(ancestor)
+        for name in reversed(suffix):
+            child = os.open(name, self.flags, dir_fd=parent)
+            ancestor = ancestor / name
+            self.opened[ancestor] = child
+            if len(self.opened) > _DELETE_DIRECTORY_CACHE_SIZE:
+                _, oldest = self.opened.popitem(last=False)
+                os.close(oldest)
+            parent = child
+        return parent
 
 
 @dataclass(frozen=True)
@@ -571,6 +615,8 @@ class FileHelper:
     def _deletion_plan(
         self, path: Path, *, recursive: bool, parent: int | Path
     ) -> _DeletionEntry:
+        if isinstance(parent, int):
+            return self._posix_deletion_plan(path, recursive=recursive, parent=parent)
         directory = self._deletion_kind(path, self._deletion_entry_mode(path, parent=parent))
         children: tuple[_DeletionEntry, ...] = ()
         if directory and recursive:
@@ -585,7 +631,43 @@ class FileHelper:
                 children = tuple(child_plans)
         return _DeletionEntry(path, directory, children)
 
+    def _posix_deletion_plan(
+        self, path: Path, *, recursive: bool, parent: int
+    ) -> _DeletionEntry:
+        pending: list[tuple[Path, list[str] | None]] = [(path, None)]
+        completed: dict[Path, _DeletionEntry] = {}
+        with ExitStack() as resources:
+            directories = _DeletionDirectories(
+                path.parent, parent, self._directory_flags(), resources
+            )
+            while pending:
+                entry, children = pending.pop()
+                if children is not None:
+                    completed[entry] = _DeletionEntry(
+                        entry, True, tuple(completed.pop(entry / name) for name in children)
+                    )
+                    continue
+                entry_parent = directories.directory(entry.parent)
+                directory = self._deletion_kind(
+                    entry, self._deletion_entry_mode(entry, parent=entry_parent)
+                )
+                if not (directory and recursive):
+                    completed[entry] = _DeletionEntry(entry, directory)
+                    continue
+                with self._child_deletion_directory(
+                    entry_parent, entry.name, readable=True
+                ) as readable:
+                    with os.scandir(readable) as entries:
+                        names = sorted(child.name for child in entries)
+                pending.append((entry, names))
+                for name in reversed(names):
+                    pending.append((entry / name, None))
+        return completed[path]
+
     def _delete_plan(self, entry: _DeletionEntry, *, parent: int | Path) -> None:
+        if isinstance(parent, int):
+            self._posix_delete_plan(entry, parent=parent)
+            return
         directory = self._deletion_kind(
             entry.path, self._deletion_entry_mode(entry.path, parent=parent)
         )
@@ -601,6 +683,34 @@ class FileHelper:
             os.rmdir(leaf, dir_fd=directory_fd)
         else:
             os.unlink(leaf, dir_fd=directory_fd)
+
+    def _posix_delete_plan(self, entry: _DeletionEntry, *, parent: int) -> None:
+        pending = [(entry, False)]
+        with ExitStack() as resources:
+            # Do not reuse preflight handles: parent replacements must be checked
+            # afresh before any removal.
+            directories = _DeletionDirectories(
+                entry.path.parent, parent, self._directory_flags(), resources
+            )
+            while pending:
+                selected, ready = pending.pop()
+                selected_parent = directories.directory(selected.path.parent)
+                directory = self._deletion_kind(
+                    selected.path,
+                    self._deletion_entry_mode(selected.path, parent=selected_parent),
+                )
+                if directory != selected.directory:
+                    raise FileHelperError(f"Destination changed during deletion: {selected.path}")
+                if directory and selected.children and not ready:
+                    pending.append((selected, True))
+                    for child in reversed(selected.children):
+                        pending.append((child, False))
+                    continue
+                if directory:
+                    os.rmdir(selected.path.name, dir_fd=selected_parent)
+                    directories.discard(selected.path)
+                else:
+                    os.unlink(selected.path.name, dir_fd=selected_parent)
 
     def delete(self, path: Path | str, *, recursive: bool = False) -> None:
         """Delete an entry; recursive deletion never follows descendant links."""
