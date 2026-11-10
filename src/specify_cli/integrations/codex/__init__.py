@@ -210,12 +210,14 @@ class CodexIntegration(SkillsIntegration):
     def _failed_cleanup_mode(root: Path, rel: str, recorded_hash: str, mode: str) -> str:
         """Ownership for a file whose policy could not be removed.
 
-        Readable bytes that differ from the recorded hash are a user edit, so
-        they become ``partial``: upgrade re-hashes tracked files afterwards, and
+        A ``whole`` file whose readable bytes differ from the recorded hash is
+        a user edit, so it becomes ``partial``: upgrade re-hashes tracked files afterwards, and
         a ``whole`` entry would then count as generated and be deleted. When
         the file cannot be read, the prior mode is kept so a generated file is
         still recognised, and deleted, once it can be read again.
         """
+        if mode != "whole":
+            return mode
         try:
             _validate_record_path(Path(rel), root)
             if hashlib.sha256((root / rel).read_bytes()).hexdigest() != recorded_hash:
@@ -232,6 +234,7 @@ class CodexIntegration(SkillsIntegration):
         rewrites it, so neither can carry the prior hash forward. This is the
         only write to manifest internals; ``TestCodexManifestInternals`` pins it.
         """
+        rel = Path(rel).as_posix()
         manifest._files[rel] = recorded_hash
         manifest.set_ownership(rel, ownership)
 

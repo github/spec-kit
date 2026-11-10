@@ -564,6 +564,7 @@ class TestCodexNoModelInvocationOwnership:
         )
         assert result.exit_code == 0, result.output
         assert path.read_bytes() == edited
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "partial"
 
         result = _run_in_project(tmp_path, ["integration", "uninstall", "codex"])
         assert result.exit_code == 0, result.output
