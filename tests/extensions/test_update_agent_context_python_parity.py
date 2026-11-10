@@ -1484,7 +1484,7 @@ def test_powershell_context_file_rejects_unresolved_deep_chain(
     outside_dir = tmp_path / "outside"
     outside_dir.mkdir()
     external = outside_dir / "AGENTS.md"
-    external.write_text("# external\n", encoding="utf-8")
+    external.write_bytes(b"# external\n")
 
     repo = make_project(tmp_path / "project", context_file="l1/AGENTS.md")
     prev = outside_dir
@@ -1528,7 +1528,7 @@ def test_powershell_context_file_rejects_depth_exhaustion_before_dotdot(
     outside_dir = elsewhere / "outside"
     outside_dir.mkdir(parents=True)
     external = elsewhere / "AGENTS.md"
-    external.write_text("# external\n", encoding="utf-8")
+    external.write_bytes(b"# external\n")
 
     repo = make_project(tmp_path / "project", context_file="l1/AGENTS.md")
     for i in range(1, 11):
