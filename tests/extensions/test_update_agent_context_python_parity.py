@@ -87,6 +87,40 @@ def run_powershell(
     )
 
 
+def run_powershell_with_unreadable_link(
+    project_root: Path, link: Path
+) -> subprocess.CompletedProcess:
+    link_literal = str(link).replace("'", "''")
+    script_literal = str(PS_SCRIPT).replace("'", "''")
+    command = f"""
+function Get-Item {{
+    [CmdletBinding()]
+    param([string]$LiteralPath, [switch]$Force)
+    if ($LiteralPath -eq '{link_literal}') {{
+        return [PSCustomObject]@{{ Target = $null }}
+    }}
+    Microsoft.PowerShell.Management\\Get-Item @PSBoundParameters
+}}
+& '{script_literal}'
+"""
+    return subprocess.run(
+        [
+            WINDOWS_POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
+        ],
+        check=False,
+        cwd=project_root,
+        env=_bundled_script_env(project_root),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
 def normalize(text: str, project_root: Path) -> str:
     return text.replace(str(project_root.resolve()), "__ROOT__").replace(
         str(project_root), "__ROOT__"
@@ -1502,6 +1536,114 @@ def test_powershell_context_file_rejects_unresolved_deep_chain(
     # Write-Warning reaches stdout under pwsh -File in this harness.
     assert "outside the project root" in result.stdout
     assert external.read_bytes() == b"# external\n"
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("link_kind", ["file", "directory"])
+def test_powershell_context_file_rejects_unreadable_link_target(
+    tmp_path: Path, link_kind: str
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    external = outside / "AGENTS.md"
+    external.write_bytes(b"# external\n")
+    context_file = "linked/AGENTS.md" if link_kind == "directory" else "linked.md"
+    repo = make_project(
+        tmp_path / "project", context_files=["LOCAL.md", context_file]
+    )
+    local = repo / "LOCAL.md"
+    local.write_bytes(b"# local\n")
+    link = repo / ("linked" if link_kind == "directory" else "linked.md")
+    try:
+        link.symlink_to(
+            outside if link_kind == "directory" else external,
+            target_is_directory=link_kind == "directory",
+        )
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell_with_unreadable_link(repo, link)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "outside the project root" in result.stdout
+    assert external.read_bytes() == b"# external\n"
+    assert local.read_bytes() == b"# local\n"
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_mtime_fallback_skips_unreadable_directory_link(
+    tmp_path: Path,
+) -> None:
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    valid = repo / "specs/001-valid/plan.md"
+    valid.parent.mkdir(parents=True)
+    valid.write_bytes(b"# valid\n")
+    os.utime(valid, (1_700_000_000, 1_700_000_000))
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    external = outside / "plan.md"
+    external.write_bytes(b"# external\n")
+    os.utime(external, (1_700_000_100, 1_700_000_100))
+    link = repo / "linked"
+    candidate = repo / "specs/999-candidate/plan.md"
+    candidate.parent.mkdir(parents=True)
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+        candidate.symlink_to("../../linked/plan.md")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell_with_unreadable_link(repo, link)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert b"at specs/001-valid/plan.md" in (repo / "AGENTS.md").read_bytes()
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX directory permissions")
+def test_powershell_context_file_rejects_metadata_errors_before_writing(
+    tmp_path: Path,
+) -> None:
+    repo = make_project(
+        tmp_path / "project", context_files=["LOCAL.md", "restricted/AGENTS.md"]
+    )
+    local = repo / "LOCAL.md"
+    local.write_bytes(b"# local\n")
+    restricted = repo / "restricted"
+    restricted.mkdir()
+    context = restricted / "AGENTS.md"
+    context.write_bytes(b"# restricted\n")
+    original_mode = restricted.stat().st_mode
+    try:
+        restricted.chmod(0)
+        try:
+            context.stat()
+        except PermissionError:
+            pass
+        else:
+            pytest.skip("directory permissions do not prevent metadata access")
+
+        result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+    finally:
+        restricted.chmod(original_mode)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "outside the project root" in result.stdout
+    assert local.read_bytes() == b"# local\n"
+    assert context.read_bytes() == b"# restricted\n"
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("context_file", ["AGENTS.md", "new/nested/AGENTS.md"])
+def test_powershell_context_file_allows_missing_output(
+    tmp_path: Path, context_file: str
+) -> None:
+    repo = make_project(tmp_path / "project", context_file=context_file)
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert b"<!-- SPECKIT START -->" in (repo / context_file).read_bytes()
 
 
 @pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")

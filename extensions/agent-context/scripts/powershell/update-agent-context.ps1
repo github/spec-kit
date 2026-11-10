@@ -238,8 +238,12 @@ function Resolve-ContextPath {
         $attributes = $null
         try {
             $attributes = [System.IO.File]::GetAttributes($candidate)
+        } catch [System.IO.FileNotFoundException] {
+            # A new context file may not exist yet.
+        } catch [System.IO.DirectoryNotFoundException] {
+            # Its parent directories may also be new.
         } catch {
-            # Missing or unreadable: not a link, keep walking.
+            return $null
         }
         if ($null -ne $attributes -and ($attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
             if ($Depth -le 0) {
@@ -279,6 +283,8 @@ function Resolve-ContextPath {
                     return $null
                 }
                 $candidate = $followed
+            } else {
+                return $null
             }
         }
         $resolved = $candidate
