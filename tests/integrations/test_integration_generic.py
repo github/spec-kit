@@ -11,7 +11,6 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.base import MarkdownIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
@@ -877,29 +876,16 @@ def test_generic_refresh_write_error_restores_artifacts_and_registry(
         second.parent.rmdir()
     source = manager.extensions_dir / "sample/commands/run.md"
     source.write_text(source.read_text(encoding="utf-8") + "\nupdated source\n", encoding="utf-8")
-    # Skills-mode generic artifacts are written through Path.write_text; the
-    # command-file path replaces the entry via the registrar helper.
     original_write = Path.write_text
-    original_replace = AgentCommandRegistrar._replace_file_text
 
-    def fail_second(path):
+    def fail_second_write(path, *args, **kwargs):
         if path == second:
             if partial_second:
                 original_write(path, "partial generated output", encoding="utf-8")
             raise OSError("simulated refresh write error")
-
-    def fail_second_write(path, *args, **kwargs):
-        fail_second(path)
         return original_write(path, *args, **kwargs)
 
-    def fail_second_replace(path, content):
-        fail_second(path)
-        return original_replace(path, content)
-
     monkeypatch.setattr(Path, "write_text", fail_second_write)
-    monkeypatch.setattr(
-        AgentCommandRegistrar, "_replace_file_text", staticmethod(fail_second_replace)
-    )
     manager.register_enabled_extensions_for_agent("generic", force=skills)
     monkeypatch.undo()
 
@@ -1119,22 +1105,13 @@ def test_generic_registration_write_error_rolls_back_partial_install(
         "speckit-sample-other/SKILL.md" if skills else "speckit.sample.other.md"
     )
     original_write = Path.write_text
-    original_replace = AgentCommandRegistrar._replace_file_text
 
     def fail_second_write(path, *args, **kwargs):
         if path == second:
             raise OSError("simulated artifact write error")
         return original_write(path, *args, **kwargs)
 
-    def fail_second_replace(path, content):
-        if path == second:
-            raise OSError("simulated artifact write error")
-        return original_replace(path, content)
-
     monkeypatch.setattr(Path, "write_text", fail_second_write)
-    monkeypatch.setattr(
-        AgentCommandRegistrar, "_replace_file_text", staticmethod(fail_second_replace)
-    )
     with pytest.raises(OSError, match="simulated artifact write error"):
         manager.install_from_directory(generic_extension, "1.0.0")
     monkeypatch.undo()

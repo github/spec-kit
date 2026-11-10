@@ -442,7 +442,16 @@ class _PresetSkillMethods:
                 )
                 if owner_idx is None or layers[owner_idx]["strategy"] == "replace":
                     continue
-                if owner_idx == 0:
+                # A layer under the owner that was never registered in this
+                # destination (a preset installed while another agent was
+                # active) must not be composed into it either. The global
+                # winner's own composition is only right when nothing is
+                # filtered out; otherwise compose from the owner's layers
+                # that belong here.
+                registered_here = self._layers_registered_in(
+                    layers[owner_idx:], skills_dir, active_ai, active_skills_dir
+                )
+                if owner_idx == 0 and len(registered_here) == len(layers):
                     prior_agent, prior_names = extra_dirs.get(skills_dir, (agent, []))
                     extra_dirs[skills_dir] = (
                         prior_agent, list(dict.fromkeys([*prior_names, name]))
@@ -489,7 +498,9 @@ class _PresetSkillMethods:
                     for idx, layer in enumerate(layers)
                     if layer["path"].is_relative_to(owner_dir)
                 )
-                owner_layers = layers[owner_idx:]
+                owner_layers = self._layers_registered_in(
+                    layers[owner_idx:], skills_dir, active_ai, active_skills_dir
+                )
                 composed = resolver.resolve_content(
                     cmd_name, "command", layers=owner_layers
                 )
@@ -566,15 +577,8 @@ class _PresetSkillMethods:
                 is no longer composable is still retired wherever it is
                 recorded, mirroring stale-output retirement.
         """
-        from ..integrations._file_changes import (
-            after_file_change,
-            before_file_change,
-            unlink_in_directory,
-        )
-        from ..shared_infra import (
-            _ensure_safe_shared_destination,
-            _ensure_safe_shared_directory,
-        )
+        from ..integrations._file_changes import unlink_in_directory
+        from ..shared_infra import _ensure_safe_shared_directory, _write_shared_text
 
         try:
             registrar = self._command_registrar()
@@ -652,7 +656,11 @@ class _PresetSkillMethods:
                     skill_name = registrar._compute_output_name(agent, alias, agent_config)
                     skill_dir = skills_dir / skill_name
                     skill_file = skill_dir / "SKILL.md"
-                    missing = not skill_dir.exists() and not skill_dir.is_symlink()
+                    # Retiring an alias removes only ``SKILL.md``; its
+                    # directory stays when it holds other files. So "missing"
+                    # is about the file, not the directory.
+                    missing = not skill_file.exists() and not skill_file.is_symlink()
+                    hard_linked = False
                     if missing:
                         if not (create_missing and skills_dir == active_skills_dir):
                             continue
@@ -663,6 +671,7 @@ class _PresetSkillMethods:
                             continue
                         try:
                             content = skill_file.read_text(encoding="utf-8")
+                            hard_linked = skill_file.stat().st_nlink > 1
                         except (OSError, UnicodeDecodeError):
                             continue
                         metadata = registrar.parse_frontmatter(content)[0].get("metadata")
@@ -704,7 +713,9 @@ class _PresetSkillMethods:
                     # shadowed alias is refreshed from its own layer down, as
                     # its primary skill is.
                     shadowed = alias_shadowed and not removal_pass
-                    owner_layers = layers[owner_idx:]
+                    owner_layers = self._layers_registered_in(
+                        layers[owner_idx:], skills_dir, active_ai, active_skills_dir
+                    )
                     composed = resolver.resolve_content(
                         primary, "command", layers=owner_layers
                     )
@@ -725,6 +736,12 @@ class _PresetSkillMethods:
                         continue
                     if shadowed or not may_render:
                         continue
+                    if hard_linked:
+                        # Command registration writes the alias in place,
+                        # which would reach every other link of the file.
+                        # As elsewhere for generated artifacts with extra
+                        # links, it is not ours to rewrite: leave it.
+                        continue
                     if missing and not self._validate_skill_subdir(
                         skill_dir, create=True, skills_root=skills_dir
                     ):
@@ -734,22 +751,23 @@ class _PresetSkillMethods:
                         # Every ancestor and the cache file itself must stay
                         # inside the project and off symlinks, so a planted
                         # ``.composed`` link cannot redirect this write. The
-                        # entry is replaced atomically rather than written in
-                        # place, so a hard link to an outside file is broken,
-                        # not written through, and an existing cache keeps
-                        # its permission bits.
+                        # shared writer validates the destination, journals
+                        # the change and replaces the entry atomically, so a
+                        # hard link to an outside file is broken, not written
+                        # through; an existing cache keeps its permission
+                        # bits.
                         _ensure_safe_shared_directory(
                             self.project_root,
                             composed_file.parent,
                             create=True,
                             context="preset composed cache directory",
                         )
-                        _ensure_safe_shared_destination(
-                            self.project_root, composed_file
+                        _write_shared_text(
+                            self.project_root,
+                            composed_file,
+                            composed,
+                            preserve_mode=True,
                         )
-                        before_file_change(composed_file)
-                        registrar._replace_file_text(composed_file, composed)
-                        after_file_change(composed_file)
                     except (ValueError, OSError):
                         continue
                     registrar.register_commands(
@@ -760,6 +778,70 @@ class _PresetSkillMethods:
                         self.project_root,
                         _resolved_dir=skills_dir,
                     )
+
+    def _layers_registered_in(
+        self,
+        layers: List[Dict[str, Any]],
+        skills_dir: Path,
+        active_ai: Optional[str],
+        active_skills_dir: Optional[Path],
+    ) -> List[Dict[str, Any]]:
+        """Drop preset layers that were never registered in ``skills_dir``.
+
+        Presets are registered for the active agent only (#2948), so a preset
+        installed while another agent was active has no output in a
+        historical agent's directory and must not be composed into one. A
+        preset counts as registered here when its ``registered_skills`` or
+        ``registered_commands`` names an agent that resolves to this
+        directory. The active directory is never filtered, non-preset layers
+        (core, extensions, project overrides) always stay, and so does a
+        preset whose provenance is unknown (a legacy flat list).
+        """
+        if active_skills_dir is not None and skills_dir == active_skills_dir:
+            return layers
+        registered: Dict[str, bool] = {}
+
+        def resolves_here(agent: Any) -> bool:
+            if not isinstance(agent, str):
+                return False
+            agent_dir = (
+                active_skills_dir
+                if agent == active_ai
+                else self._safe_skills_dir_for_agent(agent)
+            )
+            return agent_dir is not None and agent_dir == skills_dir
+
+        def is_registered(pack_id: str) -> bool:
+            meta = self.registry.get(pack_id)
+            if not isinstance(meta, dict):
+                return True
+            if isinstance(meta.get("registered_skills"), list):
+                return True
+            for key in ("registered_skills", "registered_commands"):
+                recorded = meta.get(key)
+                if isinstance(recorded, dict) and any(
+                    names and resolves_here(agent)
+                    for agent, names in recorded.items()
+                ):
+                    return True
+            return False
+
+        kept: List[Dict[str, Any]] = []
+        for layer in layers:
+            try:
+                rel = layer["path"].relative_to(self.presets_dir)
+            except (KeyError, TypeError, ValueError):
+                kept.append(layer)
+                continue
+            if not rel.parts:
+                kept.append(layer)
+                continue
+            pack_id = rel.parts[0]
+            if pack_id not in registered:
+                registered[pack_id] = is_registered(pack_id)
+            if registered[pack_id]:
+                kept.append(layer)
+        return kept
 
     def _layer_declares_alias(
         self, resolver: Any, layer: Dict[str, Any], primary: str, alias: str

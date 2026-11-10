@@ -2614,13 +2614,115 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "Base preset body" not in skill_file.read_text(encoding="utf-8")
         assert stat.S_IMODE(skill_file.stat().st_mode) == 0o600
 
+    def test_new_base_restores_retired_outputs_beside_companion_files(
+        self, project_dir, temp_dir
+    ):
+        """Retiring a stale skill removes only ``SKILL.md``, so a directory
+        holding a user's companion file stays behind. A new base must still
+        bring the primary skill and its alias back, next to those files."""
+        manager = self._install_custom_layers(project_dir, temp_dir, alias=self._ALIAS)
+        alias_file = self._alias_skill(project_dir)
+        skill_file = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        for skill in (alias_file, skill_file):
+            (skill.parent / "notes.md").write_text("mine\n", encoding="utf-8")
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+        for skill in (alias_file, skill_file):
+            assert not skill.exists()
+            assert (skill.parent / "notes.md").read_text(encoding="utf-8") == "mine\n"
+
+        self._install_alias_layer(
+            manager, temp_dir, "new-base", "New base body", "replace", 10, alias=False
+        )
+
+        for skill in (alias_file, skill_file):
+            restored = skill.read_text(encoding="utf-8")
+            assert "New base body" in restored and "Appended body" in restored
+            assert (skill.parent / "notes.md").read_text(encoding="utf-8") == "mine\n"
+
+    def test_new_base_does_not_restore_alias_through_symlinked_dir(
+        self, project_dir, temp_dir
+    ):
+        """A retired alias whose directory was swapped for a symlink has no
+        ``SKILL.md`` either, but restoring it must not write through the link."""
+        manager = self._install_custom_layers(project_dir, temp_dir, alias=self._ALIAS)
+        alias_dir = self._alias_skill(project_dir).parent
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+        assert not alias_dir.exists()
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        try:
+            alias_dir.symlink_to(outside, target_is_directory=True)
+        except OSError as exc:  # pragma: no cover - symlinks unavailable
+            pytest.skip(f"symlinks unsupported: {exc}")
+
+        self._install_alias_layer(
+            manager, temp_dir, "new-base", "New base body", "replace", 10, alias=False
+        )
+
+        assert list(outside.iterdir()) == []
+
+    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    def test_remove_base_does_not_compose_other_agents_layer_into_historical_dir(
+        self, project_dir, temp_dir, core
+    ):
+        """``low`` is installed while Codex is active, so it was never
+        registered for Claude. When the base under Claude's composing owner
+        is removed, Claude's skill and alias must be recomposed only from
+        layers registered there (single-active, #2948), not onto ``low``."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        if core:
+            self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        claude_skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        claude_alias = self._alias_skill(project_dir)
+        assert "Base preset body" in claude_alias.read_text(encoding="utf-8")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("low-preset", "Low body", "replace", 12, alias=False)
+
+        assert manager.remove("base-preset") is True
+
+        codex_skill = project_dir / ".agents" / "skills" / "speckit-custom" / "SKILL.md"
+        codex = codex_skill.read_text(encoding="utf-8")
+        assert "Low body" in codex and "Middle body" in codex
+        for output in (claude_skill, claude_alias):
+            if not core:
+                assert not output.exists()
+                continue
+            content = output.read_text(encoding="utf-8")
+            assert "Low body" not in content and "Base preset body" not in content
+            assert "Core custom body" in content and "Middle body" in content
+
+    def test_alias_refresh_rewrites_the_same_file(self, project_dir, temp_dir):
+        """The alias is refreshed in place, as command registration always
+        wrote it: the same inode keeps its owner, ACL and mode."""
+        manager = self._install_custom_layers(
+            project_dir, temp_dir, core=True, alias=self._ALIAS
+        )
+        alias_file = self._alias_skill(project_dir)
+        before = alias_file.stat()
+
+        assert manager.remove("base-preset") is True
+
+        assert "Core custom body" in alias_file.read_text(encoding="utf-8")
+        after = alias_file.stat()
+        assert (after.st_ino, after.st_dev) == (before.st_ino, before.st_dev)
+        assert sorted(p.name for p in alias_file.parent.iterdir()) == ["SKILL.md"]
+
     def test_alias_refresh_does_not_write_through_hardlinked_skill(
         self, project_dir, temp_dir
     ):
         """An alias ``SKILL.md`` hard-linked to a file outside the project
-        carries the preset's own source marker, so the ownership checks pass;
-        the refresh on removal must replace the directory entry rather than
-        write through the shared inode."""
+        carries the preset's own source marker, so the marker check passes.
+        Like other generated artifacts with extra links, it is not ours to
+        rewrite: the refresh on removal leaves it, and the file it is linked
+        to, untouched."""
         self._write_init_options(project_dir, ai="claude", ai_skills=True)
         self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
         self._write_core_custom(project_dir)
@@ -2643,10 +2745,8 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert manager.remove("base-preset") is True
 
         assert target.read_text(encoding="utf-8") == before
-        after = alias_file.read_text(encoding="utf-8")
-        assert "Base preset body" not in after
-        assert "Core custom body" in after and "Appended body" in after
-        assert alias_file.stat().st_nlink == 1
+        assert alias_file.read_text(encoding="utf-8") == before
+        assert os.path.samefile(alias_file, target)
 
     def test_remove_base_keeps_survivor_alias_both_layers_declare(
         self, project_dir, temp_dir

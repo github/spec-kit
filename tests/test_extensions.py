@@ -4794,18 +4794,14 @@ Run {SCRIPT}
         """Dev-mode registration stays functional when the dev cache is unwritable."""
         agents_dir = project_dir / ".github" / "agents"
         agents_dir.mkdir(parents=True)
-        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+        original_write_text = Path.write_text
 
-        original_write = AgentCommandRegistrar._replace_file_text
-
-        def raise_cache_write_error(path, content):
+        def raise_cache_write_error(path, *args, **kwargs):
             if ".specify-dev" in path.parts:
                 raise OSError("cache is not writable")
-            return original_write(path, content)
+            return original_write_text(path, *args, **kwargs)
 
-        monkeypatch.setattr(
-            AgentCommandRegistrar, "_replace_file_text", staticmethod(raise_cache_write_error)
-        )
+        monkeypatch.setattr(Path, "write_text", raise_cache_write_error)
 
         manifest = ExtensionManifest(extension_dir / "extension.yml")
         registrar = CommandRegistrar()
