@@ -188,10 +188,13 @@ helpers for independent project/source/managed boundaries.
   truncation. Windows retains every resolved directory's non-reparse handle,
   withholding delete sharing, and opens an existing non-reparse leaf without
   truncation. For a missing leaf, an empty, randomly named CRT-created probe
-  in the pinned parent captures the masked creation attributes without
-  changing the process mask. The probe is removed before native no-follow
-  exclusive creation of the destination. A leaf introduced between these
-  calls causes an explicit creation error.
+  in an independently owned runtime temporary directory captures the masked
+  creation attributes without changing the process mask. This scratch root is
+  pinned separately, contains no project data, and is removed before native
+  no-follow exclusive creation of the destination. No disposable sibling is
+  created in the project, so destination creation does not require project
+  deletion rights. Runtime temporary-storage failures remain explicit errors.
+  A leaf introduced between these calls causes an explicit creation error.
   The opened leaf remains held through text I/O. Both paths check the opened
   file type before truncating that same descriptor. An exchanged parent cannot
   redirect creation or truncation through a new link. Allowed links are still

@@ -4,6 +4,7 @@ import errno
 import os
 import secrets
 import stat
+import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -88,7 +89,7 @@ def _windows_overwrite_fd(path: Path) -> Iterator[int]:
     try:
         handle = _open_windows_handle(path, directory=False, overwrite=True)
     except FileNotFoundError:
-        attributes = _windows_creation_attributes(path.parent)
+        attributes = _windows_creation_attributes()
         handle = _open_windows_handle(
             path, directory=False, overwrite=True, create_attributes=attributes
         )
@@ -105,16 +106,19 @@ def _windows_overwrite_fd(path: Path) -> Iterator[int]:
         os.close(fd)
 
 
-def _windows_creation_attributes(parent: Path) -> int:
-    """Capture CRT-masked permissions using a private, empty creation probe."""
-    probe = parent / f".specify-mode-{secrets.token_hex(16)}.tmp"
-    fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_BINARY, 0o666)
-    try:
-        readonly = not os.fstat(fd).st_mode & stat.S_IWRITE
-    finally:
-        try:
-            os.chmod(probe, 0o600)
-        finally:
-            os.close(fd)
-            os.unlink(probe)
+def _windows_creation_attributes() -> int:
+    """Capture CRT-masked permissions in independent runtime-owned storage."""
+    with tempfile.TemporaryDirectory(prefix="specify-mode-") as directory:
+        parent = Path(directory)
+        with _windows_handle(parent, directory=True):
+            probe = parent / f".specify-mode-{secrets.token_hex(16)}.tmp"
+            fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_BINARY, 0o666)
+            try:
+                readonly = not os.fstat(fd).st_mode & stat.S_IWRITE
+            finally:
+                try:
+                    os.chmod(probe, 0o600)
+                finally:
+                    os.close(fd)
+                    os.unlink(probe)
     return 0x1 if readonly else 0

@@ -1,5 +1,6 @@
 """Handle-based non-atomic text overwrite behavior."""
 
+import csv
 import os
 import subprocess
 import sys
@@ -219,6 +220,46 @@ def test_native_windows_overwrite_creation_matches_masked_native_creation(tmp_pa
         for path in (native, leaf):
             if path.exists():
                 path.chmod(0o600)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows directory ACL semantics required")
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("allow", [False, True])
+def test_native_windows_overwrite_does_not_require_project_delete_rights(
+    tmp_path, existing, allow
+):
+    root = tmp_path / "project"
+    root.mkdir()
+    leaf = root / "file"
+    if existing:
+        leaf.write_text("longer old content")
+    identity = subprocess.run(
+        ["whoami", "/user", "/fo", "csv", "/nh"],
+        capture_output=True, text=True, check=True,
+    )
+    rows = [row for row in csv.reader(identity.stdout.splitlines()) if row]
+    sid = rows[0][1].strip()
+    assert sid.startswith("S-")
+
+    def icacls(*args):
+        result = subprocess.run(
+            ["icacls", str(root), *args], capture_output=True, text=True, check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    try:
+        icacls("/deny", f"*{sid}:(OI)(CI)(D,DC)")
+        native = root / "native"
+        native.write_text("native")
+        with pytest.raises(PermissionError):
+            native.unlink()
+        FileHelper(root, allow_symlinks=allow).overwrite_text("file", "new")
+        assert leaf.read_text() == "new"
+        with pytest.raises(PermissionError):
+            leaf.unlink()
+        assert {path.name for path in root.iterdir()} == {"native", "file"}
+    finally:
+        icacls("/remove:d", f"*{sid}", "/T", "/C")
 
 
 @pytest.mark.parametrize("allow", [False, True])

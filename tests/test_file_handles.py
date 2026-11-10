@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from ctypes import wintypes
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +13,37 @@ from types import SimpleNamespace
 import pytest
 
 from specify_cli import _file_handles
+
+
+@pytest.fixture
+def runtime_probe(monkeypatch):
+    root = Path("runtime")
+    events = []
+
+    @contextmanager
+    def temporary_directory(*, prefix):
+        assert prefix == "specify-mode-"
+        events.append("temporary")
+        try:
+            yield str(root)
+        finally:
+            events.append("cleanup")
+
+    @contextmanager
+    def pin(path, *, directory):
+        assert path == root and directory
+        events.append("pin")
+        try:
+            yield 1
+        finally:
+            events.append("unpin")
+
+    monkeypatch.setattr(
+        _file_handles, "tempfile",
+        SimpleNamespace(TemporaryDirectory=temporary_directory), raising=False,
+    )
+    monkeypatch.setattr(_file_handles, "_windows_handle", pin)
+    return root, events
 
 
 @pytest.fixture
@@ -133,7 +165,10 @@ def test_overwrite_descriptor_ownership_and_binary_mode(kernel, monkeypatch, fai
 
 @pytest.mark.parametrize("mask", [0, 0o200, 0o400, 0o600])
 @pytest.mark.parametrize("body_failure", [False, True])
-def test_windows_creation_probe_uses_crt_mask_without_changing_it(monkeypatch, mask, body_failure):
+def test_windows_creation_probe_uses_crt_mask_without_changing_it(
+    monkeypatch, runtime_probe, mask, body_failure
+):
+    runtime, events = runtime_probe
     created = []
     closed_fds = []
     chmods = []
@@ -158,18 +193,19 @@ def test_windows_creation_probe_uses_crt_mask_without_changing_it(monkeypatch, m
         "chmod": lambda path, mode: chmods.append((path, mode)), "unlink": removed.append,
     }))
     monkeypatch.setattr(_file_handles.secrets, "token_hex", lambda size: "a" * (size * 2))
-    probe = Path("parent") / f".specify-mode-{'a' * 32}.tmp"
+    probe = runtime / f".specify-mode-{'a' * 32}.tmp"
     if body_failure:
         with pytest.raises(OSError, match="query failed"):
-            _file_handles._windows_creation_attributes(Path("parent"))
+            _file_handles._windows_creation_attributes()
     else:
-        assert _file_handles._windows_creation_attributes(Path("parent")) == (
+        assert _file_handles._windows_creation_attributes() == (
             0x1 if mask & 0o200 else 0
         )
     assert created == [(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL | 0x8000, 0o666)]
     assert chmods == [(probe, 0o600)]
     assert removed == [probe]
     assert closed_fds == [42]
+    assert events == ["temporary", "pin", "unpin", "cleanup"]
 
 
 @pytest.mark.parametrize("attributes", [0, 0x1])
@@ -181,10 +217,10 @@ def test_missing_windows_leaf_uses_native_no_follow_creation(
     state.handles = [wintypes.HANDLE(-1).value, 123]
     monkeypatch.setattr(ctypes, "get_last_error", lambda: 2)
     closed_fds = []
-    parents = []
+    probes = []
 
-    def probe(parent):
-        parents.append(parent)
+    def probe():
+        probes.append(True)
         return attributes
 
     monkeypatch.setattr(_file_handles, "_windows_creation_attributes", probe)
@@ -205,7 +241,7 @@ def test_missing_windows_leaf_uses_native_no_follow_creation(
             write()
     else:
         write()
-    assert parents == [Path("parent")]
+    assert probes == [True]
     assert calls[0][4] == 3
     assert calls[1][4:6] == (1, 0x02200000 | attributes)
     assert closed_handles == []
@@ -224,7 +260,7 @@ def test_windows_native_creation_errors_propagate_without_retry(kernel, monkeypa
         raise error("creation failed")
 
     monkeypatch.setattr(_file_handles, "_open_windows_handle", open_handle)
-    monkeypatch.setattr(_file_handles, "_windows_creation_attributes", lambda parent: 0)
+    monkeypatch.setattr(_file_handles, "_windows_creation_attributes", lambda: 0)
     with pytest.raises(error, match="creation failed"):
         with _file_handles._windows_overwrite_fd(Path("new")):
             pytest.fail("A failed creation yielded a descriptor")
@@ -289,3 +325,42 @@ def test_interleaved_windows_overwrites_do_not_change_process_mask(kernel, monke
     assert mask_calls == []
     assert all(not call[5] & 0x1 for call in calls)
     assert closed == [42, 42]
+
+
+def test_missing_windows_leaf_does_not_require_project_delete_rights(
+    kernel, runtime_probe, monkeypatch
+):
+    state, calls, closed_handles = kernel
+    state.handles = [wintypes.HANDLE(-1).value, 123]
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 2)
+    runtime, events = runtime_probe
+    created = []
+    deleted = []
+    closed = []
+
+    def create(path, flags, mode):
+        created.append(Path(path))
+        return 100
+
+    def unlink(path):
+        path = Path(path)
+        if path.parent == Path("project"):
+            raise PermissionError("Project grants creation but not deletion")
+        deleted.append(path)
+
+    monkeypatch.setattr(_file_handles, "os", SimpleNamespace(**{
+        **vars(os), "O_BINARY": 0x8000, "open": create,
+        "fstat": lambda fd: SimpleNamespace(st_mode=0o666),
+        "chmod": lambda path, mode: None, "unlink": unlink, "close": closed.append,
+    }))
+    monkeypatch.setitem(
+        sys.modules, "msvcrt", SimpleNamespace(open_osfhandle=lambda handle, flags: 42)
+    )
+    with _file_handles._windows_overwrite_fd(Path("project/new")) as fd:
+        assert fd == 42
+    assert len(created) == 1 and created[0].parent == runtime
+    assert deleted == created
+    assert events == ["temporary", "pin", "unpin", "cleanup"]
+    assert closed == [100, 42]
+    assert closed_handles == []
+    assert calls[1][4] == 1
