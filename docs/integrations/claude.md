@@ -69,3 +69,18 @@ See [runtime events](cli.md#runtime-events).
 Workflow steps use `claude -p <prompt>`, with `--model` when configured and
 `--output-format json` when structured output is requested. This adapter does
 not add a permission-bypass flag itself.
+
+## Workflow Dispatch Settings
+
+Command and prompt steps can set
+[`reasoning_effort`](../workflow-steps/types.md#reasoning-effort-and-context-size),
+which Claude Code dispatch passes as `--effort <value>`. Claude Code 2.1.318
+accepts `low`, `medium`, `high`, `xhigh`, and `max`. It ignores any other
+value with only a warning, so Spec Kit rejects other values before Claude Code
+starts. To pass a level that a newer Claude Code release adds, set
+`SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS="--effort <value>"` instead of
+`reasoning_effort`; the environment variable applies to every Claude Code
+invocation, not just one step.
+
+Spec Kit does not map `context_size` for Claude Code, so a step that sets it
+fails. Choose a long-context model with the step's `model` field instead.
