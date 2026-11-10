@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-09T00:00:00Z",
+  "updated_at": "2026-11-10T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "ado": {
@@ -1532,9 +1532,9 @@
       "id": "companion",
       "description": "Records your spec-kit runs live: status, resume, and a health check for what actually happened.",
       "author": "alfredoperez",
-      "version": "0.24.0",
-      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.24.0/companion-0.24.0.zip",
-      "sha256": "8bfbe27dbe2d67e525820f83340c053341836f108d2ff087c10fdc8295b07da9",
+      "version": "0.26.0",
+      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.26.0/companion-0.26.0.zip",
+      "sha256": "e385885cfb6e1254945da902295b4587b74050334109eb9b17c2446e285273c0",
       "repository": "https://github.com/alfredoperez/speckit-companion",
       "homepage": "https://github.com/alfredoperez/speckit-companion/tree/main/apps/speckit-extension",
       "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/apps/speckit-extension/README.md",
@@ -1543,7 +1543,7 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.9.5",
+        "speckit_version": ">=1.2.5.dev0",
         "tools": [
           {
             "name": "python3",
@@ -1552,8 +1552,8 @@
         ]
       },
       "provides": {
-        "commands": 23,
-        "hooks": 6
+        "commands": 26,
+        "hooks": 10
       },
       "tags": [
         "vscode",
@@ -1566,7 +1566,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-11T00:00:00Z",
-      "updated_at": "2026-10-06T00:00:00Z"
+      "updated_at": "2026-11-10T00:00:00Z"
     },
     "conduct": {
       "name": "Conduct Extension",
