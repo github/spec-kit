@@ -250,6 +250,11 @@ entries, not reject a whole project for excluded/unrelated links.
 
 ## Safety limits and migration
 
+POSIX reads, exclusive file creation, and text overwrites share one parent
+directory walk for capability checks, search flags, no-follow traversal, and
+descriptor cleanup. Leaf open flags, file-type validation, and truncation
+remain operation-specific.
+
 Reads resolve supported contained links under the existing policy, then open
 the resolved hierarchy without following substituted links. POSIX reads use
 descriptor-relative directory traversal with `O_DIRECTORY` and `O_NOFOLLOW`.

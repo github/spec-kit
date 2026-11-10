@@ -63,6 +63,106 @@ def test_plain_operations(root, allow):
     assert list(root.iterdir()) == []
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX shared directory traversal")
+@pytest.mark.parametrize("operation", ["read_bytes", "create_bytes", "overwrite_text"])
+def test_posix_operations_share_parent_walk_and_preserve_leaf_flags(root, monkeypatch, operation):
+    parent = root / "parent/nested"
+    parent.mkdir(parents=True)
+    selected = parent / "file"
+    if operation != "create_bytes":
+        selected.write_bytes(b"inside")
+    parents = []
+    opened = []
+    original_walk = FileHelper._posix_directory
+    original_open = os.open
+
+    @contextmanager
+    def observe_walk(self, directory, **kwargs):
+        parents.append(directory)
+        with original_walk(self, directory, **kwargs) as fd:
+            yield fd
+
+    def observe_open(path, flags, *args, **kwargs):
+        opened.append((path, flags, args, kwargs))
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(FileHelper, "_posix_directory", observe_walk)
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "open": observe_open}))
+    files = FileHelper(root)
+    cloexec = getattr(os, "O_CLOEXEC", 0)
+    if operation == "read_bytes":
+        assert files.read_bytes(selected) == b"inside"
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | cloexec
+        mode = ()
+    elif operation == "create_bytes":
+        files.create_bytes(selected, b"new")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        mode = (0o644,)
+    else:
+        files.overwrite_text(selected, "new")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK | cloexec
+        mode = (0o666,)
+    assert parents == [parent.resolve()]
+    directory_calls = [call for call in opened if call[1] & os.O_DIRECTORY]
+    assert len(directory_calls) == 3
+    assert len({call[1] for call in directory_calls}) == 1
+    assert all(call[1] & os.O_NOFOLLOW for call in directory_calls)
+    leaf_calls = [call for call in opened if not call[1] & os.O_DIRECTORY]
+    assert len(leaf_calls) == 1
+    assert leaf_calls[0][:3] == ("file", flags, mode)
+    assert leaf_calls[0][3]["dir_fd"] is not None
+    assert selected.read_bytes() == (b"inside" if operation == "read_bytes" else b"new")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX shared directory cleanup")
+@pytest.mark.parametrize("operation", ["read_bytes", "create_bytes", "overwrite_text"])
+@pytest.mark.parametrize("failure", ["root", "parent", "leaf"])
+def test_posix_parent_walk_closes_descriptors_after_open_failures(root, monkeypatch, operation, failure):
+    parent = root / "parent/nested"
+    parent.mkdir(parents=True)
+    selected = parent / "file"
+    if operation != "create_bytes":
+        selected.write_bytes(b"inside")
+    original_open = os.open
+    original_close = os.close
+    live = set()
+    failed = []
+
+    def observe_open(path, flags, *args, **kwargs):
+        fail_here = (
+            (failure == "root" and Path(path) == root.resolve())
+            or (failure == "parent" and path == "nested")
+            or (failure == "leaf" and path == "file")
+        )
+        if fail_here:
+            failed.append(path)
+            raise PermissionError("injected open failure")
+        fd = original_open(path, flags, *args, **kwargs)
+        live.add(fd)
+        return fd
+
+    def observe_close(fd):
+        original_close(fd)
+        live.remove(fd)
+
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{
+        **vars(os), "open": observe_open, "close": observe_close,
+    }))
+    with pytest.raises(PermissionError, match="injected"):
+        if operation == "read_bytes":
+            FileHelper(root).read_bytes(selected)
+        elif operation == "create_bytes":
+            FileHelper(root).create_bytes(selected, b"new")
+        else:
+            FileHelper(root).overwrite_text(selected, "new")
+    assert len(failed) == 1
+    assert live == set()
+    if operation == "create_bytes":
+        assert not selected.exists()
+    else:
+        assert selected.read_bytes() == b"inside"
+
+
 @pytest.mark.parametrize("allow", [False, True])
 @pytest.mark.parametrize("operation", ["read_bytes", "read_text"])
 @pytest.mark.parametrize("kind", ["leaf", "parent", "resolved-link"])
