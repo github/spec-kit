@@ -89,6 +89,19 @@ def clean_env() -> dict[str, str]:
     # silently override the "unset" baseline for every other test.
     env.pop("SPECKIT_PYTHON_EXECUTABLE", None)
     env.pop("SPECKIT_PYTHON", None)
+    # The script variants resolve python3 -> python -> py -3 through PATH.
+    # Under `uv run` the venv's bin directory is already first on PATH, so
+    # the scripts see the interpreter the suite runs on, including its
+    # site-packages (PyYAML among them). A direct
+    # `.venv/bin/python -m pytest` — the invocation AGENTS.md prescribes —
+    # leaves PATH untouched, and an ambient python3 without PyYAML then
+    # fails every composed-template test with "PyYAML is required".
+    # Prepend the running interpreter's own directory so subprocesses see
+    # the same Python under either invocation.
+    env["PATH"] = (
+        f"{Path(sys.executable).absolute().parent}"
+        f"{os.pathsep}{env.get('PATH', '')}"
+    )
     return env
 
 
