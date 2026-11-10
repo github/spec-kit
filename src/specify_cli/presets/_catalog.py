@@ -551,7 +551,11 @@ class PresetCatalog:
             )
 
     def _get_merged_packs(
-        self, force_refresh: bool = False, *, pack_id: str | None = None
+        self,
+        force_refresh: bool = False,
+        *,
+        pack_id: str | None = None,
+        active_catalogs: List[PresetCatalogEntry] | None = None,
     ) -> Dict[str, Dict[str, Any]]:
         """Fetch and merge presets from all active catalogs.
 
@@ -562,7 +566,8 @@ class PresetCatalog:
         Returns:
             Merged dictionary of pack_id -> pack_data
         """
-        active_catalogs = self.get_active_catalogs()
+        if active_catalogs is None:
+            active_catalogs = self.get_active_catalogs()
         merged: Dict[str, Dict[str, Any]] = {}
         first_fetch_error: PresetError | None = None
         readable_source = False
@@ -761,9 +766,10 @@ class PresetCatalog:
         Returns:
             List of matching preset metadata
         """
+        active_catalogs = self.get_active_catalogs()
         try:
-            packs = self._get_merged_packs()
-        except (PresetCatalogValidationError, PresetValidationError):
+            packs = self._get_merged_packs(active_catalogs=active_catalogs)
+        except PresetCatalogValidationError:
             raise
         except PresetError:
             return []

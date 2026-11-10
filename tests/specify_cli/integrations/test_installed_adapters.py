@@ -1368,6 +1368,42 @@ def test_catalog_install_renders_host_templates_and_fresh_process(tmp_path, serv
     assert json.loads(status.output)["default_integration"] == KEY
 
 
+def test_https_catalog_installs_loopback_http_archive(tmp_path, server):
+    requested = []
+
+    class Handler(SimpleHTTPRequestHandler):
+        def do_GET(self):
+            requested.append(self.path)
+            super().do_GET()
+
+        def log_message(self, *args):
+            pass
+
+    http = ThreadingHTTPServer(
+        ("127.0.0.1", 0), partial(Handler, directory=str(server.root))
+    )
+    thread = threading.Thread(
+        target=http.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
+    thread.start()
+    try:
+        info, archive = publish(server)
+        info["download_url"] = f"http://127.0.0.1:{http.server_port}/{archive.name}"
+        write_catalog(server, info)
+        project = catalog_project(tmp_path, server)
+
+        install(project)
+
+        assert read_records(project)[KEY]["version"] == "1.0.0"
+        assert "/catalog.json" in server.requests
+        assert requested == [f"/{archive.name}"]
+        assert f"/{archive.name}" not in server.requests
+    finally:
+        http.shutdown()
+        http.server_close()
+        thread.join()
+
+
 def test_markdown_adapter_renders_host_commands(tmp_path, server):
     publish(server, code=implementation(flavor="markdown"))
     project = catalog_project(tmp_path, server)

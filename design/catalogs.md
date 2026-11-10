@@ -175,12 +175,11 @@ Current behavior differs by primitive:
 - Extensions and presets use one-hour per-URL caches, retain legacy cache names
   for the official source, validate every redirect hop, validate cached payload
   shape, and treat cache read/write failures as best-effort.
-- Integrations use one-hour per-URL caches. The shared HTTP redirect handler
-  applies its strict scheme, host, and remote-to-local policy on every hop;
-  integrations do not add their catalog-specific URL validator per hop, but do
-  apply it to a changed terminal URL. They validate cached payload shape,
-  discard invalid cache entries when possible, and treat cache writes as
-  best-effort.
+- Integrations use one-hour per-URL caches and apply their catalog-specific URL
+  validator on every redirect hop and to a changed terminal URL. The shared HTTP
+  redirect handler also applies its strict scheme, host, and remote-to-local
+  policy on every hop. Integrations validate cached payload shape, discard
+  invalid cache entries when possible, and treat cache writes as best-effort.
 - Workflows use one-hour per-URL caches, validate every redirect hop, fall back
   to any readable stale cache after errors while opening, redirecting, bounded
   reading, UTF-8 decoding, or JSON parsing, and currently require only a mapping
@@ -231,9 +230,10 @@ usable. Validation errors are not uniformly recoverable:
   an `IntegrationCatalogError`, so the merge warns, skips that source, and can
   expose a lower-precedence copy.
 - Preset lookup preserves the first fetch error when no source is readable;
-  preset search currently converts ordinary fetch failures to an empty result.
-  Invalid source configuration (`PresetValidationError`) is fatal in search,
-  including rejected HTTP catalog URLs.
+  preset search converts recoverable fetch failures, including rejected
+  redirects, to an empty result when no source is readable, regardless of source
+  order. Invalid source configuration (`PresetValidationError`) is fatal in
+  search and is validated before fetching, including rejected HTTP catalog URLs.
   `PresetCatalogValidationError` remains fatal: search can fail on invalid
   lower-precedence content even after reading a valid higher source, while a
   targeted lookup can return as soon as it finds the requested higher entry.
