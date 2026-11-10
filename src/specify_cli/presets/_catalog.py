@@ -107,7 +107,7 @@ class PresetCatalog:
         self.cache_metadata_file = self.cache_dir / "catalog-metadata.json"
 
     def _validate_catalog_url(self, url: str) -> None:
-        """Validate that a catalog URL uses HTTPS (localhost HTTP allowed).
+        """Validate that a catalog URL uses HTTPS, including local hosts.
 
         Args:
             url: URL to validate
@@ -129,16 +129,12 @@ class PresetCatalog:
             _ = parsed.port
         except ValueError:
             raise PresetValidationError(f"Catalog URL is malformed: {url}") from None
-        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (
-            parsed.scheme == "http" and is_localhost
-        ):
+        if parsed.scheme != "https":
             # A scheme-less value (``example.com/catalog.json``) would otherwise read
             # "got ://". The value itself is not echoed: callers render errors as Rich markup.
             got = f"{parsed.scheme}://" if parsed.scheme else "a URL with no scheme"
             raise PresetValidationError(
-                f"Catalog URL must use HTTPS (got {got}). "
-                "HTTP is only allowed for localhost."
+                f"Catalog URL must use HTTPS (got {got})."
             )
         # Check hostname, not netloc: netloc is truthy for host-less URLs like
         # "https://:8080" or "https://user@", so the host guarantee this error
@@ -555,7 +551,11 @@ class PresetCatalog:
             )
 
     def _get_merged_packs(
-        self, force_refresh: bool = False, *, pack_id: str | None = None
+        self,
+        force_refresh: bool = False,
+        *,
+        pack_id: str | None = None,
+        active_catalogs: List[PresetCatalogEntry] | None = None,
     ) -> Dict[str, Dict[str, Any]]:
         """Fetch and merge presets from all active catalogs.
 
@@ -566,7 +566,8 @@ class PresetCatalog:
         Returns:
             Merged dictionary of pack_id -> pack_data
         """
-        active_catalogs = self.get_active_catalogs()
+        if active_catalogs is None:
+            active_catalogs = self.get_active_catalogs()
         merged: Dict[str, Dict[str, Any]] = {}
         first_fetch_error: PresetError | None = None
         readable_source = False
@@ -765,8 +766,9 @@ class PresetCatalog:
         Returns:
             List of matching preset metadata
         """
+        active_catalogs = self.get_active_catalogs()
         try:
-            packs = self._get_merged_packs()
+            packs = self._get_merged_packs(active_catalogs=active_catalogs)
         except PresetCatalogValidationError:
             raise
         except PresetError:

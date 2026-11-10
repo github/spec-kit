@@ -335,7 +335,9 @@ specify integration catalog add <url>
 | --------------- | ----------------------------- |
 | `--name <name>` | Optional name for the catalog |
 
-Adds a custom catalog URL to the project's `.specify/integration-catalogs.yml`. The URL must use HTTPS (except `http://localhost`, `http://127.0.0.1`, or `http://[::1]` for local testing).
+Adds a custom catalog URL to the project's `.specify/integration-catalogs.yml`.
+The URL must use HTTPS, including for local testing. Plain HTTP is rejected
+before network access, including on localhost and loopback addresses.
 
 Re-adding the same URL with the same name succeeds without changing the configuration; a different name is rejected.
 

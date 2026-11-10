@@ -129,7 +129,7 @@ class StepCatalog:
     # -- Catalog resolution -----------------------------------------------
 
     def _validate_catalog_url(self, url: str) -> None:
-        """Validate that a catalog URL uses HTTPS (localhost HTTP allowed)."""
+        """Validate that a catalog URL uses HTTPS, including local hosts."""
         from urllib.parse import urlparse
 
         # A malformed authority (e.g. an unterminated IPv6 bracket
@@ -146,16 +146,12 @@ class StepCatalog:
             raise StepValidationError(
                 f"Catalog URL is malformed: {url}"
             ) from None
-        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (
-            parsed.scheme == "http" and is_localhost
-        ):
+        if parsed.scheme != "https":
             # A scheme-less value (``example.com/catalog.json``) would otherwise read
             # "got ://". The value itself is not echoed: callers render errors as Rich markup.
             got = f"{parsed.scheme}://" if parsed.scheme else "a URL with no scheme"
             raise StepValidationError(
-                f"Catalog URL must use HTTPS (got {got}). "
-                "HTTP is only allowed for localhost."
+                f"Catalog URL must use HTTPS (got {got})."
             )
         if not hostname:
             raise StepValidationError(
@@ -180,7 +176,7 @@ class StepCatalog:
         return [entry for _, entry in indexed_entries]
 
     def _parse_catalog_config(
-        self, data: Any, config_path: Path
+        self, data: Any, config_path: Path, *, validate_urls: bool = True
     ) -> list[tuple[int, StepCatalogEntry]] | None:
         """Validate and order sources, retaining their original YAML positions."""
         # Same two guards as WorkflowCatalog._load_catalog_config above, kept in
@@ -216,7 +212,8 @@ class StepCatalog:
             url = str(item.get("url", "")).strip()
             if not url:
                 continue
-            self._validate_catalog_url(url)
+            if validate_urls:
+                self._validate_catalog_url(url)
             raw_priority = item.get("priority", idx + 1)
             # bool is an int subclass: reject ``priority: true`` explicitly rather
             # than silently coercing it to 1 (mirrors CatalogStackBase).
@@ -369,10 +366,7 @@ class StepCatalog:
                 raise StepCatalogError(
                     f"Refusing to fetch catalog from malformed URL: {url}"
                 ) from None
-            is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-            if parsed.scheme != "https" and not (
-                parsed.scheme == "http" and is_localhost
-            ):
+            if parsed.scheme != "https":
                 raise StepCatalogError(
                     f"Refusing to fetch catalog from non-HTTPS URL: {url}"
                 )
@@ -644,7 +638,9 @@ class StepCatalog:
             raise StepValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        entries = self._parse_catalog_config(data, config_path) or []
+        entries = self._parse_catalog_config(
+            data, config_path, validate_urls=False
+        ) or []
 
         if index < 0 or index >= len(entries):
             raise StepValidationError(

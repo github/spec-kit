@@ -343,6 +343,26 @@ You can configure multiple entries for different hosts or organizations:
    target leaves the entry's declared hosts — preventing credential
    leakage to CDNs or third-party services.
 
+## TLS certificates
+
+HTTPS catalog requests use Python's `urllib` and `ssl` certificate verification.
+The trusted certificate authorities depend on the Python distribution and its
+OpenSSL configuration. Trusting a development CA in a browser or macOS Keychain
+alone does not necessarily make it trusted by the Python interpreter running
+Specify.
+
+For a private or local development CA, set `SSL_CERT_FILE` to the absolute path
+of a PEM CA bundle containing that CA before running Specify:
+
+```bash
+export SSL_CERT_FILE="/absolute/path/to/ca-bundle.pem"
+```
+
+This selects a CA file rather than appending to Python's default CA file. Keep
+any other required trust roots in the bundle, including those needed for public
+catalogs and downloads. The server certificate must still be valid for the
+requested hostname or IP address. Keep certificate verification enabled.
+
 ## Template
 
 A reference `auth.json` with GitHub pre-configured:

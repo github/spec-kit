@@ -10427,12 +10427,13 @@ class TestWorkflowCatalog:
             with pytest.raises(error, match=r"\(got a URL with no scheme\)"):
                 catalog._validate_catalog_url("example.com/catalog.json")
 
-    def test_validate_url_localhost_http_allowed(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog
+    @pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+    def test_validate_url_localhost_http_rejected(self, project_dir, host):
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
 
         catalog = WorkflowCatalog(project_dir)
-        # Should not raise
-        catalog._validate_catalog_url("http://localhost:8080/catalog.json")
+        with pytest.raises(WorkflowValidationError, match="HTTPS"):
+            catalog._validate_catalog_url(f"http://{host}:8080/catalog.json")
 
     @pytest.mark.parametrize(
         "url",
@@ -11248,12 +11249,13 @@ class TestStepCatalog:
         with pytest.raises(StepValidationError, match="HTTPS"):
             catalog._validate_catalog_url("http://evil.com/step-catalog.json")
 
-    def test_validate_url_localhost_http_allowed(self, project_dir):
-        from specify_cli.workflows.step.catalog import StepCatalog
+    @pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+    def test_validate_url_localhost_http_rejected(self, project_dir, host):
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
 
         catalog = StepCatalog(project_dir)
-        # Should not raise
-        catalog._validate_catalog_url("http://localhost:8080/step-catalog.json")
+        with pytest.raises(StepValidationError, match="HTTPS"):
+            catalog._validate_catalog_url(f"http://{host}:8080/step-catalog.json")
 
     @pytest.mark.parametrize(
         "url",
