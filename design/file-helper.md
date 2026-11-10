@@ -146,17 +146,31 @@ any followed target hierarchy. An unrelated project symlink does not prevent
 an operation. A helper cannot cross to another root; callers establish separate
 helpers for independent project/source/managed boundaries.
 
-On supported deletion backends, construction pins the canonical root with an
-open directory handle. That handle remains owned by the helper until `close()`
-or context-manager exit. Keeping the original directory open also prevents its
-identity from being reused for a different directory while the helper is alive;
-stored device/inode numbers alone are not the binding. Windows additionally
-retains the canonical ancestors without delete sharing. Close the helper before
-external code renames or removes that root or its ancestors. Automatic
+On supported deletion backends, construction retains a handle to the canonical
+root until `close()` or context-manager exit. Keeping the original directory open
+prevents its identity from being reused for a different directory while the
+helper is alive; stored device/inode numbers alone are not the binding. On POSIX,
+the handle uses search-only access where available. On Windows, construction
+requests only root metadata access (`FILE_READ_ATTRIBUTES`) and permits delete
+sharing; it does not request directory-list access on the canonical ancestors.
+The retained reference records the full volume/file identity from that handle.
+If that reference or identity query is unavailable, the native capability error
+is deferred to `delete()` rather than preventing ordinary read/write operations.
+
+Windows deletion separately pins the canonical ancestry through the drive/share
+root without delete sharing, then compares the opened root's full identity with
+the retained reference. Those operation-time handles require both
+`FILE_LIST_DIRECTORY` and `FILE_READ_ATTRIBUTES` on every canonical ancestor,
+including those above the helper root, and reject reparse points. An ACL allowing
+traversal but not listing can therefore prevent deletion while still allowing
+bootstrap reads. These locks are released at the end of deletion; the
+metadata-only reference remains until the helper closes. Automatic
 finalization is a compatibility fallback, not a substitute for deterministic
 cleanup. Bootstrap configuration and managed integration-state consumers close
-their own helpers explicitly; consumers receiving `project_files()` own its
-lifetime. Pinning the root does not make other pathname-based operations
+their own helpers explicitly. Installed-workflow listing also closes its
+`project_files()` owner on every validation, registry-read, and successful exit;
+other consumers receiving `project_files()` own its lifetime.
+Pinning the root does not make other pathname-based operations
 descriptor-relative or change their documented concurrency limitations.
 
 | Operation | Default deny | Explicit allow |
@@ -230,7 +244,8 @@ descriptor-relative or change their documented concurrency limitations.
   Platforms lacking the required directory-descriptor operations fail with
   `ENOTSUP`, not pathname-only deletion.
   POSIX traversal and removal use search/path-only descriptors (`O_SEARCH` or
-  `O_PATH`) where available, so known entries in write-and-execute-only parents
+  `O_PATH`) where available, including Darwin's native `O_SEARCH` value on Python
+  builds that do not expose it, so known entries in write-and-execute-only parents
   can still be removed. Read-capable descriptors are requested only for directories
   being enumerated; systems without search/path-only flags retain read-capable
   traversal. Recursive enumeration still requires directory read permission, and

@@ -13,7 +13,7 @@ import tempfile
 from typing import TypeVar
 from weakref import finalize
 
-from specify_cli._file_handles import _windows_handle
+from specify_cli._file_handles import _windows_file_id, _windows_handle
 
 
 _PathType = TypeVar("_PathType", bound=PurePath)
@@ -90,6 +90,8 @@ class FileHelper:
     _canonical_root: Path = field(init=False, repr=False)
     _root_stat: os.stat_result = field(init=False, repr=False, compare=False)
     _root_anchor: int | Path | None = field(init=False, repr=False, compare=False)
+    _root_anchor_error: OSError | None = field(init=False, repr=False, compare=False)
+    _windows_root_id: tuple[int, bytes] | None = field(init=False, repr=False, compare=False)
     _root_cleanup: finalize = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -103,20 +105,34 @@ class FileHelper:
         object.__setattr__(self, "_root_stat", root_stat)
         with ExitStack() as resources:
             anchor: int | Path | None = None
+            anchor_error: OSError | None = None
+            windows_root_id: tuple[int, bytes] | None = None
             if os.name == "nt":
-                for current in reversed([canonical, *canonical.parents]):
-                    resources.enter_context(_windows_handle(current, directory=True))
-                self._check_deletion_root(canonical.stat())
-                anchor = canonical
+                with ExitStack() as reference:
+                    try:
+                        handle = reference.enter_context(
+                            _windows_handle(canonical, directory=True, pin=False)
+                        )
+                        windows_root_id = _windows_file_id(handle)
+                    except OSError as exc:
+                        # Other operations do not require deletion's handle capability.
+                        exc.__traceback__ = None
+                        anchor_error = exc
+                    else:
+                        self._check_deletion_root(canonical.stat())
+                        resources.enter_context(reference.pop_all())
+                        anchor = canonical
             elif (
                 _DELETE_DIR_FD_SUPPORTED
                 and getattr(os, "O_NOFOLLOW", 0)
                 and getattr(os, "O_DIRECTORY", 0)
             ):
-                anchor = os.open(canonical, self._deletion_flags())
+                anchor = os.open(canonical, self._directory_flags())
                 resources.callback(os.close, anchor)
                 self._check_deletion_root(os.fstat(anchor))
             object.__setattr__(self, "_root_anchor", anchor)
+            object.__setattr__(self, "_root_anchor_error", anchor_error)
+            object.__setattr__(self, "_windows_root_id", windows_root_id)
             object.__setattr__(self, "_root_cleanup", finalize(self, resources.pop_all().close))
 
     def close(self) -> None:
@@ -232,7 +248,7 @@ class FileHelper:
             raise PathEscapeError(f"Parent traversal is not an operation path: {original}")
         with ExitStack() as resources:
             directories = (
-                _WalkDirectories(self._canonical_root, root_fd, self._deletion_flags(), resources)
+                _WalkDirectories(self._canonical_root, root_fd, self._directory_flags(), resources)
                 if root_fd is not None else None
             )
             return self._walk(
@@ -279,11 +295,7 @@ class FileHelper:
             and os.open in os.supports_dir_fd
         ):
             raise OSError(errno.ENOTSUP, "Anchored file creation is unsupported on this platform")
-        access = getattr(os, "O_PATH", 0) or getattr(os, "O_SEARCH", 0)
-        if not access:
-            # Darwin's O_SEARCH ABI is missing from some older Python builds.
-            access = (0x40000000 | os.O_DIRECTORY) if sys.platform == "darwin" else os.O_RDONLY
-        flags = access | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        flags = self._directory_flags()
         parent = os.open(self._canonical_root, flags)
         try:
             for part in parts:
@@ -375,8 +387,11 @@ class FileHelper:
         destination.symlink_to(target, target_is_directory=resolved.is_dir())
 
     @staticmethod
-    def _deletion_flags() -> int:
-        access = getattr(os, "O_SEARCH", getattr(os, "O_PATH", os.O_RDONLY))
+    def _directory_flags() -> int:
+        access = getattr(os, "O_PATH", 0) or getattr(os, "O_SEARCH", 0)
+        if not access:
+            # Some older Python builds omit Darwin's native search-only flag.
+            access = (0x40000000 | os.O_DIRECTORY) if sys.platform == "darwin" else os.O_RDONLY
         return access | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
 
     def _check_deletion_root(self, current: os.stat_result) -> None:
@@ -388,9 +403,22 @@ class FileHelper:
         """Borrow the root pinned when this helper was established."""
         self._require_open()
         if self._root_anchor is None:
+            if self._root_anchor_error is not None:
+                raise self._root_anchor_error
             raise OSError(errno.ENOTSUP, "Handle-based deletion is unsupported on this platform")
         self._check_deletion_root(self._canonical_root.stat())
-        yield self._root_anchor
+        if isinstance(self._root_anchor, Path):
+            with ExitStack() as resources:
+                for ancestor in reversed(self._root_anchor.parents):
+                    resources.enter_context(_windows_handle(ancestor, directory=True))
+                handle = resources.enter_context(
+                    _windows_handle(self._root_anchor, directory=True)
+                )
+                if _windows_file_id(handle) != self._windows_root_id:
+                    raise FileHelperError(f"Established root changed during deletion: {self.root}")
+                yield self._root_anchor
+        else:
+            yield self._root_anchor
 
     @contextmanager
     def _child_deletion_directory(
@@ -403,7 +431,7 @@ class FileHelper:
             return
         flags = (
             os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
-            if readable else self._deletion_flags()
+            if readable else self._directory_flags()
         )
         child = os.open(name, flags, dir_fd=parent)
         try:
@@ -446,10 +474,12 @@ class FileHelper:
                 with self._child_deletion_directory(child_directory, ".", readable=True) as readable:
                     with os.scandir(readable) as entries:
                         names = sorted(entry.name for entry in entries)
-                children = tuple(
-                    self._deletion_plan(path / name, recursive=True, parent=child_directory)
-                    for name in names
-                )
+                child_plans = []
+                for name in names:
+                    child_plans.append(
+                        self._deletion_plan(path / name, recursive=True, parent=child_directory)
+                    )
+                children = tuple(child_plans)
         return _DeletionEntry(path, directory, children)
 
     def _delete_plan(self, entry: _DeletionEntry, *, parent: int | Path) -> None:

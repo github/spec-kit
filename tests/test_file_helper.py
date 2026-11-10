@@ -6,6 +6,7 @@ import gc
 from contextlib import contextmanager, nullcontext
 import os
 from pathlib import Path, PureWindowsPath
+import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -151,12 +152,20 @@ def test_overwrite_text_encoding_errors_propagate(root, allow):
 
 @pytest.mark.parametrize("allow", [False, True])
 def test_overwrite_text_io_errors_propagate(root, monkeypatch, allow):
+    files = FileHelper(root, allow_symlinks=allow)
+    calls = []
+
     def denied(*args, **kwargs):
+        assert Path(args[0]) == root / "new"
+        assert args[1] & os.O_TRUNC
+        calls.append(args[0])
         raise PermissionError("denied")
 
     monkeypatch.setattr("specify_cli.file_helper.os.open", denied)
-    with pytest.raises(PermissionError, match="denied"):
-        FileHelper(root, allow_symlinks=allow).overwrite_text("new", "text")
+    with files:
+        with pytest.raises(PermissionError, match="denied"):
+            files.overwrite_text("new", "text")
+    assert len(calls) == 1
     assert not (root / "new").exists()
 
 
@@ -582,6 +591,62 @@ def test_delete_exchange_during_parent_open(root, link, monkeypatch, allow):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor lifetime")
+def test_recursive_delete_preserves_deep_tree_support(root):
+    import resource
+
+    depth = 550
+    if resource.getrlimit(resource.RLIMIT_NOFILE)[0] < depth + 100:
+        pytest.skip("Descriptor ceiling is too low for the deep-tree fixture")
+    tree = root / "deep"
+    tree.mkdir()
+    parent = os.open(tree, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for _ in range(depth):
+            os.mkdir("d", dir_fd=parent)
+            child = os.open("d", os.O_RDONLY | os.O_DIRECTORY, dir_fd=parent)
+            os.close(parent)
+            parent = child
+    finally:
+        os.close(parent)
+    try:
+        with FileHelper(root) as files:
+            files.delete(tree, recursive=True)
+        assert not tree.exists()
+    finally:
+        if tree.exists():
+            shutil.rmtree(tree)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Native Darwin search-only fallback")
+@pytest.mark.parametrize("operation", ["read_text", "overwrite_text", "create_text", "mkdir", "delete"])
+def test_legacy_darwin_establishes_write_search_only_root(root, monkeypatch, operation):
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses directory permission checks")
+    (root / "victim").write_text("selected")
+    monkeypatch.delattr(os, "O_PATH", raising=False)
+    monkeypatch.delattr(os, "O_SEARCH", raising=False)
+    root.chmod(0o300)
+    try:
+        with FileHelper(root) as files:
+            if operation == "read_text":
+                assert files.read_text("victim") == "selected"
+            elif operation == "overwrite_text":
+                files.overwrite_text("victim", "updated")
+                assert (root / "victim").read_text() == "updated"
+            elif operation == "create_text":
+                files.create_text("new", "created")
+                assert (root / "new").read_text() == "created"
+            elif operation == "mkdir":
+                files.mkdir("new")
+                assert (root / "new").is_dir()
+            else:
+                files.delete("victim")
+                assert not (root / "victim").exists()
+    finally:
+        root.chmod(0o700)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor lifetime")
 @pytest.mark.parametrize("depth", [8, 32, 64])
 @pytest.mark.parametrize("recursive", [False, True])
 def test_delete_directory_open_count_is_linear(root, monkeypatch, depth, recursive):
@@ -691,6 +756,7 @@ def test_delete_without_search_flags_reports_unreadable_parent(root, monkeypatch
         pytest.skip("Root bypasses directory read permissions")
     monkeypatch.delattr(os, "O_SEARCH", raising=False)
     monkeypatch.delattr(os, "O_PATH", raising=False)
+    monkeypatch.setattr(file_helper, "sys", SimpleNamespace(platform="generic-posix"))
     parent = root / "parent"
     parent.mkdir()
     (parent / "victim").write_text("keep")
@@ -705,15 +771,18 @@ def test_delete_without_search_flags_reports_unreadable_parent(root, monkeypatch
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor lifetime")
-@pytest.mark.parametrize("failure", [False, True])
-def test_delete_closes_directory_descriptors(root, monkeypatch, failure):
+@pytest.mark.parametrize(
+    ("recursive", "failure"),
+    [(False, None), (False, "unlink"), (True, None), (True, "unlink"), (True, "scan")],
+)
+def test_delete_closes_directory_descriptors(root, monkeypatch, recursive, failure):
     parent = root / "parent"
-    parent.mkdir()
-    (parent / "victim").write_text("selected")
+    (parent / "nested").mkdir(parents=True)
+    victim = parent / "nested/victim"
+    victim.write_text("selected")
     opened = []
     root_opens = []
     open_directory = os.open
-    duplicate = os.dup
 
     def observe(*args, **kwargs):
         fd = open_directory(*args, **kwargs)
@@ -722,24 +791,22 @@ def test_delete_closes_directory_descriptors(root, monkeypatch, failure):
             root_opens.append(fd)
         return fd
 
-    def observe_duplicate(fd):
-        result = duplicate(fd)
-        opened.append(result)
-        return result
-
     def denied(*args, **kwargs):
         raise PermissionError("removal denied")
 
     monkeypatch.setattr(os, "open", observe)
-    monkeypatch.setattr(os, "dup", observe_duplicate)
-    if failure:
+    if failure == "unlink":
         monkeypatch.setattr(os, "unlink", denied)
-        with pytest.raises(PermissionError, match="removal denied"):
-            FileHelper(root).delete(parent / "victim")
-        assert (parent / "victim").read_text() == "selected"
+    elif failure == "scan":
+        monkeypatch.setattr(os, "scandir", denied)
+    with FileHelper(root) as files:
+        expected = pytest.raises(PermissionError, match="removal denied") if failure else nullcontext()
+        with expected:
+            files.delete(parent if recursive else victim, recursive=recursive)
+    if failure:
+        assert victim.read_text() == "selected"
     else:
-        FileHelper(root).delete(parent / "victim")
-        assert not (parent / "victim").exists()
+        assert not victim.exists()
     assert len(root_opens) == 1
     assert len(opened) >= 2
     for fd in opened:
@@ -1022,7 +1089,7 @@ def test_delete_parent_link_targets_preserve_failure_contract(root, link, kind, 
 @pytest.mark.parametrize("parent_is_root", [False, True])
 @pytest.mark.parametrize("kind", ["file", "empty-directory", "recursive-tree"])
 def test_delete_through_write_execute_only_parent(root, parent_is_root, kind):
-    if not (getattr(os, "O_SEARCH", 0) or getattr(os, "O_PATH", 0)):
+    if not (sys.platform == "darwin" or getattr(os, "O_SEARCH", 0) or getattr(os, "O_PATH", 0)):
         pytest.skip("Search/path-only directory descriptors are unavailable")
     if os.geteuid() == 0:
         pytest.skip("Root bypasses directory read permissions")
@@ -1084,12 +1151,6 @@ def test_delete_rejects_replaced_root_before_validation(root, monkeypatch, allow
     (root / "victim").write_text("selected")
     files = FileHelper(root, allow_symlinks=allow)
     retained = root.parent / "retained"
-    if os.name == "nt":
-        with pytest.raises(PermissionError):
-            root.rename(retained)
-        assert (root / "victim").read_text() == "selected"
-        files.close()
-        return
     root.rename(retained)
     root.mkdir()
     (root / "victim").write_text("keep")
@@ -1121,7 +1182,7 @@ def test_windows_delete_rejects_replaced_root_during_acquisition_portably(
     attempted = False
 
     @contextmanager
-    def handle(path, *, directory):
+    def handle(path, *, directory, pin=True):
         nonlocal attempted
         assert directory
         active.append(path)
@@ -1139,6 +1200,7 @@ def test_windows_delete_rejects_replaced_root_during_acquisition_portably(
     backend.name = "nt"
     monkeypatch.setattr(module, "os", backend)
     monkeypatch.setattr(module, "_windows_handle", handle)
+    monkeypatch.setattr(module, "_windows_file_id", lambda _: (1, b"root"))
     with pytest.raises(FileHelperError, match="root changed"):
         with FileHelper(project) as files:
             files.delete("victim")
@@ -1146,6 +1208,123 @@ def test_windows_delete_rejects_replaced_root_during_acquisition_portably(
     assert active == []
     assert (outside / "project/victim").read_text() == "keep"
     assert (retained / "project/victim").read_text() == "selected"
+
+
+def test_windows_read_does_not_require_ancestor_listing_portably(root, monkeypatch):
+    (root / "victim").write_text("keep")
+    active = []
+
+    @contextmanager
+    def handle(path, *, directory, pin=True):
+        assert directory
+        if pin and path != root:
+            raise PermissionError("ancestor listing denied")
+        active.append((path, pin))
+        try:
+            yield 123
+        finally:
+            assert active.pop() == (path, pin)
+
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
+    monkeypatch.setattr(file_helper, "_windows_handle", handle)
+    monkeypatch.setattr(file_helper, "_windows_file_id", lambda _: (1, b"root"), raising=False)
+    with FileHelper(root) as files:
+        assert files.read_text("victim") == "keep"
+        with pytest.raises(PermissionError, match="ancestor listing denied"):
+            files.delete("victim")
+        assert files.read_text("victim") == "keep"
+    assert active == []
+
+
+@pytest.mark.parametrize("failure", ["open", "identity"])
+def test_windows_read_preserves_native_deletion_capability_error(root, monkeypatch, failure):
+    (root / "victim").write_text("keep")
+    active = []
+
+    @contextmanager
+    def denied(*args, **kwargs):
+        if failure == "open":
+            raise PermissionError("root reference denied")
+        active.append(123)
+        try:
+            yield 123
+        finally:
+            active.pop()
+
+    def identity(*args):
+        raise PermissionError("root reference denied")
+
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
+    monkeypatch.setattr(file_helper, "_windows_handle", denied)
+    monkeypatch.setattr(file_helper, "_windows_file_id", identity)
+    with FileHelper(root) as files:
+        assert active == []
+        assert files.read_text("victim") == "keep"
+        with pytest.raises(PermissionError, match="root reference denied"):
+            files.delete("victim")
+    assert not files._root_cleanup.alive
+
+
+def test_windows_delete_checks_retained_handle_identity_portably(root, monkeypatch):
+    (root / "victim").write_text("keep")
+    active = []
+    identities = {}
+
+    @contextmanager
+    def handle(path, *, directory, pin=True):
+        value = len(identities) + 1
+        identities[value] = (1, b"replacement" if pin else b"original")
+        active.append(value)
+        try:
+            yield value
+        finally:
+            assert active.pop() == value
+
+    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
+    monkeypatch.setattr(file_helper, "_windows_handle", handle)
+    monkeypatch.setattr(file_helper, "_windows_file_id", lambda handle: identities[handle])
+    with FileHelper(root) as files:
+        with pytest.raises(FileHelperError, match="root changed"):
+            files.delete("victim")
+        assert len(active) == 1
+        assert files.read_text("victim") == "keep"
+    assert active == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows directory ACL semantics")
+@pytest.mark.parametrize("consumer", ["helper", "policy", "state"])
+def test_windows_readonly_helper_supports_traverse_only_ancestor(root, consumer):
+    ancestor = root / "ancestor"
+    project = ancestor / "project"
+    project.mkdir(parents=True)
+    (project / "victim").write_text("keep")
+    (project / ".specify").mkdir()
+    (project / ".specify/init-options.json").write_text("{}")
+    (project / ".specify/integration.json").write_text('{"integration": "claude"}')
+    user = subprocess.check_output(["whoami"], text=True).strip()
+    subprocess.run(
+        ["icacls", str(ancestor), "/deny", f"{user}:(RD)"],
+        check=True, capture_output=True, text=True,
+    )
+    try:
+        with FileHelper(project) as files:
+            if consumer == "helper":
+                assert files.read_text("victim") == "keep"
+            elif consumer == "policy":
+                from specify_cli._file_policy import read_project_options
+                assert read_project_options(project) == {}
+            else:
+                from specify_cli.integration_state import try_read_integration_json
+                state, error = try_read_integration_json(project)
+                assert error is None and state is not None and state["integration"] == "claude"
+            with pytest.raises(PermissionError):
+                files.delete("victim")
+            assert files.read_text("victim") == "keep"
+    finally:
+        subprocess.run(
+            ["icacls", str(ancestor), "/remove:d", user],
+            check=True, capture_output=True, text=True,
+        )
 
 
 @pytest.mark.parametrize("failure", [False, True])
@@ -1160,14 +1339,22 @@ def test_windows_delete_holds_ancestors_until_io_completes_portably(
     (parent / "victim").write_text("selected")
     alias = link(root / "alias", root / "target")
     active = []
+    references = []
     events = []
     unlink = os.unlink
     rmdir = os.rmdir
     scan = os.scandir
 
     @contextmanager
-    def handle(path, *, directory):
+    def handle(path, *, directory, pin=True):
         assert directory
+        if not pin:
+            references.append(path)
+            try:
+                yield 123
+            finally:
+                assert references.pop() == path
+            return
         active.append(path)
         try:
             yield 123
@@ -1205,6 +1392,7 @@ def test_windows_delete_holds_ancestors_until_io_completes_portably(
     backend.scandir = observe_scan
     monkeypatch.setattr(module, "os", backend)
     monkeypatch.setattr(module, "_windows_handle", handle)
+    monkeypatch.setattr(module, "_windows_file_id", lambda _: (1, b"root"))
     files = FileHelper(root, allow_symlinks=True)
     selected = alias / "nested" if recursive else alias / "nested/victim"
     if failure:
@@ -1215,9 +1403,10 @@ def test_windows_delete_holds_ancestors_until_io_completes_portably(
         files.delete(selected, recursive=recursive)
         assert not (parent / "victim").exists()
     assert events
-    assert root.resolve() in active
-    files.close()
     assert active == []
+    assert references == [root.resolve()]
+    files.close()
+    assert references == []
     assert alias.is_symlink()
 
 

@@ -8,12 +8,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from specify_cli._file_handles import _windows_handle
+from specify_cli._file_handles import _windows_file_id, _windows_handle
 
 
 @pytest.mark.parametrize("directory", [False, True])
+@pytest.mark.parametrize("pin", [False, True])
 @pytest.mark.parametrize("outcome", ["success", "reparse", "wrong-type", "query-failure", "body-failure", "open-failure"])
-def test_windows_handle_flags_validation_and_cleanup(monkeypatch, directory, outcome):
+def test_windows_handle_flags_validation_and_cleanup(monkeypatch, directory, pin, outcome):
     calls = []
 
     def create(*args):
@@ -46,7 +47,7 @@ def test_windows_handle_flags_validation_and_cleanup(monkeypatch, directory, out
     )
 
     def use():
-        with _windows_handle(Path("selected"), directory=directory) as handle:
+        with _windows_handle(Path("selected"), directory=directory, pin=pin) as handle:
             assert handle == 123
             assert calls == [calls[0]]
             if outcome == "body-failure":
@@ -64,10 +65,34 @@ def test_windows_handle_flags_validation_and_cleanup(monkeypatch, directory, out
             assert exc.value.errno == (errno.ELOOP if outcome == "reparse" else errno.EINVAL)
     args = calls[0][1]
     assert args == (
-        "selected", 0x81 if directory else 0x80000000,
-        0x3, None, 3, 0x00200000 | 0x02000000, None,
+        "selected", (0x81 if directory else 0x80000000) if pin else 0x80,
+        0x3 if pin else 0x7, None, 3, 0x00200000 | 0x02000000, None,
     )
     assert calls[1:] == ([] if outcome == "open-failure" else [("close", 123)])
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_windows_file_identity_uses_full_volume_and_file_id(monkeypatch, failure):
+    def info(handle, kind, buffer, size):
+        assert handle == 0x1FFFFFFFF and kind == 18 and size == 24
+        buffer._obj.volume = 0x1FFFFFFFF
+        buffer._obj.file_id[:] = bytes(range(16))
+        return not failure
+
+    monkeypatch.setattr(
+        ctypes, "WinDLL",
+        lambda *args, **kwargs: SimpleNamespace(GetFileInformationByHandleEx=info),
+        raising=False,
+    )
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
+    monkeypatch.setattr(ctypes, "WinError", lambda code: PermissionError(code, "identity denied"), raising=False)
+    if failure:
+        with pytest.raises(PermissionError, match="identity denied"):
+            _windows_file_id(0x1FFFFFFFF)
+    else:
+        assert _windows_file_id(0x1FFFFFFFF) == (0x1FFFFFFFF, bytes(range(16)))
+    assert info.argtypes == [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+    assert info.restype is wintypes.BOOL
 
 
 @pytest.mark.parametrize("directory", [False, True])

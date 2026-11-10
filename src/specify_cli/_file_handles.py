@@ -7,8 +7,8 @@ from pathlib import Path
 
 
 @contextmanager
-def _windows_handle(path: Path, *, directory: bool) -> Iterator[int]:
-    """Pin a non-reparse path by withholding Windows delete sharing."""
+def _windows_handle(path: Path, *, directory: bool, pin: bool = True) -> Iterator[int]:
+    """Open a non-reparse object, optionally preventing directory replacement."""
     import ctypes
     from ctypes import wintypes
 
@@ -37,12 +37,12 @@ def _windows_handle(path: Path, *, directory: bool) -> Iterator[int]:
     # OPEN_REPARSE_POINT inspects the link itself; BACKUP_SEMANTICS permits
     # directory handles. Holding every ancestor without FILE_SHARE_DELETE
     # prevents a junction/symlink swap during path-based create/replace.
-    # Attribute-only handles bypass share checking: include FILE_LIST_DIRECTORY
-    # with FILE_READ_ATTRIBUTES so even an empty directory cannot be renamed.
+    # Pinning needs FILE_LIST_DIRECTORY as well as FILE_READ_ATTRIBUTES.
+    # An attribute-only reference preserves identity without locking ancestors.
     handle = create(
         str(path),
-        (0x80 | 0x1) if directory else 0x80000000,
-        0x3,
+        ((0x80 | 0x1) if directory else 0x80000000) if pin else 0x80,
+        0x3 if pin else 0x7,
         None,
         3,
         0x00200000 | 0x02000000,
@@ -61,3 +61,24 @@ def _windows_handle(path: Path, *, directory: bool) -> Iterator[int]:
         yield handle
     finally:
         close(handle)
+
+
+def _windows_file_id(handle: int) -> tuple[int, bytes]:
+    """Read the volume and complete file identity from an already opened object."""
+    import ctypes
+    from ctypes import wintypes
+
+    class FileIdInfo(ctypes.Structure):
+        _fields_ = [
+            ("volume", ctypes.c_ulonglong),
+            ("file_id", ctypes.c_ubyte * 16),
+        ]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    info = kernel.GetFileInformationByHandleEx
+    info.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+    info.restype = wintypes.BOOL
+    identity = FileIdInfo()
+    if not info(handle, 18, ctypes.byref(identity), ctypes.sizeof(identity)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return identity.volume, bytes(identity.file_id)
