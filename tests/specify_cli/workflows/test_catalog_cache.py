@@ -273,6 +273,9 @@ def test_url_policy_failure_does_not_use_expired_cache(
         with pytest.raises(error, match="Failed to fetch catalog") as excinfo:
             catalog._fetch_single_catalog(entry, force_refresh=force_refresh)
         assert isinstance(excinfo.value.__cause__, http.URLPolicyError)
+        assert str(excinfo.value) == (
+            f"Failed to fetch catalog from {url}: {excinfo.value.__cause__.reason}"
+        )
         if rejection == "initial":
             build_opener.assert_not_called()
         else:

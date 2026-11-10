@@ -610,7 +610,7 @@ class WorkflowCatalog:
                 )
         except URLPolicyError as exc:
             raise WorkflowCatalogError(
-                f"Failed to fetch catalog from {entry.url}: {exc}"
+                f"Failed to fetch catalog from {entry.url}: {exc.reason}"
             ) from exc
         except Exception as exc:
             # Fall back to cache if available

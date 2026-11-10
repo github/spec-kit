@@ -404,7 +404,7 @@ class StepCatalog:
             raise
         except URLPolicyError as exc:
             raise StepCatalogError(
-                f"Failed to fetch catalog from {entry.url}: {exc}"
+                f"Failed to fetch catalog from {entry.url}: {exc.reason}"
             ) from exc
         except Exception as exc:
             try:
