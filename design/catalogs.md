@@ -132,6 +132,11 @@ phase and accepted values otherwise differ:
   while `remove_source()` intentionally filters raw mappings by ID or URL
   without validating their other fields. This lets users remove a hand-edited
   invalid source instead of being trapped by the invalid entry.
+- Workflow and workflow-step catalog removal retains configuration-shape and
+  priority validation, but skips URL validation. Removal never fetches a source,
+  so legacy HTTP entries do not prevent removing either that source or an
+  unrelated HTTPS entry. Discovery and fetching still require HTTPS. Removal
+  retains priority order, with YAML declaration order breaking ties.
 - All readers reject boolean priorities. Replacement-layer loaders otherwise
   call `int(value)`, so a fractional numeric value such as `1.9` is truncated
   to `1`. Bundle `CatalogSource` materialization rejects booleans and floats

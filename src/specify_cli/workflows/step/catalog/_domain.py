@@ -324,7 +324,7 @@ class StepCatalog:
         return [entry for _, entry in indexed_entries]
 
     def _parse_catalog_config(
-        self, data: Any, config_path: Path
+        self, data: Any, config_path: Path, *, validate_urls: bool = True
     ) -> list[tuple[int, StepCatalogEntry]] | None:
         """Validate and order sources, retaining their original YAML positions."""
         # Same two guards as WorkflowCatalog._load_catalog_config above, kept in
@@ -360,7 +360,8 @@ class StepCatalog:
             url = str(item.get("url", "")).strip()
             if not url:
                 continue
-            self._validate_catalog_url(url)
+            if validate_urls:
+                self._validate_catalog_url(url)
             raw_priority = item.get("priority", idx + 1)
             # bool is an int subclass: reject ``priority: true`` explicitly rather
             # than silently coercing it to 1 (mirrors CatalogStackBase).
@@ -785,7 +786,9 @@ class StepCatalog:
             raise StepValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        entries = self._parse_catalog_config(data, config_path) or []
+        entries = self._parse_catalog_config(
+            data, config_path, validate_urls=False
+        ) or []
 
         if index < 0 or index >= len(entries):
             raise StepValidationError(

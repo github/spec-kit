@@ -376,7 +376,7 @@ class WorkflowCatalog:
         return [entry for _, entry in indexed_entries]
 
     def _parse_catalog_config(
-        self, data: Any, config_path: Path
+        self, data: Any, config_path: Path, *, validate_urls: bool = True
     ) -> list[tuple[int, WorkflowCatalogEntry]] | None:
         """Validate and order sources, retaining their original YAML positions."""
         # An empty document (or explicit ``null``) parses to None -> this config
@@ -424,7 +424,8 @@ class WorkflowCatalog:
             url = str(item.get("url", "")).strip()
             if not url:
                 continue
-            self._validate_catalog_url(url)
+            if validate_urls:
+                self._validate_catalog_url(url)
             raw_priority = item.get("priority", idx + 1)
             # bool is an int subclass: int(True) == 1 would silently accept a
             # ``priority: true`` as priority 1. Reject it explicitly, mirroring
@@ -861,7 +862,9 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        entries = self._parse_catalog_config(data, config_path) or []
+        entries = self._parse_catalog_config(
+            data, config_path, validate_urls=False
+        ) or []
 
         if index < 0 or index >= len(entries):
             raise WorkflowValidationError(
