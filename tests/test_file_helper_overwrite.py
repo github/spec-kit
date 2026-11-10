@@ -229,8 +229,9 @@ def test_native_windows_overwrite_does_not_require_project_delete_rights(
     tmp_path, existing, allow
 ):
     root = tmp_path / "project"
-    root.mkdir()
-    leaf = root / "file"
+    parent = root / "parent"
+    parent.mkdir(parents=True)
+    leaf = parent / "file"
     if existing:
         leaf.write_text("longer old content")
     identity = subprocess.run(
@@ -243,21 +244,21 @@ def test_native_windows_overwrite_does_not_require_project_delete_rights(
 
     def icacls(*args):
         result = subprocess.run(
-            ["icacls", str(root), *args], capture_output=True, text=True, check=False,
+            ["icacls", str(parent), *args], capture_output=True, text=True, check=False,
         )
         assert result.returncode == 0, result.stdout + result.stderr
 
     try:
         icacls("/deny", f"*{sid}:(OI)(CI)(D,DC)")
-        native = root / "native"
+        native = parent / "native"
         native.write_text("native")
         with pytest.raises(PermissionError):
             native.unlink()
-        FileHelper(root, allow_symlinks=allow).overwrite_text("file", "new")
+        FileHelper(root, allow_symlinks=allow).overwrite_text("parent/file", "new")
         assert leaf.read_text() == "new"
         with pytest.raises(PermissionError):
             leaf.unlink()
-        assert {path.name for path in root.iterdir()} == {"native", "file"}
+        assert {path.name for path in parent.iterdir()} == {"native", "file"}
     finally:
         icacls("/remove:d", f"*{sid}", "/T", "/C")
 
