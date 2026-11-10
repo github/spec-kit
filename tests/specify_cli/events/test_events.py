@@ -1510,6 +1510,35 @@ class TestCommandRunner:
         code = resolve_and_run_event_command("nonexistent.command", "session_start", "{}", tmp_path)
         assert code == 0  # no-ops gracefully
 
+    def test_run_command_not_found_fails_closed_for_guard_events(self, tmp_path):
+        """The delegated resolver must fail closed like the inline fallback:
+        a guard command that cannot be resolved exits 2 instead of
+        returning 0 without running the guard (Copilot round 3)."""
+        for event in ("pre_tool_use", "user_prompt_submit"):
+            code = resolve_and_run_event_command(
+                "nonexistent.command", event, "{}", tmp_path
+            )
+            assert code == 2, f"{event} did not fail closed"
+
+    def test_run_command_without_script_fails_closed_for_guard_events(self, tmp_path):
+        """A guard command that resolves to a template with no runnable
+        script must fail closed in the delegated resolver too: the guard
+        never ran, so the action stays blocked (Copilot round 3)."""
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "test.md").write_text(
+            "---\ndescription: \"Test\"\n---\nBody\n", encoding="utf-8"
+        )
+        for event, expected in (
+            ("pre_tool_use", 2),
+            ("user_prompt_submit", 2),
+            ("session_start", 0),
+        ):
+            code = resolve_and_run_event_command(
+                "speckit.test", event, "{}", tmp_path
+            )
+            assert code == expected, f"{event} returned {code}, expected {expected}"
+
     def test_extension_command_resolves_when_file_stem_differs(self, tmp_path):
         """S8: an extension command whose declared file differs from its
         command name resolves via the manifest, not a file-stem scan."""
@@ -2241,6 +2270,93 @@ class TestCommandRunner:
         assert result.returncode == 2, f"stderr={result.stderr!r}"
         assert "could not be resolved" in result.stderr
 
+    def test_dispatcher_inline_fallback_description_file_text_ignored(self, tmp_path):
+        """The inline manifest scan must match real ``file:`` keys, not the
+        substring anywhere: a ``description:`` mentioning ``file:`` before
+        the real ``file:`` entry must not select the mentioned file, or the
+        guard is bypassed by a handler that exits 0 (Copilot round 3)."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        out_file = tmp_path / "guard.out"
+        dispatcher, _out = self._install_extension_dispatcher(
+            tmp_path,
+            "schema_version: '1.0'\n"
+            "extension:\n"
+            "  id: guard-ext\n"
+            "  name: Guard Ext\n"
+            "  version: 1.0.0\n"
+            "  description: test\n"
+            "provides:\n"
+            "  commands:\n"
+            "    - name: speckit.guard\n"
+            "      description: \"Inspect file: commands/allow.md\"\n"
+            "      file: commands/guard-check.md\n",
+            "speckit.guard",
+            "pre_tool_use",
+            f"#!/bin/sh\necho ran > {shlex.quote(str(out_file))}\nexit 0\n",
+        )
+        # The mentioned file exists as a decoy: its script exits 0, so
+        # selecting it would pass the guard without running the real one.
+        ext_dir = tmp_path / ".specify" / "extensions" / "guard-ext"
+        allow_out = tmp_path / "allow.out"
+        (ext_dir / "commands" / "allow.md").write_text(
+            "---\ndescription: \"Allow\"\nscripts:\n"
+            "  sh: scripts/allow.sh\n---\nBody\n",
+            encoding="utf-8",
+        )
+        (ext_dir / "scripts" / "allow.sh").write_text(
+            f"#!/bin/sh\necho allow > {shlex.quote(str(allow_out))}\nexit 0\n",
+            encoding="utf-8",
+        )
+        (ext_dir / "scripts" / "allow.sh").chmod(0o755)
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.guard", "pre_tool_use", 60
+        )
+        assert result.returncode == 0, f"stderr={result.stderr!r}"
+        assert not allow_out.exists(), "description text selected the wrong handler"
+        assert out_file.read_text().strip() == "ran", (
+            "inline fallback did not run the real guard; "
+            f"stderr={result.stderr!r} rc={result.returncode}"
+        )
+
+    def test_dispatcher_inline_fallback_block_aliases_keep_command_name(self, tmp_path):
+        """A block-style ``aliases:`` list between ``name:`` and ``file:``
+        must not reset the command entry: alias items are nested list
+        items, not sibling commands, so the guard still resolves and runs
+        (Copilot round 3)."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        out_file = tmp_path / "guard.out"
+        dispatcher, _out = self._install_extension_dispatcher(
+            tmp_path,
+            "schema_version: '1.0'\n"
+            "extension:\n"
+            "  id: guard-ext\n"
+            "  name: Guard Ext\n"
+            "  version: 1.0.0\n"
+            "  description: test\n"
+            "provides:\n"
+            "  commands:\n"
+            "    - name: speckit.guard\n"
+            "      aliases:\n"
+            "        - guard-alias\n"
+            "        - other-alias\n"
+            "      file: commands/guard-check.md\n",
+            "speckit.guard",
+            "pre_tool_use",
+            f"#!/bin/sh\necho ran > {shlex.quote(str(out_file))}\nexit 0\n",
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.guard", "pre_tool_use", 60
+        )
+        assert result.returncode == 0, f"stderr={result.stderr!r}"
+        assert out_file.read_text().strip() == "ran", (
+            "inline fallback did not run the guard after block aliases; "
+            f"stderr={result.stderr!r} rc={result.returncode}"
+        )
+
     def test_dispatcher_inline_fallback_unresolved_guard_fails_closed(self, tmp_path):
         """A guard command the inline resolver cannot find must fail closed:
         pre_tool_use exits 2 with a diagnostic instead of returning 0
@@ -2363,6 +2479,23 @@ class TestCommandRunner:
         )
         result = self._run_dispatcher_inline(
             tmp_path, dispatcher, "speckit.boot", "user_prompt_submit", 60
+        )
+        assert result.returncode == 2, f"stderr={result.stderr!r}"
+        assert "error:" in result.stderr
+
+    def test_dispatcher_inline_fallback_pre_tool_use_startup_failure_returns_2(self, tmp_path):
+        """The inline fallback must exit 2 when a pre_tool_use handler
+        cannot start: the tool call was never validated, so it stays
+        blocked. Completes the startup-failure matrix (both runners, all
+        three event classes) required by the round-1 review."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, _out = self._install_boot_dispatcher(
+            tmp_path, "#!/does/not/exist\nexit 0\n", event="pre_tool_use"
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.boot", "pre_tool_use", 60
         )
         assert result.returncode == 2, f"stderr={result.stderr!r}"
         assert "error:" in result.stderr

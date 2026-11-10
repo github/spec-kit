@@ -213,6 +213,9 @@ def _find_command_template(command_name, project_root):
                     yml_text = ext_yml.read_text(encoding="utf-8")
                     cur_name = None
                     cur_file = None
+                    # Indent of the dash that started the entry being read;
+                    # a deeper-indented dash belongs to a nested list.
+                    entry_indent = None
                     in_provides = False
                     in_commands = False
                     for line in yml_text.splitlines():
@@ -231,17 +234,31 @@ def _find_command_template(command_name, project_root):
                             # A new list item starts a new command entry:
                             # drop any half-filled pair from the previous
                             # entry so a name can never pair with the next
-                            # entry's file.
+                            # entry's file. Only a dash at (or above) the
+                            # entry's own indent starts a new entry: a
+                            # deeper-indented dash belongs to a nested list
+                            # (e.g. a block-style ``aliases:`` list) and
+                            # must not reset the entry being read.
                             if stripped.startswith("- ") or stripped == "-":
-                                cur_name = None
-                                cur_file = None
-                            if "name:" in line:
+                                indent = len(line) - len(line.lstrip())
+                                if entry_indent is None or indent <= entry_indent:
+                                    cur_name = None
+                                    cur_file = None
+                                    entry_indent = indent
+                            # Match real ``name:``/``file:`` keys only: a
+                            # substring match mistakes ``file:`` inside a
+                            # description value (or ``file:`` inside
+                            # ``profile:``) for the entry's file, so a
+                            # guard can resolve to the wrong handler.
+                            name_match = re.match(r"^(?:-\\s+)?name\\s*:\\s*(.*)$", stripped)
+                            if name_match:
                                 cur_name = _strip_yaml_comment(
-                                    line.split("name:", 1)[1].strip()
+                                    name_match.group(1).strip()
                                 ).strip('"').strip("'")
-                            if "file:" in line:
+                            file_match = re.match(r"^(?:-\\s+)?file\\s*:\\s*(.*)$", stripped)
+                            if file_match:
                                 cur_file = _strip_yaml_comment(
-                                    line.split("file:", 1)[1].strip()
+                                    file_match.group(1).strip()
                                 ).strip('"').strip("'")
                             if cur_name and cur_file:
                                 if cur_name == command_name:
@@ -916,14 +933,33 @@ def resolve_and_run_event_command(
     guard events (``pre_tool_use``, ``user_prompt_submit``) so the action
     stays blocked, and 1 for every other event so a slow handler cannot
     keep the agent running. A handler's own non-zero exit code always
-    passes through unchanged.
+    passes through unchanged. A guard command that cannot be resolved, or
+    resolves to a template with no runnable script, also fails closed
+    (exit 2) — the guard never ran, so the action must stay blocked;
+    non-guard events still no-op with 0 when no handler resolves.
     """
     template_path, ext_id = _find_command_template(command_name, project_root)
     if not template_path:
+        if event_name in BLOCKING_FAILURE_EVENTS:
+            logger.warning(
+                "Event command '%s' could not be resolved; blocking event "
+                "'%s' fails closed without validation",
+                command_name,
+                event_name,
+            )
+            return _runner_failure_exit_code(event_name)
         logger.warning("Event command '%s' not found", command_name)
         return 0
     argv = _resolve_event_command_argv(template_path, project_root, ext_id)
     if not argv:
+        if event_name in BLOCKING_FAILURE_EVENTS:
+            logger.warning(
+                "Event command '%s' has no runnable script; blocking event "
+                "'%s' fails closed without validation",
+                command_name,
+                event_name,
+            )
+            return _runner_failure_exit_code(event_name)
         logger.warning("No script found for event command '%s'", command_name)
         return 0
     # Tell the handler which event fired so one script can serve several
