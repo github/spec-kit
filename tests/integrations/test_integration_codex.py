@@ -1,6 +1,7 @@
 """Tests for CodexIntegration."""
 
 import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -758,7 +759,16 @@ class TestCodexNoModelInvocationOwnership:
         result = _run_in_project(tmp_path, ["integration", "upgrade", "codex", "--force"])
         assert result.exit_code == 0, result.output
         assert self._yaml(path) == {"interface": {"display_name": "Retired"}}
-        assert self._manifest(tmp_path).ownership_modes[rel] == "partial"
+        # Once the policy is gone the file is the user's, not tracked.
+        assert rel not in self._manifest(tmp_path).files
+
+        user_owned = "interface:\n  display_name: Retired\npolicy:\n  allow_implicit_invocation: false\n"
+        path.write_text(user_owned, encoding="utf-8")
+        result = _run_in_project(tmp_path, ["integration", "upgrade", "codex", "--force"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(tmp_path, ["integration", "uninstall", "codex"])
+        assert result.exit_code == 0, result.output
+        assert path.read_text(encoding="utf-8") == user_owned
 
     def test_directory_at_policy_path_is_not_kept_tracked(self, tmp_path):
         self._setup(tmp_path).save()
@@ -781,6 +791,157 @@ class TestCodexNoModelInvocationOwnership:
             self._setup(tmp_path)
         assert not list(skills.glob("*/SKILL.md"))
         assert not list(shared.iterdir())
+
+    def test_round_trip_keeps_values_yaml_1_1_would_reinterpret(self, tmp_path):
+        content = (
+            "interface:\n"
+            "  display_name: On\n"
+            "  short_description: no\n"
+            "  default_prompt: 1:30\n"
+            "  brand_color: '0o12'\n"
+            "custom:\n"
+            "  count: 010\n"
+            "  big: 1_000\n"
+            "  ratio: 1e3\n"
+            "  when: 2026-01-01\n"
+            "  enabled: yes\n"
+        )
+        path = self._seed(tmp_path, content.encode("utf-8"))
+        manifest = self._setup(tmp_path)
+        # The strings are written quoted, so YAML 1.1 readers see them too.
+        assert self._yaml(path)["interface"]["display_name"] == "On"
+        assert self._yaml(path)["custom"]["enabled"] == "yes"
+
+        import yaml
+        from specify_cli.integrations.codex import _Yaml12Loader
+
+        original = yaml.load(content, Loader=_Yaml12Loader)
+        assert original["interface"]["display_name"] == "On"
+        assert original["custom"]["count"] == 10
+        written = path.read_text(encoding="utf-8")
+        assert yaml.load(written, Loader=_Yaml12Loader) == {**original, "policy": self.POLICY}
+
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert yaml.load(path.read_text(encoding="utf-8"), Loader=_Yaml12Loader) == original
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            b"interface: invalid\n",
+            b"dependencies: invalid\n",
+            b"dependencies:\n  tools: invalid\n",
+            b"dependencies:\n  tools:\n    - not-a-mapping\n",
+            b"dependencies:\n  tools:\n    - type: mcp\n      oauth: 8080\n",
+            b"policy:\n  products: codex\n",
+        ],
+        ids=["interface", "dependencies", "tools", "tool-item", "oauth", "products"],
+    )
+    def test_file_codex_would_ignore_aborts_without_overwriting(self, tmp_path, content):
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*Codex would ignore"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+        assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
+
+    def test_file_with_every_supported_field_is_accepted(self, tmp_path):
+        content = (
+            b"interface:\n  display_name: Plan\n  short_description: Plans\n"
+            b"dependencies:\n  tools:\n    - type: mcp\n      value: docs\n"
+            b"      oauth:\n        callbackPort: 8080\n"
+            b"policy:\n  products: [codex]\n"
+        )
+        path = self._seed(tmp_path, content)
+        self._setup(tmp_path)
+        assert self._yaml(path)["policy"] == {"products": ["codex"], **self.POLICY}
+        assert self._yaml(path)["dependencies"]["tools"][0]["oauth"] == {"callbackPort": 8080}
+
+    @staticmethod
+    def _fail_policy_writes(monkeypatch):
+        """Simulate a write that fails part-way, for in-place and staged writes."""
+        real_write_bytes = Path.write_bytes
+        real_replace = os.replace
+
+        def write_bytes(self, data):
+            if self.name == "openai.yaml" and self.exists():
+                real_write_bytes(self, data[:5])
+                raise OSError("disk full")
+            return real_write_bytes(self, data)
+
+        def replace(src, dst, *args, **kwargs):
+            if Path(dst).name == "openai.yaml":
+                raise OSError("disk full")
+            return real_replace(src, dst, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_bytes", write_bytes)
+        monkeypatch.setattr(os, "replace", replace)
+
+    def test_failed_write_at_setup_leaves_user_file_intact(self, tmp_path, monkeypatch):
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        self._fail_policy_writes(monkeypatch)
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert path.read_bytes() == original
+        assert [p.name for p in path.parent.iterdir()] == ["openai.yaml"]
+
+    def test_failed_write_at_cleanup_leaves_user_file_intact_and_tracked(self, tmp_path, monkeypatch):
+        path = self._seed(tmp_path)
+        self._setup(tmp_path).save()
+        with_policy = path.read_bytes()
+        self._fail_policy_writes(monkeypatch)
+        manifest = self._setup(tmp_path, enabled=False)
+        monkeypatch.undo()
+        assert path.read_bytes() == with_policy
+        assert manifest.ownership_modes[self.PLAN_REL] == "partial"
+        assert [p.name for p in path.parent.iterdir()] == ["openai.yaml"]
+
+        manifest.save()
+        self._setup(tmp_path, enabled=False)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+
+    @pytest.mark.skipif(os.name == "nt", reason="needs POSIX file modes")
+    def test_rewritten_user_file_keeps_its_mode(self, tmp_path):
+        path = self._seed(tmp_path)
+        path.chmod(0o640)
+        manifest = self._setup(tmp_path)
+        assert stat.S_IMODE(path.stat().st_mode) == 0o640
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert stat.S_IMODE(path.stat().st_mode) == 0o640
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_policy_behind_dangling_agents_symlink_stays_tracked(self, tmp_path):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        generated = path.read_bytes()
+        agents_dir = path.parent
+        path.unlink()
+        agents_dir.rmdir()
+        agents_dir.symlink_to(tmp_path / "missing", target_is_directory=True)
+
+        manifest = self._setup(tmp_path, enabled=False)
+        assert manifest.ownership_modes[self.PLAN_REL] == "whole"
+        manifest.save()
+
+        agents_dir.unlink()
+        agents_dir.mkdir()
+        path.write_bytes(generated)
+        manifest = self._setup(tmp_path, enabled=False)
+        assert not path.exists()
+        assert self.PLAN_REL not in manifest.files
+
+    @pytest.mark.parametrize(
+        "blocker",
+        [".agents/skills/speckit-plan/agents", ".agents/skills/speckit-plan"],
+        ids=["agents-file", "skill-dir-file"],
+    )
+    def test_non_directory_on_policy_path_is_rejected_before_writing(self, tmp_path, blocker):
+        (tmp_path / blocker).parent.mkdir(parents=True)
+        (tmp_path / blocker).write_bytes(b"not a directory\n")
+        with pytest.raises(ValueError, match=f"{blocker} is not a directory"):
+            self._setup(tmp_path)
+        assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
+        assert (tmp_path / blocker).read_bytes() == b"not a directory\n"
 
     def test_stale_cleanup_never_deletes_policy_files(self):
         exclusions = get_integration("codex").stale_cleanup_exclusions()
