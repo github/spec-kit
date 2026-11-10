@@ -263,6 +263,12 @@ descriptor-relative or change their documented concurrency limitations.
   being enumerated; systems without search/path-only flags retain read-capable
   traversal. Recursive enumeration still requires directory read permission, and
   removal still requires the operating system's normal directory permissions.
+  Preflight opens the enumerated child directly as readable, relative to its
+  anchored parent, without a search-only open or `"."` reopening first. An empty
+  readable directory therefore does not need its own search permission to be
+  removed; accessing children in a nonempty directory still requires search
+  permission. The parent still needs the permissions required to remove its
+  directory entry.
   On systems using the read-capable fallback, root establishment also requires
   read permission on the root.
   Component resolution retains opened parent descriptors instead of reopening

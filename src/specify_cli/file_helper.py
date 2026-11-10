@@ -491,10 +491,9 @@ class FileHelper:
         directory = self._deletion_kind(path, self._deletion_entry_mode(path, parent=parent))
         children: tuple[_DeletionEntry, ...] = ()
         if directory and recursive:
-            with self._child_deletion_directory(parent, path.name) as child_directory:
-                with self._child_deletion_directory(child_directory, ".", readable=True) as readable:
-                    with os.scandir(readable) as entries:
-                        names = sorted(entry.name for entry in entries)
+            with self._child_deletion_directory(parent, path.name, readable=True) as child_directory:
+                with os.scandir(child_directory) as entries:
+                    names = sorted(entry.name for entry in entries)
                 child_plans = []
                 for name in names:
                     child_plans.append(

@@ -1115,17 +1115,69 @@ def test_delete_through_write_execute_only_parent(root, parent_is_root, kind):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions")
-def test_recursive_delete_still_requires_read_permission_for_enumeration(root):
+@pytest.mark.parametrize("mode", [0o400, 0o600, 0o444, 0o644])
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("allow", [False, True])
+def test_recursive_delete_readable_empty_directory_without_search(root, mode, nested, allow):
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses directory permission checks")
+    tree = root / "tree"
+    tree.mkdir()
+    restricted = tree
+    if nested:
+        (tree / "a-first").write_text("selected")
+        restricted = tree / "z-empty"
+        restricted.mkdir()
+    restricted.chmod(mode)
+    try:
+        with FileHelper(root, allow_symlinks=allow) as files:
+            files.delete(tree, recursive=True)
+        assert not tree.exists()
+    finally:
+        if restricted.exists():
+            restricted.chmod(0o700)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions")
+@pytest.mark.parametrize("mode", [0o400, 0o600])
+@pytest.mark.parametrize("allow", [False, True])
+def test_recursive_delete_nonempty_directory_without_search_fails_preflight(root, mode, allow):
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses directory permission checks")
+    tree = root / "tree"
+    restricted = tree / "z-restricted"
+    restricted.mkdir(parents=True)
+    (tree / "a-first").write_text("keep")
+    (restricted / "victim").write_text("keep")
+    restricted.chmod(mode)
+    try:
+        with FileHelper(root, allow_symlinks=allow) as files:
+            with pytest.raises(PermissionError):
+                files.delete(tree, recursive=True)
+        assert (tree / "a-first").read_text() == "keep"
+    finally:
+        restricted.chmod(0o700)
+    assert (restricted / "victim").read_text() == "keep"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions")
+@pytest.mark.parametrize("nonempty", [False, True])
+def test_recursive_delete_still_requires_read_permission_for_enumeration(root, nonempty):
     if os.geteuid() == 0:
         pytest.skip("Root bypasses directory read permissions")
     tree = root / "tree"
     tree.mkdir()
-    (tree / "victim").write_text("keep")
+    if nonempty:
+        (tree / "victim").write_text("keep")
     tree.chmod(0o300)
     try:
-        with pytest.raises(PermissionError):
-            FileHelper(root).delete(tree, recursive=True)
-        assert (tree / "victim").read_text() == "keep"
+        with FileHelper(root) as files:
+            with pytest.raises(PermissionError):
+                files.delete(tree, recursive=True)
+        if nonempty:
+            assert (tree / "victim").read_text() == "keep"
+        else:
+            assert tree.is_dir()
     finally:
         tree.chmod(0o700)
 
