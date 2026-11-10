@@ -201,11 +201,14 @@ helpers for independent project/source/managed boundaries.
   access where supported so unreadable but searchable parents remain usable,
   and closes the previous directory after opening its child. Descriptor usage
   stays bounded independently of path depth. It then opens the leaf without
-  truncation. Windows retains every resolved directory's non-reparse handle,
-  withholding delete sharing, and opens an existing non-reparse leaf without
-  truncation. For a missing leaf, an empty, randomly named CRT-created probe
-  in an independently owned runtime temporary directory captures the masked
-  creation attributes without changing the process mask. This scratch root is
+  truncation. Windows pins the canonical root and every resolved parent with
+  non-reparse handles withholding delete sharing. Each anchored directory must
+  permit `FILE_LIST_DIRECTORY` and `FILE_READ_ATTRIBUTES` access. An ACL that
+  permits file writing but denies directory listing can therefore cause an
+  overwrite to fail before opening the leaf. Existing non-reparse leaves are
+  opened without truncation. For a missing leaf, an empty, randomly named
+  CRT-created probe in an independently owned runtime temporary directory
+  captures the masked creation attributes without changing the process mask. This scratch root is
   pinned separately, contains no project data, and is removed before native
   no-follow exclusive creation of the destination. No disposable sibling is
   created in the project, so destination creation does not require project
