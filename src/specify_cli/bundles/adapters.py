@@ -268,13 +268,16 @@ def _http_get_json(source_id: str, url: str) -> dict:
         # server-side availability responses (408, 429, 5xx) fall back to the
         # snapshot. Any other 4xx (404, 403, ...) is definitive and must
         # surface as a hard error.
-        if exc.code in _TRANSIENT_HTTP_STATUS_CODES or exc.code >= 500:
-            raise _CatalogUnavailable(
+        try:
+            if exc.code in _TRANSIENT_HTTP_STATUS_CODES or exc.code >= 500:
+                raise _CatalogUnavailable(
+                    f"Failed to fetch catalog from {url}: HTTP {exc.code} {exc.reason}"
+                ) from exc
+            raise BundlerError(
                 f"Failed to fetch catalog from {url}: HTTP {exc.code} {exc.reason}"
             ) from exc
-        raise BundlerError(
-            f"Failed to fetch catalog from {url}: HTTP {exc.code} {exc.reason}"
-        ) from exc
+        finally:
+            exc.close()
     except urllib.error.URLError as exc:
         # urllib wraps a TLS handshake failure as URLError(reason=<ssl error>);
         # a certificate-verification failure is a security failure, not a
