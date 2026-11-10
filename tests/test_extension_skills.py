@@ -1275,6 +1275,7 @@ class TestExtensionSkillRegistration:
             '  sh: scripts/run.sh "{ARGS}"\n---\n\n'
             "Read references/template.md.\n"
             "Read skills/example/references/template.md.\n"
+            "Run `cat references/template.md`.\n"
             "Run {SCRIPT}\n"
             "Leave references/missing.md and specs/plan.md unchanged.\n"
         )
@@ -1284,6 +1285,7 @@ class TestExtensionSkillRegistration:
         content = skill_file.read_text()
         prefix = "../../../.specify/extensions/nested-ext/"
         assert content.count(prefix + "skills/example/references/template.md.") == 2
+        assert f"Run `cat {prefix}skills/example/references/template.md`." in content
         assert 'Run .specify/extensions/nested-ext/scripts/run.sh "$ARGUMENTS"' in content
         assert "Leave references/missing.md and specs/plan.md unchanged." in content
         assert (skill_file.parent / prefix / "skills/example/references/template.md").is_file()

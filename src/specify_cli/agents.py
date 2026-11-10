@@ -10,6 +10,7 @@ import hashlib
 import os
 import re
 from copy import deepcopy
+from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -266,48 +267,53 @@ class CommandRegistrar:
         extension_root = extension_dir.resolve()
         installed_prefix = f".specify/extensions/{extension_id}/"
         skip = {"commands", "specs"}
-        spans: list[tuple[int, int]] = []
-        position = 0
         boundaries = "`\"'([{<="
         stops = "`\"'{}<>=,;!?"
-        while position < len(text):
-            char = text[position]
-            if char in "`\"'":
-                if char == "'" and position > 0 and text[position - 1].isalnum():
+
+        def path_spans(start: int, end: int) -> Iterable[tuple[int, int, bool]]:
+            position = start
+            while position < end:
+                char = text[position]
+                if char in "`\"'":
+                    if char == "'" and position > 0 and text[position - 1].isalnum():
+                        position += 1
+                        continue
+                    start = position + 1
+                    position = start
+                    while position < end and text[position] not in {char, "\n", "\r"}:
+                        position += 1
+                    if position < end and text[position] == char:
+                        if "/" in text[start:position]:
+                            yield start, position, True
+                        position += 1
+                    continue
+                if char.isspace() or char in boundaries + stops + ")":
                     position += 1
                     continue
-                start = position + 1
-                position = start
-                while position < len(text) and text[position] not in {char, "\n", "\r"}:
-                    position += 1
-                if position < len(text) and text[position] == char:
-                    if "/" in text[start:position]:
-                        spans.append((start, position))
-                    position += 1
-                continue
-            if char.isspace() or char in boundaries + stops + ")":
-                position += 1
-                continue
-            start = position
-            eligible = start == 0 or text[start - 1].isspace() or text[start - 1] in boundaries
-            has_slash = False
-            parentheses = 0
-            while position < len(text):
-                char = text[position]
-                if char.isspace() or char in stops:
-                    break
-                if char == "(":
-                    if not has_slash:
+                start = position
+                eligible = start == 0 or text[start - 1].isspace() or text[start - 1] in boundaries
+                has_slash = False
+                parentheses = 0
+                while position < end:
+                    char = text[position]
+                    if char.isspace() or char in stops:
                         break
-                    parentheses += 1
-                elif char == ")":
-                    if not parentheses:
-                        break
-                    parentheses -= 1
-                has_slash = has_slash or char == "/"
-                position += 1
-            if eligible and has_slash:
-                spans.append((start, position))
+                    if char == "(":
+                        if not has_slash:
+                            break
+                        parentheses += 1
+                    elif char == ")":
+                        if not parentheses:
+                            break
+                        parentheses -= 1
+                    has_slash = has_slash or char == "/"
+                    position += 1
+                if eligible and has_slash:
+                    yield start, position, False
+
+        def has_command_word(token: str) -> bool:
+            words = token.split(maxsplit=1)
+            return len(words) == 2 and ("/" not in words[0] or words[0].startswith("/"))
 
         def candidate_for(token: str) -> Optional[str]:
             if token.startswith("./"):
@@ -327,7 +333,18 @@ class CommandRegistrar:
         def contained_target(path: Path) -> bool:
             return path.exists() and path.resolve().is_relative_to(extension_root)
 
-        tokens = {text[start:end] for start, end in spans}
+        tokens: set[str] = set()
+        pending_scans = [iter(path_spans(0, len(text)))]
+        while pending_scans:
+            span = next(pending_scans[-1], None)
+            if span is None:
+                pending_scans.pop()
+                continue
+            left, right, quoted = span
+            token = text[left:right]
+            tokens.add(token)
+            if quoted and has_command_word(token):
+                pending_scans.append(iter(path_spans(left, right)))
         candidates: dict[str, Optional[str]] = {}
         token_parts: dict[str, list[tuple[str, bool, str]]] = {}
         for token in tokens:
@@ -380,7 +397,7 @@ class CommandRegistrar:
             for candidate in ambiguous:
                 candidates[candidate] = None
 
-        def replace(token: str) -> str:
+        def replace(token: str) -> Optional[str]:
             # Prefer a literal '#' filename over interpreting it as a fragment.
             for candidate, trailing_slash, suffix in token_parts.get(token, []):
                 if candidate in ambiguous:
@@ -402,15 +419,31 @@ class CommandRegistrar:
                 if trailing_slash:
                     rewritten += "/"
                 return rewritten + suffix
-            return token
+            return None
 
-        parts: list[str] = []
-        previous = 0
-        for start, end in spans:
-            parts.extend((text[previous:start], replace(text[start:end])))
-            previous = end
-        parts.append(text[previous:])
-        return "".join(parts)
+        replacements = {token: replace(token) for token in tokens}
+        output = StringIO()
+
+        output_scans = [(iter(path_spans(0, len(text))), 0, len(text))]
+        while output_scans:
+            scan, previous, end = output_scans[-1]
+            span = next(scan, None)
+            if span is None:
+                output.write(text[previous:end])
+                output_scans.pop()
+                continue
+            left, right, quoted = span
+            output.write(text[previous:left])
+            output_scans[-1] = (scan, right, end)
+            token = text[left:right]
+            replacement = replacements[token]
+            if replacement is not None:
+                output.write(replacement)
+            elif quoted and has_command_word(token):
+                output_scans.append((iter(path_spans(left, right)), left, right))
+            else:
+                output.write(token)
+        return output.getvalue()
 
     def render_markdown_command(
         self, frontmatter: dict, body: str, source_id: str, context_note: Optional[str] = None

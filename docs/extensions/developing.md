@@ -115,6 +115,8 @@ link fragments such as `references/template.md#checks` are preserved; an existin
 filename containing a literal `#` takes precedence over fragment interpretation.
 Enclose filenames containing spaces or parentheses in backticks or quotes, for
 example `agents/reviewer guide.md` or `agents/reviewer(v2).md`.
+Paths used as arguments in inline commands, such as `cat agents/reviewer.md`,
+are also rewritten; a matching complete delimited filename takes precedence.
 
 Generated skills use resource paths relative to their `SKILL.md` directory.
 For example, a Copilot skill

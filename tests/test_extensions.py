@@ -4743,16 +4743,78 @@ Run {SCRIPT}
         result = subprocess.run(
             [
                 sys.executable, "-c",
-                "import sys\n"
-                "from pathlib import Path\n"
-                "from specify_cli.agents import CommandRegistrar\n"
-                "text = '[' * 100_000\n"
-                "assert CommandRegistrar.rewrite_extension_paths(text, 'ext', Path(sys.argv[1])) == text\n",
+                "\n".join([
+                    "import sys",
+                    "from pathlib import Path",
+                    "from specify_cli.agents import CommandRegistrar",
+                    "text = '[' * 100_000",
+                    "assert CommandRegistrar.rewrite_extension_paths(text, 'ext', Path(sys.argv[1])) == text",
+                    "",
+                ]),
                 str(temp_dir),
             ],
             capture_output=True, text=True, timeout=15, check=True,
         )
         assert result.stdout == ""
+
+    @pytest.mark.parametrize(
+        ("command", "expected"),
+        [
+            ("cat agents/reviewer.md", "cat .specify/extensions/ext/agents/reviewer.md"),
+            ('cat "agents/reviewer guide.md"', 'cat ".specify/extensions/ext/agents/reviewer guide.md"'),
+            ("cat references/template.md", "cat .specify/extensions/ext/skills/example/references/template.md"),
+            ("cat agents/reviewer.md | grep checks", "cat .specify/extensions/ext/agents/reviewer.md | grep checks"),
+        ],
+    )
+    def test_rewrite_extension_paths_embedded_inline_commands(
+        self, temp_dir, command, expected
+    ):
+        from specify_cli.agents import CommandRegistrar
+
+        extension_dir = temp_dir / "ext"
+        for name in (
+            "agents/reviewer.md", "agents/reviewer guide.md",
+            "skills/example/references/template.md",
+        ):
+            target = extension_dir / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.touch()
+        text = f"Run `{command}`."
+        assert CommandRegistrar.rewrite_extension_paths(text, "ext", extension_dir) == (
+            f"Run `{expected}`."
+        )
+
+    def test_rewrite_extension_paths_prefers_whole_delimited_filename_over_inline_command(
+        self, temp_dir
+    ):
+        from specify_cli.agents import CommandRegistrar
+
+        extension_dir = temp_dir / "ext"
+        for directory in ("cat agents", "agents"):
+            (extension_dir / directory).mkdir(parents=True)
+            (extension_dir / directory / "reviewer.md").touch()
+        text = "Read `cat agents/reviewer.md`."
+        assert CommandRegistrar.rewrite_extension_paths(text, "ext", extension_dir) == (
+            "Read `.specify/extensions/ext/cat agents/reviewer.md`."
+        )
+
+    def test_rewrite_extension_paths_bounds_repeated_occurrence_memory(self, temp_dir):
+        import tracemalloc
+        from specify_cli.agents import CommandRegistrar
+
+        extension_dir = temp_dir / "ext"
+        (extension_dir / "agents").mkdir(parents=True)
+        (extension_dir / "agents" / "reviewer.md").touch()
+        text = "agents/reviewer.md\n" * 50_000
+        expected = ".specify/extensions/ext/agents/reviewer.md\n" * 50_000
+        tracemalloc.start()
+        try:
+            result = CommandRegistrar.rewrite_extension_paths(text, "ext", extension_dir)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        assert result == expected
+        assert peak < 4 * len(expected)
 
     def test_rewrite_extension_paths_relative_to_actual_skill_directory(self, temp_dir):
         from specify_cli.agents import CommandRegistrar
