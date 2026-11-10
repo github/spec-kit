@@ -56,3 +56,16 @@ steps:
     input:
       args: "{{ steps.step-one.output.command }}"
 """
+
+
+@pytest.fixture
+def reset_custom_functions():
+    """Start and end with only built-in filters registered.
+
+    The custom-filter table and synthetic function modules are process-global.
+    """
+    from specify_cli.workflows.function.loader import _unload_custom_functions
+
+    _unload_custom_functions()
+    yield
+    _unload_custom_functions()

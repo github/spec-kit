@@ -154,14 +154,26 @@ def test_overwrite_text_encoding_errors_propagate(root, allow):
 def test_overwrite_text_io_errors_propagate(root, monkeypatch, allow):
     files = FileHelper(root, allow_symlinks=allow)
     calls = []
+    real_open = os.open
 
     def denied(*args, **kwargs):
-        assert Path(args[0]) == root / "new"
-        assert args[1] & os.O_TRUNC
+        if not args[1] & os.O_WRONLY:
+            return real_open(*args, **kwargs)
+        assert Path(args[0]).name == "new"
+        assert args[1] & os.O_CREAT
+        assert not args[1] & os.O_TRUNC
         calls.append(args[0])
         raise PermissionError("denied")
 
-    monkeypatch.setattr("specify_cli.file_helper.os.open", denied)
+    if os.name == "nt":
+        def denied_windows(path):
+            assert path == root / "new"
+            calls.append(path)
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(file_helper, "_windows_overwrite_fd", denied_windows)
+    else:
+        monkeypatch.setattr("specify_cli.file_helper.os.open", denied)
     with files:
         with pytest.raises(PermissionError, match="denied"):
             files.overwrite_text("new", "text")
