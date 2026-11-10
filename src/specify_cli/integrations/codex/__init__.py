@@ -193,16 +193,33 @@ class CodexIntegration(SkillsIntegration):
                     self._retain(manifest, rel, recorded_hash, "partial")
                 continue
             if path.is_file() or path.is_symlink():
-                # Unreadable, unparseable or unsafe: retry on a later run. The
-                # prior mode is kept so a generated file is still recognised,
-                # and deleted, once it can be read again.
-                self._retain(manifest, rel, recorded_hash, modes[rel])
+                # Unreadable, unparseable or unsafe: retry on a later run.
+                mode = self._failed_cleanup_mode(project_root, rel, recorded_hash, modes[rel])
+                self._retain(manifest, rel, recorded_hash, mode)
         # Each entry was checked above, content-equal ones included.
         _, skipped = generated.uninstall(project_root, force=True, remove_manifest=False)
         for path in skipped:
             rel = path.relative_to(project_root).as_posix()
             if path.is_file() or path.is_symlink():
                 self._retain(manifest, rel, prior.files[rel], "whole")
+
+    @staticmethod
+    def _failed_cleanup_mode(root: Path, rel: str, recorded_hash: str, mode: str) -> str:
+        """Ownership for a file whose policy could not be removed.
+
+        Readable bytes that differ from the recorded hash are a user edit, so
+        they become ``partial``: upgrade re-hashes tracked files afterwards, and
+        a ``whole`` entry would then count as generated and be deleted. When
+        the file cannot be read, the prior mode is kept so a generated file is
+        still recognised, and deleted, once it can be read again.
+        """
+        try:
+            _validate_record_path(Path(rel), root)
+            if hashlib.sha256((root / rel).read_bytes()).hexdigest() != recorded_hash:
+                return "partial"
+        except (OSError, ValueError):
+            pass
+        return mode
 
     @staticmethod
     def _retain(manifest: IntegrationManifest, rel: str, recorded_hash: str, ownership: str) -> None:

@@ -538,19 +538,36 @@ class TestCodexNoModelInvocationOwnership:
         assert self._yaml(real / self.PLAN_REL) == {"policy": self.POLICY}
         assert self.PLAN_REL in manifest.files
 
-    def test_clearing_option_keeps_unparseable_edit_of_generated_file(self, tmp_path):
+    @pytest.mark.parametrize(
+        "edited",
+        [b"interface: [half-edited\n", b"\xff\xfe\x00 invalid utf-8\n"],
+        ids=["invalid-yaml", "invalid-utf8"],
+    )
+    def test_clearing_option_keeps_unparseable_edit_of_generated_file(self, tmp_path, edited):
         from tests.specify_cli.integrations._helpers import _run_in_project
 
         self._init(tmp_path, "--no-model-invocation")
         path = tmp_path / self.PLAN_REL
-        path.write_bytes(b"interface: [half-edited\n")
+        path.write_bytes(edited)
 
         result = _run_in_project(
             tmp_path, ["integration", "upgrade", "codex", "--force", "--integration-options", ""]
         )
         assert result.exit_code == 0, result.output
-        assert path.read_bytes() == b"interface: [half-edited\n"
+        assert path.read_bytes() == edited
         assert self._other_policies(tmp_path) == []
+        # Upgrade's resync re-hashes the edit, so it must not stay ``whole``.
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "partial"
+
+        result = _run_in_project(
+            tmp_path, ["integration", "upgrade", "codex", "--force", "--integration-options", ""]
+        )
+        assert result.exit_code == 0, result.output
+        assert path.read_bytes() == edited
+
+        result = _run_in_project(tmp_path, ["integration", "uninstall", "codex"])
+        assert result.exit_code == 0, result.output
+        assert path.read_bytes() == edited
 
     def test_clearing_option_deletes_generated_file_after_cosmetic_change(self, tmp_path):
         from tests.specify_cli.integrations._helpers import _run_in_project
