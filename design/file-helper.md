@@ -239,7 +239,10 @@ prevent attribute-only reparse updates. Each new handle rejects reparse points,
 and handles withhold delete sharing. Reads duplicate the validated leaf handle
 into an independently owned descriptor, never reopen its pathname.
 Both paths validate the opened file with `fstat` before reading its descriptor,
-and release all handles on success or failure. Platforms without
+and release all handles on success or failure. Windows child-open ABI
+structures and pointer types are defined once and reused, avoiding type retention
+in older supported Python versions. Handle values and path buffers remain
+operation-local. Platforms without
 the required safe-open primitives fail explicitly rather than fall back to
 unchecked pathname reads. A concurrent replacement can fail the read or leave
 it reading the already-open original file, but cannot redirect it through a

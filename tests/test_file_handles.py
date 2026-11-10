@@ -4,11 +4,13 @@ from contextlib import contextmanager
 import ctypes
 from ctypes import wintypes
 import errno
+import gc
 import os
 from pathlib import Path
 import sys
 import subprocess
 from types import SimpleNamespace
+import weakref
 
 import pytest
 
@@ -279,6 +281,10 @@ def test_windows_handle_declares_complete_createfile_prototype(tmp_path, monkeyp
 @pytest.mark.parametrize("child_name", ["caf\u00e9", "face \U0001f600", "surrogate\ud800"])
 def test_windows_child_open_is_relative_and_closes_handles(monkeypatch, directory, failure, child_name):
     closed = []
+    abi_types = {role: set() for role in (
+        "name", "attributes", "status_value", "status",
+        "name_pointer", "attributes_pointer", "status_pointer",
+    )}
 
     def create_path(*args):
         pytest.fail("A child must not be opened by absolute pathname")
@@ -287,6 +293,13 @@ def test_windows_child_open_is_relative_and_closes_handles(monkeypatch, director
                      sharing, disposition, options, ea, ea_length):
         assert create_child.restype is ctypes.c_int32
         attributes = attributes._obj
+        declarations = (
+            type(attributes.ObjectName.contents), type(attributes), type(status._obj.Value),
+            type(status._obj), type(attributes.ObjectName),
+            create_child.argtypes[2], create_child.argtypes[3],
+        )
+        for role, declaration in zip(abi_types, declarations):
+            abi_types[role].add(weakref.ref(declaration))
         assert attributes.Length == ctypes.sizeof(type(attributes))
         assert attributes.RootDirectory == 51
         assert attributes.Attributes == 0x1040
@@ -335,14 +348,42 @@ def test_windows_child_open_is_relative_and_closes_handles(monkeypatch, director
     monkeypatch.setattr(ctypes, "WinDLL", load, raising=False)
     monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
     monkeypatch.setattr(ctypes, "WinError", lambda code: PermissionError(errno.EACCES, "native denied"), raising=False)
-    if failure:
-        with pytest.raises(OSError):
-            with _windows_handle(Path(child_name), directory=directory, traverse=directory, parent=51):
-                pytest.fail("A failing native open must not yield a handle")
-    else:
-        with _windows_handle(Path(child_name), directory=directory, traverse=directory, parent=51) as handle:
-            assert handle == 77 and closed == []
-    assert closed == ([] if failure in ("status", "empty") else [77])
+    for iteration in range(32):
+        if failure:
+            with pytest.raises(OSError):
+                with _windows_handle(Path(child_name), directory=directory, traverse=directory, parent=51):
+                    pytest.fail("A failing native open must not yield a handle")
+        else:
+            with _windows_handle(Path(child_name), directory=directory, traverse=directory, parent=51) as handle:
+                assert handle == 77 and len(closed) == iteration
+    assert closed == ([] if failure in ("status", "empty") else [77] * 32)
+    gc.collect()
+    assert {role: len(declarations) for role, declarations in abi_types.items()} == dict.fromkeys(abi_types, 1)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows repeated-read lifetime regression")
+@pytest.mark.parametrize("allow", [False, True])
+def test_repeated_windows_reads_do_not_accumulate_abi_types(tmp_path, allow):
+    root = tmp_path / "project"
+    selected = root / "nested/file"
+    selected.parent.mkdir(parents=True)
+    selected.write_bytes(b"inside")
+    files = FileHelper(root, allow_symlinks=allow)
+
+    def live_abi_types():
+        return {
+            weakref.ref(obj) for obj in gc.get_objects()
+            if isinstance(obj, type) and getattr(obj, "__module__", None) == _file_handles.__name__
+        }
+
+    for _ in range(32):
+        assert files.read_bytes("nested/file") == b"inside"
+    gc.collect()
+    baseline = live_abi_types()
+    for _ in range(256):
+        assert files.read_bytes("nested/file") == b"inside"
+    gc.collect()
+    assert live_abi_types() == baseline
 
 
 @pytest.mark.parametrize("name", ["", ".", "..", "../file", "dir/file", "dir\\file", "C:outside", "C:\\outside", "\0"])
