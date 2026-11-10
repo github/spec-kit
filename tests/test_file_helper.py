@@ -95,6 +95,30 @@ def windows_delete_model(monkeypatch):
     )
 
 
+def _before_windows_removal(monkeypatch, name, before):
+    selected = set()
+    original_entry = file_helper._windows_entry
+    original_delete = file_helper._windows_delete
+
+    @contextmanager
+    def entry(parent, child, *, deleting=False):
+        with original_entry(parent, child, deleting=deleting) as handle:
+            if deleting and child == name:
+                selected.add(handle)
+            try:
+                yield handle
+            finally:
+                selected.discard(handle)
+
+    def remove(handle):
+        if handle in selected:
+            before()
+        original_delete(handle)
+
+    monkeypatch.setattr(file_helper, "_windows_entry", entry)
+    monkeypatch.setattr(file_helper, "_windows_delete", remove)
+
+
 @pytest.mark.parametrize("allow", [False, True])
 def test_plain_operations(root, allow):
     files = FileHelper(root, allow_symlinks=allow)
@@ -1019,9 +1043,9 @@ def test_delete_parent_exchange_at_removal(root, link, monkeypatch, allow, kind)
     remove = getattr(os, primitive)
     attempted = False
 
-    def exchange(path, *args, **kwargs):
+    def exchange_parent():
         nonlocal attempted
-        if not attempted and (Path(path) == victim or str(path) == victim.name):
+        if not attempted:
             attempted = True
             try:
                 parent.rename(retained)
@@ -1030,9 +1054,15 @@ def test_delete_parent_exchange_at_removal(root, link, monkeypatch, allow, kind)
                     raise
             else:
                 link(parent, outside)
+    def exchange(path, *args, **kwargs):
+        if Path(path) == victim or str(path) == victim.name:
+            exchange_parent()
         return remove(path, *args, **kwargs)
 
-    monkeypatch.setattr(os, primitive, exchange)
+    if os.name == "nt":
+        _before_windows_removal(monkeypatch, victim.name, exchange_parent)
+    else:
+        monkeypatch.setattr(os, primitive, exchange)
     try:
         FileHelper(root, allow_symlinks=allow).delete(
             tree if kind.startswith("recursive-") else victim,
@@ -1064,7 +1094,7 @@ def test_recursive_delete_parent_exchange_at_scan(root, link, monkeypatch, allow
     attempted = False
     observed = []
 
-    def exchange(path):
+    def exchange_parent():
         nonlocal attempted
         if not attempted:
             attempted = True
@@ -1075,6 +1105,8 @@ def test_recursive_delete_parent_exchange_at_scan(root, link, monkeypatch, allow
                     raise
             else:
                 link(tree, outside)
+    def exchange(path):
+        exchange_parent()
         entries = scan(path)
         # Capture enumeration as well as removal: no outside entry is visited.
         with entries:
@@ -1086,7 +1118,18 @@ def test_recursive_delete_parent_exchange_at_scan(root, link, monkeypatch, allow
     def scanned(entries):
         yield iter(entries)
 
-    monkeypatch.setattr(os, "scandir", exchange)
+    if os.name == "nt":
+        native_names = file_helper._windows_directory_names
+
+        def exchange_native(handle):
+            exchange_parent()
+            names = native_names(handle)
+            observed.extend(names)
+            return names
+
+        monkeypatch.setattr(file_helper, "_windows_directory_names", exchange_native)
+    else:
+        monkeypatch.setattr(os, "scandir", exchange)
     try:
         FileHelper(root, allow_symlinks=allow).delete(tree, recursive=True)
     except (FileHelperError, OSError):
@@ -1109,7 +1152,7 @@ def test_delete_link_parent_exchange_at_removal(root, link, monkeypatch, recursi
     unlink = os.unlink
     attempted = False
 
-    def exchange(path, *args, **kwargs):
+    def exchange_parent():
         nonlocal attempted
         if not attempted:
             attempted = True
@@ -1120,9 +1163,14 @@ def test_delete_link_parent_exchange_at_removal(root, link, monkeypatch, recursi
                     raise
             else:
                 link(parent, outside)
+    def exchange(path, *args, **kwargs):
+        exchange_parent()
         return unlink(path, *args, **kwargs)
 
-    monkeypatch.setattr(os, "unlink", exchange)
+    if os.name == "nt":
+        _before_windows_removal(monkeypatch, "victim", exchange_parent)
+    else:
+        monkeypatch.setattr(os, "unlink", exchange)
     FileHelper(root, allow_symlinks=True).delete(parent / "victim", recursive=recursive)
     assert attempted
     assert (outside / "victim").read_text() == "keep"
@@ -1155,10 +1203,23 @@ def test_delete_exchange_after_final_validation(root, link, monkeypatch, allow):
                 link(parent, outside)
         return result
 
-    monkeypatch.setattr(FileHelper, "_deletion_entry_mode", exchange)
+    if os.name == "nt":
+        def after_validation():
+            nonlocal checks
+            checks += 1
+            try:
+                parent.rename(retained)
+            except PermissionError:
+                pass
+            else:
+                link(parent, outside)
+
+        _before_windows_removal(monkeypatch, "victim", after_validation)
+    else:
+        monkeypatch.setattr(FileHelper, "_deletion_entry_mode", exchange)
     with FileHelper(root, allow_symlinks=allow) as files:
         files.delete(parent / "victim")
-    assert checks == 2
+    assert checks == (1 if os.name == "nt" else 2)
     assert (outside / "victim").read_text() == "keep"
     assert not ((retained if retained.exists() else parent) / "victim").exists()
 
@@ -2203,17 +2264,19 @@ def test_native_windows_link_resolution_blocks_accessed_parent_exchange(root, li
     (selected / "victim").write_text("selected")
     link(parent / "alias", selected)
     attempted = False
-    lstat = Path.lstat
+    original_entry = file_helper._windows_entry
 
-    def exchange(path, **kwargs):
+    @contextmanager
+    def exchange(directory, name, *, deleting=False):
         nonlocal attempted
-        if path == parent / "alias" and not attempted:
-            attempted = True
-            with pytest.raises(PermissionError):
-                parent.rename(root / "retained")
-        return lstat(path, **kwargs)
+        with original_entry(directory, name, deleting=deleting) as handle:
+            if name == "alias" and not attempted:
+                attempted = True
+                with pytest.raises(PermissionError):
+                    parent.rename(root / "retained")
+            yield handle
 
-    monkeypatch.setattr(Path, "lstat", exchange)
+    monkeypatch.setattr(file_helper, "_windows_entry", exchange)
     with FileHelper(root, allow_symlinks=True) as files:
         files.delete("parent/alias/victim")
     assert attempted
@@ -3640,6 +3703,7 @@ def test_directory_reparse_entries_rejected_before_traversal_portably(
     (junction / "keep").write_text("keep")
     lstat = Path.lstat
     stat_entry = os.stat
+    junction_identity = lstat(junction)
 
     def as_reparse(result):
         return SimpleNamespace(
@@ -3662,6 +3726,15 @@ def test_directory_reparse_entries_rejected_before_traversal_portably(
 
     monkeypatch.setattr(Path, "lstat", directory_reparse)
     monkeypatch.setattr(os, "stat", directory_reparse_stat)
+    if os.name == "nt":
+        native_mode = file_helper._windows_mode
+
+        def reparse_mode(handle):
+            if os.path.samestat(file_helper._windows_stat(handle), junction_identity):
+                raise OSError(errno.ELOOP, "Unsupported Windows reparse point")
+            return native_mode(handle)
+
+        monkeypatch.setattr(file_helper, "_windows_mode", reparse_mode)
     files = FileHelper(root, allow_symlinks=allow)
     for operation in (
         lambda: files.read_bytes(junction / "keep"),
