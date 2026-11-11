@@ -154,7 +154,9 @@ def _write_bytes_with_mode(path: Path, content: bytes, mode: int) -> None:
     """
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
-    temp = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+    # A fixed-length name: one derived from the destination would overflow the
+    # filesystem's component limit for long but valid file names.
+    temp = path.with_name(f".{secrets.token_hex(8)}.tmp")
     fd = os.open(temp, flags, mode)
     try:
         with os.fdopen(fd, "wb") as handle:

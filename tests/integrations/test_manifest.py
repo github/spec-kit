@@ -77,6 +77,12 @@ class TestManifestRecordFile:
             os.umask(previous)
         assert path.stat().st_mode & 0o777 == 0o644
 
+    def test_record_file_mode_supports_long_file_names(self, tmp_path):
+        name = "a" * 240  # valid, but too long for the name plus a derived temp suffix
+        path = IntegrationManifest("test", tmp_path).record_file(name, b"x", mode=0o644)
+        assert path.read_bytes() == b"x"
+        assert [p.name for p in tmp_path.iterdir() if p.is_file()] == [name]
+
     def test_record_file_mode_failure_leaves_no_temp_file(self, tmp_path, monkeypatch):
         import os
 
