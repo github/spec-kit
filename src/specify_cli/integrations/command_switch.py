@@ -36,7 +36,7 @@ def integration_switch(
     target: str = typer.Argument(help="Integration key to switch to"),
     script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or py (default: from init-options.json or platform default)"),
     force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall of the previous integration"),
-    refresh_shared_infra: bool = typer.Option(False, "--refresh-shared-infra", help="Also overwrite shared infrastructure files even if you customized them (otherwise customizations are preserved)"),
+    refresh_shared_infra: bool = typer.Option(False, "--refresh-shared-infra", help="Overwrite customized shared scripts, templates, and .specify/.gitignore, including when the target is already the default"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the target integration'),
     trust_integration: bool = typer.Option(False, "--trust-integration", help="Authorize executing a reviewed external integration package without prompting"),
 ):
@@ -68,7 +68,7 @@ def integration_switch(
                 "to update managed files/options."
             )
             raise typer.Exit(1)
-        if force:
+        if force or refresh_shared_infra:
             raw_options, parsed_options = _resolve_integration_options(
                 target_integration, current, target, None
             )
@@ -112,7 +112,7 @@ def integration_switch(
             installed_keys,
             raw_options=raw_options,
             parsed_options=parsed_options,
-            refresh_templates_force=force,
+            refresh_templates_force=force or refresh_shared_infra,
         )
         manifest, unmodified_files = _snapshot_manifest_before_registration(project_root, target)
         _register_extensions_for_agent(
