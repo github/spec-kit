@@ -200,8 +200,9 @@ def sync_skill_resources(
                 continue
         try:
             source = _validate_record_path(Path(resource), ext_dir.resolve())
-            written.append(manifest.record_file(rel, source.read_bytes()))
-            _keep_restrictive_mode(source, written[-1])
+            written.append(manifest.record_file(
+                rel, source.read_bytes(), mode=_resource_mode(source),
+            ))
         except (ValueError, OSError) as exc:
             if expected is not None:
                 updated[rel] = expected
@@ -210,20 +211,15 @@ def sync_skill_resources(
     return updated, written, warnings
 
 
-def _keep_restrictive_mode(source: Path, copy: Path) -> None:
-    """Drop the group/other access bits the source lacks from its copy.
+def _resource_mode(source: Path) -> int:
+    """Creation mode for a resource copy: the source's bits, owner read/write.
 
-    ``record_file`` writes with the process umask, which would turn a private
-    ``0600`` resource into a world-readable copy. This only ever tightens, so
-    the script execution policy that runs afterwards is unaffected.
+    The process umask still narrows it, so a copy never has group/other access
+    the source lacks, and keeps the source's execute bits (not only for
+    ``.sh`` scripts). Owner read/write is always kept so a later refresh can
+    replace the copy.
     """
-    try:
-        wanted = stat.S_IMODE(source.stat().st_mode) | ~0o077
-        current = stat.S_IMODE(copy.stat().st_mode)
-        if current & wanted != current:
-            copy.chmod(current & wanted)
-    except (NotImplementedError, OSError):
-        pass  # Best effort, as for restored files.
+    return (stat.S_IMODE(source.stat().st_mode) & 0o777) | 0o600
 
 
 def remove_skill_resources(

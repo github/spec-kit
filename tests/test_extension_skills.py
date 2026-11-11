@@ -4045,6 +4045,30 @@ def test_resource_copy_keeps_restrictive_source_permissions(project_dir, temp_di
     assert mode(skill / "scripts/run.sh") & 0o100  # and remains executable
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_resource_copy_keeps_execute_bits_of_non_shell_script(project_dir, temp_dir):
+    _create_init_options(project_dir, ai="claude", ai_skills=False)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["scripts/review", "scripts/data.txt"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "scripts").mkdir()
+    (ext / "scripts/review").write_text("#!/usr/bin/env python3\nprint(1)\n")
+    (ext / "scripts/review").chmod(0o755)
+    (ext / "scripts/data.txt").write_text("data")
+    (ext / "scripts/data.txt").chmod(0o644)
+    previous_umask = os.umask(0o022)
+    try:
+        ExtensionManager(project_dir).install_from_directory(ext, "0.1.0")
+    finally:
+        os.umask(previous_umask)
+    skill = skills / "speckit-test-ext-hello"
+
+    assert stat.S_IMODE((skill / "scripts/review").stat().st_mode) == 0o755
+    assert stat.S_IMODE((skill / "scripts/data.txt").stat().st_mode) == 0o644  # not made executable
+
+
 def test_remove_legacy_registry_without_resource_field(project_dir, temp_dir):
     _create_init_options(project_dir, ai="claude", ai_skills=True)
     skills = _create_skills_dir(project_dir)

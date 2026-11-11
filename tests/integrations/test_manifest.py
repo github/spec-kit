@@ -26,6 +26,68 @@ class TestManifestRecordFile:
         assert abs_path.read_bytes() == data
         assert m.files["bin.dat"] == hashlib.sha256(data).hexdigest()
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+    def test_record_file_mode_is_set_at_creation(self, tmp_path, monkeypatch):
+        """The content is never on disk under a wider mode than requested."""
+        import os
+
+        seen = []
+        original = os.replace
+
+        def spy(src, dst):
+            seen.append(os.stat(src).st_mode & 0o777)
+            return original(src, dst)
+
+        monkeypatch.setattr(os, "replace", spy)
+        previous = os.umask(0)  # a umask that would otherwise give 0666
+        try:
+            path = IntegrationManifest("test", tmp_path).record_file(
+                "a/private.txt", b"secret", mode=0o600
+            )
+        finally:
+            os.umask(previous)
+        assert seen == [0o600]
+        assert path.stat().st_mode & 0o777 == 0o600
+        assert path.read_bytes() == b"secret"
+        assert [p.name for p in path.parent.iterdir()] == ["private.txt"]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+    def test_record_file_mode_is_narrowed_by_umask_and_replaces_existing(self, tmp_path):
+        import os
+
+        existing = tmp_path / "x.sh"
+        existing.write_text("old")
+        existing.chmod(0o600)
+        previous = os.umask(0o022)
+        try:
+            IntegrationManifest("test", tmp_path).record_file("x.sh", b"new", mode=0o775)
+        finally:
+            os.umask(previous)
+        assert existing.read_bytes() == b"new"
+        assert existing.stat().st_mode & 0o777 == 0o755
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+    def test_record_file_without_mode_keeps_default_mode(self, tmp_path):
+        import os
+
+        previous = os.umask(0o022)
+        try:
+            path = IntegrationManifest("test", tmp_path).record_file("d.txt", b"x")
+        finally:
+            os.umask(previous)
+        assert path.stat().st_mode & 0o777 == 0o644
+
+    def test_record_file_mode_failure_leaves_no_temp_file(self, tmp_path, monkeypatch):
+        import os
+
+        def fail(src, dst):
+            raise OSError("replace failed")
+
+        monkeypatch.setattr(os, "replace", fail)
+        with pytest.raises(OSError, match="replace failed"):
+            IntegrationManifest("test", tmp_path).record_file("f.txt", b"x", mode=0o644)
+        assert not [p for p in tmp_path.rglob("*") if p.is_file()]
+
     def test_record_existing(self, tmp_path):
         f = tmp_path / "existing.txt"
         f.write_text("content", encoding="utf-8")

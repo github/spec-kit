@@ -292,10 +292,10 @@ def test_sync_skill_resources_continues_after_record_file_failure(tmp_path, monk
 
     original = IntegrationManifest.record_file
 
-    def record(self, rel, data):
+    def record(self, rel, data, **kwargs):
         if rel.endswith("/bad"):
             raise OSError("destination changed")
-        return original(self, rel, data)
+        return original(self, rel, data, **kwargs)
 
     monkeypatch.setattr(IntegrationManifest, "record_file", record)
     hashes, written, warnings = sync_skill_resources(

@@ -358,6 +358,10 @@ symlink itself is rejected. Files users create later in `.specify/extensions/<id
 location may not be gitignored. Prefer explicit paths or narrow patterns over
 broad wildcards such as `**`.
 
+Copies keep the source file's permission bits, narrowed by the process umask and
+never widened, so an executable script stays executable and a private file stays
+private. They are created with those bits, not tightened afterwards.
+
 Copies are hash-tracked. During rendering, an unowned existing destination is
 skipped with a warning unless the user supplies `--force`; on refresh, a
 modified recorded copy is also kept with a warning unless forced. Extension removal and update delete recorded resources,
