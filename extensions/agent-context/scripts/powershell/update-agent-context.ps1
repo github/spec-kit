@@ -608,9 +608,23 @@ if (-not $PlanPath) {
                     $candidatePlan = Join-Path (Join-Path $ProjectRoot $featureDir) 'plan.md'
                 }
                 if (Test-Path -LiteralPath $candidatePlan) {
-                    # Resolve ./ .. segments before relativizing (mirrors bash Path.resolve()).
-                    # GetFullPath is available in .NET Framework 4.x (PS 5.1 compatible).
-                    $resolvedPlan = [System.IO.Path]::GetFullPath($candidatePlan)
+                    # Resolve links before relativizing (mirrors the twins'
+                    # Path.resolve()): the project root is canonical, so a
+                    # feature_directory that reaches the project through an
+                    # alias must be resolved too. GetFullPath only
+                    # normalizes ./ .. segments, so an absolute
+                    # feature_directory through a project alias kept the
+                    # alias spelling, failed the prefix comparison below,
+                    # and emitted a machine-local absolute plan path
+                    # instead of the project-relative one. Fall back to
+                    # GetFullPath when resolution fails so an unresolvable
+                    # spelling keeps the previous behavior.
+                    $script:LinkFollowBudgetRemaining = $script:LinkFollowBudget
+                    $planRoot = [System.IO.Path]::GetPathRoot($candidatePlan)
+                    $resolvedPlan = Resolve-ContextPath -Root $planRoot -RelativePath $candidatePlan.Substring($planRoot.Length)
+                    if ($null -eq $resolvedPlan) {
+                        $resolvedPlan = [System.IO.Path]::GetFullPath($candidatePlan)
+                    }
                     $resolvedDir  = [System.IO.Path]::GetDirectoryName($resolvedPlan)
                     $normRoot = $ProjectRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
                     $normDir  = $resolvedDir.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar

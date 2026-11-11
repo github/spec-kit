@@ -1179,6 +1179,62 @@ def test_powershell_mtime_fallback_uses_canonical_project_root(
 
 
 @pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("alias_kind", ["project", "ancestor"])
+def test_powershell_feature_json_absolute_directory_through_project_alias(
+    tmp_path: Path, alias_kind: str
+) -> None:
+    repo = make_project(tmp_path / "real/project", context_file="AGENTS.md")
+    plan = repo / "specs/001-demo/plan.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_bytes(b"# plan\n")
+    alias = tmp_path / "alias"
+    try:
+        alias.symlink_to(
+            repo if alias_kind == "project" else repo.parent,
+            target_is_directory=True,
+        )
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    location = alias if alias_kind == "project" else alias / "project"
+    # feature.json names the feature directory by its absolute path
+    # through the project alias, as written when the project was opened
+    # through the alias.
+    aliased_feature_dir = location / "specs/001-demo"
+    (repo / ".specify").mkdir(parents=True, exist_ok=True)
+    (repo / ".specify" / "feature.json").write_text(
+        json.dumps({"feature_directory": str(aliased_feature_dir)}),
+        encoding="utf-8",
+    )
+    location_literal = str(location).replace("'", "''")
+    script_literal = str(PS_SCRIPT).replace("'", "''")
+
+    result = subprocess.run(
+        [
+            WINDOWS_POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            f"Set-Location -LiteralPath '{location_literal}'; & '{script_literal}'",
+        ],
+        check=False,
+        cwd=repo,
+        env=_bundled_script_env(repo),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    content = (repo / "AGENTS.md").read_bytes()
+    # The alias is resolved before the prefix comparison, so the plan
+    # is emitted project-relative — not as a machine-local absolute
+    # path through the alias.
+    assert b"at specs/001-demo/plan.md" in content
+    assert str(aliased_feature_dir).replace("\\", "/").encode() not in content
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
 @pytest.mark.parametrize("operation", ["context", "fallback"])
 def test_powershell_rejects_cyclic_link_chains(
     tmp_path: Path, operation: str
