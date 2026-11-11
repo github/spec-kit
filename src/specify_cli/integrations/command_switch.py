@@ -16,7 +16,7 @@ from ..integration_state import (
 )
 from ._commands import integration_app
 from ._lifecycle import external_lifecycle, lifecycle_owns_rollback, lifecycle_success
-from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _clear_init_options_for_integration, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _register_extensions_for_agent, _register_presets_for_agent, _remove_integration_json, _resolve_integration_options, _resolve_script_type, _set_default_integration, _set_default_integration_or_exit, _unregister_extensions_for_agent, _unregister_presets_for_agent, _write_integration_json
+from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _clear_init_options_for_integration, _cli_error_detail, _cli_phase_label, _get_speckit_version, _preflight_setup_or_exit, _read_integration_json, _register_extensions_for_agent, _register_presets_for_agent, _remove_integration_json, _resync_manifest_after_registration, _resolve_integration_options, _resolve_script_type, _set_default_integration, _set_default_integration_or_exit, _snapshot_manifest_before_registration, _unregister_extensions_for_agent, _unregister_presets_for_agent, _write_integration_json
 
 
 def _missing_required_options(integration, parsed_options) -> list[str]:
@@ -36,7 +36,7 @@ def integration_switch(
     target: str = typer.Argument(help="Integration key to switch to"),
     script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or py (default: from init-options.json or platform default)"),
     force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall of the previous integration"),
-    refresh_shared_infra: bool = typer.Option(False, "--refresh-shared-infra", help="Also overwrite shared infrastructure files even if you customized them (otherwise customizations are preserved)"),
+    refresh_shared_infra: bool = typer.Option(False, "--refresh-shared-infra", help="Overwrite customized shared scripts, templates, and .specify/.gitignore, including when the target is already the default"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the target integration'),
     trust_integration: bool = typer.Option(False, "--trust-integration", help="Authorize executing a reviewed external integration package without prompting"),
 ):
@@ -68,7 +68,7 @@ def integration_switch(
                 "to update managed files/options."
             )
             raise typer.Exit(1)
-        if force:
+        if force or refresh_shared_infra:
             raw_options, parsed_options = _resolve_integration_options(
                 target_integration, current, target, None
             )
@@ -112,8 +112,9 @@ def integration_switch(
             installed_keys,
             raw_options=raw_options,
             parsed_options=parsed_options,
-            refresh_templates_force=force,
+            refresh_templates_force=force or refresh_shared_infra,
         )
+        manifest, unmodified_files = _snapshot_manifest_before_registration(project_root, target)
         _register_extensions_for_agent(
             project_root,
             target,
@@ -130,6 +131,13 @@ def integration_switch(
                 "need re-registration."
             ),
         )
+        if manifest is not None:
+            _resync_manifest_after_registration(
+                manifest,
+                target,
+                unmodified_files=unmodified_files,
+                continuing="The integration switch succeeded, but its manifest hashes may be stale.",
+            )
         lifecycle_success(f"\n[green]✓[/green] Default integration set to [bold]{target}[/bold].")
         raise typer.Exit(0)
 
@@ -152,6 +160,13 @@ def integration_switch(
         )
         console.print("No files were changed.")
         raise typer.Exit(1)
+    _preflight_setup_or_exit(
+        target_integration,
+        project_root,
+        target_parsed_options,
+        selected_script,
+        "switch to",
+    )
 
     # Phase 1: Uninstall current integration (if any)
     if installed_key:
@@ -354,6 +369,9 @@ def integration_switch(
                         # artifacts. Rescaffold so the restored default is
                         # actually usable. Both helpers are best-effort and
                         # cannot raise past this point.
+                        fallback_manifest, unmodified_files = _snapshot_manifest_before_registration(
+                            project_root, fallback_key
+                        )
                         _register_extensions_for_agent(
                             project_root,
                             fallback_key,
@@ -364,6 +382,13 @@ def integration_switch(
                             fallback_key,
                             continuing="The switch was rolled back; installed presets may need re-registration.",
                         )
+                        if fallback_manifest is not None:
+                            _resync_manifest_after_registration(
+                                fallback_manifest,
+                                fallback_key,
+                                unmodified_files=unmodified_files,
+                                continuing="The switch was rolled back, but its manifest hashes may be stale.",
+                            )
                 else:
                     _write_integration_json(
                         project_root, fallback_key, installed_keys, _integration_settings(current)
@@ -388,6 +413,16 @@ def integration_switch(
         project_root,
         target,
         continuing="The integration switch succeeded, but installed presets may need re-registration.",
+    )
+
+    # The manifest was saved right before registration, so every tracked
+    # file is unmodified; passing them all keeps recovered markers on files
+    # registration didn't change.
+    _resync_manifest_after_registration(
+        manifest,
+        target,
+        unmodified_files=set(manifest.files),
+        continuing="The integration switch succeeded, but its manifest hashes may be stale.",
     )
 
     name = (target_integration.config or {}).get("name", target)

@@ -33,7 +33,9 @@ def self_upgrade(
     Detection classifies the runtime into uv-tool / pipx / uvx (ephemeral) /
     source-checkout / unsupported. Only uv-tool and pipx are upgraded
     automatically; the other three paths print path-specific guidance and
-    exit 0.
+    exit 0. On Windows, uv cannot replace the uv-tool environment specify is
+    running from, so uv-tool installs print the uv command to run once
+    specify exits, and exit 0 without changes.
 
     Exit codes:
       0      success or no-op-success (already on latest, --dry-run, or
@@ -44,7 +46,7 @@ def self_upgrade(
              installer itself exits 2, that installer failure code is
              propagated verbatim
       3      installer binary not found on PATH, or resolved installer path is
-             missing / non-executable
+             rejected / missing / non-executable
       124    internal installer timeout when SPECIFY_UPGRADE_TIMEOUT_SECS is set,
              or a real installer exit code 124 propagated verbatim; scripts
              should treat 124 as ambiguous and inspect the failure message
@@ -73,6 +75,9 @@ def self_upgrade(
         _parse_version_text,
         _render_argv,
         _run_installer,
+        _runs_from_uv_tool_env_on_windows,
+        _UV_TOOL_MANUAL_INTRO,
+        _uv_tool_manual_command,
         _validate_tag,
         _verify_upgrade,
         console,
@@ -99,6 +104,9 @@ def self_upgrade(
         _emit_failure(failure_reason, plan=plan)
         raise typer.Exit(1)
 
+    for rejection in plan.installer_rejections:
+        console.print(rejection, soft_wrap=True, markup=False)
+
     if dry_run:
         if plan.method in (
             _InstallMethod.UVX_EPHEMERAL,
@@ -110,6 +118,13 @@ def self_upgrade(
         console.print("Dry run — no changes will be made.")
         for line in plan.preview_summary.splitlines():
             console.print(line)
+        if (
+            plan.method == _InstallMethod.UV_TOOL
+            and plan.installer_argv is not None
+            and _runs_from_uv_tool_env_on_windows()
+        ):
+            console.print(_UV_TOOL_MANUAL_INTRO, soft_wrap=True)
+            console.print(f"  {_uv_tool_manual_command(plan.target_tag)}", soft_wrap=True)
         raise typer.Exit(0)
 
     if plan.method in (
@@ -121,11 +136,12 @@ def self_upgrade(
         raise typer.Exit(0)
 
     if plan.installer_argv is None:
-        _emit_failure(
-            _FAILURE_INSTALLER_MISSING,
-            plan=plan,
-            installer_name=_installer_binary_name(plan.method),
-        )
+        if not plan.installer_rejected:
+            _emit_failure(
+                _FAILURE_INSTALLER_MISSING,
+                plan=plan,
+                installer_name=_installer_binary_name(plan.method),
+            )
         raise typer.Exit(3)
 
     if plan.target_tag is None:
@@ -152,6 +168,21 @@ def self_upgrade(
         ):
             console.print(f"Already on requested release: {target_tag}")
             raise typer.Exit(0)
+
+    if plan.method == _InstallMethod.UV_TOOL and _runs_from_uv_tool_env_on_windows():
+        # uv deletes the tool environment before reinstalling it, and Windows
+        # will not delete the python.exe this process is running from, so uv
+        # would leave the environment without its packages. Leave the
+        # reinstall to the user's shell instead.
+        console.print(
+            f"Not upgrading specify-cli {plan.current_version} → {target_tag}: "
+            "on Windows, uv cannot replace the tool environment specify is "
+            "running from. No changes were made.",
+            soft_wrap=True,
+        )
+        console.print(_UV_TOOL_MANUAL_INTRO, soft_wrap=True)
+        console.print(f"  {_uv_tool_manual_command(target_tag)}", soft_wrap=True)
+        raise typer.Exit(0)
 
     installed_version = _parse_version_text(plan.current_version)
     verb = (

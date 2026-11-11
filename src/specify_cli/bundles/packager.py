@@ -48,6 +48,17 @@ def build_bundle(
             "README.md describing it."
         )
 
+    # The packager never packages symlinked files, so a symlinked manifest or
+    # README would pass the checks above yet be left out of the artifact,
+    # producing a zip that 'specify bundle install' rejects. Fail the build.
+    for required in (manifest_path, bundle_dir / "README.md"):
+        if required.is_symlink():
+            raise BundlerError(
+                f"'{required.name}' in '{bundle_dir}' is a symlink. The manifest "
+                "and README.md must be regular files so they are included in "
+                "the artifact."
+            )
+
     manifest = BundleManifest.from_file(manifest_path)
     report = validate_manifest(manifest)
     if not report.ok:

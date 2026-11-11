@@ -34,8 +34,6 @@ def _prepare_workflow_add(
     project_root: cli.Path, source: str, *, dev: bool, from_url: str | None,
     version: str | None, selected_catalog: bool = False,
 ) -> cli.Path:
-    from . import load_custom_steps
-
     if version is not None and (
         dev or from_url is not None or (
             not selected_catalog and (
@@ -50,7 +48,7 @@ def _prepare_workflow_add(
         raise cli.typer.Exit(1)
     if version is not None or selected_catalog:
         cli._validate_workflow_id_or_exit(source)
-    load_custom_steps(project_root)
+    cli._load_project_workflow_plugins_or_exit(project_root)
     cli._open_workflow_registry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
     if from_url is not None and not dev:

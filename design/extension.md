@@ -141,7 +141,8 @@ Catalog configuration resolves in this order:
 
 Extension configuration merges, from lowest to highest precedence:
 
-1. `config.defaults` in `extension.yml`;
+1. the top-level `defaults` and `config.defaults` in `extension.yml`, merged
+   with `config.defaults` winning on conflicting keys;
 2. `.specify/extensions/<id>/<id>-config.yml`;
 3. `.specify/extensions/<id>/local-config.yml`; and
 4. `SPECKIT_<NORMALIZED_EXTENSION_ID>_*` environment variables.
@@ -345,8 +346,8 @@ packaging and output writes; they are not a sandbox.
 
 Network and package trust rules are:
 
-- catalog and archive URLs require HTTPS, except loopback HTTP for local
-  development;
+- catalog URLs require HTTPS, including for local development; archive URLs
+  retain the loopback HTTP exception;
 - catalog redirects are validated at every hop;
 - configured authentication providers may add credentials for matching hosts,
   and redirect handling does not forward them to untrusted hosts;

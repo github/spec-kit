@@ -22,7 +22,51 @@ See [integration management](cli.md) for activation, upgrades, and removal.
 Skills are installed as `.github/skills/speckit-<command>/SKILL.md`.
 Invoke them in the agent's chat as `/speckit-specify` or
 `/speckit-bug-assess` for the installed bug extension. These are agent skills,
-not terminal commands.
+not terminal commands. Generated skills are both user- and model-invocable by
+default.
+
+## User-Invocable-Only Skills
+
+To stop Copilot loading the core Spec Kit command skills automatically in the
+skills layout:
+
+```bash
+specify init my-project --integration copilot --integration-options="--no-model-invocation"
+```
+
+This writes `disable-model-invocation: true` into the core command skills.
+VS Code's [agent skills documentation](https://code.visualstudio.com/docs/agent-customization/agent-skills)
+says this requires manual invocation through the `/` slash command only.
+GitHub's Copilot CLI skills documentation does not list the field, but in a
+manual check with Copilot CLI 1.0.70 the model called its `skill` tool for
+`speckit-specify` without the flag and did not with it, and an explicit
+`/speckit-specify` still ran. With the flag the model could still read the
+skill's `SKILL.md` as an ordinary file, so it is not a hard block. Neither
+source says whether a skill with this flag keeps its description out of the
+model's context.
+
+- The option has no effect in the commands layout, whether selected explicitly
+  with `--commands` or retained from an existing installation when no layout flag
+  is passed: the `.agent.md` and `.prompt.md` files are not skills and no flag is
+  written.
+- Extension skills stay model-invocable, because mandatory extension hooks rely
+  on the model invoking them. If an extension's mandatory hook runs a core
+  command (its `command:` is a core `speckit.<command>`), leave this option off:
+  the model cannot run that hook while the core skill is user-invocable only.
+- The option is stored with the integration's other options and reapplied by
+  `specify integration upgrade copilot`. Passing `--integration-options` to
+  `upgrade` replaces all stored options;
+  `--integration-options=""` clears them. Re-running `specify init` likewise
+  stores only the options passed to it.
+- Core command skills that a preset overrides, or stops overriding, are reverted
+  to the default by commands that re-register preset skills without reinstalling
+  Copilot: commands that install, remove or update presets (including `specify
+  bundle` commands that carry presets), `specify integration use copilot`, and
+  `specify integration switch copilot` when Copilot is installed but not the
+  default. To reapply the option, run `specify integration upgrade copilot
+  --force` while Copilot is the default integration (`--force` is needed because
+  those commands modify installed skill files, and it overwrites local edits to
+  Spec Kit-managed files).
 
 ## Commands Layout
 
@@ -39,7 +83,9 @@ it directly in a prompt.
 
 Use `--integration-options="--skills"` to explicitly select the default skills
 layout when migrating an existing commands installation with
-`specify integration upgrade copilot`. See the
+`specify integration upgrade copilot`. Passing it replaces all stored options,
+so include any you want to keep: without `--no-model-invocation` in that value,
+for example, the migrated skills are written as model-invocable. See the
 [shared upgrade rules](cli.md#upgrade-an-integration),
 including the restriction on changing layouts while preset artifacts are
 registered.
@@ -70,3 +116,23 @@ without interactive approval. Set `SPECKIT_COPILOT_ALLOW_ALL_TOOLS=0` to stop
 Spec Kit from adding this flag. The deprecated `SPECKIT_ALLOW_ALL_TOOLS` is
 accepted only as a fallback. A configured `--model` and requested
 `--output-format json` are forwarded.
+
+## Workflow Dispatch Settings
+
+Command and prompt steps can set
+[`reasoning_effort` and `context_size`](../workflow-steps/types.md#reasoning-effort-and-context-size).
+Copilot CLI dispatch passes them as native flags after `--model`, in both the
+skills and commands layouts:
+
+| Step setting | Copilot CLI flag | Values in Copilot CLI 1.0.106 |
+|---|---|---|
+| `reasoning_effort` | `--reasoning-effort <value>` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
+| `context_size` | `--context <value>` | `default`, `long_context` |
+
+Spec Kit accepts only these values. Any other value fails the step before
+Copilot CLI starts, because Copilot CLI repeats a rejected value in its error
+and the value can come from captured output. To pass a value that a newer
+Copilot CLI release adds, set
+`SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS="--reasoning-effort <value>"` or
+`SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS="--context <value>"` instead of the
+step setting.

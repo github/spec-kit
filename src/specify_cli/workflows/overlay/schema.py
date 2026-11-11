@@ -11,7 +11,7 @@ from ...extensions import normalize_priority
 # Safe single-segment identifiers: no path separators, no traversal, no dots.
 _SAFE_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 _RESERVED_OVERLAY_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays"})
-_RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays", "runs", "steps"})
+_RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays", "runs", "steps", "functions"})
 
 VALID_OPERATIONS = frozenset({"insert_after", "insert_before", "replace", "remove"})
 

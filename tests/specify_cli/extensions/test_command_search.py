@@ -22,6 +22,51 @@ from specify_cli.extensions import (
 class TestExtensionSearchCLI:
     """CLI tests for ``specify extension search``."""
 
+    def test_search_shows_incomplete_catalog_entry(self, incomplete_catalog_entry):
+        result = CliRunner().invoke(app, ["extension", "search"])
+
+        assert result.exit_code == 0, result.output
+        assert incomplete_catalog_entry in result.output
+        assert "Healthy (v2.0.0)" in result.output
+
+        filtered = CliRunner().invoke(app, ["extension", "search", "Healthy"])
+        assert filtered.exit_code == 0, filtered.output
+        assert "Example" not in filtered.output
+        assert "Healthy (v2.0.0)" in filtered.output
+
+    @pytest.mark.parametrize("install_allowed", [True, False])
+    @pytest.mark.parametrize(
+        ("extension_id", "command_id"),
+        [
+            ("acme-thing", "acme-thing"),
+            ("acme-thing\n", "<extension-id>"),
+        ],
+    )
+    def test_search_install_suggestion_uses_safe_catalog_id(
+        self, project_dir, install_allowed, extension_id, command_id
+    ):
+        entry = {
+            "id": extension_id,
+            "name": "Example",
+            "version": "1.0.0",
+            "description": "Example extension",
+            "_install_allowed": install_allowed,
+            "_catalog_name": "test-catalog",
+        }
+
+        with patch.object(ExtensionCatalog, "_get_merged_extensions", return_value=[entry]), \
+                patch("specify_cli.extensions._commands._require_specify_project",
+                      return_value=project_dir):
+            result = CliRunner().invoke(app, ["extension", "search"])
+
+        assert result.exit_code == 0, result.output
+        output = " ".join(result.output.split())
+        assert f"specify extension add {command_id}" in output
+        if not install_allowed:
+            assert f"specify extension add {command_id} --from <archive-url>" in output
+        if extension_id != command_id:
+            assert "acme-thing" not in result.output
+
     @pytest.mark.parametrize("downloads", ["1500", "[/red]foo"])
     def test_search_survives_non_numeric_downloads(self, temp_dir, downloads):
         """`specify extension search` must not abort when a catalog entry's

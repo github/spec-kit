@@ -477,6 +477,39 @@ steps:
         assert "Permission denied" not in captured.out
         assert captured.out.strip() == ""
 
+    @pytest.mark.parametrize(
+        "state_text, fragment",
+        [
+            ("[" * 100000, "Invalid"),  # nesting; error type varies by interpreter
+            ("{bad", "Invalid run state for"),  # decoder error is run-scoped
+        ],
+        ids=["nested-too-deeply", "decoder-error"],
+    )
+    @pytest.mark.parametrize("json_output", [False, True], ids=["text", "json"])
+    def test_status_unparseable_run_state_exits_cleanly(
+        self, project_dir, monkeypatch, json_output, state_text, fragment
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_dir)
+        state = project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
+        state.write_text(state_text, encoding="utf-8")
+
+        args = ["workflow", "status", run_id] + (["--json"] if json_output else [])
+        result = runner.invoke(app, args)
+
+        assert result.exit_code == 1, result.output
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Traceback" not in result.output
+        if json_output:
+            assert result.stdout == ""
+            assert fragment in result.stderr
+        else:
+            assert fragment in result.output
+
     def test_status_no_run_id_list_path_unaffected(self, project_dir, monkeypatch):
         """The no-run-id list-all-runs path must remain unaffected by the
         new single-run ValueError boundary."""

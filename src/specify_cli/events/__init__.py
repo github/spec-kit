@@ -875,12 +875,12 @@ ResolvedEvents = dict[str, list[dict[str, Any]]]
 
 
 def _normalize_handlers(value: Any) -> list[dict[str, Any]]:
-    """Coerce a single handler config or a list of them into a validated list.
+    """Coerce a single handler config or a list of them into a list of mappings.
 
     Accepts both the legacy single-mapping shape (``{command: ...}``) and the
-    explicit list shape (``[{command: ...}, ...]``). Drops any entry that is
-    not a mapping or lacks a ``command`` with a warning, so a malformed user
-    override never reaches installation and crashes on ``cfg.get(...)`` (#21).
+    explicit list shape (``[{command: ...}, ...]``). Drops entries that are
+    not mappings with a warning. The remaining handlers require validation by
+    the caller before installation.
     """
     if isinstance(value, dict):
         value = [value]
@@ -916,16 +916,15 @@ def _validate_resolved_event(event_name: str, handlers: list[dict[str, Any]]) ->
                 f"Event '{event_name}' handler missing required non-empty 'command' string"
             )
         # C10: matcher must be a string (or absent). A non-string matcher such
-        # as `matcher: []` passes extension validation but later crashes
-        # by_matcher.setdefault(matcher, ...) with TypeError: unhashable type.
+        # as `matcher: []` later crashes by_matcher.setdefault with TypeError.
         matcher = handler.get("matcher")
-        if matcher is not None and not isinstance(matcher, str):
+        if "matcher" in handler and not isinstance(matcher, str):
             raise ValidationError(
                 f"Event '{event_name}' handler has invalid 'matcher': "
                 "must be a string"
             )
         timeout = handler.get("timeout")
-        if timeout is not None:
+        if "timeout" in handler:
             if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
                 raise ValidationError(
                     f"Event '{event_name}' handler has invalid 'timeout': must be a positive integer"
@@ -997,7 +996,7 @@ def resolve_events(
                     override_file, integration_key,
                 )
             else:
-                key_events = key_data.get("events", {})
+                key_events = key_data.get("events")
                 if not isinstance(key_events, dict):
                     logger.warning(
                         "Override %s: 'events' for '%s' is not a mapping; ignoring override",
@@ -1093,7 +1092,7 @@ def collect_extension_events(project_root: Path) -> ResolvedEvents:
     obsolete name and ``_find_command_template`` could not match it, leaving
     the hook silently inert.
     """
-    from ..extensions import ExtensionManager
+    from ..extensions import ExtensionManager, ValidationError
 
     events: ResolvedEvents = {}
     exts_dir = project_root / ".specify" / "extensions"
@@ -1147,8 +1146,18 @@ def collect_extension_events(project_root: Path) -> ResolvedEvents:
             continue
         for event, config in runtime.items():
             handlers = _normalize_handlers(config)
-            if handlers:
-                events.setdefault(event, []).extend(handlers)
+            for handler in handlers:
+                try:
+                    _validate_resolved_event(event, [handler])
+                except ValidationError as exc:
+                    logger.warning(
+                        "Extension %s: skipping invalid event handler for '%s': %s",
+                        ext_id,
+                        event,
+                        exc,
+                    )
+                    continue
+                events.setdefault(event, []).append(handler)
     return events
 
 
@@ -1932,12 +1941,12 @@ def validate_events(data: dict[str, Any]) -> None:
             # C10: matcher must be a string (or absent). A non-string matcher
             # such as `matcher: []` would later crash by_matcher.setdefault.
             matcher = event_config.get("matcher")
-            if matcher is not None and not isinstance(matcher, str):
+            if "matcher" in event_config and not isinstance(matcher, str):
                 raise ValidationError(
                     f"Event '{event_name}' has invalid 'matcher': must be a string"
                 )
             timeout = event_config.get("timeout")
-            if timeout is not None:
+            if "timeout" in event_config:
                 if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
                     raise ValidationError(
                         f"Event '{event_name}' has invalid 'timeout': must be a positive integer"

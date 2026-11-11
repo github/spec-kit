@@ -10,7 +10,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
-
+from urllib.parse import urlparse
 from . import BundlerError
 from .manifest import _text
 from .yamlio import ensure_within, load_yaml
@@ -66,6 +66,14 @@ class CatalogSource:
     @property
     def install_allowed(self) -> bool:
         return self.install_policy is InstallPolicy.INSTALL_ALLOWED
+
+    @property
+    def is_builtin(self) -> bool:
+        """Whether this source is a ``builtin://`` catalog (packaged snapshot offline)."""
+        try:
+            return urlparse(self.url).scheme.lower() == "builtin"
+        except ValueError:
+            return False
 
     @classmethod
     def from_dict(cls, data: Any, scope: Scope) -> "CatalogSource":

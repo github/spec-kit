@@ -30,7 +30,13 @@ from typing import Any
 import typer
 
 from .._capture import run_captured
-from ..base import IntegrationBase, IntegrationOption, SkillsIntegration
+from ..base import (
+    IntegrationBase,
+    IntegrationOption,
+    SkillsIntegration,
+    check_dispatch_settings,
+    requested_dispatch_settings,
+)
 from ..manifest import IntegrationManifest
 
 _COPILOT_CORE_COMMANDS = {
@@ -43,8 +49,16 @@ _COPILOT_CORE_COMMANDS = {
     "plan",
     "specify",
     "tasks",
-    "taskstoissues",
 }
+
+# ``--reasoning-effort`` levels and ``--context`` tiers accepted by GitHub
+# Copilot CLI 1.0.106. The CLI rejects any other value with an error that
+# repeats it, and a value can be captured agent output, so per-step
+# ``reasoning_effort`` and ``context_size`` are limited to these.
+REASONING_EFFORT_LEVELS: tuple[str, ...] = (
+    "none", "minimal", "low", "medium", "high", "xhigh", "max"
+)
+CONTEXT_TIERS: tuple[str, ...] = ("default", "long_context")
 
 
 def _copilot_executable() -> str:
@@ -153,6 +167,9 @@ class CopilotIntegration(IntegrationBase):
         "extension": ".agent.md",
     }
     invoke_separator = "-"
+    # Translated by both receiving methods defined below: build_exec_args()
+    # for prompt steps and dispatch_command() for command steps.
+    supported_dispatch_settings = frozenset({"reasoning_effort", "context_size"})
 
     CANONICAL_TO_NATIVE = {
         "session_start": "sessionStart",
@@ -177,6 +194,14 @@ class CopilotIntegration(IntegrationBase):
 
     # Mutable flag set by setup() — indicates the active scaffolding mode.
     _skills_mode: bool = True
+
+    # Set by ``setup()`` from ``--no-model-invocation`` (skills layout only);
+    # applies to core command skills only, since mandatory extension hooks rely
+    # on the model invoking the hook skill. Integrations are process-wide
+    # singletons, so preset overrides re-registered later in the same run see
+    # the same value. Commands that rewrite skills without calling ``setup()``
+    # (e.g. ``preset add``, ``integration use``) get the default.
+    _disable_model_invocation: bool = False
 
     def effective_invoke_separator(
         self,
@@ -299,6 +324,17 @@ class CopilotIntegration(IntegrationBase):
                 ),
             ),
         )
+        opts.append(
+            IntegrationOption(
+                "--no-model-invocation",
+                is_flag=True,
+                default=False,
+                help=(
+                    "Install core command skills as user-invocable only "
+                    "(disable-model-invocation: true); skills layout only, documented for VS Code"
+                ),
+            ),
+        )
         return opts
 
     def _resolve_executable(self) -> str:
@@ -314,6 +350,54 @@ class CopilotIntegration(IntegrationBase):
         override = os.environ.get(env_name, "").strip()
         return override if override else _copilot_executable()
 
+    def _dispatch_setting_args(
+        self,
+        *,
+        via: str,
+        reasoning_effort: str | None,
+        context_size: str | None,
+    ) -> list[str]:
+        """Gate per-step dispatch settings and return their Copilot CLI flags.
+
+        *via* names the method that received the settings, as for
+        :func:`check_dispatch_settings`. The gate calls
+        :meth:`validate_dispatch_setting`, so only values the CLI accepts
+        reach it.
+        """
+        settings = requested_dispatch_settings(
+            reasoning_effort=reasoning_effort, context_size=context_size
+        )
+        if not settings:
+            return []
+        check_dispatch_settings(self, settings, via=via)
+        args: list[str] = []
+        if reasoning_effort is not None:
+            args.extend(["--reasoning-effort", reasoning_effort])
+        if context_size is not None:
+            args.extend(["--context", context_size])
+        return args
+
+    def validate_dispatch_setting(self, name: str, value: str) -> None:
+        """Reject values that Copilot CLI does not accept.
+
+        Copilot CLI repeats a rejected value in its error, and the value can be
+        captured agent output, so Spec Kit rejects it first without repeating it.
+        """
+        if name == "reasoning_effort" and value not in REASONING_EFFORT_LEVELS:
+            raise ValueError(
+                "GitHub Copilot 'reasoning_effort' must be one of "
+                f"{', '.join(REASONING_EFFORT_LEVELS)}. To pass a newer level, "
+                'set SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS="--reasoning-effort '
+                "<value>\" instead of 'reasoning_effort'."
+            )
+        if name == "context_size" and value not in CONTEXT_TIERS:
+            raise ValueError(
+                "GitHub Copilot 'context_size' must be one of "
+                f"{', '.join(CONTEXT_TIERS)}. To pass a newer tier, set "
+                'SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS="--context <value>" '
+                "instead of 'context_size'."
+            )
+
     def build_exec_args(
         self,
         prompt: str,
@@ -323,8 +407,15 @@ class CopilotIntegration(IntegrationBase):
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
         project_root: Path | None = None,
+        reasoning_effort: str | None = None,
+        context_size: str | None = None,
     ) -> list[str] | None:
         self.validate_runtime_config(integration_args, integration_options)
+        setting_args = self._dispatch_setting_args(
+            via="build_exec_args",
+            reasoning_effort=reasoning_effort,
+            context_size=context_size,
+        )
         # GitHub Copilot CLI uses ``copilot -p "prompt"`` for
         # non-interactive mode.  --yolo enables all permissions
         # (tools, paths, and URLs) so the agent can perform file
@@ -338,6 +429,7 @@ class CopilotIntegration(IntegrationBase):
             args.append("--yolo")
         if model:
             args.extend(["--model", model])
+        args.extend(setting_args)
         if output_json:
             args.extend(["--output-format", "json"])
         return args
@@ -371,6 +463,8 @@ class CopilotIntegration(IntegrationBase):
         integration_options: Mapping[str, Any] | None = None,
         output_json: bool | None = None,
         capture_max_bytes: int | None = None,
+        reasoning_effort: str | None = None,
+        context_size: str | None = None,
     ) -> dict[str, Any]:
         """Dispatch via ``--agent speckit.<stem>`` instead of slash-commands.
 
@@ -389,6 +483,11 @@ class CopilotIntegration(IntegrationBase):
             output_json = not stream
 
         self.validate_runtime_config(integration_args, integration_options)
+        setting_args = self._dispatch_setting_args(
+            via="dispatch_command",
+            reasoning_effort=reasoning_effort,
+            context_size=context_size,
+        )
 
         stem = command_name
         if stem.startswith("speckit."):
@@ -420,6 +519,7 @@ class CopilotIntegration(IntegrationBase):
             cli_args.append("--yolo")
         if model:
             cli_args.extend(["--model", model])
+        cli_args.extend(setting_args)
         if output_json:
             cli_args.extend(["--output-format", "json"])
 
@@ -482,14 +582,78 @@ class CopilotIntegration(IntegrationBase):
         exclusions.add(".vscode/settings.json")
         return exclusions
 
+    @staticmethod
+    def _inject_frontmatter_flag(content: str, key: str, value: str = "true") -> str:
+        """Insert ``key: value`` before the closing ``---`` if not already present."""
+        lines = content.splitlines(keepends=True)
+        dash_count = 0
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith(f"{key}:"):
+                return content
+
+        out: list[str] = []
+        dash_count = 0
+        injected = False
+        for line in lines:
+            if line.rstrip("\n\r") == "---":
+                dash_count += 1
+                if dash_count == 2 and not injected:
+                    eol = "\r\n" if line.endswith("\r\n") else "\n"
+                    out.append(f"{key}: {value}{eol}")
+                    injected = True
+            out.append(line)
+        return "".join(out)
+
+    @staticmethod
+    def _skill_name_from_content(content: str) -> str | None:
+        """Return the ``name:`` field of a skill's first frontmatter block."""
+        dash_count = 0
+        for line in content.splitlines():
+            stripped = line.rstrip("\r\n")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith("name:"):
+                name = stripped[len("name:"):].strip().strip('"').strip("'")
+                return name or None
+        return None
+
+    @staticmethod
+    def _is_core_command_skill(name: str | None) -> bool:
+        from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+
+        return bool(name) and name.startswith("speckit-") and (
+            name.removeprefix("speckit-") in CORE_COMMAND_NAMES
+        )
+
     def post_process_skill_content(self, content: str) -> str:
         """Inject shared hook guidance into Copilot skill content.
 
         Delegates to :class:`_CopilotSkillsHelper` for shared post-processing.
         The ``mode:`` frontmatter field is intentionally omitted: VS Code
         Copilot Agent Skills do not support it (see issue #2799).
+
+        ``disable-model-invocation: true`` is added to core command skills
+        when the last ``setup()`` in this process was given
+        ``--no-model-invocation`` in the skills layout. Otherwise the key is
+        omitted, which VS Code treats as ``false``.
         """
-        return _CopilotSkillsHelper().post_process_skill_content(content)
+        updated = _CopilotSkillsHelper().post_process_skill_content(content)
+        if self._disable_model_invocation and self._is_core_command_skill(
+            self._skill_name_from_content(updated)
+        ):
+            updated = self._inject_frontmatter_flag(
+                updated, "disable-model-invocation"
+            )
+        return updated
 
     def setup(
         self,
@@ -506,16 +670,24 @@ class CopilotIntegration(IntegrationBase):
         """
         parsed_options = parsed_options or {}
         self._skills_mode = self.is_skills_mode(parsed_options, project_root)
-        if self._skills_mode:
-            created = self._setup_skills(project_root, manifest, parsed_options, **opts)
-        else:
-            created = self._setup_commands(project_root, manifest, parsed_options, **opts)
-
-        # Install agent runtime events
-        event_files = self.emit_events(
-            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options,
-            force=opts.get("force", False),
+        self._disable_model_invocation = (
+            self._skills_mode and parsed_options.get("no_model_invocation") is True
         )
+        try:
+            if self._skills_mode:
+                created = self._setup_skills(project_root, manifest, parsed_options, **opts)
+            else:
+                created = self._setup_commands(project_root, manifest, parsed_options, **opts)
+
+            # Install agent runtime events
+            event_files = self.emit_events(
+                project_root, manifest, events=opts.get("events"), parsed_options=parsed_options,
+                force=opts.get("force", False),
+            )
+        except BaseException:
+            self._disable_model_invocation = False
+            raise
+
         created.extend(event_files)
         return created
 

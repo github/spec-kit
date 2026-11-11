@@ -57,7 +57,7 @@ CLI 只需安装一次，项目只需初始化一次；以下三种流程共用�
 如需使用其他助手，将 `copilot` 替换为对应的
 [集成标识](https://github.github.io/spec-kit/integrations/index.html)。
 
-已有代码？请参阅[现有项目指南](https://github.github.io/spec-kit/guides/existing-projects.html)。
+已有代码？请参阅[现有项目指南](https://github.github.io/spec-kit/how-to/existing-projects.html)。
 锁定版本、其他安装方式、CI 与故障排查见[安装指南](https://github.github.io/spec-kit/installation.html)；
 更新已安装的 CLI 和项目文件见[升级指南](https://github.github.io/spec-kit/upgrade.html)。
 
@@ -160,7 +160,7 @@ specify extension add assess
 **扩展**新增能力，**预设**调整现有行为，**工作流**自动执行步骤，**捆绑包**打包面向角色的配置。
 单个项目的一次性模板调整可使用项目本地覆盖；流程或术语的本地化可使用预设。
 
-[定制指南](https://github.github.io/spec-kit/guides/customization.html) ·
+[定制指南](https://github.github.io/spec-kit/how-to/customization.html) ·
 [社区扩展、预设、捆绑包与实战演练](https://github.github.io/spec-kit/community/overview.html)
 
 <a id="-specify-cli-参考"></a>
@@ -175,9 +175,9 @@ specify extension add assess
 
 以下链接指向英文指南。工具升级与功能规范演进是两件事：升级时更新工具文件，需求变化时更新 `specs/` 制品。
 
-- [CLI 参考](https://github.github.io/spec-kit/reference/overview.html)与[流程命令](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
-- [SDD 理念](https://github.github.io/spec-kit/concepts/sdd.html)、[完整方法论](./spec-driven.md)与[现有规范演进](https://github.github.io/spec-kit/guides/evolving-specs.html)
-- [项目历史](https://github.github.io/spec-kit/history.html)
+- [CLI 参考](https://github.github.io/spec-kit/index.html#specify-cli)与[流程命令](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
+- [SDD 理念](https://github.github.io/spec-kit/how-to/sdd.html)、[完整方法论](./spec-driven.md)与[现有规范演进](https://github.github.io/spec-kit/how-to/evolving-specs.html)
+- [项目历史](https://github.github.io/spec-kit/overview/history.html)
 - [Spec Kit 如何使用 Spec Kit](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
 
 <a id="-支持"></a>

@@ -104,10 +104,10 @@ during PR review. A separate SDD plan is not required for every issue.
 Larger changes need prior discussion and agreement with maintainers, as the
 [contribution guide](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#submitting-a-pull-request)
 explains. When decisions should remain useful across changes, the repository
-keeps [CLI](https://github.com/github/spec-kit/blob/main/design/cli.md),
-[integration](https://github.com/github/spec-kit/blob/main/design/integration.md),
-and [workflow-step](https://github.com/github/spec-kit/blob/main/design/workflow-step.md)
-design documents.
+keeps internal design documents for contributors. Supported
+[integration](../integrations/api.md) and
+[workflow-step](../workflow-steps/api.md) authoring contracts are documented
+separately on this site.
 
 &#9733; The [bundler SDD snapshot](https://github.com/github/spec-kit/commit/3fd1e54d4b237af6124bb967e2eae24c93685a89)
 illustrates the deeper path: its plan, research, data model, contracts, and
@@ -233,7 +233,7 @@ each combining an extension with a resumable *Spec Kit workflow* and a human
 review gate. It also ships the
 [`lean` preset](https://github.com/github/spec-kit/tree/main/presets/lean)
 to demonstrate an alternative way of shaping core SDD guidance. These are
-Spec Kit's own [extensions, presets, workflows, and bundles](customization.md),
+Spec Kit's own [extensions, presets, workflows, and bundles](../how-to/customization.md),
 not the repository's GitHub Actions workflows.
 
 &#9733; Beyond core feature delivery, agentic community-submission workflows for

@@ -464,6 +464,13 @@ def refresh_shared_templates(
             console.print(f"    {rel}")
 
 
+def script_variant_dirs(script_type: str) -> tuple[str, ...]:
+    """Return the ``scripts/`` variant directories installed for *script_type*."""
+    if script_type == "py":
+        return ("python", "powershell" if os.name == "nt" else "bash")
+    return ("bash" if script_type == "sh" else "powershell",)
+
+
 def install_shared_infra(
     project_path: Path,
     script_type: str,
@@ -515,12 +522,7 @@ def install_shared_infra(
     # manifest entries the core no longer ships (stale-script cleanup, #3076).
     seen_rels: set[str] = set()
     scanned_variant_dirs: set[str] = set()
-    shell_variant = "powershell" if os.name == "nt" else "bash"
-    variant_dirs = (
-        ("python", shell_variant)
-        if script_type == "py"
-        else ("bash" if script_type == "sh" else "powershell",)
-    )
+    variant_dirs = script_variant_dirs(script_type)
 
     def _decide_overwrite(rel: str, dst: Path) -> tuple[bool, str | None]:
         """Return (write, bucket) where bucket is 'skip', 'preserved', or None."""

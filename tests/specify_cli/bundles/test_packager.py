@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import zipfile
 from pathlib import Path
 
@@ -24,6 +25,41 @@ def _make_bundle(directory: Path, *, extra_files: dict | None = None) -> Path:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
     return directory
+
+
+def test_reference_only_bundle_packages_without_expansion(tmp_path: Path, monkeypatch):
+    bundle = tmp_path / "reference-only"
+    data = valid_manifest_dict(schema_version="1.1")
+    data["provides"] = {"bundles": [{"id": "child", "version": "1.0.0"}]}
+    bundle.mkdir()
+    (bundle / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    (bundle / "README.md").write_text("# Parent", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "specify_cli.bundles.expansion.expand_manifest",
+        lambda *args, **kwargs: pytest.fail("build expanded bundle references"),
+    )
+    monkeypatch.setattr(
+        socket,
+        "create_connection",
+        lambda *args, **kwargs: pytest.fail("build attempted network access"),
+    )
+    result = build_bundle(bundle, output_dir=tmp_path / "out")
+
+    assert result.artifact_path.exists()
+
+
+def test_reference_structural_error_refuses_build(tmp_path: Path):
+    bundle = tmp_path / "invalid-reference"
+    data = valid_manifest_dict(schema_version="1.0")
+    data["provides"] = {"bundles": [{"id": "child", "version": "1.0.0"}]}
+    bundle.mkdir()
+    (bundle / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    (bundle / "README.md").write_text("# Parent", encoding="utf-8")
+
+    with pytest.raises(BundlerError, match="Bundle references require schema_version"):
+        build_bundle(bundle, output_dir=tmp_path / "out")
+    assert not list((tmp_path / "out").glob("*.zip"))
 
 
 def test_artifact_named_by_id_and_version(tmp_path: Path):
@@ -132,6 +168,22 @@ def test_symlinked_directory_is_not_followed(tmp_path: Path):
         names = archive.namelist()
     assert "linkdir/secret.txt" not in names
     assert not any("secret" in name for name in names)
+
+
+@pytest.mark.parametrize("name", ["bundle.yml", "README.md"])
+def test_build_refuses_symlinked_manifest_or_readme(tmp_path: Path, name: str):
+    bundle = _make_bundle(tmp_path / "b")
+    (bundle / "shared").mkdir()
+    (bundle / name).rename(bundle / "shared" / name)
+    try:
+        (bundle / name).symlink_to(Path("shared") / name)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this platform")
+    # The packager skips symlinked files, so building would otherwise succeed
+    # and emit an artifact without the manifest or README at its root.
+    with pytest.raises(BundlerError, match="symlink"):
+        build_bundle(bundle, output_dir=tmp_path / "out")
+    assert not list((tmp_path / "out").glob("*.zip"))
 
 
 def test_unsafe_bundle_id_is_rejected_before_build(tmp_path: Path):

@@ -1,5 +1,6 @@
 """Verification, resolution, and validation tests for `specify self upgrade`."""
 
+import sys
 import urllib.error
 from unittest.mock import patch
 
@@ -34,7 +35,7 @@ class TestVerificationMismatch:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -57,7 +58,7 @@ class TestVerificationMismatch:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -79,7 +80,7 @@ class TestVerificationMismatch:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.9.0"
         ):
@@ -99,7 +100,7 @@ class TestVerificationMismatch:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -119,7 +120,7 @@ class TestVerificationMismatch:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -139,7 +140,7 @@ class TestVerificationMismatch:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -349,7 +350,7 @@ class TestResolutionFailures:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "release-main"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -371,7 +372,7 @@ class TestUnknownCurrent:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="unknown"
         ):
@@ -393,7 +394,7 @@ class TestUnknownCurrent:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="unknown"
         ):
@@ -422,7 +423,7 @@ class TestTokenScrubbing:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli.authentication.http.urllib.request.build_opener"
         ) as mock_build_opener, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -455,7 +456,7 @@ class TestTokenScrubbing:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli.authentication.http.urllib.request.build_opener"
         ) as mock_build_opener, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=sys.executable
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):

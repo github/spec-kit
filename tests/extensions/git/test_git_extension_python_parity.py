@@ -21,7 +21,9 @@ from tests.parity_helpers import collation_range_locale
 from tests.extensions.git.test_git_extension import (
     _GIT_ENV,
     HAS_PWSH,
+    _add_prompt_probe_remote,
     _init_git,
+    _probe_log,
     _run_bash,
     _run_pwsh,
     _setup_project,
@@ -292,12 +294,119 @@ class TestCreateFeatureBranchParity:
         _assert_parity(b, p)
         assert json.loads(p.stdout)["FEATURE_NUM"] == "013"
 
+    def test_fetch_disables_terminal_prompt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Both twins fetch with GIT_TERMINAL_PROMPT=0 and survive a failing remote (#5199)."""
+        monkeypatch.delenv("GIT_TERMINAL_PROMPT", raising=False)
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        bash_log = _add_prompt_probe_remote(bash_proj)
+        py_log = _add_prompt_probe_remote(py_proj)
+        b = _run_bash(
+            "create-new-feature-branch.sh", bash_proj, "--json", "--short-name", "probe", "Probe feature"
+        )
+        p = _run_py(
+            "create-new-feature-branch", py_proj, "--json", "--short-name", "probe", "Probe feature"
+        )
+        _assert_parity(b, p)
+        assert json.loads(p.stdout)["BRANCH_NAME"] == "001-probe"
+        for log in (bash_log, py_log):
+            calls = _probe_log(log)
+            assert calls, "the probe remote was never contacted"
+            assert set(calls) == {"0"}
+
     def test_explicit_number(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
         b = _run_bash("create-new-feature-branch.sh", bash_proj, "--json", "--number", "42", "some feature")
         p = _run_py("create-new-feature-branch", py_proj, "--json", "--number", "42", "some feature")
         _assert_parity(b, p)
         assert json.loads(p.stdout)["FEATURE_NUM"] == "042"
+
+    def test_explicit_number_max_int64_accepted(self, tmp_path: Path):
+        _, py_proj = _twin_projects(tmp_path)
+        p = _run_py(
+            "create-new-feature-branch",
+            py_proj,
+            "--json",
+            "--dry-run",
+            "--number",
+            str(2**63 - 1),
+            "some feature",
+        )
+        assert p.returncode == 0, p.stderr
+        assert json.loads(p.stdout)["FEATURE_NUM"] == str(2**63 - 1)
+
+    def test_explicit_number_zero_padded_input_accepted(self, tmp_path: Path):
+        _, py_proj = _twin_projects(tmp_path)
+        p = _run_py(
+            "create-new-feature-branch",
+            py_proj,
+            "--json",
+            "--dry-run",
+            "--number",
+            "0" * 5000 + "1",
+            "some feature",
+        )
+        assert p.returncode == 0, p.stderr
+        assert json.loads(p.stdout)["FEATURE_NUM"] == "001"
+
+    def test_explicit_number_above_max_int64_rejected(self, tmp_path: Path):
+        """Pin Python-side bound checking; bash currently has no equivalent guard."""
+        _, py_proj = _twin_projects(tmp_path)
+        too_large = str(2**63)
+        p = _run_py(
+            "create-new-feature-branch",
+            py_proj,
+            "--json",
+            "--dry-run",
+            "--number",
+            too_large,
+            "some feature",
+        )
+        assert p.returncode == 1
+        assert (
+            "Error: --number must be between 0 and 9223372036854775807, "
+            f"got '{too_large}'"
+        ) in p.stderr
+        assert "Traceback" not in p.stderr
+
+    def test_explicit_number_oversized_digits_rejected_without_traceback(
+        self, tmp_path: Path
+    ):
+        _, py_proj = _twin_projects(tmp_path)
+        oversized = "9" * 5000
+        p = _run_py(
+            "create-new-feature-branch",
+            py_proj,
+            "--json",
+            "--dry-run",
+            "--number",
+            oversized,
+            "some feature",
+        )
+        assert p.returncode == 1
+        assert (
+            "Error: --number must be between 0 and 9223372036854775807, "
+            f"got '{oversized}'"
+        ) in p.stderr
+        assert "Traceback" not in p.stderr
+
+    def test_auto_detected_number_above_max_int64_rejected(self, tmp_path: Path):
+        _, py_proj = _twin_projects(tmp_path)
+        (py_proj / "specs" / f"{2**63 - 1}-existing").mkdir(parents=True)
+        p = _run_py(
+            "create-new-feature-branch",
+            py_proj,
+            "--json",
+            "--dry-run",
+            "some feature",
+        )
+        assert p.returncode == 1
+        assert (
+            "Error: feature number must be between 0 and 9223372036854775807, "
+            "got '9223372036854775808'"
+        ) in p.stderr
+        assert "Traceback" not in p.stderr
 
     def test_timestamp_mode_format(self, tmp_path: Path):
         _, py_proj = _twin_projects(tmp_path)

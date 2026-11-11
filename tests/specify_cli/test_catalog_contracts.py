@@ -13,14 +13,22 @@ import yaml
 from specify_cli.extensions import ExtensionCatalog, ValidationError
 from specify_cli.integrations import (
     IntegrationCatalog,
+    IntegrationCatalogError,
     IntegrationValidationError,
 )
 from specify_cli.presets import PresetCatalog, PresetValidationError
 from specify_cli.workflows.catalog import (
     WorkflowCatalog,
+    WorkflowCatalogEntry,
+    WorkflowCatalogError,
     WorkflowValidationError,
 )
-from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
+from specify_cli.workflows.step.catalog import (
+    StepCatalog,
+    StepCatalogEntry,
+    StepCatalogError,
+    StepValidationError,
+)
 
 
 @dataclass(frozen=True)
@@ -81,6 +89,85 @@ REMOTE_CATALOGS = (
         False,
     ),
 )
+
+
+@pytest.mark.parametrize("case", REMOTE_CATALOGS, ids=lambda case: case.name)
+@pytest.mark.parametrize("layer", ["project", "user", "environment"])
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+def test_catalog_search_rejects_loopback_http_before_network(
+    case: RemoteCatalogCase,
+    layer: str,
+    host: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import Mock
+
+    project = tmp_path / "project"
+    home = tmp_path / "home"
+    project.mkdir()
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.delenv(case.env_var, raising=False)
+    url = f"http://{host}:8080/catalog.json?channel=test"
+    if layer == "environment":
+        monkeypatch.setenv(case.env_var, url)
+    else:
+        root = project if layer == "project" else home
+        config_dir = root / ".specify"
+        config_dir.mkdir()
+        (config_dir / case.config_filename).write_text(
+            yaml.safe_dump({"catalogs": [{"name": "local", "url": url}]}),
+            encoding="utf-8",
+        )
+    open_url = Mock(side_effect=AssertionError("Catalog URL reached the network"))
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", open_url)
+
+    catalog = case.catalog_type(project)
+    error_type = IntegrationCatalogError if case.name == "integration" else case.error_type
+    with pytest.raises(error_type, match="HTTPS"):
+        catalog.get_active_catalogs()
+
+    with pytest.raises(error_type, match="HTTPS"):
+        catalog.search()
+
+    open_url.assert_not_called()
+
+
+@pytest.mark.parametrize("case", REMOTE_CATALOGS, ids=lambda case: case.name)
+@pytest.mark.parametrize("host", ["example.com", "localhost", "127.0.0.1", "[::1]"])
+def test_catalog_https_urls_remain_allowed(case, host, tmp_path):
+    case.catalog_type(tmp_path)._validate_catalog_url(
+        f"https://{host}:8443/catalog.json"
+    )
+
+
+@pytest.mark.parametrize(
+    "catalog_type,entry_type,error_type",
+    [
+        (WorkflowCatalog, WorkflowCatalogEntry, WorkflowCatalogError),
+        (StepCatalog, StepCatalogEntry, StepCatalogError),
+    ],
+)
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+def test_workflow_catalog_fetch_rejects_loopback_http_before_network(
+    catalog_type, entry_type, error_type, host, tmp_path, monkeypatch
+):
+    from unittest.mock import Mock
+
+    entry = entry_type(
+        url=f"http://{host}:8080/catalog.json?channel=test",
+        name="local",
+        priority=1,
+        install_allowed=False,
+    )
+    open_url = Mock(side_effect=AssertionError("Catalog URL reached the network"))
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", open_url)
+
+    with pytest.raises(error_type, match="HTTPS"):
+        catalog_type(tmp_path)._fetch_single_catalog(entry, force_refresh=True)
+
+    open_url.assert_not_called()
 
 
 def _write_remote_config(root: Path, filename: str, name: str) -> None:
