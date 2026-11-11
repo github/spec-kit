@@ -118,6 +118,7 @@ def integration_switch(
         _register_extensions_for_agent(
             project_root,
             target,
+            overwrite_modified=force,
             continuing=(
                 "The integration switch succeeded, but installed extensions may "
                 "need re-registration."
@@ -407,6 +408,7 @@ def integration_switch(
     _register_extensions_for_agent(
         project_root,
         target,
+        overwrite_modified=force,
         continuing="The integration switch succeeded, but installed extensions may need re-registration.",
     )
     _register_presets_for_agent(

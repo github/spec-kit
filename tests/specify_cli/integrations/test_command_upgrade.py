@@ -1948,3 +1948,33 @@ class TestIntegrationUpgradeBasic:
             os.chdir(old)
         assert result.exit_code == 0
         assert "Nothing to upgrade" in result.output
+
+
+def test_upgrade_resource_force_is_user_controlled(tmp_path):
+    import yaml
+    from specify_cli.extensions import ExtensionManager
+
+    project = _init_project(tmp_path, "claude")
+    source = tmp_path / "resource-ext"
+    (source / "commands").mkdir(parents=True)
+    (source / "references").mkdir()
+    (source / "references/r.md").write_text("original")
+    (source / "commands/run.md").write_text("Read references/r.md")
+    (source / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "extension": {"id": "resource-ext", "name": "Resource", "version": "1.0.0", "description": "test"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"commands": [{"name": "speckit.resource-ext.run", "file": "commands/run.md", "resources": ["references/r.md"]}]},
+    }))
+    manager = ExtensionManager(project)
+    manager.install_from_directory(source, "1.0.0")
+    resource = project / ".claude/skills/speckit-resource-ext-run/references/r.md"
+    original_hash = manager.registry.get("resource-ext")["skill_resource_hashes"]["project"][resource.relative_to(project).as_posix()]
+    resource.write_text("edited")
+    result = _run_in_project(project, ["integration", "upgrade", "claude", "--script", "sh"])
+    assert result.exit_code == 0, result.output
+    assert resource.read_text() == "edited"
+    assert ExtensionManager(project).registry.get("resource-ext")["skill_resource_hashes"]["project"][resource.relative_to(project).as_posix()] == original_hash
+    result = _run_in_project(project, ["integration", "upgrade", "claude", "--script", "sh", "--force"])
+    assert result.exit_code == 0, result.output
+    assert resource.read_text() == "original"

@@ -148,7 +148,9 @@ Bundled extension commands do not yet use this core-template script routing.
 `__AGENT__` and command references are resolved during rendering, not by
 adding per-agent wrapper scripts. For `generic`, extension registration
 resolves the persisted `--commands-dir` rather than the static registry
-placeholder; `--skills` emits skills into that same directory.
+placeholder; `--skills` emits skills into that same directory. Extension
+commands with declared resources copy those files alongside their rendered
+`SKILL.md` outputs, not into other command formats.
 
 ## External adapter package contract
 

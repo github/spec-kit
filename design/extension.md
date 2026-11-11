@@ -75,7 +75,7 @@ An extension must provide at least one command, hook, event, template, or
 script. Supported behavioral declarations are:
 
 - `provides.commands`: canonical `speckit.<extension-id>.<command>` names,
-  source files, descriptions, and optional aliases;
+  source files, descriptions, optional aliases, and optional `resources`;
 - `provides.templates`: named template files;
 - `provides.scripts`: named script entries with optional runtime declarations
   from `bash`, `powershell`, and `python`;
@@ -89,6 +89,17 @@ Manifest paths are relative to the extension root. Absolute paths, traversal,
 and unsafe command or alias output names are rejected. Templates and scripts
 always have `replace` semantics when they participate in artifact resolution;
 extensions cannot author preset composition strategies.
+
+Each command's `resources` is an optional list of non-empty extension-root-relative
+file paths or gitignore-style patterns, using the `.extensionignore` dialect.
+Backslashes are normalized; absolute paths, `..` segments, negation, and invalid
+patterns are rejected. At installation or skill rendering, each explicit file
+must exist and each wildcard must match regular files in the installed package;
+symlink matches and a destination of `SKILL.md` are rejected. Matches are
+sorted and deduplicated. A non-empty list enables skill copy mode, preserving
+source-relative paths under each rendered skill. Missing or empty lists retain
+no-copy rendering. See [Skill resources](../docs/extensions/developing.md#skill-resources)
+for authoring guidance and the working-directory caveat.
 
 Primary command names must use the extension's namespace. Installation rejects
 names and aliases that exactly match a name from another installed extension,
@@ -124,8 +135,14 @@ The JSON `.registry` is the lifecycle source of truth for installed
 extensions. Each valid entry records version, source provenance, manifest
 hash, enablement, priority, installation time, registered command outputs,
 registered skills, and, where needed, hashes proving ownership of generic
-integration artifacts. Lower numeric priority has higher precedence; ties are
-ordered by extension ID.
+integration artifacts. `skill_resource_hashes` records copied resource SHA-256
+hashes in `project` and `home` buckets, keyed by their recorded paths relative
+to the project root and `Path.home()` respectively. Missing or empty buckets
+mean no recorded resources. Project scope takes precedence if both roots contain
+the destination; destinations outside both roots receive no copies and produce
+a warning. Home directories can be shared across projects, so project-local
+registry hashes are not exclusive cross-project authority. Lower numeric
+priority has higher precedence; ties are ordered by extension ID.
 
 `.specify/extensions.yml` is a separate YAML projection used by declarative
 hooks. It contains a normalized installed list, hook bindings, and settings.
@@ -257,8 +274,11 @@ preservation from a partial failed installation.
 Extension command source is agent-neutral Markdown. The active integration's
 registrar converts it to the agent's command, recipe, TOML, YAML, or
 `SKILL.md` layout, rewrites extension-relative asset paths to the installed
-extension directory, resolves command references, and records the generated
-outputs in `.registry`. The output formats and integration ownership rules are
+extension directory by default, resolves command references, and records the
+generated outputs in `.registry`. Copy-mode skill rendering skips path
+rewriting in the body and frontmatter scripts, while still resolving
+placeholders; non-skill outputs retain their existing rendering and do not
+receive resource copies. The output formats and integration ownership rules are
 defined in [Agent Integration Design](integration.md).
 
 Native registration follows the selected integration's output flavor. It
@@ -272,6 +292,25 @@ supplemental path. That path renders only primary commands as
 `speckit-<extension>-<command>/SKILL.md`. A normal install skips an existing
 unverified skill file or directory, while an expected development symlink or a
 forced integration refresh may be replaced.
+
+### Skill resource lifecycle
+
+Resources are copied only when the corresponding `SKILL.md` is written. Native
+skill registration copies to primary and alias directories; supplemental skills
+render primaries only. Extension-backed skill restoration after preset removal
+also uses copy-mode rendering and resource ownership.
+
+| Operation | Resource behavior |
+| --- | --- |
+| Install / render | Write and record hashes for copies; skip unowned existing destinations with a warning unless forced. |
+| Refresh / integration switch or upgrade | Overwrite hash-matching copies; preserve modified recorded copies with a warning unless the user supplies `--force`. |
+| Extension removal / update / force reinstall | Remove recorded resources even if edited, using recorded project/home paths across agent directories, including moved locations; unsafe paths are skipped with a warning. Update and reinstall then install the new set. |
+| Per-agent unregister | Restrict recorded-path cleanup to the agent's currently resolved skills directory; records outside it remain. |
+
+Resource cleanup itself does not remove unrecorded paths. Native and generic
+skill cleanup leaves unrelated files in place, but existing non-generic
+supplemental cleanup removes the entire skill directory, including unrecorded
+files. A forced render can overwrite an unowned destination.
 
 Hooks are declarative AI-agent follow-up instructions, not direct subprocess
 execution. `HookExecutor` is a helper API that filters enabled bindings,

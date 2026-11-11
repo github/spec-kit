@@ -1599,7 +1599,7 @@ class TestExtensionSkillRegistration:
 
         original = CommandRegistrar.register_commands_for_agent
 
-        def flaky(self, agent_name, manifest, ext_dir, project_root, link_outputs=False):
+        def flaky(self, agent_name, manifest, ext_dir, project_root, link_outputs=False, **kwargs):
             if manifest.id == "aaa-fail":
                 raise OSError("simulated command-file write failure")
             return original(
@@ -3677,3 +3677,271 @@ class TestExtensionSkillEdgeCases:
         assert result is True
         assert not (skills_dir / "speckit-test-ext-hello").exists()
         assert not (skills_dir / "speckit-test-ext-world").exists()
+
+
+def test_supplemental_resource_registry_refresh_and_force(project_dir, temp_dir):
+    from specify_cli.integrations.manifest import _sha256
+
+    _create_init_options(project_dir, ai="copilot", ai_skills=True)
+    skills = _create_skills_dir(project_dir, ai="copilot")
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["references/r.md", "scripts/x.sh"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("reference")
+    (ext / "scripts").mkdir()
+    (ext / "scripts/x.sh").write_text("#!/bin/sh\necho ok\n")
+    (ext / "commands/hello.md").write_text(
+        "---\ndescription: Hello\nscripts:\n  sh: scripts/x.sh --json\n---\n\n"
+        "Run {SCRIPT}; read references/r.md and templates/t.md\n"
+    )
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    skill = skills / "speckit-test-ext-hello"
+    assert "Run scripts/x.sh --json; read references/r.md and templates/t.md" in (skill / "SKILL.md").read_text()
+    resource = skill / "references/r.md"
+    script = skill / "scripts/x.sh"
+    key = resource.relative_to(project_dir).as_posix()
+    hashes = manager.registry.get("test-ext")["skill_resource_hashes"]["project"]
+    assert hashes[key] == _sha256(resource)
+    if os.name != "nt":
+        assert script.stat().st_mode & 0o100
+    resource.write_text("edited")
+    with pytest.warns(UserWarning, match="modified resource"):
+        manager.register_enabled_extensions_for_agent("copilot", force=True)
+    assert resource.read_text() == "edited"
+    assert manager.registry.get("test-ext")["skill_resource_hashes"]["project"][key] == hashes[key]
+    manager.register_enabled_extensions_for_agent("copilot", force=True, overwrite_modified=True)
+    assert resource.read_text() == "reference"
+
+
+def test_native_home_skill_resource_destination(project_dir, temp_dir, monkeypatch):
+    from specify_cli.integrations.manifest import _sha256
+
+    home = temp_dir / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    _create_init_options(project_dir, ai="hermes", ai_skills=True)
+    (project_dir / ".hermes").mkdir()
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["references/r.md"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("home resource")
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    resource = home / ".hermes/skills/speckit-test-ext-hello/references/r.md"
+    assert resource.read_text() == "home resource"
+    assert manager.registry.get("test-ext")["skill_resource_hashes"]["home"] == {resource.relative_to(home).as_posix(): _sha256(resource)}
+
+
+def test_extension_force_reinstall_overwrites_modified_native_resource(project_dir, temp_dir):
+    _create_init_options(project_dir, ai="claude", ai_skills=True)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["references/r.md"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("package")
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    resource = skills / "speckit-test-ext-hello/references/r.md"
+    resource.write_text("modified")
+    manager.install_from_directory(ext, "0.1.0", force=True)
+    assert resource.read_text() == "package"
+    assert resource.relative_to(project_dir).as_posix() in manager.registry.get("test-ext")["skill_resource_hashes"]["project"]
+
+
+def test_skipped_resource_scripts_keep_permissions(project_dir, temp_dir):
+    if os.name == "nt":
+        pytest.skip("POSIX permissions required")
+    _create_init_options(project_dir, ai="claude", ai_skills=True)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["scripts/a.sh", "scripts/b.sh"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "scripts").mkdir()
+    for name in ("a.sh", "b.sh"):
+        (ext / "scripts" / name).write_text("#!/bin/sh\necho packaged\n")
+    skill = skills / "speckit-test-ext-hello"
+    unowned = skill / "scripts/b.sh"
+    unowned.parent.mkdir(parents=True)
+    unowned.write_text("#!/bin/sh\necho user\n")
+    unowned.chmod(0o600)
+    manager = ExtensionManager(project_dir)
+    with pytest.warns(UserWarning, match="unowned"):
+        manager.install_from_directory(ext, "0.1.0")
+    modified = skill / "scripts/a.sh"
+    modified.write_text("#!/bin/sh\necho modified\n")
+    modified.chmod(0o600)
+    with pytest.warns(UserWarning):
+        manager.register_enabled_extensions_for_agent("claude", force=True)
+    assert modified.stat().st_mode & 0o777 == 0o600
+    assert unowned.stat().st_mode & 0o777 == 0o600
+
+
+def test_native_and_supplemental_refresh_records_last_written_resource_hash(project_dir, temp_dir):
+    from specify_cli.integrations.manifest import _sha256
+
+    _create_init_options(project_dir, ai="claude", ai_skills=True)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["references/r.md"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("old")
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    (manager.extensions_dir / "test-ext/references/r.md").write_text("new")
+    manager.register_enabled_extensions_for_agent("claude", force=True)
+    resource = skills / "speckit-test-ext-hello/references/r.md"
+    key = resource.relative_to(project_dir).as_posix()
+    assert resource.read_text() == "new"
+    assert manager.registry.get("test-ext")["skill_resource_hashes"]["project"][key] == _sha256(resource)
+
+
+def test_remove_native_recorded_resources_preserves_unrecorded(project_dir, temp_dir):
+    _create_init_options(project_dir, ai="claude", ai_skills=True)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["references/r.md"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("package")
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    skill = skills / "speckit-test-ext-hello"
+    resource = skill / "references/r.md"
+    resource.write_text("edited")
+    (skill / "user.txt").write_text("keep")
+    assert manager.remove("test-ext")
+    assert not resource.exists()
+    assert (skill / "user.txt").read_text() == "keep"
+    assert not (skill / "SKILL.md").exists()
+
+
+@pytest.mark.parametrize("replacement", ["leaf", "ancestor"])
+def test_remove_resource_symlinks_are_safe(project_dir, temp_dir, replacement):
+    if not _can_create_symlink(temp_dir):
+        pytest.skip("Current platform/user cannot create symlinks")
+    _create_init_options(project_dir, ai="claude", ai_skills=True)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["references/r.md"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("package")
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    resource = skills / "speckit-test-ext-hello/references/r.md"
+    outside = temp_dir / "outside"
+    outside.mkdir()
+    (outside / "r.md").write_text("untouched")
+    resource.unlink()
+    if replacement == "leaf":
+        resource.symlink_to(outside / "r.md")
+        manager.remove("test-ext")
+        assert not resource.is_symlink()
+    else:
+        resource.parent.rmdir()
+        try:
+            resource.parent.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("Directory symlinks unavailable")
+        with pytest.warns(UserWarning, match="unsafe skill resource"):
+            manager.remove("test-ext")
+        assert resource.parent.is_symlink()
+    assert (outside / "r.md").read_text() == "untouched"
+
+
+def test_remove_recorded_home_resource_after_location_changes(project_dir, temp_dir, monkeypatch):
+    home = temp_dir / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    _create_init_options(project_dir, ai="hermes", ai_skills=True)
+    (project_dir / ".hermes").mkdir()
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["references/r.md"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("home resource")
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    resource = home / ".hermes/skills/speckit-test-ext-hello/references/r.md"
+    assert resource.exists()
+    from specify_cli.agents import CommandRegistrar
+    moved = dict(CommandRegistrar.AGENT_CONFIGS["hermes"], dir="~/.hermes-moved/skills")
+    monkeypatch.setitem(CommandRegistrar.AGENT_CONFIGS, "hermes", moved)
+    manager.remove("test-ext")
+    assert not resource.exists()
+
+
+def test_install_invalid_resource_before_any_skill_output(project_dir, temp_dir):
+    from specify_cli.extensions import ValidationError
+
+    _create_init_options(project_dir, ai="copilot", ai_skills=True)
+    skills = _create_skills_dir(project_dir, ai="copilot")
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["missing.md"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    with pytest.raises(ValidationError):
+        ExtensionManager(project_dir).install_from_directory(ext, "0.1.0")
+    assert not list(skills.iterdir())
+    assert not (project_dir / ".github/agents/speckit.test-ext.hello.agent.md").exists()
+
+
+def test_remove_legacy_registry_without_resource_field(project_dir, temp_dir):
+    _create_init_options(project_dir, ai="claude", ai_skills=True)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    assert "skill_resource_hashes" not in manager.registry.get("test-ext")
+    assert manager.remove("test-ext")
+    assert not (skills / "speckit-test-ext-hello").exists()
+
+
+def test_install_preflights_resources_before_non_skill_first_multi_agent(project_dir, temp_dir, monkeypatch):
+    from specify_cli.agents import CommandRegistrar
+    from specify_cli.extensions import ValidationError
+
+    (project_dir / ".gemini/commands").mkdir(parents=True)
+    (project_dir / ".claude/skills").mkdir(parents=True)
+    configs = CommandRegistrar.AGENT_CONFIGS
+    monkeypatch.setattr(CommandRegistrar, "AGENT_CONFIGS", {
+        "gemini": configs["gemini"], "claude": configs["claude"],
+    })
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][1]["resources"] = ["missing.md"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    with pytest.raises(ValidationError):
+        ExtensionManager(project_dir).install_from_directory(ext, "0.1.0")
+    assert not list((project_dir / ".gemini/commands").iterdir())
+    assert not list((project_dir / ".claude/skills").iterdir())
+
+
+def test_remove_supplemental_skill_resources(project_dir, temp_dir):
+    _create_init_options(project_dir, ai="copilot", ai_skills=True)
+    skills = _create_skills_dir(project_dir, ai="copilot")
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["references/r.md"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("resource")
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    skill = skills / "speckit-test-ext-hello"
+    (skill / "references/r.md").write_text("modified")
+    assert manager.remove("test-ext")
+    assert not skill.exists()

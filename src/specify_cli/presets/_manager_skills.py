@@ -609,6 +609,7 @@ class _PresetSkillMethods:
                     "author": manifest.data["extension"].get("author"),
                     "extension_id": manifest.id,
                     "extension_dir": ext_root,
+                    "resources": cmd_info.get("resources", []),
                 }
                 modern_skill_name, legacy_skill_name = self._skill_names_for_command(cmd_name)
                 restore_index.setdefault(modern_skill_name, restore_info)
@@ -1496,20 +1497,30 @@ class _PresetSkillMethods:
                     )
                     continue
                 frontmatter, body = registrar.parse_frontmatter(content)
-                # Mirror the register-time rewrite (#2101): resolve
-                # extension-relative subdir references (agents/,
-                # knowledge-base/, etc.) to their installed location before
-                # the generic placeholder resolution below, otherwise
-                # restoring after a preset override removal would leave
-                # bare, unresolvable paths in the skill body.
-                body = registrar.rewrite_extension_paths(
-                    body,
-                    extension_restore["extension_id"],
-                    extension_restore["extension_dir"],
-                )
+                resources = extension_restore.get("resources", [])
+                resolved_resources = []
+                if resources:
+                    from ..extensions import ValidationError
+                    from ..extensions._skill_resources import resolve_skill_resources
+
+                    try:
+                        resolved_resources = resolve_skill_resources(
+                            extension_restore["extension_dir"], resources
+                        )
+                    except ValidationError as exc:
+                        self._warn_unrestored_skill(
+                            skill_name, extension_restore["source_file"], exc
+                        )
+                        continue
+                else:
+                    body = registrar.rewrite_extension_paths(
+                        body, extension_restore["extension_id"],
+                        extension_restore["extension_dir"],
+                    )
                 if isinstance(selected_ai, str):
                     body = registrar.resolve_skill_placeholders(
-                        selected_ai, frontmatter, body, self.project_root
+                        selected_ai, frontmatter, body, self.project_root,
+                        rewrite_paths=not bool(resources),
                     )
                     body = self._resolve_skill_command_refs(
                         body, registrar, selected_ai, self.project_root
@@ -1539,6 +1550,24 @@ class _PresetSkillMethods:
                         skill_content
                     )
                 _write_shared_text(skills_dir, skill_file, skill_content)
+                if resources:
+                    import copy
+                    from ..extensions import ExtensionRegistry
+                    from ..extensions._skill_resources import (
+                        deliver_skill_resources, recorded_resource_hashes,
+                    )
+
+                    registry = ExtensionRegistry(self.project_root / ".specify" / "extensions")
+                    ext_id = extension_restore["extension_id"]
+                    metadata = registry.get(ext_id)
+                    previous = recorded_resource_hashes(metadata)
+                    hashes = copy.deepcopy(previous)
+                    deliver_skill_resources(
+                        self.project_root, ext_id, skills_dir, skill_name,
+                        extension_restore["extension_dir"], resolved_resources, previous, hashes,
+                    )
+                    if metadata is not None and hashes != previous:
+                        registry.update(ext_id, {"skill_resource_hashes": hashes})
                 mutated_names.append(skill_name)
             else:
                 # No core or extension template — remove only the generated file

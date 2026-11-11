@@ -2775,3 +2775,245 @@ class TestGenericIntegration:
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
         )
+
+
+def test_generic_force_reinstall_with_owned_skill_resources(tmp_path, generic_extension):
+    project = generic_project(tmp_path, skills=True, commands_dir=".custom/skills")
+    path = generic_extension / "extension.yml"
+    data = yaml.safe_load(path.read_text())
+    data["provides"]["commands"][0]["resources"] = ["scripts/run.sh"]
+    path.write_text(yaml.safe_dump(data))
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    skill = project / ".custom/skills/speckit-sample-run"
+    resource = skill / "scripts/run.sh"
+    resource.write_text("user edit")
+    manager.install_from_directory(generic_extension, "1.0.0", force=True)
+    assert resource.read_text() == "echo sample\n"
+    assert (skill / "SKILL.md").is_file()
+    assert resource.relative_to(project).as_posix() in manager.registry.get("sample")["skill_resource_hashes"]["project"]
+    (skill / "unrelated").write_text("keep")
+    with pytest.raises(ExtensionError, match="cannot be replaced safely"):
+        manager.install_from_directory(generic_extension, "1.0.0", force=True)
+    assert (skill / "unrelated").read_text() == "keep"
+
+
+def test_generic_extension_add_force_overwrites_skill_resource(tmp_path, generic_extension, monkeypatch):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = generic_project(tmp_path, skills=True, commands_dir=".custom/skills")
+    path = generic_extension / "extension.yml"
+    data = yaml.safe_load(path.read_text())
+    data["provides"]["commands"][0]["resources"] = ["scripts/run.sh"]
+    path.write_text(yaml.safe_dump(data))
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    result = runner.invoke(app, ["extension", "add", "--dev", str(generic_extension)])
+    assert result.exit_code == 0, result.output
+    resource = project / ".custom/skills/speckit-sample-run/scripts/run.sh"
+    resource.write_text("edited")
+    result = runner.invoke(app, ["extension", "add", "--dev", str(generic_extension), "--force"])
+    assert result.exit_code == 0, result.output
+    assert resource.read_text() == "echo sample\n"
+
+
+def test_generic_remove_recorded_resource_preserves_user_file(tmp_path, generic_extension):
+    project = generic_project(tmp_path, skills=True, commands_dir=".custom/skills")
+    manifest_path = generic_extension / "extension.yml"
+    data = yaml.safe_load(manifest_path.read_text())
+    data["provides"]["commands"][0]["resources"] = ["scripts/run.sh"]
+    manifest_path.write_text(yaml.safe_dump(data))
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    skill = project / ".custom/skills/speckit-sample-run"
+    resource = skill / "scripts/run.sh"
+    resource.write_text("modified")
+    (skill / "user.txt").write_text("keep")
+    manager.remove("sample")
+    assert not resource.exists()
+    assert not (skill / "SKILL.md").exists()
+    assert (skill / "user.txt").read_text() == "keep"
+
+
+def test_generic_extension_remove_recorded_resource_after_directory_move(tmp_path, generic_extension):
+    project = generic_project(tmp_path, skills=True, commands_dir=".custom/skills")
+    manifest_path = generic_extension / "extension.yml"
+    data = yaml.safe_load(manifest_path.read_text())
+    data["provides"]["commands"][0]["resources"] = ["scripts/run.sh"]
+    manifest_path.write_text(yaml.safe_dump(data))
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    resource = project / ".custom/skills/speckit-sample-run/scripts/run.sh"
+    assert resource.exists()
+    write_integration_json(
+        project, version="1.0.0", integration_key="generic",
+        settings={"generic": {"parsed_options": {"commands_dir": ".moved/skills", "skills": True}}},
+    )
+    manager.remove("sample")
+    assert not resource.exists()
+
+
+def _declare_run_skill_resource(source):
+    path = source / "extension.yml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["provides"]["commands"][0]["resources"] = ["scripts/run.sh"]
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+
+def test_generic_disable_registry_failure_restores_skill_resource(tmp_path, generic_extension, monkeypatch):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    _declare_run_skill_resource(generic_extension)
+    project = generic_project(tmp_path, skills=True)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    skill = project / ".custom/commands/speckit-sample-run"
+    resource = skill / "scripts/run.sh"
+    original = resource.read_bytes()
+    metadata = manager.registry.get("sample")
+    original_save = manager.registry.__class__._save
+    failed = False
+
+    def fail_save(registry):
+        nonlocal failed
+        if not failed and registry.data["extensions"]["sample"].get("enabled") is False:
+            failed = True
+            original_save(registry)
+            raise OSError("simulated disable registry failure")
+        return original_save(registry)
+
+    monkeypatch.setattr(manager.registry.__class__, "_save", fail_save)
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    result = runner.invoke(app, ["extension", "disable", "sample"])
+    assert result.exit_code != 0 and "simulated disable registry failure" in result.output
+    assert resource.read_bytes() == original
+    assert ExtensionManager(project).registry.get("sample") == metadata
+    retry = runner.invoke(app, ["extension", "disable", "sample"])
+    assert retry.exit_code == 0, retry.output
+    assert not resource.exists()
+    assert ExtensionManager(project).registry.get("sample")["enabled"] is False
+
+
+def test_generic_update_rollback_restores_resource_at_moved_recorded_location(tmp_path, generic_extension):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    _declare_run_skill_resource(generic_extension)
+    project = generic_project(tmp_path, skills=True)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    resource = project / ".custom/commands/speckit-sample-run/scripts/run.sh"
+    resource.write_bytes(b"modified but still recorded\n")
+    original = resource.read_bytes()
+    metadata = manager.registry.get("sample")
+    write_integration_json(project, version="1.0.0", integration_key="generic", settings={
+        "generic": {"parsed_options": {"commands_dir": ".moved/skills", "skills": True}}
+    })
+    archive = tmp_path / "sample-update.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        data = yaml.safe_load((generic_extension / "extension.yml").read_text())
+        data["extension"]["version"] = "2.0.0"
+        zf.writestr("extension.yml", yaml.safe_dump(data))
+        for file in generic_extension.rglob("*"):
+            if file.is_file() and file.name != "extension.yml":
+                zf.write(file, file.relative_to(generic_extension))
+
+    def fail_install(*args, **kwargs):
+        raise RuntimeError("simulated update failure")
+
+    with (
+        patch.object(Path, "cwd", return_value=project),
+        patch.object(ExtensionCatalog, "get_extension_info", return_value={
+            "id": "sample", "name": "Sample", "version": "2.0.0", "_install_allowed": True,
+        }),
+        patch.object(ExtensionCatalog, "download_extension", return_value=archive),
+        patch.object(ExtensionManager, "install_from_zip", fail_install),
+    ):
+        result = CliRunner().invoke(app, ["extension", "update", "sample"], input="y\n")
+    assert result.exit_code == 1 and "simulated update failure" in result.output
+    assert resource.read_bytes() == original
+    assert ExtensionManager(project).registry.get("sample") == metadata
+
+
+@pytest.mark.parametrize("agent", ["generic", "claude"])
+def test_install_hook_failure_retires_attempt_skill_resource(tmp_path, generic_extension, monkeypatch, agent):
+    _declare_run_skill_resource(generic_extension)
+    if agent == "generic":
+        project = generic_project(tmp_path, skills=True)
+        skill = project / ".custom/commands/speckit-sample-run"
+    else:
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".claude/skills").mkdir(parents=True)
+        save_init_options(project, {"ai": "claude", "ai_skills": False, "script": "sh"})
+        skill = project / ".claude/skills/speckit-sample-run"
+        path = generic_extension / "extension.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data["provides"]["commands"][0]["aliases"] = ["speckit.sample.alias"]
+        path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    manager = ExtensionManager(project)
+    resource = skill / "scripts/run.sh"
+    alias_resource = project / ".claude/skills/speckit-sample-alias/scripts/run.sh"
+    original_register = HookExecutor.register_hooks
+
+    def fail_hook(*args, **kwargs):
+        raise OSError("simulated hook failure")
+
+    monkeypatch.setattr(HookExecutor, "register_hooks", fail_hook)
+    with pytest.raises(OSError, match="simulated hook failure"):
+        manager.install_from_directory(generic_extension, "1.0.0")
+    assert not resource.exists()
+    assert not alias_resource.exists()
+    assert not manager.registry.is_installed("sample")
+    monkeypatch.setattr(HookExecutor, "register_hooks", original_register)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    assert resource.read_bytes() == b"echo sample\n"
+    hashes = manager.registry.get("sample")["skill_resource_hashes"]["project"]
+    assert hashes[resource.relative_to(project).as_posix()] == sha256(resource.read_bytes()).hexdigest()
+    if agent == "claude":
+        assert alias_resource.read_bytes() == b"echo sample\n"
+        assert hashes[alias_resource.relative_to(project).as_posix()] == sha256(alias_resource.read_bytes()).hexdigest()
+
+
+def test_install_failure_preserves_previously_recorded_unwritten_resource(tmp_path, generic_extension, monkeypatch):
+    from specify_cli.extensions import _skill_resources
+
+    _declare_run_skill_resource(generic_extension)
+    project = tmp_path / "project"
+    project.mkdir()
+    skill = project / ".claude/skills/speckit-sample-run"
+    skill.mkdir(parents=True)
+    retained = skill / "old.txt"
+    retained.write_text("previously recorded")
+    save_init_options(project, {"ai": "claude", "ai_skills": False, "script": "sh"})
+    previous = {"project": {retained.relative_to(project).as_posix(): sha256(retained.read_bytes()).hexdigest()}}
+    monkeypatch.setattr(_skill_resources, "recorded_resource_hashes", lambda metadata: previous)
+    monkeypatch.setattr(HookExecutor, "register_hooks", lambda *a, **kw: (_ for _ in ()).throw(OSError("hook failure")))
+    with pytest.raises(OSError, match="hook failure"):
+        ExtensionManager(project).install_from_directory(generic_extension, "1.0.0")
+    assert retained.read_text() == "previously recorded"
+    assert not (skill / "scripts/run.sh").exists()
+
+
+def test_generic_snapshot_resources_includes_all_safe_recorded_locations(tmp_path):
+    project = generic_project(tmp_path, skills=True)
+    manager = ExtensionManager(project)
+    old = project / ".old/skills/speckit-sample-run/scripts/run.sh"
+    middle = project / ".middle/skills/speckit-sample-run/scripts/run.sh"
+    for path in (old, middle):
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"modified")
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"outside")
+    records = {path.relative_to(project).as_posix(): "old-hash" for path in (old, middle)}
+    records.update({str(outside): "hash", "../outside": "hash", 123: "hash"})
+    snapshot = manager._snapshot_generic_refresh_artifacts(
+        "sample", None, {"skill_resource_hashes": {"project": records}},
+        skills_mode_active=True, include_current_candidates=False,
+    )
+    assert set(snapshot) == {old, middle}
+    assert all(snapshot[path][0] == b"modified" for path in (old, middle))
+    assert outside.read_bytes() == b"outside"

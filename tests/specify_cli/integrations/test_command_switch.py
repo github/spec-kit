@@ -1220,3 +1220,74 @@ def test_switch_preset_skill_cleanup_rollback_preserves_directory_mode(
     check_cleanup_rollback_preserves_directory_mode(
         tmp_path, monkeypatch, capsys, INTEGRATION_SWITCH, user_reference, fallback
     )
+
+
+@pytest.mark.parametrize("installed", [False, True])
+def test_switch_writes_skill_resources_for_new_target(tmp_path, installed):
+    import yaml
+    from specify_cli.extensions import ExtensionManager
+
+    project = _init_project(tmp_path, "claude")
+    if installed:
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+    source = tmp_path / "resource-ext"
+    (source / "commands").mkdir(parents=True)
+    (source / "references").mkdir()
+    (source / "references/r.md").write_text("reference")
+    (source / "commands/run.md").write_text("Read references/r.md")
+    (source / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "extension": {"id": "resource-ext", "name": "Resource", "version": "1.0.0", "description": "test"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"commands": [{"name": "speckit.resource-ext.run", "file": "commands/run.md", "resources": ["references/r.md"]}]},
+    }))
+    manager = ExtensionManager(project)
+    manager.install_from_directory(source, "1.0.0")
+    old_resource = project / ".claude/skills/speckit-resource-ext-run/references/r.md"
+    assert old_resource.read_text() == "reference"
+    resource = project / ".agents/skills/speckit-resource-ext-run/references/r.md"
+    resource.parent.mkdir(parents=True, exist_ok=True)
+    resource.write_text("unowned")
+    result = _run_in_project(project, ["integration", "switch", "codex", "--script", "sh", "--force"])
+    assert result.exit_code == 0, result.output
+    assert resource.read_text() == "reference"
+    hashes = ExtensionManager(project).registry.get("resource-ext")["skill_resource_hashes"]["project"]
+    if not installed:
+        assert not old_resource.exists()
+        assert old_resource.relative_to(project).as_posix() not in hashes
+    else:
+        assert old_resource.read_text() == "reference"
+        assert old_resource.relative_to(project).as_posix() in hashes
+    assert resource.relative_to(project).as_posix() in hashes
+
+
+def test_unregister_agent_keeps_another_agents_resource_with_same_skill_name(tmp_path):
+    import yaml
+    from specify_cli.extensions import ExtensionManager
+
+    project = _init_project(tmp_path, "claude")
+    result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+    assert result.exit_code == 0, result.output
+    source = tmp_path / "ext"
+    (source / "commands").mkdir(parents=True)
+    (source / "references").mkdir()
+    (source / "references/r.md").write_text("reference")
+    (source / "commands/run.md").write_text("Read references/r.md")
+    (source / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0", "extension": {"id": "res", "name": "Res", "version": "1.0.0", "description": "test"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"commands": [{"name": "speckit.res.run", "file": "commands/run.md", "resources": ["references/r.md"]}]},
+    }))
+    ExtensionManager(project).install_from_directory(source, "1.0.0")
+    result = _run_in_project(project, ["integration", "switch", "codex", "--script", "sh"])
+    assert result.exit_code == 0, result.output
+    old = project / ".claude/skills/speckit-res-run/references/r.md"
+    active = project / ".agents/skills/speckit-res-run/references/r.md"
+    assert old.read_text() == active.read_text() == "reference"
+    manager = ExtensionManager(project)
+    manager.unregister_agent_artifacts("codex")
+    assert not active.exists()
+    assert old.read_text() == "reference"
+    hashes = manager.registry.get("res")["skill_resource_hashes"]["project"]
+    assert old.relative_to(project).as_posix() in hashes

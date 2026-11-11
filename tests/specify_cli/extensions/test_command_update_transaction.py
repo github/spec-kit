@@ -2228,3 +2228,229 @@ def test_extension_update_partial_skill_backup_preserves_live_skills(
     assert first_support.read_text(encoding="utf-8") == "FIRST SUPPORT"
     assert second_support.read_text(encoding="utf-8") == "SECOND SUPPORT"
     assert _update_backup_dirs(project_dir) == []
+
+
+def test_update_rollback_native_resource_primary_and_alias(project_dir, monkeypatch):
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify/init-options.json").write_text('{"ai":"claude","ai_skills":false}')
+    (project_dir / ".specify/extensions.yml").write_text(yaml.safe_dump({"installed": ["test-ext"], "hooks": {}}))
+    root = project_dir / ".claude/skills"
+    names = ["speckit-test-ext-run", "speckit-test-ext-alias"]
+    for name in names:
+        skill = root / name
+        _write_owned_extension_skill(skill, "test-ext", "OLD SKILL")
+        (skill / "resource.txt").write_text("OLD RESOURCE")
+        (skill / "dropped.txt").write_text("DROPPED")
+    hashes = {"project": {(root / name / leaf).relative_to(project_dir).as_posix(): "old-hash"
+                            for name in names for leaf in ("resource.txt", "dropped.txt")}}
+    entry = {"version": "1.0.0", "enabled": True,
+             "registered_commands": {"claude": ["speckit.test-ext.run", "speckit.test-ext.alias"]},
+             "registered_skills": [], "skill_resource_hashes": hashes}
+    registry = ExtensionRegistry(project_dir / ".specify/extensions")
+    registry.add("test-ext", entry)
+    _stub_available_update(monkeypatch, entry)
+    manifest = _valid_update_manifest()
+    archive = project_dir / "mock.zip"
+    _write_update_zip(archive, manifest=manifest)
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: archive)
+    def remove(self, ext_id, keep_config=False):
+        for name in names:
+            shutil.rmtree(root / name)
+    def fail(*args, **kwargs):
+        raise RuntimeError("install failed")
+    monkeypatch.setattr(ExtensionManager, "remove", remove)
+    monkeypatch.setattr(ExtensionManager, "install_from_zip", fail)
+    result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
+    assert result.exit_code == 1, result.output
+    assert "Rollback successful" in result.output
+    for name in names:
+        assert (root / name / "resource.txt").read_text() == "OLD RESOURCE"
+        assert (root / name / "dropped.txt").read_text() == "DROPPED"
+    assert ExtensionRegistry(project_dir / ".specify/extensions").data["extensions"]["test-ext"]["skill_resource_hashes"] == hashes
+
+
+def test_update_rollback_supplemental_resources(project_dir, monkeypatch):
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify/init-options.json").write_text('{"ai":"copilot","ai_skills":true}')
+    (project_dir / ".specify/extensions.yml").write_text(yaml.safe_dump({"installed": ["test-ext"], "hooks": {}}))
+    skill = project_dir / ".github/skills/speckit-test-ext-run"
+    _write_owned_extension_skill(skill, "test-ext", "OLD SKILL")
+    (skill / "resource.txt").write_text("OLD RESOURCE")
+    (skill / "dropped.txt").write_text("DROPPED")
+    hashes = {"project": {(skill / leaf).relative_to(project_dir).as_posix(): "old-hash"
+                            for leaf in ("resource.txt", "dropped.txt")}}
+    entry = {"version": "1.0.0", "enabled": True, "registered_skills": [skill.name], "skill_resource_hashes": hashes}
+    ExtensionRegistry(project_dir / ".specify/extensions").add("test-ext", entry)
+    _stub_available_update(monkeypatch, entry)
+    archive = project_dir / "mock.zip"
+    _write_update_zip(archive)
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: archive)
+    monkeypatch.setattr(ExtensionManager, "remove", lambda self, ext_id, keep_config=False: shutil.rmtree(skill))
+    def fail(*args, **kwargs):
+        raise RuntimeError("install failed")
+    monkeypatch.setattr(ExtensionManager, "install_from_zip", fail)
+    result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
+    assert result.exit_code == 1, result.output
+    assert "Rollback successful" in result.output
+    assert (skill / "resource.txt").read_text() == "OLD RESOURCE"
+    assert (skill / "dropped.txt").read_text() == "DROPPED"
+    assert ExtensionRegistry(project_dir / ".specify/extensions").data["extensions"]["test-ext"]["skill_resource_hashes"] == hashes
+
+
+def test_update_resource_list_and_copy_mode_transitions(project_dir, tmp_path, monkeypatch):
+    import zipfile
+
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify/init-options.json").write_text('{"ai":"claude","ai_skills":false}')
+    (project_dir / ".claude/skills").mkdir(parents=True)
+    source = tmp_path / "source"
+    (source / "commands").mkdir(parents=True)
+    (source / "commands/run.md").write_text("Read references/a.md")
+    (source / "references").mkdir()
+    for name in ("a.md", "b.md"):
+        (source / "references" / name).write_text(name)
+    manifest = _valid_update_manifest(version="1.0.0")
+    manifest["provides"]["commands"][0]["resources"] = ["references/a.md", "references/b.md"]
+    (source / "extension.yml").write_text(yaml.safe_dump(manifest))
+    ExtensionManager(project_dir).install_from_directory(source, "1.0.0")
+    skill = project_dir / ".claude/skills/speckit-test-ext-run"
+    (skill / "user.txt").write_text("keep")
+    (skill / "references/b.md").write_text("modified")
+    monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda self, ext_id: {
+        "id": "test-ext", "name": "Test Ext", "version": manifest["extension"]["version"],
+        "download_url": "https://example.com/ext.zip",
+    })
+    monkeypatch.setattr("typer.confirm", lambda _: True)
+    archive = project_dir / "update.zip"
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: archive)
+    def update(version, resources):
+        manifest["extension"]["version"] = version
+        manifest["provides"]["commands"][0]["resources"] = resources
+        with zipfile.ZipFile(archive, "w") as z:
+            z.writestr("extension.yml", yaml.safe_dump(manifest))
+            z.writestr("commands/run.md", "Read references/a.md")
+            z.writestr("references/a.md", "a.md")
+            z.writestr("references/b.md", "b.md")
+        result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
+        assert result.exit_code == 0, result.output
+    update("1.1.0", ["references/a.md"])
+    assert not (skill / "references/b.md").exists()
+    assert (skill / "references/a.md").read_text() == "a.md"
+    assert (skill / "user.txt").read_text() == "keep"
+    update("1.2.0", [])
+    assert not (skill / "references/a.md").exists()
+    assert (skill / "user.txt").read_text() == "keep"
+    update("1.3.0", ["references/b.md"])
+    assert (skill / "references/b.md").read_text() == "b.md"
+    assert (skill / "user.txt").read_text() == "keep"
+
+
+def test_update_rollback_removes_incoming_native_resources_before_registry(project_dir, monkeypatch):
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify/init-options.json").write_text('{"ai":"claude","ai_skills":false}')
+    (project_dir / ".specify/extensions.yml").write_text(yaml.safe_dump({"installed": ["test-ext"], "hooks": {}}))
+    root = project_dir / ".claude/skills"
+    root.mkdir(parents=True)
+    entry = {"version": "1.0.0", "enabled": True, "registered_commands": {}, "registered_skills": []}
+    _stub_available_update(monkeypatch, entry)
+    archive = project_dir / "mock.zip"
+    _write_update_zip(archive)
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: archive)
+    monkeypatch.setattr(ExtensionManager, "remove", lambda *args, **kwargs: None)
+    skill = root / "speckit-test-ext-run"
+    def fail(*args, **kwargs):
+        skill.mkdir()
+        (skill / "SKILL.md").write_text("partial")
+        (skill / "resource.txt").write_text("new resource")
+        raise RuntimeError("install failed")
+    monkeypatch.setattr(ExtensionManager, "install_from_zip", fail)
+    result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
+    assert result.exit_code == 1, result.output
+    assert "Rollback successful" in result.output
+    assert not skill.exists()
+
+
+@pytest.mark.parametrize("agent,skills_mode", [("claude", False), ("copilot", True)])
+def test_failed_update_restores_real_extension_resources(project_dir, tmp_path, monkeypatch, agent, skills_mode):
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify/init-options.json").write_text(
+        '{"ai":"' + agent + '","ai_skills":' + str(skills_mode).lower() + '}'
+    )
+    skills_root = project_dir / (".claude/skills" if agent == "claude" else ".github/skills")
+    skills_root.mkdir(parents=True)
+    source = tmp_path / "source"
+    (source / "commands").mkdir(parents=True)
+    (source / "references").mkdir()
+    (source / "commands/run.md").write_text("Read references/a.md")
+    for name in ("a.md", "dropped.md"):
+        (source / "references" / name).write_text("old " + name)
+    manifest = _valid_update_manifest(version="1.0.0")
+    command = manifest["provides"]["commands"][0]
+    command["resources"] = ["references/a.md", "references/dropped.md"]
+    if agent == "claude":
+        command["aliases"] = ["speckit.test-ext.alias"]
+    (source / "extension.yml").write_text(yaml.safe_dump(manifest))
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(source, "1.0.0")
+    old_hashes = manager.registry.get("test-ext")["skill_resource_hashes"]
+    names = ["speckit-test-ext-run"] + (["speckit-test-ext-alias"] if agent == "claude" else [])
+    assert all((skills_root / name / "references/dropped.md").exists() for name in names)
+    manifest["extension"]["version"] = "1.1.0"
+    command["resources"] = ["references/a.md"]
+    archive = project_dir / "mock.zip"
+    _write_update_zip(archive, manifest=manifest)
+    monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda self, ext_id: {
+        "id": "test-ext", "name": "Test Ext", "version": "1.1.0", "download_url": "https://example.com/ext.zip",
+    })
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: archive)
+    monkeypatch.setattr("typer.confirm", lambda _: True)
+    def fail(*args, **kwargs):
+        raise RuntimeError("install failed after removal")
+    monkeypatch.setattr(ExtensionManager, "install_from_zip", fail)
+    result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
+    assert result.exit_code == 1, result.output
+    assert "Rollback successful" in result.output
+    for name in names:
+        assert (skills_root / name / "references/a.md").read_text() == "old a.md"
+        assert (skills_root / name / "references/dropped.md").read_text() == "old dropped.md"
+    assert ExtensionManager(project_dir).registry.get("test-ext")["skill_resource_hashes"] == old_hashes
+
+
+def test_update_rollback_native_resources_canonical_and_legacy(project_dir, monkeypatch):
+    from specify_cli.integrations import get_integration
+
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify/init-options.json").write_text('{"ai":"claude","ai_skills":false}')
+    (project_dir / ".specify/extensions.yml").write_text(yaml.safe_dump({"installed": ["test-ext"], "hooks": {}}))
+    monkeypatch.setitem(get_integration("claude").registrar_config, "legacy_dir", ".claude/old-skills")
+    roots = [project_dir / ".claude/skills", project_dir / ".claude/old-skills"]
+    names = ["speckit-test-ext-run", "speckit-test-ext-alias"]
+    for root in roots:
+        for name in names:
+            skill = root / name
+            _write_owned_extension_skill(skill, "test-ext", "OLD SKILL")
+            (skill / "resource.txt").write_text(f"resource at {root.name}/{name}")
+    hashes = {"project": {(root / name / "resource.txt").relative_to(project_dir).as_posix(): "old-hash"
+                          for root in roots for name in names}}
+    entry = {"version": "1.0.0", "enabled": True,
+             "registered_commands": {"claude": ["speckit.test-ext.run", "speckit.test-ext.alias"]},
+             "registered_skills": [], "skill_resource_hashes": hashes}
+    ExtensionRegistry(project_dir / ".specify/extensions").add("test-ext", entry)
+    _stub_available_update(monkeypatch, entry)
+    archive = project_dir / "mock.zip"
+    _write_update_zip(archive)
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: archive)
+
+    def remove(self, ext_id, keep_config=False):
+        for root in roots:
+            for name in names:
+                shutil.rmtree(root / name)
+
+    monkeypatch.setattr(ExtensionManager, "remove", remove)
+    monkeypatch.setattr(ExtensionManager, "install_from_zip", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("install failed")))
+    result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
+    assert result.exit_code == 1 and "Rollback successful" in result.output
+    for root in roots:
+        for name in names:
+            assert (root / name / "resource.txt").read_text() == f"resource at {root.name}/{name}"
+    assert ExtensionRegistry(project_dir / ".specify/extensions").data["extensions"]["test-ext"]["skill_resource_hashes"] == hashes

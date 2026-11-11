@@ -2826,3 +2826,80 @@ class TestWrapStrategy:
 
         # Preset's scripts must not be overwritten by core
         assert preset_fm["scripts"] == {"sh": "preset-run.sh"}
+
+
+def test_preset_remove_restores_extension_copy_mode_resources(project_dir, temp_dir):
+    from specify_cli.extensions import ExtensionManager
+
+    (project_dir / ".specify/init-options.json").write_text('{"ai":"claude","ai_skills":true,"script":"sh"}')
+    (project_dir / ".claude/skills").mkdir(parents=True, exist_ok=True)
+    ext = temp_dir / "resource-ext"
+    (ext / "commands").mkdir(parents=True)
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("resource")
+    (ext / "commands/run.md").write_text(
+        '---\ndescription: Resource\nscripts:\n  sh: scripts/run.sh --json\n---\n\nRun {SCRIPT}; read references/r.md'
+    )
+    (ext / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0", "extension": {"id": "res", "name": "Res", "version": "1.0.0", "description": "test"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"commands": [{"name": "speckit.res.run", "file": "commands/run.md", "resources": ["references/r.md"]}]},
+    }))
+    extensions = ExtensionManager(project_dir)
+    extensions.install_from_directory(ext, "0.1.0")
+    preset = temp_dir / "override"
+    (preset / "commands").mkdir(parents=True)
+    (preset / "commands/run.md").write_text("---\ndescription: Override\n---\n\noverride")
+    (preset / "preset.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0", "preset": {"id": "override", "name": "Override", "version": "1.0.0", "description": "test"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"templates": [{"type": "command", "name": "speckit.res.run", "file": "commands/run.md"}]},
+    }))
+    manager = PresetManager(project_dir)
+    manager.install_from_directory(preset, "0.1.0")
+    skill = project_dir / ".claude/skills/speckit-res-run"
+    assert "override" in (skill / "SKILL.md").read_text()
+    resource = skill / "references/r.md"
+    resource.unlink()
+    manager.remove("override")
+    content = (skill / "SKILL.md").read_text()
+    assert "Run scripts/run.sh --json; read references/r.md" in content
+    assert ".specify/extensions/res" not in content
+    assert resource.read_text() == "resource"
+    assert resource.relative_to(project_dir).as_posix() in ExtensionManager(project_dir).registry.get("res")["skill_resource_hashes"]["project"]
+
+
+def test_preset_remove_warns_when_extension_resource_missing(project_dir, temp_dir):
+    from specify_cli.extensions import ExtensionManager
+
+    (project_dir / ".specify/init-options.json").write_text('{"ai":"claude","ai_skills":true}')
+    (project_dir / ".claude/skills").mkdir(parents=True, exist_ok=True)
+    ext = temp_dir / "resource-ext"
+    (ext / "commands").mkdir(parents=True)
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("resource")
+    (ext / "commands/run.md").write_text("---\ndescription: Resource\n---\n\nread references/r.md")
+    (ext / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0", "extension": {"id": "res", "name": "Res", "version": "1.0.0", "description": "test"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"commands": [{"name": "speckit.res.run", "file": "commands/run.md", "resources": ["references/r.md"]}]},
+    }))
+    ExtensionManager(project_dir).install_from_directory(ext, "0.1.0")
+    preset = temp_dir / "override"
+    (preset / "commands").mkdir(parents=True)
+    (preset / "commands/run.md").write_text("---\ndescription: Override\n---\n\noverride")
+    (preset / "preset.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0", "preset": {"id": "override", "name": "Override", "version": "1.0.0", "description": "test"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"templates": [{"type": "command", "name": "speckit.res.run", "file": "commands/run.md"}]},
+    }))
+    manager = PresetManager(project_dir)
+    manager.install_from_directory(preset, "0.1.0")
+    skill_file = project_dir / ".claude/skills/speckit-res-run/SKILL.md"
+    preset_content = skill_file.read_text()
+    (project_dir / ".specify/extensions/res/references/r.md").unlink()
+
+    with pytest.warns(UserWarning, match=r"speckit-res-run.*ValidationError.*references/r.md"):
+        manager.remove("override")
+    assert skill_file.read_text() == preset_content
+    assert manager.registry.get("override") is None
