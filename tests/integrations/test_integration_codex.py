@@ -941,21 +941,21 @@ class TestCodexNoModelInvocationOwnership:
     def _fail_policy_writes(monkeypatch):
         """Simulate a rewrite of an existing file that fails part-way.
 
-        Only the first write to each file fails, so the restore can succeed.
+        Each rewrite fails and the restore that follows it succeeds.
         """
         from specify_cli.integrations import codex
 
-        real_write = codex._write_in_place
-        failed = set()
+        real_write = codex._write_stream
+        calls = []
 
-        def write_in_place(path, content):
-            if path not in failed:
-                failed.add(path)
-                real_write(path, content[:5])
+        def write_stream(stream, content):
+            calls.append(content)
+            if len(calls) % 2:
+                real_write(stream, content[:5])
                 raise OSError("disk full")
-            real_write(path, content)
+            real_write(stream, content)
 
-        monkeypatch.setattr(codex, "_write_in_place", write_in_place)
+        monkeypatch.setattr(codex, "_write_stream", write_stream)
 
     def test_failed_write_at_setup_leaves_user_file_intact(self, tmp_path, monkeypatch):
         path = self._seed(tmp_path)
@@ -991,21 +991,49 @@ class TestCodexNoModelInvocationOwnership:
         get_integration("codex").teardown(tmp_path, manifest)
         assert stat.S_IMODE(path.stat().st_mode) == 0o640
 
-    @pytest.mark.skipif(not hasattr(os, "link"), reason="hard links are unavailable")
     def test_rewritten_user_file_keeps_its_inode(self, tmp_path):
         # The same inode keeps the owner, group and access-control list, which
         # a sibling-and-rename swap would replace.
         path = self._seed(tmp_path)
-        alias = tmp_path / "alias.yaml"
-        os.link(path, alias)
         inode = path.stat().st_ino
         manifest = self._setup(tmp_path)
         assert path.stat().st_ino == inode
-        assert alias.read_bytes() == path.read_bytes()
-        assert self._yaml(alias)["policy"] == self.POLICY
+        assert self._yaml(path)["policy"] == self.POLICY
         get_integration("codex").teardown(tmp_path, manifest)
         assert path.stat().st_ino == inode
-        assert self._yaml(alias) == {"interface": {"display_name": "Plan"}}
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert [p.name for p in path.parent.iterdir()] == ["openai.yaml"]
+
+    @pytest.mark.skipif(not hasattr(os, "link"), reason="hard links are unavailable")
+    def test_hard_linked_user_file_is_not_rewritten(self, tmp_path):
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        outside = tmp_path / "shared-template.yaml"
+        os.link(path, outside)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*hard links"):
+            self._setup(tmp_path)
+        assert outside.read_bytes() == original
+
+    def test_failed_restore_keeps_a_backup_of_the_previous_content(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        from specify_cli.integrations import codex
+
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        real_write = codex._write_stream
+
+        def write_stream(stream, content):
+            real_write(stream, content[:5])
+            raise OSError("disk full")
+
+        monkeypatch.setattr(codex, "_write_stream", write_stream)
+        with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
+            with pytest.raises(OSError, match="disk full"):
+                self._setup(tmp_path)
+        backup = path.with_name("openai.yaml.speckit-backup")
+        assert backup.read_bytes() == original
+        assert backup.name in caplog.text
 
     @pytest.mark.parametrize(
         "content",
@@ -1022,6 +1050,12 @@ class TestCodexNoModelInvocationOwnership:
             self._setup(tmp_path)
         assert path.read_bytes() == content
         assert self._other_policies(tmp_path) == []
+
+    def test_explicit_merge_override_is_not_a_collision(self, tmp_path):
+        content = b"base: &b {a: 1}\ncustom: {!!merge <<: *b, a: 2}\n"
+        path = self._seed(tmp_path, content)
+        self._setup(tmp_path)
+        assert self._yaml(path)["custom"] == {"a": 2}
 
     def test_aliased_policy_is_changed_without_touching_its_anchor(self, tmp_path):
         path = self._seed(tmp_path, b"shared: &p\n  products: [codex]\npolicy: *p\n")
@@ -1074,6 +1108,22 @@ class TestCodexNoModelInvocationOwnership:
         assert len(self._other_policies(tmp_path)) == 9
         self._setup(tmp_path, enabled=False)
         assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+
+    def test_failed_release_of_prior_policies_rolls_back_new_ones(self, tmp_path, monkeypatch):
+        from specify_cli.integrations.codex import CodexIntegration
+
+        self._setup(tmp_path, enabled=False).save()
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+
+        def release(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(CodexIntegration, "_release_prior_policies", release)
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == original
         assert self._other_policies(tmp_path) == []
 
     def test_failed_policy_write_is_left_to_an_active_lifecycle_journal(self, tmp_path, monkeypatch):

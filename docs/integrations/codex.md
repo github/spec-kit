@@ -59,7 +59,9 @@ description in Codex's context.
   The exception is `uninstall --force` or `switch --force`, which deletes a
   generated file you edited as it does any other modified file. When the
   policy is added or removed, such a file is rewritten as plain YAML, so its
-  comments and formatting are not kept; a read-only file is refused instead.
+  comments and formatting are not kept. It is rewritten in place, so its
+  owner, group and access-control list are kept; a read-only file, or one with
+  other hard links, is refused instead.
   Its values are read and written by the YAML 1.2 rules Codex uses, so
   unquoted values such as `On` or `no` stay strings and numbers such as `007`
   keep their text. One that already sets it to `false` is left untouched, and
@@ -74,8 +76,10 @@ description in Codex's context.
   `.agents`, `.agents/skills` or a core `speckit-<command>` skill directory is a
   symlink, or if a path where a policy goes is a file rather than a directory.
   Once the policy has been removed from a file Spec Kit no longer tracks it, so
-  a policy you set there yourself afterwards is never removed. If setup fails
-  part-way, the policies it had already written are undone.
+  a policy you set there yourself afterwards is never removed. If writing or
+  removing policies fails part-way through setup, the policies it had already
+  written are undone. If Spec Kit is stopped while rewriting a file, the
+  previous content is left beside it as `openai.yaml.speckit-backup`.
 - Core command skills registered without running Codex's `setup()` get no
   `agents/openai.yaml`: those registered by commands that install, remove or
   update presets (including `specify bundle` commands that carry presets),

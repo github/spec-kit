@@ -34,15 +34,26 @@ class Yaml12Loader(yaml.SafeLoader):
     def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
         # A dict keeps one of two keys Python treats as equal, such as ``true``
         # and ``1``, or a key given twice; rewriting would drop the other.
-        # serde_yaml rejects a repeated key too.
-        mapping = super().construct_mapping(node, deep=deep)
-        if len(mapping) != len(node.value):
-            raise yaml.constructor.ConstructorError(
-                None, None,
-                "found keys that collide, such as a repeated key or both true and 1",
-                node.start_mark,
-            )
-        return mapping
+        # serde_yaml rejects a repeated key too. Keys an explicit ``!!merge``
+        # brings in may be overridden, so only the mapping's own keys count.
+        if isinstance(node, yaml.MappingNode):
+            seen: dict[Any, None] = {}
+            for key_node, _ in node.value:
+                if key_node.tag == "tag:yaml.org,2002:merge":
+                    continue
+                key = self.construct_object(key_node, deep=True)
+                try:
+                    collides = key in seen
+                except TypeError:  # unhashable; the base constructor reports it
+                    continue
+                if collides:
+                    raise yaml.constructor.ConstructorError(
+                        None, None,
+                        "found keys that collide, such as a repeated key or both true and 1",
+                        key_node.start_mark,
+                    )
+                seen[key] = None
+        return super().construct_mapping(node, deep=deep)
 
 
 Yaml12Loader.yaml_implicit_resolvers = {

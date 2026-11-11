@@ -16,7 +16,8 @@ from typing import Any
 
 import yaml
 
-from .._file_changes import changing_file, file_change_observer
+from ...file_helper import FileHelper
+from .._file_changes import changing_file
 from ..base import IntegrationOption, SkillsIntegration
 # The manifest has no public validator; this is the check ``record_file`` and
 # ``record_existing`` apply, so policies are planned, cleaned up and recorded by
@@ -27,40 +28,67 @@ from . import _openai_yaml
 logger = logging.getLogger(__name__)
 
 
-def _replace_file(root: Path, rel: str, content: bytes) -> None:
-    """Rewrite an existing file in place, restoring its bytes if the write fails.
+_BACKUP_SUFFIX = ".speckit-backup"
+
+
+def _replace_file(root: Path, rel: str, content: bytes) -> bytes:
+    """Rewrite an existing file in place and return its previous bytes.
 
     Writing through the same file keeps its owner, group, access-control list
     and other attributes, which a sibling-and-rename swap would replace with
-    the directory's defaults. A read-only file is refused.
+    the directory's defaults. Until the new bytes are on disk, a copy of the
+    previous ones is kept beside the file as ``<name>.speckit-backup``, so a
+    crash part-way leaves something to recover from. A failed write is undone.
+    Read-only and hard-linked files are refused.
     """
     path = root / rel
-    _require_writable(path)
+    backup = root / f"{rel}{_BACKUP_SUFFIX}"
+    _require_rewritable(path)
     original = path.read_bytes()
-    with changing_file(path):
+    with changing_file(backup):
+        FileHelper(root).write_bytes(backup.relative_to(root).as_posix(), original, mode=0o600)
+    flags = os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    with changing_file(path), os.fdopen(os.open(path, flags), "wb") as stream:
         try:
-            _write_in_place(path, content)
+            _write_stream(stream, content)
         except BaseException:
             try:
-                _write_in_place(path, original)
+                _write_stream(stream, original)
             except OSError as exc:
-                logger.warning("Could not restore %s after a failed write: %s", rel, exc)
+                logger.warning(
+                    "Could not restore %s after a failed write: %s; its previous "
+                    "content is in %s", rel, exc, backup.name,
+                )
+                raise
+            _remove_backup(backup)
             raise
+    _remove_backup(backup)
+    return original
 
 
-def _write_in_place(path: Path, content: bytes) -> None:
+def _write_stream(stream: Any, content: bytes) -> None:
     # Truncating after writing, not before, means the old bytes' space is
     # reused rather than freed first.
-    flags = os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
-    with os.fdopen(os.open(path, flags), "wb") as stream:
-        stream.write(content)
-        stream.truncate()
+    stream.seek(0)
+    stream.write(content)
+    stream.truncate()
+    stream.flush()
+    os.fsync(stream.fileno())
 
 
-def _require_writable(path: Path) -> None:
+def _remove_backup(backup: Path) -> None:
+    with changing_file(backup, removal=True):
+        backup.unlink()
+
+
+def _require_rewritable(path: Path) -> None:
     # The mode bits catch a read-only file even when running as root.
     if not os.access(path, os.W_OK) or not path.stat().st_mode & 0o222:
         raise PermissionError(errno.EACCES, "File is read-only", str(path))
+    # An in-place write would also change every other link, possibly outside
+    # the project.
+    if path.stat().st_nlink > 1:
+        raise PermissionError(errno.EPERM, "File has other hard links", str(path))
 
 
 class CodexIntegration(SkillsIntegration):
@@ -192,7 +220,7 @@ class CodexIntegration(SkillsIntegration):
             ownership = "whole" if self._is_generated(project_root, rel, prior) else "partial"
             if (data.get("policy") or {}).get("allow_implicit_invocation") is not False:
                 try:
-                    _require_writable(path)
+                    _require_rewritable(path)
                 except OSError as exc:
                     raise ValueError(f"Cannot update {rel}: {exc}") from exc
         policy = data.get("policy") or {}
@@ -406,25 +434,26 @@ class CodexIntegration(SkillsIntegration):
                     # intact if the write fails.
                     _validate_record_path(Path(rel), root)
                     if content is not None:
-                        original = path.read_bytes()
-                        _replace_file(root, rel, content.encode("utf-8"))
+                        original = _replace_file(root, rel, content.encode("utf-8"))
                         written.append((rel, original, False))
                     manifest.record_existing(rel, ownership=ownership)
                     created.append(path)
                 else:
                     written.append((rel, None, not path.parent.exists()))
                     created.append(manifest.record_file(rel, content, ownership=ownership))
+            if prior is not None:
+                self._released_policy_rels = frozenset(
+                    self._release_prior_policies(root, manifest, prior, {rel for rel, _, _ in planned})
+                )
         except BaseException:
             # A retry would see these policies untracked and take them for the
             # user's own, so they could never be removed. A lifecycle
             # transaction restores its journal itself.
-            if file_change_observer.get() is None:
+            from .._lifecycle import lifecycle_owns_rollback  # lazy: avoids circular import
+
+            if not lifecycle_owns_rollback():
                 self._roll_back_policies(root, written)
             raise
-        if prior is not None:
-            self._released_policy_rels = frozenset(
-                self._release_prior_policies(root, manifest, prior, {rel for rel, _, _ in planned})
-            )
         return created
 
     @staticmethod
@@ -436,9 +465,9 @@ class CodexIntegration(SkillsIntegration):
                 if original is not None:
                     _replace_file(root, rel, original)
                     continue
+                # Only runs outside a lifecycle transaction, so nothing journals it.
                 if path.is_file() and not path.is_symlink():
-                    with changing_file(path, removal=True):
-                        path.unlink()
+                    path.unlink()
                 if new_dir and path.parent.is_dir():
                     path.parent.rmdir()
             except OSError as exc:
