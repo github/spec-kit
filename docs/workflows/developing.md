@@ -26,12 +26,12 @@ schema_version: "1.0"
 workflow:
   id: "speckit"
   name: "Full SDD Cycle"
-  version: "1.0.1"
+  version: "1.0.2"
   author: "GitHub"
   description: "Runs specify → plan → tasks → implement with review gates"
 
 requires:
-  speckit_version: ">=0.8.5"
+  speckit_version: ">=0.15.1"
   integrations:
     any:
       - "alquimia"
@@ -49,6 +49,12 @@ inputs:
     type: string
     default: "auto"
     prompt: "Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's initialized integration)"
+  speckit_review_spec_verdict:
+    type: string
+    default: ""
+  speckit_review_plan_verdict:
+    type: string
+    default: ""
 
 steps:
   - id: specify
@@ -59,6 +65,7 @@ steps:
 
   - id: review-spec
     type: gate
+    verdict_input: speckit_review_spec_verdict
     message: "Review the generated spec before planning."
     options: [approve, reject]
     on_reject: abort
@@ -71,6 +78,7 @@ steps:
 
   - id: review-plan
     type: gate
+    verdict_input: speckit_review_plan_verdict
     message: "Review the plan before generating tasks."
     options: [approve, reject]
     on_reject: abort

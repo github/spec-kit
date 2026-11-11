@@ -133,7 +133,12 @@ def test_local_firstparty_bundle_installs_bundled_components_offline(
             encoding="utf-8"
         )
     )
-    assert registry["workflows"][bundle_id]["version"] == "1.0.0"
+    workflow = yaml.safe_load(
+        (REPO_ROOT / "workflows" / bundle_id / "workflow.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert registry["workflows"][bundle_id]["version"] == workflow["workflow"]["version"]
 
 
 def test_local_parent_installs_referenced_catalog_components(

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from specify_cli._assets import _locate_bundled_workflow
+from specify_cli.workflows.base import RunStatus
 from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+from specify_cli.workflows.step import gate as gate_module
 
 
 def _load_workflow(workflow_id: str) -> WorkflowDefinition:
@@ -91,3 +95,72 @@ def test_bundled_workflow_has_required_inputs(
     for input_id in required_inputs:
         assert definition.inputs[input_id].get("required") is True
     assert definition.inputs.get("integration", {}).get("default") == "auto"
+
+
+def test_verdict_resume(bundled_review, resume_bundled_review) -> None:
+    _, state, commands = bundled_review("bugfix", "review-assessment")
+
+    result, resumed = resume_bundled_review(
+        state, "bug_review_assessment_verdict", "approve"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert resumed.status is RunStatus.COMPLETED
+    assert resumed.step_results["review-assessment"]["output"]["choice"] == "approve"
+    assert resumed.step_results["review-assessment"]["status"] == "completed"
+    assert commands == ["speckit.bug.assess", "speckit.bug.fix", "speckit.bug.test"]
+
+
+@pytest.mark.parametrize("explicit_empty", [False, True], ids=["omitted", "empty"])
+@pytest.mark.parametrize("tty", [False, True], ids=["non-tty", "tty"])
+def test_empty_verdict_preserves_review(
+    bundled_review, monkeypatch, explicit_empty, tty
+) -> None:
+    engine, state, commands = bundled_review("bugfix", "review-assessment")
+    assert state.inputs["bug_review_assessment_verdict"] == ""
+    prompts = []
+
+    def prompt(message, options):
+        prompts.append((message, options))
+        return "reject"
+
+    monkeypatch.setattr(
+        gate_module, "sys",
+        SimpleNamespace(stdin=SimpleNamespace(isatty=lambda: tty)),
+    )
+    monkeypatch.setattr(gate_module.GateStep, "_prompt", staticmethod(prompt))
+
+    resumed = engine.resume(
+        state.run_id,
+        {"bug_review_assessment_verdict": ""} if explicit_empty else None,
+    )
+
+    assert resumed.status is (RunStatus.ABORTED if tty else RunStatus.PAUSED)
+    assert len(prompts) == int(tty)
+    assert resumed.inputs["bug_review_assessment_verdict"] == ""
+    assert resumed.step_results["review-assessment"]["output"]["choice"] == (
+        "reject" if tty else None
+    )
+    assert commands == ["speckit.bug.assess"]
+
+
+@pytest.mark.parametrize("value", ["reject", "maybe", " ", "aPpRoVe"])
+def test_bound_verdict_preserves_decisions(bundled_review, value) -> None:
+    engine, state, commands = bundled_review("bugfix", "review-assessment")
+
+    resumed = engine.resume(
+        state.run_id, {"bug_review_assessment_verdict": value}
+    )
+
+    if value == "aPpRoVe":
+        assert resumed.status is RunStatus.COMPLETED
+        assert resumed.step_results["review-assessment"]["output"]["choice"] == "approve"
+        assert commands == ["speckit.bug.assess", "speckit.bug.fix", "speckit.bug.test"]
+    else:
+        expected = RunStatus.ABORTED if value == "reject" else RunStatus.FAILED
+        assert resumed.status is expected
+        assert commands == ["speckit.bug.assess"]
+        if value == "reject":
+            assert resumed.step_results["review-assessment"]["output"]["aborted"] is True
+        else:
+            assert "does not match any configured option" in resumed.error
