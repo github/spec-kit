@@ -2529,6 +2529,40 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "Core custom body" in cache_file.read_text(encoding="utf-8")
         assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_historical_alias_refresh_creates_cache_under_umask(
+        self, project_dir, temp_dir
+    ):
+        """When the survivor has no ``.composed`` cache yet, the refresh
+        creates one. Like the other ``.composed`` writes, the new file must
+        get its mode from the process umask, not a fixed 0644."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", "append", 5)
+        cache_dir = manager.presets_dir / "middle-preset" / ".composed"
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
+        cache_file = cache_dir / "speckit.custom.md"
+
+        old_umask = os.umask(0o077)
+        try:
+            assert manager.remove("base-preset") is True
+        finally:
+            os.umask(old_umask)
+
+        assert "Core custom body" in cache_file.read_text(encoding="utf-8")
+        assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
+        assert "Core custom body" in self._alias_skill(project_dir).read_text(
+            encoding="utf-8"
+        )
+
     def test_rescaffold_recomposes_alias_declared_only_by_lower_preset(
         self, project_dir, temp_dir
     ):

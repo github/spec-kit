@@ -578,7 +578,6 @@ class _PresetSkillMethods:
                 recorded, mirroring stale-output retirement.
         """
         from ..integrations._file_changes import unlink_in_directory
-        from ..shared_infra import _ensure_safe_shared_directory, _write_shared_text
 
         try:
             registrar = self._command_registrar()
@@ -748,26 +747,7 @@ class _PresetSkillMethods:
                         continue
                     composed_file = pack_dir / ".composed" / f"{primary}.md"
                     try:
-                        # Every ancestor and the cache file itself must stay
-                        # inside the project and off symlinks, so a planted
-                        # ``.composed`` link cannot redirect this write. The
-                        # shared writer validates the destination, journals
-                        # the change and replaces the entry atomically, so a
-                        # hard link to an outside file is broken, not written
-                        # through; an existing cache keeps its permission
-                        # bits.
-                        _ensure_safe_shared_directory(
-                            self.project_root,
-                            composed_file.parent,
-                            create=True,
-                            context="preset composed cache directory",
-                        )
-                        _write_shared_text(
-                            self.project_root,
-                            composed_file,
-                            composed,
-                            preserve_mode=True,
-                        )
+                        self._write_alias_composed_cache(composed_file, composed)
                     except (ValueError, OSError):
                         continue
                     registrar.register_commands(
@@ -778,6 +758,44 @@ class _PresetSkillMethods:
                         self.project_root,
                         _resolved_dir=skills_dir,
                     )
+
+    def _write_alias_composed_cache(self, composed_file: Path, composed: str) -> None:
+        """Write a preset's ``.composed`` cache entry for an alias refresh.
+
+        Every ancestor and the cache file itself must stay inside the project
+        and off symlinks, so a planted ``.composed`` link cannot redirect the
+        write. An existing entry goes through the shared writer, which
+        replaces it atomically (a hard link to an outside file is broken, not
+        written through) and keeps its permission bits. A missing entry is
+        created exclusively, so the kernel applies the process umask, as it
+        does for the other ``.composed`` writes, and nothing planted at the
+        path in the meantime is opened or followed.
+
+        Raises:
+            ValueError, OSError: The path is unsafe or the write failed.
+        """
+        from ..integrations._file_changes import changing_file
+        from ..shared_infra import (
+            _ensure_safe_shared_destination,
+            _ensure_safe_shared_directory,
+            _write_shared_text,
+        )
+
+        _ensure_safe_shared_directory(
+            self.project_root,
+            composed_file.parent,
+            create=True,
+            context="preset composed cache directory",
+        )
+        if composed_file.exists() or composed_file.is_symlink():
+            _write_shared_text(
+                self.project_root, composed_file, composed, preserve_mode=True
+            )
+            return
+        _ensure_safe_shared_destination(self.project_root, composed_file)
+        with changing_file(composed_file):
+            with open(composed_file, "x", encoding="utf-8") as cache:
+                cache.write(composed)
 
     def _layers_registered_in(
         self,
