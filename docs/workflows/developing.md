@@ -49,6 +49,14 @@ inputs:
     type: string
     default: "auto"
     prompt: "Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's initialized integration)"
+  spec_verdict:
+    type: string
+    enum: ["", approve, reject]
+    default: ""
+  plan_verdict:
+    type: string
+    enum: ["", approve, reject]
+    default: ""
 
 steps:
   - id: specify
@@ -62,6 +70,7 @@ steps:
     message: "Review the generated spec before planning."
     options: [approve, reject]
     on_reject: abort
+    verdict_input: spec_verdict
 
   - id: plan
     command: speckit.plan
@@ -74,6 +83,7 @@ steps:
     message: "Review the plan before generating tasks."
     options: [approve, reject]
     on_reject: abort
+    verdict_input: plan_verdict
 
   - id: tasks
     command: speckit.tasks
@@ -115,6 +125,10 @@ Run it with:
 ```bash
 specify workflow run speckit -i spec="Build a kanban board with drag-and-drop task management"
 ```
+
+Without a terminal, the review gates pause. Resume them with
+`--input spec_verdict=approve` and `--input plan_verdict=approve`, respectively.
+Omitting a verdict preserves the pause (or the interactive prompt on a terminal).
 
 ## Test locally
 

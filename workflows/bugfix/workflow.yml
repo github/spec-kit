@@ -23,6 +23,10 @@ inputs:
     type: string
     default: "auto"
     prompt: "Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's initialized integration)"
+  assessment_verdict:
+    type: string
+    enum: ["", approve, reject]
+    default: ""
 
 steps:
   - id: assess
@@ -36,6 +40,7 @@ steps:
     message: "Review the assessment before any code change."
     options: [approve, reject]
     on_reject: abort
+    verdict_input: assessment_verdict
 
   - id: fix
     command: speckit.bug.fix
