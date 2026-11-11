@@ -163,7 +163,8 @@ function Resolve-ContextPath {
         # aborting the whole fallback. Empty means the base directory.
         [string]$RelativePath = '',
         [string]$Base = $null,
-        [int]$Depth = 10
+        # Windows permits up to 63 reparse points in a path.
+        [int]$Depth = 63
     )
 
     # Resolve $RelativePath segment-by-segment from $Base (the project
@@ -173,8 +174,7 @@ function Resolve-ContextPath {
     # a symlinked parent must win over the lexical spelling, so
     # plans/alias/../current.md (alias -> archive/nested) reaches
     # archive/current.md, not plans/current.md. Link chains are bounded
-    # by $Depth so a cycle terminates; the caller re-runs until the
-    # result stabilizes.
+    # by $Depth so a cycle terminates without returning a partial path.
     if (-not $Base) {
         $Base = $Root
     }
@@ -282,6 +282,19 @@ function Resolve-ContextPath {
                 if ($null -eq $followed) {
                     return $null
                 }
+                # A trailing separator or '/.' requires a directory,
+                # including on intermediate links in a longer chain.
+                $lastTargetSegment = $target.Split($separators)[-1]
+                if ([string]::IsNullOrEmpty($lastTargetSegment) -or [string]::Equals($lastTargetSegment, '.', [System.StringComparison]::Ordinal)) {
+                    try {
+                        $targetAttributes = [System.IO.File]::GetAttributes($followed)
+                    } catch {
+                        return $null
+                    }
+                    if (($targetAttributes -band [System.IO.FileAttributes]::Directory) -eq 0) {
+                        return $null
+                    }
+                }
                 $candidate = $followed
             } else {
                 return $null
@@ -340,7 +353,13 @@ $script:LinkFollowBudgetRemaining = $script:LinkFollowBudget
 $ErrorActionPreference = 'Stop'
 $DefaultStart = '<!-- SPECKIT START -->'
 $DefaultEnd   = '<!-- SPECKIT END -->'
-$ProjectRoot  = (Get-Location).Path
+$projectLocation = (Get-Location).Path
+$locationRoot = [System.IO.Path]::GetPathRoot($projectLocation)
+$ProjectRoot = Resolve-ContextPath -Root $locationRoot -RelativePath $projectLocation.Substring($locationRoot.Length)
+if ($null -eq $ProjectRoot) {
+    Write-Warning 'agent-context: unable to resolve the project root; skipping update.'
+    exit 1
+}
 $ExtConfig    = Join-Path $ProjectRoot '.specify/extensions/agent-context/agent-context-config.yml'
 
 if (-not (Test-Path -LiteralPath $ExtConfig)) {
@@ -535,13 +554,8 @@ foreach ($ContextFile in $ContextFiles) {
     # Fresh budget per context file: the budget is scoped to one
     # resolution unit, not shared across unrelated paths.
     $script:LinkFollowBudgetRemaining = $script:LinkFollowBudget
-    # Resolve the complete link chain before the containment check:
-    # a single Resolve-ContextPath pass stops at its depth bound and
-    # returns a partially resolved path, so an in-project spelling can
-    # pass containment while the later write follows the remaining
-    # links outside the project. Re-run until the result stabilizes,
-    # like the mtime fallback; a chain that never stabilizes (or
-    # leaves the project) is rejected.
+    # Require a fully resolved, stable path before checking containment.
+    # Exhausting the depth or work budget returns null, never a partial path.
     $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
     $resolvedTarget = [System.IO.Path]::GetFullPath((Join-Path $ProjectRoot $ContextFile))
     $stabilized = $false
@@ -644,19 +658,15 @@ if (-not $PlanPath) {
                     # later ones.
                     $script:LinkFollowBudgetRemaining = $script:LinkFollowBudget
                     $resolved = $_.FullName
-                    # Resolve-ContextPath follows link chains up to its
-                    # depth bound; re-run until the result stabilizes,
-                    # so a chain longer than the bound (or a cycle)
-                    # never stabilizes and is rejected below.
+                    # Require complete resolution and a stable path;
+                    # unresolved chains and cycles are rejected below.
                     $stabilized = $false
                     for ($depth = 0; $depth -lt 10; $depth++) {
                         $relPath = ConvertTo-SlashPath -Path $resolved
                         $normRoot = (ConvertTo-SlashPath -Path $ProjectRoot).TrimEnd('/') + '/'
                         if (-not $relPath.StartsWith($normRoot, $cmp)) { break }
                         $next = Resolve-ContextPath -Root $ProjectRoot -RelativePath $relPath.Substring($normRoot.Length)
-                        # A null result means the shared link-follow
-                        # budget is spent: the chain cannot be resolved,
-                        # so the candidate is rejected below.
+                        # A null result means resolution failed.
                         if ($null -eq $next) { break }
                         # Platform-aware equality: PowerShell's -eq is
                         # case-insensitive even on Unix, so a link to a
@@ -718,15 +728,8 @@ if (-not $PlanPath) {
                     # no test command, so the check runs on Unix only; if
                     # test is unavailable, fall back to the UnixMode letter.
                     if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
-                        # The resolver drops a trailing '/.' or '/' from a
-                        # link target, so a link to 'current.md/.' resolves
-                        # to the regular file 'current.md' and would pass
-                        # the check below — but opening the link itself fails
-                        # on Unix (ENOTDIR), and the bash/Python twins stat
-                        # the original candidate and reject it. Stat the
-                        # original candidate too, so a broken suffix cannot
-                        # displace a valid plan. `test -f` stats through
-                        # the link, like the twins' p.stat().
+                        # Stat the original candidate as well as the resolved
+                        # target, matching the twins and the OS link limit.
                         $isOriginalRegularFile = $null
                         try {
                             $null = & test -f $_.FullName 2>$null
@@ -748,24 +751,6 @@ if (-not $PlanPath) {
                         } elseif (-not $isRegularFile) {
                             return
                         }
-                    } else {
-                        # Windows has no `test` command, and .NET path
-                        # handling normalizes a trailing '/.' or '/' away,
-                        # so Test-Path and File.Exists cannot see a broken
-                        # suffix. Read the candidate's own link target
-                        # instead: a target ending in '/.', '/', '\.', or
-                        # '\' never denotes a regular file (it is a
-                        # directory reference, or invalid when the
-                        # preceding component is a file), so the twins
-                        # reject it by stat. Reject it here too, so a
-                        # broken suffix cannot displace a valid plan.
-                        $ownTarget = Get-LinkTarget -Path $_.FullName
-                        if ($ownTarget -and (
-                            $ownTarget.EndsWith('/.', [System.StringComparison]::Ordinal) -or
-                            $ownTarget.EndsWith('/', [System.StringComparison]::Ordinal) -or
-                            $ownTarget.EndsWith('\.', [System.StringComparison]::Ordinal) -or
-                            $ownTarget.EndsWith('\', [System.StringComparison]::Ordinal)
-                        )) { return }
                     }
                     [PSCustomObject]@{
                         ResolvedPath = $resolved

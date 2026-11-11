@@ -1089,18 +1089,131 @@ def test_powershell_mtime_fallback_selects_case_only_link_target(
 
 
 @pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("link_count", [11, 20])
+@pytest.mark.parametrize("operation", ["context", "fallback"])
+def test_powershell_accepts_valid_in_project_link_chains(
+    tmp_path: Path, link_count: int, operation: str
+) -> None:
+    context_file = "l1/AGENTS.md" if operation == "context" else "AGENTS.md"
+    repo = make_project(tmp_path / "project", context_file=context_file)
+    target_dir = repo / "actual"
+    target_dir.mkdir()
+    target = target_dir / ("AGENTS.md" if operation == "context" else "plan.md")
+    target.write_bytes(b"# original\n")
+    try:
+        for index in range(1, link_count + 1):
+            (repo / f"l{index}").symlink_to(
+                f"l{index + 1}" if index < link_count else "actual/.",
+                target_is_directory=True,
+            )
+        if operation == "fallback":
+            candidate = repo / "specs/001/plan.md"
+            candidate.parent.mkdir(parents=True)
+            candidate.symlink_to("../../l1/plan.md")
+        else:
+            candidate = repo / context_file
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    assert candidate.is_file()
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    content = (repo / context_file).read_bytes()
+    assert b"<!-- SPECKIT START -->" in content
+    if operation == "fallback":
+        assert b"at actual/plan.md" in content
+    else:
+        assert content.startswith(b"# original\n")
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("alias_kind", ["project", "ancestor"])
+def test_powershell_mtime_fallback_uses_canonical_project_root(
+    tmp_path: Path, alias_kind: str
+) -> None:
+    repo = make_project(tmp_path / "real/project", context_file="AGENTS.md")
+    valid = repo / "plans/current.md"
+    valid.parent.mkdir()
+    valid.write_bytes(b"# valid\n")
+    os.utime(valid, (1_700_000_000, 1_700_000_000))
+    external = tmp_path / "external.md"
+    external.write_bytes(b"# external\n")
+    os.utime(external, (1_700_000_100, 1_700_000_100))
+    alias = tmp_path / "alias"
+    try:
+        alias.symlink_to(
+            repo if alias_kind == "project" else repo.parent,
+            target_is_directory=True,
+        )
+        for name, target in [("001-valid", valid), ("999-escaping", external)]:
+            candidate = repo / "specs" / name / "plan.md"
+            candidate.parent.mkdir(parents=True)
+            candidate.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    location = alias if alias_kind == "project" else alias / "project"
+    location_literal = str(location).replace("'", "''")
+    script_literal = str(PS_SCRIPT).replace("'", "''")
+
+    result = subprocess.run(
+        [
+            WINDOWS_POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            f"Set-Location -LiteralPath '{location_literal}'; & '{script_literal}'",
+        ],
+        check=False,
+        cwd=repo,
+        env=_bundled_script_env(repo),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert b"at plans/current.md" in (repo / "AGENTS.md").read_bytes()
+    assert external.read_bytes() == b"# external\n"
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("operation", ["context", "fallback"])
+def test_powershell_rejects_cyclic_link_chains(
+    tmp_path: Path, operation: str
+) -> None:
+    context_file = "l1/AGENTS.md" if operation == "context" else "AGENTS.md"
+    repo = make_project(tmp_path / "project", context_file=context_file)
+    try:
+        (repo / "l1").symlink_to("l2", target_is_directory=True)
+        (repo / "l2").symlink_to("l1", target_is_directory=True)
+        if operation == "fallback":
+            candidate = repo / "specs/001/plan.md"
+            candidate.parent.mkdir(parents=True)
+            candidate.symlink_to("../../l1/plan.md")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    if operation == "context":
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "outside the project root" in result.stdout
+        assert not (repo / "AGENTS.md").exists()
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert b"\nat " not in (repo / "AGENTS.md").read_bytes()
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
 def test_powershell_mtime_fallback_rejects_depth_limit_exhaustion(
     tmp_path: Path,
 ) -> None:
-    """PowerShell mtime fallback must reject chains the loop cannot finish.
+    """PowerShell must reject chains beyond the resolution depth limit.
 
-    Regression for the Copilot review on #5283: when the ten-pass
-    resolution loop exhausts without stabilizing, $resolved can still
-    hold an unresolved directory link, and the lexical containment
-    check then accepts a file the OS resolves through the remaining
-    chain. A chain of 100 directory links needs more follows than the
-    loop performs, so the candidate must be rejected and no plan
-    selected.
+    A chain of 100 directory links must not produce a partially resolved
+    in-project spelling that can pass the lexical containment check.
     """
     repo = make_project(tmp_path / "project", context_file="AGENTS.md")
     real = repo / "plans" / "real"
@@ -1657,11 +1770,11 @@ def test_powershell_context_file_rejects_depth_exhaustion_before_dotdot(
     links but kept walking, so a '..' after the exhausted link
     collapsed against the unresolved spelling and the result stabilized
     at an in-project path while the later write followed the original
-    chain outside the project. A chain of eleven links whose tenth
+    chain outside the project. A chain of 64 links whose 63rd
     target ends in '..' must be rejected and the outside file left
     unchanged.
 
-    The eleventh link points at a directory beside the test tree, so
+    The 64th link points at a directory beside the test tree, so
     following the chain can never loop back into the project (a target
     under the test tree would make directory enumeration recurse
     forever through the chain).
@@ -1673,17 +1786,17 @@ def test_powershell_context_file_rejects_depth_exhaustion_before_dotdot(
     external.write_bytes(b"# external\n")
 
     repo = make_project(tmp_path / "project", context_file="l1/AGENTS.md")
-    for i in range(1, 11):
+    for i in range(1, 64):
         link = repo / f"l{i}"
         try:
-            if i < 10:
+            if i < 63:
                 link.symlink_to(f"l{i + 1}")
             else:
-                link.symlink_to("l11/..")
+                link.symlink_to("l64/..")
         except (OSError, NotImplementedError) as exc:
             pytest.skip(f"symlinks unavailable: {exc}")
     try:
-        (repo / "l11").symlink_to(outside_dir, target_is_directory=True)
+        (repo / "l64").symlink_to(outside_dir, target_is_directory=True)
     except (OSError, NotImplementedError) as exc:
         pytest.skip(f"symlinks unavailable: {exc}")
 
@@ -1734,8 +1847,33 @@ def test_powershell_mtime_fallback_preserves_unicode_dot_directory(
 
 @pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
 @pytest.mark.parametrize("suffix", ["/.", "/"], ids=["dot-suffix", "slash-suffix"])
-def test_powershell_mtime_fallback_rejects_plan_link_with_invalid_suffix(
+def test_powershell_context_file_rejects_multihop_invalid_suffix_before_writing(
     tmp_path: Path, suffix: str
+) -> None:
+    repo = make_project(tmp_path / "project", context_files=["LOCAL.md", "AGENTS.md"])
+    local = repo / "LOCAL.md"
+    local.write_bytes(b"# local\n")
+    target = repo / "current.md"
+    target.write_bytes(b"# original\n")
+    try:
+        (repo / "intermediate.md").symlink_to(f"current.md{suffix}")
+        (repo / "AGENTS.md").symlink_to("intermediate.md")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "outside the project root" in result.stdout
+    assert local.read_bytes() == b"# local\n"
+    assert target.read_bytes() == b"# original\n"
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("suffix", ["/.", "/"], ids=["dot-suffix", "slash-suffix"])
+@pytest.mark.parametrize("hops", [1, 2])
+def test_powershell_mtime_fallback_rejects_plan_link_with_invalid_suffix(
+    tmp_path: Path, suffix: str, hops: int
 ) -> None:
     """PowerShell mtime fallback must reject plan links with bad suffixes.
 
@@ -1746,9 +1884,9 @@ def test_powershell_mtime_fallback_rejects_plan_link_with_invalid_suffix(
     path, so the broken candidate displaced a valid plan (unlike the
     bash/Python twins, which stat the original candidate). The valid
     plan must win even when the broken candidate's target is newer.
-    On Windows the same rejection runs through the link-target string
-    check: Windows has no ``test`` command, and .NET normalizes a
-    trailing ``/.`` away, so the Unix stat cannot see the suffix.
+    On Windows the resolver validates every link target's directory
+    suffix before .NET normalization can hide it, including targets
+    reached through an intermediate link.
     """
     repo = make_project(tmp_path / "project", context_file="AGENTS.md")
     valid = repo / "specs/001-valid/plan.md"
@@ -1762,7 +1900,12 @@ def test_powershell_mtime_fallback_rejects_plan_link_with_invalid_suffix(
     candidate = repo / "specs/999-candidate/plan.md"
     candidate.parent.mkdir(parents=True)
     try:
-        candidate.symlink_to(f"../../plans/current.md{suffix}")
+        if hops == 1:
+            candidate.symlink_to(f"../../plans/current.md{suffix}")
+        else:
+            intermediate = repo / "plans/intermediate.md"
+            intermediate.symlink_to(f"current.md{suffix}")
+            candidate.symlink_to("../../plans/intermediate.md")
     except (OSError, NotImplementedError) as exc:
         pytest.skip(f"symlinks unavailable: {exc}")
 

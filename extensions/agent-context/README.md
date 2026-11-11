@@ -48,6 +48,8 @@ All configuration flows through the extension's own config file at `.specify/ext
 
 The PowerShell updater rejects context paths whose existing links cannot be resolved or whose metadata cannot be read, before writing any context files. Missing context files and parent directories can still be created.
 
+Project-directory aliases are resolved before containment checks. Valid in-project link chains are supported within the operating system's limits; resolution remains bounded to reject cycles and excessive link expansion.
+
 ## Requirements
 
 The bundled update scripts require **Python 3** with **PyYAML** for YAML/upsert processing (PowerShell can also use `ConvertFrom-Yaml` when available).
