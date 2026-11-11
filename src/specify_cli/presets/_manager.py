@@ -752,6 +752,40 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             if any(_SCRIPT_LAUNCHER_MARKER in line for line in first_line):
                 stale.unlink()
 
+    def _read_script_layer_source(self, path: Path) -> str:
+        """Read a resolved script layer's content for materialization.
+
+        A layer under ``.specify/`` (a project override, an installed
+        preset, or an installed extension) is project-supplied content.
+        If that path were a symlink -- at the leaf or at any ancestor
+        directory -- following it would silently copy a file from
+        outside the project into the world-readable canonical script,
+        without ever executing it. Reuse the same ancestor-walk and
+        leaf-symlink check already enforced for shared-infra
+        *destinations* here, for the *source* side of the same read.
+
+        A layer outside the project root (the bundled/core asset
+        shipped with this tool, found when no project-local layer
+        exists) is never user-supplied and is read as-is.
+
+        The "is this project-local" test must use the *unresolved* path
+        -- every project-local layer is constructed as a literal child
+        of ``self.project_root`` by the resolver, so a plain
+        (non-symlink-following) ancestry check already distinguishes it
+        from a bundled asset path, which is never a child of
+        ``self.project_root`` at all. Resolving first would be wrong:
+        a project-local path that *is* a symlink escaping outside the
+        project would then resolve to somewhere outside the root and be
+        misread as a trusted bundled asset -- the exact thing this
+        check exists to catch.
+        """
+        try:
+            path.relative_to(self.project_root)
+        except ValueError:
+            return path.read_text(encoding="utf-8")
+        _ensure_safe_shared_destination(self.project_root, path)
+        return path.read_text(encoding="utf-8")
+
     def _reconcile_script_chain(self, script_name: str) -> None:
         """Materialize the project's generated launcher chain for ``script_name``.
 
@@ -804,7 +838,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             core_path = scripts_dir / f"{script_name}{_SCRIPT_CORE_SUFFIX}"
             _ensure_safe_shared_destination(self.project_root, core_path)
             _write_shared_text(
-                self.project_root, core_path, chain[-1].read_text(encoding="utf-8")
+                self.project_root,
+                core_path,
+                self._read_script_layer_source(chain[-1]),
             )
             generated = [core_path]
 
@@ -842,7 +878,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             # A single replace-strategy layer: no $CORE_SCRIPT to satisfy,
             # write it verbatim with no intermediate files at all.
             _write_shared_text(
-                self.project_root, canonical, chain[0].read_text(encoding="utf-8")
+                self.project_root,
+                canonical,
+                self._read_script_layer_source(chain[0]),
             )
             if os.name != "nt":
                 canonical.chmod(canonical.stat().st_mode | 0o111)
@@ -853,7 +891,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         # No preset layer left: restore core, or drop a stale generated file.
         if chain:
             _write_shared_text(
-                self.project_root, canonical, chain[-1].read_text(encoding="utf-8")
+                self.project_root,
+                canonical,
+                self._read_script_layer_source(chain[-1]),
             )
             # Command frontmatter executes this path directly, and
             # _write_shared_text writes 0644.

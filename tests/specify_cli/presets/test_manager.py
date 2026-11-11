@@ -1873,6 +1873,44 @@ class TestScriptChainReconciliation:
             PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
         assert list(outside.iterdir()) == []
 
+    def test_reconcile_refuses_symlinked_script_source(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A preset's installed script source must not be a symlink to a
+        file outside the project: following it would copy that file's
+        content into the world-readable canonical script without ever
+        executing it (#4709 review)."""
+        secret = temp_dir / "secret.txt"
+        secret.write_text("TOP-SECRET-OUTSIDE-PROJECT\n")
+
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "sym-source-pack", "echo safe\n",
+            template_type="script", template_name="sym-source-script",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        installed_script = (
+            project_dir / ".specify" / "presets" / "sym-source-pack"
+            / "scripts" / "sym-source-script.sh"
+        )
+        canonical = (
+            project_dir / ".specify" / "scripts" / "bash" / "sym-source-script.sh"
+        )
+        assert "safe" in canonical.read_text(encoding="utf-8")
+
+        installed_script.unlink()
+        try:
+            os.symlink(secret, installed_script)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks unavailable")
+
+        with pytest.warns(UserWarning, match="symlink"):
+            manager.reconcile_all_script_chains()
+
+        assert "TOP-SECRET-OUTSIDE-PROJECT" not in canonical.read_text(encoding="utf-8")
+        assert "safe" in canonical.read_text(encoding="utf-8")
+
     def test_install_wrap_script_writes_launcher_stub(
         self, project_dir, temp_dir, valid_pack_data
     ):
