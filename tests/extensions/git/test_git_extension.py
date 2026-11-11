@@ -186,7 +186,7 @@ class TestGitExtensionManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "git"
-        assert m.version == "1.0.4"
+        assert m.version == "1.0.5"
 
     def test_manifest_commands(self):
         """Manifest declares expected commands."""
@@ -1970,6 +1970,106 @@ class TestAutoCommitPowerShellCommitStyle:
             cwd=project, capture_output=True, text=True,
         )
         assert "[Spec Kit] Add specification" in log.stdout
+
+
+# ── PowerShell UTF-8 input tests ─────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "exe",
+    [
+        pytest.param(
+            "pwsh",
+            marks=pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available"),
+            id="pwsh",
+        ),
+        pytest.param(
+            WINDOWS_POWERSHELL,
+            marks=pytest.mark.skipif(
+                not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
+            ),
+            id="windows-powershell-5.1",
+        ),
+    ],
+)
+class TestPowerShellUtf8Inputs:
+    """Non-ASCII text in git-config.yml and in -MessageFile must reach git unchanged.
+
+    Without -Encoding, Get-Content in Windows PowerShell 5.1 decodes BOM-less
+    UTF-8 with the ANSI code page, so accented letters and dashes came out
+    garbled in commit messages and branch names. PowerShell 7 reads UTF-8 by
+    default, so only the windows-powershell-5.1 case can reproduce it.
+    """
+
+    TEXT = "café — naïve résumé"
+
+    @staticmethod
+    def _git_lines(project: Path, *args: str) -> list[str]:
+        out = subprocess.run(
+            ["git", *args], cwd=project, capture_output=True, check=True
+        )
+        return out.stdout.decode("utf-8").splitlines()
+
+    def test_auto_commit_reads_message_file_as_utf8(self, tmp_path: Path, exe: str):
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        msg_file = project / "commit-msg.txt"
+        msg_file.write_text(f"feat: {self.TEXT}\n", encoding="utf-8")
+
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "-MessageFile", str(msg_file),
+            exe=exe,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert self._git_lines(project, "log", "-1", "--format=%s") == [f"feat: {self.TEXT}"]
+
+    def test_auto_commit_reads_configured_message_as_utf8(self, tmp_path: Path, exe: str):
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            f'    message: "{self.TEXT}"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify", exe=exe)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert self._git_lines(project, "log", "-1", "--format=%s") == [self.TEXT]
+
+    def test_initialize_repo_reads_init_commit_message_as_utf8(self, tmp_path: Path, exe: str):
+        project = _setup_project(tmp_path, git=False)
+        _write_config(project, f'init_commit_message: "{self.TEXT}"\n')
+
+        result = _run_pwsh("initialize-repo.ps1", project, exe=exe)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert self._git_lines(project, "log", "-1", "--format=%s") == [self.TEXT]
+
+    def test_create_branch_reads_branch_prefix_as_utf8(self, tmp_path: Path, exe: str):
+        project = _setup_project(tmp_path)
+        _write_config(project, 'branch_prefix: "équipe"\n')
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-ShortName", "guided-tour", "Add guided tour",
+            exe=exe,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert self._git_lines(project, "branch", "--show-current") == [
+            "équipe/001-guided-tour"
+        ]
 
 
 # ── auto-commit.ps1 CRLF warning tests (issue #2253) ────────────────────────
