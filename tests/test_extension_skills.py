@@ -4069,6 +4069,26 @@ def test_resource_copy_keeps_execute_bits_of_non_shell_script(project_dir, temp_
     assert stat.S_IMODE((skill / "scripts/data.txt").stat().st_mode) == 0o644  # not made executable
 
 
+def test_remove_deletes_resources_of_nested_alias_skill(project_dir, temp_dir):
+    _create_init_options(project_dir, ai="claude", ai_skills=False)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["scripts/run.sh"]
+    data["provides"]["commands"][0]["aliases"] = ["speckit.test-ext/group.alias"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "scripts").mkdir()
+    (ext / "scripts/run.sh").write_text("echo hi\n")
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    nested = skills / "speckit-test-ext/group-alias/scripts/run.sh"
+    primary = skills / "speckit-test-ext-hello/scripts/run.sh"
+    assert nested.is_file() and primary.is_file()
+
+    manager.remove("test-ext", keep_config=False)
+    assert not nested.exists() and not primary.exists()
+
+
 def test_remove_legacy_registry_without_resource_field(project_dir, temp_dir):
     _create_init_options(project_dir, ai="claude", ai_skills=True)
     skills = _create_skills_dir(project_dir)
