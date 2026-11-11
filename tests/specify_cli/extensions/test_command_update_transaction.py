@@ -2269,6 +2269,34 @@ def test_update_rollback_native_resource_primary_and_alias(project_dir, monkeypa
     assert ExtensionRegistry(project_dir / ".specify/extensions").data["extensions"]["test-ext"]["skill_resource_hashes"] == hashes
 
 
+def test_update_rollback_restores_nested_alias_skill_from_an_older_version(project_dir, monkeypatch):
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify/init-options.json").write_text('{"ai":"claude","ai_skills":false}')
+    (project_dir / ".specify/extensions.yml").write_text(yaml.safe_dump({"installed": ["test-ext"], "hooks": {}}))
+    root = project_dir / ".claude/skills"
+    # The layout an older version wrote for the alias speckit.test-ext/group.alias.
+    skill = root / "speckit-test-ext/group-alias"
+    _write_owned_extension_skill(skill, "test-ext", "OLD SKILL")
+    entry = {"version": "1.0.0", "enabled": True,
+             "registered_commands": {"claude": ["speckit.test-ext/group.alias"]},
+             "registered_skills": []}
+    ExtensionRegistry(project_dir / ".specify/extensions").add("test-ext", entry)
+    _stub_available_update(monkeypatch, entry)
+    archive = project_dir / "mock.zip"
+    _write_update_zip(archive)
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: archive)
+    monkeypatch.setattr(ExtensionManager, "remove", lambda self, ext_id, keep_config=False: shutil.rmtree(root / "speckit-test-ext"))
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("install failed")
+
+    monkeypatch.setattr(ExtensionManager, "install_from_zip", fail)
+    result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
+    assert result.exit_code == 1, result.output
+    assert "Rollback successful" in result.output
+    assert "OLD SKILL" in (skill / "SKILL.md").read_text()
+
+
 def test_update_rollback_supplemental_resources(project_dir, monkeypatch):
     monkeypatch.chdir(project_dir)
     (project_dir / ".specify/init-options.json").write_text('{"ai":"copilot","ai_skills":true}')

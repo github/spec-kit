@@ -71,6 +71,26 @@ def skill_name_for_command(command_name: str) -> str:
     return "speckit-" + short_name.replace(".", "-").replace("/", "-")
 
 
+def legacy_skill_name_for_command(command_name: str) -> str | None:
+    """Return the nested skill name older versions rendered for an alias, if any.
+
+    Before ``skill_name_for_command`` collapsed separators, an alias such as
+    ``speckit.ext/group.alias`` was written to ``speckit-ext/group-alias``.
+    Cleanup and update backup still look there so an install from an older
+    version is removed completely. ``None`` for every name that was already
+    a single component, and for names with an empty segment. Dots are
+    replaced too, so no ``.`` or ``..`` segment can survive.
+    """
+    short_name = command_name
+    if short_name.startswith("speckit."):
+        short_name = short_name[len("speckit."):]
+    legacy = "speckit-" + short_name.replace(".", "-")
+    segments = legacy.split("/")
+    if len(segments) == 1 or "" in segments:
+        return None
+    return legacy
+
+
 def relative_extension_path_violation(value: Any) -> str | None:
     """Return why ``value`` is unsafe as an extension-relative ``file`` path.
 

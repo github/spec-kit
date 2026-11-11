@@ -4115,6 +4115,65 @@ def test_alias_with_separator_renders_a_flat_skill_and_cleans_up_with_its_resour
     assert not alias.exists() and not primary.exists()
 
 
+@pytest.mark.parametrize("command, expected", [
+    ("speckit.test-ext/group.alias", "speckit-test-ext/group-alias"),
+    ("custom/nested/alias", "speckit-custom/nested/alias"),
+    ("speckit.verify", None),  # already a single component
+    ("speckit.ext//alias", None),  # empty segment
+    ("speckit.ext/../escape", "speckit-ext/--/escape"),  # dots collapse, so no traversal segment
+    ("speckit.ext/./alias", "speckit-ext/-/alias"),
+])
+def test_legacy_skill_name_for_command(command, expected):
+    from specify_cli._utils import legacy_skill_name_for_command
+
+    assert legacy_skill_name_for_command(command) == expected
+
+
+def test_remove_cleans_nested_alias_skill_written_by_an_older_version(project_dir, temp_dir):
+    _create_init_options(project_dir, ai="claude", ai_skills=False)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    # What an older version rendered for the alias speckit.test-ext/group.alias.
+    old = skills / "speckit-test-ext/group-alias"
+    old.mkdir(parents=True)
+    frontmatter = yaml.safe_dump({
+        "name": old.name, "description": "d", "metadata": {"source": "extension:test-ext"},
+    })
+    (old / "SKILL.md").write_text(f"---\n{frontmatter}---\n\nbody\n")
+    registered = dict(manager.registry.get("test-ext")["registered_commands"])
+    registered["claude"] = [*registered["claude"], "speckit.test-ext/group.alias"]
+    manager.registry.update("test-ext", {"registered_commands": registered})
+    unrelated = skills / "speckit-test-ext/keep.txt"
+    unrelated.write_text("user file")
+
+    manager.remove("test-ext", keep_config=False)
+
+    assert not (old / "SKILL.md").exists() and not old.exists()
+    assert unrelated.read_text() == "user file"  # only the emptied directory goes, not user files
+    assert not list(skills.glob("speckit-test-ext-*"))
+
+
+def test_remove_prunes_emptied_parent_of_nested_alias_skill(project_dir, temp_dir):
+    _create_init_options(project_dir, ai="claude", ai_skills=False)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    old = skills / "speckit-test-ext/group-alias"
+    old.mkdir(parents=True)
+    frontmatter = yaml.safe_dump({"name": old.name, "description": "d", "metadata": {"source": "extension:test-ext"}})
+    (old / "SKILL.md").write_text(f"---\n{frontmatter}---\n\nbody\n")
+    registered = dict(manager.registry.get("test-ext")["registered_commands"])
+    registered["claude"] = [*registered["claude"], "speckit.test-ext/group.alias"]
+    manager.registry.update("test-ext", {"registered_commands": registered})
+
+    manager.remove("test-ext", keep_config=False)
+
+    assert not (skills / "speckit-test-ext").exists()
+
+
 def test_remove_legacy_registry_without_resource_field(project_dir, temp_dir):
     _create_init_options(project_dir, ai="claude", ai_skills=True)
     skills = _create_skills_dir(project_dir)

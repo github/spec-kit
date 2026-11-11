@@ -16,6 +16,7 @@ from rich.markup import escape as _escape_markup
 
 from .._console import console
 from .._init_options import is_ai_skills_enabled
+from .._utils import legacy_skill_name_for_command
 from . import _commands
 from ._command_update_artifacts import preflight_update_archive
 from ._command_update_discovery import discover_updates
@@ -317,6 +318,10 @@ def run_update_command(extension: str | None) -> None:
                             and _AgentReg._is_safe_command_name(cmd_name)
                         ):
                             names_to_backup.append(cmd_name)
+                        if agent_config.get("extension") == "/SKILL.md":
+                            legacy_name = legacy_skill_name_for_command(cmd_name)
+                            if legacy_name:
+                                names_to_backup.append(legacy_name)
 
                         for dir_index, target_dir in enumerate(
                             dirs_to_backup
