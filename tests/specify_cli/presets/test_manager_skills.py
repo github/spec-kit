@@ -2899,7 +2899,12 @@ def test_preset_remove_warns_when_extension_resource_missing(project_dir, temp_d
     preset_content = skill_file.read_text()
     (project_dir / ".specify/extensions/res/references/r.md").unlink()
 
-    with pytest.warns(UserWarning, match=r"speckit-res-run.*ValidationError.*references/r.md"):
+    with pytest.warns(UserWarning, match=r"speckit-res-run.*ValidationError.*references/r.md") as caught:
         manager.remove("override")
+    message = str(caught[0].message)
+    assert "resources declared by its extension command" in message
+    assert str(project_dir / ".specify/extensions/res") in message
+    assert "could not be read" not in message  # the command file itself was read fine
+    assert "Fix or remove that file" not in message
     assert skill_file.read_text() == preset_content
     assert manager.registry.get("override") is None

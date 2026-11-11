@@ -1306,6 +1306,29 @@ class _PresetSkillMethods:
             stacklevel=2,
         )
 
+    @staticmethod
+    def _warn_unrestored_skill_resources(
+        skill_name: str, extension_dir: Path, exc: BaseException
+    ) -> None:
+        """Warn that a skill kept preset content because its resources are unresolved.
+
+        The command file itself was read; the extension's declared ``resources``
+        no longer resolve. As for an unreadable source, leaving the skill in
+        place is the safe recovery, so say what is wrong and where to fix it.
+        """
+        import warnings
+
+        warnings.warn(
+            f"Skill '{skill_name}' still contains the removed preset's content: "
+            f"the resources declared by its extension command could not be "
+            f"resolved in '{extension_dir}' ({exc.__class__.__name__}: {exc}). "
+            f"The skill was left in place rather than deleted. Restore the "
+            f"missing resource in that extension or fix its 'resources' in "
+            f"extension.yml, then re-run 'specify preset add'/'specify preset "
+            f"remove' to refresh it.",
+            stacklevel=2,
+        )
+
     @project_registration
     def _unregister_skills_in_dir(
         self,
@@ -1508,8 +1531,8 @@ class _PresetSkillMethods:
                             extension_restore["extension_dir"], resources
                         )
                     except ValidationError as exc:
-                        self._warn_unrestored_skill(
-                            skill_name, extension_restore["source_file"], exc
+                        self._warn_unrestored_skill_resources(
+                            skill_name, extension_restore["extension_dir"], exc
                         )
                         continue
                 else:
