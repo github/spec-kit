@@ -3041,11 +3041,11 @@ def test_install_hook_failure_retires_attempt_skill_resource(tmp_path, generic_e
     assert not manager.registry.is_installed("sample")
     monkeypatch.setattr(HookExecutor, "register_hooks", original_register)
     manager.install_from_directory(generic_extension, "1.0.0")
-    assert resource.read_bytes() == b"echo sample\n"
+    assert resource.read_bytes() == (generic_extension / "scripts/run.sh").read_bytes()
     hashes = manager.registry.get("sample")["skill_resource_hashes"]["project"]
     assert hashes[resource.relative_to(project).as_posix()] == sha256(resource.read_bytes()).hexdigest()
     if agent == "claude":
-        assert alias_resource.read_bytes() == b"echo sample\n"
+        assert alias_resource.read_bytes() == (generic_extension / "scripts/run.sh").read_bytes()
         assert hashes[alias_resource.relative_to(project).as_posix()] == sha256(alias_resource.read_bytes()).hexdigest()
 
 
@@ -3079,7 +3079,7 @@ def test_failed_force_reinstall_retires_unchanged_attempt_resource(tmp_path, gen
 
     monkeypatch.setattr(HookExecutor, "register_hooks", original_register)
     manager.install_from_directory(generic_extension, "1.0.0")
-    assert resource.read_bytes() == b"echo sample\n"
+    assert resource.read_bytes() == (generic_extension / "scripts/run.sh").read_bytes()
     recorded = manager.registry.get("sample")["skill_resource_hashes"]["project"]
     assert resource.relative_to(project).as_posix() in recorded
 
