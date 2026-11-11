@@ -18,6 +18,11 @@ from ..manifest import IntegrationManifest
 # call the glob tool makes). ``!.specify/**`` alone does not. OpenCode 2.x
 # was not part of that check.
 _SPECIFY_IGNORE_RULES = ("!.specify/", "!.specify/**")
+# ripgrep ranks ``.ignore`` above every ``.gitignore``, so the exceptions
+# would also surface per-machine extension overrides that the managed
+# ``.specify/.gitignore`` keeps out of version control and that can hold
+# credentials. These rules must follow the last exception line.
+_SPECIFY_PRIVATE_RULES = (".specify/extensions/*/local-config.yml",)
 
 
 class OpencodeIntegration(MarkdownIntegration):
@@ -65,7 +70,8 @@ class OpencodeIntegration(MarkdownIntegration):
                 default=False,
                 help=(
                     "Append !.specify/ and !.specify/** to the project root "
-                    ".ignore so OpenCode can glob hidden Spec Kit files. "
+                    ".ignore so OpenCode can glob hidden Spec Kit files, "
+                    "keeping extension local-config.yml files excluded. "
                     "Uninstall leaves .ignore in place."
                 ),
             )
@@ -83,7 +89,8 @@ class OpencodeIntegration(MarkdownIntegration):
 
         Command files stay on the Markdown layout from ``super().setup()``.
         ``--configure-ignore-file`` appends missing ``!.specify/`` and
-        ``!.specify/**`` rules and records the root file as partial
+        ``!.specify/**`` rules, then the private-config exclusion, and
+        records the root file as partial
         ownership. Without the flag the root ``.ignore`` is left alone.
         """
         configure = (parsed_options or {}).get("configure_ignore_file") is True
@@ -210,7 +217,10 @@ def _reject_hidden_specify_paths(
     specify = path.parent / ".specify"
     if specify.is_dir() and not specify.is_symlink():
         probes.update(f.relative_to(path.parent).as_posix() for f in specify.rglob("*") if f.is_file())
-    hidden = sorted(probe for probe in probes if hides(probe))
+    private = pathspec.GitIgnoreSpec.from_lines(_SPECIFY_PRIVATE_RULES)
+    hidden = sorted(
+        probe for probe in probes if not private.match_file(probe) and hides(probe)
+    )
     if hidden:
         raise ValueError(
             f"A later exclusion in {path} hides {hidden[0]}. "
@@ -221,27 +231,39 @@ def _reject_hidden_specify_paths(
 def _with_specify_ignore_rules(raw: bytes) -> bytes:
     """Append missing Spec Kit rules, keeping *raw* as a byte prefix.
 
-    New rules use the file's newline (``\\n`` when *raw* is empty) and a
-    trailing newline. Exact ASCII lines are matched without decoding.
-    Non-UTF-8 files are rejected before this runs and are not preserved.
+    Private rules are appended when they are not exact lines after the
+    last exception line. New rules use the file's newline (``\\n`` when
+    *raw* is empty) and a trailing newline. Exact ASCII lines are matched
+    without decoding. Non-UTF-8 files are rejected before this runs and
+    are not preserved.
     """
     if not raw:
         newline = b"\n"
-        body = newline.join(rule.encode("ascii") for rule in _SPECIFY_IGNORE_RULES)
+        body = newline.join(
+            rule.encode("ascii")
+            for rule in _SPECIFY_IGNORE_RULES + _SPECIFY_PRIVATE_RULES
+        )
         return body + newline
 
-    present = set(_split_ignore_lines(raw))
-    missing = [
-        rule
-        for rule in _SPECIFY_IGNORE_RULES
-        if rule.encode("ascii") not in present
+    lines = _split_ignore_lines(raw)
+    exceptions = [rule.encode("ascii") for rule in _SPECIFY_IGNORE_RULES]
+    missing = [rule for rule in exceptions if rule not in lines]
+    last = max(
+        (index for index, line in enumerate(lines) if line in exceptions),
+        default=-1,
+    )
+    after = set() if missing else set(lines[last + 1:])
+    missing += [
+        rule.encode("ascii")
+        for rule in _SPECIFY_PRIVATE_RULES
+        if rule.encode("ascii") not in after
     ]
     if not missing:
         return raw
 
     newline = _ignore_newline(raw)
     addition = b"" if raw.endswith(b"\n") else newline
-    addition += newline.join(rule.encode("ascii") for rule in missing) + newline
+    addition += newline.join(missing) + newline
     return raw + addition
 
 

@@ -15,6 +15,8 @@ from specify_cli.integrations.manifest import IntegrationManifest
 from .test_integration_base_markdown import MarkdownIntegrationTests
 
 _OPT_IN = {"configure_ignore_file": True}
+_PRIVATE = ".specify/extensions/*/local-config.yml"
+_RULES = f"!.specify/\n!.specify/**\n{_PRIVATE}\n".encode()
 
 
 class TestOpencodeIntegration(MarkdownIntegrationTests):
@@ -216,7 +218,7 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         created = integration.setup(tmp_path, manifest, parsed_options=_OPT_IN)
 
         ignore = tmp_path / ".ignore"
-        assert ignore.read_bytes() == b"!.specify/\n!.specify/**\n"
+        assert ignore.read_bytes() == _RULES
         assert any(path.resolve() == ignore.resolve() for path in created)
         assert manifest.ownership_modes[".ignore"] == "partial"
         assert ".ignore" in manifest.files
@@ -233,32 +235,40 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         """Existing bytes stay a prefix; missing rules are appended once."""
         integration = get_integration(self.KEY)
         cases = {
-            "empty": (b"", b"!.specify/\n!.specify/**\n"),
+            "empty": (b"", _RULES),
             "lf-non-ascii-no-final-newline": (
                 "café keep".encode(),
-                "café keep\n!.specify/\n!.specify/**\n".encode(),
+                f"café keep\n!.specify/\n!.specify/**\n{_PRIVATE}\n".encode(),
             ),
             "crlf-non-ascii-no-final-newline": (
                 "café\r\nkeep".encode(),
-                "café\r\nkeep\r\n!.specify/\r\n!.specify/**\r\n".encode(),
+                f"café\r\nkeep\r\n!.specify/\r\n!.specify/**\r\n{_PRIVATE}\r\n".encode(),
             ),
-            "dir-rule-only": (b"!.specify/\n", b"!.specify/\n!.specify/**\n"),
-            "contents-rule-only": (b"!.specify/**\n", b"!.specify/**\n!.specify/\n"),
+            "dir-rule-only": (b"!.specify/\n", _RULES),
+            "contents-rule-only": (
+                b"!.specify/**\n", f"!.specify/**\n!.specify/\n{_PRIVATE}\n".encode()
+            ),
             "both-rules": (
                 "café\r\n!.specify/\r\n!.specify/**\r\n".encode(),
-                "café\r\n!.specify/\r\n!.specify/**\r\n".encode(),
+                f"café\r\n!.specify/\r\n!.specify/**\r\n{_PRIVATE}\r\n".encode(),
+            ),
+            "all-rules": (_RULES, _RULES),
+            "private-rule-before-exceptions": (
+                f"{_PRIVATE}\n!.specify/\n!.specify/**\n".encode(),
+                f"{_PRIVATE}\n!.specify/\n!.specify/**\n{_PRIVATE}\n".encode(),
             ),
             "broader-exclusions": (
                 b"*\n.*\n.specify/**\n",
-                b"*\n.*\n.specify/**\n!.specify/\n!.specify/**\n",
+                b"*\n.*\n.specify/**\n" + _RULES,
             ),
             "bare-cr-comment": (
                 b"# user comment\r!.specify/\n!.specify/**\n",
-                b"# user comment\r!.specify/\n!.specify/**\n!.specify/\n",
+                b"# user comment\r!.specify/\n!.specify/**\n!.specify/\n"
+                + _PRIVATE.encode() + b"\n",
             ),
             "unicode-separator-comment": (
                 "!.specify/\n!.specify/**\n# note\u2028.specify/memory\n".encode(),
-                "!.specify/\n!.specify/**\n# note\u2028.specify/memory\n".encode(),
+                f"!.specify/\n!.specify/**\n# note\u2028.specify/memory\n{_PRIVATE}\n".encode(),
             ),
         }
         for name, (original, expected) in cases.items():
@@ -302,16 +312,37 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             with pytest.raises(ValueError, match=match):
                 integration.setup(root, IntegrationManifest(self.KEY, root), parsed_options=_OPT_IN)
             assert (root / ".ignore").read_bytes() == original and not (root / ".opencode").exists()
-        restored = b"!.specify/\n!.specify/**\n.specify/**\n!.specify/**\n"
+        restored = b"!.specify/\n!.specify/**\n.specify/**\n!.specify/**\n" + _PRIVATE.encode() + b"\n"
         (tmp_path / ".ignore").write_bytes(restored)
         integration.setup(tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN)
         assert (tmp_path / ".ignore").read_bytes() == restored
-        kept = b"!.specify/\n!.specify/**\n.specify/memory\n!.specify/memory/\n!.specify/memory/**\n"
+        kept = (
+            b"!.specify/\n!.specify/**\n.specify/memory\n!.specify/memory/\n!.specify/memory/**\n"
+            + _PRIVATE.encode() + b"\n"
+        )
         reinclude = tmp_path / "reinclude"
         reinclude.mkdir()
         (reinclude / ".ignore").write_bytes(kept)
         integration.setup(reinclude, IntegrationManifest(self.KEY, reinclude), parsed_options=_OPT_IN)
         assert (reinclude / ".ignore").read_bytes() == kept
+
+    def test_configure_ignore_file_keeps_local_extension_config_hidden(self, tmp_path):
+        """Private extension overrides stay excluded and may be excluded again."""
+        import pathspec
+
+        integration = get_integration(self.KEY)
+        local = tmp_path / ".specify" / "extensions" / "jira" / "local-config.yml"
+        local.parent.mkdir(parents=True)
+        local.write_text("api_token: x\n", encoding="utf-8")
+        (local.parent / "jira-config.yml").write_text("project: x\n", encoding="utf-8")
+        ignore = tmp_path / ".ignore"
+        ignore.write_bytes(b"!.specify/\n!.specify/**\n.specify/extensions/jira/local-config.yml\n")
+        integration.setup(tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN)
+        spec = pathspec.GitIgnoreSpec.from_lines(ignore.read_text(encoding="utf-8").splitlines())
+        assert spec.match_file(".specify/extensions/jira/local-config.yml")
+        assert spec.match_file(".specify/extensions/other/local-config.yml")
+        assert not spec.match_file(".specify/extensions/jira/jira-config.yml")
+        assert not spec.match_file(".specify/memory/constitution.md")
 
     def test_without_flag_and_other_integrations_leave_ignore_untouched(self, tmp_path):
         plain = tmp_path / "plain"
@@ -356,10 +387,10 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         ignore.write_bytes(b"keep me\n")
         result = _run_in_project(project, ["integration", "upgrade", "opencode", "--force"])
         assert result.exit_code == 0, result.output
-        assert ignore.read_bytes() == b"keep me\n!.specify/\n!.specify/**\n"
+        assert ignore.read_bytes() == b"keep me\n" + _RULES
         result = _run_in_project(project, ["integration", "upgrade", "opencode", "--force"])
         assert result.exit_code == 0, result.output
-        assert ignore.read_bytes() == b"keep me\n!.specify/\n!.specify/**\n"
+        assert ignore.read_bytes() == b"keep me\n" + _RULES
 
     def test_uninstall_preserves_partial_ignore_even_when_forced(self, tmp_path):
         integration = get_integration(self.KEY)
@@ -582,7 +613,7 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             sh_root, IntegrationManifest(self.KEY, sh_root),
             parsed_options=_OPT_IN, script_type="sh",
         )
-        assert (sh_root / ".ignore").read_bytes() == rules
+        assert (sh_root / ".ignore").read_bytes() == rules + _PRIVATE.encode() + b"\n"
 
         for name, script_type, present in (("ps", "ps", False), ("sh-present", "sh", True)):
             root = tmp_path / name
