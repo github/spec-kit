@@ -26,7 +26,10 @@ _SPECIFY_IGNORE_RULES = ("!.specify/", "!.specify/**")
 # ``.specify/.gitignore`` keeps out of version control and that can hold
 # credentials, including the copies extension removal keeps under
 # ``.specify/extensions/.backup/``. These rules must follow the last
-# negation line.
+# negation line. They only cover ripgrep runs without a matching
+# ``--glob``: a positive glob that matches a file (``.specify/**/*``,
+# ``**/*.yml``) overrides every ignore file, so opencode's glob tool still
+# lists these paths once ``.specify`` is walked (ripgrep 15.2.0).
 _SPECIFY_PRIVATE_RULES = (
     ".specify/**/local-config.yml",
     ".specify/**/*-config.local.yml",
@@ -81,8 +84,9 @@ class OpencodeIntegration(MarkdownIntegration):
                 help=(
                     "Append !.specify/ and !.specify/** to the project root "
                     ".ignore so opencode can glob hidden Spec Kit files, "
-                    "keeping extension local-config.yml and "
-                    "*-config.local.yml files excluded. "
+                    "excluding extension local-config.yml and "
+                    "*-config.local.yml files from searches without a "
+                    "matching glob (a glob that matches them still lists them). "
                     "Uninstall leaves .ignore in place."
                 ),
             )

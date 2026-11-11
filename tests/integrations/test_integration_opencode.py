@@ -2,7 +2,9 @@
 
 import json
 import os
+import shutil
 import stat
+import subprocess
 import warnings
 from unittest.mock import patch
 
@@ -353,6 +355,45 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         assert spec.match_file(".specify/extensions/jira/jira-config.local.yml")
         assert not spec.match_file(".specify/extensions/jira/jira-config.yml")
         assert not spec.match_file(".specify/memory/constitution.md")
+
+    @pytest.mark.skipif(shutil.which("rg") is None, reason="ripgrep not installed")
+    def test_configure_ignore_file_private_rules_on_native_ripgrep(self, tmp_path):
+        """Pin what real ripgrep does with the written .ignore.
+
+        A plain listing omits private configs. A positive ``--glob`` that
+        matches them overrides ignore files, which is why the docs do not
+        claim the glob tool hides them.
+        """
+        integration = get_integration(self.KEY)
+        constitution = tmp_path / ".specify" / "memory" / "constitution.md"
+        constitution.parent.mkdir(parents=True)
+        constitution.write_text("# Constitution\n", encoding="utf-8")
+        ext = tmp_path / ".specify" / "extensions" / "jira"
+        ext.mkdir(parents=True)
+        (ext / "jira-config.yml").write_text("project: x\n", encoding="utf-8")
+        (ext / "local-config.yml").write_text("placeholder: x\n", encoding="utf-8")
+        (ext / "jira-config.local.yml").write_text("placeholder: x\n", encoding="utf-8")
+        integration.setup(tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN)
+
+        def rg_files(*args):
+            out = subprocess.run(
+                ["rg", "--files", "--no-config", *args],
+                cwd=tmp_path, capture_output=True, text=True, check=False,
+            )
+            assert out.returncode in (0, 1), out.stderr
+            return {line.removeprefix("./").replace("\\", "/") for line in out.stdout.splitlines()}
+
+        private = {
+            ".specify/extensions/jira/local-config.yml",
+            ".specify/extensions/jira/jira-config.local.yml",
+        }
+        plain = rg_files()
+        assert ".specify/memory/constitution.md" in plain
+        assert ".specify/extensions/jira/jira-config.yml" in plain
+        assert not plain & private
+        globbed = rg_files("--glob", ".specify/**/*")
+        assert ".specify/memory/constitution.md" in globbed
+        assert private <= globbed
 
     def test_configure_ignore_file_allows_excluding_extension_backups(self, tmp_path):
         """A user exclusion of removal backups is not treated as hiding Spec Kit files."""
