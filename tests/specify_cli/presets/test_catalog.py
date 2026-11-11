@@ -193,11 +193,11 @@ class TestPresetCatalog:
         with pytest.raises(PresetValidationError, match=r"\(got a URL with no scheme\)"):
             catalog._validate_catalog_url("example.com/catalog.json")
 
-    def test_validate_catalog_url_localhost_http_allowed(self, project_dir):
-        """Test that HTTP is allowed for localhost."""
+    @pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+    def test_validate_catalog_url_localhost_http_rejected(self, project_dir, host):
         catalog = PresetCatalog(project_dir)
-        catalog._validate_catalog_url("http://localhost:8080/catalog.json")
-        catalog._validate_catalog_url("http://127.0.0.1:8080/catalog.json")
+        with pytest.raises(PresetValidationError, match="HTTPS"):
+            catalog._validate_catalog_url(f"http://{host}:8080/catalog.json")
 
     @pytest.mark.parametrize(
         "url",
@@ -427,6 +427,68 @@ class TestPresetCatalog:
         with pytest.raises(PresetValidationError, match="HTTPS"):
             catalog._fetch_single_catalog(entry, force_refresh=True)
         assert captured["rv"] is not None
+
+    @pytest.mark.parametrize("reverse_sources", [False, True])
+    @pytest.mark.parametrize(
+        "source_kinds",
+        [
+            ("unavailable", "unavailable"),
+            ("redirect", "redirect"),
+            ("unavailable", "redirect"),
+            ("unavailable", "healthy"),
+            ("redirect", "healthy"),
+        ],
+    )
+    def test_search_fetch_failures_are_independent_of_source_order(
+        self, project_dir, monkeypatch, source_kinds, reverse_sources
+    ):
+        catalog = PresetCatalog(project_dir)
+        entries = [
+            PresetCatalogEntry(
+                f"https://example.com/{index}.json", str(index), index, False
+            )
+            for index in range(len(source_kinds))
+        ]
+        kinds_by_url = {
+            entry.url: kind for entry, kind in zip(entries, source_kinds)
+        }
+        if reverse_sources:
+            entries.reverse()
+        active_catalogs = MagicMock(return_value=entries)
+        monkeypatch.setattr(catalog, "get_active_catalogs", active_catalogs)
+        requested = []
+        payload = {
+            "schema_version": "1.0",
+            "presets": {"sample": {"name": "Sample", "version": "1.0.0"}},
+        }
+
+        class Response(io.BytesIO):
+            def __init__(self, url):
+                super().__init__(json.dumps(payload).encode())
+                self.url = url
+
+            def geturl(self):
+                return self.url
+
+        def open_url(url, timeout=10, redirect_validator=None):
+            requested.append(url)
+            kind = kinds_by_url[url]
+            if kind == "unavailable":
+                raise OSError("catalog unavailable")
+            if kind == "redirect":
+                redirect_validator(url, "http://localhost:8080/catalog.json")
+                pytest.fail("HTTP redirect should have been rejected")
+            return Response(url)
+
+        monkeypatch.setattr(catalog, "_open_url", open_url)
+
+        results = catalog.search()
+
+        assert [result["id"] for result in results] == (
+            ["sample"] if "healthy" in source_kinds else []
+        )
+        assert set(requested) == set(kinds_by_url)
+        active_catalogs.assert_called_once_with()
 
     def test_fetch_catalog_legacy_revalidates_redirected_url(self, project_dir):
         """The legacy single-catalog fetch_catalog() path also rejects an

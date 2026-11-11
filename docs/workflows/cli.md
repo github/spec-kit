@@ -188,6 +188,20 @@ archives follow the same validation and installation behavior.
 
 For exact-version catalog selection and its digest requirements, see [Catalog releases](catalogs.md#workflow-releases).
 
+## Workflow Functions
+
+```bash
+specify workflow function add <id> --dev <directory>
+specify workflow function add <id> --from <archive-url>
+specify workflow function list [--json]
+specify workflow function remove <id>
+```
+
+Exactly one source option is required for `add`. Function packages are Python
+code and are loaded before workflow validation; install only packages you have
+reviewed. `list --json` reports registry metadata and generic export usage
+without importing package code.
+
 ## Update Workflows
 
 ```bash

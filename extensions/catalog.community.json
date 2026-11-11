@@ -1,8 +1,58 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-07T00:00:00Z",
+  "updated_at": "2026-11-10T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
+    "ado": {
+      "name": "Spec Kit for Azure DevOps — human-gated lifecycle",
+      "id": "ado",
+      "description": "Azure DevOps story to Done through Spec Kit, with a human sign-off before every board change.",
+      "author": "praveenlavu",
+      "version": "0.3.2",
+      "download_url": "https://github.com/praveenlavu/spec-kit-ado/archive/refs/tags/v0.3.2.zip",
+      "sha256": "1f6806c67de462a3a5e34e818c070dd49bd689bf0cb22a0fdc6078467b2fae4c",
+      "repository": "https://github.com/praveenlavu/spec-kit-ado",
+      "homepage": "https://github.com/praveenlavu/spec-kit-ado",
+      "documentation": "https://github.com/praveenlavu/spec-kit-ado/blob/v0.3.2/README.md",
+      "changelog": "https://github.com/praveenlavu/spec-kit-ado/blob/v0.3.2/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.2.1",
+        "tools": [
+          {
+            "name": "ado",
+            "version": ">=0.3.0",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "gh",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 13,
+        "hooks": 2
+      },
+      "tags": [
+        "azure-devops",
+        "issue-tracking",
+        "hitl",
+        "workflow",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-09T00:00:00Z",
+      "updated_at": "2026-11-09T00:00:00Z"
+    },
     "adrkit": {
       "name": "adrkit — decision memory for spec-driven development",
       "id": "adrkit",
@@ -147,6 +197,56 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "aididit": {
+      "name": "A·I·DID·IT — Agile Expansion Pack",
+      "id": "aididit",
+      "description": "Runs every work item through Assemble, Ideate, Draft, Iterate, Deliver, Investigate and Tidy, with a simulated agile team and a web-cited practitioner panel in place of human gates.",
+      "author": "Rubber Duck Engineering",
+      "version": "0.2.1",
+      "download_url": "https://github.com/RubberDuckEngineering/ai-did-it/releases/download/v0.2.1/aididit-v0.2.1.zip",
+      "sha256": "32fd832e46e0972e2f06bab8723dc981ee41a3d0d0bb18daff0a0cb7da97993f",
+      "repository": "https://github.com/RubberDuckEngineering/ai-did-it",
+      "homepage": "https://github.com/RubberDuckEngineering/ai-did-it",
+      "documentation": "https://github.com/RubberDuckEngineering/ai-did-it/blob/v0.2.1/README.md",
+      "changelog": "https://github.com/RubberDuckEngineering/ai-did-it/blob/v0.2.1/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.3.0,<2.0.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "gh",
+            "required": true
+          },
+          {
+            "name": "claude",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 14,
+        "hooks": 0
+      },
+      "tags": [
+        "agile",
+        "xp",
+        "workflow",
+        "orchestration",
+        "tdd",
+        "review"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-10T00:00:00Z",
+      "updated_at": "2026-11-10T00:00:00Z"
     },
     "agent-assign": {
       "name": "Agent Assign",
@@ -1482,9 +1582,9 @@
       "id": "companion",
       "description": "Records your spec-kit runs live: status, resume, and a health check for what actually happened.",
       "author": "alfredoperez",
-      "version": "0.24.0",
-      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.24.0/companion-0.24.0.zip",
-      "sha256": "8bfbe27dbe2d67e525820f83340c053341836f108d2ff087c10fdc8295b07da9",
+      "version": "0.26.0",
+      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.26.0/companion-0.26.0.zip",
+      "sha256": "e385885cfb6e1254945da902295b4587b74050334109eb9b17c2446e285273c0",
       "repository": "https://github.com/alfredoperez/speckit-companion",
       "homepage": "https://github.com/alfredoperez/speckit-companion/tree/main/apps/speckit-extension",
       "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/apps/speckit-extension/README.md",
@@ -1493,7 +1593,7 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.9.5",
+        "speckit_version": ">=1.2.5.dev0",
         "tools": [
           {
             "name": "python3",
@@ -1502,8 +1602,8 @@
         ]
       },
       "provides": {
-        "commands": 23,
-        "hooks": 6
+        "commands": 26,
+        "hooks": 10
       },
       "tags": [
         "vscode",
@@ -1516,7 +1616,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-11T00:00:00Z",
-      "updated_at": "2026-10-06T00:00:00Z"
+      "updated_at": "2026-11-10T00:00:00Z"
     },
     "conduct": {
       "name": "Conduct Extension",
@@ -1966,9 +2066,9 @@
       "id": "docguard",
       "description": "Documentation integrity for AI-assisted repositories: lifecycle registry, drift validation, traceability, safe archival, SARIF/JUnit, MCP, GitHub Actions, and Spec Kit hooks.",
       "author": "raccioly",
-      "version": "0.46.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.46.0/spec-kit-docguard-v0.46.0.zip",
-      "sha256": "c8d67b15c13d956b118a464bf8c5c362b432daa8bd499a4aa39dc25a9ffff012",
+      "version": "0.47.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.47.0/spec-kit-docguard-v0.47.0.zip",
+      "sha256": "69bf3e08acb22b2825637aed7afb38c7b05de0a8a0072de8942405a51370de67",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -2009,7 +2109,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-11-04T00:00:00Z"
+      "updated_at": "2026-11-10T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -5821,6 +5921,46 @@
       "stars": 0,
       "created_at": "2026-04-01T00:00:00Z",
       "updated_at": "2026-04-01T00:00:00Z"
+    },
+    "sizing": {
+      "name": "T-Shirt Sizing Gate",
+      "id": "sizing",
+      "description": "Adds T-Shirt sizing estimates (XS–XL) and an explicit human approval gate between planning and implementation, with SHA-256 checks to detect changes to approved planning artifacts.",
+      "author": "Maurizio Pinotti",
+      "version": "0.1.2",
+      "download_url": "https://github.com/mauriziopinotti/spec-kit-sizing/archive/refs/tags/v0.1.2.zip",
+      "sha256": "4815e6b30bffead28befa7f849a79c44e5b93717ccddc27ded6c14d07a6c7e99",
+      "repository": "https://github.com/mauriziopinotti/spec-kit-sizing",
+      "homepage": "https://github.com/mauriziopinotti/spec-kit-sizing",
+      "documentation": "https://github.com/mauriziopinotti/spec-kit-sizing/blob/main/README.md",
+      "changelog": "https://github.com/mauriziopinotti/spec-kit-sizing/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.3.1",
+        "tools": [
+          {
+            "name": "python3",
+            "version": ">=3.11",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 2
+      },
+      "tags": [
+        "sizing",
+        "quality-gate",
+        "process"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-09T00:00:00Z",
+      "updated_at": "2026-11-09T00:00:00Z"
     },
     "spec-reference-loader": {
       "name": "Spec Reference Loader",

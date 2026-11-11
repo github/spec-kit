@@ -244,6 +244,52 @@ CLI adapter declares none, tool checking probes its runtime executable.
 Version detection is agent-specific; declaring a version constraint does not
 supply a universal `--version` invocation.
 
+### Per-step dispatch settings
+
+Workflow `command` and `prompt` steps can request
+[`reasoning_effort` and `context_size`](../workflow-steps/types.md#reasoning-effort-and-context-size)
+for one CLI invocation. `DISPATCH_SETTINGS` in `specify_cli.integrations.base`
+lists them in the order they are checked. Values are opaque strings whose
+meaning belongs to the agent's CLI.
+
+The `build_exec_args()` signature above does not change, and an adapter that
+does not opt in never receives either keyword: a step that requests one fails
+before the CLI runs. Prompt steps pass requested settings to
+`build_exec_args()`. Command steps pass them to `dispatch_command()`, whose
+base implementation forwards them to `build_exec_args()`. The *receiving
+method* is therefore `build_exec_args()`, or `dispatch_command()` for a command
+step when the integration overrides it. To opt in:
+
+- Declare `supported_dispatch_settings`, a `frozenset` of the settings the
+  integration translates, on the class that defines the receiving method. A
+  subclass that overrides that method must declare support again. A
+  declaration on any other class, or one that is not a set or frozenset,
+  declares nothing.
+- Accept a `reasoning_effort=None` or `context_size=None` keyword on the
+  receiving method for each declared setting. The host passes a keyword only
+  when a step sets that setting, and never passes `""`. Translate the value
+  into CLI arguments placed after those from
+  `SPECKIT_INTEGRATION_<KEY>_EXTRA_ARGS`, and do not pass it on:
+  `IntegrationBase.build_exec_args()` and the format-base builders translate
+  neither setting and raise `DispatchSettingsError` rather than drop a value.
+- Optionally, override `validate_dispatch_setting(name, value)` to raise
+  `ValueError` for a value the CLI would ignore or misread, and
+  `dispatch_setting_hint(setting)` to return remediation text that the host
+  appends to its error for an unsupported setting.
+
+Before the CLI runs, the host gate `check_dispatch_settings()` checks each
+requested setting in `DISPATCH_SETTINGS` order. The value must be 1 to 64
+letters, digits, `.`, `_`, or `-`, starting with a letter or digit; the
+integration must declare the setting as above; and the receiving method must
+accept the keyword or `**kwargs`. The gate then calls
+`validate_dispatch_setting()`. Each failure raises `DispatchSettingsError`, a
+`ValueError` whose `setting` attribute names the setting; if the receiving
+method itself must reject a value, raise it with `setting`. Keep the value out
+of every error message: it can come from captured output, which Spec Kit does
+not print to the terminal or write to `log.jsonl`. The host cannot detect a
+declared setting that the receiving method accepts and then ignores, for
+example through `**kwargs`, so a declaration is a promise to translate it.
+
 ## Setup and file ownership
 
 Format bases implement setup and teardown. Custom layouts may override:

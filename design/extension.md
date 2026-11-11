@@ -346,8 +346,8 @@ packaging and output writes; they are not a sandbox.
 
 Network and package trust rules are:
 
-- catalog and archive URLs require HTTPS, except loopback HTTP for local
-  development;
+- catalog URLs require HTTPS, including for local development; archive URLs
+  retain the loopback HTTP exception;
 - catalog redirects are validated at every hop;
 - configured authentication providers may add credentials for matching hosts,
   and redirect handling does not forward them to untrusted hosts;

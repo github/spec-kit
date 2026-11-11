@@ -27,6 +27,7 @@ from ..integration_state import (
     default_integration_key,
     try_read_integration_json,
 )
+from ..integrations.base import DISPATCH_SETTINGS, dispatch_setting_value_error
 from .base import RunStatus, StepContext
 
 
@@ -93,6 +94,8 @@ class WorkflowDefinition:
         # and retains its existing runtime representation as an empty mapping.
         self.default_integration: Any = workflow.get("integration")
         self.default_model: Any = workflow.get("model")
+        self.default_reasoning_effort: Any = workflow.get("reasoning_effort")
+        self.default_context_size: Any = workflow.get("context_size")
         raw_default_options = workflow.get("options")
         self.default_options: Any = (
             {} if raw_default_options is None else raw_default_options
@@ -209,6 +212,17 @@ def _dispatch_default_errors(definition: WorkflowDefinition) -> list[str]:
             f"{type(definition.default_options).__name__} "
             f"({definition.default_options!r})."
         )
+
+    # ``null`` and ``""`` leave a dispatch setting unset, and the step checks an
+    # expression once it is resolved. An error reports only a malformed value's
+    # type and length.
+    for name in DISPATCH_SETTINGS:
+        value = getattr(definition, f"default_{name}")
+        if value is None or value == "" or (isinstance(value, str) and "{{" in value):
+            continue
+        problem = dispatch_setting_value_error(f"workflow.{name}", value)
+        if problem is not None:
+            errors.append(problem)
 
     return errors
 
@@ -1199,6 +1213,8 @@ class WorkflowEngine:
             project_root=str(self.project_root),
             run_id=state.run_id,
             workflow_dir=workflow_dir,
+            default_reasoning_effort=definition.default_reasoning_effort,
+            default_context_size=definition.default_context_size,
         )
 
         # Execute steps
@@ -1298,6 +1314,8 @@ class WorkflowEngine:
             run_id=state.run_id,
             is_resume=True,
             workflow_dir=state.workflow_dir,
+            default_reasoning_effort=definition.default_reasoning_effort,
+            default_context_size=definition.default_context_size,
         )
 
         from . import STEP_REGISTRY

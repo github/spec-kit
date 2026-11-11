@@ -1,5 +1,6 @@
 """Tests for preset skill artifacts in specify_cli.presets._manager_skills."""
 
+import os
 import shutil
 from pathlib import Path
 
@@ -2746,6 +2747,26 @@ class TestPresetSkills(PresetArtifactTestHelpers):
                 "as preset-owned provenance by probing outside the "
                 "intended skills subtree (#2948)"
             )
+
+    @pytest.mark.parametrize("operation", ["remove", "switch"])
+    @pytest.mark.parametrize("fallback", [False, True])
+    def test_preset_skill_cleanup_uses_global_boundary(self, project_dir, tmp_path, monkeypatch, operation, fallback):
+        home = tmp_path / "home"
+        monkeypatch.setattr(Path, "home", lambda: home)
+        skills_root = home / ".hermes/skills"
+        skill_dir = skills_root / "speckit-custom"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nmetadata:\n  source: preset:global-preset\n---\nGenerated skill\n")
+        if fallback:
+            monkeypatch.setattr(os, "supports_dir_fd", set())
+        manager = PresetManager(project_dir)
+        if operation == "switch":
+            manager._delete_agent_preset_skills("hermes", [skill_dir.name], "global-preset")
+        else:
+            manager._unregister_skills_in_dir([skill_dir.name], skills_root, "hermes", pack_id="global-preset")
+
+        assert not (skill_dir / "SKILL.md").exists()
+        assert not skill_dir.exists()
 
 
 class TestWrapStrategy:
