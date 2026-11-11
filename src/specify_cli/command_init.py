@@ -646,7 +646,7 @@ def register(app: typer.Typer) -> None:
             else:
                 selected_script = default_script
 
-        if here and (project_path / ".specify").is_dir():
+        if (project_path / ".specify").is_dir():
             from .presets import PresetManager as _ExistingPresetManager
             from .presets import PresetValidationError
 
