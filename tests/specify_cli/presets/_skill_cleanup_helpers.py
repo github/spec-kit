@@ -65,7 +65,8 @@ def check_cleanup_preserves_swapped_link_target(
 
     monkeypatch.setattr(PresetManager, "_validate_skill_subdir", validate_then_swap)
     if fallback:
-        monkeypatch.setattr(os, "supports_dir_fd", set())
+        # Disable descriptor-relative cleanup without disabling safe project reads.
+        monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd - {os.rmdir})
     result = runner.invoke(app, command, catch_exceptions=False)
 
     assert swapped
@@ -97,7 +98,7 @@ def check_cleanup_preserves_user_files(
         reference.parent.mkdir()
         reference.write_bytes(original)
     if fallback:
-        monkeypatch.setattr(os, "supports_dir_fd", set())
+        monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd - {os.rmdir})
 
     result = runner.invoke(app, command, catch_exceptions=False)
 
@@ -133,7 +134,7 @@ def check_cleanup_rollback_preserves_directory_mode(
         reference.parent.mkdir()
         reference.write_bytes(b"User reference before cleanup")
     if fallback:
-        monkeypatch.setattr(os, "supports_dir_fd", set())
+        monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd - {os.rmdir})
 
     snapshot = _FileJournal._snapshot
     snapshotted = []

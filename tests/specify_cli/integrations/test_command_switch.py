@@ -32,10 +32,124 @@ from tests.specify_cli.presets._skill_cleanup_helpers import (
     check_cleanup_rollback_preserves_directory_mode,
 )
 
+
+@pytest.fixture(scope="module")
+def switch_copilot_commands_template(tmp_path_factory):
+    return _init_project(
+        tmp_path_factory.mktemp("switch-copilot-commands"), "copilot", "--commands"
+    )
+
+
+def _init_codex_switch_project(tmp_path, target_state, script="sh"):
+    project = _init_project(tmp_path, "claude")
+    if target_state != "new":
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", script])
+        assert result.exit_code == 0, result.output
+    if target_state == "default":
+        result = _run_in_project(project, ["integration", "use", "codex"])
+        assert result.exit_code == 0, result.output
+    return project
+
+
+def _project_file_state(project):
+    return {
+        path.relative_to(project): (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in project.rglob("*")
+        if path.is_file() and ".git" not in path.relative_to(project).parts
+    }
+
+
 class TestIntegrationSwitch:
-    @pytest.mark.parametrize("installed", [False, True])
+    @pytest.mark.parametrize("target_state", ["new", "installed", "default"])
+    @pytest.mark.parametrize(
+        "flags", [[], ["--force"], ["--refresh-shared-infra"], ["--force", "--refresh-shared-infra"]],
+        ids=["none", "force", "refresh", "both"],
+    )
+    def test_switch_shared_infra_refresh_flag_matrix(
+        self, tmp_path, switch_copilot_commands_template, target_state, flags
+    ):
+        """Shared overwrite consent depends on installation state, not teardown consent."""
+        if target_state == "default":
+            project = _copy_project_template(tmp_path, switch_copilot_commands_template)
+        else:
+            project = _init_project(tmp_path, "claude")
+            if target_state == "installed":
+                result = _run_in_project(project, [
+                    "integration", "install", "copilot", "--script", "sh",
+                    "--integration-options", "--commands", "--force",
+                ])
+                assert result.exit_code == 0, result.output
+
+        shared_rels = [
+            ".specify/scripts/bash/check-prerequisites.sh",
+            ".specify/templates/plan-template.md",
+            ".specify/.gitignore",
+        ]
+        clean = {rel: (switch_copilot_commands_template / rel).read_bytes() for rel in shared_rels}
+        assert b"/speckit.plan" in clean[shared_rels[0]]
+        assert b"/speckit.plan" in clean[shared_rels[1]]
+        shared_manifest = project / ".specify/integrations/speckit.manifest.json"
+        prior_hashes = json.loads(shared_manifest.read_bytes())["files"]
+        customized = {rel: (project / rel).read_bytes() + b"\n# user customization\n" for rel in shared_rels}
+        for rel, content in customized.items():
+            (project / rel).write_bytes(content)
+
+        old_skill = project / ".claude/skills/speckit-plan/SKILL.md"
+        if target_state != "default":
+            old_skill.write_bytes(b"User-edited outgoing skill\n")
+        target_skill = project / ".github/agents/speckit.plan.agent.md"
+        if target_state != "new":
+            target_skill.write_bytes(b"User-edited installed skill\n")
+            target_manifest = project / ".specify/integrations/copilot.manifest.json"
+            before_target_manifest = target_manifest.read_bytes()
+        metadata_rels = [
+            ".specify/integration.json", ".specify/init-options.json",
+            ".specify/integrations/speckit.manifest.json",
+        ]
+        before_metadata = {rel: (project / rel).read_bytes() for rel in metadata_rels}
+
+        args = ["integration", "switch", "copilot", *flags]
+        if target_state == "new":
+            args += ["--script", "sh", "--integration-options", "--commands"]
+        result = _run_in_project(project, args)
+        assert result.exit_code == 0, result.output
+
+        overwrite = "--refresh-shared-infra" in flags or (target_state != "new" and "--force" in flags)
+        actual = {rel: (project / rel).read_bytes() for rel in shared_rels}
+        expected = clean if overwrite else customized
+        retained = [rel for rel in shared_rels if actual[rel] == customized[rel]]
+        assert actual == expected, f"{target_state=} {flags=}: customized shared files retained: {retained}"
+
+        hashes = json.loads(shared_manifest.read_bytes())["files"]
+        for rel in shared_rels:
+            assert hashes[rel] == (hashlib.sha256(clean[rel]).hexdigest() if overwrite else prior_hashes[rel])
+        state = json.loads((project / ".specify/integration.json").read_bytes())
+        assert state["default_integration"] == state["integration"] == "copilot"
+        assert set(state["installed_integrations"]) == (
+            {"claude", "copilot"} if target_state == "installed" else {"copilot"}
+        )
+        options = json.loads((project / ".specify/init-options.json").read_bytes())
+        assert options["integration"] == options["ai"] == "copilot"
+        assert state["integration_settings"]["copilot"]["parsed_options"] == {"commands": True}
+        if target_state == "new":
+            assert old_skill.exists() == ("--force" not in flags)
+            if old_skill.exists():
+                assert old_skill.read_bytes() == b"User-edited outgoing skill\n"
+        else:
+            assert target_skill.read_bytes() == b"User-edited installed skill\n"
+            assert target_manifest.read_bytes() == before_target_manifest
+            if target_state == "installed":
+                assert old_skill.read_bytes() == b"User-edited outgoing skill\n"
+        if target_state == "default" and not flags:
+            assert {rel: (project / rel).read_bytes() for rel in metadata_rels} == before_metadata
+            assert "already the default integration" in result.output
+
+    @pytest.mark.parametrize(
+        ("installed", "refresh"), [(False, False), (True, False), (True, True)],
+        ids=["new", "installed", "installed-refresh"],
+    )
     def test_switch_syncs_manifest_hash_for_preset_override(
-        self, tmp_path, tasks_preset_src, installed
+        self, tmp_path, tasks_preset_src, installed, refresh
     ):
         """Both switch paths must record the preset's final bytes (#5078)."""
         project = _init_project(tmp_path, "claude")
@@ -47,7 +161,10 @@ class TestIntegrationSwitch:
         result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
         assert result.exit_code == 0, result.output
 
-        result = _run_in_project(project, ["integration", "switch", "codex", "--script", "sh"])
+        result = _run_in_project(project, [
+            "integration", "switch", "codex", "--script", "sh",
+            *(["--refresh-shared-infra"] if refresh else []),
+        ])
         assert result.exit_code == 0, result.output
 
         rel = ".agents/skills/speckit-tasks/SKILL.md"
@@ -116,8 +233,9 @@ class TestIntegrationSwitch:
             assert "snapshot manifest hashes for integration 'codex'" in output
 
     @pytest.mark.parametrize("command", ["plan", "tasks"])
+    @pytest.mark.parametrize("flags", [[], ["--refresh-shared-infra"]], ids=["normal", "refresh"])
     def test_switch_installed_target_preserves_modified_manifest_hash(
-        self, tmp_path, tasks_preset_src, command
+        self, tmp_path, tasks_preset_src, command, flags
     ):
         """Rescaffolding must not bless earlier user edits as pristine (#5078)."""
         from specify_cli.integrations.manifest import IntegrationManifest
@@ -131,7 +249,7 @@ class TestIntegrationSwitch:
         before = IntegrationManifest.load("codex", project).files[rel]
         (project / rel).write_bytes(b"User-edited skill\n")
 
-        result = _run_in_project(project, ["integration", "switch", "codex"])
+        result = _run_in_project(project, ["integration", "switch", "codex", *flags])
         assert result.exit_code == 0, result.output
         manifest = IntegrationManifest.load("codex", project)
         assert manifest.files[rel] == before, "pre-existing edits must not be recorded as pristine"
@@ -244,6 +362,7 @@ class TestIntegrationSwitch:
 
     def test_switch_same_noop(self, tmp_path):
         project = _init_project(tmp_path, "copilot")
+        before = _project_file_state(project)
         old_cwd = os.getcwd()
         try:
             os.chdir(project)
@@ -252,9 +371,47 @@ class TestIntegrationSwitch:
             os.chdir(old_cwd)
         assert result.exit_code == 0
         assert "already the default integration" in result.output
+        assert _project_file_state(project) == before
 
-    def test_switch_same_force_refreshes_shared_templates(self, tmp_path):
+    @pytest.mark.parametrize(
+        "flags", [["--force"], ["--refresh-shared-infra"], ["--force", "--refresh-shared-infra"]],
+        ids=["force", "refresh", "both"],
+    )
+    def test_switch_same_force_refreshes_shared_templates(self, tmp_path, tasks_preset_src, monkeypatch, flags):
+        import specify_cli
+        from specify_cli.integrations import command_switch
+        from specify_cli.integrations.claude import ClaudeIntegration
+
         project = _init_project(tmp_path, "claude")
+        for args in (["extension", "add", "git"], ["preset", "add", "--dev", str(tasks_preset_src)]):
+            result = _run_in_project(project, args)
+            assert result.exit_code == 0, result.output
+        agent_paths = [
+            *list((project / ".claude").rglob("*")),
+            project / ".specify/extensions/.registry",
+            project / ".specify/presets/.registry",
+            project / ".specify/integrations/claude.manifest.json",
+        ]
+        before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in agent_paths if path.is_file()}
+        refreshes = []
+        install_shared_infra = specify_cli._install_shared_infra
+
+        def record_refresh(*args, **kwargs):
+            refreshes.append(True)
+            return install_shared_infra(*args, **kwargs)
+
+        monkeypatch.setattr(specify_cli, "_install_shared_infra", record_refresh)
+
+        def unexpected_lifecycle(*args, **kwargs):
+            pytest.fail("same-default refresh must not set up, tear down, or re-register")
+
+        monkeypatch.setattr(ClaudeIntegration, "setup", unexpected_lifecycle)
+        monkeypatch.setattr(ClaudeIntegration, "teardown", unexpected_lifecycle)
+        for name in (
+            "_register_extensions_for_agent", "_register_presets_for_agent",
+            "_unregister_extensions_for_agent", "_unregister_presets_for_agent",
+        ):
+            monkeypatch.setattr(command_switch, name, unexpected_lifecycle)
         template = project / ".specify" / "templates" / "plan-template.md"
         script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
         template.write_text("# custom shared template\n", encoding="utf-8")
@@ -265,7 +422,7 @@ class TestIntegrationSwitch:
             os.chdir(project)
             result = runner.invoke(app, [
                 "integration", "switch", "claude",
-                "--force",
+                *flags,
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -274,29 +431,101 @@ class TestIntegrationSwitch:
         assert "managed shared infrastructure refreshed" not in result.output
         assert "/speckit-plan" in template.read_text(encoding="utf-8")
         assert "/speckit-plan" in script.read_text(encoding="utf-8")
+        assert len(refreshes) == 1
+        assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in before} == before
 
-    def test_switch_installed_target_rejects_integration_options(self, tmp_path):
+    @pytest.mark.parametrize("same_default", [False, True], ids=["installed", "default"])
+    @pytest.mark.parametrize(
+        "flags", [[], ["--force"], ["--refresh-shared-infra"], ["--force", "--refresh-shared-infra"]],
+        ids=["none", "force", "refresh", "both"],
+    )
+    def test_switch_installed_target_rejects_integration_options(self, tmp_path, same_default, flags):
         project = _init_project(tmp_path, "claude")
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            install = runner.invoke(app, [
+        target = "claude" if same_default else "codex"
+        if not same_default:
+            install = _run_in_project(project, [
                 "integration", "install", "codex",
                 "--script", "sh",
-            ], catch_exceptions=False)
-            assert install.exit_code == 0, install.output
-
-            result = runner.invoke(app, [
-                "integration", "switch", "codex",
-                "--integration-options", "--bogus",
             ])
-        finally:
-            os.chdir(old_cwd)
+            assert install.exit_code == 0, install.output
+        before = _project_file_state(project)
+
+        result = _run_in_project(project, [
+            "integration", "switch", target, *flags,
+            "--integration-options", "--bogus",
+        ])
         assert result.exit_code != 0
         assert "--integration-options cannot be used" in result.output
+        assert _project_file_state(project) == before
 
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["default_integration"] == "claude"
+
+    @pytest.mark.parametrize("target_state", ["installed", "default"])
+    def test_switch_refresh_failure_does_not_persist_default(self, tmp_path, target_state):
+        """A real unsafe destination must fail before runtime metadata commits."""
+        project = _init_codex_switch_project(tmp_path, target_state)
+        templates = project / ".specify/templates"
+        shutil.rmtree(templates)
+        templates.write_bytes(b"blocking file, not a directory\n")
+        before = _project_file_state(project)
+
+        result = _run_in_project(project, ["integration", "switch", "codex", "--refresh-shared-infra"])
+
+        assert result.exit_code == 1, result.output
+        assert "Failed to refresh shared infrastructure" in result.output
+        assert "shared infrastructure refreshed" not in result.output
+        assert "Default integration set" not in result.output
+        assert "Default integration remains" not in result.output
+        assert _project_file_state(project) == before
+
+    @pytest.mark.parametrize("target_state", ["installed", "default"])
+    @pytest.mark.parametrize("script_type", ["ps", "py"])
+    def test_switch_refresh_uses_stored_script_runtime(self, tmp_path, target_state, script_type):
+        """Installed refresh uses target settings rather than the outgoing runtime."""
+        project = _init_codex_switch_project(tmp_path, target_state, script_type)
+        clean = tmp_path / "clean"
+        clean.mkdir()
+        result = _run_in_project(clean, [
+            "init", "--here", "--integration", "codex", "--script", script_type,
+            "--ignore-agent-tools",
+        ])
+        assert result.exit_code == 0, result.output
+        selected = (["powershell"] if script_type == "ps" else [
+            "python", "powershell" if os.name == "nt" else "bash",
+        ])
+        rels = [
+            path.relative_to(clean) for path in (clean / ".specify/scripts").rglob("*")
+            if path.is_file() and path.parent.name in selected
+        ]
+        assert rels
+        rels += [Path(".specify/templates/plan-template.md"), Path(".specify/.gitignore")]
+        expected = {rel: (clean / rel).read_bytes() for rel in rels}
+        for rel in rels:
+            (project / rel).write_bytes(b"# edited shared runtime\n")
+        agent_manifest = project / ".specify/integrations/codex.manifest.json"
+        before_agent_manifest = agent_manifest.read_bytes()
+        unselected = project / ".specify/scripts/bash/check-prerequisites.sh"
+        if script_type == "ps":
+            unselected.write_bytes(b"# leave unselected bash alone\n")
+
+        result = _run_in_project(project, ["integration", "switch", "codex", "--refresh-shared-infra"])
+
+        assert result.exit_code == 0, result.output
+        assert {rel: (project / rel).read_bytes() for rel in rels} == expected
+        assert b"$speckit-plan" in (project / ".specify/templates/plan-template.md").read_bytes()
+        state = json.loads((project / ".specify/integration.json").read_bytes())
+        assert state["default_integration"] == "codex"
+        assert state["integration_settings"]["codex"]["script"] == script_type
+        options = json.loads((project / ".specify/init-options.json").read_bytes())
+        assert options["script"] == script_type
+        assert options["integration"] == options["ai"] == "codex"
+        assert agent_manifest.read_bytes() == before_agent_manifest
+        shared_manifest = json.loads((project / ".specify/integrations/speckit.manifest.json").read_bytes())
+        for rel, content in expected.items():
+            assert shared_manifest["files"][rel.as_posix()] == hashlib.sha256(content).hexdigest()
+        if script_type == "ps":
+            assert unselected.read_bytes() == b"# leave unselected bash alone\n"
 
     def test_switch_between_integrations(self, tmp_path):
         project = _init_project(tmp_path, "claude")
@@ -510,7 +739,8 @@ class TestIntegrationSwitch:
         assert "claude" in registered_commands
         assert "opencode" not in registered_commands
 
-    def test_switch_installed_target_backfills_extension_commands(self, tmp_path):
+    @pytest.mark.parametrize("flags", [[], ["--refresh-shared-infra"]], ids=["normal", "refresh"])
+    def test_switch_installed_target_backfills_extension_commands(self, tmp_path, flags):
         """Switching to an already-installed agent should register extensions."""
         project = _init_project(tmp_path, "claude")
 
@@ -535,7 +765,7 @@ class TestIntegrationSwitch:
         )
         assert not codex_git_feature.exists()
 
-        result = _run_in_project(project, ["integration", "switch", "codex"])
+        result = _run_in_project(project, ["integration", "switch", "codex", *flags])
         assert result.exit_code == 0, result.output
 
         registered = json.loads(registry_path.read_text(encoding="utf-8"))[
@@ -543,6 +773,9 @@ class TestIntegrationSwitch:
         ]["git"]["registered_commands"]
         assert "codex" in registered
         assert codex_git_feature.exists()
+        manifest = json.loads((project / ".specify/integrations/codex.manifest.json").read_bytes())
+        for rel, digest in manifest["files"].items():
+            assert hashlib.sha256((project / rel).read_bytes()).hexdigest() == digest
 
     def test_switch_migrates_copilot_skills_extension_commands(self, tmp_path):
         """Copilot --skills should receive extension skills, not .agent.md files."""
@@ -766,160 +999,82 @@ class TestIntegrationSwitch:
         assert "/speckit.plan" in updated
         assert "/speckit-plan" not in updated
 
-    def test_switch_preserves_user_customized_shared_infra(self, tmp_path):
-        """User customizations (hash divergence from manifest) survive switch without --refresh-shared-infra."""
-        project = _init_project(tmp_path, "claude")
-        shared_script = project / ".specify" / "scripts" / "bash" / "common.sh"
+    @pytest.mark.parametrize("target_state", ["new", "installed", "default"])
+    @pytest.mark.parametrize(
+        "flags", [[], ["--force"], ["--refresh-shared-infra"], ["--force", "--refresh-shared-infra"]],
+        ids=["none", "force", "refresh", "both"],
+    )
+    def test_switch_preserves_recovered_files(self, tmp_path, target_state, flags):
+        """Matching hashes never confer ownership on recovered files (#2918)."""
+        from specify_cli.integrations.manifest import IntegrationManifest
 
-        # User customization: append bytes but do NOT update manifest hash,
-        # so on-disk hash diverges from the recorded one.
-        original = shared_script.read_bytes()
-        custom_bytes = original + b"\n# user customization\n"
-        shared_script.write_bytes(custom_bytes)
+        project = _init_codex_switch_project(tmp_path, target_state)
+        rels = [
+            ".specify/scripts/bash/setup-tasks.sh",
+            ".specify/templates/plan-template.md",
+            ".specify/.gitignore",
+        ]
+        custom_bytes = b"# team custom workflow\n"
+        manifest = IntegrationManifest.load("speckit", project)
+        for rel in rels:
+            (project / rel).write_bytes(custom_bytes)
+            manifest.record_existing(rel, recovered=True)
+        # Stale recovered and edited scripts remain protected even with consent
+        # to overwrite current bundle files.
+        stale_recovered = ".specify/scripts/bash/retired-recovered.sh"
+        (project / stale_recovered).write_bytes(custom_bytes)
+        manifest.record_existing(stale_recovered, recovered=True)
+        stale_edited = ".specify/scripts/bash/retired-edited.sh"
+        (project / stale_edited).write_bytes(b"# old managed bytes\n")
+        manifest.record_existing(stale_edited)
+        (project / stale_edited).write_bytes(custom_bytes)
+        manifest.save()
 
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, [
-                "integration", "switch", "copilot",
-                "--integration-options", "--commands",
-                "--script", "sh",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-        assert result.exit_code == 0
-        assert shared_script.read_bytes() == custom_bytes
-        assert "Preserved" in result.output
+        result = _run_in_project(project, ["integration", "switch", "codex", *flags])
+        assert result.exit_code == 0, result.output
+        overwrite = "--refresh-shared-infra" in flags or (target_state != "new" and "--force" in flags)
+        manifest = IntegrationManifest.load("speckit", project)
+        for rel in rels:
+            content = (project / rel).read_bytes()
+            assert (content != custom_bytes) == overwrite
+            assert manifest.is_recovered(rel) == (not overwrite)
+            assert manifest.files[rel] == hashlib.sha256(content).hexdigest()
+        for rel in (stale_recovered, stale_edited):
+            assert (project / rel).read_bytes() == custom_bytes
+            assert rel in manifest.files
+        assert manifest.is_recovered(stale_recovered)
+        assert stale_edited in manifest.check_modified()
 
-    def test_switch_refresh_shared_infra_overwrites_customizations(self, tmp_path):
-        """--refresh-shared-infra explicitly overwrites user customizations on switch."""
-        project = _init_project(tmp_path, "claude")
-        shared_script = project / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
-        assert "/speckit-plan" in shared_script.read_text(encoding="utf-8")
-        rendered_bytes = shared_script.read_bytes()
-
-        # User customization (hash diverges from manifest)
-        custom_bytes = rendered_bytes + b"\n# user customization\n"
-        shared_script.write_bytes(custom_bytes)
-
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, [
-                "integration", "switch", "copilot",
-                "--integration-options", "--commands",
-                "--script", "sh",
-                "--refresh-shared-infra",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-        assert result.exit_code == 0
-        # Customization is overwritten with the target integration's rendered version.
-        updated = shared_script.read_text(encoding="utf-8")
-        assert "# user customization" not in updated
-        assert "/speckit.plan" in updated
-        assert "/speckit-plan" not in updated
-
-    def test_switch_preserves_recovered_files(self, tmp_path):
-        """Regression for #2918: files marked recovered in the manifest are not overwritten.
-
-        When a file already exists on disk before init and is recorded with
-        ``recovered=True``, ``integration use``/``switch`` must not treat it as
-        managed even when the on-disk hash matches the manifest hash.
-        """
-        import hashlib
-
-        project = _init_project(tmp_path, "claude")
-        shared_script = project / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
-        assert shared_script.is_file()
-
-        # Simulate a team-customized file that was recorded as recovered:
-        # write custom content, then update the manifest to record its hash
-        # with the recovered flag set.
-        custom_bytes = b"#!/usr/bin/env bash\n# team custom workflow\nexit 0\n"
-        shared_script.write_bytes(custom_bytes)
-
-        manifest_path = project / ".specify" / "integrations" / "speckit.manifest.json"
-        manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
-        rel = ".specify/scripts/bash/setup-tasks.sh"
-        manifest_data["files"][rel] = hashlib.sha256(custom_bytes).hexdigest()
-        manifest_data.setdefault("recovered_files", []).append(rel)
-        manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
-
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, [
-                "integration", "switch", "copilot",
-                "--script", "sh",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-        assert result.exit_code == 0
-        # Recovered file must NOT be overwritten — team content preserved.
-        assert shared_script.read_bytes() == custom_bytes
-
-    def test_switch_skips_symlinked_parent_directory(self, tmp_path):
-        """Regression: if .specify/scripts/bash is a symlink, switch must not write through it.
-
-        Copilot follow-up on #2375: leaf-only symlink check let writes escape
-        when an *ancestor* directory was symlinked outside the project root.
-        """
-        import sys
-        if sys.platform.startswith("win"):
-            import pytest as _pytest
-            _pytest.skip("Symlink creation typically requires admin on Windows")
-
-        project = _init_project(tmp_path, "claude")
-        bash_dir = project / ".specify" / "scripts" / "bash"
+    @pytest.mark.parametrize("target_state", ["new", "installed", "default"])
+    @pytest.mark.parametrize("ancestor", [False, True], ids=["leaves", "ancestors"])
+    @pytest.mark.parametrize(
+        "flags", [[], ["--force"], ["--refresh-shared-infra"], ["--force", "--refresh-shared-infra"]],
+        ids=["none", "force", "refresh", "both"],
+    )
+    def test_switch_skips_symlinked_parent_directory(self, tmp_path, target_state, ancestor, flags):
+        """No flag permits writing through shared leaf or ancestor symlinks."""
+        if os.name == "nt":
+            pytest.skip("Symlink creation typically requires admin on Windows")
+        project = _init_codex_switch_project(tmp_path, target_state)
         outside = tmp_path / "outside"
         outside.mkdir()
-        for child in bash_dir.iterdir():
-            child.rename(outside / child.name)
-        bash_dir.rmdir()
-        bash_dir.symlink_to(outside, target_is_directory=True)
-        sentinel = (outside / "common.sh").read_bytes()
+        rels = [".specify/.gitignore"]
+        rels += ([".specify/scripts/bash", ".specify/templates"] if ancestor else [
+            ".specify/scripts/bash/common.sh", ".specify/templates/plan-template.md",
+        ])
+        for index, rel in enumerate(rels):
+            path = project / rel
+            destination = outside / str(index)
+            path.rename(destination)
+            path.symlink_to(destination, target_is_directory=destination.is_dir())
+        before = {path.relative_to(outside): path.read_bytes() for path in outside.rglob("*") if path.is_file()}
 
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, [
-                "integration", "switch", "copilot",
-                "--script", "sh",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-        assert result.exit_code == 0
-        # Symlinked tree reported, not written through.
-        assert "symlink" in result.output.lower()
-        # Outside dir contents unchanged.
-        assert (outside / "common.sh").read_bytes() == sentinel
-
-    def test_switch_force_alone_does_not_overwrite_shared_customizations(self, tmp_path):
-        """--force (uninstall semantics) must NOT overwrite shared-infra customizations.
-
-        Regression: ensures the decoupling of --force and --refresh-shared-infra.
-        """
-        project = _init_project(tmp_path, "claude")
-        shared_script = project / ".specify" / "scripts" / "bash" / "common.sh"
-        bundled_bytes = shared_script.read_bytes()
-
-        custom_bytes = bundled_bytes + b"\n# user customization\n"
-        shared_script.write_bytes(custom_bytes)
-
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, [
-                "integration", "switch", "copilot",
-                "--script", "sh",
-                "--force",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-        assert result.exit_code == 0
-        # --force alone preserves the customization
-        assert shared_script.read_bytes() == custom_bytes
+        result = _run_in_project(project, ["integration", "switch", "codex", *flags])
+        assert result.exit_code == 0, result.output
+        if target_state != "default" or flags:
+            assert "symlink" in result.output.lower()
+        assert all((project / rel).is_symlink() for rel in rels)
+        assert {path.relative_to(outside): path.read_bytes() for path in outside.rglob("*") if path.is_file()} == before
 
     def test_switch_from_nothing(self, tmp_path):
         """Switch when no integration is installed should just install the target."""

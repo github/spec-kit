@@ -188,11 +188,13 @@ Current behavior differs by primitive:
   redirect handler also applies its strict scheme, host, and remote-to-local
   policy on every hop. Integrations validate cached payload shape, discard
   invalid cache entries when possible, and treat cache writes as best-effort.
-- Workflows use one-hour per-URL caches, validate every redirect hop, fall back
-  to any readable stale cache after errors while opening, redirecting, bounded
-  reading, UTF-8 decoding, or JSON parsing, and currently require only a mapping
-  at the payload root before merge. A freshly parsed non-object payload is
-  rejected after that fallback boundary.
+- Workflows use one-hour per-URL caches, validate every redirect hop, and fall
+  back to any readable stale cache after transport, bounded-read, UTF-8 decoding,
+  or JSON parsing errors. Initial URL, redirect, and final URL validation
+  rejections bypass stale-cache fallback, whether raised by a catalog validator
+  or the shared HTTP handler, and retain their cause in a workflow catalog
+  error. A freshly parsed non-object payload is rejected after the fallback
+  boundary; the payload root must be a mapping before merge.
 - Workflow steps follow the workflow cache/fallback model, validate every
   redirect hop, and disable cache use when the cache path contains a symlink.
   Duplicate JSON fields are re-raised as fatal validation errors before stale
@@ -202,11 +204,25 @@ Current behavior differs by primitive:
   sources fetch repository catalogs when online and fall back to packaged
   snapshots only for catalog-unavailable failures; malformed or unsafe content
   is not masked by the snapshot. Bundle stacks memoize parsed payloads for the
-  lifetime of one stack instance.
+  lifetime of one stack instance. When translating an HTTP status error, the
+  fetcher closes its response body before propagating the catalog error, while
+  retaining the original exception as its cause and preserving status-based
+  fallback classification.
 
 A future shared fetch boundary may share URL validation, redirect validation,
 bounded reads, cache records, and error types. It must preserve each
 primitive's fallback policy until a separate behavior change is approved.
+
+The workflow and step URL-policy behavior above is an intentional transport
+hardening change: stale metadata must not mask a rejected URL or redirect during
+an online fetch, particularly when bundles rely on the result to validate a
+reference. Previously, a catalog callback could reject a redirect or final URL
+and still return expired metadata. Both catalog and shared HTTP validators now
+preserve these rejections as definitive catalog errors; ordinary fetch failures
+retain their existing stale-cache fallback. The shared redirect handler checks
+raw `Location` and legacy `URI` headers before urllib can normalize malformed
+absolute targets or raise an unclassified parsing error. Valid relative and
+scheme-relative redirects retain urllib's normal resolution behavior.
 
 ## Payload validation ownership
 
@@ -249,9 +265,11 @@ usable. Validation errors are not uniformly recoverable:
   fails. Workflow-step duplicate JSON fields and duplicate IDs are fatal
   validation errors rather than skippable source-fetch errors.
 - Workflow and step fetches may use readable stale cache data after broad
-  fetch-path failures, including rejected redirects, bounded-read failures,
-  decoding failures, and malformed JSON. Fresh non-object payloads and step
-  duplicate-field errors remain outside that fallback.
+  fetch-path failures, including transport errors, bounded-read failures,
+  decoding failures, and malformed JSON. All URL-policy rejections bypass
+  stale-cache fallback, including during forced refresh, independently of
+  which validator rejects the URL first. Fresh non-object payloads and step
+  duplicate-field errors also remain outside that fallback.
 
 Bundle lookup is fail-fast in precedence order: loading a source error stops
 the operation. Built-in fetch fallback is handled inside the bundle fetcher,

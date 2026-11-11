@@ -33,12 +33,13 @@ def read_project_options(project_root: Path) -> dict[str, Any]:
     """Read without following configuration links; only absence defaults."""
     try:
         files = FileHelper(project_root)
-    except (OSError, RuntimeError) as exc:
+    except (OSError, FileHelperError, RuntimeError) as exc:
         raise ProjectPolicyError(
             f"Cannot establish project root for {INIT_OPTIONS_FILE}: {exc}"
         ) from exc
     try:
-        text = files.read_text(INIT_OPTIONS_FILE)
+        with files:
+            text = files.read_text(INIT_OPTIONS_FILE)
     except FileNotFoundError:
         return {}
     except (OSError, UnicodeError, FileHelperError) as exc:
@@ -60,7 +61,7 @@ def project_files(project_root: Path) -> FileHelper:
     options = read_project_options(project_root)
     try:
         return FileHelper(project_root, allow_symlinks=options.get("allow_symlinks", False))
-    except (OSError, RuntimeError) as exc:
+    except (OSError, FileHelperError, RuntimeError) as exc:
         raise ProjectPolicyError(f"Cannot establish project filesystem boundary: {exc}") from exc
 
 
@@ -74,19 +75,19 @@ def save_project_options(project_root: Path, options: dict[str, Any]) -> None:
     except (TypeError, ValueError, RecursionError) as exc:
         raise ProjectPolicyError(f"Cannot encode {INIT_OPTIONS_FILE} as JSON: {exc}") from exc
     try:
-        files = FileHelper(project_root)
-        # Validate the entire destination before creating even .specify.
-        try:
-            files.read_text(INIT_OPTIONS_FILE)
-        except FileNotFoundError:
-            pass
-        from .integrations._file_changes import after_file_change, before_file_change
+        with FileHelper(project_root) as files:
+            # Validate the entire destination before creating even .specify.
+            try:
+                files.read_text(INIT_OPTIONS_FILE)
+            except FileNotFoundError:
+                pass
+            from .integrations._file_changes import after_file_change, before_file_change
 
-        destination = project_root / INIT_OPTIONS_FILE
-        before_file_change(destination)
-        files.mkdir(".specify", exist_ok=True)
-        files.overwrite_text(INIT_OPTIONS_FILE, content)
-        after_file_change(destination)
+            destination = project_root / INIT_OPTIONS_FILE
+            before_file_change(destination)
+            files.mkdir(".specify", exist_ok=True)
+            files.overwrite_text(INIT_OPTIONS_FILE, content)
+            after_file_change(destination)
     except (OSError, UnicodeError, FileHelperError, RuntimeError) as exc:
         raise ProjectPolicyError(
             f"Cannot write {INIT_OPTIONS_FILE}: {exc}. "
@@ -127,11 +128,11 @@ def preflight_init_root(target: Path) -> Path:
         if target.exists() or target.is_symlink():
             read_project_options(target)
         else:
-            files = FileHelper(_existing_init_parent(target))
-            try:
-                files.read_bytes(target)
-            except FileNotFoundError:
-                pass
+            with FileHelper(_existing_init_parent(target)) as files:
+                try:
+                    files.read_bytes(target)
+                except FileNotFoundError:
+                    pass
         return target.resolve()
     except (OSError, FileHelperError, RuntimeError) as exc:
         raise ProjectPolicyError(
@@ -148,7 +149,9 @@ def prepare_init_root(target: Path) -> Path:
     target = target.absolute()
     _validate_init_traversal(target)
     if target.exists() or target.is_symlink():
-        FileHelper(target)
+        with FileHelper(target):
+            pass
         return target
-    FileHelper(_existing_init_parent(target)).mkdir(target, parents=True, exist_ok=True)
+    with FileHelper(_existing_init_parent(target)) as files:
+        files.mkdir(target, parents=True, exist_ok=True)
     return target
