@@ -1083,6 +1083,42 @@ class TestCodexNoModelInvocationOwnership:
         assert manifest.ownership_modes[self.PLAN_REL] == "partial"
         assert "interrupted update" in caplog.text
 
+    def test_leftover_backup_beside_a_deleted_file_stops_setup(self, tmp_path):
+        path = self._seed(tmp_path)
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        path.unlink()
+        with pytest.raises(ValueError, match="speckit-backup is left from an interrupted update"):
+            self._setup(tmp_path)
+        assert not path.exists()
+        assert backup.read_bytes() == b"interface:\n  display_name: Earlier\n"
+
+    def test_leftover_backup_does_not_block_a_file_left_alone(self, tmp_path):
+        path = self._seed(
+            tmp_path, b"interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n"
+        )
+        before = path.read_bytes()
+        path.with_name("openai.yaml.speckit-backup").write_bytes(b"stale")
+        self._setup(tmp_path)
+        assert path.read_bytes() == before
+        assert len(self._other_policies(tmp_path)) == len(CORE_COMMAND_NAMES) - 1
+
+    def test_failed_restore_keeps_the_original_exception(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        self._seed(tmp_path)
+        calls = []
+
+        def write_fd(fd, content):
+            calls.append(content)
+            if len(calls) == 1:
+                raise KeyboardInterrupt
+            raise OSError("disk full")
+
+        monkeypatch.setattr(codex, "_write_fd", write_fd)
+        with pytest.raises(KeyboardInterrupt):
+            self._setup(tmp_path)
+
     def test_failed_backup_removal_restores_the_original(self, tmp_path, monkeypatch):
         from specify_cli.integrations import codex
 

@@ -12,7 +12,7 @@ import logging
 import os
 import re
 import stat
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import ExitStack
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -43,25 +43,37 @@ _MAX_CONTEXT_WINDOW = 2**63 - 1
 _BACKUP_SUFFIX = ".speckit-backup"
 
 
-def _replace_file(root: Path, rel: str, content: bytes) -> bytes:
+def _replace_file(
+    root: Path,
+    rel: str,
+    content: bytes,
+    on_written: Callable[[bytes], None] | None = None,
+) -> bytes:
     """Rewrite an existing file in place and return its previous bytes.
 
     Writing through the same file keeps its owner, group, access-control list
     and other attributes, which a sibling-and-rename swap would replace with
     the directory's defaults. Every step goes through ``FileHelper``, which
     opens each ancestor without following links, so a directory swapped for a
-    symlink part-way cannot redirect the write outside the project.
+    symlink part-way cannot redirect the write outside the project, and the
+    file written must be the one that was read.
 
     Until the new bytes are on disk and the backup is gone, a copy of the
     previous ones is kept beside the file as ``<name>.speckit-backup``. The
     backup is created exclusively: one left by an interrupted run stops the
-    rewrite instead of being overwritten. Any failure, including removing the
-    backup, restores the previous bytes before it propagates. Read-only and
-    hard-linked files are refused.
+    rewrite instead of being overwritten. A failure up to and including
+    removing the backup restores the previous bytes before it propagates.
+    ``on_written`` receives the previous bytes once the rewrite is complete,
+    so a caller can still undo it if closing the file fails afterwards.
+    Read-only and hard-linked files are refused.
     """
     backup_rel = f"{rel}{_BACKUP_SUFFIX}"
     with FileHelper(root) as helper:
-        _require_rewritable(root / rel)
+        # FileHelper has no public in-place byte rewrite; this is the anchored,
+        # non-truncating open behind ``overwrite_text``, which would translate
+        # newlines on Windows. Pinned by ``TestCodexFileHelperInternals``.
+        destination = helper._path(rel)
+        read = os.stat(destination, follow_symlinks=False)
         original = helper.read_bytes(rel)
         with changing_file(root / backup_rel):
             try:
@@ -73,14 +85,10 @@ def _replace_file(root: Path, rel: str, content: bytes) -> bytes:
                     f"with {rel}, keep the right copy and delete the backup",
                     str(root / backup_rel),
                 ) from exc
-        # FileHelper has no public in-place byte rewrite; this is the anchored,
-        # non-truncating open behind ``overwrite_text``, which would translate
-        # newlines on Windows. Pinned by ``TestCodexFileHelperInternals``.
-        destination = helper._path(rel)
         with changing_file(root / rel), ExitStack() as stack:
             try:
                 fd = stack.enter_context(helper._overwrite_descriptor(destination))
-                _require_rewritable_fd(fd, root / rel)
+                _require_rewritable_fd(fd, root / rel, read)
             except BaseException:
                 # Nothing was written, so the backup is only clutter, and one
                 # left behind would block the next run.
@@ -93,13 +101,19 @@ def _replace_file(root: Path, rel: str, content: bytes) -> bytes:
                 try:
                     _write_fd(fd, original)
                 except OSError as exc:
-                    logger.warning(
-                        "Could not restore %s after a failed write: %s; its previous "
-                        "content is in %s", rel, exc, backup_rel,
+                    where = (
+                        f"its previous content is in {backup_rel}"
+                        if (root / backup_rel).is_file()
+                        else "its previous content could not be kept"
                     )
-                    raise
-                _discard_backup(helper, root, backup_rel)
+                    logger.warning(
+                        "Could not restore %s after a failed write: %s; %s", rel, exc, where,
+                    )
+                else:
+                    _discard_backup(helper, root, backup_rel)
                 raise
+            if on_written is not None:
+                on_written(original)
     return original
 
 
@@ -109,7 +123,10 @@ def _write_fd(fd: int, content: bytes) -> None:
     os.lseek(fd, 0, os.SEEK_SET)
     view = memoryview(content)
     while view:
-        view = view[os.write(fd, view):]
+        count = os.write(fd, view)
+        if count == 0:
+            raise OSError(errno.EIO, "Write made no progress")
+        view = view[count:]
     os.ftruncate(fd, len(content))
     os.fsync(fd)
 
@@ -126,15 +143,18 @@ def _discard_backup(helper: FileHelper, root: Path, backup_rel: str) -> None:
 
 
 def _remove_backup(helper: FileHelper, root: Path, backup_rel: str) -> None:
-    if not (root / backup_rel).exists():
-        return
     with changing_file(root / backup_rel, removal=True):
-        helper.delete(backup_rel)
+        try:
+            helper.delete(backup_rel)
+        except FileNotFoundError:
+            pass
 
 
-def _require_rewritable_fd(fd: int, path: Path) -> None:
-    # Re-checked on the open file, which is what is written, not its path.
+def _require_rewritable_fd(fd: int, path: Path, read: os.stat_result) -> None:
+    # Checked on the open file, which is what is written, not its path.
     info = os.fstat(fd)
+    if (info.st_dev, info.st_ino) != (read.st_dev, read.st_ino):
+        raise PermissionError(errno.EPERM, "File was replaced while being updated", str(path))
     if not stat.S_ISREG(info.st_mode):
         raise PermissionError(errno.EPERM, "Not a regular file", str(path))
     if not info.st_mode & 0o222:
@@ -279,15 +299,6 @@ class CodexIntegration(SkillsIntegration):
         elif not path.is_file():
             raise ValueError(f"Cannot update {rel}: not a regular file")
         else:
-            backup = project_root / f"{rel}{_BACKUP_SUFFIX}"
-            if backup.exists() or backup.is_symlink():
-                # ``rel`` may be a half-written rewrite; the backup is the
-                # only intact copy, so nothing may replace or remove it.
-                raise ValueError(
-                    f"Cannot update {rel}: {backup.name} is left from an interrupted "
-                    f"update; compare it with {path.name}, keep the right copy and "
-                    "delete the backup"
-                )
             data = self._load_openai_yaml(path, rel)
             ownership = "whole" if self._is_generated(project_root, rel, prior) else "partial"
             if (data.get("policy") or {}).get("allow_implicit_invocation") is not False:
@@ -311,6 +322,15 @@ class CodexIntegration(SkillsIntegration):
             return None
         if already_set and path.exists():
             return rel, None, ownership
+        backup = project_root / f"{rel}{_BACKUP_SUFFIX}"
+        if backup.exists() or backup.is_symlink():
+            # ``rel`` may be a half-written rewrite, or was deleted to start
+            # over; either way the backup may be the only intact copy.
+            raise ValueError(
+                f"Cannot update {rel}: {backup.name} is left from an interrupted "
+                f"update; compare it with {path.name}, keep the right copy and "
+                "delete the backup"
+            )
         return rel, _openai_yaml.dump(data), ownership
 
     def _remove_policy(self, project_root: Path, rel: str, *, final: bool = False) -> bool:
@@ -506,8 +526,10 @@ class CodexIntegration(SkillsIntegration):
                     # intact if the write fails.
                     _validate_record_path(Path(rel), root)
                     if content is not None:
-                        original = _replace_file(root, rel, content.encode("utf-8"))
-                        written.append((rel, original, False))
+                        _replace_file(
+                            root, rel, content.encode("utf-8"),
+                            on_written=lambda original, rel=rel: written.append((rel, original, False)),
+                        )
                     manifest.record_existing(rel, ownership=ownership)
                     created.append(path)
                 else:
