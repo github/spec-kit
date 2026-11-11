@@ -11,7 +11,9 @@ import hashlib
 import logging
 import os
 import re
+import stat
 from collections.abc import Mapping, Sequence
+from contextlib import ExitStack
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -46,49 +48,99 @@ def _replace_file(root: Path, rel: str, content: bytes) -> bytes:
 
     Writing through the same file keeps its owner, group, access-control list
     and other attributes, which a sibling-and-rename swap would replace with
-    the directory's defaults. Until the new bytes are on disk, a copy of the
-    previous ones is kept beside the file as ``<name>.speckit-backup``, so a
-    crash part-way leaves something to recover from. A failed write is undone.
-    Read-only and hard-linked files are refused.
+    the directory's defaults. Every step goes through ``FileHelper``, which
+    opens each ancestor without following links, so a directory swapped for a
+    symlink part-way cannot redirect the write outside the project.
+
+    Until the new bytes are on disk and the backup is gone, a copy of the
+    previous ones is kept beside the file as ``<name>.speckit-backup``. The
+    backup is created exclusively: one left by an interrupted run stops the
+    rewrite instead of being overwritten. Any failure, including removing the
+    backup, restores the previous bytes before it propagates. Read-only and
+    hard-linked files are refused.
     """
-    path = root / rel
-    backup = root / f"{rel}{_BACKUP_SUFFIX}"
-    _require_rewritable(path)
-    original = path.read_bytes()
-    with changing_file(backup):
-        FileHelper(root).write_bytes(backup.relative_to(root).as_posix(), original, mode=0o600)
-    flags = os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
-    with changing_file(path), os.fdopen(os.open(path, flags), "wb") as stream:
-        try:
-            _write_stream(stream, content)
-        except BaseException:
+    backup_rel = f"{rel}{_BACKUP_SUFFIX}"
+    with FileHelper(root) as helper:
+        _require_rewritable(root / rel)
+        original = helper.read_bytes(rel)
+        with changing_file(root / backup_rel):
             try:
-                _write_stream(stream, original)
-            except OSError as exc:
-                logger.warning(
-                    "Could not restore %s after a failed write: %s; its previous "
-                    "content is in %s", rel, exc, backup.name,
-                )
+                helper.create_bytes(backup_rel, original, mode=0o600)
+            except FileExistsError as exc:
+                raise FileExistsError(
+                    errno.EEXIST,
+                    f"{backup_rel} is left from an interrupted update; compare it "
+                    f"with {rel}, keep the right copy and delete the backup",
+                    str(root / backup_rel),
+                ) from exc
+        # FileHelper has no public in-place byte rewrite; this is the anchored,
+        # non-truncating open behind ``overwrite_text``, which would translate
+        # newlines on Windows. Pinned by ``TestCodexFileHelperInternals``.
+        destination = helper._path(rel)
+        with changing_file(root / rel), ExitStack() as stack:
+            try:
+                fd = stack.enter_context(helper._overwrite_descriptor(destination))
+                _require_rewritable_fd(fd, root / rel)
+            except BaseException:
+                # Nothing was written, so the backup is only clutter, and one
+                # left behind would block the next run.
+                _discard_backup(helper, root, backup_rel)
                 raise
-            _remove_backup(backup)
-            raise
-    _remove_backup(backup)
+            try:
+                _write_fd(fd, content)
+                _remove_backup(helper, root, backup_rel)
+            except BaseException:
+                try:
+                    _write_fd(fd, original)
+                except OSError as exc:
+                    logger.warning(
+                        "Could not restore %s after a failed write: %s; its previous "
+                        "content is in %s", rel, exc, backup_rel,
+                    )
+                    raise
+                _discard_backup(helper, root, backup_rel)
+                raise
     return original
 
 
-def _write_stream(stream: Any, content: bytes) -> None:
+def _write_fd(fd: int, content: bytes) -> None:
     # Truncating after writing, not before, means the old bytes' space is
     # reused rather than freed first.
-    stream.seek(0)
-    stream.write(content)
-    stream.truncate()
-    stream.flush()
-    os.fsync(stream.fileno())
+    os.lseek(fd, 0, os.SEEK_SET)
+    view = memoryview(content)
+    while view:
+        view = view[os.write(fd, view):]
+    os.ftruncate(fd, len(content))
+    os.fsync(fd)
 
 
-def _remove_backup(backup: Path) -> None:
-    with changing_file(backup, removal=True):
-        backup.unlink()
+def _discard_backup(helper: FileHelper, root: Path, backup_rel: str) -> None:
+    """Remove a backup whose original is intact; a failure only leaves it behind."""
+    try:
+        _remove_backup(helper, root, backup_rel)
+    except (OSError, ValueError) as exc:  # ValueError covers FileHelperError
+        logger.warning(
+            "Could not remove %s: %s; %s is intact, so delete the backup before "
+            "retrying", backup_rel, exc, backup_rel.removesuffix(_BACKUP_SUFFIX),
+        )
+
+
+def _remove_backup(helper: FileHelper, root: Path, backup_rel: str) -> None:
+    if not (root / backup_rel).exists():
+        return
+    with changing_file(root / backup_rel, removal=True):
+        helper.delete(backup_rel)
+
+
+def _require_rewritable_fd(fd: int, path: Path) -> None:
+    # Re-checked on the open file, which is what is written, not its path.
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode):
+        raise PermissionError(errno.EPERM, "Not a regular file", str(path))
+    if not info.st_mode & 0o222:
+        raise PermissionError(errno.EACCES, "File is read-only", str(path))
+    if info.st_nlink > 1:
+        raise PermissionError(errno.EPERM, "File has other hard links", str(path))
 
 
 def _require_rewritable(path: Path) -> None:
@@ -227,6 +279,15 @@ class CodexIntegration(SkillsIntegration):
         elif not path.is_file():
             raise ValueError(f"Cannot update {rel}: not a regular file")
         else:
+            backup = project_root / f"{rel}{_BACKUP_SUFFIX}"
+            if backup.exists() or backup.is_symlink():
+                # ``rel`` may be a half-written rewrite; the backup is the
+                # only intact copy, so nothing may replace or remove it.
+                raise ValueError(
+                    f"Cannot update {rel}: {backup.name} is left from an interrupted "
+                    f"update; compare it with {path.name}, keep the right copy and "
+                    "delete the backup"
+                )
             data = self._load_openai_yaml(path, rel)
             ownership = "whole" if self._is_generated(project_root, rel, prior) else "partial"
             if (data.get("policy") or {}).get("allow_implicit_invocation") is not False:

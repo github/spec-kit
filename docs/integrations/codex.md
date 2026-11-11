@@ -79,7 +79,12 @@ description in Codex's context.
   a policy you set there yourself afterwards is never removed. If writing or
   removing policies fails part-way through setup, the policies it had already
   written are undone. If Spec Kit is stopped while rewriting a file, the
-  previous content is left beside it as `openai.yaml.speckit-backup`.
+  previous content is left beside it as `openai.yaml.speckit-backup`. While
+  that backup exists, setup stops with an error and policy cleanup leaves the
+  file alone, so the backup is never overwritten: compare the two files, keep
+  the right content in `openai.yaml`, delete the backup and run the command
+  again. A file is never written through a symlinked directory, even one
+  swapped in while the rewrite runs.
 - Core command skills registered without running Codex's `setup()` get no
   `agents/openai.yaml`: those registered by commands that install, remove or
   update presets (including `specify bundle` commands that carry presets),

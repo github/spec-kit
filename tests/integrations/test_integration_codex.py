@@ -956,17 +956,17 @@ class TestCodexNoModelInvocationOwnership:
         """
         from specify_cli.integrations import codex
 
-        real_write = codex._write_stream
+        real_write = codex._write_fd
         calls = []
 
-        def write_stream(stream, content):
+        def write_fd(fd, content):
             calls.append(content)
             if len(calls) % 2:
-                real_write(stream, content[:5])
+                real_write(fd, content[:5])
                 raise OSError("disk full")
-            real_write(stream, content)
+            real_write(fd, content)
 
-        monkeypatch.setattr(codex, "_write_stream", write_stream)
+        monkeypatch.setattr(codex, "_write_fd", write_fd)
 
     def test_failed_write_at_setup_leaves_user_file_intact(self, tmp_path, monkeypatch):
         path = self._seed(tmp_path)
@@ -1032,19 +1032,107 @@ class TestCodexNoModelInvocationOwnership:
 
         path = self._seed(tmp_path)
         original = path.read_bytes()
-        real_write = codex._write_stream
+        real_write = codex._write_fd
 
-        def write_stream(stream, content):
-            real_write(stream, content[:5])
+        def write_fd(fd, content):
+            real_write(fd, content[:5])
             raise OSError("disk full")
 
-        monkeypatch.setattr(codex, "_write_stream", write_stream)
+        monkeypatch.setattr(codex, "_write_fd", write_fd)
         with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
             with pytest.raises(OSError, match="disk full"):
                 self._setup(tmp_path)
         backup = path.with_name("openai.yaml.speckit-backup")
         assert backup.read_bytes() == original
         assert backup.name in caplog.text
+
+    def test_retry_after_a_failed_restore_keeps_the_backup(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        real_write = codex._write_fd
+
+        def write_fd(fd, content):
+            real_write(fd, content[:5])
+            raise OSError("disk full")
+
+        monkeypatch.setattr(codex, "_write_fd", write_fd)
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        backup = path.with_name("openai.yaml.speckit-backup")
+        # A half-written file can still be valid YAML.
+        path.write_bytes(b"interface: {}\n")
+        with pytest.raises(ValueError, match="speckit-backup is left from an interrupted update"):
+            self._setup(tmp_path)
+        assert backup.read_bytes() == original
+        assert path.read_bytes() == b"interface: {}\n"
+        assert self._other_policies(tmp_path) == []
+
+    def test_leftover_backup_stops_policy_cleanup(self, tmp_path, caplog):
+        path = self._seed(tmp_path)
+        self._setup(tmp_path).save()
+        with_policy = path.read_bytes()
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
+            manifest = self._setup(tmp_path, enabled=False)
+        assert path.read_bytes() == with_policy
+        assert backup.read_bytes() == b"interface:\n  display_name: Earlier\n"
+        assert manifest.ownership_modes[self.PLAN_REL] == "partial"
+        assert "interrupted update" in caplog.text
+
+    def test_failed_backup_removal_restores_the_original(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        real_remove = codex._remove_backup
+        calls = []
+
+        def remove_backup(*args):
+            calls.append(args)
+            if len(calls) == 1:
+                raise OSError("device busy")
+            real_remove(*args)
+
+        monkeypatch.setattr(codex, "_remove_backup", remove_backup)
+        with pytest.raises(OSError, match="device busy"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert path.read_bytes() == original
+        assert [p.name for p in path.parent.iterdir()] == ["openai.yaml"]
+        assert self._other_policies(tmp_path) == []
+
+        # Nothing was left untracked, so a retry claims and later clears the policy.
+        self._setup(tmp_path).save()
+        assert self._yaml(path)["policy"] == self.POLICY
+        self._setup(tmp_path, enabled=False)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+
+    @pytest.mark.skipif(os.name == "nt", reason="needs POSIX symlinks")
+    def test_parent_swapped_for_a_symlink_is_not_written_through(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        path = self._seed(tmp_path)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "openai.yaml").write_bytes(b"interface:\n  display_name: Outside\n")
+        real_changing_file = codex.changing_file
+
+        def changing_file(target, **kwargs):
+            # Swap the parent after every path check, just before the open.
+            if target == path and path.parent.is_dir() and not path.parent.is_symlink():
+                path.parent.rename(tmp_path / "moved")
+                path.parent.symlink_to(outside, target_is_directory=True)
+            return real_changing_file(target, **kwargs)
+
+        monkeypatch.setattr(codex, "changing_file", changing_file)
+        with pytest.raises((OSError, ValueError)):
+            self._setup(tmp_path)
+        assert (outside / "openai.yaml").read_bytes() == b"interface:\n  display_name: Outside\n"
+        assert sorted(p.name for p in outside.iterdir()) == ["openai.yaml"]
 
     @pytest.mark.parametrize(
         "content",
@@ -1265,6 +1353,52 @@ class TestCodexNoModelInvocationPresets:
         assert overridden
         assert during == []
         assert not (project / self.SKILL / "agents").exists()
+
+
+class TestCodexFileHelperInternals:
+    """Pins the ``FileHelper`` internals ``_replace_file`` rewrites through.
+
+    ``FileHelper`` has no public in-place byte rewrite, so the Codex package
+    uses ``_path`` and ``_overwrite_descriptor``. A change to either should
+    fail here rather than silently in a policy rewrite.
+    """
+
+    REL = ".agents/skills/speckit-plan/agents/openai.yaml"
+
+    def test_overwrite_descriptor_rewrites_in_place_without_truncating(self, tmp_path):
+        from specify_cli.file_helper import FileHelper
+
+        path = tmp_path / self.REL
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"0123456789")
+        inode = path.stat().st_ino
+        with FileHelper(tmp_path) as helper:
+            destination = helper._path(self.REL)
+            assert destination == path.resolve()
+            with helper._overwrite_descriptor(destination) as fd:
+                assert os.fstat(fd).st_size == 10
+                os.write(fd, b"ab")
+        assert path.read_bytes() == b"ab23456789"
+        assert path.stat().st_ino == inode
+
+    @pytest.mark.skipif(os.name == "nt", reason="needs POSIX symlinks")
+    def test_overwrite_descriptor_refuses_a_symlinked_parent(self, tmp_path):
+        from specify_cli.file_helper import FileHelper
+
+        path = tmp_path / self.REL
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"inside")
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "openai.yaml").write_bytes(b"outside")
+        with FileHelper(tmp_path) as helper:
+            destination = helper._path(self.REL)
+            path.parent.rename(tmp_path / "moved")
+            path.parent.symlink_to(outside, target_is_directory=True)
+            with pytest.raises(OSError):
+                with helper._overwrite_descriptor(destination) as fd:
+                    os.write(fd, b"written")
+        assert (outside / "openai.yaml").read_bytes() == b"outside"
 
 
 class TestCodexManifestInternals:
