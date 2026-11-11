@@ -31,6 +31,19 @@ _YAML12_RESOLVERS = (
 class Yaml12Loader(yaml.SafeLoader):
     """Safe loader that resolves plain scalars by the YAML 1.2 core schema."""
 
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
+        # A dict keeps one of two keys Python treats as equal, such as ``true``
+        # and ``1``, or a key given twice; rewriting would drop the other.
+        # serde_yaml rejects a repeated key too.
+        mapping = super().construct_mapping(node, deep=deep)
+        if len(mapping) != len(node.value):
+            raise yaml.constructor.ConstructorError(
+                None, None,
+                "found keys that collide, such as a repeated key or both true and 1",
+                node.start_mark,
+            )
+        return mapping
+
 
 Yaml12Loader.yaml_implicit_resolvers = {
     first: [(tag, rx) for tag, rx in resolvers if tag not in _YAML11_ONLY_TAGS]
@@ -103,11 +116,11 @@ def dump(data: dict[str, Any]) -> str:
 def schema_errors(data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
 
-    def expect(value: Any, kind: type, label: str) -> bool:
-        if value is None or isinstance(value, kind):
+    def expect(value: Any, kind: type, label: str, *, optional: bool = True) -> bool:
+        if (optional and value is None) or isinstance(value, kind):
             return value is not None
         name = "a mapping" if kind is dict else "a list"
-        got = {Int: "int", Float: "float"}.get(type(value), type(value).__name__)
+        got = {Int: "int", Float: "float", type(None): "null"}.get(type(value), type(value).__name__)
         errors.append(f"'{label}' must be {name}, got {got}")
         return False
 
@@ -117,7 +130,8 @@ def schema_errors(data: dict[str, Any]) -> list[str]:
         tools = dependencies.get("tools")
         if expect(tools, list, "dependencies.tools"):
             for index, tool in enumerate(tools):
-                if expect(tool, dict, f"dependencies.tools[{index}]"):
+                # A list item is required, so ``null`` is not an absent field.
+                if expect(tool, dict, f"dependencies.tools[{index}]", optional=False):
                     expect(tool.get("oauth"), dict, f"dependencies.tools[{index}].oauth")
     policy = data.get("policy")
     if expect(policy, dict, "policy"):

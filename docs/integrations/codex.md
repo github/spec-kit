@@ -66,17 +66,22 @@ description in Codex's context.
   so is a tracked file that still holds it. If uninstall cannot remove the
   policy from your own file, it logs a warning naming the file so you can
   remove it by hand. If an existing file cannot be read, is not valid YAML, is
-  not a mapping, or has a field Codex would reject (for example
+  not a mapping, repeats a key or has keys that would merge into one (such as
+  `true` and `1`), or has a field Codex would reject (for example
   `interface` or `dependencies.tools` of the wrong type, which makes Codex
   ignore the whole file), setup stops with an error naming the file and leaves
   it unchanged. Setup with the option also stops before writing anything if
   `.agents`, `.agents/skills` or a core `speckit-<command>` skill directory is a
   symlink, or if a path where a policy goes is a file rather than a directory.
   Once the policy has been removed from a file Spec Kit no longer tracks it, so
-  a policy you set there yourself afterwards is never removed. Skills that commands other than
-  `init`, `install` and `upgrade` register (for example presets that add core
-  skills) get no `agents/openai.yaml` until `specify integration upgrade codex
-  --force` is run.
+  a policy you set there yourself afterwards is never removed. If setup fails
+  part-way, the policies it had already written are undone.
+- Core command skills registered without running Codex's `setup()` get no
+  `agents/openai.yaml`: those registered by commands that install, remove or
+  update presets (including `specify bundle` commands that carry presets),
+  `specify integration use codex`, and `specify integration switch codex` when
+  Codex is installed but not the default. To add the policy, run `specify
+  integration upgrade codex --force` while Codex is the default integration.
 - Preset overrides rewrite only `SKILL.md`, so the sibling `agents/openai.yaml`
   of an overridden core skill is left in place.
 

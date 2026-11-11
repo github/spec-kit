@@ -910,8 +910,13 @@ class TestCodexNoModelInvocationOwnership:
             b"dependencies:\n  tools:\n    - not-a-mapping\n",
             b"dependencies:\n  tools:\n    - type: mcp\n      oauth: 8080\n",
             b"policy:\n  products: codex\n",
+            b"dependencies:\n  tools:\n    - null\n",
+            b"interface: invalid\npolicy:\n  allow_implicit_invocation: false\n",
         ],
-        ids=["interface", "dependencies", "tools", "tool-item", "oauth", "products"],
+        ids=[
+            "interface", "dependencies", "tools", "tool-item", "oauth", "products",
+            "null-tool-item", "untracked-already-set",
+        ],
     )
     def test_file_codex_would_ignore_aborts_without_overwriting(self, tmp_path, content):
         path = self._seed(tmp_path, content)
@@ -934,23 +939,23 @@ class TestCodexNoModelInvocationOwnership:
 
     @staticmethod
     def _fail_policy_writes(monkeypatch):
-        """Simulate a write that fails part-way, for in-place and staged writes."""
-        real_write_bytes = Path.write_bytes
-        real_replace = os.replace
+        """Simulate a rewrite of an existing file that fails part-way.
 
-        def write_bytes(self, data):
-            if self.name == "openai.yaml" and self.exists():
-                real_write_bytes(self, data[:5])
+        Only the first write to each file fails, so the restore can succeed.
+        """
+        from specify_cli.integrations import codex
+
+        real_write = codex._write_in_place
+        failed = set()
+
+        def write_in_place(path, content):
+            if path not in failed:
+                failed.add(path)
+                real_write(path, content[:5])
                 raise OSError("disk full")
-            return real_write_bytes(self, data)
+            real_write(path, content)
 
-        def replace(src, dst, *args, **kwargs):
-            if Path(dst).name == "openai.yaml":
-                raise OSError("disk full")
-            return real_replace(src, dst, *args, **kwargs)
-
-        monkeypatch.setattr(Path, "write_bytes", write_bytes)
-        monkeypatch.setattr(os, "replace", replace)
+        monkeypatch.setattr(codex, "_write_in_place", write_in_place)
 
     def test_failed_write_at_setup_leaves_user_file_intact(self, tmp_path, monkeypatch):
         path = self._seed(tmp_path)
@@ -985,6 +990,134 @@ class TestCodexNoModelInvocationOwnership:
         assert stat.S_IMODE(path.stat().st_mode) == 0o640
         get_integration("codex").teardown(tmp_path, manifest)
         assert stat.S_IMODE(path.stat().st_mode) == 0o640
+
+    @pytest.mark.skipif(not hasattr(os, "link"), reason="hard links are unavailable")
+    def test_rewritten_user_file_keeps_its_inode(self, tmp_path):
+        # The same inode keeps the owner, group and access-control list, which
+        # a sibling-and-rename swap would replace.
+        path = self._seed(tmp_path)
+        alias = tmp_path / "alias.yaml"
+        os.link(path, alias)
+        inode = path.stat().st_ino
+        manifest = self._setup(tmp_path)
+        assert path.stat().st_ino == inode
+        assert alias.read_bytes() == path.read_bytes()
+        assert self._yaml(alias)["policy"] == self.POLICY
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert path.stat().st_ino == inode
+        assert self._yaml(alias) == {"interface": {"display_name": "Plan"}}
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            b"custom:\n  true: first\n  1: second\n",
+            b"custom:\n  1: first\n  1.0: second\n",
+            b"custom:\n  a: first\n  a: second\n",
+        ],
+        ids=["bool-and-int", "int-and-float", "repeated"],
+    )
+    def test_colliding_keys_abort_without_overwriting(self, tmp_path, content):
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*keys that collide"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+        assert self._other_policies(tmp_path) == []
+
+    def test_aliased_policy_is_changed_without_touching_its_anchor(self, tmp_path):
+        path = self._seed(tmp_path, b"shared: &p\n  products: [codex]\npolicy: *p\n")
+        manifest = self._setup(tmp_path)
+        assert self._yaml(path) == {
+            "shared": {"products": ["codex"]},
+            "policy": {"products": ["codex"], **self.POLICY},
+        }
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert self._yaml(path) == {
+            "shared": {"products": ["codex"]},
+            "policy": {"products": ["codex"]},
+        }
+
+    def test_removing_an_aliased_policy_keeps_its_anchor(self, tmp_path):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        path.write_bytes(b"shared: &p\n  allow_implicit_invocation: false\npolicy: *p\n")
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert self._yaml(path) == {"shared": self.POLICY}
+
+    @staticmethod
+    def _fail_policy_record(monkeypatch, project, failing_skill="speckit-taskstoissues"):
+        """Fail the policy write for ``failing_skill``, after the plan file is rewritten."""
+        real_record_file = IntegrationManifest.record_file
+        plan = project / TestCodexNoModelInvocationOwnership.PLAN_REL
+
+        def record_file(self, rel, *args, **kwargs):
+            if Path(rel).as_posix().endswith(f"{failing_skill}/agents/openai.yaml"):
+                assert b"allow_implicit_invocation" in plan.read_bytes()
+                raise OSError("disk full")
+            return real_record_file(self, rel, *args, **kwargs)
+
+        monkeypatch.setattr(IntegrationManifest, "record_file", record_file)
+
+    def test_failed_later_policy_write_rolls_back_so_a_retry_can_clear_them(
+        self, tmp_path, monkeypatch
+    ):
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        self._fail_policy_record(monkeypatch, tmp_path)
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert path.read_bytes() == original
+        assert self._other_policies(tmp_path) == []
+        assert list((tmp_path / ".agents" / "skills").glob("*/agents")) == [path.parent]
+
+        self._setup(tmp_path).save()
+        assert len(self._other_policies(tmp_path)) == 9
+        self._setup(tmp_path, enabled=False)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+
+    def test_failed_policy_write_is_left_to_an_active_lifecycle_journal(self, tmp_path, monkeypatch):
+        from specify_cli.integrations._file_changes import file_change_observer
+
+        self._seed(tmp_path)
+        self._fail_policy_record(monkeypatch, tmp_path)
+        token = file_change_observer.set(lambda *args: None)
+        try:
+            with pytest.raises(OSError, match="disk full"):
+                self._setup(tmp_path)
+        finally:
+            file_change_observer.reset(token)
+        assert self._yaml(tmp_path / self.PLAN_REL)["policy"] == self.POLICY
+        assert len(self._other_policies(tmp_path)) == 8
+
+    def test_unreadable_prior_manifest_leaves_policies_in_place(self, tmp_path, caplog):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        manifest.save()
+        policies = {p: p.read_bytes() for p in [path, *self._other_policies(tmp_path)]}
+        manifest.manifest_path.write_text("{not json", encoding="utf-8")
+        with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
+            self._setup(tmp_path, enabled=False)
+        assert "Could not read prior manifest" in caplog.text
+        assert {p: p.read_bytes() for p in policies} == policies
+
+    def test_forced_teardown_deletes_an_edited_generated_file(self, tmp_path):
+        manifest = self._setup(tmp_path)
+        path = tmp_path / self.PLAN_REL
+        path.write_text(
+            "interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n",
+            encoding="utf-8",
+        )
+        get_integration("codex").teardown(tmp_path, manifest, force=True)
+        assert not path.exists()
+        assert self._other_policies(tmp_path) == []
+
+    def test_forced_teardown_keeps_a_user_file_and_removes_only_the_policy(self, tmp_path):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        get_integration("codex").teardown(tmp_path, manifest, force=True)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_policy_behind_dangling_agents_symlink_stays_tracked(self, tmp_path):

@@ -10,15 +10,13 @@ import errno
 import hashlib
 import logging
 import os
-import stat
 from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
 
-from ...file_helper import FileHelper
-from .._file_changes import changing_file
+from .._file_changes import changing_file, file_change_observer
 from ..base import IntegrationOption, SkillsIntegration
 # The manifest has no public validator; this is the check ``record_file`` and
 # ``record_existing`` apply, so policies are planned, cleaned up and recorded by
@@ -30,16 +28,33 @@ logger = logging.getLogger(__name__)
 
 
 def _replace_file(root: Path, rel: str, content: bytes) -> None:
-    """Replace an existing file through a sibling, so a failed write leaves it intact.
+    """Rewrite an existing file in place, restoring its bytes if the write fails.
 
-    The swap would also replace a read-only file, so that is refused as an
-    in-place write would be.
+    Writing through the same file keeps its owner, group, access-control list
+    and other attributes, which a sibling-and-rename swap would replace with
+    the directory's defaults. A read-only file is refused.
     """
     path = root / rel
     _require_writable(path)
-    mode = stat.S_IMODE(path.stat().st_mode)
+    original = path.read_bytes()
     with changing_file(path):
-        FileHelper(root).write_bytes(rel, content, mode=mode)
+        try:
+            _write_in_place(path, content)
+        except BaseException:
+            try:
+                _write_in_place(path, original)
+            except OSError as exc:
+                logger.warning("Could not restore %s after a failed write: %s", rel, exc)
+            raise
+
+
+def _write_in_place(path: Path, content: bytes) -> None:
+    # Truncating after writing, not before, means the old bytes' space is
+    # reused rather than freed first.
+    flags = os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    with os.fdopen(os.open(path, flags), "wb") as stream:
+        stream.write(content)
+        stream.truncate()
 
 
 def _require_writable(path: Path) -> None:
@@ -99,6 +114,10 @@ class CodexIntegration(SkillsIntegration):
             raise ValueError(
                 f"Cannot update {rel}: 'policy' must be a mapping, got {type(policy).__name__}"
             )
+        if policy is not None:
+            # A YAML alias can make ``policy`` the same dict as another key;
+            # a copy keeps policy edits from reaching that key.
+            loaded["policy"] = dict(policy)
         return loaded
 
     def _is_policy_rel(self, rel: str) -> bool:
@@ -178,17 +197,18 @@ class CodexIntegration(SkillsIntegration):
                     raise ValueError(f"Cannot update {rel}: {exc}") from exc
         policy = data.get("policy") or {}
         already_set = policy.get("allow_implicit_invocation") is False
-        if ownership == "partial" and not tracked and already_set:
-            # The user already set it; claiming it would let cleanup remove their setting.
-            return None
         policy["allow_implicit_invocation"] = False
         data["policy"] = policy
+        # Checked even for a file left alone, since Codex would ignore its policy.
         errors = _openai_yaml.schema_errors(data)
         if errors:
             raise ValueError(
                 f"Cannot update {rel}: Codex would ignore this file, including the "
                 f"policy: {'; '.join(errors)}"
             )
+        if ownership == "partial" and not tracked and already_set:
+            # The user already set it; claiming it would let cleanup remove their setting.
+            return None
         if already_set and path.exists():
             return rel, None, ownership
         return rel, _openai_yaml.dump(data), ownership
@@ -376,23 +396,53 @@ class CodexIntegration(SkillsIntegration):
                     plan = plans[name.removeprefix("speckit-")]
                     if plan is not None:
                         planned.append(plan)
-        for rel, content, ownership in planned:
-            path = root / rel
-            if path.exists():
-                # ``record_file`` truncates in place; keep the user's file
-                # intact if the write fails.
-                _validate_record_path(Path(rel), root)
-                if content is not None:
-                    _replace_file(root, rel, content.encode("utf-8"))
-                manifest.record_existing(rel, ownership=ownership)
-                created.append(path)
-            else:
-                created.append(manifest.record_file(rel, content, ownership=ownership))
+        # ``(rel, prior bytes or None if new, whether its directory was new)``
+        written: list[tuple[str, bytes | None, bool]] = []
+        try:
+            for rel, content, ownership in planned:
+                path = root / rel
+                if path.exists():
+                    # ``record_file`` truncates in place; keep the user's file
+                    # intact if the write fails.
+                    _validate_record_path(Path(rel), root)
+                    if content is not None:
+                        original = path.read_bytes()
+                        _replace_file(root, rel, content.encode("utf-8"))
+                        written.append((rel, original, False))
+                    manifest.record_existing(rel, ownership=ownership)
+                    created.append(path)
+                else:
+                    written.append((rel, None, not path.parent.exists()))
+                    created.append(manifest.record_file(rel, content, ownership=ownership))
+        except BaseException:
+            # A retry would see these policies untracked and take them for the
+            # user's own, so they could never be removed. A lifecycle
+            # transaction restores its journal itself.
+            if file_change_observer.get() is None:
+                self._roll_back_policies(root, written)
+            raise
         if prior is not None:
             self._released_policy_rels = frozenset(
                 self._release_prior_policies(root, manifest, prior, {rel for rel, _, _ in planned})
             )
         return created
+
+    @staticmethod
+    def _roll_back_policies(root: Path, written: list[tuple[str, bytes | None, bool]]) -> None:
+        """Undo the policy writes of a setup that failed part-way."""
+        for rel, original, new_dir in reversed(written):
+            path = root / rel
+            try:
+                if original is not None:
+                    _replace_file(root, rel, original)
+                    continue
+                if path.is_file() and not path.is_symlink():
+                    with changing_file(path, removal=True):
+                        path.unlink()
+                if new_dir and path.parent.is_dir():
+                    path.parent.rmdir()
+            except OSError as exc:
+                logger.warning("Could not undo the policy written to %s: %s", rel, exc)
 
     def teardown(
         self,
