@@ -43,7 +43,11 @@ specify self upgrade
 specify self upgrade --tag vX.Y.Z[suffix]
 ```
 
-Bare `specify self upgrade` executes immediately, matching the no-prompt behavior of commands like `pip install -U` and `npm update`. The CLI classifies your runtime into one of: `uv tool`, `pipx`, `uvx (ephemeral)`, source checkout, or unsupported. Only `uv tool` and `pipx` are upgraded automatically; for `uv tool` installs, it runs `uv tool install specify-cli --force --from <git ref>` under the hood so pinned release tags work. The other paths print path-specific guidance and exit 0 without touching anything.
+Bare `specify self upgrade` executes immediately, matching the no-prompt behavior of commands like `pip install -U` and `npm update`. The CLI classifies your runtime into one of: `uv tool`, `pipx`, `uvx (ephemeral)`, source checkout, or unsupported. Only `uv tool` and `pipx` are upgraded automatically; for `uv tool` installs, it runs `uv tool install specify-cli --force --from <git ref>` under the hood so pinned release tags work. On Windows, `uv` cannot replace the tool environment `specify` is running from, so for `uv tool` installs `specify self upgrade` prints that command for you to run once it exits, and exits 0 without touching anything. Stop any other process running from that environment first, such as a `specify mcp` server, or uv can still fail partway through. The other paths print path-specific guidance and exit 0 without touching anything.
+
+Tool detection recognizes current and legacy default installation directories, as well as directories configured with `UV_TOOL_DIR`, `PIPX_HOME`, or `XDG_DATA_HOME`. Keep the same directory environment variables set when upgrading a relocated installation so the installer also targets that location.
+
+`PIPX_HOME` expands a leading `~` to your home directory. `UV_TOOL_DIR` treats it literally as part of a path relative to the working directory. `XDG_DATA_HOME` must be absolute; relative values, including those beginning with `~`, are ignored.
 
 Pinned tags must start with `vMAJOR.MINOR.PATCH`. Optional suffixes are limited to dev, alpha/beta/rc, and/or build metadata forms such as `v1.0.0-rc1`, `v0.8.0.dev0`, `v0.8.0+build.42`, or the combination `v1.0.0-rc1+build.42`; branch names, hash refs, `latest`, and bare versions without `v` are rejected.
 
@@ -154,7 +158,7 @@ Run:
 specify extension update
 ```
 
-With no extension argument, this updates all installed extensions. Use `specify extension update <extension-id-or-name>` to update only one extension. See the [extensions reference](reference/extensions.md#update-extensions) for details.
+With no extension argument, this updates all installed extensions. Use `specify extension update <extension-id-or-name>` to update only one extension. See the [extension CLI reference](extensions/cli.md#update-extensions) for details.
 
 ### Fallback: re-run init
 

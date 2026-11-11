@@ -39,7 +39,11 @@ specify init my-project --integration copilot
 
 > **Note:** Python 3.11+ is required.
 >
-> **Windows note:** Offline scaffolding requires PowerShell 7+ (`pwsh`), not Windows PowerShell 5.x (`powershell.exe`). Install from <https://aka.ms/powershell>.
+> **Windows note:** The PowerShell scripts target Windows PowerShell 5.1
+> (`powershell.exe`), which is included with Windows. PowerShell 7 (`pwsh`) is
+> not required for offline scaffolding. Pass `--script ps` to select the
+> PowerShell scripts explicitly; non-interactive initialization on Windows
+> selects them by default.
 
 ## Component catalogs and sources
 
@@ -69,10 +73,10 @@ bundle manifest, not the component payloads it names. Before disconnecting,
 install matching non-bundled components separately. Components with an explicit
 catalog `source` still require network verification even when already installed,
 and workflow step payloads currently resolve only through step catalogs. Review
-the [bundle offline limits](../reference/bundles.md#install-a-bundle) before
+the [bundle offline limits](../bundles/cli.md#offline-limits) before
 depending on `specify bundle install --offline`.
 
-See the [Catalogs reference](../reference/catalogs.md) for catalog types, trust
+See the [Catalogs reference](../overview/catalogs.md) for catalog types, trust
 policies, and source precedence. If internal endpoints require credentials,
 also configure [Authentication](../reference/authentication.md).
 

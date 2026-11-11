@@ -667,6 +667,35 @@ class TestExtensionUpdateCLI:
         assert "upgrade spec-kit" in flat
         assert ExtensionManager(project_dir).registry.get("test-ext")["version"] == "1.0.0"
 
+    def test_update_skips_catalog_entry_without_version(self, tmp_path):
+        """A catalog entry with no version is skipped with a warning instead of
+        aborting the command with a KeyError."""
+        from specify_cli import app
+
+        runner = CliRunner()
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+
+        manager = ExtensionManager(project_dir)
+        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
+        manager.install_from_directory(v1_dir, "0.1.0")
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                 "id": "test-ext",
+                 "name": "Test Extension",
+                 "download_url": "https://example.com/test-ext.zip",
+                 "_install_allowed": True,
+             }):
+            result = runner.invoke(app, ["extension", "update"], catch_exceptions=True)
+
+        flat = " ".join(result.output.split())
+        assert result.exit_code == 0, result.output
+        assert "test-ext: Missing catalog version (skipping)" in flat
+        assert ExtensionManager(project_dir).registry.get("test-ext")["version"] == "1.0.0"
+
     def test_update_failure_rolls_back_registry_hooks_and_commands(self, tmp_path, monkeypatch):
         """Failed update should restore original registry, hooks, and command files."""
         from specify_cli import app

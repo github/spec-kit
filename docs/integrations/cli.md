@@ -164,7 +164,7 @@ can supply an external adapter:
 specify init my-project --integration sample-agent --trust-integration
 ```
 
-Review the [external adapter API](https://github.com/github/spec-kit/blob/main/design/integration.md#external-adapter-package-contract)
+Review the [external adapter API](api.md)
 before publishing a package. No pip installation or source-registry edit is
 needed for adapters using the host API and standard library.
 
@@ -285,8 +285,8 @@ Recovery does not bypass catalog policy or replacement-package trust.
 Failed operations roll back their own changes, not unrelated user files or
 workflow progress. Conflicting concurrent edits are reported with recovery
 snapshots retained. Adapter authors should follow the
-[storage, loading, and lifecycle contract](https://github.com/github/spec-kit/blob/main/design/integration.md#storage-loading-and-lifecycle)
-for ownership, journaling, and recovery requirements.
+[setup and file ownership contract](api.md#setup-and-file-ownership)
+and [lifecycle guarantees](api.md#external-adapter-lifecycle-guarantees) for safe writes and recovery.
 
 ## Report Integration Status
 
@@ -335,7 +335,9 @@ specify integration catalog add <url>
 | --------------- | ----------------------------- |
 | `--name <name>` | Optional name for the catalog |
 
-Adds a custom catalog URL to the project's `.specify/integration-catalogs.yml`. The URL must use HTTPS (except `http://localhost`, `http://127.0.0.1`, or `http://[::1]` for local testing).
+Adds a custom catalog URL to the project's `.specify/integration-catalogs.yml`.
+The URL must use HTTPS, including for local testing. Plain HTTP is rejected
+before network access, including on localhost and loopback addresses.
 
 Re-adding the same URL with the same name succeeds without changing the configuration; a different name is rejected.
 
@@ -481,20 +483,20 @@ parsed using POSIX shell quoting. Placement and duplicate-flag behavior differ
 by adapter; see the agent guide, especially for Docker Agent and Goose.
 
 Setup `--integration-options` are separate from workflow
-[`integration_args` and `integration_options`](../reference/workflows.md#per-step-integration-configuration).
+[`integration_args` and `integration_options`](../workflow-steps/types.md#per-step-integration-configuration).
 Adapters reject non-empty per-step configuration unless they implement it;
 Docker Agent currently exposes structured agent/safety configuration.
 Headless approval flags, model forwarding, and structured-output support are
 also adapter-specific, not universal guarantees.
 
-## GitHub Issue Creation
-
-The deprecated `speckit.taskstoissues` command still runs with a warning but
-will be removed in a future minor release. Install the opt-in GitHub extension
-with `specify extension add github` and use `speckit.github.taskstoissues`
-instead. See the [extension's migration guide](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#migrating-from-the-core-taskstoissues-command)
-for invocation syntax and migration details; the core command does not install
-the extension automatically.
+The [`reasoning_effort` and `context_size`](../workflow-steps/types.md#reasoning-effort-and-context-size)
+settings of `command` and `prompt` steps instead follow one shared contract.
+Spec Kit checks each value and passes it only to an integration that declares
+and translates that setting; with any other integration, the step fails before
+the CLI runs. GitHub Copilot and Codex CLI translate both settings, and Claude
+Code translates `reasoning_effort`; the agent guides describe each mapping.
+Adapter authors opt in as described in the
+[integration API reference](api.md#per-step-dispatch-settings).
 
 ## FAQ
 

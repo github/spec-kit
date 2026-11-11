@@ -25,7 +25,7 @@ numeric priority wins:
 4. **Built-in defaults** — `catalog.json` + `catalog.community.json`
 
 Adding the first project catalog replaces the default sources unless you also
-list them in the project file. See [Catalogs](../reference/catalogs.md)
+list them in the project file. See [Catalogs](../overview/catalogs.md)
 for shared discovery, trust, and private-source guidance.
 
 Example `integration-catalogs.yml`:
@@ -77,7 +77,7 @@ Required descriptor fields:
 
 `requires.tools` is optional; omit it for adapters with no required executable.
 Optional legacy `provides` metadata remains valid but does not supply host
-commands. See [integration design](https://github.com/github/spec-kit/blob/main/design/integration.md#external-adapter-package-contract)
+commands. See the [integration API reference](api.md)
 for class metadata, runtime methods, tools, and storage requirements.
 
 ## Catalog Schema
@@ -159,3 +159,8 @@ See the [contribution guide](contributing.md) for adding built-in integrations
 or submitting external integration catalog entries. For agent-specific setup,
 start with the [integration directory](index.md). Shared user-facing commands
 are documented in the [integration management reference](cli.md).
+
+## See also
+
+- [Integration API reference](api.md)
+- [Community integrations](../community/integrations.md)

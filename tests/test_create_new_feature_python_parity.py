@@ -23,6 +23,7 @@ from tests.parity_helpers import (
     break_wrap_layer,
     clean_env,
     collation_range_locale,
+    fold_persistence_hints,
     install_composition_stack,
     install_scripts,
     json_stdout,
@@ -424,6 +425,10 @@ def test_python_prefix_scan_tolerates_permission_error(
         "a to the of",
         "Fix \u00e9DB\u00e9 sync",
         "Ajouter la réservation hôtelière",
+        "-n",
+        "-e",
+        "-E",
+        "-neE",
     ],
     ids=[
         "plain",
@@ -432,6 +437,10 @@ def test_python_prefix_scan_tolerates_permission_error(
         "all_stop_words_fallback",
         "acronym_next_to_non_ascii",
         "accented_words",
+        "option_like_n",
+        "option_like_e",
+        "option_like_E",
+        "option_like_neE",
     ],
 )
 def test_python_branch_name_generation_matches_bash(
@@ -755,23 +764,40 @@ def test_all_variants_branch_truncation_match(repo: Path) -> None:
 
 
 @requires_bash
-def test_python_full_run_matches_bash(repo_pair: tuple[Path, Path]) -> None:
-    repo_a, repo_b = repo_pair
-    description = "Add user authentication system"
+@pytest.mark.parametrize(
+    "description",
+    ["Add user authentication system", "-n"],
+    ids=["plain", "option_like_n"],
+)
+@pytest.mark.parametrize(
+    "repo_names",
+    [("proj-a", "proj-b"), ("O'Brien-a", "O'Brien-b")],
+    ids=["plain_repo", "apostrophe_repo"],
+)
+def test_python_full_run_matches_bash(
+    tmp_path: Path, repo_names: tuple[str, str], description: str
+) -> None:
+    repo_a = _setup_repo(tmp_path, repo_names[0])
+    repo_b = _setup_repo(tmp_path, repo_names[1])
 
     bash = run(bash_cmd(repo_a, SCRIPT, "--json", description), repo_a)
     py = run(py_cmd(repo_b, SCRIPT, "--json", description), repo_b)
 
     assert py.returncode == bash.returncode == 0
-    assert normalize_repo_paths(py.stdout, repo_b) == normalize_repo_paths(
-        bash.stdout, repo_a
-    )
-    assert normalize_repo_paths(py.stderr, repo_b) == normalize_repo_paths(
-        bash.stderr, repo_a
-    )
+    # fold_persistence_hints first: the Python variant prints PowerShell-style
+    # hints on Windows while the bash variant prints export-style ones, and
+    # folding canonicalizes shlex.quote's apostrophe spelling (the '"'"' seam)
+    # to the literal value so normalize_repo_paths can then replace the repo
+    # path in the folded hint.
+    assert normalize_repo_paths(
+        fold_persistence_hints(py.stdout), repo_b
+    ) == normalize_repo_paths(fold_persistence_hints(bash.stdout), repo_a)
+    assert normalize_repo_paths(
+        fold_persistence_hints(py.stderr), repo_b
+    ) == normalize_repo_paths(fold_persistence_hints(bash.stderr), repo_a)
 
     branch = json_stdout(py)["BRANCH_NAME"]
-    for repo in repo_pair:
+    for repo in (repo_a, repo_b):
         spec = repo / "specs" / branch / "spec.md"
         assert spec.read_bytes() == TEMPLATE_BODY.encode("utf-8")
     assert (repo_b / ".specify" / "feature.json").read_bytes() == (
@@ -1306,15 +1332,52 @@ def test_python_persist_hints_match_bash_for_spaced_repo_path(
     py = run(py_cmd(py_repo, SCRIPT, "--number", "7", "x"), py_repo)
 
     assert bash.returncode == py.returncode == 0, bash.stderr + py.stderr
-    assert normalize_repo_paths(bash.stdout, bash_repo) == normalize_repo_paths(
-        py.stdout, py_repo
-    )
-    assert normalize_repo_paths(bash.stderr, bash_repo) == normalize_repo_paths(
-        py.stderr, py_repo
-    )
+    assert normalize_repo_paths(
+        fold_persistence_hints(bash.stdout), bash_repo
+    ) == normalize_repo_paths(fold_persistence_hints(py.stdout), py_repo)
+    assert normalize_repo_paths(
+        fold_persistence_hints(bash.stderr), bash_repo
+    ) == normalize_repo_paths(fold_persistence_hints(py.stderr), py_repo)
     assert "export SPECIFY_FEATURE_DIRECTORY='<REPO>/specs/007-x'" in (
-        normalize_repo_paths(py.stderr, py_repo)
+        normalize_repo_paths(bash.stderr, bash_repo)
     )
+
+
+@requires_bash
+def test_python_persist_hints_match_bash_for_apostrophe_repo_path(
+    tmp_path: Path,
+) -> None:
+    """Apostrophe paths take shlex.quote's '"'"' seam, so the fold must parse
+    the complete POSIX-quoted word for the two-repo comparison to hold."""
+    bash_repo = _setup_repo(tmp_path, "O'Brien a")
+    py_repo = _setup_repo(tmp_path, "O'Brien b")
+
+    bash = run(bash_cmd(bash_repo, SCRIPT, "--number", "7", "x"), bash_repo)
+    py = run(py_cmd(py_repo, SCRIPT, "--number", "7", "x"), py_repo)
+
+    assert bash.returncode == py.returncode == 0, bash.stderr + py.stderr
+    assert normalize_repo_paths(
+        fold_persistence_hints(bash.stdout), bash_repo
+    ) == normalize_repo_paths(fold_persistence_hints(py.stdout), py_repo)
+    assert normalize_repo_paths(
+        fold_persistence_hints(bash.stderr), bash_repo
+    ) == normalize_repo_paths(fold_persistence_hints(py.stderr), py_repo)
+    assert "SPECIFY_FEATURE_DIRECTORY=<REPO>/specs/007-x" in normalize_repo_paths(
+        fold_persistence_hints(bash.stderr), bash_repo
+    )
+
+
+def test_fold_persistence_hints_parses_posix_quoted_apostrophe_paths() -> None:
+    """shlex.quote spells apostrophes as a '"'"' seam; the fold must parse the
+    complete POSIX-quoted word instead of stopping at the first apostrophe."""
+    expected = "SPECIFY_FEATURE_DIRECTORY=/tmp/O'Brien/proj/specs/001-x"
+    bash_form = (
+        "export SPECIFY_FEATURE_DIRECTORY='/tmp/O'\"'\"'Brien/proj/specs/001-x'"
+    )
+    assert fold_persistence_hints(bash_form) == expected
+    assert fold_persistence_hints(
+        "$env:SPECIFY_FEATURE_DIRECTORY = '/tmp/O''Brien/proj/specs/001-x'"
+    ) == expected
 
 
 def test_python_powershell_persistence_assignments_escape_quotes() -> None:
@@ -1609,6 +1672,32 @@ def test_python_dash_prefixed_short_name_matches_bash(
     assert py.returncode == bash.returncode == 0
     assert json_stdout(py) == json_stdout(bash)
     expected = f"001-{short_name.lstrip('-').lower()}"
+    assert json_stdout(bash)["BRANCH_NAME"] == expected
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    "description",
+    ["-n", "-e", "-E", "-neE"],
+    ids=["n", "e", "E", "neE"],
+)
+def test_python_dash_prefixed_positional_description_matches_bash(
+    repo: Path, description: str
+) -> None:
+    """A positional feature description that looks like an ``echo`` option is text.
+
+    Trimming used ``echo "$FEATURE_DESCRIPTION"``, so bash swallowed ``-n`` /
+    ``-e`` / ``-E`` / ``-neE`` as options, emptied the description, and exited
+    with the whitespace error. ``printf`` keeps the literal so the branch name
+    matches the Python port.
+    """
+    args = ("--json", "--dry-run", "--number", "1", description)
+    bash = run(bash_cmd(repo, SCRIPT, *args), repo)
+    py = run(py_cmd(repo, SCRIPT, *args), repo)
+
+    assert py.returncode == bash.returncode == 0, (bash.stderr, py.stderr)
+    assert json_stdout(py) == json_stdout(bash)
+    expected = f"001-{description.lstrip('-').lower()}"
     assert json_stdout(bash)["BRANCH_NAME"] == expected
 
 

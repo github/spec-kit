@@ -25,7 +25,7 @@ schema_version: "1.0"
 extension:
   id: "my-ext"                          # Lowercase, alphanumeric + hyphens only
   name: "My Extension"
-  version: "1.0.0"                      # Semantic versioning
+  version: "1.0.0"                      # SemVer recommended; PEP 440 accepted
   description: "My custom extension"
   author: "Your Name"
   repository: "https://github.com/you/spec-kit-my-ext"
@@ -161,7 +161,7 @@ Extension metadata block.
 
 - `id`: Extension identifier (lowercase, alphanumeric, hyphens)
 - `name`: Human-readable name
-- `version`: Semantic version (e.g., "1.0.0")
+- `version`: PEP 440 version (SemVer recommended, e.g., "1.0.0")
 - `description`: Short description
 
 **Optional sub-fields**:
@@ -237,7 +237,6 @@ Available hook points:
 - `before_checklist` / `after_checklist`: Before/after checklist generation
 - `before_clarify` / `after_clarify`: Before/after spec clarification
 - `before_constitution` / `after_constitution`: Before/after constitution update
-- `before_taskstoissues` / `after_taskstoissues`: Before/after tasks-to-issues conversion
 - `before_bug_assess` / `after_bug_assess`: Before/after bug assessment (bundled `bug` extension)
 - `before_bug_fix` / `after_bug_fix`: Before/after bug remediation (bundled `bug` extension)
 - `before_bug_test` / `after_bug_test`: Before/after bug verification (bundled `bug` extension)
@@ -247,11 +246,44 @@ Each event accepts a single hook object or a list of hook objects (multiple comm
 Hook object:
 
 - `command`: Command to execute (typically from `provides.commands`, but can reference any registered command)
-- `priority`: Run order within the event (integer ≥ 1, default 10; lower runs first; equal priorities keep authoring order)
+- `priority`: Sort metadata for `HookExecutor` (integer ≥ 1, default 10);
+  current command templates surface hooks in configured YAML order instead
 - `optional`: If true, prompt user before executing
 - `prompt`: Prompt text for optional hooks
 - `description`: Hook description
-- `condition`: Execution condition (future)
+- `condition`: Expression evaluated by `HookExecutor`; current command
+  templates skip hooks with non-empty conditions rather than evaluating them
+
+See the [hook configuration contract](api.md#hook-configuration) for all fields
+and the distinction between the Python API and command-template behavior.
+
+#### `events`
+
+Runtime events react to the coding agent's lifecycle, rather than a Spec Kit
+command. Declare canonical names at the top level and reference command
+templates with runnable `scripts` entries:
+
+```yaml
+events:
+  session_start:
+    command: speckit.my-ext.initialize
+```
+
+For example, `commands/initialize.md` can declare:
+
+```yaml
+---
+description: "Initialize the extension session"
+scripts:
+  sh: scripts/initialize.sh
+  ps: scripts/initialize.ps1
+---
+```
+
+Include that command in `provides.commands` and supply the scripts in your
+extension. Runtime events execute the script directly; they do not send the
+command's Markdown body to the coding agent. Each integration supports a subset
+of canonical events. See the [runtime event contract](api.md#extension-runtime-events).
 
 #### `tags`
 
@@ -261,10 +293,6 @@ Array of tags for catalog discovery.
 
 Default extension configuration values.
 
-#### `config_schema`
-
-JSON Schema for validating extension configuration.
-
 ---
 
 ## Command File Format
@@ -273,7 +301,7 @@ JSON Schema for validating extension configuration.
 
 ```yaml
 ---
-description: "Command description"          # Required
+description: "Command description"          # Recommended
 tools:                                      # Optional
   - 'tool-name/function'
 scripts:                                    # Optional
@@ -343,7 +371,9 @@ For other integrations' invocation formats, see the shared
 
 ### Script Path Rewriting
 
-Extension commands use relative paths that get rewritten during registration:
+The registrar normalizes helper paths while rendering commands. A
+repository-root reference with two or more `../` segments targets the
+project's core scripts.
 
 **In extension**:
 
@@ -352,14 +382,18 @@ scripts:
   sh: ../../scripts/bash/helper.sh
 ```
 
-**After registration**:
+Use `{SCRIPT}` in the command body to invoke the selected script variant.
+For this example, the generated invocation is:
 
-```yaml
-scripts:
-  sh: .specify/scripts/bash/helper.sh
+```bash
+.specify/scripts/bash/helper.sh
 ```
 
-This allows scripts to reference core spec-kit scripts.
+Bare `scripts/helper.sh` instead targets
+`.specify/extensions/<extension-id>/scripts/helper.sh` for an extension-owned
+script. The generated output format may omit the original `scripts`
+frontmatter after resolving `{SCRIPT}`; do not rely on that metadata surviving
+in the installed command or skill.
 
 ---
 
@@ -377,42 +411,42 @@ This allows scripts to reference core spec-kit scripts.
 api:
   endpoint: "https://api.example.com"
   timeout: 30
+  key: ""  # Set with SPECKIT_MY_EXT_API_KEY; do not commit credentials
 
 features:
   feature_a: true
   feature_b: false
-
-credentials:
-  # DO NOT commit credentials!
-  # Use environment variables instead
-  api_key: "${MY_EXT_API_KEY}"
 ```
 
 ### Config Loading
 
 In your command, load config with layered precedence:
 
-1. Extension defaults (`extension.yml` → `defaults`)
+1. Extension defaults (`extension.yml` → `defaults`, then `config.defaults`
+   for any conflicting keys)
 2. Project config (`.specify/extensions/my-ext/my-ext-config.yml`)
-3. Local overrides (`.specify/extensions/my-ext/my-ext-config.local.yml` - gitignored)
+3. Local overrides (`.specify/extensions/my-ext/local-config.yml` - gitignored)
 4. Environment variables (`SPECKIT_MY_EXT_*`)
 
-**Example loading script**:
+For Python code running in an environment with `specify-cli` installed, use
+the existing loader rather than duplicating the merge:
 
-```bash
-#!/usr/bin/env bash
-EXT_DIR=".specify/extensions/my-ext"
+```python
+from pathlib import Path
+from specify_cli.extensions import ConfigManager
 
-# Load and merge config
-config=$(yq eval '.' "$EXT_DIR/my-ext-config.yml" -o=json)
-
-# Apply env overrides
-if [ -n "${SPECKIT_MY_EXT_API_KEY:-}" ]; then
-  config=$(echo "$config" | jq ".api.api_key = \"$SPECKIT_MY_EXT_API_KEY\"")
-fi
-
-echo "$config"
+config = ConfigManager(Path.cwd(), "my-ext").get_config()
+endpoint = config.get("api", {}).get("endpoint")
 ```
+
+Run this from the project root, or pass that root explicitly. Environment
+variable components become nested keys: `SPECKIT_MY_EXT_API_KEY` overrides
+`api.key`. Values remain strings; YAML `${...}` placeholders are not expanded.
+Commands implemented in other languages must provide their own loading if they
+need this layering.
+
+Spec Kit does not consume `config_schema` to validate configuration.
+Validate required values and types in your extension's commands or scripts.
 
 ---
 
@@ -487,15 +521,22 @@ The following `.gitignore` features are **not applicable** in this context:
 
 ### Extension Version
 
-- **Format**: Semantic versioning (MAJOR.MINOR.PATCH)
+- **Format**: PEP 440; SemVer (`MAJOR.MINOR.PATCH`) is recommended for releases
 - **Valid**: `1.0.0`, `0.1.0`, `2.5.3`
-- **Invalid**: `1.0`, `v1.0.0`, `1.0.0-beta`
+- **Also accepted by the CLI**: `1.0`, `v1.0.0`, `1.0.0-beta`
+- **Invalid**: `latest`, `not-a-version`
+
+Community submissions have stricter release-version requirements; see
+[Submission validation](publishing.md#submission-validation).
 
 ### Command Name
 
 - **Pattern**: `^speckit\.[a-z0-9-]+\.[a-z0-9-]+$`
 - **Valid**: `speckit.my-ext.hello`, `speckit.tool.cmd`
-- **Invalid**: `my-ext.hello` (missing prefix), `speckit.hello` (no extension namespace)
+- **Invalid**: `other-ext.hello` (wrong namespace), `speckit.my-ext.Create` (uppercase)
+
+Legacy `my-ext.hello` and `speckit.hello` are normalized to
+`speckit.my-ext.hello` with warnings. Use canonical names in new manifests.
 
 ### Command File Path
 
@@ -588,7 +629,7 @@ def test_command_files_exist():
    specify extension add --dev spec-kit-my-ext/
    ```
 
-### Option 2: ZIP Archive (Future)
+### Option 2: ZIP Archive
 
 Create ZIP archive and host on GitHub Releases:
 
@@ -610,8 +651,9 @@ Submit to the community catalog for public discovery:
 2. **File an issue** using the [Extension Submission](https://github.com/github/spec-kit/issues/new?template=extension_submission.yml) template
 3. **After review**, a maintainer updates the catalog and your extension becomes available:
    - Users can browse `catalog.community.json` to discover your extension
-   - Users copy the entry to their own `catalog.json`
-   - Users install with: `specify extension add my-ext` (from their catalog)
+   - Users vet the release archive before installing it directly or adding it
+     to their own trusted catalog
+   - Users install with `--from <archive-url>` or from their vetted catalog
 
 See the [Extension Publishing Guide](publishing.md) for detailed submission instructions.
 
@@ -740,7 +782,8 @@ hooks:
     description: "Analyze tasks after generation"
 ```
 
-Multiple commands on one event, ordered by `priority` (lower runs first):
+Multiple commands on one event, surfaced in YAML order by current command
+templates (`HookExecutor` instead sorts by `priority`, lower first):
 
 ```yaml
 # extension.yml
@@ -807,7 +850,8 @@ reinstall the extension to trigger registration.
 
 - **Issues**: Report bugs at GitHub repository
 - **Discussions**: Ask questions in GitHub Discussions
-- **Examples**: See `spec-kit-jira` for full-featured example (Phase B)
+- **Examples**: See the bundled [GitHub](https://github.com/github/spec-kit/tree/main/extensions/github)
+  and [bug](https://github.com/github/spec-kit/tree/main/extensions/bug) extensions
 
 ---
 
@@ -821,3 +865,11 @@ reinstall the extension to trigger registration.
 Happy extending! 🚀
 
 > Agent invocation examples on this page use GitHub Copilot's default skills syntax (`/speckit-*`). For other integrations and modes, see [Command invocation](../integrations/cli.md#command-invocation).
+
+## See also
+
+- [Extension API reference](api.md)
+- [Extension CLI reference](cli.md)
+- [Extension catalogs](catalogs.md)
+- [Publishing extensions](publishing.md)
+- [Extension user guide](overview.md)

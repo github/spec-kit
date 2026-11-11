@@ -92,7 +92,7 @@ def _file_url_to_path(parsed: ParseResult) -> Path:
 
 
 def _validate_remote_url(source_id: str, url: str) -> None:
-    """Restrict remote catalogs to HTTPS (HTTP only for localhost) with a host.
+    """Restrict remote catalogs to HTTPS with a host, including localhost.
 
     Mirrors ``specify_cli.catalogs`` URL validation to avoid MITM/downgrade
     issues before any network call.
@@ -110,11 +110,9 @@ def _validate_remote_url(source_id: str, url: str) -> None:
         raise BundlerError(
             f"Catalog '{source_id}' URL is malformed: {url}"
         ) from None
-    is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-    if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+    if parsed.scheme != "https":
         raise BundlerError(
-            f"Catalog '{source_id}' URL must use HTTPS (got {parsed.scheme}://). "
-            "HTTP is only allowed for localhost."
+            f"Catalog '{source_id}' URL must use HTTPS (got {parsed.scheme}://)."
         )
     # Check hostname, not netloc: netloc is truthy for host-less URLs like
     # "https://:8080" or "https://user@...", so requiring netloc would let
@@ -229,7 +227,7 @@ def _http_get_json(source_id: str, url: str) -> dict:
     rather than only on the initial URL.
     """
     from ..authentication.github import GitHubCliAuthError
-    from ..authentication.http import RedirectPolicyError, open_url
+    from ..authentication.http import URLPolicyError, open_url
 
     def _validate_redirect(_old_url: str, new_url: str) -> None:
         _validate_remote_url(source_id, new_url)
@@ -259,8 +257,8 @@ def _http_get_json(source_id: str, url: str) -> dict:
         raise BundlerError(
             f"Failed to fetch catalog from {url}: {exc}"
         ) from exc
-    except (GitHubCliAuthError, RedirectPolicyError) as exc:
-        # Authentication and redirect-policy failures are definitive, not
+    except (GitHubCliAuthError, URLPolicyError) as exc:
+        # Authentication and URL-policy failures are definitive, not
         # transient catalog unavailability.
         raise BundlerError(
             f"Failed to fetch catalog from {url}: {exc}"

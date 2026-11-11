@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import os
 import re
 import sys
 from pathlib import Path, PurePosixPath as PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 import yaml
@@ -31,6 +32,9 @@ from .._download_security import (
 from .._project import _resolve_init_dir_override as _resolve_init_dir_override
 from ..shared_infra import verify_archive_sha256
 
+if TYPE_CHECKING:
+    from .engine import RunState
+
 workflow_app = typer.Typer(
     name="workflow",
     help="Manage and run automation workflows",
@@ -44,6 +48,33 @@ def _error_console(json_output: bool):
     stderr-only error routing already used by ``specify bundle``.
     """
     return err_console if json_output else console
+
+
+def _load_project_workflow_plugins_or_exit(
+    project_root: Path, *, json_output: bool = False, run_id: str | None = None
+) -> None:
+    """Load project workflow steps and expression functions before validation."""
+    from . import load_custom_steps
+    from .function import WorkflowFunctionError, load_workflow_functions
+
+    try:
+        # Package imports may write diagnostics. Keep them off a JSON run's
+        # stdout, but render the expected failure after this context exits.
+        with _stdout_to_stderr_when(json_output):
+            load_custom_steps(project_root)
+            load_workflow_functions(project_root)
+    except (WorkflowFunctionError, OSError) as exc:
+        # OSError (an unreadable steps or functions directory or package file)
+        # was rendered by run/resume's integration-load handler before plugin
+        # loading moved ahead of it; keep that behavior for every entry point.
+        _fail_integration_load(exc, json_output=json_output, run_id=run_id)
+
+
+def _print_package_error(exc: Exception) -> None:
+    """Render a package install/remove failure: retained notes as warnings, then the error."""
+    for note in getattr(exc, "__notes__", ()):
+        console.print(f"[yellow]Warning:[/yellow] {_escape_markup(note)}")
+    console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
 
 
 def _fail_integration_load(exc: Exception, *, json_output: bool, run_id: str | None = None):
@@ -203,7 +234,7 @@ def _resolve_installed_workflow_ownership(
 
 
 _WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
-_RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays", "runs", "steps"})
+_RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays", "runs", "steps", "functions"})
 
 
 def _reject_insecure_download_redirect(old_url: str, new_url: str) -> None:
@@ -1074,14 +1105,222 @@ def _run_outcome_exit_code(status_value: str) -> int:
     return 1 if status_value in ("failed", "aborted") else 0
 
 
-def _emit_workflow_json(payload: dict[str, Any]) -> None:
+# Real workflow definitions are tiny (largest shipped: ~67 nodes); this leaves
+# >1000x headroom while capping the expansion of alias graphs. Callers that
+# emit user-authored definitions pass it as ``max_nodes``.
+_MAX_JSON_NODES = 100000
+
+# Byte cap on each emitted definition. Nodes do not bound size: one alias can
+# repeat a large scalar or deeply indented container many times, so the cap is
+# enforced on the encoded output itself rather than estimated per value type.
+_MAX_JSON_BYTES = 5 * 1024 * 1024
+
+# Response-wide cap across all definitions of one response. Generous on
+# purpose: many small bound workflow calls must pass, while a loop or fan-out
+# repeating a near-limit definition must not multiply into gigabytes.
+_MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+
+# Character cap on a non-string mapping key once stringified. Aliases rebuild
+# every mapping, so an oversized key would otherwise be re-created per alias
+# before the byte budget runs.
+_MAX_JSON_KEY_CHARS = 256
+
+
+class _ResponseBudget:
+    """Bytes a whole response may use across several converted payloads."""
+
+    def __init__(self, max_bytes: int | None = None) -> None:
+        self.max_bytes = _MAX_RESPONSE_BYTES if max_bytes is None else max_bytes
+        self.used = 0
+
+
+def _check_json_byte_budget(
+    plain: Any, response: _ResponseBudget | None = None
+) -> None:
+    """Raise ``ValueError`` once *plain* encodes to more than the byte cap.
+
+    The encoding is streamed and discarded, so memory stays bounded even when
+    aliases expand a small input into a huge document, and no value type can
+    escape the budget. When *response* is given, the encoded size also counts
+    against that shared response-wide budget.
+    """
+    total = 0
+    for chunk in json.JSONEncoder(indent=2).iterencode(plain):
+        total += len(chunk)
+        if total > _MAX_JSON_BYTES:
+            raise ValueError(
+                "Workflow JSON output is too large to represent: it "
+                f"exceeds {_MAX_JSON_BYTES} bytes"
+            )
+    if response is not None:
+        response.used += total
+        if response.used > response.max_bytes:
+            raise ValueError(
+                "Workflow JSON output is too large to represent: the "
+                f"response exceeds {response.max_bytes} bytes"
+            )
+
+
+def _plain_workflow_json(
+    payload: Any,
+    *,
+    max_nodes: int | None = None,
+    response: _ResponseBudget | None = None,
+) -> Any:
+    """Convert *payload* to plain JSON-representable values.
+
+    YAML-native scalars that JSON cannot represent (e.g. dates), mapping
+    keys, and non-finite floats are stringified, so output is always plain
+    JSON. Binary values are replaced by a ``<binary: N bytes>`` placeholder
+    rather than emitted, and sets become lists sorted so that output does
+    not depend on hash randomization.
+
+    JSON has no way to share a reference, so a YAML alias graph must be
+    duplicated into a tree; a non-recursive alias DAG can therefore expand
+    exponentially even though it is linear on disk. Cycle detection alone
+    lets that terminate, so a caller emitting user-authored definitions passes
+    ``max_nodes`` to bound the expansion instead of rejecting every reused
+    alias. The byte budget is measured by streaming the encoded output, so it
+    covers every value type. Each call has its own node and byte budget, so
+    independent definitions can be budgeted separately; an optional shared
+    ``response`` budget additionally caps their combined encoded size. The budget is opt-in:
+    payloads such as ``workflow status --json`` grow with the number of runs
+    and must not be capped. Excessive nesting depth is always reported as
+    ``ValueError``.
+    """
+    remaining_nodes = max_nodes
+    # Set members are encoded once as sort keys; this total spans alias visits.
+    set_key_bytes = 0
+
+    def json_key(key: Any) -> str:
+        """Canonicalize a mapping key to the property name json.dumps emits."""
+        if isinstance(key, str):
+            return key
+        if isinstance(key, (bytes, bytearray)):
+            return f"<binary: {len(key)} bytes>"
+        if isinstance(key, (int, float, bool)) or key is None:
+            text = json.dumps(key)
+        else:
+            text = str(key)
+        if max_nodes is not None and len(text) > _MAX_JSON_KEY_CHARS:
+            raise ValueError(
+                "Workflow JSON output is too large to represent: a mapping "
+                f"key exceeds {_MAX_JSON_KEY_CHARS} characters"
+            )
+        return text
+
+    def plain_json(value: Any, active_containers: set[int]) -> Any:
+        nonlocal remaining_nodes, set_key_bytes
+        if remaining_nodes is not None:
+            remaining_nodes -= 1
+            if remaining_nodes < 0:
+                raise ValueError(
+                    "Workflow JSON output is too large to represent: it "
+                    f"exceeds {max_nodes} nodes"
+                )
+        if isinstance(value, dict):
+            container_id = id(value)
+            if container_id in active_containers:
+                raise ValueError(
+                    "Workflow JSON output cannot represent recursive YAML aliases"
+                )
+            active_containers.add(container_id)
+            try:
+                result: dict[str, Any] = {}
+                for key, item in value.items():
+                    canonical = json_key(key)
+                    if canonical in result:
+                        raise ValueError(
+                            "Workflow JSON output cannot represent duplicate "
+                            f"mapping key {canonical!r}"
+                        )
+                    result[canonical] = plain_json(item, active_containers)
+                return result
+            finally:
+                active_containers.remove(container_id)
+        if isinstance(value, float) and not math.isfinite(value):
+            return str(value)
+        if isinstance(value, (list, tuple)):
+            container_id = id(value)
+            if container_id in active_containers:
+                raise ValueError(
+                    "Workflow JSON output cannot represent recursive YAML aliases"
+                )
+            active_containers.add(container_id)
+            try:
+                return [plain_json(item, active_containers) for item in value]
+            finally:
+                active_containers.remove(container_id)
+        if isinstance(value, (bytes, bytearray)):
+            return f"<binary: {len(value)} bytes>"
+        if isinstance(value, (set, frozenset)):
+            items = [plain_json(item, active_containers) for item in value]
+            keyed = []
+            for item in items:
+                encoded = json.dumps(item)
+                if max_nodes is not None:
+                    set_key_bytes += len(encoded)
+                    if set_key_bytes > _MAX_JSON_BYTES:
+                        raise ValueError(
+                            "Workflow JSON output is too large to represent: "
+                            f"it exceeds {_MAX_JSON_BYTES} bytes"
+                        )
+                keyed.append((encoded, item))
+            keyed.sort(key=lambda pair: pair[0])
+            return [item for _, item in keyed]
+        if isinstance(value, (str, int, float)) or value is None:
+            return value
+        return str(value)
+
+    try:
+        plain = plain_json(payload, set())
+        if max_nodes is not None:
+            _check_json_byte_budget(plain, response)
+        return plain
+    except RecursionError:
+        raise ValueError(
+            "Workflow JSON output is nested too deeply to represent"
+        ) from None
+
+
+def _emit_workflow_json(
+    payload: dict[str, Any], *, max_nodes: int | None = None
+) -> None:
     """Write a workflow payload as machine-readable JSON to stdout.
 
     Uses the builtin ``print`` rather than ``console.print`` so Rich
     markup interpretation, syntax highlighting, and line-wrapping can
-    never alter the emitted JSON.
+    never alter the emitted JSON. See ``_plain_workflow_json`` for the
+    value conversion and the opt-in ``max_nodes`` budget.
     """
-    print(json.dumps(payload, indent=2))
+    plain = _plain_workflow_json(payload, max_nodes=max_nodes)
+    try:
+        text = json.dumps(plain, indent=2)
+    except RecursionError:
+        raise ValueError(
+            "Workflow JSON output is nested too deeply to represent"
+        ) from None
+    print(text)
+
+
+def _load_run_state(run_id: str, project_root: Path) -> RunState:
+    """Load a run's state; raise ValueError with a user-facing message on failure."""
+    from .engine import RunState
+
+    try:
+        return RunState.load(run_id, project_root)
+    except FileNotFoundError:
+        raise ValueError(f"Run not found: {run_id}") from None
+    except OSError as exc:
+        raise ValueError(str(exc)) from exc
+    except json.JSONDecodeError as exc:
+        # Newer interpreters report pathological nesting as a decode error
+        # rather than RecursionError.
+        raise ValueError(f"Invalid run state for {run_id}: {exc}") from None
+    except RecursionError:
+        raise ValueError(
+            f"Invalid run state for {run_id}: nested too deeply"
+        ) from None
 
 
 @contextlib.contextmanager
@@ -1596,17 +1835,20 @@ def workflow_step_remove(*args, **kwargs):
 def register(app: typer.Typer) -> None:
     """Attach the workflow command group to the root Typer app."""
     from .catalog import register as register_catalog
+    from .function import register as register_function
     from .overlay import register as register_overlay
     from .step import register as register_step
 
     register_catalog(workflow_app)
     register_step(workflow_app)
+    register_function(workflow_app)
     register_overlay(workflow_app)
 
     # isort: off
     from . import command_run  # noqa: F401 -- registers handler
     from . import command_resume  # noqa: F401 -- registers handler
     from . import command_status  # noqa: F401 -- registers handler
+    from . import command_definition  # noqa: F401 -- registers handler
     from . import command_list  # noqa: F401 -- registers handler
     from . import command_add  # noqa: F401 -- registers handler
     from . import command_remove  # noqa: F401 -- registers handler

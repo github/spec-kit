@@ -9,26 +9,10 @@ the evaluator and crash the whole run.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
-from typing import Any
-
-
-# The filters the expression evaluator recognizes. Used to tell a
-# *registered* filter used in an unsupported form (e.g. `| join` with no
-# argument) apart from a genuinely unknown filter name, so each raises an
-# error that names the real problem.
-_REGISTERED_FILTERS: tuple[str, ...] = (
-    "default",
-    "join",
-    "map",
-    "contains",
-    "from_json",
-    "upper",
-    "lower",
-    "split",
-    "length",
-    "to_json",
-)
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Any, NoReturn
 
 
 # -- Custom filters -------------------------------------------------------
@@ -118,6 +102,11 @@ def _filter_contains(value: Any, substring: Any) -> bool:
     return False
 
 
+def _reject_json_constant(value: str) -> NoReturn:
+    """Reject the non-JSON numeric constants accepted by Python's decoder."""
+    raise ValueError(f"from_json: invalid JSON constant: {value}")
+
+
 def _filter_from_json(value: Any) -> Any:
     """Parse a JSON string into a typed value (list/dict/scalar).
 
@@ -130,7 +119,7 @@ def _filter_from_json(value: Any) -> Any:
             f"from_json: expected a JSON string, got {type(value).__name__}"
         )
     try:
-        return json.loads(value)
+        return json.loads(value, parse_constant=_reject_json_constant)
     except json.JSONDecodeError as exc:
         raise ValueError(f"from_json: invalid JSON: {exc}") from exc
 
@@ -224,7 +213,8 @@ def _filter_to_json(value: Any) -> str:
     quoting or escaping, so JSON quotes and metacharacters are still interpreted
     by whatever runs the ``run`` field. Interpolate unconstrained JSON into a
     shell step only when you have constrained what it can contain; see the
-    "Interpolation and shell safety" section of ``docs/reference/workflows.md``.
+    "Interpolation and shell safety" section of
+    https://github.github.io/spec-kit/workflows/expressions.html#interpolation-and-shell-safety.
 
     Raises ``ValueError`` when *value* is not JSON-serializable, chained from
     the underlying error so the offending type stays visible. ``allow_nan=False``
@@ -277,15 +267,138 @@ def _check_json_keys(value: Any) -> None:
             stack.extend(item)
 
 
-# Filters that take no arguments and tolerate no trailing tokens. Keyed by name
-# so ``_apply_filter`` can recognize a mis-wired form of any of them from the
-# leading filter name alone, instead of each needing its own branch. ``default``
-# is deliberately absent: it is the one filter that is valid both bare and with
-# an argument, so it is dispatched by both of the branches below.
-_ZERO_ARG_FILTERS: dict[str, Callable[[Any], Any]] = {
-    "from_json": _filter_from_json,
-    "upper": _filter_upper,
-    "lower": _filter_lower,
-    "length": _filter_length,
-    "to_json": _filter_to_json,
+# -- The filter table ------------------------------------------------------
+#
+# One entry per filter: the function, the call forms it accepts, and the usage
+# text the error messages advertise. ``_REGISTERED_FILTERS`` and the
+# "expected one of ..." sentence are derived from this table, so a new
+# filter is one row here — not a row here, a branch in the dispatcher and a
+# second edit to the message. The table order is the order the message lists.
+
+@dataclass(frozen=True)
+class FilterSpec:
+    """One pipe filter and the number of explicit arguments it accepts."""
+
+    function: Callable[..., Any]
+    min_args: int
+    max_args: int
+    # Built-in diagnostics historically used hand-written examples. Keep the
+    # override so the arity refactor does not alter established messages.
+    usage: str = ""
+
+
+# Largest number of explicit arguments a custom filter may accept. Manifests and
+# registry records are untrusted, and usage text is built per argument.
+MAX_FILTER_ARGS = 16
+
+ARG_BOUNDS_RULE = f"integers with 0 <= min_args <= max_args <= {MAX_FILTER_ARGS}"
+
+
+def valid_arg_bounds(min_args: Any, max_args: Any) -> bool:
+    """Whether *min_args*/*max_args* are acceptable custom-filter argument bounds."""
+    return (
+        not isinstance(min_args, bool) and not isinstance(max_args, bool)
+        and isinstance(min_args, int) and isinstance(max_args, int)
+        and 0 <= min_args <= max_args <= MAX_FILTER_ARGS
+    )
+
+
+def format_filter_usage(name: str, min_args: int, max_args: int) -> str:
+    """Return generic usage text for a filter's argument bounds."""
+    if min_args == max_args == 0:
+        return name
+    if min_args == 0 and max_args == 1:
+        return f"{name} or {name}('x')"
+    if min_args == max_args == 1:
+        return f"{name}('arg1')"
+    args = ", ".join(f"arg{i}" for i in range(1, max_args + 1))
+    call = f"{name}({args})"
+    return f"{name} or {call}" if min_args == 0 else call
+
+
+def call_form_ok(spec: FilterSpec, arg_count: int, has_parens: bool) -> bool:
+    """Whether a call with *arg_count* arguments is valid for *spec*.
+
+    The bare form (``| name``) is valid when no argument is required. A
+    parenthesized call needs at least one argument, within the filter's bounds,
+    so ``| name()`` is never valid. Shared by evaluation and static validation
+    so the two cannot disagree.
+    """
+    if has_parens:
+        return max(1, spec.min_args) <= arg_count <= spec.max_args
+    return spec.min_args == 0
+
+
+FILTER_TABLE: dict[str, FilterSpec] = {
+    "default": FilterSpec(_filter_default, 0, 1, "default or default('x')"),
+    "join": FilterSpec(_filter_join, 1, 1, "join('sep')"),
+    "map": FilterSpec(_filter_map, 1, 1, "map('attr')"),
+    "contains": FilterSpec(_filter_contains, 1, 1, "contains('s')"),
+    "split": FilterSpec(_filter_split, 1, 1, "split('sep')"),
+    "from_json": FilterSpec(_filter_from_json, 0, 0, "from_json"),
+    "upper": FilterSpec(_filter_upper, 0, 0, "upper"),
+    "lower": FilterSpec(_filter_lower, 0, 0, "lower"),
+    "length": FilterSpec(_filter_length, 0, 0, "length"),
+    "to_json": FilterSpec(_filter_to_json, 0, 0, "to_json"),
 }
+
+BUILTIN_FILTERS: Mapping[str, FilterSpec] = MappingProxyType(dict(FILTER_TABLE))
+_REGISTERED_FILTERS: tuple[str, ...] = tuple(BUILTIN_FILTERS)
+
+
+def _expected_filters() -> str:
+    """Build the expected-filter diagnostic from the live registry."""
+    usages = [
+        spec.usage or format_filter_usage(name, spec.min_args, spec.max_args)
+        for name, spec in FILTER_TABLE.items()
+    ]
+    if not usages:
+        return "expected one of no filters"
+    if len(usages) == 1:
+        return f"expected one of {usages[0]}"
+    return "expected one of " + ", ".join(usages[:-1]) + ", or " + usages[-1]
+
+
+def register_custom_filter(
+    name: str, function: Callable[..., Any], min_args: int = 0, max_args: int = 0
+) -> None:
+    """Register a project function in the process-local filter table."""
+    import re
+
+    if not isinstance(name, str) or re.fullmatch(r"[a-z_][a-z0-9_]*", name) is None:
+        raise ValueError(
+            f"Invalid custom filter name {name!r}: expected a lowercase identifier"
+        )
+    if name in BUILTIN_FILTERS:
+        raise KeyError(f"Filter '{name}' is a built-in filter")
+    if name in FILTER_TABLE:
+        raise KeyError(f"Filter '{name}' is already registered")
+    if not callable(function):
+        raise TypeError(f"Custom filter '{name}' handler must be callable")
+    if not valid_arg_bounds(min_args, max_args):
+        raise ValueError(
+            f"Invalid argument bounds for custom filter '{name}': expected {ARG_BOUNDS_RULE}"
+        )
+
+    def normalized(value: Any, *args: Any) -> Any:
+        try:
+            return function(value, *args)
+        except Exception as exc:  # noqa: BLE001 - custom code boundary
+            raise ValueError(f"{name}: {exc}") from exc
+
+    FILTER_TABLE[name] = FilterSpec(
+        normalized, min_args, max_args,
+        format_filter_usage(name, min_args, max_args),
+    )
+
+
+def unregister_custom_filter(name: str) -> None:
+    """Remove one project filter when a package registration is rolled back."""
+    if name not in BUILTIN_FILTERS:
+        FILTER_TABLE.pop(name, None)
+
+
+def unregister_custom_filters() -> None:
+    """Restore the built-in filter table."""
+    for name in tuple(FILTER_TABLE):
+        unregister_custom_filter(name)

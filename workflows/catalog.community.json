@@ -1,8 +1,42 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-29T00:00:00Z",
+  "updated_at": "2026-11-08T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/catalog.community.json",
   "workflows": {
+    "ado-lifecycle": {
+      "id": "ado-lifecycle",
+      "name": "ADO story lifecycle",
+      "description": "Azure DevOps story to an open PR: spec, plan, tasks, push, implement, gate, review, PR. Every board or PR change is preview, human gate, apply. The story closes after merge.",
+      "author": "praveenlavu",
+      "version": "0.3.1",
+      "url": "https://raw.githubusercontent.com/praveenlavu/spec-kit-ado/v0.3.1/workflows/ado-lifecycle/workflow.yml",
+      "sha256": "eaa2d4fa2bf3f5134771639549c1da5d7401dd5f4035cf008a0021b14c648c40",
+      "repository": "https://github.com/praveenlavu/spec-kit-ado",
+      "documentation": "https://github.com/praveenlavu/spec-kit-ado/blob/v0.3.1/workflows/ado-lifecycle/README.md",
+      "changelog": "https://github.com/praveenlavu/spec-kit-ado/blob/v0.3.1/workflows/ado-lifecycle/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=1.2.1",
+        "integrations": {
+          "any": [
+            "alquimia",
+            "claude",
+            "copilot",
+            "gemini",
+            "opencode"
+          ]
+        }
+      },
+      "tags": [
+        "azure-devops",
+        "issue-tracking",
+        "hitl",
+        "workflow",
+        "governance"
+      ],
+      "created_at": "2026-11-08T00:00:00Z",
+      "updated_at": "2026-11-08T00:00:00Z"
+    },
     "pipeline": {
       "id": "pipeline",
       "name": "Guided SDD Pipeline",

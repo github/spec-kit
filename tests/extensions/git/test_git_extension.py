@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import requires_bash
+from tests.parity_helpers import WINDOWS_POWERSHELL
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "git"
@@ -100,6 +101,40 @@ def _add_sibling_worktree(project: Path, path: Path, branch: str) -> None:
     )
 
 
+def _add_prompt_probe_remote(project: Path) -> Path:
+    """Add an ssh remote whose transport logs GIT_TERMINAL_PROMPT and fails.
+
+    Git runs core.sshCommand with the environment of the fetch or ls-remote
+    that contacts the remote, so the log shows whether git was allowed to
+    prompt for credentials. No network is used. Returns the log path.
+    """
+    git_dir = project / ".git"
+    probe = git_dir / "prompt-probe.sh"
+    probe.write_text(
+        "#!/bin/sh\n"
+        'echo "${GIT_TERMINAL_PROMPT-unset}" >> "$(dirname "$0")/prompt-probe.log"\n'
+        "exit 1\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    subprocess.run(
+        ["git", "remote", "add", "origin", "ssh://git@example.invalid/repo.git"],
+        cwd=project,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "core.sshCommand", f'sh "{probe.as_posix()}"'],
+        cwd=project,
+        check=True,
+    )
+    return git_dir / "prompt-probe.log"
+
+
+def _probe_log(log: Path) -> list[str]:
+    """GIT_TERMINAL_PROMPT values seen by the probe remote, one per contact."""
+    return log.read_text(encoding="utf-8").split() if log.exists() else []
+
+
 # Git identity env vars for CI runners without global git config
 _GIT_ENV = {
     "GIT_AUTHOR_NAME": "Test User",
@@ -122,12 +157,18 @@ def _run_bash(script_name: str, cwd: Path, *args: str, env_extra: dict | None = 
     )
 
 
-def _run_pwsh(script_name: str, cwd: Path, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
-    """Run an extension PowerShell script."""
+def _run_pwsh(
+    script_name: str,
+    cwd: Path,
+    *args: str,
+    env_extra: dict | None = None,
+    exe: str = "pwsh",
+) -> subprocess.CompletedProcess:
+    """Run an extension PowerShell script (pwsh unless *exe* names another host)."""
     script = cwd / ".specify" / "extensions" / "git" / "scripts" / "powershell" / script_name
     env = {**os.environ, **_GIT_ENV, **(env_extra or {})}
     return subprocess.run(
-        ["pwsh", "-NoProfile", "-File", str(script), *args],
+        [exe, "-NoProfile", "-File", str(script), *args],
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -145,7 +186,7 @@ class TestGitExtensionManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "git"
-        assert m.version == "1.0.1"
+        assert m.version == "1.0.4"
 
     def test_manifest_commands(self):
         """Manifest declares expected commands."""
@@ -283,6 +324,80 @@ class TestInitializeRepoPowerShell:
         project = _setup_project(tmp_path, git=True)
         result = _run_pwsh("initialize-repo.ps1", project)
         assert result.returncode == 0
+
+
+@pytest.mark.parametrize(
+    "exe",
+    [
+        pytest.param(
+            "pwsh",
+            marks=pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available"),
+            id="pwsh",
+        ),
+        pytest.param(
+            WINDOWS_POWERSHELL,
+            marks=pytest.mark.skipif(
+                not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
+            ),
+            id="windows-powershell-5.1",
+        ),
+    ],
+)
+class TestInitializeRepoPowerShellStderr:
+    """git warnings on stderr must not fail initialize-repo.ps1.
+
+    With $ErrorActionPreference = 'Stop', Windows PowerShell 5.1 turns every
+    line a native command writes to redirected stderr into a terminating
+    error, even when the command exits 0. PowerShell 7 does not, so only the
+    windows-powershell-5.1 case can reproduce it.
+    """
+
+    def test_crlf_warnings_do_not_abort_initial_commit(self, tmp_path: Path, exe: str):
+        """LF files with core.autocrlf=true still get the initial commit."""
+        project = _setup_project(tmp_path / "proj", git=False)
+        (project / "notes.txt").write_bytes(b"line one\nline two\n")
+        env = {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "core.autocrlf",
+            "GIT_CONFIG_VALUE_0": "true",
+        }
+
+        result = _run_pwsh("initialize-repo.ps1", project, env_extra=env, exe=exe)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "[OK] Git repository initialized" in result.stdout
+        log = subprocess.run(
+            ["git", "log", "--format=%s"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert log.stdout.strip() == "[Spec Kit] Initial commit"
+
+    def test_commit_failure_is_still_reported(self, tmp_path: Path, exe: str):
+        """A failing git commit still exits 1 and leaves no commit behind."""
+        project = _setup_project(tmp_path / "proj", git=False)
+        hooks = tmp_path / "hooks"
+        hooks.mkdir()
+        hook = hooks / "pre-commit"
+        hook.write_bytes(b'#!/bin/sh\necho "pre-commit: rejected" >&2\nexit 1\n')
+        hook.chmod(0o755)
+        # autocrlf=false keeps the hook's message the only stderr output.
+        env = {
+            "GIT_CONFIG_COUNT": "2",
+            "GIT_CONFIG_KEY_0": "core.autocrlf",
+            "GIT_CONFIG_VALUE_0": "false",
+            "GIT_CONFIG_KEY_1": "core.hooksPath",
+            "GIT_CONFIG_VALUE_1": str(hooks),
+        }
+
+        result = _run_pwsh("initialize-repo.ps1", project, env_extra=env, exe=exe)
+
+        assert result.returncode == 1
+        assert "pre-commit: rejected" in result.stdout + result.stderr
+        commits = subprocess.run(
+            ["git", "rev-list", "--all", "--count"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert commits.stdout.strip() == "0"
 
 
 # ── create-new-feature-branch.sh Tests ──────────────────────────────────────────────
@@ -582,6 +697,31 @@ class TestCreateFeatureBash:
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "001-next"
         assert data["FEATURE_NUM"] == "001"
+
+    @pytest.mark.parametrize("extra_args", [(), ("--dry-run",)], ids=["fetch", "dry-run"])
+    def test_remote_lookup_disables_terminal_prompt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extra_args: tuple[str, ...]
+    ):
+        """Branch numbering must not wait on a git credential prompt (#5199).
+
+        The redirects hide git's output but not a prompt written to the
+        terminal, so the fetch and the dry-run ls-remote both need
+        GIT_TERMINAL_PROMPT=0. A failing remote must not stop the script.
+        """
+        monkeypatch.delenv("GIT_TERMINAL_PROMPT", raising=False)
+        project = _setup_project(tmp_path)
+        log = _add_prompt_probe_remote(project)
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", *extra_args, "--short-name", "probe", "Probe feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["BRANCH_NAME"] == "001-probe"
+        calls = _probe_log(log)
+        assert calls, "the probe remote was never contacted"
+        assert set(calls) == {"0"}
 
     def test_no_git_graceful_degradation(self, tmp_path: Path):
         """create-new-feature-branch.sh works without git (outputs branch name, skips branch creation)."""
@@ -933,6 +1073,57 @@ class TestCreateFeaturePowerShell:
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "jdoe/app-a/custom-branch"
         assert data["FEATURE_NUM"] == "jdoe/app-a/custom-branch"
+
+    @pytest.mark.parametrize("extra_args", [(), ("-DryRun",)], ids=["fetch", "dry-run"])
+    def test_remote_lookup_disables_terminal_prompt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extra_args: tuple[str, ...]
+    ):
+        """Branch numbering must not wait on a git credential prompt (#5199)."""
+        monkeypatch.delenv("GIT_TERMINAL_PROMPT", raising=False)
+        project = _setup_project(tmp_path)
+        log = _add_prompt_probe_remote(project)
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", *extra_args, "-ShortName", "probe", "Probe feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        json_line = [ln for ln in result.stdout.splitlines() if ln.strip().startswith("{")]
+        assert json_line, f"No JSON in output: {result.stdout}"
+        assert json.loads(json_line[-1])["BRANCH_NAME"] == "001-probe"
+        calls = _probe_log(log)
+        assert calls, "the probe remote was never contacted"
+        assert set(calls) == {"0"}
+
+    @pytest.mark.parametrize("caller_value", ["1", None], ids=["set", "unset"])
+    def test_fetch_restores_caller_terminal_prompt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caller_value: str | None
+    ):
+        """The fetch guard must not leak into, or clear, the caller's GIT_TERMINAL_PROMPT."""
+        if caller_value is None:
+            monkeypatch.delenv("GIT_TERMINAL_PROMPT", raising=False)
+        else:
+            monkeypatch.setenv("GIT_TERMINAL_PROMPT", caller_value)
+        project = _setup_project(tmp_path)
+        log = _add_prompt_probe_remote(project)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
+        command = (
+            f"& '{script}' -Json -ShortName probe 'Probe feature' | Out-Null; "
+            "'after=' + [Environment]::GetEnvironmentVariable('GIT_TERMINAL_PROMPT')"
+        )
+        env = {**os.environ, **_GIT_ENV}
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-Command", command],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert set(_probe_log(log)) == {"0"}
+        assert result.stdout.splitlines()[-1] == f"after={caller_value or ''}"
 
     def test_no_git_graceful_degradation(self, tmp_path: Path):
         """create-new-feature-branch.ps1 works without git."""

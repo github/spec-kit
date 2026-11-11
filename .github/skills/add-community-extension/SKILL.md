@@ -36,7 +36,7 @@ Check **all** of the following (per `docs/extensions/publishing.md`):
 | README.md present | Confirm in repo file listing |
 | LICENSE file present | Confirm in repo file listing |
 | GitHub release exists matching version | Check releases on the repo page |
-| Download URL is accessible | Verify it follows `archive/refs/tags/vX.Y.Z.zip` pattern and release exists |
+| Download URL is accessible | Verify it follows `archive/refs/tags/<tag>.zip` or `releases/download/<tag>/<asset>.zip` pattern and release exists |
 | Extension ID is lowercase-with-hyphens only | Regex: `^[a-z][a-z0-9-]*$` |
 | Version follows semver | Format: `X.Y.Z` |
 | Submission checklists are all checked | Confirm in issue body |
@@ -54,7 +54,7 @@ Search `extensions/catalog.community.json` for the extension ID.
 
 **Update:** Replace the existing entry in-place. Update only the fields that changed (typically `version`, `download_url`, `description`, `provides`, `requires`, `tags`, `updated_at`). Preserve `created_at` and `downloads`/`stars` from the existing entry.
 
-Use the existing entries as the format template. Required fields:
+Use the existing entries as the format template. Entry format:
 
 ```json
 {

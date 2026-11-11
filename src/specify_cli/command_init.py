@@ -743,6 +743,7 @@ def register(app: typer.Typer) -> None:
                     from .integrations._helpers import (
                         _register_extensions_for_agent,
                         _register_presets_for_agent,
+                        _resync_manifest_after_registration,
                     )
 
                     _register_extensions_for_agent(
@@ -761,6 +762,16 @@ def register(app: typer.Typer) -> None:
                             "The project was re-initialized, but installed presets"
                             " may need re-registration."
                         ),
+                    )
+
+                    # The manifest was saved right before registration, so every
+                    # tracked file is unmodified; passing them all keeps recovered
+                    # markers on files registration didn't change (#5078).
+                    _resync_manifest_after_registration(
+                        manifest,
+                        resolved_integration.key,
+                        unmodified_files=set(manifest.files),
+                        continuing="The project was re-initialized, but its manifest hashes may be stale.",
                     )
 
                 integration_settings = _with_integration_setting(

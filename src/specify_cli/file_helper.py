@@ -1,16 +1,22 @@
 """Scoped filesystem operations; see design/file-helper.md for the contract."""
 
-from dataclasses import dataclass, field
 import codecs
 import errno
 import os
-from pathlib import Path, PurePath, PureWindowsPath
 import stat
+import sys
 import tempfile
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass, field
+from pathlib import Path, PurePath, PureWindowsPath
 from typing import TypeVar
 
+from specify_cli._file_handles import _windows_handle, _windows_overwrite_fd, windows_read_fd
 
 _PathType = TypeVar("_PathType", bound=PurePath)
+# Wrapping os.open must not change the underlying platform capability.
+_POSIX_OPEN = os.open
 
 
 def _strip_extended_length_prefix(path: _PathType) -> _PathType:
@@ -162,10 +168,82 @@ class FileHelper:
     def read_bytes(self, path: Path | str) -> bytes:
         destination = self._path(path)
         self._require_file(destination)
-        return destination.read_bytes()
+        with ExitStack() as stack:
+            if os.name == "nt":
+                parts = destination.relative_to(self._canonical_root).parts
+                parent = stack.enter_context(_windows_handle(
+                    self._canonical_root, directory=True, traverse=True,
+                ))
+                for part in parts[:-1]:
+                    parent = stack.enter_context(_windows_handle(
+                        Path(part), directory=True, parent=parent, traverse=True,
+                    ))
+                handle = stack.enter_context(_windows_handle(
+                    Path(parts[-1]), directory=False, parent=parent,
+                ))
+                fd = stack.enter_context(windows_read_fd(handle))
+            else:
+                unsupported = "Safe scoped reads are unsupported on this platform"
+                if not getattr(os, "O_NONBLOCK", 0):
+                    raise OSError(errno.ENOTSUP, unsupported)
+                with self._posix_directory(destination.parent, unsupported_message=unsupported) as parent:
+                    fd = os.open(
+                        destination.name,
+                        os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0),
+                        dir_fd=parent,
+                    )
+                    stack.callback(os.close, fd)
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise UnsupportedPathError(f"Expected a regular file: {destination}")
+            with os.fdopen(fd, "rb", closefd=False) as stream:
+                return stream.read()
 
     def read_text(self, path: Path | str, *, encoding: str = "utf-8") -> str:
         return self.read_bytes(path).decode(encoding)
+
+    @contextmanager
+    def _posix_directory(self, directory: Path, *, unsupported_message: str) -> Iterator[int]:
+        """Walk an already policy-resolved parent with bounded descriptor ownership."""
+        parts = directory.relative_to(self._canonical_root).parts
+        if not (
+            getattr(os, "O_NOFOLLOW", 0)
+            and getattr(os, "O_DIRECTORY", 0)
+            and _POSIX_OPEN in os.supports_dir_fd
+        ):
+            raise OSError(errno.ENOTSUP, unsupported_message)
+        access = getattr(os, "O_SEARCH", 0) or getattr(os, "O_PATH", 0)
+        if not access:
+            # Older Darwin Python builds omit the kernel's O_EXEC/O_SEARCH bit.
+            access = 0x40000000 if sys.platform == "darwin" else os.O_RDONLY
+        flags = access | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        parent = os.open(self._canonical_root, flags)
+        try:
+            for part in parts:
+                child = os.open(part, flags, dir_fd=parent)
+                os.close(parent)
+                parent = child
+            yield parent
+        finally:
+            os.close(parent)
+
+    @contextmanager
+    def _creation_directory(self, directory: Path) -> Iterator[int | Path]:
+        """Anchor an already policy-resolved parent without following new links."""
+        if os.name == "nt":
+            parts = directory.relative_to(self._canonical_root).parts
+            with ExitStack() as stack:
+                current = self._canonical_root
+                stack.enter_context(_windows_handle(current, directory=True))
+                for part in parts:
+                    current = current / part
+                    stack.enter_context(_windows_handle(current, directory=True))
+                yield current
+            return
+
+        with self._posix_directory(
+            directory, unsupported_message="Anchored file creation is unsupported on this platform",
+        ) as parent:
+            yield parent
 
     def create_bytes(self, path: Path | str, content: bytes, *, mode: int = 0o644) -> None:
         """Exclusively create a file; never overwrite an existing entry."""
@@ -178,9 +256,18 @@ class FileHelper:
             raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), str(destination))
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         flags |= getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(destination, flags, mode)
-        with os.fdopen(fd, "wb") as stream:
-            stream.write(content)
+        with self._creation_directory(destination.parent) as directory:
+            if isinstance(directory, Path):
+                fd = os.open(directory / destination.name, flags, mode)
+            else:
+                fd = os.open(destination.name, flags, mode, dir_fd=directory)
+            try:
+                stream = os.fdopen(fd, "wb")
+            except BaseException:
+                os.close(fd)
+                raise
+            with stream:
+                stream.write(content)
 
     def create_text(
         self, path: Path | str, content: str, *, encoding: str = "utf-8", mode: int = 0o644
@@ -217,11 +304,40 @@ class FileHelper:
         if destination.exists():
             self._require_file(destination)
         codecs.lookup(encoding)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-        flags |= getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(destination, flags, 0o666)
-        with os.fdopen(fd, "w", encoding=encoding) as stream:
-            stream.write(content)
+        with self._overwrite_descriptor(destination) as fd:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise UnsupportedPathError(f"Expected a regular file: {destination}")
+            os.ftruncate(fd, 0)
+            with os.fdopen(fd, "w", encoding=encoding, closefd=False) as stream:
+                stream.write(content)
+
+    @contextmanager
+    def _overwrite_descriptor(self, destination: Path) -> Iterator[int]:
+        """Anchor the resolved hierarchy before opening a non-truncating leaf."""
+        with ExitStack() as stack:
+            if os.name == "nt":
+                parts = destination.relative_to(self._canonical_root).parts
+                current = self._canonical_root
+                stack.enter_context(_windows_handle(current, directory=True))
+                for part in parts[:-1]:
+                    current = current / part
+                    stack.enter_context(_windows_handle(current, directory=True))
+                yield stack.enter_context(_windows_overwrite_fd(destination))
+                return
+
+            unsupported = "Scoped text overwrite is unsupported on this platform"
+            if not getattr(os, "O_NONBLOCK", 0):
+                raise OSError(errno.ENOTSUP, unsupported)
+            with self._posix_directory(destination.parent, unsupported_message=unsupported) as parent:
+                flags = (
+                    os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK
+                    | getattr(os, "O_CLOEXEC", 0)
+                )
+                fd = os.open(destination.name, flags, 0o666, dir_fd=parent)
+                try:
+                    yield fd
+                finally:
+                    os.close(fd)
 
     def symlink(self, target: Path | str, path: Path | str) -> None:
         """Create a link to an existing contained regular file or directory.

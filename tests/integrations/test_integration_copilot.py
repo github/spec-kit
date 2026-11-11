@@ -2,13 +2,50 @@
 
 import json
 import os
+import shutil
+import subprocess
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import typer
 import yaml
 
 from specify_cli.integrations import get_integration
+from specify_cli.integrations._capture import CapturedProcess
+from specify_cli.integrations.base import (
+    DispatchSettingsError,
+    SkillsIntegration,
+    check_dispatch_settings,
+    effective_dispatch_settings,
+)
+from specify_cli.integrations.copilot import (
+    CONTEXT_TIERS,
+    REASONING_EFFORT_LEVELS,
+    CopilotIntegration,
+)
 from specify_cli.integrations.manifest import IntegrationManifest
+from specify_cli.workflows.base import RunStatus, StepContext, StepStatus
+from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+from specify_cli.workflows.step.command import CommandStep
+from specify_cli.workflows.step.prompt import PromptStep
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def _reset_copilot_model_invocation():
+    """``setup()`` stores ``--no-model-invocation`` on the process-wide Copilot
+    singleton; keep it from leaking between tests."""
+    copilot = get_integration("copilot")
+    copilot._disable_model_invocation = False
+    yield
+    copilot._disable_model_invocation = False
+
+
+def _skill_frontmatter(skill_file: Path) -> dict:
+    content = skill_file.read_text(encoding="utf-8")
+    return yaml.safe_load(content.split("---", 2)[1])
 
 
 class TestCopilotCommandsMode:
@@ -176,10 +213,10 @@ class TestCopilotCommandsMode:
         agents_dir = tmp_path / ".github" / "agents"
         assert agents_dir.is_dir()
         agent_files = sorted(agents_dir.glob("speckit.*.agent.md"))
-        assert len(agent_files) == 10
+        assert len(agent_files) == 9
         expected_commands = {
             "analyze", "clarify", "constitution", "converge", "implement",
-            "plan", "checklist", "specify", "tasks", "taskstoissues",
+            "plan", "checklist", "specify", "tasks",
         }
         actual_commands = {f.name.removeprefix("speckit.").removesuffix(".agent.md") for f in agent_files}
         assert actual_commands == expected_commands
@@ -292,7 +329,6 @@ class TestCopilotCommandsMode:
             ".github/agents/speckit.plan.agent.md",
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
-            ".github/agents/speckit.taskstoissues.agent.md",
             ".github/prompts/speckit.analyze.prompt.md",
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
@@ -302,7 +338,6 @@ class TestCopilotCommandsMode:
             ".github/prompts/speckit.plan.prompt.md",
             ".github/prompts/speckit.specify.prompt.md",
             ".github/prompts/speckit.tasks.prompt.md",
-            ".github/prompts/speckit.taskstoissues.prompt.md",
             ".vscode/settings.json",
             ".specify/integration.json",
             ".specify/init-options.json",
@@ -357,7 +392,6 @@ class TestCopilotCommandsMode:
             ".github/agents/speckit.plan.agent.md",
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
-            ".github/agents/speckit.taskstoissues.agent.md",
             ".github/prompts/speckit.analyze.prompt.md",
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
@@ -367,7 +401,6 @@ class TestCopilotCommandsMode:
             ".github/prompts/speckit.plan.prompt.md",
             ".github/prompts/speckit.specify.prompt.md",
             ".github/prompts/speckit.tasks.prompt.md",
-            ".github/prompts/speckit.taskstoissues.prompt.md",
             ".vscode/settings.json",
             ".specify/integration.json",
             ".specify/init-options.json",
@@ -400,7 +433,7 @@ class TestCopilotSkillsMode:
 
     _SKILL_COMMANDS = [
         "analyze", "clarify", "constitution", "converge", "implement",
-        "plan", "checklist", "specify", "tasks", "taskstoissues",
+        "plan", "checklist", "specify", "tasks",
     ]
 
     def _make_copilot(self):
@@ -984,3 +1017,657 @@ class TestCopilotSkillsMode:
             assert "my args" in prompt, (
                 f"Skills mode prompt should preserve user args, got: {prompt}"
             )
+
+
+class TestCopilotNoModelInvocationOption:
+    """``--integration-options="--no-model-invocation"`` opts out of model invocation (#2654)."""
+
+    def test_options_include_no_model_invocation_flag(self):
+        opts = get_integration("copilot").options()
+        matching = [o for o in opts if o.name == "--no-model-invocation"]
+        assert len(matching) == 1
+        assert matching[0].is_flag is True
+        # Opt-in: skills stay model-invocable unless the flag is passed.
+        assert matching[0].default is False
+
+    def test_default_skills_omit_disable_model_invocation(self, tmp_path):
+        i = get_integration("copilot")
+        created = i.setup(tmp_path, IntegrationManifest("copilot", tmp_path), script_type="sh")
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            assert "disable-model-invocation" not in f.read_text(encoding="utf-8")
+
+    def test_setup_with_option_sets_disable_model_invocation_true(self, tmp_path):
+        i = get_integration("copilot")
+        m = IntegrationManifest("copilot", tmp_path)
+        created = i.setup(
+            tmp_path, m, parsed_options={"no_model_invocation": True}, script_type="sh"
+        )
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            fm = _skill_frontmatter(f)
+            assert fm["disable-model-invocation"] is True, f.parent.name
+            assert f.read_text(encoding="utf-8").count("disable-model-invocation:") == 1
+
+    def test_post_process_follows_option_from_setup(self, tmp_path):
+        """Preset overrides of core commands re-registered in the same run as
+        ``setup()`` (init, upgrade) get the same value."""
+        i = get_integration("copilot")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("copilot", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation: true" in result
+
+    def test_extension_skills_stay_model_invocable(self, tmp_path):
+        """Mandatory extension hooks rely on the model invoking the hook skill,
+        so the option never applies to extension commands."""
+        i = get_integration("copilot")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("copilot", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content(
+            "---\nname: speckit-git-feature\n---\n\nBody\n"
+        )
+        assert "disable-model-invocation" not in result
+
+    def test_option_requires_speckit_prefixed_core_name(self, tmp_path):
+        """A skill merely named like a core stem is not a core command skill."""
+        i = get_integration("copilot")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("copilot", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content("---\nname: tasks\n---\n\nBody\n")
+        assert "disable-model-invocation" not in result
+
+    def test_injection_preserves_crlf(self, tmp_path):
+        i = get_integration("copilot")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("copilot", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content("---\r\nname: speckit-plan\r\n---\r\nBody\r\n")
+        assert "disable-model-invocation: true\r\n---" in result
+        assert "true\n---" not in result.replace("\r\n", "")
+
+    def test_commands_layout_ignores_option(self, tmp_path):
+        i = get_integration("copilot")
+        created = i.setup(
+            tmp_path,
+            IntegrationManifest("copilot", tmp_path),
+            parsed_options={"commands": True, "no_model_invocation": True},
+            script_type="sh",
+        )
+        assert not (tmp_path / ".github" / "skills").exists()
+        for f in created:
+            if f.suffix == ".md":
+                assert "disable-model-invocation" not in f.read_text(encoding="utf-8")
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation" not in result
+
+    @pytest.mark.parametrize("failing", ["setup", "emit_events"])
+    def test_failed_setup_does_not_leave_option_set(self, tmp_path, failing):
+        i = get_integration("copilot")
+        target = SkillsIntegration if failing == "setup" else type(i)
+        with patch.object(target, failing, side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError):
+                i.setup(
+                    tmp_path,
+                    IntegrationManifest("copilot", tmp_path),
+                    parsed_options={"no_model_invocation": True},
+                    script_type="sh",
+                )
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation" not in result
+
+    def test_setup_without_option_resets(self, tmp_path):
+        i = get_integration("copilot")
+        first = tmp_path / "first"
+        first.mkdir()
+        i.setup(
+            first,
+            IntegrationManifest("copilot", first),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        second = tmp_path / "second"
+        second.mkdir()
+        created = i.setup(second, IntegrationManifest("copilot", second), script_type="sh")
+        for f in (f for f in created if f.name == "SKILL.md"):
+            assert "disable-model-invocation" not in f.read_text(encoding="utf-8")
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation" not in result
+
+    def test_cli_rejects_value_for_flag(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "copilot-bad-option"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    "copilot",
+                    "--integration-options",
+                    "--no-model-invocation=yes",
+                    "--script",
+                    "sh",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code != 0
+        assert "does not accept a value" in result.output
+        assert not (project / ".github" / "skills").exists()
+
+    def test_option_persists_across_upgrade_and_can_be_cleared(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "copilot", "--no-model-invocation")
+        skills_dir = project / ".github" / "skills"
+        skill_files = sorted(skills_dir.glob("speckit-*/SKILL.md"))
+        assert len(skill_files) > 0
+        for f in skill_files:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is True, f.parent.name
+
+        state = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        settings = state["integration_settings"]["copilot"]
+        assert settings["raw_options"] == "--no-model-invocation"
+        assert settings["parsed_options"] == {"no_model_invocation": True}
+
+        # A later ``specify integration upgrade`` is a new process: drop the
+        # in-memory value so only the persisted options can supply it.
+        get_integration("copilot")._disable_model_invocation = False
+        result = _run_in_project(project, ["integration", "upgrade", "copilot", "--force"])
+        assert result.exit_code == 0, result.output
+        for f in skill_files:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is True, f.parent.name
+
+        # Passing replacement options (here: none) clears it.
+        result = _run_in_project(
+            project,
+            ["integration", "upgrade", "copilot", "--force", "--integration-options", ""],
+        )
+        assert result.exit_code == 0, result.output
+        for f in skill_files:
+            assert "disable-model-invocation" not in f.read_text(encoding="utf-8"), f.parent.name
+        state = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert "parsed_options" not in state["integration_settings"]["copilot"]
+
+    def test_upgrade_reapplies_option_to_preset_overrides(self, tmp_path):
+        """``preset add`` runs without ``setup()`` (documented limitation);
+        ``integration upgrade copilot --force`` reapplies the option to the
+        core-command skills a preset overrides."""
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "copilot", "--no-model-invocation")
+        skill_file = project / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+        assert _skill_frontmatter(skill_file)["disable-model-invocation"] is True
+
+        get_integration("copilot")._disable_model_invocation = False
+        result = _run_in_project(
+            project, ["preset", "add", "--dev", str(REPO_ROOT / "presets" / "lean")]
+        )
+        assert result.exit_code == 0, result.output
+        fm = _skill_frontmatter(skill_file)
+        assert fm["metadata"]["source"] == "preset:lean"
+        # Documented in docs/integrations/copilot.md; update the docs if
+        # preset commands start honouring the option.
+        assert "disable-model-invocation" not in fm
+
+        # The docs say ``--force`` is needed here: preset add modified
+        # installed skill files, so a plain upgrade refuses.
+        result = _run_in_project(project, ["integration", "upgrade", "copilot"])
+        assert result.exit_code != 0
+        assert "modified since installation" in result.output
+        assert "disable-model-invocation" not in _skill_frontmatter(skill_file)
+
+        get_integration("copilot")._disable_model_invocation = False
+        result = _run_in_project(project, ["integration", "upgrade", "copilot", "--force"])
+        assert result.exit_code == 0, result.output
+        fm = _skill_frontmatter(skill_file)
+        assert fm["metadata"]["source"] == "preset:lean"
+        assert fm["disable-model-invocation"] is True
+
+    def test_extension_hook_skills_stay_model_invocable_after_upgrade(self, tmp_path):
+        """``integration upgrade`` re-registers extension skills in the same
+        process as ``setup()``; they must stay model-invocable so mandatory
+        hooks (e.g. ``speckit.git.feature``) can still be invoked by the model."""
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "copilot", "--no-model-invocation")
+        result = _run_in_project(
+            project, ["extension", "add", "--dev", str(REPO_ROOT / "extensions" / "git")]
+        )
+        assert result.exit_code == 0, result.output
+        get_integration("copilot")._disable_model_invocation = False
+        result = _run_in_project(project, ["integration", "upgrade", "copilot", "--force"])
+        assert result.exit_code == 0, result.output
+
+        skills_dir = project / ".github" / "skills"
+        git_skills = sorted(skills_dir.glob("speckit-git-*/SKILL.md"))
+        assert git_skills, "git extension skills were not generated"
+        for f in git_skills:
+            assert "disable-model-invocation" not in f.read_text(encoding="utf-8"), f.parent.name
+        assert _skill_frontmatter(skills_dir / "speckit-specify" / "SKILL.md")[
+            "disable-model-invocation"
+        ] is True
+
+
+class _LegacyBuilderCopilot(CopilotIntegration):
+    """Overrides only ``build_exec_args``, with the signature that predates
+    per-step dispatch settings."""
+
+    def build_exec_args(
+        self,
+        prompt,
+        *,
+        model=None,
+        output_json=True,
+        integration_args=None,
+        integration_options=None,
+        project_root=None,
+    ):
+        return super().build_exec_args(
+            prompt,
+            model=model,
+            output_json=output_json,
+            integration_args=integration_args,
+            integration_options=integration_options,
+            project_root=project_root,
+        )
+
+
+_COMMAND_STEP = (CommandStep, {"command": "speckit.plan", "input": {"args": "body"}})
+_PROMPT_STEP = (PromptStep, {"type": "prompt", "prompt": "Summarise"})
+# Captured agent output that passes the host's value pattern, so only
+# Copilot's own value check rejects it.
+_SECRET_OUTPUT = "FAKEsecret0123456789"
+_ACCEPTED_VALUES = pytest.mark.parametrize(
+    ("setting", "flag", "value"),
+    [("reasoning_effort", "--reasoning-effort", v) for v in REASONING_EFFORT_LEVELS]
+    + [("context_size", "--context", v) for v in CONTEXT_TIERS],
+)
+
+
+class TestCopilotDispatchSettings:
+    """Per-step ``reasoning_effort`` and ``context_size`` (#4916)."""
+
+    _LAYOUTS = pytest.mark.parametrize(
+        ("skills_mode", "dispatch_head"),
+        [
+            (True, ["copilot", "-p", "/speckit-plan body"]),
+            (False, ["copilot", "-p", "body", "--agent", "speckit.plan"]),
+        ],
+        ids=["skills", "commands"],
+    )
+
+    @pytest.fixture(autouse=True)
+    def _deterministic_argv(self, monkeypatch):
+        monkeypatch.setenv("SPECKIT_INTEGRATION_COPILOT_EXECUTABLE", "copilot")
+        monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
+
+    @pytest.fixture
+    def runs(self, monkeypatch):
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append(list(args))
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        return calls
+
+    @pytest.fixture
+    def no_runs(self, monkeypatch):
+        def fail(*args, **kwargs):
+            raise AssertionError("the Copilot CLI must not start")
+
+        monkeypatch.setattr(subprocess, "run", fail)
+
+    @staticmethod
+    def _copilot(skills_mode=True, cls=CopilotIntegration):
+        copilot = cls()
+        copilot._skills_mode = skills_mode
+        return copilot
+
+    @pytest.mark.parametrize("via", ["dispatch_command", "build_exec_args"])
+    def test_both_receiving_methods_declare_both_settings(self, via):
+        assert effective_dispatch_settings(
+            get_integration("copilot"), via=via
+        ) == frozenset({"reasoning_effort", "context_size"})
+
+    @pytest.mark.parametrize("skills_mode", [True, False], ids=["skills", "commands"])
+    def test_build_exec_args_emits_flags_after_model(self, skills_mode):
+        args = self._copilot(skills_mode).build_exec_args(
+            "do it",
+            model="gpt-5",
+            reasoning_effort="high",
+            context_size="long_context",
+        )
+        assert args == [
+            "copilot", "-p", "do it",
+            "--model", "gpt-5",
+            "--reasoning-effort", "high",
+            "--context", "long_context",
+            "--output-format", "json",
+        ]
+
+    @pytest.mark.parametrize(
+        ("settings", "flags"),
+        [
+            ({"reasoning_effort": "low"}, ["--reasoning-effort", "low"]),
+            ({"context_size": "default"}, ["--context", "default"]),
+        ],
+        ids=["reasoning_effort", "context_size"],
+    )
+    def test_build_exec_args_without_model_emits_only_requested_flags(
+        self, settings, flags
+    ):
+        args = self._copilot().build_exec_args("do it", **settings)
+        assert args == ["copilot", "-p", "do it", *flags, "--output-format", "json"]
+
+    @_LAYOUTS
+    def test_dispatch_command_emits_flags_after_model(
+        self, runs, skills_mode, dispatch_head
+    ):
+        result = self._copilot(skills_mode).dispatch_command(
+            "speckit.plan",
+            "body",
+            model="gpt-5",
+            stream=False,
+            reasoning_effort="xhigh",
+            context_size="long_context",
+        )
+        assert result["exit_code"] == 0
+        assert runs == [
+            [
+                *dispatch_head,
+                "--model", "gpt-5",
+                "--reasoning-effort", "xhigh",
+                "--context", "long_context",
+                "--output-format", "json",
+            ]
+        ]
+
+    @_LAYOUTS
+    def test_unset_settings_leave_argv_unchanged(
+        self, runs, skills_mode, dispatch_head
+    ):
+        copilot = self._copilot(skills_mode)
+        baseline = [
+            "copilot", "-p", "do it", "--model", "gpt-5", "--output-format", "json"
+        ]
+        assert copilot.build_exec_args("do it", model="gpt-5") == baseline
+        assert copilot.build_exec_args(
+            "do it", model="gpt-5", reasoning_effort=None, context_size=None
+        ) == baseline
+
+        copilot.dispatch_command("speckit.plan", "body", model="gpt-5", stream=False)
+        copilot.dispatch_command(
+            "speckit.plan",
+            "body",
+            model="gpt-5",
+            stream=False,
+            reasoning_effort=None,
+            context_size=None,
+        )
+        expected = [*dispatch_head, "--model", "gpt-5", "--output-format", "json"]
+        assert runs == [expected, expected]
+
+    def test_accepted_values_match_copilot_cli(self):
+        assert REASONING_EFFORT_LEVELS == (
+            "none", "minimal", "low", "medium", "high", "xhigh", "max"
+        )
+        assert CONTEXT_TIERS == ("default", "long_context")
+
+    @_ACCEPTED_VALUES
+    def test_every_accepted_value_reaches_the_cli(self, runs, setting, flag, value):
+        copilot = self._copilot()
+        assert copilot.build_exec_args("do it", **{setting: value}) == [
+            "copilot", "-p", "do it", flag, value, "--output-format", "json"
+        ]
+        copilot.dispatch_command(
+            "speckit.plan", "body", stream=False, **{setting: value}
+        )
+        assert runs == [
+            ["copilot", "-p", "/speckit-plan body", flag, value,
+             "--output-format", "json"]
+        ]
+
+    @pytest.mark.usefixtures("no_runs")
+    @pytest.mark.parametrize(
+        ("setting", "value", "accepted", "hatch"),
+        [
+            ("reasoning_effort", "bogus", REASONING_EFFORT_LEVELS, "--reasoning-effort"),
+            ("reasoning_effort", "HIGH", REASONING_EFFORT_LEVELS, "--reasoning-effort"),
+            ("reasoning_effort", _SECRET_OUTPUT, REASONING_EFFORT_LEVELS, "--reasoning-effort"),
+            ("context_size", "huge", CONTEXT_TIERS, "--context"),
+            ("context_size", "200000", CONTEXT_TIERS, "--context"),
+            ("context_size", _SECRET_OUTPUT, CONTEXT_TIERS, "--context"),
+        ],
+    )
+    def test_unknown_values_fail_before_the_cli_starts(
+        self, setting, value, accepted, hatch
+    ):
+        copilot = self._copilot()
+        with pytest.raises(DispatchSettingsError) as built:
+            copilot.build_exec_args("do it", **{setting: value})
+        with pytest.raises(DispatchSettingsError) as dispatched:
+            copilot.dispatch_command("speckit.plan", stream=False, **{setting: value})
+        for excinfo in (built, dispatched):
+            message = str(excinfo.value)
+            assert excinfo.value.setting == setting
+            assert value not in message
+            assert f"must be one of {', '.join(accepted)}." in message
+            assert (
+                f'SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS="{hatch} <value>"' in message
+            )
+
+    def test_extra_args_escape_hatch_passes_newer_values(self, monkeypatch):
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS", "--reasoning-effort ultra"
+        )
+        assert self._copilot().build_exec_args("do it") == [
+            "copilot", "-p", "do it", "--reasoning-effort", "ultra",
+            "--output-format", "json",
+        ]
+
+    @pytest.mark.parametrize(
+        ("skills_mode", "dispatch_head"),
+        [
+            (True, ["copilot", "-p", "/speckit-plan body", "--log-level", "debug"]),
+            (
+                False,
+                [
+                    "copilot", "-p", "body", "--log-level", "debug",
+                    "--agent", "speckit.plan",
+                ],
+            ),
+        ],
+        ids=["skills", "commands"],
+    )
+    def test_flags_follow_extra_args(
+        self, monkeypatch, runs, skills_mode, dispatch_head
+    ):
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS", "--log-level debug"
+        )
+        copilot = self._copilot(skills_mode)
+        settings = {"reasoning_effort": "high", "context_size": "long_context"}
+        tail = [
+            "--model", "gpt-5",
+            "--reasoning-effort", "high",
+            "--context", "long_context",
+            "--output-format", "json",
+        ]
+        assert copilot.build_exec_args("do it", model="gpt-5", **settings) == [
+            "copilot", "-p", "do it", "--log-level", "debug", *tail
+        ]
+        copilot.dispatch_command(
+            "speckit.plan", "body", model="gpt-5", stream=False, **settings
+        )
+        assert runs == [[*dispatch_head, *tail]]
+
+    @pytest.mark.usefixtures("no_runs")
+    @pytest.mark.parametrize(
+        ("setting", "value"),
+        [
+            ("reasoning_effort", ""),
+            ("context_size", ""),
+            ("reasoning_effort", "--yolo"),
+            ("context_size", "long context"),
+        ],
+    )
+    def test_direct_calls_reject_malformed_values(self, setting, value):
+        copilot = self._copilot()
+        with pytest.raises(DispatchSettingsError) as built:
+            copilot.build_exec_args("do it", **{setting: value})
+        with pytest.raises(DispatchSettingsError) as dispatched:
+            copilot.dispatch_command("speckit.plan", stream=False, **{setting: value})
+        assert built.value.setting == setting
+        assert dispatched.value.setting == setting
+
+    def test_legacy_builder_subclass_keeps_the_command_path(self, runs):
+        legacy = self._copilot(cls=_LegacyBuilderCopilot)
+        settings = {"reasoning_effort": "high", "context_size": "long_context"}
+
+        assert effective_dispatch_settings(
+            legacy, via="dispatch_command"
+        ) == frozenset(settings)
+        check_dispatch_settings(legacy, settings, via="dispatch_command")
+        legacy.dispatch_command("speckit.plan", "body", stream=False, **settings)
+        assert runs == [
+            [
+                "copilot", "-p", "/speckit-plan body",
+                "--reasoning-effort", "high",
+                "--context", "long_context",
+                "--output-format", "json",
+            ]
+        ]
+
+    def test_legacy_builder_subclass_rejects_the_prompt_path(self):
+        legacy = self._copilot(cls=_LegacyBuilderCopilot)
+
+        assert effective_dispatch_settings(legacy, via="build_exec_args") == frozenset()
+        with pytest.raises(
+            DispatchSettingsError,
+            match="does not support per-step 'reasoning_effort'",
+        ) as excinfo:
+            check_dispatch_settings(
+                legacy, {"reasoning_effort": "high"}, via="build_exec_args"
+            )
+        assert excinfo.value.setting == "reasoning_effort"
+
+    @pytest.mark.parametrize(
+        ("step", "config", "prompt"),
+        [(*_COMMAND_STEP, "/speckit-plan body"), (*_PROMPT_STEP, "Summarise")],
+        ids=["command", "prompt"],
+    )
+    def test_workflow_steps_dispatch_settings(
+        self, monkeypatch, tmp_path, runs, step, config, prompt
+    ):
+        monkeypatch.setattr(shutil, "which", lambda name, *a, **k: f"/bin/{name}")
+        result = step().execute(
+            {
+                "id": "ask",
+                **config,
+                "reasoning_effort": "high",
+                "context_size": "long_context",
+            },
+            StepContext(default_integration="copilot", project_root=str(tmp_path)),
+        )
+        assert result.status == StepStatus.COMPLETED, result.error
+        assert result.output["reasoning_effort"] == "high"
+        assert result.output["context_size"] == "long_context"
+        (args,) = runs
+        assert args[1:] == [
+            "-p", prompt, "--reasoning-effort", "high", "--context", "long_context"
+        ]
+
+    @pytest.mark.parametrize("setting", ["reasoning_effort", "context_size"])
+    @pytest.mark.parametrize(
+        ("label", "step"),
+        [("Command", _COMMAND_STEP[1]), ("Prompt", _PROMPT_STEP[1])],
+        ids=["command", "prompt"],
+    )
+    def test_captured_secret_stays_out_of_the_cli_error_and_log(
+        self, monkeypatch, tmp_path, label, step, setting
+    ):
+        """A streaming step that reads captured output into a setting fails
+        before Copilot CLI could repeat the value."""
+        captured, streamed = [], []
+
+        def run_captured(args, **kwargs):
+            captured.append(list(args))
+            return CapturedProcess(exit_code=0, stdout=_SECRET_OUTPUT, stderr="")
+
+        def run(args, **kwargs):
+            streamed.append(list(args))
+            return subprocess.CompletedProcess(args, 1, stdout="", stderr="")
+
+        monkeypatch.setattr(shutil, "which", lambda name, *a, **k: f"/bin/{name}")
+        monkeypatch.setattr(
+            "specify_cli.workflows.step.prompt.run_captured", run_captured
+        )
+        monkeypatch.setattr(subprocess, "run", run)
+        (tmp_path / ".specify" / "workflows").mkdir(parents=True)
+        definition = WorkflowDefinition(
+            {
+                "schema_version": "1.0",
+                "workflow": {
+                    "id": "leak",
+                    "name": "leak",
+                    "version": "1.0.0",
+                    "integration": "copilot",
+                },
+                "steps": [
+                    {
+                        "id": "read",
+                        "type": "prompt",
+                        "prompt": "Print the token",
+                        "capture": True,
+                    },
+                    {"id": "ask", **step, setting: "{{ steps.read.output.stdout }}"},
+                ],
+            }
+        )
+
+        state = WorkflowEngine(tmp_path).execute(definition)
+
+        assert state.step_results["read"]["output"]["stdout"] == _SECRET_OUTPUT
+        assert len(captured) == 1
+        assert streamed == []
+        assert state.status is RunStatus.FAILED
+        error = state.step_results["ask"]["error"]
+        assert error.startswith(
+            f"{label} step 'ask': GitHub Copilot '{setting}' must be one of "
+        )
+        assert error.endswith(" (set by step)")
+        assert _SECRET_OUTPUT not in error
+        log = (
+            tmp_path / ".specify" / "workflows" / "runs" / state.run_id / "log.jsonl"
+        ).read_text(encoding="utf-8")
+        assert _SECRET_OUTPUT not in log
