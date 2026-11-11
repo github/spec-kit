@@ -2089,6 +2089,36 @@ class TestScriptChainReconciliation:
         chain = PresetResolver(project_dir).resolve_script_chain("setup-plan")
         assert [p.read_text() for p in chain] == ["echo overridden\n"]
 
+    def test_reconcile_all_script_chains_cleans_up_deleted_standalone_override(
+        self, project_dir
+    ):
+        """A deleted standalone override's script name drops out of the
+        overrides-directory scan entirely, so scanning that directory alone
+        can never find it again to clean up the stale canonical script it
+        left behind -- even on an explicit reconcile_all_script_chains()
+        call (#4709 review). Provenance metadata recorded when this manager
+        generated the canonical script must be consulted too, not just
+        names still declared somewhere today."""
+        override_dir = (
+            project_dir / ".specify" / "templates" / "overrides" / "scripts"
+        )
+        override_dir.mkdir(parents=True, exist_ok=True)
+        (override_dir / "deleted-override-script.sh").write_text("echo overridden\n")
+
+        manager = PresetManager(project_dir)
+        manager.reconcile_all_script_chains()
+
+        canonical = self._canonical(project_dir, "deleted-override-script")
+        assert canonical.read_text() == "echo overridden\n"
+
+        (override_dir / "deleted-override-script.sh").unlink()
+        manager.reconcile_all_script_chains()
+
+        # No core/bundled fallback exists for this name either, so the
+        # stale canonical file (and its provenance sidecar) must be
+        # removed entirely, not merely left with its old content.
+        assert not canonical.exists()
+
     def test_enable_disable_and_set_priority_rematerialize_scripts(
         self, project_dir, temp_dir, valid_pack_data
     ):

@@ -973,6 +973,19 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         self-materialize: a project-local override added directly to the
         filesystem outside any lifecycle command still needs this called
         explicitly.
+
+        A *deleted* standalone override is the same situation from the
+        other side: once the override file is gone, scanning the overrides
+        directory alone can never find its name again, so the stale
+        canonical script it left behind -- generated while the override
+        still existed -- would survive even this explicit call forever
+        (#4709 review). Every name with provenance metadata (recorded the
+        last time this manager generated a canonical script for it) is
+        reconciled too, not only names still declared somewhere today;
+        ``_reconcile_script_chain`` already restores-to-core or cleans up
+        a name nothing provides any more, and already preserves a
+        canonical file the user edited after the fact via the same
+        provenance hash check.
         """
         script_names: Set[str] = set()
         for pack_id, _metadata in self.registry.list_by_priority():
@@ -993,6 +1006,12 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             script_names.update(
                 override_file.stem
                 for override_file in overrides_scripts_dir.glob("*.sh")
+            )
+        scripts_dir = self.project_root / ".specify" / "scripts" / "bash"
+        if scripts_dir.is_dir():
+            script_names.update(
+                provenance_file.name[: -len(_SCRIPT_PROVENANCE_SUFFIX)]
+                for provenance_file in scripts_dir.glob(f"*{_SCRIPT_PROVENANCE_SUFFIX}")
             )
         for script_name in script_names:
             try:
