@@ -57,6 +57,20 @@ def docker_agent_command(executable: str | None = None) -> list[str] | None:
     return ["docker", "agent", "run"] if resolved_from_path else run_command
 
 
+def skill_name_for_command(command_name: str) -> str:
+    """Return the generated skill directory name for an extension command or alias.
+
+    Skill names are exactly one path component: registry cleanup, ownership and
+    rollback code all rely on that and reject anything else. Aliases are
+    free-form relative paths, so every separator collapses to a hyphen here,
+    the same way dots do, and no caller has to handle a nested name.
+    """
+    short_name = command_name
+    if short_name.startswith("speckit."):
+        short_name = short_name[len("speckit."):]
+    return "speckit-" + short_name.replace(".", "-").replace("/", "-")
+
+
 def relative_extension_path_violation(value: Any) -> str | None:
     """Return why ``value`` is unsafe as an extension-relative ``file`` path.
 

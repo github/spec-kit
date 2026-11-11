@@ -4069,6 +4069,52 @@ def test_resource_copy_keeps_execute_bits_of_non_shell_script(project_dir, temp_
     assert stat.S_IMODE((skill / "scripts/data.txt").stat().st_mode) == 0o644  # not made executable
 
 
+@pytest.mark.parametrize("command, expected", [
+    ("speckit.plan", "speckit-plan"),
+    ("speckit.test-ext.hello", "speckit-test-ext-hello"),
+    ("speckit.verify", "speckit-verify"),
+    ("speckit.test-ext/group.alias", "speckit-test-ext-group-alias"),
+    ("custom/nested/alias", "speckit-custom-nested-alias"),
+])
+def test_skill_name_for_command_is_always_a_single_path_component(command, expected):
+    from specify_cli._utils import skill_name_for_command
+    from specify_cli.agents import CommandRegistrar
+
+    assert skill_name_for_command(command) == expected
+    assert len(Path(expected).parts) == 1
+    # Every producer agrees, so no consumer ever sees a different spelling.
+    assert ExtensionManager._skill_name_for_command(command) == expected
+    assert CommandRegistrar._compute_output_name(
+        "claude", command, CommandRegistrar.AGENT_CONFIGS["claude"]
+    ) == expected
+
+
+def test_alias_with_separator_renders_a_flat_skill_and_cleans_up_with_its_resources(project_dir, temp_dir):
+    _create_init_options(project_dir, ai="claude", ai_skills=False)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["scripts/run.sh"]
+    data["provides"]["commands"][0]["aliases"] = ["speckit.test-ext/group.alias"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "scripts").mkdir()
+    (ext / "scripts/run.sh").write_text("echo hi\n")
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+
+    alias = skills / "speckit-test-ext-group-alias"
+    primary = skills / "speckit-test-ext-hello"
+    assert (alias / "SKILL.md").is_file() and (alias / "scripts/run.sh").is_file()
+    assert (primary / "scripts/run.sh").is_file()
+    assert not (skills / "speckit-test-ext").exists()  # no nested skill directory
+    recorded = manager.registry.get("test-ext")["skill_resource_hashes"]["project"]
+    depth = len(skills.relative_to(project_dir).parts)
+    assert {Path(key).parts[depth] for key in recorded} == {alias.name, primary.name}
+
+    manager.remove("test-ext", keep_config=False)
+    assert not alias.exists() and not primary.exists()
+
+
 def test_remove_legacy_registry_without_resource_field(project_dir, temp_dir):
     _create_init_options(project_dir, ai="claude", ai_skills=True)
     skills = _create_skills_dir(project_dir)

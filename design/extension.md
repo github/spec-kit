@@ -283,7 +283,10 @@ defined in [Agent Integration Design](integration.md).
 
 Native registration follows the selected integration's output flavor. It
 renders primary names and aliases, so integrations whose native command format
-is `SKILL.md` create separate primary and alias skill directories. Non-generic
+is `SKILL.md` create separate primary and alias skill directories. A skill name
+is always a single path component: `skill_name_for_command` turns dots and the
+path separators that free-form aliases may contain into hyphens, and every
+producer and cleanup path relies on that. Non-generic
 native registration writes its selected destination and may replace an
 existing file; the generic integration applies its ownership checks first.
 

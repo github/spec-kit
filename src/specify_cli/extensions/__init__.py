@@ -46,7 +46,12 @@ from .._download_security import (
 from .._init_options import is_ai_skills_enabled
 from .._install_ignore import load_install_ignore
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
-from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
+from .._utils import (
+    dump_frontmatter,
+    relative_extension_path_violation,
+    skill_name_for_command,
+    version_satisfies,
+)
 from ..catalogs import CatalogEntry as BaseCatalogEntry
 from ..catalogs import CatalogStackBase
 from ..integration_state import (
@@ -1244,7 +1249,7 @@ class ExtensionManager:
         Normalize before comparing so all of
         them are caught, not just the exact dotted spelling.
         """
-        hyphenated = name.replace(".", "-")
+        hyphenated = name.replace(".", "-").replace("/", "-")
         if not hyphenated.startswith("speckit-"):
             hyphenated = f"speckit-{hyphenated}"
         return hyphenated
@@ -1405,10 +1410,7 @@ class ExtensionManager:
     @staticmethod
     def _skill_name_for_command(command_name: str) -> str:
         """Return the generated skill directory name for an extension command."""
-        short_name = command_name
-        if short_name.startswith("speckit."):
-            short_name = short_name[len("speckit.") :]
-        return f"speckit-{short_name.replace('.', '-')}"
+        return skill_name_for_command(command_name)
 
     def _active_command_registration_scope(self) -> Optional[set[str]]:
         """Return the agents a new extension install may render commands for.
@@ -5936,7 +5938,7 @@ class HookExecutor:
         command_id = command.strip()
         if not command_id.startswith("speckit."):
             return ""
-        return f"speckit-{command_id[len('speckit.') :].replace('.', '-')}"
+        return skill_name_for_command(command_id)
 
     def _render_hook_invocation(self, command: Any) -> str:
         """Render an agent-specific invocation string for a hook command."""

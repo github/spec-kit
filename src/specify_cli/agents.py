@@ -19,7 +19,7 @@ from ._init_options import is_ai_skills_enabled, load_init_options
 from ._invocation_style import get_invocation_prefix
 from ._toml_string import escape_toml_basic as _escape_toml_basic
 from ._toml_string import has_illegal_toml_control as _has_illegal_toml_control
-from ._utils import relative_extension_path_violation
+from ._utils import relative_extension_path_violation, skill_name_for_command
 from .integrations._registration import project_registration
 
 
@@ -566,12 +566,7 @@ class CommandRegistrar:
                 return format_name(cmd_name)
             return cmd_name
 
-        short_name = cmd_name
-        if short_name.startswith("speckit."):
-            short_name = short_name[len("speckit.") :]
-        short_name = short_name.replace(".", "-")
-
-        return f"speckit-{short_name}"
+        return skill_name_for_command(cmd_name)
 
     @staticmethod
     def _ensure_inside(candidate: Path, base: Path) -> None:
