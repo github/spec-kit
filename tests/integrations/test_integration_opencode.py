@@ -411,6 +411,45 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         assert ".specify/memory/constitution.md" in globbed
         assert private <= globbed
 
+    @pytest.mark.skipif(shutil.which("rg") is None, reason="ripgrep not installed")
+    @pytest.mark.parametrize(
+        ("rule_file", "rule", "private"),
+        [
+            (".rgignore", "!.specify/**/local-config.yml\n", ".specify/extensions/jira/local-config.yml"),
+            (".specify/extensions/jira/.ignore", "!local-config.yml\n", ".specify/extensions/jira/local-config.yml"),
+            (".rgignore", "!.specify/workflows/runs/\n", ".specify/workflows/runs/run-1/state.json"),
+        ],
+    )
+    def test_configure_ignore_file_rejects_reinclusion_of_private_paths(
+        self, tmp_path, rule_file, rule, private
+    ):
+        """A higher-priority or nearer ignore file must not re-include private paths."""
+        integration = get_integration(self.KEY)
+        target = tmp_path / private
+        target.parent.mkdir(parents=True)
+        target.write_text("placeholder: x\n", encoding="utf-8")
+        (tmp_path / rule_file).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rule_file).write_text(rule, encoding="utf-8")
+        ignore = tmp_path / ".ignore"
+        ignore.write_bytes(_RULES)
+        listed = subprocess.run(
+            ["rg", "--files", "--no-config"],
+            cwd=tmp_path, capture_output=True, text=True, check=False,
+        ).stdout.replace("\\", "/").splitlines()
+        assert private in {line.removeprefix("./") for line in listed}
+
+        ignore.unlink()
+        with pytest.raises(ValueError, match="exposes private"):
+            integration.setup(tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN)
+        assert not ignore.exists()
+
+    def test_configure_ignore_file_allows_unrelated_rgignore_reinclusion(self, tmp_path):
+        """A re-inclusion that does not reach private paths is accepted."""
+        integration = get_integration(self.KEY)
+        (tmp_path / ".rgignore").write_text("!.specify/memory/\n", encoding="utf-8")
+        integration.setup(tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN)
+        assert (tmp_path / ".ignore").read_bytes() == _RULES
+
     def test_configure_ignore_file_allows_excluding_extension_backups(self, tmp_path):
         """A user exclusion of removal backups is not treated as hiding Spec Kit files."""
         integration = get_integration(self.KEY)

@@ -4,7 +4,7 @@ import errno
 import os
 import re
 import stat
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +43,13 @@ _SPECIFY_PRIVATE_RULES = (
 _UNPROBED_SPECIFY_DIRS = (
     ".specify/extensions/.backup/",
     ".specify/workflows/runs/",
+)
+# Representative private paths checked even before any exist.
+_PRIVATE_SPECIFY_PROBES = (
+    ".specify/extensions/example/local-config.yml",
+    ".specify/extensions/example/example-config.local.yml",
+    ".specify/extensions/.backup/example/local-config.yml",
+    ".specify/workflows/runs/example/state.json",
 )
 
 
@@ -260,10 +267,13 @@ def _ignore_layers(
     return layers
 
 
-def _rg_hiding_file(
+def _rg_decisions(
     layers: Sequence[tuple[str, str, Path, pathspec.GitIgnoreSpec]], probe: str
-) -> Path | None:
-    """The ignore file that makes ripgrep skip *probe*, or ``None``."""
+) -> Iterator[tuple[Path, bool]]:
+    """Each deciding ignore file and its decision as ripgrep walks to *probe*.
+
+    ``True`` ignores the step and ripgrep stops there; ``False`` re-includes it.
+    """
     for step in _probe_steps(probe):
         for name in _RG_IGNORE_NAMES:
             applicable = sorted(
@@ -282,10 +292,32 @@ def _rg_hiding_file(
                 if decision is not None:
                     break
             if decision is not None:
+                yield path, decision
                 if decision:
-                    return path
+                    return
                 break
+
+
+def _rg_hiding_file(
+    layers: Sequence[tuple[str, str, Path, pathspec.GitIgnoreSpec]], probe: str
+) -> Path | None:
+    """The ignore file that makes ripgrep skip *probe*, or ``None``."""
+    for path, decision in _rg_decisions(layers, probe):
+        if decision:
+            return path
     return None
+
+
+def _rg_exposing_file(
+    layers: Sequence[tuple[str, str, Path, pathspec.GitIgnoreSpec]], probe: str
+) -> Path | None:
+    """The ignore file whose re-inclusion lets ripgrep list *probe*, or ``None``."""
+    culprit = None
+    for path, decision in _rg_decisions(layers, probe):
+        if decision:
+            return None
+        culprit = path
+    return culprit
 
 
 def _reject_hidden_specify_paths(
@@ -297,7 +329,9 @@ def _reject_hidden_specify_paths(
     (every variant when it is unknown); files already under ``.specify/``
     are always probed. Each probe and its ancestors are evaluated the way
     ripgrep does: a root ``.rgignore`` and any ``.ignore`` or ``.rgignore``
-    under ``.specify/`` can override the root exceptions.
+    under ``.specify/`` can override the root exceptions. Private configs
+    and workflow run state, existing or not, must stay hidden across those
+    same layers, so a re-inclusion there fails too.
     """
     from ..._assets import _locate_core_pack, _repo_root
     from ...shared_infra import script_variant_dirs
@@ -326,6 +360,20 @@ def _reject_hidden_specify_paths(
         and not probe.startswith(_UNPROBED_SPECIFY_DIRS)
     )
     layers = _ignore_layers(path.parent, updated)
+    hidden = sorted(
+        set(_PRIVATE_SPECIFY_PROBES)
+        | {
+            probe for probe in probes
+            if private.match_file(probe) or probe.startswith(".specify/workflows/runs/")
+        }
+    )
+    for probe in hidden:
+        culprit = _rg_exposing_file(layers, probe)
+        if culprit is not None:
+            raise ValueError(
+                f"A re-inclusion in {culprit} exposes private {probe}. "
+                "Remove it from that file, then rerun."
+            )
     for probe in visible:
         culprit = _rg_hiding_file(layers, probe)
         if culprit is None:
