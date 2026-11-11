@@ -2996,6 +2996,38 @@ class ExtensionManager:
         # the restored user config with packaged defaults.  Cleanup is deferred
         # until after registry.add() succeeds (see post-commit cleanup below).
 
+        def rollback_package_dir() -> None:
+            """Remove the installed package, preserving rescued user config.
+
+            Shared by the generic and native rollbacks: config files a prior
+            ``remove --keep-config`` preserved (or a --force reinstall backed
+            up) stay in place with a ``.keep-config`` marker; everything else
+            the attempt copied is removed.
+            """
+            preserved = set(stranded_configs)
+            if did_remove:
+                backup_dir = self.extensions_dir / ".backup" / manifest.id
+                if backup_dir.is_dir() and not backup_dir.is_symlink():
+                    for config_file in backup_dir.iterdir():
+                        if (
+                            config_file.is_file()
+                            and not config_file.is_symlink()
+                            and config_file.name.endswith(("-config.yml", "-config.local.yml"))
+                        ):
+                            shutil.copy2(config_file, dest_dir / config_file.name)
+                            preserved.add(config_file.name)
+            if preserved:
+                for child in dest_dir.iterdir():
+                    if child.name in preserved:
+                        continue
+                    if child.is_dir() and not child.is_symlink():
+                        shutil.rmtree(child)
+                    else:
+                        child.unlink()
+                (dest_dir / ".keep-config").write_text("", encoding="utf-8")
+            else:
+                shutil.rmtree(dest_dir)
+
         def rollback_generic_registration() -> None:
             from ..shared_infra import _validate_safe_shared_directory
 
@@ -3024,35 +3056,36 @@ class ExtensionManager:
                     except OSError:
                         pass
 
-            preserved = set(stranded_configs)
-            if did_remove:
-                backup_dir = self.extensions_dir / ".backup" / manifest.id
-                if backup_dir.is_dir() and not backup_dir.is_symlink():
-                    for config_file in backup_dir.iterdir():
-                        if (
-                            config_file.is_file()
-                            and not config_file.is_symlink()
-                            and config_file.name.endswith(("-config.yml", "-config.local.yml"))
-                        ):
-                            shutil.copy2(config_file, dest_dir / config_file.name)
-                            preserved.add(config_file.name)
-            if preserved:
-                for child in dest_dir.iterdir():
-                    if child.name in preserved:
-                        continue
-                    if child.is_dir() and not child.is_symlink():
-                        shutil.rmtree(child)
-                    else:
-                        child.unlink()
-                (dest_dir / ".keep-config").write_text("", encoding="utf-8")
-            else:
-                shutil.rmtree(dest_dir)
+            rollback_package_dir()
+
+        def rollback_native_registration() -> None:
+            """Retire native command/skill outputs and the installed package.
+
+            Mirrors ``rollback_generic_registration`` for the non-generic
+            route: a failed install must leave no outputs the attempt created
+            (#5379). ``registered_commands`` holds the command files the
+            registrar wrote (for skills-mode agents these are the SKILL.md
+            outputs) and ``registered_skills`` the skill files the skills
+            registrar wrote; both lists only ever contain outputs this
+            attempt actually wrote.
+            """
+            from ..agents import CommandRegistrar
+
+            safe_commands = dict(registered_commands)
+            safe_commands.pop("generic", None)
+            if safe_commands:
+                CommandRegistrar(
+                    self.project_root, include_generic=False
+                ).unregister_commands(safe_commands, self.project_root)
+            self._unregister_extension_skills(registered_skills, manifest.id)
+            rollback_package_dir()
 
         hooks_started = False
         registry_started = False
         try:
             # Register commands with AI agents (active integration only, #2948)
             registered_commands = {}
+            registered_skills: list = []
             if register_commands:
                 registered_commands = self._register_commands_for_active_agent(
                     manifest, dest_dir, link_outputs=link_commands
@@ -3150,6 +3183,32 @@ class ExtensionManager:
                 if rollback_errors:
                     raise ExtensionError(
                         f"Generic registration failed ({exc}); rollback failed: "
+                        + "; ".join(rollback_errors)
+                    ) from exc
+            else:
+                # Native route has no generic artifacts, but a failure after
+                # command rendering must still retire everything the attempt
+                # created: registry entry, hooks, native command/skill
+                # outputs, and the installed package (#5379).
+                rollback_errors = []
+                if registry_started:
+                    try:
+                        self.registry.remove(manifest.id)
+                    except Exception as error:
+                        rollback_errors.append(f"registry: {error}")
+                if hooks_started:
+                    try:
+                        hook_executor.unregister_hooks(manifest.id)
+                    except Exception as error:
+                        rollback_errors.append(f"hooks: {error}")
+                try:
+                    with changing_file(dest_dir, removal=True):
+                        rollback_native_registration()
+                except Exception as error:
+                    rollback_errors.append(f"artifacts: {error}")
+                if rollback_errors:
+                    raise ExtensionError(
+                        f"Extension install failed ({exc}); rollback failed: "
                         + "; ".join(rollback_errors)
                     ) from exc
             raise
