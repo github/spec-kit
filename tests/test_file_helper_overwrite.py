@@ -370,6 +370,7 @@ def test_unsupported_descriptor_backend_fails_without_path_fallback(
     path = tmp_path / "file"
     if existing:
         path.write_text("old")
+    files = FileHelper(tmp_path)
 
     def unexpected_open(*args, **kwargs):
         raise AssertionError("An unsupported backend must not open a destination")
@@ -382,8 +383,9 @@ def test_unsupported_descriptor_backend_fails_without_path_fallback(
     else:
         attributes[capability] = value
     monkeypatch.setattr(file_helper, "os", SimpleNamespace(**attributes))
-    with pytest.raises(OSError, match="unsupported") as caught:
-        FileHelper(tmp_path).overwrite_text("file", "new")
+    with files:
+        with pytest.raises(OSError, match="unsupported") as caught:
+            files.overwrite_text("file", "new")
     assert caught.value.errno == errno.ENOTSUP
     if existing:
         assert path.read_text() == "old"
@@ -470,6 +472,7 @@ def test_overwrite_closes_descriptors_on_failure(tmp_path, monkeypatch, failure)
     parent.mkdir()
     (parent / "file").write_text("old")
     opened = []
+    opened_leaves = []
     original = os.open
     fstat = os.fstat
 
@@ -478,6 +481,8 @@ def test_overwrite_closes_descriptors_on_failure(tmp_path, monkeypatch, failure)
             raise PermissionError("test failure")
         fd = original(path, flags, *args, **kwargs)
         opened.append(fd)
+        if Path(path).name == "file":
+            opened_leaves.append(fd)
         return fd
 
     def fail(*args, **kwargs):
@@ -497,10 +502,13 @@ def test_overwrite_closes_descriptors_on_failure(tmp_path, monkeypatch, failure)
         replacements["fdopen"] = lambda *args, **kwargs: FailedStream()
     elif failure != "open":
         replacements[failure] = fail
-    monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), **replacements}))
-    with pytest.raises(OSError, match="test failure"):
-        FileHelper(tmp_path).overwrite_text("parent/file", "new")
+    with FileHelper(tmp_path) as files:
+        monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), **replacements}))
+        with pytest.raises(OSError, match="test failure"):
+            files.overwrite_text("parent/file", "new")
     assert opened
+    if failure != "open":
+        assert len(opened_leaves) == 1
     for fd in opened:
         with pytest.raises(OSError):
             fstat(fd)
@@ -514,6 +522,7 @@ def test_windows_overwrite_pins_resolved_hierarchy_until_stream_closes(
     parent.mkdir()
     leaf = parent / "file"
     leaf.write_text("old")
+    files = FileHelper(tmp_path)
     events = []
     active = []
 
@@ -546,13 +555,14 @@ def test_windows_overwrite_pins_resolved_hierarchy_until_stream_closes(
     monkeypatch.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
     monkeypatch.setattr(file_helper, "_windows_handle", pin)
     monkeypatch.setattr(file_helper, "_windows_overwrite_fd", open_leaf)
-    if failed_parent:
-        with pytest.raises(PermissionError, match="pin failed"):
-            FileHelper(tmp_path).overwrite_text("parent/file", "new")
-        assert leaf.read_text() == "old"
-    else:
-        FileHelper(tmp_path).overwrite_text("parent/file", "new")
-        assert events[-3:] == [("close", leaf), ("unpin", parent), ("unpin", tmp_path)]
+    with files:
+        if failed_parent:
+            with pytest.raises(PermissionError, match="pin failed"):
+                files.overwrite_text("parent/file", "new")
+            assert leaf.read_text() == "old"
+        else:
+            files.overwrite_text("parent/file", "new")
+            assert events[-3:] == [("close", leaf), ("unpin", parent), ("unpin", tmp_path)]
     assert not active
 
 

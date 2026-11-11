@@ -1,23 +1,382 @@
 """Ownership and native Windows evidence for shared handle primitives."""
 
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import ctypes
 from ctypes import wintypes
 import errno
 import gc
 import os
+import stat
 from pathlib import Path
 import sys
 import subprocess
+import struct
 from types import SimpleNamespace
 import weakref
 
 import pytest
 
 from specify_cli import _file_handles, file_helper
-from specify_cli._file_handles import _windows_handle
+from specify_cli import _file_handles as handles
+from specify_cli._file_handles import (
+    _WindowsFileIdentity, _windows_file_id, _windows_handle, _windows_stat,
+)
 from specify_cli.file_helper import FileHelper, UnsupportedPathError
+
+
+@pytest.mark.parametrize("directory", [False, True])
+@pytest.mark.parametrize("pin", [False, True])
+@pytest.mark.parametrize("outcome", ["success", "reparse", "wrong-type", "query-failure", "body-failure", "open-failure"])
+def test_windows_handle_flags_validation_and_cleanup(monkeypatch, directory, pin, outcome):
+    calls = []
+
+    def create(*args):
+        calls.append(("open", args))
+        return ctypes.c_void_p(-1).value if outcome == "open-failure" else 123
+
+    def info(handle, kind, buffer, size):
+        assert handle == 123 and kind == 9
+        attributes = 0x10 if directory else 0
+        if outcome == "reparse":
+            attributes |= 0x400
+        if outcome == "wrong-type":
+            attributes ^= 0x10
+        buffer._obj.attributes = attributes
+        return outcome != "query-failure"
+
+    def close(handle):
+        calls.append(("close", handle))
+        return True
+
+    # Real ctypes functions accept signature attributes; plain Python functions
+    # do too, allowing this contract to run without loading a Windows DLL.
+    kernel = SimpleNamespace(
+        CreateFileW=create, GetFileInformationByHandleEx=info, CloseHandle=close
+    )
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: kernel, raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
+    monkeypatch.setattr(
+        ctypes, "WinError", lambda code: PermissionError(code, "handle denied"), raising=False
+    )
+
+    def use():
+        with _windows_handle(Path("selected"), directory=directory, pin=pin) as handle:
+            assert handle == 123
+            assert calls == [calls[0]]
+            if outcome == "body-failure":
+                raise RuntimeError("body failed")
+
+    if outcome == "success":
+        use()
+    elif outcome == "body-failure":
+        with pytest.raises(RuntimeError, match="body failed"):
+            use()
+    else:
+        with pytest.raises(OSError) as exc:
+            use()
+        if outcome in ("reparse", "wrong-type"):
+            assert exc.value.errno == (errno.ELOOP if outcome == "reparse" else errno.EINVAL)
+    args = calls[0][1]
+    assert args == (
+        "selected", (0x81 if directory else 0x80000000) if pin else 0x80,
+        0x3 if pin else 0x7, None, 3, 0x00200000 | 0x02000000, None,
+    )
+    assert calls[1:] == ([] if outcome == "open-failure" else [("close", 123)])
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_windows_file_identity_uses_full_volume_and_file_id(monkeypatch, failure):
+    def info(handle, kind, buffer, size):
+        assert handle == 0x1FFFFFFFF and kind == 18 and size == 24
+        buffer._obj.volume = 0x1FFFFFFFF
+        buffer._obj.file_id[:] = bytes(range(16))
+        return not failure
+
+    monkeypatch.setattr(
+        ctypes, "WinDLL",
+        lambda *args, **kwargs: SimpleNamespace(GetFileInformationByHandleEx=info),
+        raising=False,
+    )
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
+    monkeypatch.setattr(ctypes, "WinError", lambda code: PermissionError(code, "identity denied"), raising=False)
+    if failure:
+        with pytest.raises(PermissionError, match="identity denied"):
+            _windows_file_id(0x1FFFFFFFF)
+    else:
+        assert _windows_file_id(0x1FFFFFFFF) == _WindowsFileIdentity(
+            "fileid128", 0x1FFFFFFFF, bytes(range(16))
+        )
+    assert info.argtypes == [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+    assert info.restype is wintypes.BOOL
+
+
+@pytest.fixture
+def identity_kernel(monkeypatch):
+    state = SimpleNamespace(
+        extended_error=87, legacy_error=0, last_error=0, filesystem="FAT32",
+        volume=0xABCDEF12, index=0x123456789ABCDEF, zero_extended=False,
+    )
+    calls = []
+
+    def extended(handle, kind, output, size):
+        assert handle == 0x1FFFFFFFF and kind == 18 and size == 24
+        calls.append("extended")
+        if state.extended_error:
+            state.last_error = state.extended_error
+            return False
+        output._obj.volume = state.volume
+        output._obj.file_id[:] = bytes(16) if state.zero_extended else bytes(range(16))
+        return True
+
+    def legacy(handle, output):
+        assert handle == 0x1FFFFFFFF
+        assert ctypes.sizeof(output._obj) == 52
+        calls.append("legacy")
+        if state.legacy_error:
+            state.last_error = state.legacy_error
+            return False
+        output._obj.volume = state.volume
+        output._obj.index_high = state.index >> 32
+        output._obj.index_low = state.index & 0xFFFFFFFF
+        return True
+
+    def native_error(code):
+        error = OSError(errno.EACCES if code == 5 else errno.ENOTSUP, f"native error {code}")
+        error.winerror = code
+        return error
+
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: SimpleNamespace(
+        GetFileInformationByHandleEx=extended, GetFileInformationByHandle=legacy,
+    ), raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: state.last_error, raising=False)
+    monkeypatch.setattr(ctypes, "WinError", native_error, raising=False)
+    monkeypatch.setattr(
+        handles, "_windows_filesystem", lambda _: state.filesystem, raising=False
+    )
+    return state, calls
+
+
+@pytest.mark.parametrize("unsupported", [1, 50, 87])
+@pytest.mark.parametrize("filesystem", ["FAT", "FAT32", "exFAT", "NTFS"])
+def test_windows_identity_falls_back_only_for_supported_legacy_filesystems(
+    identity_kernel, unsupported, filesystem
+):
+    state, calls = identity_kernel
+    state.extended_error = unsupported
+    state.filesystem = filesystem
+    identity = _windows_file_id(0x1FFFFFFFF)
+    assert identity.kind == "legacy64"
+    assert identity.volume == state.volume
+    assert identity.file_id == state.index.to_bytes(8, "little")
+    assert calls == ["extended", "legacy"]
+
+
+@pytest.mark.parametrize("error_code", [5, 6, 32])
+def test_windows_identity_does_not_hide_unrelated_native_errors(identity_kernel, error_code):
+    state, calls = identity_kernel
+    state.extended_error = error_code
+    with pytest.raises(OSError) as raised:
+        _windows_file_id(0x1FFFFFFFF)
+    assert raised.value.winerror == error_code
+    assert calls == ["extended"]
+
+
+@pytest.mark.parametrize("filesystem", ["ReFS", "unknown"])
+def test_windows_identity_rejects_unreliable_legacy_scheme(identity_kernel, filesystem):
+    state, calls = identity_kernel
+    state.filesystem = filesystem
+    with pytest.raises(OSError, match="legacy.*identity"):
+        _windows_file_id(0x1FFFFFFFF)
+    assert calls == ["extended"]
+
+
+@pytest.mark.parametrize("scheme", ["legacy64", "fileid128"])
+def test_windows_identity_uses_selected_scheme_without_renegotiating(identity_kernel, scheme):
+    state, calls = identity_kernel
+    state.extended_error = 0
+    identity = _windows_file_id(0x1FFFFFFFF, kind=scheme)
+    assert identity.kind == scheme
+    assert calls == (["legacy"] if scheme == "legacy64" else ["extended"])
+
+
+def test_windows_identity_selected_extended_scheme_does_not_downgrade(identity_kernel):
+    state, calls = identity_kernel
+    with pytest.raises(OSError) as raised:
+        _windows_file_id(0x1FFFFFFFF, kind="fileid128")
+    assert raised.value.winerror == state.extended_error
+    assert calls == ["extended"]
+
+
+@pytest.mark.parametrize("invalid", [False, True])
+def test_windows_filesystem_query_is_handle_relative_and_preserves_abi(monkeypatch, invalid):
+    from specify_cli import _windows_abi as abi
+
+    def query(handle, status, output, size, kind):
+        assert handle == 0x1FFFFFFFF and size == 536 and kind == 5
+        assert isinstance(status._obj, abi._IoStatusBlock)
+        name = "exFAT".encode("utf-16-le")
+        output._obj.name_length = 1 if invalid else len(name)
+        ctypes.memmove(output._obj.name, name, len(name))
+        return 0
+
+    def dos_error(status):
+        pytest.fail("A successful native query must not query an error")
+
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args: SimpleNamespace(
+        NtQueryVolumeInformationFile=query, RtlNtStatusToDosError=dos_error,
+    ), raising=False)
+    if invalid:
+        with pytest.raises(OSError, match="Invalid filesystem name"):
+            handles._windows_filesystem(0x1FFFFFFFF)
+    else:
+        assert handles._windows_filesystem(0x1FFFFFFFF) == "exFAT"
+    assert query.argtypes == [
+        wintypes.HANDLE, abi._IoStatusBlockPointer, wintypes.LPVOID,
+        ctypes.c_uint32, ctypes.c_int,
+    ]
+    assert query.restype is ctypes.c_int32
+
+
+def test_windows_filesystem_query_preserves_native_failure(monkeypatch):
+    def query(*args):
+        return -1
+
+    def dos_error(status):
+        assert status == -1
+        return 5
+
+    def win_error(code):
+        assert code == 5
+        error = PermissionError("volume query denied")
+        error.winerror = code
+        return error
+
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args: SimpleNamespace(
+        NtQueryVolumeInformationFile=query, RtlNtStatusToDosError=dos_error,
+    ), raising=False)
+    monkeypatch.setattr(ctypes, "WinError", win_error, raising=False)
+    with pytest.raises(PermissionError, match="volume query denied"):
+        handles._windows_filesystem(123)
+
+
+def test_windows_identity_zero_extended_id_uses_reliable_legacy_identity(identity_kernel):
+    state, calls = identity_kernel
+    state.extended_error = 0
+    state.zero_extended = True
+    identity = _windows_file_id(0x1FFFFFFFF)
+    assert identity.kind == "legacy64"
+    assert calls == ["extended", "legacy"]
+
+
+def test_windows_identity_zero_legacy_id_is_not_accepted(identity_kernel):
+    state, calls = identity_kernel
+    state.index = 0
+    with pytest.raises(OSError, match="identity"):
+        _windows_file_id(0x1FFFFFFFF)
+    assert calls == ["extended", "legacy"]
+
+
+def test_windows_identity_legacy_query_error_remains_native(identity_kernel):
+    state, _ = identity_kernel
+    state.legacy_error = 5
+    with pytest.raises(OSError) as raised:
+        _windows_file_id(0x1FFFFFFFF)
+    assert raised.value.winerror == 5
+
+
+@pytest.mark.parametrize("failure", [None, "duplicate", "convert", "stat"])
+def test_windows_stat_preserves_borrowed_handle_and_closes_duplicate(tmp_path, monkeypatch, failure):
+    expected = tmp_path.stat()
+    closed = []
+
+    def duplicate(source_process, handle, target_process, access, inherit, options):
+        assert source_process == target_process == 0x1FFFFFFFF
+        assert handle == 0x2FFFFFFFF
+        assert access == 0 and inherit is False and options == 2
+        if failure == "duplicate":
+            raise OSError("duplicate failed")
+        return 456
+
+    def convert(handle, flags):
+        assert handle == 456 and flags == 128
+        if failure == "convert":
+            raise OSError("convert failed")
+        return 789
+
+    def fstat(fd):
+        assert fd == 789
+        if failure == "stat":
+            raise OSError("stat failed")
+        return expected
+
+    monkeypatch.setitem(sys.modules, "_winapi", SimpleNamespace(
+        GetCurrentProcess=lambda: 0x1FFFFFFFF,
+        DuplicateHandle=duplicate,
+        DUPLICATE_SAME_ACCESS=2,
+        CloseHandle=lambda handle: closed.append(("handle", handle)),
+    ))
+    monkeypatch.setitem(sys.modules, "msvcrt", SimpleNamespace(open_osfhandle=convert))
+    monkeypatch.setattr(handles, "os", SimpleNamespace(
+        O_RDONLY=0, O_NOINHERIT=128, fstat=fstat, close=lambda fd: closed.append(("fd", fd)),
+    ))
+    if failure:
+        with pytest.raises(OSError, match=f"{failure} failed"):
+            _windows_stat(0x2FFFFFFFF)
+    else:
+        assert _windows_stat(0x2FFFFFFFF) is expected
+    assert closed == {
+        None: [("fd", 789)], "duplicate": [], "convert": [("handle", 456)], "stat": [("fd", 789)],
+    }[failure]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows directory-handle metadata")
+def test_native_windows_stat_matches_path_metadata_without_closing_reference(tmp_path):
+    with _windows_handle(tmp_path, directory=True, pin=False) as handle:
+        identity = _windows_file_id(handle)
+        assert os.path.samestat(tmp_path.stat(), _windows_stat(handle))
+        assert _windows_file_id(handle) == identity
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows legacy identity APIs")
+@pytest.mark.parametrize("recursive", [False, True])
+@pytest.mark.parametrize("allow", [False, True])
+def test_native_windows_delete_uses_legacy_identity_when_extended_query_is_unsupported(
+    tmp_path, monkeypatch, recursive, allow
+):
+    parent = tmp_path / "tree/nested"
+    parent.mkdir(parents=True)
+    (parent / "victim").write_text("selected")
+    native = handles._windows_api()
+    win_dll = ctypes.WinDLL
+    extended_queries = []
+
+    def query(handle, kind, output, size):
+        if kind == 18:
+            extended_queries.append(handle)
+            ctypes.set_last_error(87)
+            return False
+        return native.GetFileInformationByHandleEx(handle, kind, output, size)
+
+    kernel = SimpleNamespace(
+        CreateFileW=native.CreateFileW,
+        CloseHandle=native.CloseHandle,
+        GetFileInformationByHandleEx=query,
+        GetFileInformationByHandle=native.GetFileInformationByHandle,
+        SetFileInformationByHandle=native.SetFileInformationByHandle,
+        DeviceIoControl=native.DeviceIoControl,
+    )
+
+    def load(name, *args, **kwargs):
+        return kernel if name == "kernel32" else win_dll(name, *args, **kwargs)
+
+    monkeypatch.setattr(ctypes, "WinDLL", load)
+    with FileHelper(tmp_path, allow_symlinks=allow) as files:
+        assert files._windows_root_id is not None
+        assert files._windows_root_id.kind == "legacy64"
+        files.delete("tree" if recursive else "tree/nested/victim", recursive=recursive)
+    assert len(extended_queries) == 1
+    assert not (parent / "victim").exists()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX startup must not require Windows ctypes support")
@@ -684,9 +1043,9 @@ def test_windows_child_open_is_relative_and_closes_handles(monkeypatch, director
         name = attributes.ObjectName.contents
         length = len(child_name.encode("utf-16-le", errors="surrogatepass"))
         assert (name.Buffer, name.Length, name.MaximumLength) == (child_name, length, length + 2)
-        assert access == (0xA0 if directory else 0x80100000)
+        assert access == (0x1000A0 if directory else 0x80100000)
         assert sharing == 3 and disposition == 1
-        assert options == (0x200001 if directory else 0x200060)
+        assert options == (0x200021 if directory else 0x200060)
         assert allocation is None and file_attributes == 0 and ea is None and ea_length == 0
         assert ctypes.sizeof(status._obj) == 2 * ctypes.sizeof(ctypes.c_void_p)
         if failure == "status":
@@ -737,6 +1096,34 @@ def test_windows_child_open_is_relative_and_closes_handles(monkeypatch, director
     assert {role: len(declarations) for role, declarations in abi_types.items()} == dict.fromkeys(abi_types, 1)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows synchronous directory I/O")
+@pytest.mark.parametrize("traverse", [False, True])
+def test_native_windows_relative_directory_handle_has_synchronous_mode(tmp_path, traverse):
+    from specify_cli import _windows_abi as abi
+
+    directory = tmp_path / "directory"
+    directory.mkdir()
+    (directory / "file").write_text("selected")
+    native = ctypes.WinDLL("ntdll")
+    query = native.NtQueryInformationFile
+    query.argtypes = [
+        wintypes.HANDLE, abi._IoStatusBlockPointer, wintypes.LPVOID,
+        ctypes.c_uint32, ctypes.c_int,
+    ]
+    query.restype = ctypes.c_int32
+    status = abi._IoStatusBlock()
+    mode = ctypes.c_uint32()
+    with _windows_handle(tmp_path, directory=True) as parent:
+        with _windows_handle(
+            Path("directory"), directory=True, parent=parent, traverse=traverse,
+        ) as child:
+            result = query(child, ctypes.byref(status), ctypes.byref(mode), 4, 16)
+            assert result == 0
+            assert mode.value & 0x20  # FILE_SYNCHRONOUS_IO_NONALERT.
+            if not traverse:
+                assert handles._windows_directory_names(child) == ["file"]
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows repeated-read lifetime regression")
 @pytest.mark.parametrize("allow", [False, True])
 def test_repeated_windows_reads_do_not_accumulate_abi_types(tmp_path, allow):
@@ -774,6 +1161,203 @@ def test_windows_child_open_rejects_oversized_unicode_name():
     with pytest.raises(OSError) as error:
         _file_handles._open_windows_child(51, "a" * 32767, directory=False, access=0, sharing=3)
     assert error.value.errno == errno.ENAMETOOLONG
+
+
+@pytest.mark.parametrize("deleting", [False, True])
+@pytest.mark.parametrize("body_failure", [False, True])
+def test_windows_entry_open_uses_native_parent_and_closes_its_handle(
+    monkeypatch, deleting, body_failure
+):
+    closed = []
+
+    def create(output, access, attributes, status, allocation, file_attributes,
+               sharing, disposition, options, ea, ea_length):
+        assert access == 0x100080 | (0x10000 if deleting else 0)
+        assert attributes._obj.RootDirectory == 51
+        assert attributes._obj.Attributes == 0x40
+        assert attributes._obj.ObjectName.contents.Buffer == "entry"
+        assert sharing == 7 and disposition == 1 and options == 0x200020
+        output._obj.value = 77
+        return 0
+
+    def dos_error(status):
+        pytest.fail("A successful native open must not query an error")
+
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args: SimpleNamespace(
+        NtCreateFile=create, RtlNtStatusToDosError=dos_error,
+    ), raising=False)
+    monkeypatch.setattr(handles, "_windows_api", lambda: SimpleNamespace(CloseHandle=closed.append))
+    expected = pytest.raises(RuntimeError, match="body failed") if body_failure else nullcontext()
+    with expected:
+        with handles._windows_entry(51, "entry", deleting=deleting) as handle:
+            assert handle == 77 and not closed
+            if body_failure:
+                raise RuntimeError("body failed")
+    assert closed == [77]
+
+
+@pytest.mark.parametrize(
+    ("attributes", "tag", "mode"),
+    [(0, 0, stat.S_IFREG), (0x10, 0, stat.S_IFDIR), (0x400, 0xA000000C, stat.S_IFLNK)],
+)
+def test_windows_mode_queries_the_opened_object(monkeypatch, attributes, tag, mode):
+    def query(handle, kind, output, size):
+        assert handle == 51 and kind == 9 and size == 8
+        output._obj.attributes = attributes
+        output._obj.tag = tag
+        return True
+
+    monkeypatch.setattr(handles, "_windows_api", lambda: SimpleNamespace(
+        GetFileInformationByHandleEx=query,
+    ))
+    assert handles._windows_mode(51) == mode
+
+
+def test_windows_mode_rejects_non_symlink_reparse_points(monkeypatch):
+    def query(handle, kind, output, size):
+        output._obj.attributes = 0x410
+        output._obj.tag = 0xA0000003
+        return True
+
+    monkeypatch.setattr(handles, "_windows_api", lambda: SimpleNamespace(
+        GetFileInformationByHandleEx=query,
+    ))
+    with pytest.raises(OSError, match="Unsupported Windows reparse"):
+        handles._windows_mode(51)
+
+
+@pytest.mark.parametrize("target", ["directory/../caf\u00e9", "name\ud800", "\\??\\C:\\target"])
+def test_windows_readlink_reads_the_opened_reparse_buffer(monkeypatch, target):
+    encoded = target.encode("utf-16-le", errors="surrogatepass")
+    relative = not target.startswith("\\??\\")
+    data = struct.pack("<IHHHHHHI", 0xA000000C, 12 + len(encoded), 0, 0, len(encoded), 0, 0, int(relative)) + encoded
+
+    def control(handle, code, source, source_size, destination, size, returned, overlapped):
+        assert handle == 51 and code == 0x900A8
+        assert source is None and source_size == 0 and size == 16384
+        ctypes.memmove(destination, data, len(data))
+        returned._obj.value = len(data)
+        return True
+
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: SimpleNamespace(
+        DeviceIoControl=control,
+    ), raising=False)
+    expected = target if relative else "\\\\?\\" + target[4:]
+    assert handles._windows_readlink(51) == expected
+
+
+@pytest.mark.parametrize("failure", ["short", "offset", "size", "tag", "flags", "nul"])
+def test_windows_readlink_rejects_invalid_native_data(monkeypatch, failure):
+    encoded = ("bad\0target" if failure == "nul" else "target").encode("utf-16-le")
+    data = struct.pack(
+        "<IHHHHHHI", 0 if failure == "tag" else 0xA000000C,
+        12 + len(encoded), 0, 999 if failure == "offset" else 0,
+        999 if failure == "size" else len(encoded), 0, 0, 2 if failure == "flags" else 1,
+    ) + encoded
+    if failure == "short":
+        data = data[:5]
+
+    def control(handle, code, source, source_size, destination, size, returned, overlapped):
+        ctypes.memmove(destination, data, len(data))
+        returned._obj.value = len(data)
+        return True
+
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: SimpleNamespace(
+        DeviceIoControl=control,
+    ), raising=False)
+    with pytest.raises(OSError):
+        handles._windows_readlink(51)
+
+
+def _directory_buffer(names):
+    result = bytearray()
+    for index, name in enumerate(names):
+        encoded = name.encode("utf-16-le", errors="surrogatepass")
+        length = (68 + len(encoded) + 7) // 8 * 8
+        record = bytearray(length)
+        struct.pack_into("<I", record, 0, length if index + 1 < len(names) else 0)
+        struct.pack_into("<I", record, 60, len(encoded))
+        record[68:68 + len(encoded)] = encoded
+        result.extend(record)
+    return bytes(result)
+
+
+def test_windows_directory_names_enumerates_handle_pages_and_preserves_unicode(monkeypatch):
+    pages = [_directory_buffer([".", "..", "caf\u00e9"]), _directory_buffer(["name\ud800"])]
+    calls = []
+
+    def query(handle, kind, buffer, size):
+        assert handle == 51 and size == 131072
+        calls.append(kind)
+        if not pages:
+            return False
+        page = pages.pop(0)
+        ctypes.memmove(buffer, page, len(page))
+        return True
+
+    monkeypatch.setattr(handles, "_windows_api", lambda: SimpleNamespace(GetFileInformationByHandleEx=query))
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 18, raising=False)
+    assert handles._windows_directory_names(51) == ["caf\u00e9", "name\ud800"]
+    assert calls == [15, 14, 14]
+
+
+@pytest.mark.parametrize("failure", ["name", "length", "offset"])
+def test_windows_directory_names_rejects_invalid_native_data(monkeypatch, failure):
+    data = bytearray(_directory_buffer(["bad/name" if failure == "name" else "name"]))
+    if failure == "length":
+        struct.pack_into("<I", data, 60, 999999)
+    elif failure == "offset":
+        struct.pack_into("<I", data, 0, 1)
+
+    def query(handle, kind, buffer, size):
+        ctypes.memmove(buffer, bytes(data), len(data))
+        return True
+
+    monkeypatch.setattr(handles, "_windows_api", lambda: SimpleNamespace(GetFileInformationByHandleEx=query))
+    with pytest.raises(OSError):
+        handles._windows_directory_names(51)
+
+
+@pytest.mark.parametrize("operation", ["mode", "readlink", "directory_names"])
+def test_windows_native_metadata_failures_are_not_success_shaped(monkeypatch, operation):
+    def failed(*args):
+        return False
+
+    def win_error(code):
+        assert code == 5
+        error = PermissionError("native metadata denied")
+        error.winerror = code
+        return error
+
+    monkeypatch.setattr(handles, "_windows_api", lambda: SimpleNamespace(
+        GetFileInformationByHandleEx=failed,
+    ))
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: SimpleNamespace(
+        DeviceIoControl=failed,
+    ), raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
+    monkeypatch.setattr(ctypes, "WinError", win_error, raising=False)
+    with pytest.raises(PermissionError, match="native metadata denied"):
+        getattr(handles, f"_windows_{operation}")(51)
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_windows_delete_marks_the_opened_handle_without_a_path(monkeypatch, failure):
+    def dispose(handle, kind, buffer, size):
+        assert handle == 51 and kind == 4 and size == 4 and buffer._obj.value == 1
+        return not failure
+
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: SimpleNamespace(
+        SetFileInformationByHandle=dispose,
+    ), raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
+    monkeypatch.setattr(ctypes, "WinError", lambda code: PermissionError("delete denied"), raising=False)
+    if failure:
+        with pytest.raises(PermissionError, match="delete denied"):
+            handles._windows_delete(51)
+    else:
+        handles._windows_delete(51)
+    assert dispose.argtypes == [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows attribute-only junction changes required")
@@ -823,6 +1407,92 @@ def test_windows_read_anchors_children_after_attribute_only_junction_change(tmp_
     else:
         assert content == b"inside"
     assert changed
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows attribute-only junction changes required")
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize(
+    ("level", "recursive", "boundary"),
+    [
+        ("parent", False, "preflight"),
+        ("root", True, "preflight"),
+        ("parent", False, "removal"),
+        ("root", True, "removal"),
+        ("parent", True, "enumeration"),
+    ],
+)
+def test_windows_delete_anchors_operations_after_attribute_only_junction_change(
+    tmp_path, monkeypatch, allow, level, recursive, boundary
+):
+    root = tmp_path / "project"
+    directory = root / "directory"
+    directory.mkdir(parents=True)
+    selected = directory / "file"
+    selected.write_bytes(b"inside")
+    outside = tmp_path / "outside"
+    outside_directory = outside / "directory" if level == "root" else outside
+    outside_directory.mkdir(parents=True)
+    (outside_directory / "file").write_bytes(b"outside")
+    locations = {}
+    changed = False
+    target = directory if recursive else selected
+    original_plan = FileHelper._deletion_plan
+
+    def convert():
+        nonlocal changed
+        affected = root if level == "root" else directory
+        displaced = directory if level == "root" else selected
+        displaced.rename(tmp_path / "retained")
+        _set_windows_symlink_reparse(affected, outside, junction=True, access=0x100)
+        changed = True
+        assert (outside_directory / "file").read_bytes() == b"outside"
+
+    @contextmanager
+    def pin(path, **kwargs):
+        parent = kwargs.get("parent")
+        actual = path if parent is None else locations[parent] / path
+        with _file_handles._windows_handle(path, **kwargs) as handle:
+            locations[handle] = actual
+            try:
+                yield handle
+            finally:
+                del locations[handle]
+
+    @contextmanager
+    def entry(parent, name, *, deleting=False):
+        actual = locations[parent] / name
+        with _file_handles._windows_entry(parent, name, deleting=deleting) as handle:
+            locations[handle] = actual
+            try:
+                if boundary == "removal" and deleting and actual == target and not changed:
+                    convert()
+                yield handle
+            finally:
+                del locations[handle]
+
+    def plan(self, path, **kwargs):
+        result = original_plan(self, path, **kwargs)
+        if boundary == "preflight" and path == target and not changed:
+            convert()
+        return result
+
+    def names(handle):
+        if boundary == "enumeration" and locations[handle] == directory and not changed:
+            convert()
+        return _file_handles._windows_directory_names(handle)
+
+    monkeypatch.setattr(file_helper, "_windows_handle", pin)
+    monkeypatch.setattr(file_helper, "_windows_entry", entry)
+    monkeypatch.setattr(file_helper, "_windows_directory_names", names)
+    monkeypatch.setattr(FileHelper, "_deletion_plan", plan)
+    with FileHelper(root, allow_symlinks=allow) as files:
+        try:
+            files.delete(target, recursive=recursive)
+        except (OSError, ValueError):
+            assert changed
+    assert changed
+    assert (outside_directory / "file").read_bytes() == b"outside"
+    assert not locations
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows ACL semantics required")
