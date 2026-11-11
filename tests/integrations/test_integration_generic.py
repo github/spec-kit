@@ -2932,6 +2932,42 @@ def test_generic_refresh_failure_removes_new_resource_destinations_and_allows_re
     assert recorded == {resource.relative_to(project).as_posix(): _sha256(resource)}
 
 
+def test_generic_refresh_failure_removes_new_nested_resource_directories(
+    tmp_path, generic_extension, monkeypatch,
+):
+    from specify_cli.extensions import ExtensionRegistry
+
+    nested = generic_extension / "scripts/bash"
+    nested.mkdir(parents=True)
+    (nested / "run.sh").write_text("echo nested\n")
+    path = generic_extension / "extension.yml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["provides"]["commands"][0]["resources"] = ["scripts/bash/run.sh"]
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    project = generic_project(tmp_path, skills=False)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    commands = project / ".custom/commands"
+    skill = commands / "speckit-sample-run"
+    save_init_options(project, {"ai": "generic", "ai_skills": True, "script": "sh"})
+    original_update = ExtensionRegistry.update
+
+    def fail_update(self, ext_id, updates):
+        raise OSError("simulated registry failure")
+
+    monkeypatch.setattr(ExtensionRegistry, "update", fail_update)
+    ExtensionManager(project).register_enabled_extensions_for_agent("generic")
+    # Every directory the refresh created is gone; the pre-existing one stays.
+    assert not skill.exists()
+    assert commands.is_dir()
+
+    monkeypatch.setattr(ExtensionRegistry, "update", original_update)
+    manager = ExtensionManager(project)
+    manager.register_enabled_extensions_for_agent("generic")
+    assert (skill / "SKILL.md").is_file()
+    assert (skill / "scripts/bash/run.sh").read_text() == "echo nested\n"
+
+
 def test_generic_update_rollback_restores_resource_at_moved_recorded_location(tmp_path, generic_extension):
     from typer.testing import CliRunner
     from specify_cli import app

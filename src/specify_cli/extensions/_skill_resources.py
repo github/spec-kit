@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import stat
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -69,13 +70,20 @@ def track_skill_resource_writes() -> Iterator[set[Path]]:
 
 def written_resource_hashes(
     project_root: Path, hashes: dict, written: set[Path],
+    *, previous: dict | None = None,
 ) -> dict[str, dict[str, str]]:
-    """Select the recorded resources whose files were written, per bucket."""
+    """Select the recorded resources whose files were written, per bucket.
+
+    With ``previous``, records that were already there before the attempt are
+    left out, so only files the attempt created are selected.
+    """
     roots = {"project": project_root.resolve(), "home": Path.home().resolve()}
+    previous = previous or {}
     return {
         bucket: {
             key: digest for key, digest in records.items()
             if isinstance(key, str) and roots[bucket] / key in written
+            and key not in (previous.get(bucket) or {})
         }
         for bucket, records in hashes.items()
         if bucket in roots and isinstance(records, dict)
@@ -193,12 +201,29 @@ def sync_skill_resources(
         try:
             source = _validate_record_path(Path(resource), ext_dir.resolve())
             written.append(manifest.record_file(rel, source.read_bytes()))
+            _keep_restrictive_mode(source, written[-1])
         except (ValueError, OSError) as exc:
             if expected is not None:
                 updated[rel] = expected
             warnings.append(f"Skipped resource {rel}: {exc}")
     updated.update(manifest.files)
     return updated, written, warnings
+
+
+def _keep_restrictive_mode(source: Path, copy: Path) -> None:
+    """Drop the group/other access bits the source lacks from its copy.
+
+    ``record_file`` writes with the process umask, which would turn a private
+    ``0600`` resource into a world-readable copy. This only ever tightens, so
+    the script execution policy that runs afterwards is unaffected.
+    """
+    try:
+        wanted = stat.S_IMODE(source.stat().st_mode) | ~0o077
+        current = stat.S_IMODE(copy.stat().st_mode)
+        if current & wanted != current:
+            copy.chmod(current & wanted)
+    except (NotImplementedError, OSError):
+        pass  # Best effort, as for restored files.
 
 
 def remove_skill_resources(

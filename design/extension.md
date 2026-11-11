@@ -99,7 +99,7 @@ symlink matches and a destination of `SKILL.md` are rejected. Wildcards skip the
 sorted and deduplicated. A non-empty list enables skill copy mode, preserving
 source-relative paths under each rendered skill. Missing or empty lists retain
 no-copy rendering. See [Skill resources](../docs/extensions/developing.md#skill-resources)
-for authoring guidance and the working-directory caveat.
+for authoring guidance and the working-directory caveat. Symlinks are out of scope: the install copy resolves links in the package, so resolution sees their targets as regular files and does not trace where they came from.
 
 Primary command names must use the extension's namespace. Installation rejects
 names and aliases that exactly match a name from another installed extension,

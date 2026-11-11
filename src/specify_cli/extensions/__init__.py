@@ -1988,11 +1988,14 @@ class ExtensionManager:
         self, extension_id: str, manifest: Optional[ExtensionManifest],
         metadata: Dict[str, Any],
         *, skills_mode_active: bool, include_current_candidates: bool = True,
-    ) -> Dict[Path, tuple[bytes | None, str | None, bool, int | None]]:
+    ) -> Dict[Path, tuple[bytes | None, str | None, Path, int | None]]:
         """Remember owned outputs and absent candidates for generic rollback.
 
-        Each entry is ``(content, symlink target, parent existed, mode)``; the
-        permission bits matter for executable resource scripts.
+        Each entry is ``(content, symlink target, anchor, mode)``. ``anchor`` is
+        the nearest directory that exists now: an output that is absent is
+        removed on failure together with the empty directories below it, and
+        nothing at or above the anchor. The permission bits matter for
+        executable resource scripts.
         """
         from ..integrations.generic import registration_directory
         from ..shared_infra import _validate_safe_shared_directory
@@ -2058,7 +2061,7 @@ class ExtensionManager:
             name = Path(relative)
             if not name.is_absolute() and ".." not in name.parts:
                 trusted.setdefault(root / name, root)
-        snapshot: Dict[Path, tuple[bytes | None, str | None, bool, int | None]] = {}
+        snapshot: Dict[Path, tuple[bytes | None, str | None, Path, int | None]] = {}
         for path, path_root in trusted.items():
             try:
                 _validate_safe_shared_directory(path_root, path.parent)
@@ -2066,7 +2069,10 @@ class ExtensionManager:
                 # An unsafe candidate is not owned; do not block the other layout.
                 continue
             if not path.exists() and not path.is_symlink():
-                snapshot[path] = (None, None, path.parent.is_dir(), None)
+                anchor = path.parent
+                while not anchor.exists() and not anchor.is_symlink():
+                    anchor = anchor.parent
+                snapshot[path] = (None, None, anchor, None)
                 continue
             if not path.is_file():
                 continue
@@ -2080,13 +2086,13 @@ class ExtensionManager:
                 and hashes.get(relative) == hashlib.sha256(content).hexdigest()
             ):
                 snapshot[path] = (
-                    content, os.readlink(path) if path.is_symlink() else None, True,
+                    content, os.readlink(path) if path.is_symlink() else None, path.parent,
                     stat.S_IMODE(path.stat().st_mode),
                 )
         return snapshot
 
     def _restore_generic_refresh_artifacts(
-        self, snapshot: Dict[Path, tuple[bytes | None, str | None, bool, int | None]],
+        self, snapshot: Dict[Path, tuple[bytes | None, str | None, Path, int | None]],
         extension_id: str,
     ) -> None:
         """Restore prior owned files and remove only outputs absent before refresh."""
@@ -2100,7 +2106,7 @@ class ExtensionManager:
         source = (self.extensions_dir / extension_id).resolve()
         errors = []
         # Deepest paths first so a parent directory is empty when its turn comes.
-        for path, (content, link, parent_existed, mode) in sorted(
+        for path, (content, link, anchor, mode) in sorted(
             snapshot.items(), key=lambda item: len(item[0].parts), reverse=True,
         ):
             try:
@@ -2121,11 +2127,14 @@ class ExtensionManager:
                 if content is None:
                     if path.is_file():
                         unlink(path)
-                    if not parent_existed and path.parent.is_dir():
+                    # Directories created below the anchor, deepest first.
+                    for directory in path.parents:
+                        if directory == anchor or not directory.is_relative_to(anchor):
+                            break
                         try:
-                            path.parent.rmdir()
+                            directory.rmdir()
                         except OSError:
-                            pass
+                            break
                 else:
                     _ensure_safe_shared_directory(root, path.parent)
                     if link is not None:
@@ -3791,7 +3800,7 @@ class ExtensionManager:
         skills = self._valid_name_list(metadata.get("registered_skills", []))
         hashes = metadata.get("generic_artifact_hashes", {})
         has_artifacts = bool(commands or skills or hashes)
-        snapshot: Dict[Path, tuple[bytes | None, str | None, bool, int | None]] = {}
+        snapshot: Dict[Path, tuple[bytes | None, str | None, Path, int | None]] = {}
         updates: Dict[str, Any] = {"enabled": False}
         if has_artifacts:
             from ..integrations.generic import registration_directory
@@ -4130,6 +4139,12 @@ class ExtensionManager:
             return
 
         from .. import load_init_options
+        from ._skill_resources import (
+            recorded_resource_hashes,
+            retire_skill_resources,
+            track_skill_resource_writes,
+            written_resource_hashes,
+        )
 
         registrar = CommandRegistrar(self.project_root)
         agent_config = registrar.AGENT_CONFIGS.get(agent_name)
@@ -4177,6 +4192,12 @@ class ExtensionManager:
             # registration of the remaining enabled extensions for this agent.
             generic_snapshot = None
             registry_update_started = False
+            previous_resource_hashes: Dict[str, Dict[str, str]] = {}
+            resource_hashes: Dict[str, Dict[str, str]] = {}
+            write_tracking = contextlib.ExitStack()
+            attempt_resource_writes = write_tracking.enter_context(
+                track_skill_resource_writes()
+            )
             try:
                 if agent_name == "generic":
                     generic_snapshot = self._snapshot_generic_refresh_artifacts(
@@ -4184,8 +4205,6 @@ class ExtensionManager:
                         skills_mode_active=skills_mode_active,
                     )
                 updates: Dict[str, Any] = {}
-                from ._skill_resources import recorded_resource_hashes
-
                 previous_resource_hashes = recorded_resource_hashes(metadata)
                 resource_hashes = copy.deepcopy(previous_resource_hashes)
 
@@ -4340,8 +4359,6 @@ class ExtensionManager:
                                     metadata, to_remove, skills=True, extension_id=ext_id
                                 )
                             if to_remove:
-                                from ._skill_resources import retire_skill_resources
-
                                 retire_skill_resources(
                                     self.project_root, ext_id, resource_hashes, set(to_remove),
                                     skills_dir=agent_skills_dir,
@@ -4479,6 +4496,27 @@ class ExtensionManager:
                 # extension cannot silently drop the others. See #2950.
                 from .. import _print_cli_warning
 
+                if generic_snapshot is None:
+                    # No snapshot to restore: remove the resource copies this
+                    # attempt created, or the next refresh would skip them as
+                    # unowned and removal could never clean them up.
+                    try:
+                        retire_skill_resources(
+                            self.project_root, ext_id,
+                            written_resource_hashes(
+                                self.project_root, resource_hashes,
+                                attempt_resource_writes, previous=previous_resource_hashes,
+                            ),
+                            {
+                                self._skill_name_for_command(name)
+                                for command in manifest.commands
+                                for name in [command["name"], *(command.get("aliases") or [])]
+                            },
+                        )
+                    except Exception as error:
+                        ext_err = ExtensionError(
+                            f"{ext_err}; resource rollback failed: {error}"
+                        )
                 if generic_snapshot is not None:
                     rollback_errors = []
                     try:
@@ -4504,6 +4542,8 @@ class ExtensionManager:
                     continuing="Continuing with the remaining extensions.",
                 )
                 continue
+            finally:
+                write_tracking.close()
 
     def list_installed(self) -> List[Dict[str, Any]]:
         """List all installed extensions with metadata.

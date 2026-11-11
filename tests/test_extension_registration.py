@@ -567,7 +567,7 @@ def test_non_skill_resource_declaration_preserves_rendering(project_dir, tmp_pat
     assert list(output.parent.iterdir()) == [output]
 
 
-def test_all_agents_preflight_before_any_output(project_dir, tmp_path):
+def test_invalid_resource_aborts_before_later_agents_write(project_dir, tmp_path):
     from specify_cli.agents import CommandRegistrar
     from specify_cli.extensions import ValidationError
 

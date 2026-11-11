@@ -349,7 +349,11 @@ TOML, and other non-skill outputs keep their existing rendering and get no
 resource copies.
 
 Patterns match the installed extension, after `.extensionignore` filters the
-package copy. Files users create later in `.specify/extensions/<id>/`, such as
+package copy. Do not use symlinks in an extension package: resource matching
+does not follow or vet them. Installation copies the package with links
+resolved, so a linked directory's files become regular files in the installed
+extension and match like any other file, wherever the link pointed. A matched
+symlink itself is rejected. Files users create later in `.specify/extensions/<id>/`, such as
 `local-config.yml`, can still match and be copied on a re-render; the skill
 location may not be gitignored. Prefer explicit paths or narrow patterns over
 broad wildcards such as `**`.

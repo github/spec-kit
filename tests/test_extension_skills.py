@@ -12,6 +12,7 @@ Tests cover:
 
 import json
 import os
+import stat
 import pytest
 import tempfile
 import shutil
@@ -3952,6 +3953,98 @@ def test_wildcard_resources_ignore_dev_render_cache_and_manifest(project_dir, te
     assert not any(".specify-dev" in key or key.endswith("extension.yml") for key in recorded)
 
 
+def test_native_refresh_failure_removes_resources_it_created(project_dir, temp_dir, monkeypatch):
+    from specify_cli.extensions import ExtensionRegistry
+
+    _create_init_options(project_dir, ai="claude", ai_skills=False)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["references/r.md"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("package")
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    skill = skills / "speckit-test-ext-hello"
+    resource = skill / "references/r.md"
+    # The user deleted the skill; the next refresh re-creates it and the resource.
+    shutil.rmtree(skill)
+    manager.registry.update("test-ext", {"skill_resource_hashes": {"project": {}, "home": {}}})
+
+    original_update = ExtensionRegistry.update
+
+    def fail_update(self, ext_id, updates):
+        raise OSError("simulated registry failure")
+
+    monkeypatch.setattr(ExtensionRegistry, "update", fail_update)
+    ExtensionManager(project_dir).register_enabled_extensions_for_agent("claude")
+    assert not resource.exists()  # no unrecorded copy is left behind
+
+    monkeypatch.setattr(ExtensionRegistry, "update", original_update)
+    manager = ExtensionManager(project_dir)
+    manager.register_enabled_extensions_for_agent("claude", force=True)
+    recorded = manager.registry.get("test-ext")["skill_resource_hashes"]["project"]
+    assert resource.read_text() == "package"
+    assert resource.relative_to(project_dir).as_posix() in recorded
+
+
+def test_native_refresh_failure_keeps_previously_recorded_resources(project_dir, temp_dir, monkeypatch):
+    from specify_cli.extensions import ExtensionRegistry
+
+    _create_init_options(project_dir, ai="claude", ai_skills=False)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["references/r.md"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("package")
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    resource = skills / "speckit-test-ext-hello/references/r.md"
+    assert resource.read_text() == "package"
+
+    monkeypatch.setattr(
+        ExtensionRegistry, "update",
+        lambda self, ext_id, updates: (_ for _ in ()).throw(OSError("simulated registry failure")),
+    )
+    ExtensionManager(project_dir).register_enabled_extensions_for_agent("claude", force=True)
+    assert resource.read_text() == "package"  # a recorded copy is not retired
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_resource_copy_keeps_restrictive_source_permissions(project_dir, temp_dir):
+    _create_init_options(project_dir, ai="claude", ai_skills=False)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["references/*.md", "scripts/run.sh"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "references").mkdir()
+    (ext / "references/private.md").write_text("private")
+    (ext / "references/private.md").chmod(0o600)
+    (ext / "references/plain.md").write_text("plain")
+    (ext / "references/plain.md").chmod(0o644)
+    (ext / "scripts").mkdir()
+    (ext / "scripts/run.sh").write_text("#!/bin/sh\necho hi\n")
+    (ext / "scripts/run.sh").chmod(0o700)
+    previous_umask = os.umask(0o022)
+    try:
+        ExtensionManager(project_dir).install_from_directory(ext, "0.1.0")
+    finally:
+        os.umask(previous_umask)
+    skill = skills / "speckit-test-ext-hello"
+
+    def mode(path):
+        return stat.S_IMODE(path.stat().st_mode)
+
+    assert mode(skill / "references/private.md") == 0o600
+    assert mode(skill / "references/plain.md") == 0o644  # never widened or narrowed
+    assert mode(skill / "scripts/run.sh") & 0o077 == 0  # private script stays private
+    assert mode(skill / "scripts/run.sh") & 0o100  # and remains executable
+
+
 def test_remove_legacy_registry_without_resource_field(project_dir, temp_dir):
     _create_init_options(project_dir, ai="claude", ai_skills=True)
     skills = _create_skills_dir(project_dir)
@@ -3967,19 +4060,30 @@ def test_install_preflights_resources_before_non_skill_first_multi_agent(project
     from specify_cli.agents import CommandRegistrar
     from specify_cli.extensions import ValidationError
 
-    (project_dir / ".gemini/commands").mkdir(parents=True)
+    # Agents are visited in registry order; amp (".md" commands) precedes
+    # claude (skills), so a missing preflight would let amp write first.
+    order = list(CommandRegistrar(project_dir).AGENT_CONFIGS)
+    assert order.index("amp") < order.index("claude")
+    (project_dir / ".agents/commands").mkdir(parents=True)
     (project_dir / ".claude/skills").mkdir(parents=True)
-    configs = CommandRegistrar.AGENT_CONFIGS
-    monkeypatch.setattr(CommandRegistrar, "AGENT_CONFIGS", {
-        "gemini": configs["gemini"], "claude": configs["claude"],
-    })
     ext = _create_extension_dir(temp_dir)
     data = yaml.safe_load((ext / "extension.yml").read_text())
     data["provides"]["commands"][1]["resources"] = ["missing.md"]
     (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    visited = []
+    register = CommandRegistrar.register_commands
+
+    def spy(self, agent_name, *args, **kwargs):
+        visited.append(agent_name)
+        return register(self, agent_name, *args, **kwargs)
+
+    monkeypatch.setattr(CommandRegistrar, "register_commands", spy)
     with pytest.raises(ValidationError):
         ExtensionManager(project_dir).install_from_directory(ext, "0.1.0")
-    assert not list((project_dir / ".gemini/commands").iterdir())
+    # A failed install is rolled back, so the outputs alone cannot show that
+    # amp never wrote: assert the registrar was not reached at all.
+    assert visited == []
+    assert not list((project_dir / ".agents/commands").iterdir())
     assert not list((project_dir / ".claude/skills").iterdir())
 
 
