@@ -24,8 +24,15 @@ _SPECIFY_IGNORE_RULES = ("!.specify/", "!.specify/**")
 # ripgrep ranks ``.ignore`` above every ``.gitignore``, so the exceptions
 # would also surface per-machine extension overrides that the managed
 # ``.specify/.gitignore`` keeps out of version control and that can hold
-# credentials. These rules must follow the last exception line.
-_SPECIFY_PRIVATE_RULES = (".specify/extensions/*/local-config.yml",)
+# credentials, including the copies extension removal keeps under
+# ``.specify/extensions/.backup/``. These rules must follow the last
+# negation line.
+_SPECIFY_PRIVATE_RULES = (
+    ".specify/**/local-config.yml",
+    ".specify/**/*-config.local.yml",
+)
+# Extension removal backups are user state, not Spec Kit files to surface.
+_UNPROBED_SPECIFY_DIRS = (".specify/extensions/.backup/",)
 
 
 class OpencodeIntegration(MarkdownIntegration):
@@ -74,7 +81,8 @@ class OpencodeIntegration(MarkdownIntegration):
                 help=(
                     "Append !.specify/ and !.specify/** to the project root "
                     ".ignore so opencode can glob hidden Spec Kit files, "
-                    "keeping extension local-config.yml files excluded. "
+                    "keeping extension local-config.yml and "
+                    "*-config.local.yml files excluded. "
                     "Uninstall leaves .ignore in place."
                 ),
             )
@@ -230,7 +238,11 @@ def _reject_hidden_specify_paths(
     if specify.is_dir() and not specify.is_symlink():
         probes.update(f.relative_to(path.parent).as_posix() for f in specify.rglob("*") if f.is_file())
     private = pathspec.GitIgnoreSpec.from_lines(_SPECIFY_PRIVATE_RULES)
-    visible = sorted(probe for probe in probes if not private.match_file(probe))
+    visible = sorted(
+        probe for probe in probes
+        if not private.match_file(probe)
+        and not probe.startswith(_UNPROBED_SPECIFY_DIRS)
+    )
     hidden = [probe for probe in visible if _spec_hides(spec, probe)]
     if hidden:
         raise ValueError(
@@ -260,7 +272,7 @@ def _with_specify_ignore_rules(raw: bytes) -> bytes:
     """Append missing Spec Kit rules, keeping *raw* as a byte prefix.
 
     Private rules are appended when they are not exact lines after the
-    last exception line. New rules use the file's newline (``\\n`` when
+    last negation line, so a later ``!`` rule cannot re-include them. New rules use the file's newline (``\\n`` when
     *raw* is empty) and a trailing newline. Exact ASCII lines are matched
     without decoding. Non-UTF-8 files are rejected before this runs and
     are not preserved.
@@ -277,7 +289,10 @@ def _with_specify_ignore_rules(raw: bytes) -> bytes:
     exceptions = [rule.encode("ascii") for rule in _SPECIFY_IGNORE_RULES]
     missing = [rule for rule in exceptions if rule not in lines]
     last = max(
-        (index for index, line in enumerate(lines) if line in exceptions),
+        (
+            index for index, line in enumerate(lines)
+            if line in exceptions or line.startswith(b"!")
+        ),
         default=-1,
     )
     after = set() if missing else set(lines[last + 1:])

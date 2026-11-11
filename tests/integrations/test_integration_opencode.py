@@ -15,7 +15,9 @@ from specify_cli.integrations.manifest import IntegrationManifest
 from .test_integration_base_markdown import MarkdownIntegrationTests
 
 _OPT_IN = {"configure_ignore_file": True}
-_PRIVATE = ".specify/extensions/*/local-config.yml"
+_PRIVATE_RULES = (".specify/**/local-config.yml", ".specify/**/*-config.local.yml")
+_PRIVATE = "\n".join(_PRIVATE_RULES)
+_PRIVATE_CRLF = "\r\n".join(_PRIVATE_RULES)
 _RULES = f"!.specify/\n!.specify/**\n{_PRIVATE}\n".encode()
 _AS_ROOT = getattr(os, "geteuid", lambda: -1)() == 0
 
@@ -243,7 +245,7 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             ),
             "crlf-non-ascii-no-final-newline": (
                 "café\r\nkeep".encode(),
-                f"café\r\nkeep\r\n!.specify/\r\n!.specify/**\r\n{_PRIVATE}\r\n".encode(),
+                f"café\r\nkeep\r\n!.specify/\r\n!.specify/**\r\n{_PRIVATE_CRLF}\r\n".encode(),
             ),
             "dir-rule-only": (b"!.specify/\n", _RULES),
             "contents-rule-only": (
@@ -251,12 +253,17 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             ),
             "both-rules": (
                 "café\r\n!.specify/\r\n!.specify/**\r\n".encode(),
-                f"café\r\n!.specify/\r\n!.specify/**\r\n{_PRIVATE}\r\n".encode(),
+                f"café\r\n!.specify/\r\n!.specify/**\r\n{_PRIVATE_CRLF}\r\n".encode(),
             ),
             "all-rules": (_RULES, _RULES),
             "private-rule-before-exceptions": (
                 f"{_PRIVATE}\n!.specify/\n!.specify/**\n".encode(),
                 f"{_PRIVATE}\n!.specify/\n!.specify/**\n{_PRIVATE}\n".encode(),
+            ),
+            "negation-after-private-rules": (
+                _RULES + b"!.specify/extensions/jira/local-config.yml\n",
+                _RULES + b"!.specify/extensions/jira/local-config.yml\n"
+                + _PRIVATE.encode() + b"\n",
             ),
             "broader-exclusions": (
                 b"*\n.*\n.specify/**\n",
@@ -342,8 +349,22 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         spec = pathspec.GitIgnoreSpec.from_lines(ignore.read_text(encoding="utf-8").splitlines())
         assert spec.match_file(".specify/extensions/jira/local-config.yml")
         assert spec.match_file(".specify/extensions/other/local-config.yml")
+        assert spec.match_file(".specify/extensions/.backup/jira/local-config.yml")
+        assert spec.match_file(".specify/extensions/jira/jira-config.local.yml")
         assert not spec.match_file(".specify/extensions/jira/jira-config.yml")
         assert not spec.match_file(".specify/memory/constitution.md")
+
+    def test_configure_ignore_file_allows_excluding_extension_backups(self, tmp_path):
+        """A user exclusion of removal backups is not treated as hiding Spec Kit files."""
+        integration = get_integration(self.KEY)
+        backup = tmp_path / ".specify" / "extensions" / ".backup" / "jira"
+        backup.mkdir(parents=True)
+        (backup / "jira-config.yml").write_text("project: x\n", encoding="utf-8")
+        ignore = tmp_path / ".ignore"
+        original = _RULES + b".specify/extensions/.backup/\n"
+        ignore.write_bytes(original)
+        integration.setup(tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN)
+        assert ignore.read_bytes() == original
 
     def test_without_flag_and_other_integrations_leave_ignore_untouched(self, tmp_path):
         plain = tmp_path / "plain"
