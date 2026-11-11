@@ -17,6 +17,7 @@ from .test_integration_base_markdown import MarkdownIntegrationTests
 _OPT_IN = {"configure_ignore_file": True}
 _PRIVATE = ".specify/extensions/*/local-config.yml"
 _RULES = f"!.specify/\n!.specify/**\n{_PRIVATE}\n".encode()
+_AS_ROOT = getattr(os, "geteuid", lambda: -1)() == 0
 
 
 class TestOpencodeIntegration(MarkdownIntegrationTests):
@@ -437,38 +438,6 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         assert not (directory / ".opencode").exists()
         assert (ignore_dir / "user.txt").read_text(encoding="utf-8") == "keep"
 
-        unreadable = tmp_path / "unreadable"
-        unreadable.mkdir()
-        blocked = unreadable / ".ignore"
-        blocked.write_bytes(b"user\n")
-        blocked.chmod(0)
-        try:
-            with pytest.raises(OSError):
-                integration.setup(
-                    unreadable,
-                    IntegrationManifest(self.KEY, unreadable),
-                    parsed_options=_OPT_IN,
-                )
-        finally:
-            blocked.chmod(0o644)
-        assert blocked.read_bytes() == b"user\n"
-        assert not (unreadable / ".opencode").exists()
-
-        readonly = tmp_path / "readonly"
-        readonly.mkdir()
-        frozen = readonly / ".ignore"
-        frozen.write_bytes(b"user\n")
-        frozen.chmod(0o444)
-        try:
-            with pytest.raises(OSError):
-                integration.setup(
-                    readonly, IntegrationManifest(self.KEY, readonly), parsed_options=_OPT_IN
-                )
-        finally:
-            frozen.chmod(0o644)
-        assert frozen.read_bytes() == b"user\n"
-        assert not (readonly / ".opencode").exists()
-
         failing = tmp_path / "write-fail"
         failing.mkdir()
         target = failing / ".ignore"
@@ -508,6 +477,42 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         assert (failing / ".opencode" / "commands").is_dir()
         assert list(failing.glob("..ignore.*")) == []
 
+    @pytest.mark.skipif(_AS_ROOT, reason="Root bypasses file permission checks")
+    def test_configure_ignore_file_rejects_unreadable_and_readonly_ignore(self, tmp_path):
+        integration = get_integration(self.KEY)
+        unreadable = tmp_path / "unreadable"
+        unreadable.mkdir()
+        blocked = unreadable / ".ignore"
+        blocked.write_bytes(b"user\n")
+        blocked.chmod(0)
+        try:
+            with pytest.raises(OSError):
+                integration.setup(
+                    unreadable,
+                    IntegrationManifest(self.KEY, unreadable),
+                    parsed_options=_OPT_IN,
+                )
+        finally:
+            blocked.chmod(0o644)
+        assert blocked.read_bytes() == b"user\n"
+        assert not (unreadable / ".opencode").exists()
+
+        readonly = tmp_path / "readonly"
+        readonly.mkdir()
+        frozen = readonly / ".ignore"
+        frozen.write_bytes(b"user\n")
+        frozen.chmod(0o444)
+        try:
+            with pytest.raises(OSError):
+                integration.setup(
+                    readonly, IntegrationManifest(self.KEY, readonly), parsed_options=_OPT_IN
+                )
+        finally:
+            frozen.chmod(0o644)
+        assert frozen.read_bytes() == b"user\n"
+        assert not (readonly / ".opencode").exists()
+
+    @pytest.mark.skipif(_AS_ROOT, reason="Root bypasses directory permission checks")
     @pytest.mark.skipif(
         os.name == "nt",
         reason="Windows reports directories writable regardless of mode bits",
@@ -534,6 +539,82 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             root.chmod(0o755)
         assert ignore.read_bytes() == b"user\n"
         assert plan.read_bytes() == b"custom-command\n"
+
+    def test_configure_ignore_file_skips_malformed_glob_lines(self, tmp_path):
+        """pathspec raises re.error for a reversed range; the line is skipped."""
+        original = b"[z-a].txt\n"
+        (tmp_path / ".ignore").write_bytes(original)
+        get_integration(self.KEY).setup(
+            tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN
+        )
+        assert (tmp_path / ".ignore").read_bytes() == original + _RULES
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX O_NOFOLLOW read path")
+    def test_configure_ignore_file_refuses_link_swapped_in_before_read(self, tmp_path):
+        from specify_cli.file_helper import FileHelper
+
+        outside = tmp_path / "outside-secret"
+        outside.write_bytes(b"secret\n")
+        root = tmp_path / "project"
+        root.mkdir()
+        ignore = root / ".ignore"
+        ignore.write_bytes(b"user\n")
+        real_require = FileHelper._require_file
+
+        def swap(path):
+            real_require(path)
+            if path.name == ".ignore" and not path.is_symlink():
+                path.unlink()
+                path.symlink_to(outside)
+
+        with (
+            patch.object(FileHelper, "_require_file", staticmethod(swap)),
+            pytest.raises(ValueError, match="symlinked"),
+        ):
+            get_integration(self.KEY).setup(
+                root, IntegrationManifest(self.KEY, root), parsed_options=_OPT_IN
+            )
+        assert ignore.is_symlink()
+        assert outside.read_bytes() == b"secret\n"
+        assert not (root / ".opencode").exists()
+
+    def test_configure_ignore_file_aborts_when_ignore_changes_before_write(self, tmp_path):
+        from specify_cli.integrations import opencode
+
+        ignore = tmp_path / ".ignore"
+        ignore.write_bytes(b"user\n")
+        real_reject = opencode._reject_hidden_specify_paths
+        calls = []
+
+        def reject_then_edit(*args, **kwargs):
+            real_reject(*args, **kwargs)
+            calls.append(None)
+            if len(calls) == 2:
+                ignore.write_bytes(b"concurrent edit\n")
+
+        with (
+            patch.object(opencode, "_reject_hidden_specify_paths", reject_then_edit),
+            pytest.raises(ValueError, match="changed while"),
+        ):
+            get_integration(self.KEY).setup(
+                tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN
+            )
+        assert ignore.read_bytes() == b"concurrent edit\n"
+
+    def test_configure_ignore_file_rejects_nested_specify_ignore_files(self, tmp_path):
+        for name in (".ignore", ".rgignore"):
+            root = tmp_path / name.lstrip(".")
+            memory = root / ".specify" / "memory"
+            memory.mkdir(parents=True)
+            (memory / "constitution.md").write_text("x\n")
+            nested = root / ".specify" / name
+            nested.write_bytes(b"memory/\n")
+            with pytest.raises(ValueError, match=rf"\{name}.*constitution\.md"):
+                get_integration(self.KEY).setup(
+                    root, IntegrationManifest(self.KEY, root), parsed_options=_OPT_IN
+                )
+            assert not (root / ".ignore").exists()
+            assert nested.read_bytes() == b"memory/\n"
 
     def test_upgrade_rolls_back_existing_ignore_when_a_later_step_fails(self, tmp_path):
         from specify_cli.integrations import installer

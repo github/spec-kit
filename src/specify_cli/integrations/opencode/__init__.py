@@ -1,6 +1,8 @@
 """opencode integration."""
 
+import errno
 import os
+import re
 import stat
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -8,14 +10,15 @@ from typing import Any
 
 import pathspec
 
+from ...file_helper import FileHelper, SymlinkDeniedError, UnsupportedPathError
 from ..base import IntegrationOption, MarkdownIntegration
 from ..manifest import IntegrationManifest
 
-# OpenCode 1.18.31 and 1.19.3 glob through ripgrep without ``--hidden``.
+# opencode 1.18.31 and 1.19.3 glob through ripgrep without ``--hidden``.
 # Root ``.ignore`` rules ``!.specify/`` and ``!.specify/**`` make
 # ``.specify/**/*`` return constitution, template, and script paths on
 # that path (``opencode debug rg files --glob``, the same ``Ripgrep.glob``
-# call the glob tool makes). ``!.specify/**`` alone does not. OpenCode 2.x
+# call the glob tool makes). ``!.specify/**`` alone does not. opencode 2.x
 # was not part of that check.
 _SPECIFY_IGNORE_RULES = ("!.specify/", "!.specify/**")
 # ripgrep ranks ``.ignore`` above every ``.gitignore``, so the exceptions
@@ -70,7 +73,7 @@ class OpencodeIntegration(MarkdownIntegration):
                 default=False,
                 help=(
                     "Append !.specify/ and !.specify/** to the project root "
-                    ".ignore so OpenCode can glob hidden Spec Kit files, "
+                    ".ignore so opencode can glob hidden Spec Kit files, "
                     "keeping extension local-config.yml files excluded. "
                     "Uninstall leaves .ignore in place."
                 ),
@@ -162,27 +165,21 @@ def _split_ignore_lines(raw: bytes) -> list[bytes]:
     ]
 
 
-def _reject_hidden_specify_paths(
-    path: Path, updated: bytes, script_type: str | None = None
-) -> None:
-    """Fail when *updated* still hides Spec Kit paths, evaluated in file order.
-
-    Bundled scripts are probed only for the variants *script_type* installs
-    (every variant when it is unknown); files already under ``.specify/``
-    are always probed.
-    """
-    from ..._assets import _locate_core_pack, _repo_root
-    from ...shared_infra import script_variant_dirs
-
+def _ignore_spec(raw: bytes) -> pathspec.GitIgnoreSpec:
+    """Compile *raw* ignore lines, skipping lines pathspec cannot parse."""
     parsed = []
-    for raw_line in _split_ignore_lines(updated):
-        text = raw_line.decode("utf-8")
+    for raw_line in _split_ignore_lines(raw):
+        text = raw_line.decode("utf-8", errors="replace")
         try:
             pathspec.GitIgnoreSpec.from_lines([text])
-        except ValueError:
+        except (ValueError, re.error):
             continue
         parsed.append(text)
-    spec = pathspec.GitIgnoreSpec.from_lines(parsed)
+    return pathspec.GitIgnoreSpec.from_lines(parsed)
+
+
+def _spec_hides(spec: pathspec.GitIgnoreSpec, probe: str) -> bool:
+    """Whether *spec* excludes *probe* or one of its parent directories."""
 
     def ancestor_excluded(candidate: str) -> bool:
         state = False
@@ -191,14 +188,29 @@ def _reject_hidden_specify_paths(
                 state = bool(pattern.include)
         return state
 
-    def hides(probe: str) -> bool:
-        parts = [part for part in probe.split("/") if part]
-        built, ancestors = "", parts if probe.endswith("/") else parts[:-1]
-        for part in ancestors:
-            built = f"{built}/{part}" if built else part
-            if ancestor_excluded(built + "/"):
-                return True
-        return not probe.endswith("/") and spec.match_file(probe)
+    parts = [part for part in probe.split("/") if part]
+    built, ancestors = "", parts if probe.endswith("/") else parts[:-1]
+    for part in ancestors:
+        built = f"{built}/{part}" if built else part
+        if ancestor_excluded(built + "/"):
+            return True
+    return not probe.endswith("/") and spec.match_file(probe)
+
+
+def _reject_hidden_specify_paths(
+    path: Path, updated: bytes, script_type: str | None = None
+) -> None:
+    """Fail when *updated* still hides Spec Kit paths, evaluated in file order.
+
+    Bundled scripts are probed only for the variants *script_type* installs
+    (every variant when it is unknown); files already under ``.specify/``
+    are always probed. ``.ignore`` and ``.rgignore`` under ``.specify/`` are
+    checked too, because ripgrep applies them below the root exceptions.
+    """
+    from ..._assets import _locate_core_pack, _repo_root
+    from ...shared_infra import script_variant_dirs
+
+    spec = _ignore_spec(updated)
 
     pack, repo = _locate_core_pack(), _repo_root()
     probes = {".specify/", ".specify/.gitignore", ".specify/memory/constitution.md"}
@@ -218,14 +230,30 @@ def _reject_hidden_specify_paths(
     if specify.is_dir() and not specify.is_symlink():
         probes.update(f.relative_to(path.parent).as_posix() for f in specify.rglob("*") if f.is_file())
     private = pathspec.GitIgnoreSpec.from_lines(_SPECIFY_PRIVATE_RULES)
-    hidden = sorted(
-        probe for probe in probes if not private.match_file(probe) and hides(probe)
-    )
+    visible = sorted(probe for probe in probes if not private.match_file(probe))
+    hidden = [probe for probe in visible if _spec_hides(spec, probe)]
     if hidden:
         raise ValueError(
             f"A later exclusion in {path} hides {hidden[0]}. "
             "Move !.specify/ and !.specify/** below it, then rerun."
         )
+    if not specify.is_dir() or specify.is_symlink():
+        return
+    for name in (".ignore", ".rgignore"):
+        nested = specify / name
+        if not nested.is_file() or nested.is_symlink():
+            continue
+        nested_spec = _ignore_spec(FileHelper(specify).read_bytes(name))
+        nested_hidden = [
+            probe for probe in visible
+            if probe != ".specify/"
+            and _spec_hides(nested_spec, probe.removeprefix(".specify/"))
+        ]
+        if nested_hidden:
+            raise ValueError(
+                f"An exclusion in {nested} hides {nested_hidden[0]}. "
+                "Remove it from that file, then rerun."
+            )
 
 
 def _with_specify_ignore_rules(raw: bytes) -> bytes:
@@ -267,20 +295,29 @@ def _with_specify_ignore_rules(raw: bytes) -> bytes:
     return raw + addition
 
 
+def _read_root_ignore(path: Path) -> bytes:
+    """Read root ``.ignore`` without following a link swapped in at the leaf."""
+    try:
+        return FileHelper(path.parent).read_bytes(path.name)
+    except FileNotFoundError:
+        return b""
+    except SymlinkDeniedError as exc:
+        raise ValueError(f"Refusing to configure symlinked .ignore: {path}") from exc
+    except UnsupportedPathError as exc:
+        raise ValueError(
+            f"Refusing to configure .ignore because it is not a regular file: {path}"
+        ) from exc
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise ValueError(f"Refusing to configure symlinked .ignore: {path}") from exc
+        raise OSError(f"Cannot read .ignore at {path}") from exc
+
+
 def _preflight_root_ignore(
     project_root: Path, script_type: str | None = None
 ) -> tuple[Path, bytes, bytes]:
     path = project_root / ".ignore"
-    if path.is_symlink():
-        raise ValueError(f"Refusing to configure symlinked .ignore: {path}")
-    if path.exists() and not path.is_file():
-        raise ValueError(
-            f"Refusing to configure .ignore because it is not a regular file: {path}"
-        )
-    try:
-        raw = path.read_bytes() if path.is_file() else b""
-    except OSError as exc:
-        raise OSError(f"Cannot read .ignore at {path}") from exc
+    raw = _read_root_ignore(path)
     try:
         raw.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -314,6 +351,8 @@ def _configure_root_ignore(
     from ...shared_infra import _write_shared_bytes
 
     mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
+    if _read_root_ignore(path) != raw:
+        raise ValueError(f"{path} changed while it was being configured; rerun.")
     _write_shared_bytes(manifest.project_root, path, updated, mode=mode)
     manifest.record_existing(".ignore", ownership="partial")
     return path
