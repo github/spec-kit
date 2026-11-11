@@ -1101,11 +1101,16 @@ def test_powershell_accepts_valid_in_project_link_chains(
     target = target_dir / ("AGENTS.md" if operation == "context" else "plan.md")
     target.write_bytes(b"# original\n")
     try:
+        # Absolute link targets: a chain of bare-name relative
+        # directory links does not resolve through the Windows kernel
+        # (the setup guard below stays False at 11 and 20 hops even
+        # though every hop is a valid in-project link), so the chain
+        # is built with absolute targets instead. The depth, the
+        # in-project containment, and the resolved file are unchanged,
+        # and the resolver under test accepts both target forms.
         for index in range(1, link_count + 1):
-            (repo / f"l{index}").symlink_to(
-                f"l{index + 1}" if index < link_count else "actual/.",
-                target_is_directory=True,
-            )
+            link_target = repo / f"l{index + 1}" if index < link_count else target_dir
+            (repo / f"l{index}").symlink_to(link_target, target_is_directory=True)
         if operation == "fallback":
             candidate = repo / "specs/001/plan.md"
             candidate.parent.mkdir(parents=True)
@@ -1114,6 +1119,13 @@ def test_powershell_accepts_valid_in_project_link_chains(
             candidate = repo / context_file
     except (OSError, NotImplementedError) as exc:
         pytest.skip(f"symlinks unavailable: {exc}")
+    # The fixture chain itself must resolve before the script runs, so
+    # a failure here is a broken fixture, not a script bug. stat()
+    # surfaces the underlying resolution error instead of a bare False.
+    try:
+        candidate.stat()
+    except OSError as exc:
+        pytest.fail(f"fixture link chain did not resolve: {candidate}: {exc}")
     assert candidate.is_file()
 
     result = run_powershell(repo, powershell=WINDOWS_POWERSHELL)
