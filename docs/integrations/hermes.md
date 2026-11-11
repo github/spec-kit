@@ -39,6 +39,23 @@ project-local manifest's modified-file checks. Back up customizations before
 uninstalling or switching away from Hermes. An empty project-local marker is
 also removed; non-Spec-Kit global skills remain.
 
+## Extension Resources
+
+Extension commands can declare [skill resources](../extensions/developing.md#skill-resources).
+With Hermes they are copied beside the skill, into `~/.hermes/skills/speckit-<command>/`
+(alias skills included), so every project that uses the same user home shares them.
+
+Ownership records are project-local, not tied to the global directory:
+
+- Removing or updating the extension in one project deletes the copies that
+  project recorded, including edits. This can affect another project that
+  installed the same extension.
+- A refresh keeps a modified or unowned copy unless you pass `--force`.
+- Removal only acts under the currently configured `~/.hermes/skills`. If that
+  directory moved, copies in the old location stay in place.
+- Uninstalling Hermes removes the whole `speckit-*` skill directories, resources
+  included.
+
 ## Workflow Dispatch
 
 Workflow steps use `hermes chat -Q`. Slash-prefixed prompts select a skill with
