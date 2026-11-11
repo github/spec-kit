@@ -13,7 +13,7 @@ import yaml
 
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.base import MarkdownIntegration
-from specify_cli.integrations.manifest import IntegrationManifest
+from specify_cli.integrations.manifest import IntegrationManifest, _sha256
 from specify_cli.integration_state import INTEGRATION_STATE_SCHEMA, write_integration_json
 from specify_cli.extensions import ExtensionCatalog, ExtensionError, ExtensionManager, HookExecutor
 from specify_cli import save_init_options
@@ -2866,12 +2866,15 @@ def test_generic_disable_registry_failure_restores_skill_resource(tmp_path, gene
     from specify_cli import app
 
     _declare_run_skill_resource(generic_extension)
+    (generic_extension / "scripts/run.sh").write_text("#!/bin/sh\necho sample\n", encoding="utf-8")
     project = generic_project(tmp_path, skills=True)
     manager = ExtensionManager(project)
     manager.install_from_directory(generic_extension, "1.0.0")
     skill = project / ".custom/commands/speckit-sample-run"
     resource = skill / "scripts/run.sh"
     original = resource.read_bytes()
+    original_mode = resource.stat().st_mode & 0o777
+    assert os.name == "nt" or original_mode & 0o111
     metadata = manager.registry.get("sample")
     original_save = manager.registry.__class__._save
     failed = False
@@ -2890,11 +2893,43 @@ def test_generic_disable_registry_failure_restores_skill_resource(tmp_path, gene
     result = runner.invoke(app, ["extension", "disable", "sample"])
     assert result.exit_code != 0 and "simulated disable registry failure" in result.output
     assert resource.read_bytes() == original
+    assert resource.stat().st_mode & 0o777 == original_mode
     assert ExtensionManager(project).registry.get("sample") == metadata
     retry = runner.invoke(app, ["extension", "disable", "sample"])
     assert retry.exit_code == 0, retry.output
     assert not resource.exists()
     assert ExtensionManager(project).registry.get("sample")["enabled"] is False
+
+
+def test_generic_refresh_failure_removes_new_resource_destinations_and_allows_retry(
+    tmp_path, generic_extension, monkeypatch,
+):
+    from specify_cli.extensions import ExtensionRegistry
+
+    _declare_run_skill_resource(generic_extension)
+    project = generic_project(tmp_path, skills=False)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    skill = project / ".custom/commands/speckit-sample-run"
+    assert not skill.exists()
+    # Enabling skills mode makes the refresh write SKILL.md and the resource.
+    save_init_options(project, {"ai": "generic", "ai_skills": True, "script": "sh"})
+    original_update = ExtensionRegistry.update
+
+    def fail_update(self, ext_id, updates):
+        raise OSError("simulated registry failure")
+
+    monkeypatch.setattr(ExtensionRegistry, "update", fail_update)
+    manager = ExtensionManager(project)
+    manager.register_enabled_extensions_for_agent("generic")
+    assert not skill.exists()
+
+    monkeypatch.setattr(ExtensionRegistry, "update", original_update)
+    manager.register_enabled_extensions_for_agent("generic")
+    resource = skill / "scripts/run.sh"
+    assert (skill / "SKILL.md").is_file() and resource.read_text() == "echo sample\n"
+    recorded = manager.registry.get("sample")["skill_resource_hashes"]["project"]
+    assert recorded == {resource.relative_to(project).as_posix(): _sha256(resource)}
 
 
 def test_generic_update_rollback_restores_resource_at_moved_recorded_location(tmp_path, generic_extension):
@@ -2976,6 +3011,41 @@ def test_install_hook_failure_retires_attempt_skill_resource(tmp_path, generic_e
     if agent == "claude":
         assert alias_resource.read_bytes() == b"echo sample\n"
         assert hashes[alias_resource.relative_to(project).as_posix()] == sha256(alias_resource.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("agent", ["generic", "claude"])
+def test_failed_force_reinstall_retires_unchanged_attempt_resource(tmp_path, generic_extension, monkeypatch, agent):
+    _declare_run_skill_resource(generic_extension)
+    if agent == "generic":
+        project = generic_project(tmp_path, skills=True)
+        skill = project / ".custom/commands/speckit-sample-run"
+    else:
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".claude/skills").mkdir(parents=True)
+        save_init_options(project, {"ai": "claude", "ai_skills": False, "script": "sh"})
+        skill = project / ".claude/skills/speckit-sample-run"
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    resource = skill / "scripts/run.sh"
+    assert resource.is_file()
+
+    original_register = HookExecutor.register_hooks
+    monkeypatch.setattr(
+        HookExecutor, "register_hooks",
+        lambda *a, **kw: (_ for _ in ()).throw(OSError("simulated hook failure")),
+    )
+    with pytest.raises(OSError, match="simulated hook failure"):
+        manager.install_from_directory(generic_extension, "1.0.0", force=True)
+    # The old install was removed and the new one failed: no owner is left.
+    assert not manager.registry.is_installed("sample")
+    assert not resource.exists()
+
+    monkeypatch.setattr(HookExecutor, "register_hooks", original_register)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    assert resource.read_bytes() == b"echo sample\n"
+    recorded = manager.registry.get("sample")["skill_resource_hashes"]["project"]
+    assert resource.relative_to(project).as_posix() in recorded
 
 
 def test_install_failure_preserves_previously_recorded_unwritten_resource(tmp_path, generic_extension, monkeypatch):

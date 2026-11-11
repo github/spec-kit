@@ -333,7 +333,10 @@ Supplemental skills render the primary command only. Patterns support `*`,
 any depth, while `references/*.md` matches directly under `references/`.
 Negation, absolute paths, and `..` segments are not allowed. Explicit files
 must exist, and every wildcard must match at least one regular file; symlink
-matches and a resource destination of `SKILL.md` are rejected.
+matches and a resource destination of `SKILL.md` are rejected. Wildcards never
+select the root `extension.yml` or the `.specify-dev` development render cache
+(list `extension.yml` explicitly if you really need it; `.specify-dev` entries
+are rejected).
 
 A non-empty list enables copy mode for skill outputs: **no paths are
 rewritten**, including body paths and frontmatter `scripts:` paths. List every

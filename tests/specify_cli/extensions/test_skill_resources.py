@@ -14,6 +14,8 @@ from specify_cli.extensions._skill_resources import (
     resolve_skill_resources,
     skills_resource_root,
     sync_skill_resources,
+    track_skill_resource_writes,
+    written_resource_hashes,
 )
 from specify_cli.integrations.manifest import _sha256
 
@@ -64,6 +66,55 @@ def test_resolve_skill_resources_sorted_and_installed_ignore(tmp_path):
         resolve_skill_resources(installed, ["assets/ignored.md"])
     with pytest.raises(ValidationError, match="matches no files"):
         resolve_skill_resources(installed, ["assets/ignored*.md"])
+
+
+def test_resolve_skill_resources_ignore_matches_copytree(tmp_path):
+    source = tmp_path / "source"
+    for name in ("a.md", "skipped/b.md", "kept/c.md", "kept/d.tmp", "kept/nested/e.md"):
+        put(source / "assets" / name)
+    put(source / ".extensionignore", "assets/skipped/\n*.tmp\n!assets/kept/d.tmp\nassets/kept/nested/\n")
+    ignore = load_install_ignore(source, ".extensionignore", ValidationError)
+    installed = tmp_path / "installed"
+    shutil.copytree(source, installed, ignore=ignore)
+    expected = sorted(
+        p.relative_to(installed).as_posix() for p in (installed / "assets").rglob("*") if p.is_file()
+    )
+    assert resolve_skill_resources(source, ["assets/**"], ignore=ignore) == expected
+    assert resolve_skill_resources(installed, ["assets/**"]) == expected
+    assert "assets/skipped/b.md" not in expected and "assets/kept/nested/e.md" not in expected
+
+
+@pytest.mark.parametrize("pattern", [
+    "assets/skipped/b.md", "assets/skipped/*.md", "assets/kept/nested/e.md", ".extensionignore",
+])
+def test_resolve_skill_resources_ignore_excludes_unshipped_files(tmp_path, pattern):
+    source = tmp_path / "source"
+    put(source / "assets/skipped/b.md")
+    put(source / "assets/kept/nested/e.md")
+    put(source / ".extensionignore", "assets/skipped/\nassets/kept/nested/\n")
+    ignore = load_install_ignore(source, ".extensionignore", ValidationError)
+    with pytest.raises(ValidationError, match="excluded|matches no files"):
+        resolve_skill_resources(source, [pattern], ignore=ignore)
+    assert resolve_skill_resources(source, [pattern]) != []
+
+
+def test_resolve_skill_resources_wildcards_skip_render_cache_and_manifest(tmp_path):
+    ext = tmp_path / "ext"
+    put(ext / "extension.yml")
+    put(ext / "commands/run.md")
+    put(ext / "assets/a.md")
+    put(ext / ".specify-dev/agent-commands/claude/skill/SKILL.md")
+    put(ext / "assets/extension.yml")  # only the root manifest is excluded
+    assert resolve_skill_resources(ext, ["**"]) == [
+        "assets/a.md", "assets/extension.yml", "commands/run.md",
+    ]
+    assert resolve_skill_resources(ext, ["**/*.md"]) == ["assets/a.md", "commands/run.md"]
+    with pytest.raises(ValidationError, match="matches no files"):
+        resolve_skill_resources(ext, [".specify-dev/**"])
+    # An explicit manifest entry is a deliberate choice and still works.
+    assert resolve_skill_resources(ext, ["extension.yml"]) == ["extension.yml"]
+    with pytest.raises(ValidationError, match="internal render output"):
+        resolve_skill_resources(ext, [".specify-dev/agent-commands/claude/skill/SKILL.md"])
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO unavailable")
@@ -289,3 +340,92 @@ def test_sync_skill_resources_continues_after_late_source_validation_failure(tmp
     assert hashes == {"skills/skill/first": _sha256(first)}
     assert any("second" in warning and "source changed" in warning for warning in warnings)
     assert not (root / "skills/skill/second").exists()
+
+
+def test_retire_skill_resources_home_bucket_only_under_configured_skills_dir(monkeypatch, tmp_path):
+    from specify_cli.extensions._skill_resources import retire_skill_resources
+
+    home, project = tmp_path / "home", tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    name = "speckit-test-ext-run"
+    owned = put(home / ".hermes/skills" / name / "references/r.md")
+    unrelated = put(home / "Documents" / name / "notes.md")
+    in_project = put(project / ".claude/skills" / name / "references/r.md")
+    hashes = {
+        "home": {
+            owned.relative_to(home).as_posix(): "any",
+            unrelated.relative_to(home).as_posix(): "any",
+        },
+        "project": {in_project.relative_to(project).as_posix(): "any"},
+    }
+    retire_skill_resources(project, "test-ext", hashes, {name})
+    assert not owned.exists() and not in_project.exists()
+    assert unrelated.read_text() == "source"
+    assert hashes == {"home": {unrelated.relative_to(home).as_posix(): "any"}}
+
+
+def test_retire_skill_resources_ignores_home_dirs_of_unflagged_agents(monkeypatch, tmp_path):
+    from specify_cli.agents import CommandRegistrar
+    from specify_cli.extensions._skill_resources import retire_skill_resources
+
+    home, project = tmp_path / "home", tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    name = "speckit-test-ext-run"
+    resource = put(home / ".other/skills" / name / "references/r.md")
+    other = {"dir": "~/.other/skills", "extension": "/SKILL.md", "format": "markdown", "args": "$ARGUMENTS"}
+    monkeypatch.setitem(CommandRegistrar.AGENT_CONFIGS, "other", other)
+    hashes = {"home": {resource.relative_to(home).as_posix(): "any"}}
+    retire_skill_resources(project, "test-ext", hashes, {name})
+    assert resource.exists() and hashes["home"]
+
+    monkeypatch.setitem(CommandRegistrar.AGENT_CONFIGS, "other", {**other, "home_scoped": True})
+    retire_skill_resources(project, "test-ext", hashes, {name})
+    assert not resource.exists() and hashes == {}
+
+
+def test_written_resource_hashes_selects_only_files_written_in_the_attempt(tmp_path):
+    root = tmp_path / "project"
+    ext = tmp_path / "ext"
+    skills = root / "skills"
+    put(ext / "unchanged", "same")
+    put(ext / "preserved", "package")
+    put(ext / "unowned", "package")
+    skill = skills / "skill-one"
+    put(skill / "unchanged", "same")  # recorded, rewritten with identical bytes
+    preserved = put(skill / "preserved", "package")
+    put(skill / "unowned", "user")
+    previous = {p.relative_to(root).as_posix(): _sha256(p) for p in (skill / "unchanged", preserved)}
+    preserved.write_text("user edit")
+
+    with track_skill_resource_writes() as written:
+        hashes, _, _ = sync_skill_resources(
+            "ext", skills, root, "skill-one", ext, ["unchanged", "preserved", "unowned"], previous,
+        )
+    key = lambda name: (skill / name).relative_to(root).as_posix()  # noqa: E731
+    # The unchanged file keeps its digest but was written; the preserved one
+    # keeps its record without being written; the unowned one is not recorded.
+    assert hashes[key("unchanged")] == previous[key("unchanged")]
+    assert key("preserved") in hashes and key("unowned") not in hashes
+    assert written_resource_hashes(root, {"project": hashes}, written) == {
+        "project": {key("unchanged"): hashes[key("unchanged")]}
+    }
+
+
+def test_track_skill_resource_writes_chains_the_outer_observer(tmp_path):
+    from specify_cli.integrations._file_changes import file_change_observer
+
+    seen = []
+    token = file_change_observer.set(lambda path, before, removal: seen.append((path.name, before)))
+    try:
+        ext = tmp_path / "ext"
+        put(ext / "r")
+        with track_skill_resource_writes() as written:
+            sync_skill_resources("ext", tmp_path / "project/skills", tmp_path / "project", "s", ext, ["r"], {})
+        assert {path.name for path in written} == {"r"}
+        assert ("r", True) in seen and ("r", False) in seen
+        assert file_change_observer.get() is not None
+    finally:
+        file_change_observer.reset(token)
+    assert file_change_observer.get() is None

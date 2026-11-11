@@ -19,6 +19,7 @@ from .._init_options import is_ai_skills_enabled
 from . import _commands
 from ._command_update_artifacts import preflight_update_archive
 from ._command_update_discovery import discover_updates
+from ._skill_resources import recorded_resource_hashes
 
 
 def run_update_command(extension: str | None) -> None:
@@ -250,6 +251,7 @@ def run_update_command(extension: str | None) -> None:
                     and (
                         "generic" in registrar.AGENT_CONFIGS
                         or backup_registry_entry.get("generic_artifact_hashes")
+                        or recorded_resource_hashes(backup_registry_entry)
                     )
                 ):
                     generic_active = "generic" in registrar.AGENT_CONFIGS

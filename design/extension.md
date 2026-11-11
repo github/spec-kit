@@ -95,7 +95,7 @@ file paths or gitignore-style patterns, using the `.extensionignore` dialect.
 Backslashes are normalized; absolute paths, `..` segments, negation, and invalid
 patterns are rejected. At installation or skill rendering, each explicit file
 must exist and each wildcard must match regular files in the installed package;
-symlink matches and a destination of `SKILL.md` are rejected. Matches are
+symlink matches and a destination of `SKILL.md` are rejected. Wildcards skip the root `extension.yml` and the `.specify-dev` development render cache, so the set never depends on render history. Matches are
 sorted and deduplicated. A non-empty list enables skill copy mode, preserving
 source-relative paths under each rendered skill. Missing or empty lists retain
 no-copy rendering. See [Skill resources](../docs/extensions/developing.md#skill-resources)
@@ -304,7 +304,7 @@ also uses copy-mode rendering and resource ownership.
 | --- | --- |
 | Install / render | Write and record hashes for copies; skip unowned existing destinations with a warning unless forced. |
 | Refresh / integration switch or upgrade | Overwrite hash-matching copies; preserve modified recorded copies with a warning unless the user supplies `--force`. |
-| Extension removal / update / force reinstall | Remove recorded resources even if edited, using recorded project/home paths across agent directories, including moved locations; unsafe paths are skipped with a warning. Update and reinstall then install the new set. |
+| Extension removal / update / force reinstall | Remove recorded resources even if edited. Project paths follow the recorded location across agent directories, including moved locations. Home paths are removed only under the resolved skills directories of integrations that declare `registrar_config.home_scoped` (as their `SKILL.md` cleanup does), so a moved home directory leaves its resources in place. Unsafe paths are skipped with a warning. Update and reinstall then install the new set. Update rollback snapshots every recorded resource path from both buckets. |
 | Per-agent unregister | Restrict recorded-path cleanup to the agent's currently resolved skills directory; records outside it remain. |
 
 Resource cleanup itself does not remove unrecorded paths. Native and generic

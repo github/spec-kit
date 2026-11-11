@@ -12,6 +12,7 @@ nested catalog handlers live under ``catalog/``.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import errno
 import hashlib
@@ -1987,8 +1988,12 @@ class ExtensionManager:
         self, extension_id: str, manifest: Optional[ExtensionManifest],
         metadata: Dict[str, Any],
         *, skills_mode_active: bool, include_current_candidates: bool = True,
-    ) -> Dict[Path, tuple[bytes | None, str | None, bool]]:
-        """Remember owned outputs and absent candidates for generic rollback."""
+    ) -> Dict[Path, tuple[bytes | None, str | None, bool, int | None]]:
+        """Remember owned outputs and absent candidates for generic rollback.
+
+        Each entry is ``(content, symlink target, parent existed, mode)``; the
+        permission bits matter for executable resource scripts.
+        """
         from ..integrations.generic import registration_directory
         from ..shared_infra import _validate_safe_shared_directory
 
@@ -2003,7 +2008,10 @@ class ExtensionManager:
             hashes = {}
         from ._skill_resources import recorded_resource_hashes
 
-        resource_hashes = recorded_resource_hashes(metadata).get("project", {})
+        # Resource removal follows recorded paths from both buckets, so rollback
+        # must as well: each path is validated against its own trusted root.
+        resource_buckets = recorded_resource_hashes(metadata)
+        resource_roots = {"project": root, "home": Path.home()}
         registered = metadata.get("registered_commands", {})
         command_names = (
             set(self._collect_manifest_command_names(manifest))
@@ -2020,37 +2028,65 @@ class ExtensionManager:
         if output_dir is not None:
             paths.update(output_dir / f"{name}.md" for name in command_names)
             paths.update(output_dir / name / "SKILL.md" for name in skill_names)
-        for relative in (*hashes, *resource_hashes):
+            if skills_mode_active and manifest is not None:
+                # Resources this refresh will write: absent now, owned if it fails.
+                from . import ValidationError
+                from ._skill_resources import resolve_skill_resources
+
+                for command in manifest.commands:
+                    if not command.get("resources"):
+                        continue
+                    try:
+                        resources = resolve_skill_resources(source, command["resources"])
+                    except ValidationError:
+                        continue  # The render itself reports an invalid declaration.
+                    skill = self._skill_name_for_command(command["name"])
+                    paths.update(output_dir / skill / resource for resource in resources)
+        trusted: Dict[Path, Path] = {path: root for path in paths}
+        resource_paths: set[Path] = set()
+        for bucket, bucket_root in resource_roots.items():
+            for relative in resource_buckets.get(bucket, {}):
+                if not isinstance(relative, str):
+                    continue
+                name = Path(relative)
+                if not name.is_absolute() and ".." not in name.parts:
+                    trusted.setdefault(bucket_root / name, bucket_root)
+                    resource_paths.add(bucket_root / name)
+        for relative in hashes:
             if not isinstance(relative, str):
                 continue
             name = Path(relative)
             if not name.is_absolute() and ".." not in name.parts:
-                paths.add(root / name)
-        snapshot: Dict[Path, tuple[bytes | None, str | None, bool]] = {}
-        for path in paths:
+                trusted.setdefault(root / name, root)
+        snapshot: Dict[Path, tuple[bytes | None, str | None, bool, int | None]] = {}
+        for path, path_root in trusted.items():
             try:
-                _validate_safe_shared_directory(root, path.parent)
+                _validate_safe_shared_directory(path_root, path.parent)
             except (OSError, ValueError):
                 # An unsafe candidate is not owned; do not block the other layout.
                 continue
             if not path.exists() and not path.is_symlink():
-                snapshot[path] = (None, None, path.parent.is_dir())
+                snapshot[path] = (None, None, path.parent.is_dir(), None)
                 continue
             if not path.is_file():
                 continue
             if path.is_symlink() and not path.resolve().is_relative_to(source):
                 continue
             content = path.read_bytes()
-            relative = path.relative_to(root).as_posix()
+            relative = path.relative_to(root).as_posix() if path_root == root else None
             # Resource removal deletes recorded files even when modified.
-            if relative in resource_hashes or hashes.get(relative) == hashlib.sha256(content).hexdigest():
+            if path in resource_paths or (
+                relative is not None
+                and hashes.get(relative) == hashlib.sha256(content).hexdigest()
+            ):
                 snapshot[path] = (
-                    content, os.readlink(path) if path.is_symlink() else None, True
+                    content, os.readlink(path) if path.is_symlink() else None, True,
+                    stat.S_IMODE(path.stat().st_mode),
                 )
         return snapshot
 
     def _restore_generic_refresh_artifacts(
-        self, snapshot: Dict[Path, tuple[bytes | None, str | None, bool]],
+        self, snapshot: Dict[Path, tuple[bytes | None, str | None, bool, int | None]],
         extension_id: str,
     ) -> None:
         """Restore prior owned files and remove only outputs absent before refresh."""
@@ -2060,11 +2096,16 @@ class ExtensionManager:
         )
         from ..integrations._file_changes import changing_file, unlink, write_bytes
 
-        root = self.project_root.resolve()
+        project = self.project_root.resolve()
         source = (self.extensions_dir / extension_id).resolve()
         errors = []
-        for path, (content, link, parent_existed) in snapshot.items():
+        # Deepest paths first so a parent directory is empty when its turn comes.
+        for path, (content, link, parent_existed, mode) in sorted(
+            snapshot.items(), key=lambda item: len(item[0].parts), reverse=True,
+        ):
             try:
+                # Home-scoped resources were snapshotted against the home root.
+                root = project if path.is_relative_to(project) else Path.home()
                 _validate_safe_shared_directory(root, path.parent)
                 if path.is_symlink():
                     if content is None or not path.resolve().is_relative_to(source):
@@ -2094,6 +2135,11 @@ class ExtensionManager:
                             path.symlink_to(link)
                     else:
                         write_bytes(path, content)
+                        if mode is not None:
+                            try:
+                                path.chmod(mode)
+                            except (NotImplementedError, OSError):
+                                pass  # Best effort, as for restored config files.
             except (OSError, ValueError) as exc:
                 errors.append(f"{path}: {exc}")
         if errors:
@@ -2634,6 +2680,24 @@ class ExtensionManager:
         for package_path in package_paths:
             before_file_change(package_path, removal=True)
 
+        # Load and validate .extensionignore before removing the old install or
+        # reading/creating the rescue staging directory. The loader can raise
+        # ValidationError (invalid UTF-8) or OSError; failing first keeps the
+        # kept config authoritative in its documented location rather than
+        # leaving a staging copy that a retry (after the user edits the kept
+        # config) would reload and use to overwrite the newer bytes. Staging
+        # left by an earlier destructive attempt is intentionally left intact.
+        # Resources are resolved against what the copy will keep, so a missing
+        # or ignored resource also fails before the old install is removed.
+        from ._skill_resources import resolve_skill_resources
+
+        ignore_fn = self._load_extensionignore(source_dir)
+        for command in manifest.commands:
+            if command.get("resources"):
+                resolve_skill_resources(
+                    source_dir, command["resources"], ignore=ignore_fn,
+                )
+
         # Remove existing installation AFTER all validations pass so that a
         # validation failure doesn't leave the user with a half-uninstalled
         # extension (configs stranded in .backup/).
@@ -2655,16 +2719,6 @@ class ExtensionManager:
             finally:
                 after_file_change(dest_dir)
                 after_file_change(backup_config_dir)
-
-        # Load and validate .extensionignore BEFORE reading/creating the rescue
-        # staging directory (and thus before deleting dest_dir). The loader can
-        # raise ValidationError (invalid UTF-8) or OSError; doing it first means
-        # such a failure aborts while the kept config is still authoritative in
-        # its documented location, rather than leaving a freshly published
-        # staging copy that a later retry (after the user edits the kept config)
-        # would reload and use to overwrite the newer bytes. Any staging left by
-        # an earlier destructive attempt is intentionally left intact here.
-        ignore_fn = self._load_extensionignore(source_dir)
 
         # Rescue any config files left behind by a prior `remove --keep-config`.
         # When an extension is removed with --keep-config, it is no longer in
@@ -3102,15 +3156,13 @@ class ExtensionManager:
         # until after registry.add() succeeds (see post-commit cleanup below).
 
         def rollback_install_resources() -> None:
-            from ._skill_resources import retire_skill_resources
+            from ._skill_resources import retire_skill_resources, written_resource_hashes
 
-            written_hashes = {
-                bucket: {
-                    path: digest for path, digest in records.items()
-                    if previous_resource_hashes.get(bucket, {}).get(path) != digest
-                }
-                for bucket, records in resource_hashes.items()
-            }
+            # Retire exactly the files this attempt wrote, not records inherited
+            # from a previous install.
+            written_hashes = written_resource_hashes(
+                self.project_root, resource_hashes, attempt_resource_writes,
+            )
             skill_names = {
                 self._skill_name_for_command(name)
                 for command in manifest.commands
@@ -3173,10 +3225,13 @@ class ExtensionManager:
 
         hooks_started = False
         registry_started = False
+        from ._skill_resources import resolve_skill_resources, track_skill_resource_writes
+
+        write_tracking = contextlib.ExitStack()
+        attempt_resource_writes = write_tracking.enter_context(track_skill_resource_writes())
         try:
             # Register commands with AI agents (active integration only, #2948)
             resource_hashes = {} if did_remove else copy.deepcopy(previous_resource_hashes)
-            from ._skill_resources import resolve_skill_resources
 
             for command in manifest.commands:
                 if command.get("resources"):
@@ -3295,6 +3350,8 @@ class ExtensionManager:
                         f"Extension registration failed ({exc}); resource rollback failed: {error}"
                     ) from exc
             raise
+        finally:
+            write_tracking.close()
 
         if did_remove:
             backup_config_dir = self.extensions_dir / ".backup" / manifest.id
@@ -3734,7 +3791,7 @@ class ExtensionManager:
         skills = self._valid_name_list(metadata.get("registered_skills", []))
         hashes = metadata.get("generic_artifact_hashes", {})
         has_artifacts = bool(commands or skills or hashes)
-        snapshot: Dict[Path, tuple[bytes | None, str | None, bool]] = {}
+        snapshot: Dict[Path, tuple[bytes | None, str | None, bool, int | None]] = {}
         updates: Dict[str, Any] = {"enabled": False}
         if has_artifacts:
             from ..integrations.generic import registration_directory

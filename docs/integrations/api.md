@@ -117,7 +117,10 @@ An optional `registrar_config.invoke_separator` overrides the class separator
 for registration. Development symlinks are disabled if either the class or
 `registrar_config.dev_no_symlink` requests it. An optional
 `registrar_config.legacy_dir` declares a previous project-relative output
-directory for migration.
+directory for migration. Built-in integrations whose skills live in the user's
+home directory set `registrar_config.home_scoped = True`; extension lifecycle
+code then treats that directory as a permitted home skills location. External
+adapters cannot set it.
 
 For external adapters, output roots cannot be home-relative, enter `.git` or `.specify`,
 contain traversal, or pass through symlinks. Primary and legacy destinations

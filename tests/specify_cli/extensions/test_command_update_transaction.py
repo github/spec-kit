@@ -2454,3 +2454,40 @@ def test_update_rollback_native_resources_canonical_and_legacy(project_dir, monk
         for name in names:
             assert (root / name / "resource.txt").read_text() == f"resource at {root.name}/{name}"
     assert ExtensionRegistry(project_dir / ".specify/extensions").data["extensions"]["test-ext"]["skill_resource_hashes"] == hashes
+
+
+def test_update_rollback_restores_recorded_resources_outside_current_skills_dirs(
+    project_dir, tmp_path, monkeypatch
+):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.chdir(project_dir)
+    (project_dir / ".specify/init-options.json").write_text('{"ai":"claude","ai_skills":false}')
+    (project_dir / ".specify/extensions.yml").write_text(yaml.safe_dump({"installed": ["test-ext"], "hooks": {}}))
+    moved = project_dir / ".claude/moved-skills/speckit-test-ext-run/resource.txt"
+    moved_home = home / ".hermes-old/skills/speckit-test-ext-run/resource.txt"
+    for path, text in ((moved, "EDITED project"), (moved_home, "EDITED home")):
+        path.parent.mkdir(parents=True)
+        path.write_text(text)
+    hashes = {
+        "project": {moved.relative_to(project_dir).as_posix(): "old-hash"},
+        "home": {moved_home.relative_to(home).as_posix(): "old-hash"},
+    }
+    entry = {"version": "1.0.0", "enabled": True,
+             "registered_commands": {"claude": ["speckit.test-ext.run"]},
+             "registered_skills": [], "skill_resource_hashes": hashes}
+    ExtensionRegistry(project_dir / ".specify/extensions").add("test-ext", entry)
+    _stub_available_update(monkeypatch, entry)
+    archive = project_dir / "mock.zip"
+    _write_update_zip(archive)
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: archive)
+    monkeypatch.setattr(
+        ExtensionManager, "install_from_zip",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("install failed")),
+    )
+    result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
+    assert result.exit_code == 1 and "Rollback successful" in result.output
+    assert moved.read_text() == "EDITED project"
+    assert moved_home.read_text() == "EDITED home"
+    assert ExtensionRegistry(project_dir / ".specify/extensions").data["extensions"]["test-ext"]["skill_resource_hashes"] == hashes

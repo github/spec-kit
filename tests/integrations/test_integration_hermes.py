@@ -51,6 +51,10 @@ class TestHermesIntegration(SkillsIntegrationTests):
                 f"{f} is not under ~/.hermes/skills/"
             )
 
+    def test_declares_home_scoped_output(self):
+        """The engine learns about home-scoped skills from this flag, not from the path."""
+        assert get_integration(self.KEY).registrar_config["home_scoped"] is True
+
     def test_local_marker_dir_created(self, tmp_path, monkeypatch):
         """Project-local .hermes/skills/ should exist but be empty."""
         home = _fake_home(tmp_path)

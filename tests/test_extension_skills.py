@@ -3861,7 +3861,7 @@ def test_remove_resource_symlinks_are_safe(project_dir, temp_dir, replacement):
     assert (outside / "r.md").read_text() == "untouched"
 
 
-def test_remove_recorded_home_resource_after_location_changes(project_dir, temp_dir, monkeypatch):
+def test_remove_home_resource_outside_configured_skills_dir_is_preserved(project_dir, temp_dir, monkeypatch):
     home = temp_dir / "home"
     home.mkdir()
     monkeypatch.setattr(Path, "home", lambda: home)
@@ -3881,7 +3881,8 @@ def test_remove_recorded_home_resource_after_location_changes(project_dir, temp_
     moved = dict(CommandRegistrar.AGENT_CONFIGS["hermes"], dir="~/.hermes-moved/skills")
     monkeypatch.setitem(CommandRegistrar.AGENT_CONFIGS, "hermes", moved)
     manager.remove("test-ext")
-    assert not resource.exists()
+    # Home cleanup is bound to the currently configured skills dir, like SKILL.md.
+    assert resource.read_text() == "home resource"
 
 
 def test_install_invalid_resource_before_any_skill_output(project_dir, temp_dir):
@@ -3897,6 +3898,58 @@ def test_install_invalid_resource_before_any_skill_output(project_dir, temp_dir)
         ExtensionManager(project_dir).install_from_directory(ext, "0.1.0")
     assert not list(skills.iterdir())
     assert not (project_dir / ".github/agents/speckit.test-ext.hello.agent.md").exists()
+
+
+@pytest.mark.parametrize("pattern", ["references/r.md", "references/*.md"])
+def test_force_reinstall_with_ignored_resource_keeps_previous_install(project_dir, temp_dir, pattern):
+    from specify_cli.extensions import ValidationError
+
+    _create_init_options(project_dir, ai="claude", ai_skills=True)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["references/r.md"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("package")
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0")
+    resource = skills / "speckit-test-ext-hello/references/r.md"
+    installed = manager.registry.get("test-ext")
+
+    data["provides"]["commands"][0]["resources"] = [pattern]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / ".extensionignore").write_text("references/\n")
+    with pytest.raises(ValidationError):
+        manager.install_from_directory(ext, "0.1.0", force=True)
+
+    assert manager.registry.get("test-ext") == installed
+    assert (project_dir / ".specify/extensions/test-ext/references/r.md").read_text() == "package"
+    assert resource.read_text() == "package"
+
+
+def test_wildcard_resources_ignore_dev_render_cache_and_manifest(project_dir, temp_dir):
+    _create_init_options(project_dir, ai="claude", ai_skills=False)
+    skills = _create_skills_dir(project_dir)
+    ext = _create_extension_dir(temp_dir)
+    data = yaml.safe_load((ext / "extension.yml").read_text())
+    data["provides"]["commands"][0]["resources"] = ["**"]
+    (ext / "extension.yml").write_text(yaml.safe_dump(data))
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("package")
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(ext, "0.1.0", link_commands=True)
+    installed = project_dir / ".specify/extensions/test-ext"
+    assert any((installed / ".specify-dev").rglob("SKILL.md"))  # the dev render cache exists
+
+    # A later re-render must not bundle the cache the first one created.
+    manager.register_enabled_extensions_for_agent("claude")
+    skill = skills / "speckit-test-ext-hello"
+    recorded = manager.registry.get("test-ext")["skill_resource_hashes"]["project"]
+    assert (skill / "references/r.md").read_text() == "package"
+    assert not (skill / ".specify-dev").exists()
+    assert not (skill / "extension.yml").exists()
+    assert not any(".specify-dev" in key or key.endswith("extension.yml") for key in recorded)
 
 
 def test_remove_legacy_registry_without_resource_field(project_dir, temp_dir):

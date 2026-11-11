@@ -233,6 +233,12 @@ use the same resolved configuration.
 An optional `registrar_config.legacy_dir` must be a non-empty canonical
 project-relative directory under the same reserved-root and symlink restrictions;
 home-relative destinations are not supported for external adapters.
+A built-in integration whose skills live in the user's home directory declares
+`registrar_config.home_scoped = True` (an optional boolean, default false). It
+is the only signal extension lifecycle code uses to treat that integration's
+resolved skills directory as a permitted home location, for example when
+removing recorded skill resources; the engine does not infer home scope from
+path strings. External adapters cannot set it.
 An adapter's primary root and optional legacy destination must not overlap,
 regardless of whether it supports multi-install. Multi-install-safe adapters
 also cannot overlap another integration's agent roots or legacy destinations.
