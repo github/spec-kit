@@ -389,7 +389,7 @@ def integration_switch(
                             raw_options=raw_options,
                             parsed_options=parsed_options,
                         )
-                    except _SharedTemplateRefreshError as restore_err:
+                    except (_SharedTemplateRefreshError, PresetValidationError) as restore_err:
                         console.print(
                             f"[yellow]Warning:[/yellow] Failed to restore default "
                             f"integration '{fallback_key}': {restore_err}"

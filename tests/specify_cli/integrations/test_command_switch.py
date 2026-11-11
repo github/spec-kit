@@ -378,6 +378,63 @@ class TestIntegrationSwitch:
         assert result.exit_code == 1, result.output
         assert "switch-ps-reject-pack" in result.output
 
+    def test_switch_to_already_installed_target_rejects_stored_runtime_mismatch(
+        self, tmp_path
+    ):
+        """Switching to an already-installed integration resolves *its own*
+        previously-stored script type, not necessarily --script sh -- that
+        can differ from the project's current runtime without the caller
+        ever passing --script on this call. The same Bash-only-dispatcher
+        restriction must still apply, not just on the fresh-install and
+        same-target-refresh paths (#4709 review)."""
+        from specify_cli.presets import PresetManager
+        from tests.specify_cli.presets._helpers import create_pack
+
+        project = _init_project(tmp_path, "claude")
+
+        # "integration install" keeps claude as the default and installs
+        # copilot as a second, non-default integration with a non-Bash
+        # runtime -- copilot is now in installed_keys with ps stored as its
+        # own script type, while the active runtime is still sh.
+        result = _run_in_project(
+            project, ["integration", "install", "copilot", "--script", "ps", "--force"]
+        )
+        assert result.exit_code == 0, result.output
+
+        pack_dir = create_pack(
+            tmp_path,
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "switch-already-installed-reject-pack",
+                    "name": "Switch Already Installed Reject Pack",
+                    "version": "1.0.0",
+                    "description": "A test preset with a script",
+                    "author": "Test Author",
+                    "repository": "https://github.com/test/switch-already-installed-reject-pack",
+                    "license": "MIT",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": []},
+                "tags": ["testing"],
+            },
+            "switch-already-installed-reject-pack",
+            "echo custom\n",
+            strategy="replace",
+            template_type="script",
+            template_name="switch-already-installed-me",
+        )
+        PresetManager(project).install_from_directory(pack_dir, "0.1.5")
+
+        # Switch to the already-installed copilot integration with NO
+        # --script flag: this is the "target in installed_keys" branch,
+        # which must still reject the stored ps runtime while the Bash-only
+        # script preset is enabled.
+        result = _run_in_project(project, ["integration", "switch", "copilot"])
+
+        assert result.exit_code == 1, result.output
+        assert "switch-already-installed-reject-pack" in result.output
+
     def test_switch_to_different_target_refresh_shared_infra_restores_script_preset_launcher(
         self, tmp_path
     ):
