@@ -17,7 +17,11 @@ from specify_cli.integrations.manifest import IntegrationManifest
 from .test_integration_base_markdown import MarkdownIntegrationTests
 
 _OPT_IN = {"configure_ignore_file": True}
-_PRIVATE_RULES = (".specify/**/local-config.yml", ".specify/**/*-config.local.yml")
+_PRIVATE_RULES = (
+    ".specify/**/local-config.yml",
+    ".specify/**/*-config.local.yml",
+    ".specify/workflows/runs/",
+)
 _PRIVATE = "\n".join(_PRIVATE_RULES)
 _PRIVATE_CRLF = "\r\n".join(_PRIVATE_RULES)
 _RULES = f"!.specify/\n!.specify/**\n{_PRIVATE}\n".encode()
@@ -353,6 +357,11 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         assert spec.match_file(".specify/extensions/other/local-config.yml")
         assert spec.match_file(".specify/extensions/.backup/jira/local-config.yml")
         assert spec.match_file(".specify/extensions/jira/jira-config.local.yml")
+        # pathspec ranks a file match above a directory rule, so check the
+        # directory the way ripgrep walks it.
+        from specify_cli.integrations.opencode import _spec_hides
+
+        assert _spec_hides(spec, ".specify/workflows/runs/run-1/state.json")
         assert not spec.match_file(".specify/extensions/jira/jira-config.yml")
         assert not spec.match_file(".specify/memory/constitution.md")
 
@@ -373,6 +382,10 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         (ext / "jira-config.yml").write_text("project: x\n", encoding="utf-8")
         (ext / "local-config.yml").write_text("placeholder: x\n", encoding="utf-8")
         (ext / "jira-config.local.yml").write_text("placeholder: x\n", encoding="utf-8")
+        run = tmp_path / ".specify" / "workflows" / "runs" / "run-1"
+        run.mkdir(parents=True)
+        for name in ("state.json", "inputs.json", "log.jsonl"):
+            (run / name).write_text('{"stdout": "captured"}\n', encoding="utf-8")
         integration.setup(tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN)
 
         def rg_files(*args):
@@ -386,6 +399,9 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         private = {
             ".specify/extensions/jira/local-config.yml",
             ".specify/extensions/jira/jira-config.local.yml",
+            ".specify/workflows/runs/run-1/state.json",
+            ".specify/workflows/runs/run-1/inputs.json",
+            ".specify/workflows/runs/run-1/log.jsonl",
         }
         plain = rg_files()
         assert ".specify/memory/constitution.md" in plain
@@ -403,6 +419,26 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         (backup / "jira-config.yml").write_text("project: x\n", encoding="utf-8")
         ignore = tmp_path / ".ignore"
         original = _RULES + b".specify/extensions/.backup/\n"
+        ignore.write_bytes(original)
+        integration.setup(tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN)
+        assert ignore.read_bytes() == original
+
+    @pytest.mark.parametrize(
+        "exclusion",
+        [b".specify/workflows/runs/*/state.json\n", b".specify/workflows/runs/**\n"],
+    )
+    def test_configure_ignore_file_allows_excluding_workflow_run_state(self, tmp_path, exclusion):
+        """Existing run state with captured output does not block a user exclusion."""
+        integration = get_integration(self.KEY)
+        run = tmp_path / ".specify" / "workflows" / "runs" / "run-1"
+        run.mkdir(parents=True)
+        (run / "state.json").write_text(
+            '{"step_results": {"s1": {"stdout": "captured", "stderr": ""}}}\n',
+            encoding="utf-8",
+        )
+        (run / "log.jsonl").write_text('{"event": "step"}\n', encoding="utf-8")
+        ignore = tmp_path / ".ignore"
+        original = _RULES + exclusion
         ignore.write_bytes(original)
         integration.setup(tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN)
         assert ignore.read_bytes() == original

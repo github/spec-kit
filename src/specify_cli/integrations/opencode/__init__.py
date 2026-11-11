@@ -30,12 +30,20 @@ _SPECIFY_IGNORE_RULES = ("!.specify/", "!.specify/**")
 # ``--glob``: a positive glob that matches a file (``.specify/**/*``,
 # ``**/*.yml``) overrides every ignore file, so opencode's glob tool still
 # lists these paths once ``.specify`` is walked (ripgrep 15.2.0).
+# Workflow run state (``state.json``, ``inputs.json``, ``log.jsonl``) holds
+# resolved inputs and captured command output, so it stays out of plain
+# searches as well.
 _SPECIFY_PRIVATE_RULES = (
     ".specify/**/local-config.yml",
     ".specify/**/*-config.local.yml",
+    ".specify/workflows/runs/",
 )
-# Extension removal backups are user state, not Spec Kit files to surface.
-_UNPROBED_SPECIFY_DIRS = (".specify/extensions/.backup/",)
+# Extension removal backups and workflow run state are user state, not Spec
+# Kit files to surface, so a user exclusion of them is allowed.
+_UNPROBED_SPECIFY_DIRS = (
+    ".specify/extensions/.backup/",
+    ".specify/workflows/runs/",
+)
 
 
 class OpencodeIntegration(MarkdownIntegration):
@@ -85,7 +93,8 @@ class OpencodeIntegration(MarkdownIntegration):
                     "Append !.specify/ and !.specify/** to the project root "
                     ".ignore so opencode can glob hidden Spec Kit files, "
                     "excluding extension local-config.yml and "
-                    "*-config.local.yml files from searches without a "
+                    "*-config.local.yml files and .specify/workflows/runs/ "
+                    "from searches without a "
                     "matching glob (a glob that matches them still lists them). "
                     "Uninstall leaves .ignore in place."
                 ),
@@ -104,7 +113,7 @@ class OpencodeIntegration(MarkdownIntegration):
 
         Command files stay on the Markdown layout from ``super().setup()``.
         ``--configure-ignore-file`` appends missing ``!.specify/`` and
-        ``!.specify/**`` rules, then the private-config exclusion, and
+        ``!.specify/**`` rules, then the private-state exclusions, and
         records the root file as partial
         ownership. Without the flag the root ``.ignore`` is left alone.
         """
