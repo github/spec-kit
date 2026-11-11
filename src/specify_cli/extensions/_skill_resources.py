@@ -222,33 +222,6 @@ def _resource_mode(source: Path) -> int:
     return (stat.S_IMODE(source.stat().st_mode) & 0o777) | 0o600
 
 
-def _skill_name_segments(names: set[str]) -> list[tuple[str, ...]]:
-    """Split skill names into path segments; a nested alias has several.
-
-    Names that are empty or contain ``.``/``..``/empty segments never match.
-    """
-    segments = []
-    for name in names:
-        parts = tuple(name.split("/"))
-        if name and all(part not in ("", ".", "..") for part in parts):
-            segments.append(parts)
-    return segments
-
-
-def _in_skill_directory(
-    directories: tuple[str, ...], segments: list[tuple[str, ...]], *, anywhere: bool,
-) -> bool:
-    """Whether a record's directory parts start with (or contain) a skill's segments."""
-    for skill in segments:
-        size = len(skill)
-        if anywhere:
-            if any(directories[i:i + size] == skill for i in range(len(directories) - size + 1)):
-                return True
-        elif directories[:size] == skill:
-            return True
-    return False
-
-
 def remove_skill_resources(
     ext_id: str,
     trusted_root: Path,
@@ -258,14 +231,12 @@ def remove_skill_resources(
     """Remove canonical recorded paths belonging to a registered skill name."""
     manifest = IntegrationManifest(ext_id, trusted_root)
     dropped: list[Path] = []
-    segments = _skill_name_segments(allowed_skill_names)
     for key, digest in previous.items():
         path = PurePosixPath(key)
         if (
             not key or "\\" in key or path.is_absolute()
             or PureWindowsPath(key).drive or path.as_posix() != key
-            or ".." in path.parts
-            or not _in_skill_directory(path.parts[:-1], segments, anywhere=True)
+            or ".." in path.parts or not set(path.parts[:-1]) & allowed_skill_names
         ):
             dropped.append(trusted_root / key)
             continue
@@ -354,7 +325,6 @@ def retire_skill_resources(
             ("home", home, directory.relative_to(home).parts)
             for directory in _home_skills_dirs(project_root)
         )
-    segments = _skill_name_segments(skill_names)
     for bucket, root, prefix in targets:
         records = hashes.get(bucket)
         if not isinstance(records, dict):
@@ -362,12 +332,10 @@ def retire_skill_resources(
         selected = {
             key: value for key, value in records.items()
             if isinstance(key, str) and (
-                _in_skill_directory(PurePosixPath(key).parts[:-1], segments, anywhere=True)
-                if prefix is None else
+                set(PurePosixPath(key).parts[:-1]) & skill_names if prefix is None else
                 PurePosixPath(key).parts[:len(prefix)] == prefix
-                and _in_skill_directory(
-                    PurePosixPath(key).parts[len(prefix):-1], segments, anywhere=False,
-                )
+                and len(PurePosixPath(key).parts) > len(prefix) + 1
+                and PurePosixPath(key).parts[len(prefix)] in skill_names
             )
         }
         if not selected:

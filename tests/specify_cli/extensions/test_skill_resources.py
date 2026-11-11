@@ -385,49 +385,6 @@ def test_retire_skill_resources_ignores_home_dirs_of_unflagged_agents(monkeypatc
     assert not resource.exists() and hashes == {}
 
 
-def test_retire_skill_resources_matches_nested_alias_skill_names(tmp_path):
-    from specify_cli.extensions._skill_resources import retire_skill_resources
-
-    project = tmp_path / "project"
-    skills = project / ".claude/skills"
-    nested = put(skills / "speckit-test-ext/group-alias/scripts/run.sh")
-    primary = put(skills / "speckit-test-ext-run/scripts/run.sh")
-    other = put(skills / "speckit-other/group-alias/scripts/run.sh")  # same tail, other parent
-    unsafe = put(skills / "speckit-test-ext/.hidden/run.sh")
-    hashes = {"project": {
-        path.relative_to(project).as_posix(): "any" for path in (nested, primary, other, unsafe)
-    }}
-    names = {"speckit-test-ext/group-alias", "speckit-test-ext-run", "../x", "", "a//b"}
-    retire_skill_resources(project, "test-ext", hashes, names, skills_dir=skills)
-    assert not nested.exists() and not primary.exists()
-    assert other.exists() and unsafe.exists()
-    assert set(hashes["project"]) == {
-        other.relative_to(project).as_posix(), unsafe.relative_to(project).as_posix(),
-    }
-
-    # Without a skills directory, a recorded path is matched anywhere in it.
-    moved = put(project / ".moved/skills/speckit-test-ext/group-alias/scripts/run.sh")
-    hashes = {"project": {moved.relative_to(project).as_posix(): "any"}}
-    retire_skill_resources(project, "test-ext", hashes, {"speckit-test-ext/group-alias"})
-    assert not moved.exists() and hashes == {}
-
-
-def test_remove_skill_resources_matches_nested_alias_and_rejects_unsafe_names(tmp_path):
-    root = tmp_path / "project"
-    nested = put(root / "skills/speckit-test-ext/group-alias/scripts/run.sh")
-    key = nested.relative_to(root).as_posix()
-    removed, skipped = remove_skill_resources(
-        "ext", root, {key: _sha256(nested)}, {"speckit-test-ext/group-alias"}
-    )
-    assert removed == [nested] and skipped == []
-
-    kept = put(root / "skills/speckit-test-ext/group-alias/scripts/keep.sh")
-    removed, skipped = remove_skill_resources(
-        "ext", root, {kept.relative_to(root).as_posix(): _sha256(kept)}, {"speckit-test-ext/.."}
-    )
-    assert removed == [] and skipped == [kept] and kept.exists()
-
-
 def test_written_resource_hashes_selects_only_files_written_in_the_attempt(tmp_path):
     root = tmp_path / "project"
     ext = tmp_path / "ext"
