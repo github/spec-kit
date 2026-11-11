@@ -390,21 +390,30 @@ def _set_default_integration(
         # launcher chain for a script an already-enabled preset provides.
         # Restore those chains now, mirroring the same call in
         # command_init.py and command_upgrade.py.
-        if refresh_templates_force:
-            try:
-                from ..presets import PresetManager as _ExistingPresetManager
+        #
+        # Reconcile on every refresh, not only a forced one: a preset- or
+        # override-provided script's materialized chain is always supposed
+        # to reflect the current resolved stack (_reconcile_script_chain
+        # only ever preserves a user edit in the "no longer provided"
+        # cleanup path, never while a preset/override is actively
+        # providing the script), and the shared/core assets it was built
+        # from can still advance on a non-forced refresh (e.g. a CLI
+        # version bump), leaving an already-materialized chain stale
+        # otherwise (#4709 review).
+        try:
+            from ..presets import PresetManager as _ExistingPresetManager
 
-                _ExistingPresetManager(project_root).reconcile_all_script_chains()
-            except Exception as exc:
-                from .. import _print_cli_warning
+            _ExistingPresetManager(project_root).reconcile_all_script_chains()
+        except Exception as exc:
+            from .. import _print_cli_warning
 
-                _print_cli_warning(
-                    "reconcile script presets after",
-                    "integration use/switch",
-                    str(project_root),
-                    exc,
-                    continuing="Inspect .specify/scripts/bash/<name>.sh to diagnose.",
-                )
+            _print_cli_warning(
+                "reconcile script presets after",
+                "integration use/switch",
+                str(project_root),
+                exc,
+                continuing="Inspect .specify/scripts/bash/<name>.sh to diagnose.",
+            )
 
     _write_integration_json(project_root, key, installed_keys, settings)
     _update_init_options_for_integration(

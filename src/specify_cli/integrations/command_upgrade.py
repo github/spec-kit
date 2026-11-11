@@ -244,7 +244,15 @@ def integration_upgrade(
     # _install_shared_infra for the same reason (refreshing the integration's
     # own shared files) and would immediately re-clobber the chain restored
     # here; that branch reconciles again after its own refresh instead.
-    if force and installed_key != key:
+    #
+    # Reconcile on every refresh, not only a forced one: the shared/core
+    # assets a materialized chain was built from can still advance on a
+    # non-forced upgrade (a CLI version bump), leaving the chain stale
+    # otherwise (#4709 review) -- _reconcile_script_chain is always
+    # supposed to reflect the current resolved stack while a preset/
+    # override actively provides the script, the same as command_init.py's
+    # unconditional call.
+    if installed_key != key:
         try:
             from ..presets import PresetManager as _ExistingPresetManager
 
@@ -317,21 +325,24 @@ def integration_upgrade(
             # command performs for the default integration, so it's the one
             # that must not leave a script preset's generated launcher
             # chain clobbered by the restored bundled core script.
-            if force:
-                try:
-                    from ..presets import PresetManager as _ExistingPresetManager
+            #
+            # Reconcile on every refresh, not only a forced one (#4709
+            # review) -- see the matching comment on the earlier call in
+            # this function.
+            try:
+                from ..presets import PresetManager as _ExistingPresetManager
 
-                    _ExistingPresetManager(project_root).reconcile_all_script_chains()
-                except Exception as exc:
-                    from .. import _print_cli_warning
+                _ExistingPresetManager(project_root).reconcile_all_script_chains()
+            except Exception as exc:
+                from .. import _print_cli_warning
 
-                    _print_cli_warning(
-                        "reconcile script presets after",
-                        "integration upgrade",
-                        str(project_root),
-                        exc,
-                        continuing="Inspect .specify/scripts/bash/<name>.sh to diagnose.",
-                    )
+                _print_cli_warning(
+                    "reconcile script presets after",
+                    "integration upgrade",
+                    str(project_root),
+                    exc,
+                    continuing="Inspect .specify/scripts/bash/<name>.sh to diagnose.",
+                )
         new_manifest.save()
         _write_integration_json(project_root, installed_key, installed_keys, settings)
         if installed_key == key:
