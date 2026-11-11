@@ -27,6 +27,97 @@ class TestExtensionRemoveCLI:
         manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
         return manager
 
+    def test_remove_reconciles_preset_wrapped_extension_script(self, tmp_path):
+        """Removing an extension must reconcile any script chain it provided
+        content for, the same way disabling it does -- a preset wrapping that
+        script has the extension's content copied inline into its generated
+        core file, and that copy must not outlive the extension (#4709
+        review)."""
+        import yaml
+
+        from specify_cli.presets import PresetManager
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        ext_dir = tmp_path / "scriptext"
+        (ext_dir / "scripts").mkdir(parents=True)
+        (ext_dir / "scripts" / "scriptext-task.sh").write_text(
+            "#!/usr/bin/env bash\necho FROM-EXTENSION\n", encoding="utf-8"
+        )
+        ext_manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "scriptext",
+                "name": "Script Ext",
+                "version": "1.0.0",
+                "description": "test",
+                "author": "test",
+                "repository": "https://example.com",
+                "license": "MIT",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "scripts": [
+                    {
+                        "name": "scriptext-task",
+                        "file": "scripts/scriptext-task.sh",
+                        "description": "test",
+                        "runtimes": ["bash"],
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(ext_manifest_data, f)
+
+        self._install_ext(project_dir, ext_dir)
+
+        pack_dir = tmp_path / "wrap-pack"
+        (pack_dir / "scripts").mkdir(parents=True)
+        (pack_dir / "scripts" / "scriptext-task.sh").write_text(
+            "echo WRAP-BEFORE\n$CORE_SCRIPT\n", encoding="utf-8"
+        )
+        pack_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "wrap-pack",
+                "name": "wrap-pack",
+                "version": "1.0.0",
+                "description": "test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "script",
+                        "name": "scriptext-task",
+                        "file": "scripts/scriptext-task.sh",
+                        "strategy": "wrap",
+                    }
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(pack_data, f)
+
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.0")
+
+        core_path = (
+            project_dir / ".specify" / "scripts" / "bash"
+            / "scriptext-task.speckit-core.sh"
+        )
+        assert "FROM-EXTENSION" in core_path.read_text(encoding="utf-8")
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["extension", "remove", "scriptext", "--force"]
+            )
+        assert result.exit_code == 0, result.output
+        assert not core_path.exists()
+
     def test_remove_confirmation_singular_command(self, tmp_path, extension_dir):
         """Confirmation prompt should say '1 command' (singular) when one command registered."""
 

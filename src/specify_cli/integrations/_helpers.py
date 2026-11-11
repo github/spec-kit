@@ -339,6 +339,20 @@ def _set_default_integration(
     """Persist *key* as default and align active runtime metadata."""
     from .. import _install_shared_infra
     resolved_script = _resolve_integration_script_type(project_root, state, key, script_type)
+
+    # Validate the runtime this call will actually make active against any
+    # installed script-providing preset before any file or metadata change,
+    # not only on the fresh-install path. Switching to an already-installed
+    # integration (or `integration use`) resolves its own stored script
+    # type here too, and that can differ from the project's current
+    # runtime without the caller ever passing --script explicitly (#4709
+    # review): a Bash-only script preset would otherwise go silently inert.
+    from ..presets import PresetManager as _ExistingPresetManager
+
+    _ExistingPresetManager(project_root).reject_unsupported_script_runtime_change(
+        resolved_script
+    )
+
     settings = _with_integration_setting(
         state,
         key,
@@ -370,6 +384,37 @@ def _set_default_integration(
                 f"Failed to refresh shared infrastructure for '{key}': {exc}"
             ) from exc
 
+        # _install_shared_infra above may have just overwritten
+        # .specify/scripts/bash/<name>.sh with the bundled core when
+        # refresh_templates_force is True, clobbering any generated
+        # launcher chain for a script an already-enabled preset provides.
+        # Restore those chains now, mirroring the same call in
+        # command_init.py and command_upgrade.py.
+        #
+        # Reconcile on every refresh, not only a forced one: a preset- or
+        # override-provided script's materialized chain is always supposed
+        # to reflect the current resolved stack (_reconcile_script_chain
+        # only ever preserves a user edit in the "no longer provided"
+        # cleanup path, never while a preset/override is actively
+        # providing the script), and the shared/core assets it was built
+        # from can still advance on a non-forced refresh (e.g. a CLI
+        # version bump), leaving an already-materialized chain stale
+        # otherwise (#4709 review).
+        try:
+            from ..presets import PresetManager as _ExistingPresetManager
+
+            _ExistingPresetManager(project_root).reconcile_all_script_chains()
+        except Exception as exc:
+            from .. import _print_cli_warning
+
+            _print_cli_warning(
+                "reconcile script presets after",
+                "integration use/switch",
+                str(project_root),
+                exc,
+                continuing="Inspect .specify/scripts/bash/<name>.sh to diagnose.",
+            )
+
     _write_integration_json(project_root, key, installed_keys, settings)
     _update_init_options_for_integration(
         project_root, integration, script_type=resolved_script, parsed_options=parsed_options
@@ -377,9 +422,11 @@ def _set_default_integration(
 
 
 def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:
+    from ..presets import PresetValidationError
+
     try:
         _set_default_integration(*args, **kwargs)
-    except _SharedTemplateRefreshError as exc:
+    except (_SharedTemplateRefreshError, PresetValidationError) as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
 

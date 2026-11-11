@@ -7,6 +7,7 @@ from specify_cli.presets import (
 )
 from tests.conftest import strip_ansi
 from tests.specify_cli.presets._helpers import (
+    create_pack as _create_pack,
     install_constitution_sync_preset,
     install_self_test_preset,
     make_convention_constitution_preset as _make_convention_constitution_preset,
@@ -71,6 +72,51 @@ class TestPresetSetPriority:
 
         assert result.exit_code == 0, result.output
         assert memory.read_text() == "# Convention Constitution\n"
+
+    def test_set_priority_reconciles_generated_script(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A priority change reorders the materialized script chain through
+        the real CLI command handler, not just a direct manager/registry
+        call (#4709 review: the manager-level coverage for this invokes
+        reconcile_scripts_for_preset() itself, which cannot catch missing
+        wiring in command_set_priority.py)."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "toggle-me.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+
+        manager = PresetManager(project_dir)
+        low_pack = _create_pack(
+            temp_dir, valid_pack_data, "low-pack", "echo low-before\n$CORE_SCRIPT\n",
+            strategy="wrap", template_type="script", template_name="toggle-me",
+        )
+        manager.install_from_directory(low_pack, "0.1.5", priority=20)
+        high_pack = _create_pack(
+            temp_dir, valid_pack_data, "high-pack", "echo high-before\n$CORE_SCRIPT\n",
+            strategy="wrap", template_type="script", template_name="toggle-me",
+        )
+        manager.install_from_directory(high_pack, "0.1.5", priority=5)
+
+        canonical = (
+            project_dir / ".specify" / "scripts" / "bash" / "toggle-me.sh"
+        )
+        assert "high-pack" in canonical.read_text()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "set-priority", "high-pack", "30"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "low-pack" in canonical.read_text()
 
     def test_set_priority_same_value_no_change(self, project_dir, pack_dir):
         """Test set-priority with same value shows already set message."""

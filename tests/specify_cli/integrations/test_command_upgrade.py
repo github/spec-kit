@@ -533,6 +533,176 @@ class TestIntegrationUpgradeDetailed:
             "disabled extensions must not be re-registered in the canonical dir"
         )
 
+    def test_upgrade_force_same_integration_preserves_script_preset_dispatcher(
+        self, tmp_path
+    ):
+        """
+        Forced upgrade of the already-default integration refreshes shared
+        infrastructure twice: once explicitly, then again via the Phase 2
+        re-setup that runs when installed_key == key. The second refresh
+        must not re-clobber a script preset's generated dispatcher chain
+        after the first refresh's reconciliation already restored it.
+        """
+        import yaml
+
+        from specify_cli.presets import PresetManager
+
+        project = _init_project(tmp_path, "claude")
+
+        pack_dir = tmp_path / "dispatcher-test-pack"
+        (pack_dir / "scripts").mkdir(parents=True)
+        (pack_dir / "scripts" / "setup-plan.sh").write_text(
+            "#!/usr/bin/env bash\necho WRAPPED-BY-PRESET\n", encoding="utf-8"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "dispatcher-test-pack",
+                "name": "dispatcher-test-pack",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "script",
+                        "name": "setup-plan",
+                        "file": "scripts/setup-plan.sh",
+                    },
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        PresetManager(project).install_from_directory(pack_dir, "0.1.0")
+
+        canonical = project / ".specify" / "scripts" / "bash" / "setup-plan.sh"
+        assert "WRAPPED-BY-PRESET" in canonical.read_text(encoding="utf-8"), (
+            "precondition: script preset dispatcher chain installed"
+        )
+
+        result = _run_in_project(
+            project, ["integration", "upgrade", "claude", "--force"]
+        )
+        assert result.exit_code == 0, result.output
+
+        assert "WRAPPED-BY-PRESET" in canonical.read_text(encoding="utf-8"), (
+            "forced upgrade's second shared-infra refresh clobbered the "
+            "script preset's dispatcher chain restored after the first refresh"
+        )
+
+    def test_upgrade_without_force_refreshes_stale_materialized_core(self, tmp_path):
+        """A wrap preset's materialized ``.speckit-core.sh`` is a snapshot of
+        the underlying core/bundled script taken at reconcile time. If that
+        underlying content advances (e.g. a CLI version bump) and
+        reconciliation only ever re-ran on a *forced* refresh, an already
+        materialized chain would stay frozen at its old snapshot on an
+        ordinary, non-forced upgrade (#4709 review)."""
+        import yaml
+
+        from specify_cli.presets import PresetManager
+
+        project = _init_project(tmp_path, "claude")
+
+        core = project / ".specify" / "templates" / "scripts" / "stale-core-script.sh"
+        core.parent.mkdir(parents=True, exist_ok=True)
+        core.write_text("echo core-v1\n", encoding="utf-8")
+
+        pack_dir = tmp_path / "stale-core-wrap-pack"
+        (pack_dir / "scripts").mkdir(parents=True)
+        (pack_dir / "scripts" / "stale-core-script.sh").write_text(
+            "echo wrap-before\n$CORE_SCRIPT\n", encoding="utf-8"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "stale-core-wrap-pack",
+                "name": "stale-core-wrap-pack",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "script",
+                        "name": "stale-core-script",
+                        "file": "scripts/stale-core-script.sh",
+                        "strategy": "wrap",
+                    },
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        PresetManager(project).install_from_directory(pack_dir, "0.1.0")
+
+        core_copy = (
+            project / ".specify" / "scripts" / "bash"
+            / "stale-core-script.speckit-core.sh"
+        )
+        assert "core-v1" in core_copy.read_text(encoding="utf-8")
+
+        # Simulate the underlying core asset advancing to a new version.
+        core.write_text("echo core-v2\n", encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "upgrade", "claude"])
+        assert result.exit_code == 0, result.output
+
+        assert "core-v2" in core_copy.read_text(encoding="utf-8"), (
+            "a non-forced upgrade left the materialized core copy stale"
+        )
+
+    def test_upgrade_rejects_script_change_with_script_preset_installed(
+        self, tmp_path
+    ):
+        """A script-providing preset's dispatcher chain is Bash-only: switching
+        the project to --script ps|py via upgrade would leave it silently
+        inert, so the runtime change must be rejected instead."""
+        import yaml
+
+        from specify_cli.presets import PresetManager
+
+        project = _init_project(tmp_path, "claude")
+
+        pack_dir = tmp_path / "ps-reject-pack"
+        (pack_dir / "scripts").mkdir(parents=True)
+        (pack_dir / "scripts" / "setup-plan.sh").write_text(
+            "#!/usr/bin/env bash\necho WRAPPED-BY-PRESET\n", encoding="utf-8"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "ps-reject-pack",
+                "name": "ps-reject-pack",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "script",
+                        "name": "setup-plan",
+                        "file": "scripts/setup-plan.sh",
+                    },
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        PresetManager(project).install_from_directory(pack_dir, "0.1.0")
+
+        result = _run_in_project(
+            project, ["integration", "upgrade", "claude", "--script", "ps"]
+        )
+        assert result.exit_code == 1, result.output
+        assert "ps-reject-pack" in result.output
+
     def test_upgrade_secondary_kilocode_legacy_dir_cleans_commands_without_backfill(
         self, tmp_path
     ):
@@ -1793,6 +1963,51 @@ class TestIntegrationUpgradeDiagnostics(IntegrationCatalogCliTestBase):
         assert "Failed to upgrade integration 'upgrade-broken'" in normalized
         assert "upgrade exploded with context" in normalized
         assert "previous integration files may still be in place" in normalized
+
+    def test_upgrade_force_restores_script_preset_launcher(self, tmp_path):
+        """``integration upgrade --force`` rewrites the canonical script from
+        the bundled core (via ``_install_shared_infra_or_exit(force=True)``),
+        clobbering a generated launcher chain for an already-enabled script
+        preset. The upgrade must reconcile script chains afterward so the
+        preset's script keeps working, mirroring ``specify init --force``."""
+        from tests.specify_cli.presets._helpers import create_pack
+
+        project = _init_project(tmp_path, "claude")
+
+        from specify_cli.presets import PresetManager
+
+        pack_dir = create_pack(
+            tmp_path,
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "upgrade-script-pack",
+                    "name": "Upgrade Script Pack",
+                    "version": "1.0.0",
+                    "description": "A test preset with a script",
+                    "author": "Test Author",
+                    "repository": "https://github.com/test/upgrade-script-pack",
+                    "license": "MIT",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": []},
+                "tags": ["testing"],
+            },
+            "upgrade-script-pack",
+            "echo custom\n",
+            strategy="replace",
+            template_type="script",
+            template_name="upgrade-me",
+        )
+        PresetManager(project).install_from_directory(pack_dir, "0.1.5")
+
+        canonical = project / ".specify" / "scripts" / "bash" / "upgrade-me.sh"
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
+
+        result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+
+        assert result.exit_code == 0, result.output
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
 
 
 class TestIntegrationUpgradeBasic:

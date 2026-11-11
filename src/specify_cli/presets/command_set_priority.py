@@ -61,6 +61,10 @@ def preset_set_priority(
     manager.reconcile_constitution(
         f"Failed to reconcile constitution after changing priority for preset {preset_id}"
     )
+    manager.reconcile_scripts_for_preset(
+        preset_id,
+        f"Failed to reconcile scripts after changing priority for preset {preset_id}",
+    )
 
     console.print(
         f"[green]✓[/green] Preset '{preset_id}' priority changed: {old_priority} → {priority}"

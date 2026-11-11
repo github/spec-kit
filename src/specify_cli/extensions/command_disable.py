@@ -29,6 +29,17 @@ def extension_disable(
         extension, installed, "disable"
     )
 
+    # Capture script names this extension declares before it's disabled and
+    # its own layer drops out of resolution -- a preset wrapping one of these
+    # scripts already has that content materialized inline in its generated
+    # chain, and disabling the extension alone doesn't re-materialize it.
+    ext_manifest_for_scripts = manager.get_extension(extension_id)
+    script_names = [
+        s["name"]
+        for s in getattr(ext_manifest_for_scripts, "scripts", [])
+        if s.get("name")
+    ]
+
     # Update registry
     metadata = manager.registry.get(extension_id)
     if metadata is None or not isinstance(metadata, dict):
@@ -67,6 +78,13 @@ def extension_disable(
     console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' disabled")
     console.print("\nCommands will no longer be available. Hooks will not execute.")
     console.print(f"To re-enable: specify extension enable {_escape_markup(str(extension_id))}")
+
+    if script_names:
+        from ..presets import PresetManager
+
+        PresetManager(project_root).reconcile_scripts_for_names(
+            script_names, "reconcile script chains after disabling extension"
+        )
 
     # #1: regenerate native event config so the disabled extension's events
     # are stripped from installed integrations.

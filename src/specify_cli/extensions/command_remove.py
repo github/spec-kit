@@ -33,6 +33,12 @@ def extension_remove(
 
     # Get extension info for command and skill counts
     ext_manifest = manager.get_extension(extension_id)
+    # Capture script names before removal deletes the extension's directory --
+    # a preset wrapping one of these scripts has its content materialized
+    # inline in its generated chain, which otherwise stays stale after removal.
+    script_names = [
+        s["name"] for s in getattr(ext_manifest, "scripts", []) if s.get("name")
+    ]
     reg_meta = manager.registry.get(extension_id)
     # Derive cmd_count from the registry's registered_commands (includes aliases)
     # rather than from the manifest (primary commands only). Use max() across
@@ -76,6 +82,13 @@ def extension_remove(
             console.print(f"\nConfig files preserved in .specify/extensions/{safe_extension_id}/")
         else:
             console.print(f"\nConfig files backed up to .specify/extensions/.backup/{safe_extension_id}/")
+
+        if script_names:
+            from ..presets import PresetManager
+
+            PresetManager(project_root).reconcile_scripts_for_names(
+                script_names, "reconcile script chains after removing extension"
+            )
 
         # #1: regenerate native event config so the removed extension's events
         # are stripped from installed integrations.

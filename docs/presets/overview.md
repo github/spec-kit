@@ -58,11 +58,15 @@ Lower priority numbers take precedence. Preset and extension priorities order
 entries within their own layer; an extension cannot outrank the preset layer
 by choosing a smaller number.
 
-Templates and scripts are resolved when needed. Commands are materialized as
-command files or skills for the active integration during installation and
-reconciliation; agents do not resolve the stack on each invocation. Switching
-the default integration rescaffolds enabled presets for that integration.
-The generic integration does not register preset command or skill overrides.
+Templates are resolved when needed. Commands and scripts are materialized to
+disk at preset-lifecycle time (install, remove, enable, disable, priority
+change) rather than re-resolved on each invocation. Commands are materialized
+as command files or skills for the active integration during installation
+and reconciliation. Scripts are materialized into `.specify/scripts/bash/` as
+a chain of fixed-path generated launcher files, one per composing layer, each
+pointing `$CORE_SCRIPT` at the next-lower layer's fixed path. Switching the
+default integration rescaffolds enabled presets for that integration. The
+generic integration does not register preset command or skill overrides.
 
 With no preset installed, the remaining project overrides, extension
 contributions, and core defaults continue to apply.
@@ -122,8 +126,9 @@ including hidden layers.
 ### Is disabling the same as removing?
 
 No. Disabling excludes the preset from subsequent resolution but leaves
-previously registered commands and skills in place. Use removal when you need
-those delivered overrides cleaned up and the surviving layers restored.
+previously registered commands and skills in place, and immediately
+re-materializes its scripts' launcher chains without it. Use removal when you
+need those delivered overrides cleaned up and the surviving layers restored.
 
 ### Who supports a preset?
 

@@ -275,6 +275,222 @@ class TestIntegrationSwitch:
         assert "/speckit-plan" in template.read_text(encoding="utf-8")
         assert "/speckit-plan" in script.read_text(encoding="utf-8")
 
+    def test_switch_same_force_restores_script_preset_launcher(self, tmp_path):
+        """``integration switch <same> --force`` refreshes shared infra
+        (including ``.specify/scripts/bash/<name>.sh``) from the bundled
+        core, clobbering a generated launcher chain for an already-enabled
+        script preset. The switch must reconcile script chains afterward
+        so the preset's script keeps working."""
+        from tests.specify_cli.presets._helpers import create_pack
+        from specify_cli.presets import PresetManager
+
+        project = _init_project(tmp_path, "claude")
+
+        pack_dir = create_pack(
+            tmp_path,
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "switch-script-pack",
+                    "name": "Switch Script Pack",
+                    "version": "1.0.0",
+                    "description": "A test preset with a script",
+                    "author": "Test Author",
+                    "repository": "https://github.com/test/switch-script-pack",
+                    "license": "MIT",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": []},
+                "tags": ["testing"],
+            },
+            "switch-script-pack",
+            "echo custom\n",
+            strategy="replace",
+            template_type="script",
+            template_name="switch-me",
+        )
+        PresetManager(project).install_from_directory(pack_dir, "0.1.5")
+
+        canonical = project / ".specify" / "scripts" / "bash" / "switch-me.sh"
+        provenance = (
+            project / ".specify" / "scripts" / "bash" / "switch-me.speckit-generated"
+        )
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
+        assert provenance.is_file()
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "claude",
+                "--force",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
+
+    def test_switch_rejects_script_change_with_script_preset_installed(self, tmp_path):
+        """A script-providing preset's dispatcher chain is Bash-only: switching
+        the project to --script ps|py via switch would leave it silently
+        inert, so the runtime change must be rejected instead."""
+        from specify_cli.presets import PresetManager
+        from tests.specify_cli.presets._helpers import create_pack
+
+        project = _init_project(tmp_path, "claude")
+
+        pack_dir = create_pack(
+            tmp_path,
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "switch-ps-reject-pack",
+                    "name": "Switch PS Reject Pack",
+                    "version": "1.0.0",
+                    "description": "A test preset with a script",
+                    "author": "Test Author",
+                    "repository": "https://github.com/test/switch-ps-reject-pack",
+                    "license": "MIT",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": []},
+                "tags": ["testing"],
+            },
+            "switch-ps-reject-pack",
+            "echo custom\n",
+            strategy="replace",
+            template_type="script",
+            template_name="switch-me-ps",
+        )
+        PresetManager(project).install_from_directory(pack_dir, "0.1.5")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "copilot",
+                "--script", "ps",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 1, result.output
+        assert "switch-ps-reject-pack" in result.output
+
+    def test_switch_to_already_installed_target_rejects_stored_runtime_mismatch(
+        self, tmp_path
+    ):
+        """Switching to an already-installed integration resolves *its own*
+        previously-stored script type, not necessarily --script sh -- that
+        can differ from the project's current runtime without the caller
+        ever passing --script on this call. The same Bash-only-dispatcher
+        restriction must still apply, not just on the fresh-install and
+        same-target-refresh paths (#4709 review)."""
+        from specify_cli.presets import PresetManager
+        from tests.specify_cli.presets._helpers import create_pack
+
+        project = _init_project(tmp_path, "claude")
+
+        # "integration install" keeps claude as the default and installs
+        # copilot as a second, non-default integration with a non-Bash
+        # runtime -- copilot is now in installed_keys with ps stored as its
+        # own script type, while the active runtime is still sh.
+        result = _run_in_project(
+            project, ["integration", "install", "copilot", "--script", "ps", "--force"]
+        )
+        assert result.exit_code == 0, result.output
+
+        pack_dir = create_pack(
+            tmp_path,
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "switch-already-installed-reject-pack",
+                    "name": "Switch Already Installed Reject Pack",
+                    "version": "1.0.0",
+                    "description": "A test preset with a script",
+                    "author": "Test Author",
+                    "repository": "https://github.com/test/switch-already-installed-reject-pack",
+                    "license": "MIT",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": []},
+                "tags": ["testing"],
+            },
+            "switch-already-installed-reject-pack",
+            "echo custom\n",
+            strategy="replace",
+            template_type="script",
+            template_name="switch-already-installed-me",
+        )
+        PresetManager(project).install_from_directory(pack_dir, "0.1.5")
+
+        # Switch to the already-installed copilot integration with NO
+        # --script flag: this is the "target in installed_keys" branch,
+        # which must still reject the stored ps runtime while the Bash-only
+        # script preset is enabled.
+        result = _run_in_project(project, ["integration", "switch", "copilot"])
+
+        assert result.exit_code == 1, result.output
+        assert "switch-already-installed-reject-pack" in result.output
+
+    def test_switch_to_different_target_refresh_shared_infra_restores_script_preset_launcher(
+        self, tmp_path
+    ):
+        """``integration switch <different-target> --refresh-shared-infra``
+        forces its own shared-infra refresh in phase 1 (before phase 2 ever
+        calls ``_set_default_integration``), clobbering a generated
+        launcher chain the same way the same-target case does. The switch
+        must reconcile script chains for this path too, not just for
+        switching to the already-default integration."""
+        from tests.specify_cli.presets._helpers import create_pack
+        from specify_cli.presets import PresetManager
+
+        project = _init_project(tmp_path, "claude")
+
+        pack_dir = create_pack(
+            tmp_path,
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "switch-target-script-pack",
+                    "name": "Switch Target Script Pack",
+                    "version": "1.0.0",
+                    "description": "A test preset with a script",
+                    "author": "Test Author",
+                    "repository": "https://github.com/test/switch-target-script-pack",
+                    "license": "MIT",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": []},
+                "tags": ["testing"],
+            },
+            "switch-target-script-pack",
+            "echo custom\n",
+            strategy="replace",
+            template_type="script",
+            template_name="switch-target-me",
+        )
+        PresetManager(project).install_from_directory(pack_dir, "0.1.5")
+
+        canonical = project / ".specify" / "scripts" / "bash" / "switch-target-me.sh"
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "copilot",
+                "--script", "sh",
+                "--refresh-shared-infra",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
+
     def test_switch_installed_target_rejects_integration_options(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         old_cwd = os.getcwd()
