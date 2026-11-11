@@ -10,7 +10,6 @@ import errno
 import hashlib
 import logging
 import os
-import re
 import stat
 from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
@@ -25,94 +24,9 @@ from ..base import IntegrationOption, SkillsIntegration
 # ``record_existing`` apply, so policies are planned, cleaned up and recorded by
 # the same lexical path. Pinned by ``TestCodexManifestInternals``.
 from ..manifest import IntegrationManifest, _validate_record_path
+from . import _openai_yaml
 
 logger = logging.getLogger(__name__)
-
-# Codex reads ``openai.yaml`` with serde_yaml, which follows the YAML 1.2 core
-# schema. PyYAML's YAML 1.1 rules would turn ``display_name: On`` into ``True``
-# and ``010`` into 8, changing user values on a round trip.
-_YAML11_ONLY_TAGS = {
-    f"tag:yaml.org,2002:{name}"
-    for name in ("bool", "int", "float", "timestamp", "value", "merge")
-}
-_YAML12_RESOLVERS = (
-    ("tag:yaml.org,2002:bool", r"true|True|TRUE|false|False|FALSE", "tTfF"),
-    ("tag:yaml.org,2002:int", r"[-+]?[0-9]+|0o[0-7]+|0x[0-9a-fA-F]+", "-+0123456789"),
-    (
-        "tag:yaml.org,2002:float",
-        r"[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?"
-        r"|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN)",
-        "-+0123456789.",
-    ),
-)
-
-
-class _Yaml12Loader(yaml.SafeLoader):
-    """Safe loader that resolves plain scalars by the YAML 1.2 core schema."""
-
-
-_Yaml12Loader.yaml_implicit_resolvers = {
-    first: [(tag, rx) for tag, rx in resolvers if tag not in _YAML11_ONLY_TAGS]
-    for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
-}
-
-
-class _Yaml12Dumper(yaml.SafeDumper):
-    """Safe dumper that also quotes strings YAML 1.2 would read as non-strings."""
-
-
-for _tag, _pattern, _first in _YAML12_RESOLVERS:
-    for _cls in (_Yaml12Loader, _Yaml12Dumper):
-        _cls.add_implicit_resolver(_tag, re.compile(f"^(?:{_pattern})$"), list(_first))
-
-
-_YAML12_INT = re.compile(_YAML12_RESOLVERS[1][1])
-_YAML12_FLOAT = re.compile(_YAML12_RESOLVERS[2][1])
-
-
-# Numbers remember their source text, so ``1.10`` or ``007`` is written back
-# unchanged rather than as ``1.1`` or ``7``.
-class _Int(int):
-    text: str
-
-
-class _Float(float):
-    text: str
-
-
-def _construct_int(loader: _Yaml12Loader, node: yaml.ScalarNode) -> int:
-    text = loader.construct_scalar(node)
-    if not _YAML12_INT.fullmatch(text):  # an explicit ``!!int`` in another form
-        return loader.construct_yaml_int(node)
-    if text.startswith(("0o", "0x")):
-        number = _Int(int(text[2:], 8 if text[1] == "o" else 16))
-    else:
-        number = _Int(int(text, 10))
-    number.text = text
-    return number
-
-
-def _construct_float(loader: _Yaml12Loader, node: yaml.ScalarNode) -> float:
-    text = loader.construct_scalar(node)
-    if not _YAML12_FLOAT.fullmatch(text):  # an explicit ``!!float`` in another form
-        return loader.construct_yaml_float(node)
-    number = _Float(float(text.lower().replace(".inf", "inf").replace(".nan", "nan")))
-    number.text = text
-    return number
-
-
-_Yaml12Loader.add_constructor("tag:yaml.org,2002:int", _construct_int)
-_Yaml12Loader.add_constructor("tag:yaml.org,2002:float", _construct_float)
-_Yaml12Dumper.add_representer(
-    _Int, lambda dumper, data: dumper.represent_scalar("tag:yaml.org,2002:int", data.text)
-)
-_Yaml12Dumper.add_representer(
-    _Float, lambda dumper, data: dumper.represent_scalar("tag:yaml.org,2002:float", data.text)
-)
-
-
-def _dump_openai_yaml(data: dict[str, Any]) -> str:
-    return yaml.dump(data, Dumper=_Yaml12Dumper, sort_keys=False, allow_unicode=True)
 
 
 def _replace_file(root: Path, rel: str, content: bytes) -> None:
@@ -132,35 +46,6 @@ def _require_writable(path: Path) -> None:
     # The mode bits catch a read-only file even when running as root.
     if not os.access(path, os.W_OK) or not path.stat().st_mode & 0o222:
         raise PermissionError(errno.EACCES, "File is read-only", str(path))
-
-
-# Container shapes from Codex's ``SkillMetadataFile`` (codex-rs/skills/src/
-# metadata.rs). A mismatch makes Codex ignore the whole file, policy included.
-# Scalar leaves and ``products`` values are not checked, so a newer Codex value
-# is never rejected here.
-def _schema_errors(data: dict[str, Any]) -> list[str]:
-    errors: list[str] = []
-
-    def expect(value: Any, kind: type, label: str) -> bool:
-        if value is None or isinstance(value, kind):
-            return value is not None
-        name = "a mapping" if kind is dict else "a list"
-        got = {_Int: "int", _Float: "float"}.get(type(value), type(value).__name__)
-        errors.append(f"'{label}' must be {name}, got {got}")
-        return False
-
-    expect(data.get("interface"), dict, "interface")
-    dependencies = data.get("dependencies")
-    if expect(dependencies, dict, "dependencies"):
-        tools = dependencies.get("tools")
-        if expect(tools, list, "dependencies.tools"):
-            for index, tool in enumerate(tools):
-                if expect(tool, dict, f"dependencies.tools[{index}]"):
-                    expect(tool.get("oauth"), dict, f"dependencies.tools[{index}].oauth")
-    policy = data.get("policy")
-    if expect(policy, dict, "policy"):
-        expect(policy.get("products"), list, "policy.products")
-    return errors
 
 
 class CodexIntegration(SkillsIntegration):
@@ -200,7 +85,7 @@ class CodexIntegration(SkillsIntegration):
     def _load_openai_yaml(path: Path, rel: str) -> dict[str, Any]:
         """Parse an existing ``openai.yaml``; raise rather than guess at unusable content."""
         try:
-            loaded = yaml.load(path.read_text(encoding="utf-8"), Loader=_Yaml12Loader)
+            loaded = yaml.load(path.read_text(encoding="utf-8"), Loader=_openai_yaml.Yaml12Loader)
         except (yaml.YAMLError, OSError, ValueError) as exc:  # ValueError covers decoding and bad numbers
             raise ValueError(f"Cannot update {rel}: {exc}") from exc
         if loaded is None:  # an empty file holds nothing to preserve
@@ -298,7 +183,7 @@ class CodexIntegration(SkillsIntegration):
             return None
         policy["allow_implicit_invocation"] = False
         data["policy"] = policy
-        errors = _schema_errors(data)
+        errors = _openai_yaml.schema_errors(data)
         if errors:
             raise ValueError(
                 f"Cannot update {rel}: Codex would ignore this file, including the "
@@ -306,7 +191,7 @@ class CodexIntegration(SkillsIntegration):
             )
         if already_set and path.exists():
             return rel, None, ownership
-        return rel, _dump_openai_yaml(data), ownership
+        return rel, _openai_yaml.dump(data), ownership
 
     def _remove_policy(self, project_root: Path, rel: str, *, final: bool = False) -> bool:
         """Drop the managed policy from a user-owned file; return whether it is now policy-free."""
@@ -321,7 +206,7 @@ class CodexIntegration(SkillsIntegration):
                 del policy["allow_implicit_invocation"]
                 if not policy:
                     del data["policy"]
-                _replace_file(project_root, rel, _dump_openai_yaml(data).encode("utf-8"))
+                _replace_file(project_root, rel, _openai_yaml.dump(data).encode("utf-8"))
         except (OSError, ValueError) as exc:
             # ``final``: nothing will retry, as uninstall drops the manifest.
             hint = (

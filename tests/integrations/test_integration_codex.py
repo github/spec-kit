@@ -814,16 +814,16 @@ class TestCodexNoModelInvocationOwnership:
         assert self._yaml(path)["custom"]["enabled"] == "yes"
 
         import yaml
-        from specify_cli.integrations.codex import _Yaml12Loader
+        from specify_cli.integrations.codex._openai_yaml import Yaml12Loader
 
-        original = yaml.load(content, Loader=_Yaml12Loader)
+        original = yaml.load(content, Loader=Yaml12Loader)
         assert original["interface"]["display_name"] == "On"
         written = path.read_text(encoding="utf-8")
-        assert yaml.load(written, Loader=_Yaml12Loader) == {**original, "policy": self.POLICY}
+        assert yaml.load(written, Loader=Yaml12Loader) == {**original, "policy": self.POLICY}
         assert "count: 010\n" in written and "ratio: 1e3\n" in written
 
         get_integration("codex").teardown(tmp_path, manifest)
-        assert yaml.load(path.read_text(encoding="utf-8"), Loader=_Yaml12Loader) == original
+        assert yaml.load(path.read_text(encoding="utf-8"), Loader=Yaml12Loader) == original
 
     def test_round_trip_keeps_the_text_of_numbers(self, tmp_path):
         content = (
