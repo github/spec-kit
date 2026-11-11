@@ -2099,6 +2099,7 @@ class ExtensionManager:
         from ..shared_infra import (
             _ensure_safe_shared_directory,
             _validate_safe_shared_directory,
+            _write_shared_bytes,
         )
         from ..integrations._file_changes import changing_file, unlink, write_bytes
 
@@ -2123,6 +2124,10 @@ class ExtensionManager:
                     raise ValueError("output path is no longer a file")
                 elif content is not None and link is None and path.is_file():
                     if path.read_bytes() == content:
+                        # Same bytes, but a failed attempt may have changed the mode.
+                        if mode is not None and stat.S_IMODE(path.stat().st_mode) != mode:
+                            with changing_file(path):
+                                path.chmod(mode)
                         continue
                 if content is None:
                     if path.is_file():
@@ -2142,13 +2147,12 @@ class ExtensionManager:
                             unlink(path)
                         with changing_file(path):
                             path.symlink_to(link)
-                    else:
+                    elif mode is None:
                         write_bytes(path, content)
-                        if mode is not None:
-                            try:
-                                path.chmod(mode)
-                            except (NotImplementedError, OSError):
-                                pass  # Best effort, as for restored config files.
+                    else:
+                        # Created with the saved mode, so private bytes are never
+                        # on disk under a wider one.
+                        _write_shared_bytes(root, path, content, mode=mode)
             except (OSError, ValueError) as exc:
                 errors.append(f"{path}: {exc}")
         if errors:

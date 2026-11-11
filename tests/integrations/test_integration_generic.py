@@ -2861,6 +2861,45 @@ def _declare_run_skill_resource(source):
     path.write_text(yaml.safe_dump(data), encoding="utf-8")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_generic_restore_recreates_private_resource_with_its_mode_from_the_start(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    resource = project / "skills/speckit-sample-run/scripts/run.sh"
+    resource.parent.mkdir(parents=True)
+    snapshot = {resource: (b"secret", None, resource.parent, 0o600)}
+    seen = []
+    original = os.replace
+
+    def spy(src, dst):
+        seen.append(os.stat(src).st_mode & 0o777)
+        return original(src, dst)
+
+    monkeypatch.setattr(os, "replace", spy)
+    previous = os.umask(0)  # a umask that would otherwise publish 0666
+    try:
+        ExtensionManager(project)._restore_generic_refresh_artifacts(snapshot, "sample")
+    finally:
+        os.umask(previous)
+    assert seen == [0o600]  # never on disk under a wider mode
+    assert resource.read_bytes() == b"secret"
+    assert resource.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_generic_restore_resets_the_mode_when_the_bytes_are_unchanged(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    resource = project / "skills/speckit-sample-run/scripts/run.sh"
+    resource.parent.mkdir(parents=True)
+    resource.write_bytes(b"echo sample\n")
+    resource.chmod(0o755)  # what the failed attempt left behind
+    snapshot = {resource: (b"echo sample\n", None, resource.parent, 0o600)}
+    ExtensionManager(project)._restore_generic_refresh_artifacts(snapshot, "sample")
+    assert resource.read_bytes() == b"echo sample\n"
+    assert resource.stat().st_mode & 0o777 == 0o600
+
+
 def test_generic_disable_registry_failure_restores_skill_resource(tmp_path, generic_extension, monkeypatch):
     from typer.testing import CliRunner
     from specify_cli import app
