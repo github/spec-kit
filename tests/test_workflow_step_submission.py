@@ -425,9 +425,20 @@ def test_fetch_keeps_malicious_text_in_one_argument_even_if_validation_is_bypass
     # `curl` fail with ENOENT. Route through /bin/sh, which quotes the
     # interpreter path properly; with `-c`, sys.argv[1:] is exactly the
     # argument list `curl` was invoked with.
+    #
+    # The interpreter is reached through a path that itself contains a space,
+    # so restoring the direct `#!{interpreter}` shebang makes this test fail
+    # regardless of where the checkout lives.
+    try:
+        spaced_dir = tmp_path / "py dir"
+        spaced_dir.mkdir()
+        interpreter = spaced_dir / "python3"
+        interpreter.symlink_to(sys.executable)
+    except OSError:
+        pytest.skip("symlinks to the interpreter are unavailable here")
     curl.write_text(
         "#!/bin/sh\n"
-        f"exec {shlex.quote(str(sys.executable))} -c {shlex.quote(python_code)} \"$@\"\n",
+        f"exec {shlex.quote(str(interpreter))} -c {shlex.quote(python_code)} \"$@\"\n",
         encoding="utf-8",
     )
     curl.chmod(0o755)
