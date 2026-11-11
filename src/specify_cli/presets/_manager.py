@@ -870,24 +870,20 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             provenance.unlink()
         self._cleanup_stale_script_layers(scripts_dir, script_name, keep=set())
 
-    def reconcile_scripts_for_preset(
-        self, preset_id: str, failure_context: str
+    def reconcile_scripts_for_names(
+        self, script_names: List[str], failure_context: str
     ) -> None:
-        """Re-materialize every script this preset declares without failing a change.
+        """Re-materialize the generated chain for each of ``script_names``.
 
-        Call this after enable/disable/set-priority update the registry, the
-        same way ``reconcile_constitution`` is called alongside those events.
-        Re-resolving by name recomputes the whole chain for that name against
-        the current stack, so this is correct even for a priority change that
-        also affects another preset sharing the same script name -- only the
-        just-changed preset's own declared names need to be iterated here.
+        Shared by every caller that knows which script names just changed
+        provider (preset enable/disable/set-priority, extension
+        disable/remove) rather than needing a full ``reconcile_all_script_chains()``
+        scan. Re-resolving by name recomputes the whole chain for that name
+        against the current stack, so this is correct even when the change
+        also affects another preset/extension sharing the same script name.
+        A single name's failure is warned, not raised, so one bad chain
+        doesn't block the whole batch.
         """
-        manifest = self.get_pack(preset_id)
-        if manifest is None:
-            return
-        script_names = [
-            t["name"] for t in manifest.templates if t.get("type") == "script"
-        ]
         for script_name in script_names:
             try:
                 self._reconcile_script_chain(script_name)
@@ -897,6 +893,22 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                     f"{failure_context} (script '{script_name}'): {exc}.",
                     stacklevel=2,
                 )
+
+    def reconcile_scripts_for_preset(
+        self, preset_id: str, failure_context: str
+    ) -> None:
+        """Re-materialize every script this preset declares without failing a change.
+
+        Call this after enable/disable/set-priority update the registry, the
+        same way ``reconcile_constitution`` is called alongside those events.
+        """
+        manifest = self.get_pack(preset_id)
+        if manifest is None:
+            return
+        script_names = [
+            t["name"] for t in manifest.templates if t.get("type") == "script"
+        ]
+        self.reconcile_scripts_for_names(script_names, failure_context)
 
     def reconcile_all_script_chains(self) -> None:
         """Re-materialize every active preset- or override-provided script.
