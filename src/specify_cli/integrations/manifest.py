@@ -11,13 +11,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import secrets
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ._file_changes import after_file_change, before_file_change
+from ._file_changes import after_file_change, atomic_write_bytes, before_file_change
 
 OWNERSHIP_MODES = frozenset({"whole", "partial", "shared"})
 
@@ -144,28 +143,6 @@ def _ensure_safe_manifest_destination(root: Path, path: Path) -> None:
             raise ValueError(f"Integration manifest path escapes project root: {label}") from None
 
 
-def _write_bytes_with_mode(path: Path, content: bytes, mode: int) -> None:
-    """Publish *content* at *path* atomically, created with *mode* from the start.
-
-    The bytes go to an exclusively created sibling file whose creation mode is
-    *mode*, so the process umask can only narrow it, then replace *path*. No
-    reader ever sees the content under a wider mode, and none sees a partial
-    write.
-    """
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    # A fixed-length name: one derived from the destination would overflow the
-    # filesystem's component limit for long but valid file names.
-    temp = path.with_name(f".{secrets.token_hex(8)}.tmp")
-    fd = os.open(temp, flags, mode)
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(content)
-        os.replace(temp, path)
-    finally:
-        temp.unlink(missing_ok=True)
-
-
 class IntegrationManifest:
     """Tracks files installed by a single integration.
 
@@ -238,7 +215,7 @@ class IntegrationManifest:
         if mode is None:
             abs_path.write_bytes(content)
         else:
-            _write_bytes_with_mode(abs_path, content, mode)
+            atomic_write_bytes(abs_path, content, mode)
 
         normalized = abs_path.relative_to(self.project_root).as_posix()
         self._files[normalized] = hashlib.sha256(content).hexdigest()

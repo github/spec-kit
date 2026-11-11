@@ -2886,6 +2886,16 @@ def test_generic_restore_recreates_private_resource_with_its_mode_from_the_start
     assert resource.stat().st_mode & 0o777 == 0o600
 
 
+def test_generic_restore_recreates_a_resource_with_a_long_file_name(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    resource = project / "skills/speckit-sample-run" / ("a" * 250)
+    resource.parent.mkdir(parents=True)
+    snapshot = {resource: (b"edited by the user", None, resource.parent, 0o644)}
+    ExtensionManager(project)._restore_generic_refresh_artifacts(snapshot, "sample")
+    assert resource.read_bytes() == b"edited by the user"
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
 def test_generic_restore_resets_the_mode_when_the_bytes_are_unchanged(tmp_path):
     project = tmp_path / "project"

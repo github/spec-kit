@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import os
+import secrets
 import stat
 from collections.abc import Callable
 from contextlib import ExitStack, contextmanager
@@ -43,6 +44,43 @@ def write_text(path: Path, content: str, *, encoding: str = "utf-8", errors: str
 def write_bytes(path: Path, content: bytes) -> int:
     with changing_file(path):
         return path.write_bytes(content)
+
+
+def atomic_write_bytes(
+    path: Path,
+    content: bytes,
+    mode: int,
+    *,
+    exact: bool = False,
+    before_replace: Callable[[], None] | None = None,
+) -> None:
+    """Publish *content* at *path* atomically, created with *mode* from the start.
+
+    The bytes go to an exclusively created sibling file whose creation mode is
+    *mode*, so the process umask can only narrow it, then replace *path*. No
+    reader ever sees the content under a wider mode, and none sees a partial
+    write. With ``exact`` the file is finally chmodded to exactly *mode*,
+    ignoring the umask, as a restore of a saved mode needs.
+
+    The temporary name is fixed-length: one derived from the destination would
+    overflow the filesystem's component limit for long but valid file names.
+    ``before_replace`` runs last, so a caller can re-check the destination
+    right before it is replaced. This does no journaling; callers wrap it.
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    temp = path.with_name(f".{secrets.token_hex(8)}.tmp")
+    fd = os.open(temp, flags, mode)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+        if exact:
+            temp.chmod(mode)
+        if before_replace is not None:
+            before_replace()
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def unlink(path: Path, *, missing_ok: bool = False) -> None:
