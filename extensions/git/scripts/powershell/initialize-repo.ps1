@@ -29,7 +29,7 @@ Set-Location -LiteralPath $repoRoot
 $commitMsg = "[Spec Kit] Initial commit"
 $configFile = Join-Path $repoRoot ".specify/extensions/git/git-config.yml"
 if (Test-Path -LiteralPath $configFile) {
-    foreach ($line in Get-Content -LiteralPath $configFile) {
+    foreach ($line in Get-Content -LiteralPath $configFile -Encoding UTF8) {
         if ($line -match '^init_commit_message:\s*(.+)$') {
             $val = $matches[1].Trim() -replace '^["'']' -replace '["'']$'
             if ($val) { $commitMsg = $val }
