@@ -199,23 +199,93 @@ def _ignore_spec(raw: bytes) -> pathspec.GitIgnoreSpec:
     return pathspec.GitIgnoreSpec.from_lines(parsed)
 
 
+def _spec_decision(spec: pathspec.GitIgnoreSpec, candidate: str) -> bool | None:
+    """Last matching rule for *candidate*: True ignores, False re-includes.
+
+    A trailing ``/`` marks a directory. ``None`` means no rule matched.
+    """
+    if not candidate.endswith("/"):
+        return spec.check_file(candidate).include
+    state = None
+    for pattern in spec.patterns:
+        if pattern.include is not None and pattern.match_file(candidate) is not None:
+            state = bool(pattern.include)
+    return state
+
+
+def _probe_steps(probe: str) -> list[str]:
+    """Each directory ripgrep walks to reach *probe*, then *probe* itself."""
+    parts = [part for part in probe.split("/") if part]
+    steps, built = [], ""
+    for index, part in enumerate(parts):
+        built = f"{built}/{part}" if built else part
+        is_dir = index < len(parts) - 1 or probe.endswith("/")
+        steps.append(built + "/" if is_dir else built)
+    return steps
+
+
 def _spec_hides(spec: pathspec.GitIgnoreSpec, probe: str) -> bool:
     """Whether *spec* excludes *probe* or one of its parent directories."""
+    return any(_spec_decision(spec, step) for step in _probe_steps(probe))
 
-    def ancestor_excluded(candidate: str) -> bool:
-        state = False
-        for pattern in spec.patterns:
-            if pattern.include is not None and pattern.match_file(candidate) is not None:
-                state = bool(pattern.include)
-        return state
 
-    parts = [part for part in probe.split("/") if part]
-    built, ancestors = "", parts if probe.endswith("/") else parts[:-1]
-    for part in ancestors:
-        built = f"{built}/{part}" if built else part
-        if ancestor_excluded(built + "/"):
-            return True
-    return not probe.endswith("/") and spec.match_file(probe)
+# ripgrep checks ``.rgignore`` before ``.ignore`` across every directory, and
+# within each kind the file nearest the path wins (ripgrep 15.2.0).
+_RG_IGNORE_NAMES = (".rgignore", ".ignore")
+
+
+def _ignore_layers(
+    project_root: Path, root_ignore: bytes
+) -> list[tuple[str, str, Path, pathspec.GitIgnoreSpec]]:
+    """Ignore files that apply under ``.specify/``: (name, base dir, path, spec).
+
+    The root ``.ignore`` uses *root_ignore*, the content about to be written.
+    Symlinked ignore files are skipped.
+    """
+    layers = [(".ignore", "", project_root / ".ignore", _ignore_spec(root_ignore))]
+    root_rg = project_root / ".rgignore"
+    if root_rg.is_file() and not root_rg.is_symlink():
+        layers.append(
+            (".rgignore", "", root_rg, _ignore_spec(FileHelper(project_root).read_bytes(".rgignore")))
+        )
+    specify = project_root / ".specify"
+    if specify.is_dir() and not specify.is_symlink():
+        for name in _RG_IGNORE_NAMES:
+            for nested in sorted(specify.rglob(name)):
+                if not nested.is_file() or nested.is_symlink():
+                    continue
+                base = nested.parent.relative_to(project_root).as_posix()
+                raw = FileHelper(nested.parent).read_bytes(name)
+                layers.append((name, base, nested, _ignore_spec(raw)))
+    return layers
+
+
+def _rg_hiding_file(
+    layers: Sequence[tuple[str, str, Path, pathspec.GitIgnoreSpec]], probe: str
+) -> Path | None:
+    """The ignore file that makes ripgrep skip *probe*, or ``None``."""
+    for step in _probe_steps(probe):
+        for name in _RG_IGNORE_NAMES:
+            applicable = sorted(
+                (
+                    layer for layer in layers
+                    if layer[0] == name
+                    and (not layer[1] or step.startswith(layer[1] + "/"))
+                ),
+                key=lambda layer: layer[1].count("/") + bool(layer[1]),
+                reverse=True,
+            )
+            decision = None
+            for _, base, path, spec in applicable:
+                relative = step[len(base) + 1:] if base else step
+                decision = _spec_decision(spec, relative)
+                if decision is not None:
+                    break
+            if decision is not None:
+                if decision:
+                    return path
+                break
+    return None
 
 
 def _reject_hidden_specify_paths(
@@ -225,13 +295,12 @@ def _reject_hidden_specify_paths(
 
     Bundled scripts are probed only for the variants *script_type* installs
     (every variant when it is unknown); files already under ``.specify/``
-    are always probed. ``.ignore`` and ``.rgignore`` under ``.specify/`` are
-    checked too, because ripgrep applies them below the root exceptions.
+    are always probed. Each probe and its ancestors are evaluated the way
+    ripgrep does: a root ``.rgignore`` and any ``.ignore`` or ``.rgignore``
+    under ``.specify/`` can override the root exceptions.
     """
     from ..._assets import _locate_core_pack, _repo_root
     from ...shared_infra import script_variant_dirs
-
-    spec = _ignore_spec(updated)
 
     pack, repo = _locate_core_pack(), _repo_root()
     probes = {".specify/", ".specify/.gitignore", ".specify/memory/constitution.md"}
@@ -256,29 +325,20 @@ def _reject_hidden_specify_paths(
         if not private.match_file(probe)
         and not probe.startswith(_UNPROBED_SPECIFY_DIRS)
     )
-    hidden = [probe for probe in visible if _spec_hides(spec, probe)]
-    if hidden:
-        raise ValueError(
-            f"A later exclusion in {path} hides {hidden[0]}. "
-            "Move !.specify/ and !.specify/** below it, then rerun."
-        )
-    if not specify.is_dir() or specify.is_symlink():
-        return
-    for name in (".ignore", ".rgignore"):
-        nested = specify / name
-        if not nested.is_file() or nested.is_symlink():
+    layers = _ignore_layers(path.parent, updated)
+    for probe in visible:
+        culprit = _rg_hiding_file(layers, probe)
+        if culprit is None:
             continue
-        nested_spec = _ignore_spec(FileHelper(specify).read_bytes(name))
-        nested_hidden = [
-            probe for probe in visible
-            if probe != ".specify/"
-            and _spec_hides(nested_spec, probe.removeprefix(".specify/"))
-        ]
-        if nested_hidden:
+        if culprit == path:
             raise ValueError(
-                f"An exclusion in {nested} hides {nested_hidden[0]}. "
-                "Remove it from that file, then rerun."
+                f"A later exclusion in {path} hides {probe}. "
+                "Move !.specify/ and !.specify/** below it, then rerun."
             )
+        raise ValueError(
+            f"An exclusion in {culprit} hides {probe}. "
+            "Remove it from that file, then rerun."
+        )
 
 
 def _with_specify_ignore_rules(raw: bytes) -> bytes:

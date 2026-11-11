@@ -714,6 +714,59 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             assert not (root / ".ignore").exists()
             assert nested.read_bytes() == b"memory/\n"
 
+    @pytest.mark.parametrize(
+        ("ignore_file", "content"),
+        [
+            (".rgignore", b".specify/\n"),
+            (".rgignore", b"*.md\n"),
+            (".specify/memory/.ignore", b"*.md\n"),
+            (".specify/memory/.rgignore", b"constitution.md\n"),
+        ],
+    )
+    def test_configure_ignore_file_rejects_overriding_ignore_files(
+        self, tmp_path, ignore_file, content
+    ):
+        """A root .rgignore or a deeper ignore file outranks the root .ignore."""
+        constitution = tmp_path / ".specify" / "memory" / "constitution.md"
+        constitution.parent.mkdir(parents=True)
+        constitution.write_text("x\n")
+        blocker = tmp_path / ignore_file
+        blocker.write_bytes(content)
+        if shutil.which("rg") is not None:
+            # Pin the precedence on real ripgrep with the rules setup would write.
+            (tmp_path / ".ignore").write_bytes(_RULES)
+            out = subprocess.run(
+                ["rg", "--files", "--no-config"],
+                cwd=tmp_path, capture_output=True, text=True, check=False,
+            )
+            assert ".specify/memory/constitution.md" not in out.stdout.replace("\\", "/")
+            (tmp_path / ".ignore").unlink()
+        with pytest.raises(ValueError, match=rf"{ignore_file.split('/')[-1]}.*hides"):
+            get_integration(self.KEY).setup(
+                tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN
+            )
+        assert not (tmp_path / ".ignore").exists()
+        assert blocker.read_bytes() == content
+
+    def test_configure_ignore_file_allows_reincluding_ignore_files(self, tmp_path):
+        """Nearer re-includes win, so they do not block setup."""
+        constitution = tmp_path / ".specify" / "memory" / "constitution.md"
+        constitution.parent.mkdir(parents=True)
+        constitution.write_text("x\n")
+        (tmp_path / ".rgignore").write_bytes(b"*.md\n")
+        (tmp_path / ".specify" / ".rgignore").write_bytes(b"!*.md\n")
+        (tmp_path / ".specify" / "memory" / ".ignore").write_bytes(b"*.md\n!constitution.md\n")
+        get_integration(self.KEY).setup(
+            tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN
+        )
+        assert (tmp_path / ".ignore").read_bytes() == _RULES
+        if shutil.which("rg") is not None:
+            out = subprocess.run(
+                ["rg", "--files", "--no-config"],
+                cwd=tmp_path, capture_output=True, text=True, check=False,
+            )
+            assert ".specify/memory/constitution.md" in out.stdout.replace("\\", "/")
+
     def test_upgrade_rolls_back_existing_ignore_when_a_later_step_fails(self, tmp_path):
         from specify_cli.integrations import installer
         from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
