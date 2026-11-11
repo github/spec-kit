@@ -320,6 +320,13 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
     def _script_providing_preset_ids(self) -> List[str]:
         """Return ids of installed presets that provide a script template.
 
+        Includes disabled presets: the runtime restriction holds until a
+        script-providing preset is *removed*, not merely disabled (see the
+        error message in ``reject_unsupported_script_runtime_change``) --
+        otherwise disable, switch runtime, re-enable bypasses it, since
+        enabling only regenerates Bash files with no runtime validation of
+        its own.
+
         Also considers a project-local override (``.specify/templates/
         overrides/scripts/<name>.sh``) with no owning preset as "provided",
         mirroring ``reconcile_all_script_chains``'s override scan -- the
@@ -327,7 +334,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         human-readable error, never looked up in the registry.
         """
         ids = []
-        for pack_id, _metadata in self.registry.list_by_priority():
+        for pack_id, _metadata in self.registry.list_by_priority(include_disabled=True):
             manifest = PresetResolver(self.project_root)._get_manifest(
                 self.presets_dir / pack_id
             )
