@@ -1524,6 +1524,8 @@ class ExtensionManager:
         extension_dir: Path,
         link_outputs: bool = False,
         force: bool = False,
+        *,
+        reinstall: bool = False,
     ) -> List[str]:
         """Generate SKILL.md files for extension commands as agent skills.
 
@@ -1542,6 +1544,18 @@ class ExtensionManager:
                 ``setup()`` has just freshly regenerated core-template skill
                 files and the skip guard would otherwise prevent extension
                 content from being layered on top.
+            reinstall: If True, a pre-existing skill directory without a
+                SKILL.md may receive the fresh file. Set by
+                ``install_from_directory`` when this install removed the
+                same extension just now (``--force`` reinstall) or was
+                explicitly forced after the caller removed it
+                (``extension update``). A surviving directory is then one
+                the removal just emptied of the extension's own file
+                (#5381 keeps the directory when it holds user files), so
+                the fresh SKILL.md is written back next to them. Unlike
+                *force*, this never overwrites an existing SKILL.md: a
+                marker-mismatched file the removal deliberately preserved
+                stays untouched.
 
         Returns:
             List of skill names that were created (for registry storage).
@@ -1643,11 +1657,14 @@ class ExtensionManager:
                 # overwriting it with the composed extension content is correct.
                 if not is_expected_dev_symlink and not force:
                     continue
-            elif skill_dir_preexists and not force:
+            elif skill_dir_preexists and not force and not reinstall:
                 # Never add files to a pre-existing user directory. Without a
                 # verifiable SKILL.md ownership marker, rollback/removal cannot
                 # distinguish our output from unrelated user artifacts.
-                # Skipped when force=True (upgrade path).
+                # Skipped when force=True (upgrade path) or reinstall=True
+                # (this install follows removal of the same extension, so a
+                # surviving directory is one the removal just emptied of the
+                # extension's own SKILL.md, #5381).
                 continue
 
             # Create skill directory; track whether we created it so we can clean
@@ -2192,7 +2209,7 @@ class ExtensionManager:
                 every configured agent's skills directory is scanned
                 instead of resolving just the currently active one.
         """
-        from ..integrations._file_changes import changing_file, unlink
+        from ..integrations._file_changes import unlink
 
         generic_roots = {
             Path(path).parent.parent
@@ -2203,12 +2220,13 @@ class ExtensionManager:
             skill_names, extension_id, skills_dir=skills_dir
         ):
             skill_file = skill_subdir / "SKILL.md"
-            if (
-                generic_hashes is not None
-                and skill_file.is_symlink()
-                and not skill_file.resolve().is_relative_to(
-                    (self.extensions_dir / extension_id).resolve()
-                )
+            # Never touch a SKILL.md that is a link to a file outside this
+            # extension's own directory: the user relinked it (for example
+            # to another extension's file) and it is not ours to remove.
+            # This applies regardless of generic_hashes: rollback callers
+            # pass None, and skipping here is the conservative choice.
+            if skill_file.is_symlink() and not skill_file.resolve().is_relative_to(
+                (self.extensions_dir / extension_id).resolve()
             ):
                 continue
             if generic_hashes is not None and skill_file.is_relative_to(
@@ -2226,8 +2244,16 @@ class ExtensionManager:
                     except OSError:
                         pass
                     continue
-            with changing_file(skill_subdir, removal=True):
-                shutil.rmtree(skill_subdir)
+            # Remove only the file this extension created. The skill
+            # directory may hold files the user added after install
+            # (notes, extra references); deleting the whole directory
+            # would destroy them (#5381). Mirror the generic branch:
+            # drop SKILL.md and remove the directory only if it is empty.
+            unlink(skill_file, missing_ok=True)
+            try:
+                skill_subdir.rmdir()
+            except OSError:
+                pass
 
     def _extension_owned_skill_names(
         self, skill_names: List[str], extension_id: str
@@ -3060,8 +3086,14 @@ class ExtensionManager:
 
             # Auto-register extension commands as agent skills when skills mode
             # was used during project initialisation (feature parity).
+            # reinstall=True when this install just removed the same extension
+            # (did_remove) or was explicitly forced after the caller removed
+            # it (extension update): a surviving skill directory is one the
+            # removal just emptied of the extension's own SKILL.md (#5381),
+            # so the fresh file is written back next to preserved user files.
             registered_skills = self._register_extension_skills(
-                manifest, dest_dir, link_outputs=link_commands
+                manifest, dest_dir, link_outputs=link_commands,
+                reinstall=did_remove or force,
             )
             if register_commands and generic_active and manifest.commands:
                 expected = set(names)

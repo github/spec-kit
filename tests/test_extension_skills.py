@@ -321,6 +321,20 @@ def skills_project(project_dir):
 
 
 @pytest.fixture
+def bob_skills_project(project_dir):
+    """Create a project with Bob in its default (supplemental) skills mode.
+
+    Bob routes extension commands through _register_extension_skills into
+    ``.bob/skills`` (the supplemental route from #5381); native skills
+    agents such as Claude render SKILL.md via CommandRegistrar instead, so
+    they do not exercise the supplemental removal branch.
+    """
+    _create_init_options(project_dir, ai="bob", ai_skills=True)
+    skills_dir = _create_skills_dir(project_dir, ai="bob")
+    return project_dir, skills_dir
+
+
+@pytest.fixture
 def no_skills_project(project_dir):
     """Create a project without skills mode."""
     _create_init_options(project_dir, ai="claude", ai_skills=False)
@@ -3368,6 +3382,73 @@ class TestExtensionSkillUnregistration:
         # Skills should be gone
         assert not (skills_dir / "speckit-test-ext-hello").exists()
         assert not (skills_dir / "speckit-test-ext-world").exists()
+
+    def test_remove_preserves_user_files_in_supplemental_skill_dir(
+        self, bob_skills_project, extension_dir
+    ):
+        """Removing an extension must not delete user files in a skill dir.
+
+        Regression guard for #5381: the supplemental (non-generic) branch
+        removed the whole skill directory with ``shutil.rmtree``, deleting
+        any file the user had added to it. Only the extension-owned
+        SKILL.md may go; the directory survives while it holds user files.
+        """
+        project_dir, skills_dir = bob_skills_project
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(extension_dir, "0.1.0")
+
+        hello_dir = skills_dir / "speckit-test-ext-hello"
+        world_dir = skills_dir / "speckit-test-ext-world"
+        assert (hello_dir / "SKILL.md").is_file()
+        assert (world_dir / "SKILL.md").is_file()
+
+        notes = hello_dir / "my-notes.md"
+        notes.write_text("personal notes\n", encoding="utf-8")
+
+        result = manager.remove(manifest.id, keep_config=False)
+        assert result is True
+
+        # The extension-owned SKILL.md is gone, but the user's file survives.
+        assert not (hello_dir / "SKILL.md").exists()
+        assert notes.is_file()
+        assert notes.read_text(encoding="utf-8") == "personal notes\n"
+        assert hello_dir.is_dir()
+
+        # A skill directory with no user files is removed entirely.
+        assert not world_dir.exists()
+
+    def test_reinstall_after_remove_regenerates_skill_beside_user_files(
+        self, bob_skills_project, extension_dir
+    ):
+        """Reinstalling after removal restores SKILL.md next to user files.
+
+        Guard for #5381's update path: ``extension update`` removes then
+        reinstalls. The surviving skill directory must not make the
+        reinstall skip the skill — the fresh SKILL.md belongs next to the
+        preserved user file.
+        """
+        project_dir, skills_dir = bob_skills_project
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(extension_dir, "0.1.0")
+
+        hello_dir = skills_dir / "speckit-test-ext-hello"
+        notes = hello_dir / "my-notes.md"
+        notes.write_text("personal notes\n", encoding="utf-8")
+
+        assert manager.remove(manifest.id, keep_config=False) is True
+        assert not (hello_dir / "SKILL.md").exists()
+        assert notes.is_file()
+
+        # Reinstall, as the update flow does after removing the old version.
+        manager.install_from_directory(extension_dir, "0.1.0", force=True)
+
+        assert (hello_dir / "SKILL.md").is_file()
+        assert notes.is_file()
+        assert notes.read_text(encoding="utf-8") == "personal notes\n"
+        assert manager.registry.get(manifest.id)["registered_skills"] == [
+            "speckit-test-ext-hello",
+            "speckit-test-ext-world",
+        ]
 
     def test_skills_removed_when_description_contains_dashes(
         self, skills_project, temp_dir

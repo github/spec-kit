@@ -550,10 +550,16 @@ def run_update_command(extension: str | None) -> None:
                     installation_modified = True
                     manager.remove(extension_id, keep_config=True)
 
-                    # 8. Install new version
+                    # 8. Install new version. force=True lets the reinstall
+                    # write SKILL.md back into a skill directory that
+                    # survived removal because it holds user files (#5381):
+                    # remove() above already unregistered the old version,
+                    # so force changes nothing else here — it only signals
+                    # the reinstall to the skill registration below.
                     _ = manager.install_from_zip(
                         archive_path,
                         speckit_version,
+                        force=True,
                         catalog_name=update.catalog_name,
                     )
 
