@@ -16,6 +16,7 @@ from scripts.python import common as python_common
 from tests.conftest import HAS_BASH, requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
+    _bash_posix_path,
     bash_cmd,
     clean_env,
     install_composition_stack,
@@ -90,13 +91,18 @@ def test_all_variants_resolve_templates_in_bracketed_project(
         candidate.write_bytes(b"# Extension\n")
         expected = "# Extension\n"
 
-    commands = [py_cmd(repo, SCRIPT, TEMPLATE, "--json")]
+    # The scripts parse preset.yml with Python; pin the interpreter that has
+    # PyYAML, since an ambient python3 (on Windows runners, say) may not.
+    env = clean_env()
+    env["SPECKIT_PYTHON_EXECUTABLE"] = sys.executable
+    commands = [(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), env)]
     if HAS_BASH:
-        commands.append(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"))
+        bash_env = dict(env, SPECKIT_PYTHON_EXECUTABLE=_bash_posix_path(Path(sys.executable)))
+        commands.append((bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), bash_env))
     if HAS_POWERSHELL:
-        commands.append(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"))
-    for command in commands:
-        result = run(command, repo)
+        commands.append((ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), env))
+    for command, command_env in commands:
+        result = run(command, repo, command_env)
         assert result.returncode == (1 if layer == "missing" else 0), result.stderr
         if layer == "missing":
             assert result.stdout == ""
