@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import requires_bash
+from tests.conftest import HAS_BASH, requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
+    _bash_posix_path,
     bash_cmd,
     break_wrap_layer,
     clean_env,
@@ -24,6 +25,63 @@ from tests.parity_helpers import (
 )
 
 SCRIPT = "setup-tasks"
+
+
+@pytest.mark.parametrize("feature_env", [False, True], ids=["persisted", "env"])
+@pytest.mark.parametrize(
+    "layer",
+    [
+        "core", "override", "preset", "preset-flat", "preset-registered",
+        "preset-flat-registered", "extension", "extension-flat",
+    ],
+)
+def test_all_variants_setup_tasks_in_bracketed_project(
+    tmp_path: Path, feature_env: bool, layer: str
+) -> None:
+    repo = _setup_repo(tmp_path / "project [v1]")
+    feature = repo / "specs/001-my-feature"
+    for name in ["spec", "plan", "tasks"]:
+        (feature / f"{name}.md").write_bytes(f"# User {name}\r\n".encode("utf-8"))
+    before = {p: p.read_bytes() for p in feature.iterdir()}
+    expected_path = repo / ".specify/templates/tasks-template.md"
+    if layer == "override":
+        expected_path = repo / ".specify/templates/overrides/tasks-template.md"
+        expected_path.parent.mkdir(parents=True)
+        expected_path.write_bytes(b"# Custom Tasks\n")
+    elif layer != "core":
+        folder = "presets" if layer.startswith("preset") else "extensions"
+        relative = "tasks-template.md" if "flat" in layer else "templates/tasks-template.md"
+        expected_path = repo / ".specify" / folder / "demo" / relative
+        expected_path.parent.mkdir(parents=True)
+        expected_path.write_bytes(b"# Custom Tasks\n")
+        if layer.endswith("registered"):
+            presets = repo / ".specify/presets"
+            (presets / "aaa/templates").mkdir(parents=True)
+            (presets / "aaa/templates/tasks-template.md").write_bytes(b"# Decoy\n")
+            (presets / ".registry").write_bytes(
+                b'{"presets":{"demo":{"priority":1},"aaa":{"enabled":false}}}'
+            )
+    env = clean_env()
+    if feature_env:
+        env["SPECIFY_FEATURE_DIRECTORY"] = "specs/001-my-feature"
+        env["SPECIFY_FEATURE"] = "001-my-feature"
+    commands = [("python", py_cmd(repo, SCRIPT, "--json"))]
+    if HAS_BASH:
+        commands.append(("bash", bash_cmd(repo, SCRIPT, "--json")))
+    if HAS_POWERSHELL:
+        commands.append(("powershell", ps_cmd(repo, SCRIPT, "-Json")))
+    for variant, command in commands:
+        result = run(command, repo, env)
+        assert result.returncode == 0, result.stderr
+        payload = json_stdout(result)
+        for key, path in (("FEATURE_DIR", feature), ("TASKS_TEMPLATE", expected_path)):
+            expected = {path}
+            if variant == "bash":
+                # Git Bash on Windows can print MSYS paths such as /c/Users/...
+                expected.add(Path(_bash_posix_path(path)))
+            assert Path(payload[key]) in expected, (variant, key, payload[key])
+        assert payload["TASKS_TEMPLATE_CONTENT"] == expected_path.read_bytes().decode("utf-8")
+        assert {p: p.read_bytes() for p in feature.iterdir()} == before
 
 
 def test_installed_python_json_preserves_stock_tasks_template(

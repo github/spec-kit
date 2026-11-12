@@ -193,7 +193,7 @@ function Get-FeaturePathsEnv {
         if (-not $noPersist) {
             Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
         }
-    } elseif (Test-Path $featureJson) {
+    } elseif (Test-Path -LiteralPath $featureJson) {
         $featureJsonRaw = [System.IO.File]::ReadAllText($featureJson, [System.Text.Encoding]::UTF8)
         try {
             $featureConfig = $featureJsonRaw | ConvertFrom-Json
@@ -417,7 +417,7 @@ function Get-SortedExtensionIds {
         }
     }
 
-    foreach ($directory in Get-ChildItem -Path $ExtensionsDir -Directory -ErrorAction SilentlyContinue) {
+    foreach ($directory in Get-ChildItem -LiteralPath $ExtensionsDir -Directory -ErrorAction SilentlyContinue) {
         if ($directory.Name -cmatch '^[a-z0-9-]+$' -and $directory.Name -cnotin $registeredNames) {
             $ranked += [PSCustomObject]@{ Priority = 10; Id = $directory.Name }
         }
@@ -442,15 +442,15 @@ function Resolve-Template {
 
     # Priority 1: Project overrides
     $override = Join-Path $base "overrides/$TemplateName.md"
-    if (Test-Path $override) { return $override }
+    if (Test-Path -LiteralPath $override) { return $override }
 
     # Priority 2: Installed presets (sorted by priority from .registry)
     $presetsDir = Join-Path $RepoRoot '.specify/presets'
-    if (Test-Path $presetsDir) {
+    if (Test-Path -LiteralPath $presetsDir) {
         $registryFile = Join-Path $presetsDir '.registry'
         $sortedPresets = @()
         $registryParsed = $false
-        if (Test-Path $registryFile) {
+        if (Test-Path -LiteralPath $registryFile) {
             try {
                 $registryData = [System.IO.File]::ReadAllText($registryFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
                 if ($null -eq $registryData -or $registryData -isnot [PSCustomObject]) {
@@ -492,36 +492,36 @@ function Resolve-Template {
         if ($registryParsed) {
             foreach ($presetId in $sortedPresets) {
                 $candidate = Join-Path $presetsDir "$presetId/templates/$TemplateName.md"
-                if (Test-Path $candidate) { return $candidate }
+                if (Test-Path -LiteralPath $candidate) { return $candidate }
                 $candidate = Join-Path $presetsDir "$presetId/$TemplateName.md"
-                if (Test-Path $candidate) { return $candidate }
+                if (Test-Path -LiteralPath $candidate) { return $candidate }
             }
         } else {
             # Fallback: alphabetical directory order
-            foreach ($preset in Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' } | Sort-Object Name) {
+            foreach ($preset in Get-ChildItem -LiteralPath $presetsDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' } | Sort-Object Name) {
                 $candidate = Join-Path $preset.FullName "templates/$TemplateName.md"
-                if (Test-Path $candidate) { return $candidate }
+                if (Test-Path -LiteralPath $candidate) { return $candidate }
                 $candidate = Join-Path $preset.FullName "$TemplateName.md"
-                if (Test-Path $candidate) { return $candidate }
+                if (Test-Path -LiteralPath $candidate) { return $candidate }
             }
         }
     }
 
     # Priority 3: Extension-provided templates
     $extDir = Join-Path $RepoRoot '.specify/extensions'
-    if (Test-Path $extDir) {
+    if (Test-Path -LiteralPath $extDir) {
         foreach ($extensionId in Get-SortedExtensionIds -ExtensionsDir $extDir) {
             $candidate = Join-Path $extDir "$extensionId/templates/$TemplateName.md"
-            if (-not (Test-Path $candidate)) {
+            if (-not (Test-Path -LiteralPath $candidate)) {
                 $candidate = Join-Path $extDir "$extensionId/$TemplateName.md"
             }
-            if (Test-Path $candidate) { return $candidate }
+            if (Test-Path -LiteralPath $candidate) { return $candidate }
         }
     }
 
     # Priority 4: Core templates
     $core = Join-Path $base "$TemplateName.md"
-    if (Test-Path $core) { return $core }
+    if (Test-Path -LiteralPath $core) { return $core }
 
     return $null
 }
@@ -547,7 +547,7 @@ function Resolve-TemplateContent {
 
     # Priority 1: Project overrides (always "replace")
     $override = Join-Path $base "overrides/$TemplateName.md"
-    if (Test-Path $override) {
+    if (Test-Path -LiteralPath $override) {
         return [System.IO.File]::ReadAllText(
             $override,
             [System.Text.Encoding]::UTF8
@@ -558,11 +558,11 @@ function Resolve-TemplateContent {
 
     # Priority 2: Installed presets (sorted by priority from .registry)
     $presetsDir = Join-Path $RepoRoot '.specify/presets'
-    if (Test-Path $presetsDir) {
+    if (Test-Path -LiteralPath $presetsDir) {
         $registryFile = Join-Path $presetsDir '.registry'
         $sortedPresets = @()
         $registryParsed = $false
-        if (Test-Path $registryFile) {
+        if (Test-Path -LiteralPath $registryFile) {
             try {
                 $registryData = [System.IO.File]::ReadAllText($registryFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
                 if ($null -eq $registryData -or $registryData -isnot [PSCustomObject]) {
@@ -602,7 +602,7 @@ function Resolve-TemplateContent {
         }
 
         if (-not $registryParsed) {
-            $sortedPresets = Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue |
+            $sortedPresets = Get-ChildItem -LiteralPath $presetsDir -Directory -ErrorAction SilentlyContinue |
                 Where-Object { $_.Name -cmatch '^[a-z0-9-]+$' } |
                 Sort-Object Name |
                 ForEach-Object { $_.Name }
@@ -615,10 +615,10 @@ function Resolve-TemplateContent {
                 $manifestFilePath = ''
                 $manifestDeclared = $false
                 $manifest = Join-Path $presetsDir "$presetId/preset.yml"
-                if ((Test-Path $manifest) -and -not $pyCmd) {
+                if ((Test-Path -LiteralPath $manifest) -and -not $pyCmd) {
                     throw "Python 3 and PyYAML are required to resolve preset template composition"
                 }
-                if (Test-Path $manifest) {
+                if (Test-Path -LiteralPath $manifest) {
                     try {
                         # Use Python to parse YAML manifest for strategy and file path
                         $pyArgs = if ($pyCmd.Count -gt 1) { $pyCmd[1..($pyCmd.Count-1)] } else { @() }
@@ -690,9 +690,9 @@ except Exception as exc:
                             $strategy = $parts[1].ToLowerInvariant()
                             if ($parts.Count -gt 2 -and $parts[2]) { $manifestFilePath = $parts[2] }
                         }
-                        Remove-Item $pyStderrFile -Force -ErrorAction SilentlyContinue
+                        Remove-Item -LiteralPath $pyStderrFile -Force -ErrorAction SilentlyContinue
                     } catch {
-                        if ($pyStderrFile) { Remove-Item $pyStderrFile -Force -ErrorAction SilentlyContinue }
+                        if ($pyStderrFile) { Remove-Item -LiteralPath $pyStderrFile -Force -ErrorAction SilentlyContinue }
                         throw
                     }
                 }
@@ -706,14 +706,14 @@ except Exception as exc:
                 }
                 if ($manifestFilePath) {
                     $mf = Join-Path $presetsDir "$presetId/$manifestFilePath"
-                    if (Test-Path $mf) { $candidate = $mf }
+                    if (Test-Path -LiteralPath $mf) { $candidate = $mf }
                 }
                 if (-not $candidate -and -not $manifestDeclared) {
                     $cf = Join-Path $presetsDir "$presetId/templates/$TemplateName.md"
-                    if (Test-Path $cf) { $candidate = $cf }
+                    if (Test-Path -LiteralPath $cf) { $candidate = $cf }
                     if (-not $candidate) {
                         $cf = Join-Path $presetsDir "$presetId/$TemplateName.md"
-                        if (Test-Path $cf) { $candidate = $cf }
+                        if (Test-Path -LiteralPath $cf) { $candidate = $cf }
                     }
                 }
                 if ($candidate) {
@@ -729,13 +729,13 @@ except Exception as exc:
 
     # Priority 3: Extension-provided templates (always "replace")
     $extDir = Join-Path $RepoRoot '.specify/extensions'
-    if (-not $effectiveBaseFound -and (Test-Path $extDir)) {
+    if (-not $effectiveBaseFound -and (Test-Path -LiteralPath $extDir)) {
         foreach ($extensionId in Get-SortedExtensionIds -ExtensionsDir $extDir) {
             $candidate = Join-Path $extDir "$extensionId/templates/$TemplateName.md"
-            if (-not (Test-Path $candidate)) {
+            if (-not (Test-Path -LiteralPath $candidate)) {
                 $candidate = Join-Path $extDir "$extensionId/$TemplateName.md"
             }
-            if (Test-Path $candidate) {
+            if (Test-Path -LiteralPath $candidate) {
                 $layerPaths += $candidate
                 $layerStrategies += 'replace'
                 $effectiveBaseFound = $true
@@ -746,7 +746,7 @@ except Exception as exc:
 
     # Priority 4: Core templates (always "replace")
     $core = Join-Path $base "$TemplateName.md"
-    if (-not $effectiveBaseFound -and (Test-Path $core)) {
+    if (-not $effectiveBaseFound -and (Test-Path -LiteralPath $core)) {
         $layerPaths += $core
         $layerStrategies += 'replace'
     }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -12,9 +13,10 @@ from pathlib import Path
 import pytest
 
 from scripts.python import common as python_common
-from tests.conftest import requires_bash
+from tests.conftest import HAS_BASH, requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
+    _bash_posix_path,
     bash_cmd,
     clean_env,
     install_composition_stack,
@@ -30,6 +32,99 @@ from tests.parity_helpers import (
 
 SCRIPT = "resolve-template"
 TEMPLATE = "constitution-template"
+
+
+@pytest.mark.parametrize(
+    "layer",
+    [
+        "core", "override", "preset", "preset-flat", "preset-unregistered",
+        "preset-flat-unregistered", "manifest", "manifest-path", "extension",
+        "extension-flat", "missing",
+    ],
+)
+def test_all_variants_resolve_templates_in_bracketed_project(
+    tmp_path: Path, layer: str
+) -> None:
+    repo = make_repo(tmp_path, "project" if layer == "manifest-path" else "project [v1]")
+    install_scripts(repo, SCRIPT)
+    base = repo / ".specify/templates"
+    base.mkdir(parents=True)
+    (base / f"{TEMPLATE}.md").write_bytes(b"# Core\n")
+    expected = "# Core\n"
+    if layer == "missing":
+        (base / f"{TEMPLATE}.md").unlink()
+    elif layer == "override":
+        (base / "overrides").mkdir()
+        (base / "overrides" / f"{TEMPLATE}.md").write_bytes(b"# Override\n")
+        expected = "# Override\n"
+    elif layer.startswith("preset") or layer.startswith("manifest"):
+        presets = repo / ".specify/presets"
+        # Alphabetical fallback must differ from the registered priority order.
+        decoy = presets / "aaa/templates" / f"{TEMPLATE}.md"
+        decoy.parent.mkdir(parents=True)
+        decoy.write_bytes(b"# Decoy\n")
+        registered = "unregistered" not in layer
+        if registered:
+            (presets / ".registry").write_bytes(
+                b'{"presets":{"zzz":{"priority":1},"aaa":{"enabled":false}}}'
+            )
+        else:
+            shutil.rmtree(presets / "aaa")
+        relative = f"{TEMPLATE}.md" if "flat" in layer else f"templates/{TEMPLATE}.md"
+        if layer.startswith("manifest"):
+            relative = "templates/custom [v1].md"
+        candidate = presets / "zzz" / relative
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        candidate.write_bytes(b"# Preset\n")
+        if layer.startswith("manifest"):
+            (presets / "zzz/preset.yml").write_bytes(
+                (
+                    "provides:\n  templates:\n    - type: template\n"
+                    f"      name: {TEMPLATE}\n      file: {relative}\n"
+                ).encode("utf-8")
+            )
+        expected = "# Preset\n"
+    elif layer.startswith("extension"):
+        relative = f"{TEMPLATE}.md" if layer.endswith("flat") else f"templates/{TEMPLATE}.md"
+        candidate = repo / ".specify/extensions/demo" / relative
+        candidate.parent.mkdir(parents=True)
+        candidate.write_bytes(b"# Extension\n")
+        expected = "# Extension\n"
+
+    # The scripts parse preset.yml with Python; pin the interpreter that has
+    # PyYAML, since an ambient python3 (on Windows runners, say) may not.
+    env = clean_env()
+    env["SPECKIT_PYTHON_EXECUTABLE"] = sys.executable
+    commands = [(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), env)]
+    if HAS_BASH:
+        bash_env = dict(env, SPECKIT_PYTHON_EXECUTABLE=_bash_posix_path(Path(sys.executable)))
+        commands.append((bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), bash_env))
+    if HAS_POWERSHELL:
+        commands.append((ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), env))
+    for command, command_env in commands:
+        result = run(command, repo, command_env)
+        assert result.returncode == (1 if layer == "missing" else 0), result.stderr
+        if layer == "missing":
+            assert result.stdout == ""
+        else:
+            assert json_stdout(result)["TEMPLATE_CONTENT"] == expected
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="PowerShell not available")
+def test_powershell_bracketed_manifest_reports_missing_python(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, "project [v1]")
+    install_scripts(repo, SCRIPT)
+    install_composition_stack(repo, TEMPLATE, "# Core\n")
+    command = ps_cmd(repo, SCRIPT, TEMPLATE, "-Json")
+    command[0] = shutil.which(command[0])
+    env = clean_env()
+    env["PATH"] = str(tmp_path / "empty-bin")
+
+    result = run(command, repo, env)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "Python 3 and PyYAML are required" in result.stderr
 
 
 def test_python_json_preserves_constitution_on_legacy_stdout(tmp_path: Path) -> None:
