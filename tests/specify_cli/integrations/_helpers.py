@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 
+import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
@@ -75,3 +76,10 @@ def _integration_list_row_cells(output: str, key: str) -> list[str]:
     plain = strip_ansi(output)
     row = next(line for line in plain.splitlines() if line.startswith(f"│ {key}"))
     return [cell.strip() for cell in row.split("│")[1:-1]]
+
+
+def _symlink_or_skip(link, target, *, directory=False):
+    try:
+        link.symlink_to(target, target_is_directory=directory)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
