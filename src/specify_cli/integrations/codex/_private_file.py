@@ -67,8 +67,8 @@ def _create_posix(directory: int, name: str, content: bytes) -> None:
     Everything goes through the one descriptor that created the file, so
     nothing swapped in under its name afterwards is opened. Only the file
     this call created is removed when a later step fails. The directory is
-    flushed too, so the backup survives a crash that the rewrite after it
-    does.
+    then flushed as well, best effort, so the backup is more likely to
+    survive a crash that the rewrite after it survives.
     """
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     flags |= getattr(os, "O_CLOEXEC", 0)
@@ -86,7 +86,6 @@ def _create_posix(directory: int, name: str, content: bytes) -> None:
             os.fsync(fd)
         finally:
             os.close(fd)
-        os.fsync(directory)
     except BaseException:
         try:
             current = os.stat(name, dir_fd=directory, follow_symlinks=False)
@@ -95,6 +94,28 @@ def _create_posix(directory: int, name: str, content: bytes) -> None:
         except OSError:
             pass
         raise
+    _flush_directory(directory)
+
+
+def _flush_directory(directory: int) -> None:
+    """Flush ``directory``'s entries if the platform allows it; never fail.
+
+    The pinned descriptor may be ``O_PATH`` (Linux) or search-only, which
+    ``fsync`` rejects, so a readable one is opened through it. The backup's
+    bytes are already on disk, and a directory that cannot be opened for
+    reading or flushed is no reason to give up a backup that is complete.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(".", flags, dir_fd=directory)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def _remove_partial(helper: FileHelper, rel: str) -> None:

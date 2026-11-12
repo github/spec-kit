@@ -1,5 +1,6 @@
 """Tests for CodexIntegration."""
 
+import errno
 import os
 import shutil
 import stat
@@ -1923,6 +1924,96 @@ class TestCodexFileHelperInternals:
         monkeypatch.undo()
         assert len(leaf) == 1
         assert not (tmp_path / rel).exists()
+
+    @staticmethod
+    def _fail_directory_fsync(monkeypatch, pinned_only):
+        """Make ``fsync`` of a directory fail as it does on Linux's ``O_PATH`` descriptors."""
+        from specify_cli.file_helper import FileHelper
+
+        real_fsync = os.fsync
+        pinned: set[int] = set()
+        if pinned_only:
+            real_creation = FileHelper._creation_directory
+
+            from contextlib import contextmanager
+
+            @contextmanager
+            def creation_directory(self, directory):
+                with real_creation(self, directory) as handle:
+                    pinned.add(handle)
+                    try:
+                        yield handle
+                    finally:
+                        pinned.discard(handle)
+
+            monkeypatch.setattr(FileHelper, "_creation_directory", creation_directory)
+
+        def fsync(fd):
+            if (fd in pinned) if pinned_only else stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise OSError(errno.EBADF, "Bad file descriptor")
+            return real_fsync(fd)
+
+        monkeypatch.setattr(os, "fsync", fsync)
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+    @pytest.mark.parametrize("pinned_only", [True, False])
+    def test_posix_create_private_keeps_the_backup_when_the_directory_cannot_be_flushed(
+        self, tmp_path, monkeypatch, pinned_only
+    ):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        rel = f"{self.REL}.speckit-backup"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        self._fail_directory_fsync(monkeypatch, pinned_only)
+        with FileHelper(tmp_path) as helper:
+            create_private(helper, rel, b"content")
+        monkeypatch.undo()
+        assert (tmp_path / rel).read_bytes() == b"content"
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+    def test_posix_create_private_flushes_the_directory_through_its_own_descriptor(
+        self, tmp_path, monkeypatch
+    ):
+        from contextlib import contextmanager
+
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        rel = f"{self.REL}.speckit-backup"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        real_creation, real_fsync = FileHelper._creation_directory, os.fsync
+        pinned: list[int] = []
+        directories: list[int] = []
+
+        @contextmanager
+        def creation_directory(self, directory):
+            with real_creation(self, directory) as handle:
+                pinned.append(handle)
+                yield handle
+
+        def fsync(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                directories.append(fd)
+            return real_fsync(fd)
+
+        monkeypatch.setattr(FileHelper, "_creation_directory", creation_directory)
+        monkeypatch.setattr(os, "fsync", fsync)
+        with FileHelper(tmp_path) as helper:
+            create_private(helper, rel, b"content")
+        monkeypatch.undo()
+        # The pinned descriptor may be O_PATH, which fsync rejects.
+        assert len(directories) == 1 and directories[0] not in pinned
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+    def test_rewrite_succeeds_when_the_directory_cannot_be_flushed(self, tmp_path, monkeypatch):
+        owner = TestCodexNoModelInvocationOwnership()
+        path = owner._seed(tmp_path)
+        self._fail_directory_fsync(monkeypatch, pinned_only=True)
+        owner._setup(tmp_path)
+        monkeypatch.undo()
+        assert owner._yaml(path)["policy"] == {"allow_implicit_invocation": False}
+        assert not list(tmp_path.rglob("*.speckit-backup"))
 
     @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
     def test_posix_create_private_flushes_through_one_descriptor(self, tmp_path, monkeypatch):
