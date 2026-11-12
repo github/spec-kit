@@ -349,10 +349,10 @@ class TestExtensionUpdateCLI:
         v2_dir = self._create_extension_source(tmp_path, "2.0.0")
 
         def fake_install_from_zip(
-            self_obj, _zip_path, speckit_version, *, catalog_name=None
+            self_obj, _zip_path, speckit_version, *, catalog_name=None, force=False
         ):
             return self_obj.install_from_directory(
-                v2_dir, speckit_version, catalog_name=catalog_name
+                v2_dir, speckit_version, catalog_name=catalog_name, force=force
             )
 
         with patch.object(Path, "cwd", return_value=project_dir), \
