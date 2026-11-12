@@ -1105,7 +1105,10 @@ def test_powershell_accepts_valid_in_project_link_chains(
         # directory links does not resolve through the Windows kernel
         # (the setup guard below stays False at 11 and 20 hops even
         # though every hop is a valid in-project link), so the chain
-        # is built with absolute targets instead. The depth, the
+        # is built with absolute targets instead. The fallback
+        # candidate link is absolute for the same reason: its relative
+        # target has to traverse the symlinked l1 directory and
+        # likewise fails to resolve on Windows. The depth, the
         # in-project containment, and the resolved file are unchanged,
         # and the resolver under test accepts both target forms.
         for index in range(1, link_count + 1):
@@ -1114,7 +1117,7 @@ def test_powershell_accepts_valid_in_project_link_chains(
         if operation == "fallback":
             candidate = repo / "specs/001/plan.md"
             candidate.parent.mkdir(parents=True)
-            candidate.symlink_to("../../l1/plan.md")
+            candidate.symlink_to(repo / "l1" / "plan.md")
         else:
             candidate = repo / context_file
     except (OSError, NotImplementedError) as exc:
