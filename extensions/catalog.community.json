@@ -4356,7 +4356,7 @@
     "okr": {
       "name": "OKR Bets",
       "id": "okr",
-      "description": "Treat every spec as a bet on a team Key Result: a hypothesis and a verification contract before /speckit.specify, measurement planned into the plan, and a verdict after launch that gates scaling. Company OKRs are read-only context.",
+      "description": "Treat each spec as a Key Result bet: define a hypothesis and verification contract before /speckit.specify, plan measurement, assess results after launch before scaling. Company OKRs stay read-only.",
       "author": "juanl",
       "version": "0.2.1",
       "download_url": "https://github.com/juanl/spec-kit-okr/releases/download/v0.2.1/spec-kit-okr-0.2.1.zip",
