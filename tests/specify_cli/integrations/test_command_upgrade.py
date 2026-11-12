@@ -1948,3 +1948,101 @@ class TestIntegrationUpgradeBasic:
             os.chdir(old)
         assert result.exit_code == 0
         assert "Nothing to upgrade" in result.output
+
+
+def _tree(root):
+    """Every file's bytes and every directory, without following links."""
+    files, directories = {}, set()
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            files[relative] = ("link", os.readlink(path))
+        elif path.is_dir():
+            directories.add(relative)
+        else:
+            files[relative] = path.read_bytes()
+    return files, directories
+
+
+@pytest.mark.parametrize("failure", ["setup", "manifest", "state"])
+def test_builtin_upgrade_rolls_back_when_it_fails_before_committing(tmp_path, monkeypatch, failure):
+    """A failure after setup() starts and before the state commit restores the project."""
+    from specify_cli.integrations import command_upgrade
+    from specify_cli.integrations.claude import ClaudeIntegration
+    from specify_cli.integrations.manifest import IntegrationManifest
+
+    project = _init_project(tmp_path, "claude")
+    skills = project / ".claude" / "skills"
+    (skills / "speckit-plan" / "SKILL.md").write_text("# user customization\n", encoding="utf-8")
+    (skills / "speckit-tasks" / "SKILL.md").unlink()
+    (skills / "speckit-tasks").rmdir()
+    # --force makes the first shared-infrastructure pass overwrite this.
+    template = next((project / ".specify" / "templates").glob("*.md"))
+    template.write_text("customized\n", encoding="utf-8")
+    before = _tree(project)
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    if failure == "setup":
+        real_setup = ClaudeIntegration.setup
+
+        def setup(self, *args, **kwargs):
+            real_setup(self, *args, **kwargs)
+            fail()
+
+        monkeypatch.setattr(ClaudeIntegration, "setup", setup)
+    elif failure == "manifest":
+        real_save = IntegrationManifest.save
+
+        def save(self, *args, **kwargs):
+            if self.key == "claude":
+                fail()
+            return real_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(IntegrationManifest, "save", save)
+    else:
+        monkeypatch.setattr(command_upgrade, "_write_integration_json", fail)
+
+    result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+
+    assert result.exit_code != 0
+    assert "disk full" in result.output
+    assert _tree(project) == before
+
+
+def test_builtin_upgrade_journal_needs_no_trust_store_or_other_manifests(tmp_path, monkeypatch):
+    """The journal adds no precondition a built-in upgrade did not already have."""
+    from specify_cli.integrations import installer
+
+    project = _init_project(tmp_path, "claude")
+    result = _run_in_project(project, ["integration", "install", "copilot", "--script", "sh", "--force"])
+    assert result.exit_code == 0, result.output
+    (project / ".specify" / "integrations" / "copilot.manifest.json").write_bytes(b"\xff")
+
+    def no_trust_store(*args, **kwargs):
+        raise AssertionError("a built-in upgrade must not touch the trust store")
+
+    monkeypatch.setattr(installer, "_trust_store", no_trust_store)
+
+    result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+
+    assert result.exit_code == 0, result.output
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+def test_builtin_upgrade_runs_unjournalled_when_a_scope_is_a_symlink(tmp_path):
+    """A layout the journal cannot cover keeps upgrading as it did before."""
+    project = _init_project(tmp_path, "claude")
+    shared = tmp_path / "shared-extensions"
+    shared.mkdir()
+    extensions = project / ".specify" / "extensions"
+    if extensions.exists():
+        shutil.rmtree(extensions)
+    extensions.symlink_to(shared, target_is_directory=True)
+
+    result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+
+    assert result.exit_code == 0, result.output
+    assert extensions.is_symlink()
+

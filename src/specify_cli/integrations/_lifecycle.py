@@ -294,6 +294,13 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
     return conflicts
 
 
+_SPECIFY_SCOPE = (
+    ".specify/integrations", ".specify/templates", ".specify/scripts",
+    ".specify/.gitignore", ".specify/presets", ".specify/extensions",
+    ".specify/extensions.yml", ".specify/workflows/speckit",
+)
+
+
 @contextmanager
 def _transaction(
     root: Path, target: str | None,
@@ -304,11 +311,7 @@ def _transaction(
     from ..shared_infra import _exclusive_project_lock
     from .manifest import IntegrationManifest
 
-    folders = {
-        ".specify/integrations", ".specify/templates", ".specify/scripts",
-        ".specify/.gitignore", ".specify/presets", ".specify/extensions",
-        ".specify/extensions.yml", ".specify/workflows/speckit",
-    }
+    folders = set(_SPECIFY_SCOPE)
     manifest_leaves: set[str] = set()
     state, error = try_read_integration_json(root)
     if error:
@@ -349,8 +352,7 @@ def _transaction(
     root_existed = root.exists()
     lock_root = installer._trust_store(root).parent.parent
     lock_id = hashlib.sha256(os.path.normcase(str(root.resolve())).encode()).hexdigest()
-    backup = Path(tempfile.mkdtemp(prefix="speckit-integration-rollback-"))
-    preserve_backup = False
+    outcome = {"retained": False}
     try:
         # Keep the stable project-keyed lock outside an uninitialized target.
         with _exclusive_project_lock(lock_root, f".integration-install-{lock_id}.lock", context="integration"):
@@ -365,45 +367,129 @@ def _transaction(
                 raise installer.IntegrationInstallError(
                     "Integration state changed while preparing the operation; retry with the current project state"
                 )
-            journal = _FileJournal(root, paths, backup, _initial_entries(paths), tuple(home_scopes))
-            token = file_change_observer.set(journal.observe)
-            try:
+            with _journalled(root, paths, home_scopes, outcome):
                 with installer.event_recovery_transaction():
                     yield
-            except BaseException as operation_error:
-                try:
-                    # Restoration itself must not add writes to the journal.
-                    file_change_observer.reset(token)
-                    token = None
-                    conflicts = _restore_snapshots(root, journal)
-                    if conflicts:
-                        preserve_backup = True
-                        console.print(
-                            "[yellow]Warning:[/yellow] Preserved concurrent edits or incomplete writes to "
-                            f"{escape(str(conflicts))}. Recovery snapshots retained at {escape(str(backup))}"
-                        )
-                except (OSError, installer.IntegrationInstallError) as restore_error:
-                    preserve_backup = True
-                    raise installer.IntegrationInstallError(
-                        f"Integration operation failed ({operation_error}); rollback failed "
-                        f"({restore_error}). Recovery snapshots retained at {backup}; "
-                        f"write snapshot indexes correspond to {[str(path) for path in journal.changes]}"
-                    ) from operation_error
-                raise
-            finally:
-                if token is not None:
-                    file_change_observer.reset(token)
     finally:
-        if not preserve_backup:
-            shutil.rmtree(backup)
-            if not root_existed:
+        if not outcome["retained"] and not root_existed:
+            try:
+                root.rmdir()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                    raise
+
+
+@contextmanager
+def _journalled(
+    root: Path, paths: list[Path], home_scopes: list[Path], outcome: dict[str, bool],
+    initial: dict[Path, tuple[int, ...]] | None = None,
+):
+    """Restore every observed write if the body raises.
+
+    Sets ``outcome["retained"]`` when recovery snapshots are kept because
+    restoring them found conflicts or failed. ``initial`` is the census of
+    ``paths``, taken here when not given.
+    """
+    if initial is None:
+        initial = _initial_entries(paths)
+    backup = Path(tempfile.mkdtemp(prefix="speckit-integration-rollback-"))
+    try:
+        journal = _FileJournal(root, paths, backup, initial, tuple(home_scopes))
+        token = file_change_observer.set(journal.observe)
+        try:
+            yield
+        except BaseException as operation_error:
+            # Keep the snapshots unless restoring them completes cleanly.
+            outcome["retained"] = True
+            try:
+                # Restoration itself must not add writes to the journal.
+                file_change_observer.reset(token)
+                token = None
+                conflicts = _restore_snapshots(root, journal)
+                outcome["retained"] = bool(conflicts)
+                if conflicts:
+                    console.print(
+                        "[yellow]Warning:[/yellow] Preserved concurrent edits or incomplete writes to "
+                        f"{escape(str(conflicts))}. Recovery snapshots retained at {escape(str(backup))}"
+                    )
+            except (OSError, installer.IntegrationInstallError) as restore_error:
+                outcome["retained"] = True
+                if isinstance(operation_error, typer.Exit) and operation_error.__context__ is not None:
+                    # A command that reports its own failure exits; name the cause.
+                    operation_error = operation_error.__context__
+                raise installer.IntegrationInstallError(
+                    f"Integration operation failed ({operation_error}); rollback failed "
+                    f"({restore_error}). Recovery snapshots retained at {backup}; "
+                    f"write snapshot indexes correspond to {[str(path) for path in journal.changes]}"
+                ) from operation_error
+            raise
+        finally:
+            if token is not None:
+                file_change_observer.reset(token)
+    finally:
+        if not outcome["retained"]:
+            # Snapshots keep their source's modes, so make a read-only one
+            # writable; a removal failure must not fail a committed operation.
+            def writable_and_retry(function, path, _exc_info):
                 try:
-                    root.rmdir()
-                except FileNotFoundError:
+                    os.chmod(path, stat.S_IRWXU)
+                    parent = os.path.dirname(path)
+                    os.chmod(parent, stat.S_IRWXU)
+                    function(path)
+                except OSError:
                     pass
-                except OSError as exc:
-                    if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST):
-                        raise
+
+            shutil.rmtree(backup, onerror=writable_and_retry)
+
+
+@contextmanager
+def builtin_upgrade_journal(root: Path, key: str, manifest_files) -> Any:
+    """Journal a built-in upgrade's writes up to its manifest and state commit.
+
+    ``setup()`` rewrites generated files in place before the new manifest is
+    saved, so a failure in between would leave files the old manifest does
+    not describe, which later runs then treat as the user's. Inside an
+    external lifecycle transaction this does nothing, as that journal already
+    covers the operation. It takes no project lock and reads no other
+    integration's state. If the journal cannot cover the upgrade (a symlinked
+    or unsafe scope, an unreadable directory), the upgrade runs unjournalled,
+    as it did before, rather than failing.
+    """
+    if lifecycle_owns_rollback():
+        yield
+        return
+    try:
+        integration = INTEGRATION_REGISTRY.get(key)
+        folders = set(_SPECIFY_SCOPE)
+        folder = (integration.config or {}).get("folder") if integration else None
+        if folder:
+            folders.add(folder.rstrip("/"))
+        leaves = set(manifest_files) - folders
+        paths = [
+            installer.safe_project_path(root, entry, allow_leaf_symlink=entry in leaves)
+            for entry in sorted(folders | leaves)
+        ]
+        home_scopes = []
+        directory = (integration.registrar_config or {}).get("dir", "") if integration else ""
+        if directory.startswith("~/"):
+            home_scopes.append(installer.safe_project_path(Path.home().absolute(), directory[2:]))
+        paths.extend(home_scopes)
+        paths = [path for path in paths if not any(other != path and other in path.parents for other in paths)]
+        initial = _initial_entries(paths)
+        # The journal refuses a write to or beneath anything but a regular
+        # file or directory, which an unjournalled upgrade would have made.
+        covered = all(
+            stat.S_ISREG(state[0]) or stat.S_ISDIR(state[0]) for state in initial.values()
+        )
+    except (installer.IntegrationInstallError, OSError, ValueError, RuntimeError):
+        covered = False
+    if not covered:
+        yield
+        return
+    with _journalled(root, paths, home_scopes, {"retained": False}, initial):
+        yield
 
 
 def external_lifecycle(operation: str):
