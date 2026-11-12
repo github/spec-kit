@@ -2366,7 +2366,7 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": "0.9.0"
+        "speckit_version": "==0.9.0"
       },
       "provides": {
         "commands": 7,
