@@ -23,6 +23,7 @@ from tests.specify_cli.integrations._helpers import (
     _move_kilocode_install_to_legacy_layout,  # noqa: F401
     _run_in_project,  # noqa: F401
     _symlink_or_skip,
+    _tree,
     _write_invalid_manifest,  # noqa: F401
     runner,  # noqa: F401
 )
@@ -1949,20 +1950,6 @@ class TestIntegrationUpgradeBasic:
             os.chdir(old)
         assert result.exit_code == 0
         assert "Nothing to upgrade" in result.output
-
-
-def _tree(root):
-    """Every file's bytes and mode and every directory, without following links."""
-    files, directories = {}, set()
-    for path in sorted(root.rglob("*")):
-        relative = path.relative_to(root).as_posix()
-        if path.is_symlink():
-            files[relative] = ("link", os.readlink(path))
-        elif path.is_dir():
-            directories.add(relative)
-        else:
-            files[relative] = (path.read_bytes(), path.stat().st_mode & 0o7777)
-    return files, directories
 
 
 @pytest.mark.parametrize("failure", ["setup", "manifest", "state"])

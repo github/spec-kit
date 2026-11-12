@@ -31,8 +31,23 @@ from typer.testing import CliRunner
 from specify_cli import app
 from specify_cli.command_init import _shell_quote_arg
 from tests.conftest import requires_bash
+from tests.specify_cli.integrations._helpers import _symlink_or_skip, _tree
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_home(monkeypatch, tmp_path_factory):
+    """Keep init's home-scoped output (Hermes' ~/.hermes/skills) out of the real home."""
+    # Outside tmp_path, which several tests initialize with --here.
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    return home
+
+
+def test_init_tests_use_a_temporary_home(_isolate_home):
+    assert Path.home() == _isolate_home
 
 
 def test_command_init_importable():
@@ -379,20 +394,6 @@ def test_init_force_keeps_recovered_markers(tmp_path, monkeypatch):
     assert IntegrationManifest.load("codex", project).is_recovered(rel)
 
 
-def _tree(root: Path):
-    """Every file's bytes and mode and every directory, without following links."""
-    files, directories = {}, set()
-    for path in sorted(root.rglob("*")):
-        relative = path.relative_to(root).as_posix()
-        if path.is_symlink():
-            files[relative] = ("link", os.readlink(path))
-        elif path.is_dir():
-            directories.add(relative)
-        else:
-            files[relative] = (path.read_bytes(), path.stat().st_mode & 0o7777)
-    return files, directories
-
-
 def _init_args(key: str) -> list[str]:
     args = ["--integration", key, "--script", "sh", "--ignore-agent-tools", "--non-interactive"]
     if key == "generic":
@@ -426,6 +427,17 @@ def _fail_init_at(monkeypatch, failure: str, key: str) -> None:
             return real_save(self, *args, **kwargs)
 
         monkeypatch.setattr(IntegrationManifest, "save", save)
+    elif failure == "manifest-write":
+        from specify_cli.integrations import manifest as manifest_module
+
+        real_mkstemp = manifest_module.tempfile.mkstemp
+
+        def mkstemp(*args, **kwargs):
+            if f".{key}.manifest.json." in str(kwargs.get("prefix", "")):
+                fail()
+            return real_mkstemp(*args, **kwargs)
+
+        monkeypatch.setattr(manifest_module.tempfile, "mkstemp", mkstemp)
     else:
         monkeypatch.setattr(_commands, "_write_integration_json", fail)
 
@@ -445,7 +457,7 @@ def _existing_target(tmp_path: Path, monkeypatch, existing: str, key: str) -> Pa
 
 
 @pytest.mark.parametrize("existing", ["project", "plain"])
-@pytest.mark.parametrize("failure", ["setup", "manifest", "state"])
+@pytest.mark.parametrize("failure", ["setup", "manifest", "manifest-write", "state"])
 def test_init_here_rolls_back_when_it_fails_before_committing(tmp_path, monkeypatch, existing, failure):
     """``init --here`` that fails before its manifest and state commit restores the directory."""
     project = _existing_target(tmp_path, monkeypatch, existing, "claude")
@@ -497,8 +509,6 @@ def test_init_here_rolls_back_a_failed_setup_for_every_builtin(tmp_path, monkeyp
 
 def test_init_here_runs_unjournalled_when_a_scope_is_a_symlink(tmp_path, monkeypatch):
     """A layout the journal cannot cover keeps initializing as it did before."""
-    from tests.specify_cli.integrations._helpers import _symlink_or_skip
-
     project = _existing_target(tmp_path, monkeypatch, "project", "claude")
     shared = tmp_path / "shared-extensions"
     shared.mkdir()
@@ -536,3 +546,32 @@ def test_init_into_a_new_directory_removes_it_when_it_fails(tmp_path, monkeypatc
     assert result.exit_code != 0
     assert "disk full" in result.output
     assert not (tmp_path / "proj").exists()
+
+
+def test_init_force_registers_extensions_in_the_new_generic_commands_dir(tmp_path, monkeypatch):
+    """Re-registration after ``init --force`` follows the new ``--commands-dir``."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    base = ["--integration", "generic", "--script", "sh", "--ignore-agent-tools", "--non-interactive"]
+    result = CliRunner().invoke(
+        app, ["init", "--here", "--force", *base, "--integration-options", "--commands-dir .old/commands/"]
+    )
+    assert result.exit_code == 0, result.output
+    result = CliRunner().invoke(app, ["extension", "add", "git"])
+    assert result.exit_code == 0, result.output
+    old_artifacts = sorted((project / ".old" / "commands").glob("speckit.git.*"))
+    assert old_artifacts, "precondition: the extension registered into the first commands dir"
+    for artifact in old_artifacts:
+        artifact.unlink()
+
+    result = CliRunner().invoke(
+        app, ["init", "--here", "--force", *base, "--integration-options", "--commands-dir .new/commands/"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert sorted(path.name for path in (project / ".new" / "commands").glob("speckit.git.*")) == [
+        path.name for path in old_artifacts
+    ]
+    assert not list((project / ".old" / "commands").glob("speckit.git.*"))
+

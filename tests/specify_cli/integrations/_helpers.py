@@ -83,3 +83,17 @@ def _symlink_or_skip(link, target, *, directory=False):
         link.symlink_to(target, target_is_directory=directory)
     except (OSError, NotImplementedError) as exc:
         pytest.skip(f"symlinks unavailable: {exc}")
+
+
+def _tree(root):
+    """Every file's bytes and mode and every directory, without following links."""
+    files, directories = {}, set()
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            files[relative] = ("link", os.readlink(path))
+        elif path.is_dir():
+            directories.add(relative)
+        else:
+            files[relative] = (path.read_bytes(), path.stat().st_mode & 0o7777)
+    return files, directories
