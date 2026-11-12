@@ -1127,10 +1127,11 @@ def test_python_json_output_matches_powershell(
 def test_powershell_handles_bracketed_repo_path(tmp_path: Path) -> None:
     ps_repo = _setup_repo(tmp_path, "ps [v2]")
     py_repo = _setup_repo(tmp_path, "py [v2]")
+    existing_spec = b"# My spec\r\n\r\nKeep this.\r\n"
     for repo in (ps_repo, py_repo):
         existing = repo / "specs" / "001-login-page"
         existing.mkdir(parents=True)
-        (existing / "spec.md").write_text("my spec\n", encoding="utf-8")
+        (existing / "spec.md").write_bytes(existing_spec)
 
     ps = run(ps_cmd(ps_repo, SCRIPT, "-Json", "Add payment export"), ps_repo)
     py = run(py_cmd(py_repo, SCRIPT, "--json", "Add payment export"), py_repo)
@@ -1156,7 +1157,7 @@ def test_powershell_handles_bracketed_repo_path(tmp_path: Path) -> None:
 
     assert reuse.returncode == 0, reuse.stderr
     assert json_stdout(reuse)["BRANCH_NAME"] == "001-login-page"
-    assert (ps_repo / "specs" / "001-login-page" / "spec.md").read_text(encoding="utf-8") == "my spec\n"
+    assert (ps_repo / "specs" / "001-login-page" / "spec.md").read_bytes() == existing_spec
 
 
 @requires_bash
