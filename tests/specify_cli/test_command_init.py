@@ -43,6 +43,9 @@ def _isolate_home(monkeypatch, tmp_path_factory):
     home = tmp_path_factory.mktemp("home")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(home / ".cache"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local" / "share"))
     return home
 
 
@@ -433,7 +436,8 @@ def _fail_init_at(monkeypatch, failure: str, key: str) -> None:
         real_mkstemp = manifest_module.tempfile.mkstemp
 
         def mkstemp(*args, **kwargs):
-            if f".{key}.manifest.json." in str(kwargs.get("prefix", "")):
+            prefix = kwargs.get("prefix", args[1] if len(args) > 1 else "")
+            if f".{key}.manifest.json." in str(prefix):
                 fail()
             return real_mkstemp(*args, **kwargs)
 

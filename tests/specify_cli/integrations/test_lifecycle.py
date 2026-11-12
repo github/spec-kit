@@ -208,3 +208,25 @@ def test_builtin_journal_removes_directories_a_failed_init_created(tmp_path):
             raise OSError("disk full")
 
     assert sorted(path.name for path in project.iterdir()) == ["README.md"]
+
+
+def test_builtin_journal_removes_a_new_directory_whose_pending_write_never_landed(tmp_path):
+    """A failure between before- and after-write of a file in a new directory leaves no directory."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import after_file_change, before_file_change
+
+    project = tmp_path / "plain"
+    project.mkdir()
+    (project / "README.md").write_text("user file\n", encoding="utf-8")
+    new_directory = project / ".claude" / "skills" / "speckit-x"
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            before_file_change(new_directory)
+            new_directory.mkdir(parents=True)
+            after_file_change(new_directory)
+            before_file_change(new_directory / "SKILL.md")
+            raise OSError("disk full")
+
+    assert sorted(path.name for path in project.iterdir()) == ["README.md"]
+

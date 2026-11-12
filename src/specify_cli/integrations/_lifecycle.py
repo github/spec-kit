@@ -261,7 +261,7 @@ def _prune_new_parents(root: Path, journal: _FileJournal, path: Path) -> None:
     """Remove the empty directories the operation created above ``path``."""
     parent = path.parent
     boundary = root if path.is_relative_to(root) else Path.home().absolute()
-    while parent != boundary and not journal.directory_states[parent]:
+    while parent != boundary and not journal.directory_states.get(parent, True):
         try:
             parent.rmdir()
         except OSError:
@@ -276,13 +276,19 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
         current_identity = _file_identity(path)
         if path in journal.pending or any(path in pending.parents for pending in journal.pending):
             original_identity = _file_identity(saved) if saved is not None else None
-            if current_identity != original_identity:
+            if saved is None and path not in journal.pending and current_identity == written_identity:
+                # A new directory whose pending child never landed is
+                # unchanged since it was recorded; remove it below.
+                pass
+            elif current_identity != original_identity:
                 conflicts.append(path)
-            elif saved is None and path in journal.pending:
-                # A new file whose write never landed still leaves the
-                # directories created for it.
-                _prune_new_parents(root, journal, path)
-            continue
+                continue
+            else:
+                if saved is None and path in journal.pending:
+                    # A new file whose write never landed still leaves the
+                    # directories created for it.
+                    _prune_new_parents(root, journal, path)
+                continue
         if path not in journal.pending and current_identity != written_identity:
             conflicts.append(path)
             continue
