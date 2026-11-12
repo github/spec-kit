@@ -1190,9 +1190,27 @@ class TestCodexNoModelInvocationOwnership:
 
         self_rel = self.PLAN_REL
         monkeypatch.setattr(SkillsIntegration, "setup", setup)
-        with pytest.raises((OSError, ValueError)):
+        with pytest.raises(ValueError, match="Refusing symlink"):
             self._setup(project)
         assert not list(outside.iterdir())
+
+    def test_rollback_keeps_a_policy_someone_else_created(self, tmp_path, monkeypatch):
+        from specify_cli.file_helper import FileHelper
+
+        theirs = tmp_path / self.PLAN_REL
+        real_create_bytes = FileHelper.create_bytes
+
+        def create_bytes(self, rel, *args, **kwargs):
+            if Path(rel).as_posix() == TestCodexNoModelInvocationOwnership.PLAN_REL:
+                theirs.write_bytes(b"")  # appears just before the exclusive create
+            return real_create_bytes(self, rel, *args, **kwargs)
+
+        monkeypatch.setattr(FileHelper, "create_bytes", create_bytes)
+        with pytest.raises(ValueError, match="created while updating"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert theirs.read_bytes() == b""
+        assert self._other_policies(tmp_path) == []
 
     def test_rollback_deletes_a_policy_whose_write_failed_part_way(self, tmp_path, monkeypatch):
         from specify_cli.file_helper import FileHelper

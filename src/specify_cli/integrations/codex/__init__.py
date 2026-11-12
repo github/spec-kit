@@ -617,8 +617,8 @@ class CodexIntegration(SkillsIntegration):
                     if plan is not None:
                         planned.append(plan)
         # ``(rel, prior bytes or None if new, bytes written, whether its
-        # directory was new)``
-        written: list[tuple[str, bytes | None, bytes, bool]] = []
+        # directory was new, whether the write completed)``
+        written: list[tuple[str, bytes | None, bytes, bool, bool]] = []
         try:
             for rel, content, ownership, read in planned:
                 path = root / rel
@@ -631,20 +631,32 @@ class CodexIntegration(SkillsIntegration):
                         _replace_file(
                             root, rel, new, expected=read,
                             on_written=lambda original, rel=rel, new=new: written.append(
-                                (rel, original, new, False)
+                                (rel, original, new, False, True)
                             ),
                         )
                     manifest.record_existing(rel, ownership=ownership)
                     created.append(path)
                 else:
                     new = content.encode("utf-8")
-                    written.append((rel, None, new, not path.parent.exists()))
+                    if path.exists() or path.is_symlink():
+                        raise ValueError(f"Cannot update {rel}: it was created while updating")
+                    new_dir = not (path.parent.exists() or path.parent.is_symlink())
                     # Created exclusively through the helper, so a directory
                     # swapped for a symlink since planning cannot redirect it.
-                    with changing_file(path), FileHelper(root) as helper:
-                        helper.mkdir(PurePosixPath(rel).parent.as_posix(), parents=True, exist_ok=True)
-                        helper.create_bytes(rel, new)
+                    try:
+                        with changing_file(path), FileHelper(root) as helper:
+                            helper.mkdir(PurePosixPath(rel).parent.as_posix(), parents=True, exist_ok=True)
+                            helper.create_bytes(rel, new)
+                    except FileExistsError as exc:
+                        # Someone else's file: not ours to roll back.
+                        raise ValueError(f"Cannot update {rel}: it was created while updating") from exc
+                    except BaseException:
+                        written.append((rel, None, new, new_dir, False))
+                        raise
+                    written.append((rel, None, new, new_dir, True))
                     manifest.record_existing(rel, ownership=ownership)
+                    if manifest.files[rel] != hashlib.sha256(new).hexdigest():
+                        raise ValueError(f"Cannot update {rel}: it changed while updating")
                     created.append(path)
             if prior is not None:
                 self._released_policy_rels = frozenset(
@@ -662,21 +674,21 @@ class CodexIntegration(SkillsIntegration):
         return created
 
     @staticmethod
-    def _roll_back_policies(root: Path, written: list[tuple[str, bytes | None, bytes, bool]]) -> None:
+    def _roll_back_policies(root: Path, written: list[tuple[str, bytes | None, bytes, bool, bool]]) -> None:
         """Undo the policy writes of a setup that failed part-way.
 
         A file that no longer holds what setup wrote is left alone. Only runs
         outside a lifecycle transaction, so nothing journals it.
         """
-        for rel, original, new, new_dir in reversed(written):
+        for rel, original, new, new_dir, complete in reversed(written):
             try:
                 if original is not None:
                     try:
                         _replace_file(root, rel, original, expected=new)
                     except (OSError, ValueError) as exc:
                         logger.warning(
-                            "Could not undo the policy written to %s: %s; remove "
-                            "policy.allow_implicit_invocation from it by hand",
+                            "Could not undo the policy written to %s: %s; restore "
+                            "its earlier policy.allow_implicit_invocation setting by hand",
                             rel, exc,
                         )
                     continue
@@ -689,8 +701,8 @@ class CodexIntegration(SkillsIntegration):
                     except FileNotFoundError:  # the write itself failed
                         current = None
                     if current is not None:
-                        # A prefix is a write that failed part-way.
-                        if not new.startswith(current):
+                        # A write that failed part-way leaves a prefix.
+                        if current != new and (complete or not new.startswith(current)):
                             logger.warning("Leaving %s in place: it changed after it was written", rel)
                             continue
                         helper.delete(rel)
