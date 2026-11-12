@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-10T00:00:00Z",
+  "updated_at": "2026-11-12T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "ado": {
@@ -5925,15 +5925,15 @@
     "sizing": {
       "name": "T-Shirt Sizing Gate",
       "id": "sizing",
-      "description": "Adds T-Shirt sizing estimates (XS–XL) and an explicit human approval gate between planning and implementation, with SHA-256 checks to detect changes to approved planning artifacts.",
+      "description": "Preliminary XS–XL estimates from change descriptions, plus planned-feature sizing and explicit approval within the Spec Kit workflow, with SHA-256 checks for planning changes.",
       "author": "Maurizio Pinotti",
-      "version": "0.1.2",
-      "download_url": "https://github.com/mauriziopinotti/spec-kit-sizing/archive/refs/tags/v0.1.2.zip",
-      "sha256": "4815e6b30bffead28befa7f849a79c44e5b93717ccddc27ded6c14d07a6c7e99",
+      "version": "0.2.0",
+      "download_url": "https://github.com/mauriziopinotti/spec-kit-sizing/archive/refs/tags/v0.2.0.zip",
+      "sha256": "86171fe7f654f8ba664a045d473fea994d816b20b23753aabc7b17e9cc5be567",
       "repository": "https://github.com/mauriziopinotti/spec-kit-sizing",
       "homepage": "https://github.com/mauriziopinotti/spec-kit-sizing",
-      "documentation": "https://github.com/mauriziopinotti/spec-kit-sizing/blob/main/README.md",
-      "changelog": "https://github.com/mauriziopinotti/spec-kit-sizing/blob/main/CHANGELOG.md",
+      "documentation": "https://github.com/mauriziopinotti/spec-kit-sizing/blob/v0.2.0/README.md",
+      "changelog": "https://github.com/mauriziopinotti/spec-kit-sizing/blob/v0.2.0/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
@@ -5948,7 +5948,7 @@
         ]
       },
       "provides": {
-        "commands": 3,
+        "commands": 4,
         "hooks": 2
       },
       "tags": [
@@ -5960,7 +5960,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-11-09T00:00:00Z",
-      "updated_at": "2026-11-09T00:00:00Z"
+      "updated_at": "2026-11-12T00:00:00Z"
     },
     "spec-reference-loader": {
       "name": "Spec Reference Loader",
