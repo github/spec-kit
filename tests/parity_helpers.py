@@ -76,6 +76,28 @@ def ps_cmd(repo: Path, script: str, *args: str) -> list[str]:
     ]
 
 
+def ps_legacy_stdout_cmd(repo: Path, script: str, *args: str) -> list[str]:
+    """ps_cmd with stdout encoded as ISO-8859-1, standing in for a captured Windows console code page."""
+    assert POWERSHELL_EXE, "no PowerShell available; guard the test with HAS_POWERSHELL"
+
+    def quote(word: str) -> str:
+        return "'" + word.replace("'", "''") + "'"
+
+    path = repo / ".specify" / "scripts" / "powershell" / f"{script}.ps1"
+    words = [quote(str(path))] + [
+        arg if re.fullmatch(r"-[A-Za-z]+", arg) else quote(arg) for arg in args
+    ]
+    return [
+        POWERSHELL_EXE,
+        "-NoProfile",
+        "-Command",
+        "$previous = [Console]::OutputEncoding; "
+        "[Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding('iso-8859-1'); "
+        f"try {{ & {' '.join(words)} }} finally {{ [Console]::OutputEncoding = $previous }}; "
+        "exit $LASTEXITCODE",
+    ]
+
+
 def clean_env() -> dict[str, str]:
     env = os.environ.copy()
     for key in list(env):

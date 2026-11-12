@@ -272,6 +272,13 @@ function Test-DirHasFiles {
     }
 }
 
+# Escape non-ASCII so the JSON reads the same under any console output code page.
+function ConvertTo-AsciiJson {
+    param([Parameter(Mandatory = $true, ValueFromPipeline = $true)]$InputObject)
+    $json = $InputObject | ConvertTo-Json -Compress
+    return [regex]::Replace($json, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
+}
+
 function Get-InvokeSeparator {
     param([string]$RepoRoot = (Get-RepoRoot))
 

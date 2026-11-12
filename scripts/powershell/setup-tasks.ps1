@@ -76,7 +76,7 @@ if ($Json) {
         AVAILABLE_DOCS = $docs
         TASKS_TEMPLATE = $tasksTemplate
         TASKS_TEMPLATE_CONTENT = $tasksTemplateContent
-    } | ConvertTo-Json -Compress
+    } | ConvertTo-AsciiJson
 } else {
     Write-Output "FEATURE_DIR: $($paths.FEATURE_DIR)"
     Write-Output "TASKS_TEMPLATE: $(if ($tasksTemplate) { $tasksTemplate } else { 'not found' })"
