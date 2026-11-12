@@ -495,3 +495,115 @@ class TestExtensionRegistration:
         config = executor.get_project_config()
         assert "some-ext" not in config["installed"]
         assert "after_tasks" not in config["hooks"]
+
+
+def test_copy_mode_skill_preserves_authored_paths(project_dir, tmp_path):
+    from specify_cli.agents import CommandRegistrar
+
+    ext = tmp_path / "ext"
+    (ext / "commands").mkdir(parents=True)
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("reference")
+    (ext / "commands/run.md").write_text(
+        "---\ndescription: Example\nscripts:\n  sh: scripts/bash/x.sh --json\n---\n\n"
+        "Run {SCRIPT}; read references/r.md and templates/t.md\n"
+    )
+    (project_dir / ".specify/init-options.json").write_text('{"script": "sh"}')
+    cmd = {"name": "speckit.example.run", "file": "commands/run.md", "resources": ["references/r.md"]}
+    registrar = CommandRegistrar(project_dir)
+    registrar.register_commands("claude", [cmd], "example", ext, project_dir, extension_id="example")
+    content = (project_dir / ".claude/skills/speckit-example-run/SKILL.md").read_text()
+    assert "Run scripts/bash/x.sh --json; read references/r.md and templates/t.md" in content
+
+
+def test_native_resource_primary_alias_ownership_and_preflight(project_dir, tmp_path):
+    from specify_cli.agents import CommandRegistrar
+    from specify_cli.extensions import ValidationError
+    from specify_cli.integrations.manifest import _sha256
+
+    ext = tmp_path / "ext"
+    (ext / "commands").mkdir(parents=True)
+    (ext / "commands/run.md").write_text("hello references/r.md")
+    (ext / "references").mkdir()
+    (ext / "references/r.md").write_text("original")
+    registrar = CommandRegistrar(project_dir)
+    cmd = {"name": "speckit.example.run", "file": "commands/run.md", "aliases": ["speckit.example.alias"], "resources": ["references/r.md"]}
+    bad = {"name": "speckit.example.bad", "file": "commands/run.md", "resources": ["absent"]}
+    with pytest.raises(ValidationError):
+        registrar.register_commands("claude", [cmd, bad], "example", ext, project_dir, extension_id="example")
+    skills = project_dir / ".claude/skills"
+    assert not (skills / "speckit-example-run/SKILL.md").exists()
+    alias_resource = skills / "speckit-example-alias/references/r.md"
+    alias_resource.parent.mkdir(parents=True)
+    alias_resource.write_text("user")
+    hashes = {}
+    with pytest.warns(UserWarning, match="unowned"):
+        registrar.register_commands("claude", [cmd], "example", ext, project_dir, extension_id="example", resource_hashes=hashes)
+    primary = skills / "speckit-example-run/references/r.md"
+    assert primary.read_text() == "original" and alias_resource.read_text() == "user"
+    assert hashes == {"project": {primary.relative_to(project_dir).as_posix(): _sha256(primary)}}
+    primary.write_text("edited")
+    collected = {}
+    with pytest.warns(UserWarning):
+        registrar.register_commands("claude", [cmd], "example", ext, project_dir, extension_id="example", previous_resource_hashes=hashes, resource_hashes=collected)
+    assert collected == hashes and primary.read_text() == "edited"
+    registrar.register_commands("claude", [cmd], "example", ext, project_dir, extension_id="example", previous_resource_hashes=hashes, resource_hashes={}, overwrite_modified=True)
+    assert primary.read_text() == alias_resource.read_text() == "original"
+
+
+def test_non_skill_resource_declaration_preserves_rendering(project_dir, tmp_path):
+    from specify_cli.agents import CommandRegistrar
+
+    ext = tmp_path / "ext"
+    (ext / "commands").mkdir(parents=True)
+    (ext / "commands/run.md").write_text("Read templates/t.md")
+    registrar = CommandRegistrar(project_dir)
+    cmd = {"name": "speckit.example.run", "file": "commands/run.md"}
+    registrar.register_commands("gemini", [cmd], "example", ext, project_dir, extension_id="example")
+    output = project_dir / ".gemini/commands/speckit.example.run.toml"
+    before = output.read_bytes()
+    registrar.register_commands("gemini", [{**cmd, "resources": ["missing"]}], "example", ext, project_dir, extension_id="example")
+    assert output.read_bytes() == before
+    assert list(output.parent.iterdir()) == [output]
+
+
+def test_invalid_resource_aborts_before_later_agents_write(project_dir, tmp_path):
+    from specify_cli.agents import CommandRegistrar
+    from specify_cli.extensions import ValidationError
+
+    ext = tmp_path / "ext"
+    (ext / "commands").mkdir(parents=True)
+    (ext / "commands/run.md").write_text("hello")
+    (project_dir / ".claude/skills").mkdir(parents=True)
+    (project_dir / ".gemini/commands").mkdir(parents=True)
+    cmd = {"name": "speckit.example.run", "file": "commands/run.md", "resources": ["missing"]}
+    with pytest.raises(ValidationError):
+        CommandRegistrar(project_dir).register_commands_for_all_agents(
+            [cmd], "example", ext, project_dir, extension_id="example"
+        )
+    assert list((project_dir / ".claude/skills").iterdir()) == []
+    assert list((project_dir / ".gemini/commands").iterdir()) == []
+
+
+def test_copy_mode_resolves_non_path_placeholders_and_python_prefix(project_dir, tmp_path):
+    from specify_cli.agents import CommandRegistrar
+
+    ext = tmp_path / "ext"
+    (ext / "commands").mkdir(parents=True)
+    (ext / "scripts").mkdir()
+    (ext / "scripts/x.py").write_text("print('x')\n")
+    (ext / "commands/run.md").write_text(
+        "---\ndescription: Example\nscripts:\n  py: scripts/x.py {ARGS}\n---\n\n"
+        "Run {SCRIPT}; __AGENT__; __SPECKIT_COMMAND_TASKS__; memory/a.md; scripts/x.py"
+    )
+    (project_dir / ".specify/init-options.json").write_text('{"script": "py"}')
+    cmd = {"name": "speckit.example.run", "file": "commands/run.md", "resources": ["scripts/x.py"]}
+    CommandRegistrar(project_dir).register_commands(
+        "claude", [cmd], "example", ext, project_dir, extension_id="example"
+    )
+    content = (project_dir / ".claude/skills/speckit-example-run/SKILL.md").read_text()
+    assert "scripts/x.py $ARGUMENTS" in content
+    assert "python" in content and "__AGENT__" not in content
+    assert "__SPECKIT_COMMAND_TASKS__" not in content
+    assert "memory/a.md; scripts/x.py" in content
+    assert ".specify/extensions/example/scripts" not in content

@@ -1211,6 +1211,19 @@ def test_round5_invalid_public_adapter_attributes_are_rejected(tmp_path, server,
     assert KEY not in INTEGRATION_REGISTRY
 
 
+@pytest.mark.parametrize("value", [True, "true", 1, None])
+def test_external_adapter_cannot_declare_home_scoped_output(tmp_path, server, value):
+    body = f'    registrar_config = {{**registrar_config, "home_scoped": {value!r}}}\n'
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration"])
+    assert result.exit_code == 1, result.output
+    assert "home_scoped" in result.output or "project-local" in result.output, result.output
+    assert snapshot(project) == before
+    assert KEY not in INTEGRATION_REGISTRY
+
+
 @pytest.mark.parametrize("no_symlinks", [False, True])
 def test_round5_valid_public_attributes_propagate_to_rendering_and_recovery(tmp_path, server, no_symlinks):
     from specify_cli.integrations.installer import recovery_metadata

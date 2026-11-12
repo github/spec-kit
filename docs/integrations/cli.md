@@ -209,7 +209,7 @@ specify integration switch <key>
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
 | `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)        |
-| `--force`                | Force removal of modified files during uninstall; when the target is already installed, overwrite customized shared infrastructure |
+| `--force`                | Force removal of modified files during uninstall; when the target is already installed, overwrite customized shared infrastructure. Also overwrites modified or unowned extension [skill resource](../extensions/developing.md#skill-resources) copies when the target's skills are rendered |
 | `--refresh-shared-infra` | Overwrite customized shared scripts, page templates, and `.specify/.gitignore`, including for installed targets and the current default |
 | `--integration-options`  | Options for the target integration when it is not already installed      |
 | `--trust-integration` | Authorize downloading and executing a reviewed external adapter without the interactive trust prompt |

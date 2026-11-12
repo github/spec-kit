@@ -648,6 +648,29 @@ class TestExtensionManifest:
         assert manifest.commands[0]["aliases"] == ["speckit.hello"]
         assert manifest.warnings == []
 
+    def test_command_resources_valid_patterns(self, temp_dir, valid_manifest_data):
+        command = valid_manifest_data["provides"]["commands"][0]
+        manifest_path = temp_dir / "extension.yml"
+        manifest_path.write_text(yaml.safe_dump(valid_manifest_data), encoding="utf-8")
+        assert ExtensionManifest(manifest_path).commands[0]["resources"] == []
+
+        command["resources"] = ["references/r.md", "templates/*.md", r"assets\**"]
+        manifest_path.write_text(yaml.safe_dump(valid_manifest_data), encoding="utf-8")
+        assert ExtensionManifest(manifest_path).commands[0]["resources"] == [
+            "references/r.md", "templates/*.md", "assets/**"
+        ]
+
+    @pytest.mark.parametrize("resources", [
+        None, "x", [1], [""], ["  "], ["/absolute"], [r"C:\absolute"],
+        ["a/../b"], [r"a\..\b"], ["!secret"], ["[z-a]"],
+    ])
+    def test_command_resources_invalid(self, temp_dir, valid_manifest_data, resources):
+        valid_manifest_data["provides"]["commands"][0]["resources"] = resources
+        manifest_path = temp_dir / "extension.yml"
+        manifest_path.write_text(yaml.safe_dump(valid_manifest_data), encoding="utf-8")
+        with pytest.raises(ValidationError, match="[Rr]esource"):
+            ExtensionManifest(manifest_path)
+
     def test_valid_command_name_has_no_warnings(self, temp_dir, valid_manifest_data):
         """Test that a correctly-named command produces no warnings."""
         import yaml
@@ -1760,6 +1783,7 @@ class TestExtensionManager:
             project_root,
             link_outputs=False,
             create_missing_active_skills_dir=False,
+            **kwargs,
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
@@ -1797,6 +1821,7 @@ class TestExtensionManager:
             extension_id=None,
             only_agent=None,
             author="github-spec-kit",
+            **kwargs,
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
@@ -9393,3 +9418,24 @@ class TestExtensionConfigScaffolding:
 
         assert deployed == ["test-config.local.yml"]
         assert failed == []
+
+
+def test_ensure_executable_scripts_only_selected_files(tmp_path, monkeypatch):
+    import os
+    from specify_cli import ensure_executable_scripts
+
+    if os.name == "nt":
+        pytest.skip("POSIX permissions required")
+    selected = tmp_path / "selected.sh"
+    other = tmp_path / "other.sh"
+    nonshebang = tmp_path / "nonshebang.sh"
+    for path in (selected, other, nonshebang):
+        path.write_text("echo ok\n" if path == nonshebang else "#!/bin/sh\necho ok\n")
+        path.chmod(0o600)
+    ensure_executable_scripts(tmp_path, files=[selected, nonshebang])
+    assert selected.stat().st_mode & 0o100
+    assert not other.stat().st_mode & 0o111
+    assert not nonshebang.stat().st_mode & 0o111
+    monkeypatch.setattr("specify_cli.os.name", "nt")
+    ensure_executable_scripts(tmp_path, files=[other])
+    assert not other.stat().st_mode & 0o111

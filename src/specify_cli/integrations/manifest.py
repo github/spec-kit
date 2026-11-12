@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ._file_changes import after_file_change, before_file_change
+from ._file_changes import after_file_change, atomic_write_bytes, before_file_change
 
 OWNERSHIP_MODES = frozenset({"whole", "partial", "shared"})
 
@@ -183,12 +183,19 @@ class IntegrationManifest:
     # -- Recording files --------------------------------------------------
 
     def record_file(
-        self, rel_path: str | Path, content: bytes | str, *, ownership: str = "whole",
+        self,
+        rel_path: str | Path,
+        content: bytes | str,
+        *,
+        ownership: str = "whole",
+        mode: int | None = None,
     ) -> Path:
         """Write *content* to *rel_path* (relative to project root) and record its hash.
 
         Creates parent directories as needed.  Returns the absolute path
-        of the written file.
+        of the written file.  With ``mode`` the file is created with those
+        permission bits (narrowed by the process umask) instead of the default
+        project-file mode, and replaces any existing file atomically.
         If the path was previously marked as recovered via
         ``record_existing(recovered=True)``, the recovered marker is
         cleared because the bytes are now produced, not merely observed.
@@ -205,7 +212,10 @@ class IntegrationManifest:
 
         if isinstance(content, str):
             content = content.encode("utf-8")
-        abs_path.write_bytes(content)
+        if mode is None:
+            abs_path.write_bytes(content)
+        else:
+            atomic_write_bytes(abs_path, content, mode)
 
         normalized = abs_path.relative_to(self.project_root).as_posix()
         self._files[normalized] = hashlib.sha256(content).hexdigest()

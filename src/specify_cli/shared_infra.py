@@ -8,7 +8,6 @@ import hmac
 import logging
 import os
 import re
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -329,20 +328,18 @@ def _write_shared_bytes(
     mode: int = 0o644,
 ) -> None:
     _ensure_safe_shared_destination(project_path, dest)
-    from .integrations._file_changes import after_file_change, before_file_change
+    from .integrations._file_changes import (
+        after_file_change,
+        atomic_write_bytes,
+        before_file_change,
+    )
 
     before_file_change(dest)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
-    temp_path = Path(temp_name)
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(content)
-        temp_path.chmod(mode)
-        _ensure_safe_shared_destination(project_path, dest)
-        os.replace(temp_path, dest)
-        after_file_change(dest)
-    finally:
-        temp_path.unlink(missing_ok=True)
+    atomic_write_bytes(
+        dest, content, mode, exact=True,
+        before_replace=lambda: _ensure_safe_shared_destination(project_path, dest),
+    )
+    after_file_change(dest)
 
 
 _BASH_FORMAT_COMMAND_RE = re.compile(

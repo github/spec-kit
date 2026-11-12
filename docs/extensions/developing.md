@@ -205,6 +205,8 @@ of `provides.commands`, `provides.templates`, `provides.scripts`, `hooks`, or
 - `name`: Command name (must match `speckit.{ext-id}.{command}`)
 - `file`: Path to command file (relative to extension root)
 - `description`: Command description (optional)
+- `aliases`: Alternative command names (optional)
+- `resources`: Files to copy into generated skills (optional; see [Skill resources](#skill-resources))
 
 **Template object**:
 
@@ -296,6 +298,89 @@ Default extension configuration values.
 
 ---
 
+## Skill resources
+
+Declare an optional `resources` list on each command to copy extension files
+into its generated skill. Entries are extension-root-relative explicit file
+paths or wildcard patterns in the same gitignore-style dialect as
+[`.extensionignore`](#excluding-files-with-extensionignore). For example:
+
+```yaml
+provides:
+  commands:
+    - name: speckit.my-ext.review
+      file: commands/review.md
+      aliases: [speckit.my-ext.rv]
+      resources:
+        - references/*.md
+        - scripts/bash/review.sh
+        - scripts/bash/common.sh  # sourced by review.sh
+```
+
+When a native skills integration renders both names, the copies preserve their
+extension-relative paths in each skill:
+
+```text
+<skills>/speckit-my-ext-review/SKILL.md
+<skills>/speckit-my-ext-review/references/<matching files>
+<skills>/speckit-my-ext-review/scripts/bash/{review.sh,common.sh}
+<skills>/speckit-my-ext-rv/SKILL.md
+<skills>/speckit-my-ext-rv/references/<matching files>
+<skills>/speckit-my-ext-rv/scripts/bash/{review.sh,common.sh}
+```
+
+Supplemental skills render the primary command only. Patterns support `*`,
+`?`, `**`, and character classes; for example, slash-less `*.md` matches at
+any depth, while `references/*.md` matches directly under `references/`.
+Negation, absolute paths, and `..` segments are not allowed. Explicit files
+must exist, and every wildcard must match at least one regular file; symlink
+matches and a resource destination of `SKILL.md` are rejected. Wildcards never
+select the root `extension.yml` or the `.specify-dev` development render cache
+(list `extension.yml` explicitly if you really need it; `.specify-dev` entries
+are rejected).
+
+A non-empty list enables copy mode for skill outputs: **no paths are
+rewritten**, including body paths and frontmatter `scripts:` paths. List every
+referenced file, including frontmatter scripts and anything they source;
+`{SCRIPT}` uses the authored skill-relative command. The agent runs
+it, and the [Agent Skills specification](https://agentskills.io/specification)
+does not guarantee the shell's working directory is the skill root. Check your
+agent's behavior before relying on skill-relative script execution. Markdown,
+TOML, and other non-skill outputs keep their existing rendering and get no
+resource copies.
+
+Patterns match the installed extension, after `.extensionignore` filters the
+package copy. Do not use symlinks in an extension package: resource matching
+does not follow or vet them. Installation copies the package with links
+resolved, so a linked directory's files become regular files in the installed
+extension and match like any other file, wherever the link pointed. A matched
+symlink itself is rejected. Files users create later in `.specify/extensions/<id>/`, such as
+`local-config.yml`, can still match and be copied on a re-render; the skill
+location may not be gitignored. Prefer explicit paths or narrow patterns over
+broad wildcards such as `**`.
+
+Copies are created with the source file's permission bits plus owner read/write,
+narrowed by the process umask. On POSIX, a `.sh` copy with a shebang and no
+execute bits is then made executable: execute bits are added for each read bit,
+with at least owner execute. For example, a `0644` script can become `0755`; a `0600` script
+can become `0700`. Do not rely on exact source modes being preserved.
+
+Copies are hash-tracked. During rendering, an unowned existing destination is
+skipped with a warning unless the user supplies `--force`; on refresh, a
+modified recorded copy is also kept with a warning unless forced. Extension removal and update delete recorded resources,
+including edits; unsafe paths may be skipped with a warning. Resource cleanup
+does not delete unrecorded files, but non-generic supplemental skill removal
+removes the entire skill directory, including unrecorded files. Home-scoped
+skill directories are shared across projects, while ownership records are
+project-local; they are not exclusive cross-project authority.
+
+Omitting `resources` or leaving it empty retains the existing no-copy behavior
+and path rewriting. This authoring style is deprecated in documentation but
+remains supported without a runtime deprecation warning; add `resources` and
+use skill-relative paths to adopt copy mode.
+
+---
+
 ## Command File Format
 
 ### Frontmatter (YAML)
@@ -372,9 +457,9 @@ For other integrations' invocation formats, see the shared
 
 ### Script Path Rewriting
 
-The registrar normalizes helper paths while rendering commands. A
-repository-root reference with two or more `../` segments targets the
-project's core scripts.
+Outside [skill resource copy mode](#skill-resources), the registrar normalizes
+helper paths while rendering commands. A repository-root reference with two or
+more `../` segments targets the project's core scripts.
 
 **In extension**:
 

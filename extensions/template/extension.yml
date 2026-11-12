@@ -57,6 +57,10 @@ provides:
       description: "Example command that demonstrates functionality"
       # Optional: Add aliases in the same namespaced format
       aliases: ["speckit.my-extension.example-short"]
+      # Optional: Copy referenced files into generated skills (paths are extension-relative)
+      # resources:
+      #   - references/guide.md
+      #   - scripts/bash/*.sh
 
     # ADD MORE COMMANDS: Copy this block for each command
     # - name: "speckit.my-extension.another-command"
