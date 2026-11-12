@@ -4353,6 +4353,41 @@
       "created_at": "2026-07-17T00:00:00Z",
       "updated_at": "2026-09-23T00:00:00Z"
     },
+    "okr": {
+      "name": "OKR Bets",
+      "id": "okr",
+      "description": "Treat each spec as a Key Result bet: define a hypothesis and verification contract before /speckit.specify, plan measurement, assess results after launch before scaling. Company OKRs stay read-only.",
+      "author": "juanl",
+      "version": "0.2.1",
+      "download_url": "https://github.com/juanl/spec-kit-okr/releases/download/v0.2.1/spec-kit-okr-0.2.1.zip",
+      "sha256": "56b17e6dce43b6fd28e0b33778dc13d11695f57a46d755c4d714c716a373292f",
+      "repository": "https://github.com/juanl/spec-kit-okr",
+      "homepage": "https://github.com/juanl/spec-kit-okr",
+      "documentation": "https://github.com/juanl/spec-kit-okr/blob/v0.2.1/README.md",
+      "changelog": "https://github.com/juanl/spec-kit-okr/blob/v0.2.1/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 3
+      },
+      "tags": [
+        "okr",
+        "hypothesis",
+        "metrics",
+        "experimentation",
+        "product"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-12T00:00:00Z",
+      "updated_at": "2026-11-12T00:00:00Z"
+    },
     "onboard": {
       "name": "Onboard",
       "id": "onboard",
