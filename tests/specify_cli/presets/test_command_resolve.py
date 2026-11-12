@@ -257,3 +257,79 @@ class TestPresetResolve:
         output = " ".join(strip_ansi(result.output).split())
         assert "page-adapter.mjs" in output, output
         assert "not found" not in output
+
+    def test_resolve_prefers_template_over_higher_priority_script(
+        self, temp_dir, project_dir
+    ):
+        """A template wins over a same-named script from a higher-priority preset.
+
+        The script fallback must not change the backward-compatible precedence:
+        commands and templates are still asked for first, so an existing
+        template keeps resolving even when a script with the same name sits in
+        a higher-priority preset.
+        """
+        script_src = temp_dir / "src-script-pack"
+        (script_src / "adapters").mkdir(parents=True)
+        (script_src / "adapters" / "shared-asset.mjs").write_text("export default {};\n")
+        (script_src / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "script-pack",
+                        "name": "script-pack",
+                        "version": "1.0.0",
+                        "description": "script pack",
+                    },
+                    "requires": {"speckit_version": ">=0.0.1"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "script",
+                                "name": "shared-asset",
+                                "file": "adapters/shared-asset.mjs",
+                                "strategy": "replace",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        template_src = temp_dir / "src-template-pack"
+        (template_src / "templates").mkdir(parents=True)
+        (template_src / "templates" / "shared-asset.md").write_text("# tmpl\n")
+        (template_src / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "template-pack",
+                        "name": "template-pack",
+                        "version": "1.0.0",
+                        "description": "template pack",
+                    },
+                    "requires": {"speckit_version": ">=0.0.1"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "shared-asset",
+                                "file": "templates/shared-asset.md",
+                                "strategy": "replace",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        PresetManager(project_dir).install_from_directory(script_src, "9.9.9", 20)
+        PresetManager(project_dir).install_from_directory(template_src, "9.9.9", 5)
+
+        result = self._invoke(project_dir, ["preset", "resolve", "shared-asset"])
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        output = " ".join(strip_ansi(result.output).split())
+        assert "shared-asset.md" in output, output
+        assert "shared-asset.mjs" not in output, output
