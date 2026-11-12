@@ -1136,7 +1136,7 @@ class TestCodexNoModelInvocationOwnership:
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_read_does_not_follow_an_ancestor_swapped_for_a_symlink(self, tmp_path, monkeypatch):
-        from specify_cli.integrations import codex
+        from specify_cli.file_helper import FileHelper
 
         project = tmp_path / "proj"
         project.mkdir()
@@ -1144,25 +1144,87 @@ class TestCodexNoModelInvocationOwnership:
         outside = tmp_path / "outside"
         outside.mkdir()
         (outside / "openai.yaml").write_bytes(b"interface:\n  display_name: Secret\n")
-        real_validate = codex._validate_record_path
-        calls = []
+        real_read_bytes = FileHelper.read_bytes
+        reads = []
 
-        def validate(rel, root):
-            result = real_validate(rel, root)
-            if Path(rel).as_posix() == self.PLAN_REL:
-                calls.append(rel)
-                # The second check is the last one before the file is read.
-                if len(calls) == 2:
-                    path.parent.rename(project / "moved-agents")
-                    path.parent.symlink_to(outside, target_is_directory=True)
-            return result
+        def read_bytes(self, rel, *args, **kwargs):
+            if Path(rel).as_posix() == self_rel and not reads:
+                # Every earlier check passed; swap just before the read.
+                path.parent.rename(project / "moved-agents")
+                path.parent.symlink_to(outside, target_is_directory=True)
+            try:
+                content = real_read_bytes(self, rel, *args, **kwargs)
+            except BaseException:
+                reads.append(None)
+                raise
+            reads.append(content)
+            return content
 
-        monkeypatch.setattr(codex, "_validate_record_path", validate)
-        with pytest.raises(ValueError):
+        self_rel = self.PLAN_REL
+        monkeypatch.setattr(FileHelper, "read_bytes", read_bytes)
+        with pytest.raises(ValueError, match="Cannot update .*speckit-plan/agents/openai.yaml: Refusing symlink"):
             self._setup(project)
+        monkeypatch.undo()
+        assert reads and reads[0] is None
+        assert all(b"Secret" not in (content or b"") for content in reads)
         # Refused while planning, before any skill was written.
         assert not list((project / ".agents" / "skills").glob("*/SKILL.md"))
-        assert (outside / "openai.yaml").read_bytes() == b"interface:\n  display_name: Secret\n"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_new_policy_is_not_written_through_an_ancestor_swapped_for_a_symlink(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.integrations.base import SkillsIntegration
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        real_setup = SkillsIntegration.setup
+
+        def setup(self, *args, **kwargs):
+            # Runs between planning and writing the policies.
+            created = real_setup(self, *args, **kwargs)
+            (project / self_rel).parent.symlink_to(outside, target_is_directory=True)
+            return created
+
+        self_rel = self.PLAN_REL
+        monkeypatch.setattr(SkillsIntegration, "setup", setup)
+        with pytest.raises((OSError, ValueError)):
+            self._setup(project)
+        assert not list(outside.iterdir())
+
+    def test_rollback_deletes_a_policy_whose_write_failed_part_way(self, tmp_path, monkeypatch):
+        from specify_cli.file_helper import FileHelper
+
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        real_create_bytes = FileHelper.create_bytes
+
+        def create_bytes(self, rel, content, *args, **kwargs):
+            if Path(rel).as_posix().endswith("speckit-tasks/agents/openai.yaml"):
+                real_create_bytes(self, rel, content[:5], *args, **kwargs)
+                raise OSError("disk full")
+            return real_create_bytes(self, rel, content, *args, **kwargs)
+
+        monkeypatch.setattr(FileHelper, "create_bytes", create_bytes)
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert path.read_bytes() == original
+        assert self._other_policies(tmp_path) == []
+        assert list((tmp_path / ".agents" / "skills").glob("*/agents")) == [path.parent]
+
+    def test_preflight_without_the_option_reads_nothing(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        self._seed(tmp_path, b"- not\n- a mapping\n")
+
+        def unexpected(*args, **kwargs):
+            raise AssertionError("preflight read a policy file")
+
+        monkeypatch.setattr(codex, "_read_policy", unexpected)
+        assert get_integration("codex").preflight_setup(tmp_path, {}, script_type="sh") is None
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_rollback_does_not_delete_through_an_ancestor_swapped_for_a_symlink(
@@ -1422,16 +1484,18 @@ class TestCodexNoModelInvocationOwnership:
     @staticmethod
     def _fail_policy_record(monkeypatch, project, failing_skill="speckit-tasks"):
         """Fail the policy write for ``failing_skill``, after the plan file is rewritten."""
-        real_record_file = IntegrationManifest.record_file
+        from specify_cli.file_helper import FileHelper
+
+        real_create_bytes = FileHelper.create_bytes
         plan = project / TestCodexNoModelInvocationOwnership.PLAN_REL
 
-        def record_file(self, rel, *args, **kwargs):
+        def create_bytes(self, rel, *args, **kwargs):
             if Path(rel).as_posix().endswith(f"{failing_skill}/agents/openai.yaml"):
                 assert b"allow_implicit_invocation" in plan.read_bytes()
                 raise OSError("disk full")
-            return real_record_file(self, rel, *args, **kwargs)
+            return real_create_bytes(self, rel, *args, **kwargs)
 
-        monkeypatch.setattr(IntegrationManifest, "record_file", record_file)
+        monkeypatch.setattr(FileHelper, "create_bytes", create_bytes)
 
     def test_failed_later_policy_write_rolls_back_so_a_retry_can_clear_them(
         self, tmp_path, monkeypatch

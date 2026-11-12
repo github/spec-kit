@@ -57,9 +57,9 @@ def _backups_are_private() -> bool:
 def _windows_refusal(rel: str) -> str:
     return (
         f"Cannot update {rel}: Spec Kit does not rewrite an existing file on "
-        "Windows, because its backup could not be kept private. Add "
-        "'policy: {allow_implicit_invocation: false}' to it yourself, or move it "
-        "aside and retry"
+        "Windows, because its backup could not be kept private. Set "
+        "policy.allow_implicit_invocation to false in it yourself, or move it "
+        "aside, and retry"
     )
 
 
@@ -125,6 +125,12 @@ def _replace_file(
             try:
                 fd = stack.enter_context(helper._overwrite_descriptor(destination))
                 _require_rewritable_fd(fd, root / rel, read)
+                # Catches an in-place edit the size and timestamp miss, such
+                # as a same-length one on a coarse-timestamp filesystem.
+                if helper.read_bytes(rel) != original:
+                    raise PermissionError(
+                        errno.EPERM, "File changed while being updated", str(root / rel),
+                    )
             except BaseException:
                 # Nothing was written, so the backup is only clutter, and one
                 # left behind would block the next run.
@@ -346,7 +352,7 @@ class CodexIntegration(SkillsIntegration):
         else:
             try:
                 raw = _read_policy(project_root, rel)
-            except OSError as exc:
+            except (OSError, ValueError) as exc:  # ValueError covers FileHelperError
                 raise ValueError(f"Cannot update {rel}: {exc}") from exc
             data = self._load_openai_yaml(raw, rel)
             ownership = "whole" if self._is_generated(project_root, rel, prior, raw) else "partial"
@@ -572,6 +578,7 @@ class CodexIntegration(SkillsIntegration):
         # file setup would refuse stops a switch before the outgoing
         # integration is removed. Setup repeats the checks, since files can
         # change in between.
+        super().preflight_setup(project_root, parsed_options, script_type=script_type)
         if (parsed_options or {}).get("no_model_invocation") is True:
             root = project_root.resolve()
             self._plan_policies(root, self._prior_manifest(root))
@@ -630,10 +637,15 @@ class CodexIntegration(SkillsIntegration):
                     manifest.record_existing(rel, ownership=ownership)
                     created.append(path)
                 else:
-                    if path.exists() or path.is_symlink():
-                        raise ValueError(f"Cannot update {rel}: it was created while updating")
-                    written.append((rel, None, content.encode("utf-8"), not path.parent.exists()))
-                    created.append(manifest.record_file(rel, content, ownership=ownership))
+                    new = content.encode("utf-8")
+                    written.append((rel, None, new, not path.parent.exists()))
+                    # Created exclusively through the helper, so a directory
+                    # swapped for a symlink since planning cannot redirect it.
+                    with changing_file(path), FileHelper(root) as helper:
+                        helper.mkdir(PurePosixPath(rel).parent.as_posix(), parents=True, exist_ok=True)
+                        helper.create_bytes(rel, new)
+                    manifest.record_existing(rel, ownership=ownership)
+                    created.append(path)
             if prior is not None:
                 self._released_policy_rels = frozenset(
                     self._release_prior_policies(root, manifest, prior, {plan[0] for plan in planned})
@@ -659,7 +671,14 @@ class CodexIntegration(SkillsIntegration):
         for rel, original, new, new_dir in reversed(written):
             try:
                 if original is not None:
-                    _replace_file(root, rel, original, expected=new)
+                    try:
+                        _replace_file(root, rel, original, expected=new)
+                    except (OSError, ValueError) as exc:
+                        logger.warning(
+                            "Could not undo the policy written to %s: %s; remove "
+                            "policy.allow_implicit_invocation from it by hand",
+                            rel, exc,
+                        )
                     continue
                 parent = PurePosixPath(rel).parent.as_posix()
                 with FileHelper(root) as helper:
@@ -670,15 +689,16 @@ class CodexIntegration(SkillsIntegration):
                     except FileNotFoundError:  # the write itself failed
                         current = None
                     if current is not None:
-                        if current != new:
+                        # A prefix is a write that failed part-way.
+                        if not new.startswith(current):
                             logger.warning("Leaving %s in place: it changed after it was written", rel)
                             continue
                         helper.delete(rel)
                     if new_dir:
                         try:
                             helper.delete(parent)
-                        except FileNotFoundError:
-                            pass
+                        except OSError:
+                            pass  # gone already, or holds something else
             except (OSError, ValueError) as exc:  # ValueError covers FileHelperError
                 logger.warning("Could not undo the policy written to %s: %s", rel, exc)
 
