@@ -809,15 +809,30 @@ class _PresetSkillMethods:
         Presets are registered for the active agent only (#2948), so a preset
         installed while another agent was active has no output in a
         historical agent's directory and must not be composed into one. A
-        preset counts as registered here when its ``registered_skills`` or
-        ``registered_commands`` names an agent that resolves to this
-        directory. The active directory is never filtered, non-preset layers
-        (core, extensions, project overrides) always stay, and so does a
-        preset whose provenance is unknown (a legacy flat list).
+        preset counts as registered here when its ``registered_skills`` names
+        an agent that resolves to this directory, or its
+        ``registered_commands`` names a native skill agent that does: only
+        for those is a registered command a file in the skills directory. A
+        command-backed agent's entry records command files elsewhere, and
+        its skills directory can be another agent's (Amp's resolves to
+        Codex's ``.agents/skills``). The active directory is never filtered,
+        non-preset layers (core, extensions, project overrides) always stay,
+        and so does a preset whose provenance is unknown (a legacy flat
+        list).
         """
         if active_skills_dir is not None and skills_dir == active_skills_dir:
             return layers
         registered: Dict[str, bool] = {}
+        try:
+            registrar = self._command_registrar()
+            registrar._ensure_configs()
+            agent_configs = registrar.AGENT_CONFIGS
+        except ImportError:
+            agent_configs = {}
+
+        def writes_skills(agent: Any) -> bool:
+            config = agent_configs.get(agent) if isinstance(agent, str) else None
+            return bool(config) and config.get("extension") == "/SKILL.md"
 
         def resolves_here(agent: Any) -> bool:
             if not isinstance(agent, str):
@@ -838,7 +853,9 @@ class _PresetSkillMethods:
             for key in ("registered_skills", "registered_commands"):
                 recorded = meta.get(key)
                 if isinstance(recorded, dict) and any(
-                    names and resolves_here(agent)
+                    names
+                    and (key == "registered_skills" or writes_skills(agent))
+                    and resolves_here(agent)
                     for agent, names in recorded.items()
                 ):
                     return True

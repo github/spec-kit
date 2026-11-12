@@ -2733,6 +2733,100 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             assert "Low body" not in content and "Base preset body" not in content
             assert "Core custom body" in content and "Middle body" in content
 
+    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    def test_remove_base_does_not_compose_command_mode_layer_into_shared_skills_dir(
+        self, project_dir, temp_dir, core
+    ):
+        """Amp is command-backed (``.agents/commands``), yet its skills
+        directory resolves to ``.agents/skills``, which is Codex's native
+        one. ``low`` is installed while Amp is active in command mode, so it
+        only ever wrote an Amp command file. Its ``registered_commands``
+        entry must not make it count as registered in Codex's skills."""
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(skills_dir, "speckit-custom")
+        if core:
+            self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        codex_skill = skills_dir / "speckit-custom" / "SKILL.md"
+        codex_alias = skills_dir / "speckit-custom-short" / "SKILL.md"
+        assert "Base preset body" in codex_skill.read_text(encoding="utf-8")
+        assert "Base preset body" in codex_alias.read_text(encoding="utf-8")
+        (project_dir / ".agents" / "commands").mkdir()
+        self._write_init_options(project_dir, ai="amp", ai_skills=False)
+        install("low-preset", "Low body", "replace", 12, alias=False)
+        low = manager.registry.get("low-preset")
+        assert low["registered_commands"] == {"amp": ["speckit.custom"]}
+        assert not low.get("registered_skills")
+        # Amp is historical too once another agent becomes active.
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        manager.register_enabled_presets_for_agent("claude")
+
+        assert manager.remove("base-preset") is True
+
+        for output in (codex_skill, codex_alias):
+            if not core:
+                assert not output.exists()
+                continue
+            content = output.read_text(encoding="utf-8")
+            assert "Low body" not in content and "Base preset body" not in content
+            assert "Core custom body" in content and "Middle body" in content
+
+    @pytest.mark.parametrize(
+        "strategy,body",
+        [("append", "Appended body"), ("wrap", "Pre\n\n{CORE_TEMPLATE}\n\nPost")],
+    )
+    def test_frontmatter_strategy_alias_never_carries_a_preset_base(
+        self, project_dir, temp_dir, strategy, body
+    ):
+        """A composer may declare its strategy only in the command file's
+        frontmatter. Command registration composes an alias onto preset
+        layers only for a manifest strategy, so this alias is the preset's
+        own file (wrap: around the core template) and holds nothing of the
+        base preset. Removing the base therefore leaves it exactly as a
+        rescaffold renders it, while the primary skill is recomposed."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        self._install_alias_layer(
+            manager, temp_dir, "base-preset", "Base preset body", "replace", 10,
+            alias=False,
+        )
+        preset_dir = self._create_command_preset(
+            temp_dir, "fm-preset", "speckit.custom", "fm-preset", "unused"
+        )
+        (preset_dir / "commands" / "speckit.custom.md").write_text(
+            f"---\ndescription: fm-preset\nstrategy: {strategy}\n---\n\n{body}\n",
+            encoding="utf-8",
+        )
+        manifest_path = preset_dir / "preset.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        assert "strategy" not in manifest["provides"]["templates"][0]
+        manifest["provides"]["templates"][0]["aliases"] = [self._ALIAS]
+        manifest_path.write_text(yaml.dump(manifest))
+        manager.install_from_directory(preset_dir, "0.1.5", priority=5)
+        skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        alias_file = self._alias_skill(project_dir)
+        assert "Base preset body" in skill.read_text(encoding="utf-8")
+        installed = alias_file.read_text(encoding="utf-8")
+        assert "Base preset body" not in installed
+        assert "source: fm-preset:commands/speckit.custom.md" in installed
+
+        assert manager.remove("base-preset") is True
+
+        recomposed = skill.read_text(encoding="utf-8")
+        assert "Base preset body" not in recomposed
+        assert "Core custom body" in recomposed
+        assert alias_file.read_text(encoding="utf-8") == installed
+        manager.register_enabled_presets_for_agent("claude")
+        assert alias_file.read_text(encoding="utf-8") == installed
+        assert skill.read_text(encoding="utf-8") == recomposed
+
     def test_alias_refresh_rewrites_the_same_file(self, project_dir, temp_dir):
         """The alias is refreshed in place, as command registration always
         wrote it: the same inode keeps its owner, ACL and mode."""
