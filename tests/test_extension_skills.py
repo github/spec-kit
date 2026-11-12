@@ -718,6 +718,41 @@ class TestExtensionSkillRegistration:
         assert "speckit-test-ext-hello" not in metadata["registered_skills"]
         assert "speckit-test-ext-world" in metadata["registered_skills"]
 
+    def test_native_registration_does_not_overwrite_user_skill(
+        self, skills_project, extension_dir
+    ):
+        """Native registration must not overwrite a pre-existing user skill (#5380).
+
+        The supplemental skills route already skips pre-existing unowned
+        directories, but native command registration wrote SKILL.md
+        unconditionally, so a later ``extension remove`` deleted the user's
+        content outright.
+        """
+        project_dir, skills_dir = skills_project
+        user_dir = skills_dir / "speckit-test-ext-hello"
+        user_dir.mkdir(parents=True)
+        (user_dir / "SKILL.md").write_text("user skill", encoding="utf-8")
+        (user_dir / "notes.txt").write_text("user", encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(extension_dir, "0.1.0")
+
+        # Install must leave the user's SKILL.md untouched ...
+        assert (user_dir / "SKILL.md").read_text(encoding="utf-8") == "user skill"
+        # ... and must not register the skipped skill (native registration
+        # writes the surviving skill, so it lands in registered_commands
+        # while the supplemental route leaves registered_skills empty).
+        metadata = manager.registry.get(manifest.id)
+        registered_commands = metadata.get("registered_commands", {})
+        assert "speckit.test-ext.hello" not in registered_commands.get("claude", [])
+        assert "speckit.test-ext.world" in registered_commands.get("claude", [])
+
+        manager.remove(manifest.id, keep_config=False)
+
+        # ... so removal cannot delete content the extension never created.
+        assert (user_dir / "SKILL.md").read_text(encoding="utf-8") == "user skill"
+        assert (user_dir / "notes.txt").read_text(encoding="utf-8") == "user"
+
     def test_dev_skill_symlink_refreshes_existing_cache(
         self, skills_project, extension_dir, temp_dir
     ):
