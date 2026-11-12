@@ -214,3 +214,46 @@ class TestPresetResolve:
         assert "Composition chain" in output, output
         assert "[base]" in output, output
         assert "[append]" in output, output
+
+    def test_resolve_falls_back_to_script_artifacts(self, temp_dir, project_dir):
+        """A preset may register an executable artifact as a script.
+
+        ``preset resolve`` used to look at commands and templates only, so a
+        ``type: script`` entry (e.g. a ``.mjs`` adapter) was reported as not
+        found even though the resolver stack holds it.
+        """
+        src = temp_dir / "src-script-pack"
+        (src / "adapters").mkdir(parents=True)
+        (src / "adapters" / "page-adapter.mjs").write_text("export default {};\n")
+        (src / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "script-pack",
+                        "name": "script-pack",
+                        "version": "1.0.0",
+                        "description": "script pack",
+                    },
+                    "requires": {"speckit_version": ">=0.0.1"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "script",
+                                "name": "page-adapter",
+                                "file": "adapters/page-adapter.mjs",
+                                "strategy": "replace",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        PresetManager(project_dir).install_from_directory(src, "9.9.9", 10)
+
+        result = self._invoke(project_dir, ["preset", "resolve", "page-adapter"])
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        output = " ".join(strip_ansi(result.output).split())
+        assert "page-adapter.mjs" in output, output
+        assert "not found" not in output
