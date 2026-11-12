@@ -324,8 +324,10 @@ class TestPresetResolve:
             )
         )
 
-        PresetManager(project_dir).install_from_directory(script_src, "9.9.9", 20)
-        PresetManager(project_dir).install_from_directory(template_src, "9.9.9", 5)
+        # Lower numbers sort first in the registry, so the script preset (5)
+        # outranks the template preset (20); the template must still win.
+        PresetManager(project_dir).install_from_directory(script_src, "9.9.9", 5)
+        PresetManager(project_dir).install_from_directory(template_src, "9.9.9", 20)
 
         result = self._invoke(project_dir, ["preset", "resolve", "shared-asset"])
 
