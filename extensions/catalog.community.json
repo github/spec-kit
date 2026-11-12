@@ -6185,6 +6185,48 @@
       "created_at": "2026-08-12T00:00:00Z",
       "updated_at": "2026-08-12T00:00:00Z"
     },
+    "spec-status": {
+      "name": "Spec Status",
+      "id": "spec-status",
+      "description": "Agent skills that turn spec status output into next actions: review a roadmap (with pm, developer, qa and architect views), explain findings, reconcile recorded statuses with tasks and evidence, unblock dependencies, and check readiness before marking work verified. Proposes changes; applies them only through Spec Kit commands after the user approves each one.",
+      "author": "tosin2013",
+      "version": "0.2.0",
+      "download_url": "https://github.com/tosin2013/spec-status/releases/download/v0.2.0/spec-status-extension_0.2.0.zip",
+      "sha256": "0578ac60a88560bb3e95403e50683883014b44785264ca4c43dbeafb2c4187d9",
+      "repository": "https://github.com/tosin2013/spec-status",
+      "homepage": "https://github.com/tosin2013/spec-status/tree/main/extensions/spec-status",
+      "documentation": "https://github.com/tosin2013/spec-status/blob/main/extensions/spec-status/README.md",
+      "changelog": "https://github.com/tosin2013/spec-status/releases/tag/v0.2.0",
+      "license": "Apache-2.0",
+      "category": "visibility",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.2.0",
+        "tools": [
+          {
+            "name": "spec",
+            "version": ">=0.1.2",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 1
+      },
+      "tags": [
+        "roadmap",
+        "status",
+        "review",
+        "verification",
+        "spec-alignment"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-12T00:00:00Z",
+      "updated_at": "2026-11-12T00:00:00Z"
+    },
     "speckit-inventory": {
       "name": "Spec Inventory",
       "id": "speckit-inventory",
