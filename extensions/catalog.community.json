@@ -2353,7 +2353,7 @@
     "egm": {
       "name": "Elephant-Goldfish Model",
       "id": "egm",
-      "description": "Implements EGM (https://egm.dev/) into spec-kit universe. The extension has commands that minimally modify the upstream EGM skills to use spec-kit syntax and make it agnostic to subagent instructions (which are added by presets)",
+      "description": "Design with an elephant. Review with a goldfish.",
       "author": "Kapil Sachdeva",
       "version": "0.9.0",
       "download_url": "https://github.com/ksachdeva/spec-kit-extensions/releases/download/extension-egm-v0.9.0/extension-egm-0.9.0.zip",
