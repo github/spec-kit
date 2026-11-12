@@ -36,19 +36,14 @@ def create_private(helper: FileHelper, rel: str, content: bytes) -> None:
     failure after the file was created removes it, so a partial copy is never
     left to be mistaken for a complete one.
     """
-    if os.name != "nt":
-        helper.create_bytes(rel, content, mode=0o600)
-        try:
-            _fsync_posix(helper, rel)
-        except BaseException:
-            _remove_partial(helper, rel)
-            raise
-        return
-    # FileHelper has no public way to pass a security descriptor; these are the
-    # anchored resolution and parent pinning behind ``create_bytes``. Pinned by
-    # ``TestCodexFileHelperInternals``.
+    # FileHelper has no public way to pass a security descriptor, or to flush
+    # what it creates; these are the anchored resolution and parent pinning
+    # behind ``create_bytes``. Pinned by ``TestCodexFileHelperInternals``.
     destination = helper._path(rel, allow_missing=True, follow_leaf=False)
     with helper._creation_directory(destination.parent) as directory:
+        if os.name != "nt":
+            _create_posix(directory, destination.name, content)
+            return
         path = Path(directory) / destination.name
         fd = _create_windows(path)
         try:
@@ -66,12 +61,32 @@ def create_private(helper: FileHelper, rel: str, content: bytes) -> None:
             raise
 
 
-def _fsync_posix(helper: FileHelper, rel: str) -> None:
-    fd = os.open(helper._path(rel), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+def _create_posix(directory: int, name: str, content: bytes) -> None:
+    """Create ``name`` in the pinned ``directory``, then write and flush it.
+
+    Everything goes through the one descriptor that created the file, so
+    nothing swapped in under its name afterwards is opened. Only a file this
+    call created is removed when a later step fails.
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(name, flags, 0o600, dir_fd=directory)
     try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+        try:
+            view = memoryview(content)
+            while view:
+                count = os.write(fd, view)
+                if count == 0:
+                    raise OSError(errno.EIO, "Write made no progress")
+                view = view[count:]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except BaseException:
+        try:
+            os.unlink(name, dir_fd=directory)
+        except OSError:
+            pass
+        raise
 
 
 def _remove_partial(helper: FileHelper, rel: str) -> None:

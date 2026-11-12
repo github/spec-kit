@@ -360,20 +360,22 @@ class CodexIntegration(SkillsIntegration):
                 f"Cannot update {rel}: Codex would ignore this file, including the "
                 f"policy: {'; '.join(errors)}"
             )
-        if ownership == "partial" and not tracked and already_set:
-            # The user already set it; claiming it would let cleanup remove their setting.
-            return None
-        if already_set and path.exists():
-            return rel, None, ownership, raw
         backup = project_root / f"{rel}{_BACKUP_SUFFIX}"
         if backup.exists() or backup.is_symlink():
-            # ``rel`` may be a half-written rewrite, or was deleted to start
-            # over; either way the backup may be the only intact copy.
+            # ``rel`` may be a half-written rewrite, one finished but not yet
+            # recorded, or was deleted to start over; either way the backup
+            # may be the only intact copy, and ``rel`` cannot be taken for the
+            # user's own.
             raise ValueError(
                 f"Cannot update {rel}: {backup.name} is left from an interrupted "
                 f"update; compare it with {path.name}, keep the right copy and "
                 "delete the backup"
             )
+        if ownership == "partial" and not tracked and already_set:
+            # The user already set it; claiming it would let cleanup remove their setting.
+            return None
+        if already_set and path.exists():
+            return rel, None, ownership, raw
         return rel, _openai_yaml.dump(data), ownership, raw
 
     def _remove_policy(self, project_root: Path, rel: str, *, final: bool = False) -> bool:
@@ -431,24 +433,39 @@ class CodexIntegration(SkillsIntegration):
             if self._has_backup(project_root, rel):
                 # Deleting the file would leave only the backup, which the
                 # recovery steps compare it with; retry once that is resolved.
-                self._retain(manifest, rel, recorded_hash, modes[rel])
+                mode = self._retained_mode(project_root, rel, prior)
+                self._retain(manifest, rel, recorded_hash, mode)
                 continue
-            if self._is_generated(project_root, rel, prior):
-                self._retain(generated, rel, recorded_hash, "whole")
+            verified = self._generated_bytes(project_root, rel, prior)
+            if verified is not None:
+                # The hash of the bytes just checked, so the delete below
+                # skips a file edited since.
+                self._retain(generated, rel, hashlib.sha256(verified).hexdigest(), "whole")
                 continue
             if self._remove_policy(project_root, rel):
                 continue
             if self._may_still_exist(project_root, rel):
                 # Unreadable, unparseable or unsafe: retry on a later run.
-                mode = self._failed_cleanup_mode(project_root, rel, recorded_hash, modes[rel])
+                mode = self._retained_mode(project_root, rel, prior)
                 self._retain(manifest, rel, recorded_hash, mode)
-        # Each entry was checked above, content-equal ones included.
-        _, skipped = generated.uninstall(project_root, force=True, remove_manifest=False)
+        _, skipped = generated.uninstall(project_root, remove_manifest=False)
         for path in skipped:
             rel = path.relative_to(project_root).as_posix()
             if self._may_still_exist(project_root, rel):
-                self._retain(manifest, rel, prior.files[rel], "whole")
+                mode = self._retained_mode(project_root, rel, prior)
+                self._retain(manifest, rel, prior.files[rel], mode)
         return released
+
+    def _generated_bytes(
+        self, root: Path, rel: str, prior: IntegrationManifest,
+    ) -> bytes | None:
+        """The bytes of ``rel`` if they are a generated policy-only file, else ``None``."""
+        try:
+            _validate_record_path(Path(rel), root)
+            raw = _read_policy(root, rel)
+        except (OSError, ValueError):
+            return None
+        return raw if self._is_generated(root, rel, prior, raw) else None
 
     @staticmethod
     def _has_backup(root: Path, rel: str) -> bool:
@@ -477,25 +494,26 @@ class CodexIntegration(SkillsIntegration):
         except (OSError, ValueError):
             return True
 
-    @staticmethod
-    def _failed_cleanup_mode(root: Path, rel: str, recorded_hash: str, mode: str) -> str:
-        """Ownership for a file whose policy could not be removed.
+    def _retained_mode(self, root: Path, rel: str, prior: IntegrationManifest) -> str:
+        """Ownership for a file kept tracked because its cleanup did not finish.
 
-        A ``whole`` file whose readable bytes differ from the recorded hash is
-        a user edit, so it becomes ``partial``: upgrade re-hashes tracked files afterwards, and
-        a ``whole`` entry would then count as generated and be deleted. When
-        the file cannot be read, the prior mode is kept so a generated file is
-        still recognised, and deleted, once it can be read again.
+        A readable ``whole`` file that is no longer policy-only holds a user
+        edit, so it becomes ``partial``: upgrade re-hashes tracked files
+        afterwards, and a ``whole`` entry would then count as generated and be
+        deleted, edit included. Policy-only content stays ``whole``, so it is
+        still deleted once cleanup can finish. When the file cannot be read,
+        the prior mode is kept so a generated file is still recognised, and
+        deleted, once it can be read again.
         """
+        mode = prior.ownership_modes[rel]
         if mode != "whole":
             return mode
         try:
             _validate_record_path(Path(rel), root)
-            if hashlib.sha256(_read_policy(root, rel)).hexdigest() != recorded_hash:
-                return "partial"
+            raw = _read_policy(root, rel)
         except (OSError, ValueError):
-            pass
-        return mode
+            return mode
+        return mode if self._is_generated(root, rel, prior, raw) else "partial"
 
     @staticmethod
     def _retain(manifest: IntegrationManifest, rel: str, recorded_hash: str, ownership: str) -> None:
@@ -612,8 +630,9 @@ class CodexIntegration(SkillsIntegration):
                     # ``record_file`` truncates in place; keep the user's file
                     # intact if the write fails.
                     _validate_record_path(Path(rel), root)
+                    expected = read
                     if content is not None:
-                        new = content.encode("utf-8")
+                        expected = new = content.encode("utf-8")
                         _replace_file(
                             root, rel, new, expected=read,
                             on_written=lambda original, rel=rel, new=new: written.append(
@@ -621,6 +640,8 @@ class CodexIntegration(SkillsIntegration):
                             ),
                         )
                     manifest.record_existing(rel, ownership=ownership)
+                    if manifest.files[rel] != hashlib.sha256(expected).hexdigest():
+                        raise ValueError(f"Cannot update {rel}: it changed while updating")
                     created.append(path)
                 else:
                     new = content.encode("utf-8")

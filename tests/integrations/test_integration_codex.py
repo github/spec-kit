@@ -1405,15 +1405,114 @@ class TestCodexNoModelInvocationOwnership:
         assert not path.exists()
         assert backup.read_bytes() == b"interface:\n  display_name: Earlier\n"
 
-    def test_leftover_backup_does_not_block_a_file_left_alone(self, tmp_path):
-        path = self._seed(
-            tmp_path, b"interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n"
-        )
+    @pytest.mark.parametrize("tracked", [False, True])
+    def test_leftover_backup_beside_a_file_that_already_holds_the_policy_stops_setup(
+        self, tmp_path, tracked
+    ):
+        # An interrupted rewrite can leave the new policy written and the
+        # backup in place; a retry must not take the file for the user's own.
+        if tracked:
+            self._setup(tmp_path).save()
+            path = tmp_path / self.PLAN_REL
+        else:
+            path = self._seed(
+                tmp_path,
+                b"interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n",
+            )
         before = path.read_bytes()
-        path.with_name("openai.yaml.speckit-backup").write_bytes(b"stale")
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        with pytest.raises(ValueError, match="speckit-backup is left from an interrupted update"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == before
+        assert backup.read_bytes() == b"interface:\n  display_name: Earlier\n"
+
+        backup.unlink()
         self._setup(tmp_path)
         assert path.read_bytes() == before
         assert len(self._other_policies(tmp_path)) == len(CORE_COMMAND_NAMES) - 1
+
+    def test_clearing_option_beside_a_backup_keeps_user_edits_after_recovery(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        self._init(tmp_path, "--no-model-invocation")
+        path = tmp_path / self.PLAN_REL
+        edited = b"interface:\n  display_name: Mine\npolicy:\n  allow_implicit_invocation: false\n"
+        path.write_bytes(edited)
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        clear = ["integration", "upgrade", "codex", "--force", "--integration-options", ""]
+
+        result = _run_in_project(tmp_path, clear)
+        assert result.exit_code == 0, result.output
+        assert path.read_bytes() == edited
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "partial"
+
+        backup.unlink()
+        result = _run_in_project(tmp_path, clear)
+        assert result.exit_code == 0, result.output
+        assert self._yaml(path) == {"interface": {"display_name": "Mine"}}
+        assert self.PLAN_REL not in self._manifest(tmp_path).files
+
+    def test_clearing_option_beside_a_backup_keeps_a_policy_only_file_generated(self, tmp_path):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        manifest = self._setup(tmp_path, enabled=False)
+        assert manifest.ownership_modes[self.PLAN_REL] == "whole"
+        manifest.save()
+
+        backup.unlink()
+        manifest = self._setup(tmp_path, enabled=False)
+        assert not path.exists()
+        assert self.PLAN_REL not in manifest.files
+
+    def test_generated_file_edited_during_cleanup_is_kept(self, tmp_path, monkeypatch):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        edited = b"interface:\n  display_name: Mine\npolicy:\n  allow_implicit_invocation: false\n"
+        real_uninstall = IntegrationManifest.uninstall
+
+        def uninstall(self, *args, **kwargs):
+            # Runs after the generated-file check, just before the delete.
+            if self.version == "policy-cleanup":
+                path.write_bytes(edited)
+            return real_uninstall(self, *args, **kwargs)
+
+        monkeypatch.setattr(IntegrationManifest, "uninstall", uninstall)
+        manifest = self._setup(tmp_path, enabled=False)
+        assert path.read_bytes() == edited
+        assert manifest.ownership_modes[self.PLAN_REL] == "partial"
+        monkeypatch.undo()
+        manifest.save()
+
+        manifest = self._setup(tmp_path, enabled=False)
+        assert self._yaml(path) == {"interface": {"display_name": "Mine"}}
+        assert self.PLAN_REL not in manifest.files
+
+    @pytest.mark.parametrize("edited", [
+        b"interface:\n  display_name: Mine\npolicy:\n  allow_implicit_invocation: false\n",
+        b"policy:\n  allow_implicit_invocation: true\n",
+    ])
+    def test_tracked_policy_edited_after_planning_stops_setup(self, tmp_path, monkeypatch, edited):
+        from specify_cli.integrations.base import SkillsIntegration
+
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        real_setup = SkillsIntegration.setup
+
+        def setup(self, *args, **kwargs):
+            # Runs between planning and recording the policies.
+            created = real_setup(self, *args, **kwargs)
+            path.write_bytes(edited)
+            return created
+
+        monkeypatch.setattr(SkillsIntegration, "setup", setup)
+        with pytest.raises(ValueError, match="changed while updating"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == edited
 
     def test_failed_restore_keeps_the_original_exception(self, tmp_path, monkeypatch):
         from specify_cli.integrations import codex
@@ -1745,8 +1844,8 @@ class TestCodexFileHelperInternals:
     """Pins the ``FileHelper`` internals ``_replace_file`` rewrites through.
 
     ``FileHelper`` has no public in-place byte rewrite, so the Codex package
-    uses ``_path`` and ``_overwrite_descriptor``, and on Windows creates its
-    backup through ``_creation_directory``. A change to any of them should
+    uses ``_path`` and ``_overwrite_descriptor``, and creates its backup
+    through ``_creation_directory``. A change to any of them should
     fail here rather than silently in a policy rewrite.
     """
 
@@ -1764,6 +1863,7 @@ class TestCodexFileHelperInternals:
                 create_private(helper, rel, b"second")
         assert (tmp_path / rel).read_bytes() == b"first"
 
+    @pytest.mark.skipif(os.name != "nt", reason="Windows creation path")
     def test_create_private_removes_a_partial_file(self, tmp_path, monkeypatch):
         from specify_cli.file_helper import FileHelper
         from specify_cli.integrations.codex import _private_file
@@ -1771,22 +1871,84 @@ class TestCodexFileHelperInternals:
         def fail(*args, **kwargs):
             raise OSError("disk full")
 
-        if os.name == "nt":
-            real_fdopen = os.fdopen
+        real_fdopen = os.fdopen
 
-            def fdopen(fd, *args, **kwargs):
-                stream = real_fdopen(fd, *args, **kwargs)
-                monkeypatch.setattr(stream, "write", fail)
-                return stream
+        def fdopen(fd, *args, **kwargs):
+            stream = real_fdopen(fd, *args, **kwargs)
+            monkeypatch.setattr(stream, "write", fail)
+            return stream
 
-            monkeypatch.setattr(_private_file.os, "fdopen", fdopen)
-        else:
-            monkeypatch.setattr(_private_file, "_fsync_posix", fail)
+        monkeypatch.setattr(_private_file.os, "fdopen", fdopen)
         rel = f"{self.REL}.speckit-backup"
         (tmp_path / rel).parent.mkdir(parents=True)
         with FileHelper(tmp_path) as helper, pytest.raises(OSError, match="disk full"):
             _private_file.create_private(helper, rel, b"content")
         assert not (tmp_path / rel).exists()
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+    @pytest.mark.parametrize("step", ["write", "fsync", "close"])
+    def test_posix_create_private_uses_one_descriptor_and_removes_a_partial_file(
+        self, tmp_path, monkeypatch, step
+    ):
+        # Reopening the backup by name could block on a FIFO swapped in for it.
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        rel = f"{self.REL}.speckit-backup"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        real_open, real_step = os.open, getattr(os, step)
+        leaf: list[int] = []
+
+        def open_(path, flags, *args, **kwargs):
+            fd = real_open(path, flags, *args, **kwargs)
+            if os.fspath(path).endswith(".speckit-backup"):
+                leaf.append(fd)
+            return fd
+
+        def fail(fd, *args):
+            if fd not in leaf:
+                return real_step(fd, *args)
+            if step == "close":
+                real_step(fd)
+            raise OSError("disk full")
+
+        monkeypatch.setattr(os, "open", open_)
+        monkeypatch.setattr(os, step, fail)
+        with FileHelper(tmp_path) as helper, pytest.raises(OSError, match="disk full"):
+            create_private(helper, rel, b"content")
+        monkeypatch.undo()
+        assert len(leaf) == 1
+        assert not (tmp_path / rel).exists()
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+    def test_posix_create_private_flushes_through_one_descriptor(self, tmp_path, monkeypatch):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        rel = f"{self.REL}.speckit-backup"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        real_open, real_fsync = os.open, os.fsync
+        leaf: list[int] = []
+        synced: list[int] = []
+
+        def open_(path, flags, *args, **kwargs):
+            fd = real_open(path, flags, *args, **kwargs)
+            if os.fspath(path).endswith(".speckit-backup"):
+                leaf.append(fd)
+            return fd
+
+        def fsync(fd):
+            synced.append(fd)
+            return real_fsync(fd)
+
+        monkeypatch.setattr(os, "open", open_)
+        monkeypatch.setattr(os, "fsync", fsync)
+        with FileHelper(tmp_path) as helper:
+            create_private(helper, rel, b"content")
+        monkeypatch.undo()
+        assert len(leaf) == 1 and leaf[0] in synced
+        assert (tmp_path / rel).read_bytes() == b"content"
+        assert stat.S_IMODE((tmp_path / rel).stat().st_mode) & 0o077 == 0
 
     @pytest.mark.skipif(os.name != "nt", reason="needs Windows junctions")
     def test_create_private_refuses_a_junctioned_parent(self, tmp_path):
