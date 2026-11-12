@@ -67,17 +67,16 @@ def locate_skills_dir(project_root: Path, skills_dir: Path) -> tuple[Path, Path]
     is still recognised.
     """
     candidate = Path(os.path.abspath(skills_dir))
-    roots = _boundaries(project_root)
-    for root in roots:
-        if candidate.is_relative_to(root):
-            return candidate, root
-    for root in roots:
+    # The project, lexical then resolved, is tried before home: a project can
+    # sit inside home, and its resolved path would otherwise match home first.
+    for root in _boundaries(project_root):
         try:
             resolved = root.resolve()
         except OSError:
-            continue
-        if candidate.is_relative_to(resolved):
-            return root / candidate.relative_to(resolved), root
+            resolved = root
+        for base in (root, resolved):
+            if candidate.is_relative_to(base):
+                return root / candidate.relative_to(base), root
     return None
 
 
@@ -134,6 +133,10 @@ def configured_skill_roots(project_root: Path) -> dict[Path, Path]:
         if agent_config.get("extension") != "/SKILL.md":
             continue
         add_candidate(registrar._resolve_agent_dir(agent_name, agent_config, project_root))
+        # Unregistration cleans the legacy directory as well as the canonical one.
+        legacy = agent_config.get("legacy_dir")
+        if isinstance(legacy, str) and legacy:
+            add_candidate(project_root / legacy)
     return candidates
 
 

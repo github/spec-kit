@@ -446,6 +446,39 @@ def test_locate_skills_dir_expresses_a_resolved_path_below_a_symlinked_project(t
     assert locate_skills_dir(project, tmp_path / "elsewhere") is None
 
 
+def test_locate_skills_dir_prefers_the_resolved_project_over_home(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    real = home / "real"
+    (real / ".agent/skills").mkdir(parents=True)
+    project = home / "link"
+    link(project, real, directory=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    # The generic output directory is resolved, and the project sits inside home.
+    assert locate_skills_dir(project, real / ".agent/skills") == (project / ".agent/skills", project)
+    assert skills_resource_root(project, real / ".agent/skills") == ("project", project)
+    assert skills_resource_root(project, home / "Documents/skills") == ("home", home)
+
+
+def test_retire_skill_resources_covers_the_legacy_skills_directory(monkeypatch, tmp_path):
+    from specify_cli.agents import CommandRegistrar
+
+    project = tmp_path / "project"
+    name = "speckit-test-ext-run"
+    current = put(project / ".other/skills" / name / "references/r.md")
+    legacy = put(project / ".other-old/skills" / name / "references/r.md")
+    # Load this project's integrations once; a later registrar keeps the fake agent.
+    CommandRegistrar(project, include_generic=False)
+    monkeypatch.setitem(CommandRegistrar.AGENT_CONFIGS, "other", {
+        "dir": ".other/skills", "legacy_dir": ".other-old/skills", "extension": "/SKILL.md",
+        "format": "markdown", "args": "$ARGUMENTS",
+    })
+    hashes = {"project": {p.relative_to(project).as_posix(): "any" for p in (current, legacy)}}
+
+    retire_skill_resources(project, "test-ext", hashes, {name})
+
+    assert not current.exists() and not legacy.exists() and hashes == {}
+
+
 def test_historical_skill_roots_come_from_recorded_skill_files_including_nested_names(tmp_path):
     recorded = [
         ".old/skills/speckit-ext-run/SKILL.md",
