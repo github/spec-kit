@@ -9,6 +9,7 @@ import pytest
 from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
+    _bash_posix_path,
     bash_cmd,
     break_wrap_layer,
     clean_env,
@@ -65,15 +66,22 @@ def test_all_variants_setup_tasks_in_bracketed_project(
     if feature_env:
         env["SPECIFY_FEATURE_DIRECTORY"] = "specs/001-my-feature"
         env["SPECIFY_FEATURE"] = "001-my-feature"
-    commands = [bash_cmd(repo, SCRIPT, "--json"), py_cmd(repo, SCRIPT, "--json")]
+    commands = [
+        ("bash", bash_cmd(repo, SCRIPT, "--json")),
+        ("python", py_cmd(repo, SCRIPT, "--json")),
+    ]
     if HAS_POWERSHELL:
-        commands.append(ps_cmd(repo, SCRIPT, "-Json"))
-    for command in commands:
+        commands.append(("powershell", ps_cmd(repo, SCRIPT, "-Json")))
+    for variant, command in commands:
         result = run(command, repo, env)
         assert result.returncode == 0, result.stderr
         payload = json_stdout(result)
-        assert Path(payload["FEATURE_DIR"]) == feature
-        assert Path(payload["TASKS_TEMPLATE"]) == expected_path
+        for key, path in (("FEATURE_DIR", feature), ("TASKS_TEMPLATE", expected_path)):
+            expected = {path}
+            if variant == "bash":
+                # Git Bash on Windows can print MSYS paths such as /c/Users/...
+                expected.add(Path(_bash_posix_path(path)))
+            assert Path(payload[key]) in expected, (variant, key, payload[key])
         assert payload["TASKS_TEMPLATE_CONTENT"] == expected_path.read_bytes().decode("utf-8")
         assert {p: p.read_bytes() for p in feature.iterdir()} == before
 
