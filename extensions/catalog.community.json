@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-10T00:00:00Z",
+  "updated_at": "2026-11-12T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "ado": {
@@ -2349,6 +2349,39 @@
       "stars": 0,
       "created_at": "2026-07-08T00:00:00Z",
       "updated_at": "2026-07-08T00:00:00Z"
+    },
+    "egm": {
+      "name": "Elephant-Goldfish Model",
+      "id": "egm",
+      "description": "Implements EGM (https://egm.dev/) into spec-kit universe. The extension has commands that minimally modify the upstream EGM skills to use spec-kit syntax and make it agnostic to subagent instructions (which are added by presets)",
+      "author": "Kapil Sachdeva",
+      "version": "0.9.0",
+      "download_url": "https://github.com/ksachdeva/spec-kit-extensions/releases/download/extension-egm-v0.9.0/extension-egm-0.9.0.zip",
+      "sha256": "2b0d1997c9ebc5b21433cd3f78deedd9b113a1b3ed69f4bc58c16010b41c8641",
+      "repository": "https://github.com/ksachdeva/spec-kit-extensions",
+      "homepage": "https://github.com/ksachdeva/spec-kit-extensions",
+      "documentation": "https://github.com/ksachdeva/spec-kit-extensions/extensions/egm/README.md",
+      "changelog": "https://github.com/ksachdeva/spec-kit-extensions/extensions/egm/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": "0.9.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 0
+      },
+      "tags": [
+        "process",
+        "plan",
+        "review"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-12T00:00:00Z",
+      "updated_at": "2026-11-12T00:00:00Z"
     },
     "epic": {
       "name": "Epic",
