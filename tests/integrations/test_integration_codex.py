@@ -25,16 +25,70 @@ from .test_integration_base_skills import SkillsIntegrationTests
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.fixture(autouse=True)
-def _private_backups(monkeypatch):
-    """Exercise in-place rewrites on every platform.
+def _access(path: Path):
+    """The POSIX permission bits, or on Windows the access-control list as SDDL."""
+    if os.name != "nt":
+        return stat.S_IMODE(path.stat().st_mode)
+    import ctypes
+    from ctypes import wintypes
 
-    They are refused on Windows (``_backups_are_private``); the tests that
-    cover that refusal replace this again.
-    """
-    from specify_cli.integrations import codex
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    get = advapi.GetNamedSecurityInfoW
+    get.argtypes = [
+        wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD, wintypes.LPVOID, wintypes.LPVOID,
+        wintypes.LPVOID, wintypes.LPVOID, ctypes.POINTER(ctypes.c_void_p),
+    ]
+    get.restype = wintypes.DWORD
+    descriptor = ctypes.c_void_p()
+    code = get(str(path), 1, 0x4, None, None, None, None, ctypes.byref(descriptor))  # SE_FILE_OBJECT, DACL
+    if code:
+        raise ctypes.WinError(code)
+    return _sddl_of(descriptor)
 
-    monkeypatch.setattr(codex, "_backups_are_private", lambda: True)
+
+def _canonical_sddl(sddl: str) -> str:
+    """``sddl`` as Windows writes it back, so aliases such as ``WD`` compare equal."""
+    import ctypes
+    from ctypes import wintypes
+
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    convert = advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW
+    convert.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p), wintypes.LPVOID,
+    ]
+    convert.restype = wintypes.BOOL
+    descriptor = ctypes.c_void_p()
+    if not convert(sddl, 1, ctypes.byref(descriptor), None):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return _sddl_of(descriptor)
+
+
+def _sddl_of(descriptor) -> str:
+    """The DACL of a ``LocalAlloc``ed security descriptor as SDDL; frees it."""
+    import ctypes
+    from ctypes import wintypes
+
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    to_text = advapi.ConvertSecurityDescriptorToStringSecurityDescriptorW
+    to_text.argtypes = [
+        ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+        ctypes.POINTER(wintypes.LPWSTR), wintypes.LPVOID,
+    ]
+    to_text.restype = wintypes.BOOL
+    kernel.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel.LocalFree.restype = ctypes.c_void_p
+    dacl = 0x4  # DACL_SECURITY_INFORMATION
+    try:
+        text = wintypes.LPWSTR()
+        if not to_text(descriptor, 1, dacl, ctypes.byref(text), None):
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            return text.value
+        finally:
+            kernel.LocalFree(ctypes.cast(text, ctypes.c_void_p))
+    finally:
+        kernel.LocalFree(descriptor)
 
 
 class TestCodexIntegration(SkillsIntegrationTests):
@@ -1117,18 +1171,17 @@ class TestCodexNoModelInvocationOwnership:
         assert not list(tmp_path.rglob("*.speckit-backup"))
 
     def test_edit_made_while_backing_up_is_not_overwritten(self, tmp_path, monkeypatch):
-        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations import codex
 
         path = self._seed(tmp_path)
-        real_create_bytes = FileHelper.create_bytes
+        real_create_private = codex.create_private
 
-        def create_bytes(self, rel, *args, **kwargs):
-            real_create_bytes(self, rel, *args, **kwargs)
-            if str(rel).endswith(".speckit-backup"):
-                with path.open("ab") as stream:  # in place, so the inode is unchanged
-                    stream.write(b"# edited\n")
+        def create_private(helper, rel, content):
+            real_create_private(helper, rel, content)
+            with path.open("ab") as stream:  # in place, so the inode is unchanged
+                stream.write(b"# edited\n")
 
-        monkeypatch.setattr(FileHelper, "create_bytes", create_bytes)
+        monkeypatch.setattr(codex, "create_private", create_private)
         with pytest.raises(PermissionError, match="changed while being updated"):
             self._setup(tmp_path)
         assert path.read_bytes().endswith(b"# edited\n")
@@ -1311,43 +1364,6 @@ class TestCodexNoModelInvocationOwnership:
         assert backup.exists()
         assert path.resolve() in [p.resolve() for p in skipped]
 
-    def test_windows_refuses_to_rewrite_an_existing_file_before_writing(self, tmp_path, monkeypatch):
-        from specify_cli.integrations import codex
-
-        monkeypatch.setattr(codex, "_backups_are_private", lambda: False)
-        path = self._seed(tmp_path)
-        original = path.read_bytes()
-        with pytest.raises(ValueError, match="Windows"):
-            get_integration("codex").preflight_setup(tmp_path, {"no_model_invocation": True})
-        with pytest.raises(ValueError, match="Windows"):
-            self._setup(tmp_path)
-        assert path.read_bytes() == original
-        assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
-        assert not list(tmp_path.rglob("*.speckit-backup"))
-
-    def test_windows_accepts_a_file_that_already_sets_the_policy(self, tmp_path, monkeypatch):
-        from specify_cli.integrations import codex
-
-        monkeypatch.setattr(codex, "_backups_are_private", lambda: False)
-        content = b"interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n"
-        path = self._seed(tmp_path, content)
-        self._setup(tmp_path)
-        assert path.read_bytes() == content
-        assert len(self._other_policies(tmp_path)) == len(CORE_COMMAND_NAMES) - 1
-
-    def test_windows_cleanup_leaves_the_policy_in_a_user_file(self, tmp_path, monkeypatch, caplog):
-        from specify_cli.integrations import codex
-
-        path = self._seed(tmp_path)
-        manifest = self._setup(tmp_path)
-        with_policy = path.read_bytes()
-        monkeypatch.setattr(codex, "_backups_are_private", lambda: False)
-        with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
-            get_integration("codex").teardown(tmp_path, manifest)
-        assert path.read_bytes() == with_policy
-        assert "remove it by hand" in caplog.text
-        assert not list(tmp_path.rglob("*.speckit-backup"))
-
     def test_preflight_refuses_a_switch_before_the_outgoing_integration_is_removed(self, tmp_path):
         from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
 
@@ -1405,6 +1421,38 @@ class TestCodexNoModelInvocationOwnership:
         monkeypatch.setattr(codex, "_write_fd", write_fd)
         with pytest.raises(KeyboardInterrupt):
             self._setup(tmp_path)
+
+    def test_backup_is_readable_by_its_owner_only(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        if os.name == "nt":
+            # Everyone may read anything created here unless inheritance is blocked.
+            subprocess.run(
+                ["icacls", str(tmp_path), "/grant", "*S-1-1-0:(OI)(CI)R"],
+                check=True, capture_output=True,
+            )
+        path = self._seed(tmp_path)
+        backup = path.with_name("openai.yaml.speckit-backup")
+        seen = []
+        real_write = codex._write_fd
+
+        def write_fd(fd, content):
+            if not seen:
+                seen.append((backup.read_bytes(), _access(backup)))
+            real_write(fd, content)
+
+        monkeypatch.setattr(codex, "_write_fd", write_fd)
+        original = path.read_bytes()
+        self._setup(tmp_path)
+        assert seen and seen[0][0] == original
+        if os.name == "nt":
+            from specify_cli.integrations.codex._private_file import owner_only_sddl
+
+            assert seen[0][1] == _canonical_sddl(owner_only_sddl())
+            assert ";WD)" in _access(path)  # the inherited grant to Everyone did apply here
+        else:
+            assert seen[0][1] == 0o600
+        assert not backup.exists()
 
     def test_failed_backup_removal_restores_the_original(self, tmp_path, monkeypatch):
         from specify_cli.integrations import codex
@@ -1684,11 +1732,38 @@ class TestCodexFileHelperInternals:
     """Pins the ``FileHelper`` internals ``_replace_file`` rewrites through.
 
     ``FileHelper`` has no public in-place byte rewrite, so the Codex package
-    uses ``_path`` and ``_overwrite_descriptor``. A change to either should
+    uses ``_path`` and ``_overwrite_descriptor``, and on Windows creates its
+    backup through ``_creation_directory``. A change to any of them should
     fail here rather than silently in a policy rewrite.
     """
 
     REL = ".agents/skills/speckit-plan/agents/openai.yaml"
+
+    def test_create_private_creates_exclusively(self, tmp_path):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        rel = f"{self.REL}.speckit-backup"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        with FileHelper(tmp_path) as helper:
+            create_private(helper, rel, b"first")
+            with pytest.raises(FileExistsError):
+                create_private(helper, rel, b"second")
+        assert (tmp_path / rel).read_bytes() == b"first"
+
+    @pytest.mark.skipif(os.name == "nt", reason="needs POSIX symlinks")
+    def test_create_private_refuses_a_symlinked_parent(self, tmp_path):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        project = tmp_path / "project"
+        (project / ".agents" / "skills" / "speckit-plan").mkdir(parents=True)
+        (project / ".agents" / "skills" / "speckit-plan" / "agents").symlink_to(outside)
+        with FileHelper(project) as helper, pytest.raises((OSError, ValueError)):
+            create_private(helper, f"{self.REL}.speckit-backup", b"secret")
+        assert not list(outside.iterdir())
 
     def test_overwrite_descriptor_rewrites_in_place_without_truncating(self, tmp_path):
         from specify_cli.file_helper import FileHelper

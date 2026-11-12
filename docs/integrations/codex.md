@@ -62,11 +62,7 @@ description in Codex's context.
   comments and formatting are not kept. It is rewritten in place, so its
   owner, group and access-control list are kept; a read-only file, or one with
   other hard links, is refused instead, as is one that changes while Spec Kit
-  is updating it. On Windows an existing file is never rewritten, because its
-  backup (below) could not be kept as private as the file: setup with the
-  option stops with an error naming it, and clearing the option or uninstall
-  leaves the policy in it with a warning. Set `policy.allow_implicit_invocation`
-  in such a file yourself, or move it aside, and run the command again.
+  is updating it.
   Its values are read and written by the YAML 1.2 rules Codex uses, so
   unquoted values such as `On` or `no` stay strings and numbers such as `007`
   keep their text. One that already sets it to `false` is left untouched, and

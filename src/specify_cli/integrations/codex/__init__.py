@@ -32,6 +32,7 @@ from ..base import (
 # the same lexical path. Pinned by ``TestCodexManifestInternals``.
 from ..manifest import IntegrationManifest, _validate_record_path
 from . import _openai_yaml
+from ._private_file import create_private
 
 logger = logging.getLogger(__name__)
 
@@ -41,26 +42,6 @@ _MAX_CONTEXT_WINDOW = 2**63 - 1
 
 
 _BACKUP_SUFFIX = ".speckit-backup"
-
-
-def _backups_are_private() -> bool:
-    """Whether a backup can be created readable by its owner only.
-
-    ``FileHelper.create_bytes`` passes ``0o600`` to ``os.open``, which on
-    Windows sets no access-control list, so a backup would inherit the
-    directory's and could be readable by users the original is not. Existing
-    files are therefore not rewritten on Windows. Tests replace this.
-    """
-    return os.name != "nt"
-
-
-def _windows_refusal(rel: str) -> str:
-    return (
-        f"Cannot update {rel}: Spec Kit does not rewrite an existing file on "
-        "Windows, because its backup could not be kept private. Set "
-        "policy.allow_implicit_invocation to false in it yourself, or move it "
-        "aside, and retry"
-    )
 
 
 def _read_policy(root: Path, rel: str) -> bytes:
@@ -88,8 +69,9 @@ def _replace_file(
 
     Until the new bytes are on disk and the backup is gone, a copy of the
     previous ones is kept beside the file as ``<name>.speckit-backup``. The
-    backup is created exclusively: one left by an interrupted run stops the
-    rewrite instead of being overwritten. A failure up to and including
+    backup is created exclusively and readable by the current user only (on
+    Windows, through an access-control list set as it is created): one left
+    by an interrupted run stops the rewrite instead of being overwritten. A failure up to and including
     removing the backup restores the previous bytes before it propagates.
     ``on_written`` receives the previous bytes once the rewrite is complete,
     so a caller can still undo it if closing the file fails afterwards.
@@ -97,8 +79,6 @@ def _replace_file(
     differ from ``expected``, the bytes ``content`` was derived from, or that
     changes between being read and being opened for writing.
     """
-    if not _backups_are_private():
-        raise PermissionError(errno.EPERM, _windows_refusal(rel), str(root / rel))
     backup_rel = f"{rel}{_BACKUP_SUFFIX}"
     with FileHelper(root) as helper:
         # FileHelper has no public in-place byte rewrite; this is the anchored,
@@ -113,7 +93,7 @@ def _replace_file(
             )
         with changing_file(root / backup_rel):
             try:
-                helper.create_bytes(backup_rel, original, mode=0o600)
+                create_private(helper, backup_rel, original)
             except FileExistsError as exc:
                 raise FileExistsError(
                     errno.EEXIST,
@@ -357,8 +337,6 @@ class CodexIntegration(SkillsIntegration):
             data = self._load_openai_yaml(raw, rel)
             ownership = "whole" if self._is_generated(project_root, rel, prior, raw) else "partial"
             if (data.get("policy") or {}).get("allow_implicit_invocation") is not False:
-                if not _backups_are_private():
-                    raise ValueError(_windows_refusal(rel))
                 try:
                     _require_rewritable(path)
                 except OSError as exc:
