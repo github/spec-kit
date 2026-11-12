@@ -229,4 +229,3 @@ def test_builtin_journal_removes_a_new_directory_whose_pending_write_never_lande
             raise OSError("disk full")
 
     assert sorted(path.name for path in project.iterdir()) == ["README.md"]
-

@@ -578,4 +578,3 @@ def test_init_force_registers_extensions_in_the_new_generic_commands_dir(tmp_pat
         path.name for path in old_artifacts
     ]
     assert not list((project / ".old" / "commands").glob("speckit.git.*"))
-
