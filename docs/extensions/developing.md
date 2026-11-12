@@ -358,9 +358,11 @@ symlink itself is rejected. Files users create later in `.specify/extensions/<id
 location may not be gitignored. Prefer explicit paths or narrow patterns over
 broad wildcards such as `**`.
 
-Copies keep the source file's permission bits, narrowed by the process umask and
-never widened, so an executable script stays executable and a private file stays
-private. They are created with those bits, not tightened afterwards.
+Copies are created with the source file's permission bits plus owner read/write,
+narrowed by the process umask. On POSIX, a `.sh` copy with a shebang and no
+execute bits is then made executable: execute bits are added for each read bit,
+with at least owner execute. For example, a `0644` script can become `0755`; a `0600` script
+can become `0700`. Do not rely on exact source modes being preserved.
 
 Copies are hash-tracked. During rendering, an unowned existing destination is
 skipped with a warning unless the user supplies `--force`; on refresh, a
