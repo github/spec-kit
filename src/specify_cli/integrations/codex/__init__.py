@@ -43,11 +43,39 @@ _MAX_CONTEXT_WINDOW = 2**63 - 1
 _BACKUP_SUFFIX = ".speckit-backup"
 
 
+def _backups_are_private() -> bool:
+    """Whether a backup can be created readable by its owner only.
+
+    ``FileHelper.create_bytes`` passes ``0o600`` to ``os.open``, which on
+    Windows sets no access-control list, so a backup would inherit the
+    directory's and could be readable by users the original is not. Existing
+    files are therefore not rewritten on Windows. Tests replace this.
+    """
+    return os.name != "nt"
+
+
+def _windows_refusal(rel: str) -> str:
+    return (
+        f"Cannot update {rel}: Spec Kit does not rewrite an existing file on "
+        "Windows, because its backup could not be kept private. Add "
+        "'policy: {allow_implicit_invocation: false}' to it yourself, or move it "
+        "aside and retry"
+    )
+
+
+def _read_policy(root: Path, rel: str) -> bytes:
+    """Read ``rel`` without following a symlinked ancestor out of ``root``."""
+    with FileHelper(root) as helper:
+        return helper.read_bytes(rel)
+
+
 def _replace_file(
     root: Path,
     rel: str,
     content: bytes,
     on_written: Callable[[bytes], None] | None = None,
+    *,
+    expected: bytes | None = None,
 ) -> bytes:
     """Rewrite an existing file in place and return its previous bytes.
 
@@ -65,8 +93,12 @@ def _replace_file(
     removing the backup restores the previous bytes before it propagates.
     ``on_written`` receives the previous bytes once the rewrite is complete,
     so a caller can still undo it if closing the file fails afterwards.
-    Read-only and hard-linked files are refused.
+    Read-only and hard-linked files are refused, as is a file whose bytes
+    differ from ``expected``, the bytes ``content`` was derived from, or that
+    changes between being read and being opened for writing.
     """
+    if not _backups_are_private():
+        raise PermissionError(errno.EPERM, _windows_refusal(rel), str(root / rel))
     backup_rel = f"{rel}{_BACKUP_SUFFIX}"
     with FileHelper(root) as helper:
         # FileHelper has no public in-place byte rewrite; this is the anchored,
@@ -75,6 +107,10 @@ def _replace_file(
         destination = helper._path(rel)
         read = os.stat(destination, follow_symlinks=False)
         original = helper.read_bytes(rel)
+        if expected is not None and original != expected:
+            raise PermissionError(
+                errno.EPERM, "File changed since it was read; retry", str(root / rel),
+            )
         with changing_file(root / backup_rel):
             try:
                 helper.create_bytes(backup_rel, original, mode=0o600)
@@ -155,6 +191,8 @@ def _require_rewritable_fd(fd: int, path: Path, read: os.stat_result) -> None:
     info = os.fstat(fd)
     if (info.st_dev, info.st_ino) != (read.st_dev, read.st_ino):
         raise PermissionError(errno.EPERM, "File was replaced while being updated", str(path))
+    if (info.st_size, info.st_mtime_ns) != (read.st_size, read.st_mtime_ns):
+        raise PermissionError(errno.EPERM, "File changed while being updated", str(path))
     if not stat.S_ISREG(info.st_mode):
         raise PermissionError(errno.EPERM, "Not a regular file", str(path))
     if not info.st_mode & 0o222:
@@ -208,11 +246,11 @@ class CodexIntegration(SkillsIntegration):
     _GENERATED_POLICY: dict[str, Any] = {"policy": {"allow_implicit_invocation": False}}
 
     @staticmethod
-    def _load_openai_yaml(path: Path, rel: str) -> dict[str, Any]:
+    def _load_openai_yaml(raw: bytes, rel: str) -> dict[str, Any]:
         """Parse an existing ``openai.yaml``; raise rather than guess at unusable content."""
         try:
-            loaded = yaml.load(path.read_text(encoding="utf-8"), Loader=_openai_yaml.Yaml12Loader)
-        except (yaml.YAMLError, OSError, ValueError) as exc:  # ValueError covers decoding and bad numbers
+            loaded = yaml.load(raw.decode("utf-8"), Loader=_openai_yaml.Yaml12Loader)
+        except (yaml.YAMLError, ValueError) as exc:  # ValueError covers decoding and bad numbers
             raise ValueError(f"Cannot update {rel}: {exc}") from exc
         if loaded is None:  # an empty file holds nothing to preserve
             return {}
@@ -254,7 +292,9 @@ class CodexIntegration(SkillsIntegration):
             )
             return None
 
-    def _is_generated(self, root: Path, rel: str, prior: IntegrationManifest | None) -> bool:
+    def _is_generated(
+        self, root: Path, rel: str, prior: IntegrationManifest | None, raw: bytes | None = None,
+    ) -> bool:
         """Whether ``rel`` is a policy-only file an earlier install generated.
 
         Content equality also counts, so a CRLF checkout or an added comment
@@ -268,9 +308,11 @@ class CodexIntegration(SkillsIntegration):
             _validate_record_path(Path(rel), root)
             if path.is_symlink() or not path.is_file():
                 return False
-            if hashlib.sha256(path.read_bytes()).hexdigest() == prior.files[rel]:
+            if raw is None:
+                raw = _read_policy(root, rel)
+            if hashlib.sha256(raw).hexdigest() == prior.files[rel]:
                 return True
-            loaded = self._load_openai_yaml(path, rel)
+            loaded = self._load_openai_yaml(raw, rel)
             # ``0 == False`` in Python, so check the value's type as well.
             return loaded == self._GENERATED_POLICY and (
                 loaded["policy"]["allow_implicit_invocation"] is False
@@ -280,11 +322,13 @@ class CodexIntegration(SkillsIntegration):
 
     def _plan_policy(
         self, project_root: Path, rel: str, prior: IntegrationManifest | None
-    ) -> tuple[str, str | None, str] | None:
-        """Return ``(rel, content, ownership)`` to record, or ``None`` to leave a user file alone.
+    ) -> tuple[str, str | None, str, bytes | None] | None:
+        """Return ``(rel, content, ownership, read)`` to record, or ``None`` to leave a user file alone.
 
         ``content`` is ``None`` when the existing file already holds the policy,
-        so it is recorded without being rewritten.
+        so it is recorded without being rewritten. ``read`` is the existing
+        file's bytes, from which ``content`` was built, or ``None`` if it is new.
+        Nothing is written, so ``preflight_setup`` runs this too.
         """
         path = project_root / rel
         # Checks every ancestor for symlinks before anything is read or written.
@@ -293,15 +337,22 @@ class CodexIntegration(SkillsIntegration):
             if (project_root / parent).exists() and not (project_root / parent).is_dir():
                 raise ValueError(f"Cannot update {rel}: {parent.as_posix()} is not a directory")
         tracked = prior is not None and rel in prior.files
+        raw: bytes | None = None
         if not path.exists():
             data: dict[str, Any] = {}
             ownership = "whole"
         elif not path.is_file():
             raise ValueError(f"Cannot update {rel}: not a regular file")
         else:
-            data = self._load_openai_yaml(path, rel)
-            ownership = "whole" if self._is_generated(project_root, rel, prior) else "partial"
+            try:
+                raw = _read_policy(project_root, rel)
+            except OSError as exc:
+                raise ValueError(f"Cannot update {rel}: {exc}") from exc
+            data = self._load_openai_yaml(raw, rel)
+            ownership = "whole" if self._is_generated(project_root, rel, prior, raw) else "partial"
             if (data.get("policy") or {}).get("allow_implicit_invocation") is not False:
+                if not _backups_are_private():
+                    raise ValueError(_windows_refusal(rel))
                 try:
                     _require_rewritable(path)
                 except OSError as exc:
@@ -321,7 +372,7 @@ class CodexIntegration(SkillsIntegration):
             # The user already set it; claiming it would let cleanup remove their setting.
             return None
         if already_set and path.exists():
-            return rel, None, ownership
+            return rel, None, ownership, raw
         backup = project_root / f"{rel}{_BACKUP_SUFFIX}"
         if backup.exists() or backup.is_symlink():
             # ``rel`` may be a half-written rewrite, or was deleted to start
@@ -331,7 +382,7 @@ class CodexIntegration(SkillsIntegration):
                 f"update; compare it with {path.name}, keep the right copy and "
                 "delete the backup"
             )
-        return rel, _openai_yaml.dump(data), ownership
+        return rel, _openai_yaml.dump(data), ownership, raw
 
     def _remove_policy(self, project_root: Path, rel: str, *, final: bool = False) -> bool:
         """Drop the managed policy from a user-owned file; return whether it is now policy-free."""
@@ -340,13 +391,16 @@ class CodexIntegration(SkillsIntegration):
             _validate_record_path(Path(rel), project_root)
             if not path.is_file():
                 return False
-            data = self._load_openai_yaml(path, rel)
+            raw = _read_policy(project_root, rel)
+            data = self._load_openai_yaml(raw, rel)
             policy = data.get("policy")
             if isinstance(policy, dict) and policy.get("allow_implicit_invocation") is False:
                 del policy["allow_implicit_invocation"]
                 if not policy:
                     del data["policy"]
-                _replace_file(project_root, rel, _openai_yaml.dump(data).encode("utf-8"))
+                _replace_file(
+                    project_root, rel, _openai_yaml.dump(data).encode("utf-8"), expected=raw,
+                )
         except (OSError, ValueError) as exc:
             # ``final``: nothing will retry, as uninstall drops the manifest.
             hint = (
@@ -382,6 +436,11 @@ class CodexIntegration(SkillsIntegration):
             if rel in keep or not self._is_policy_rel(rel):
                 continue
             released.add(rel)
+            if self._has_backup(project_root, rel):
+                # Deleting the file would leave only the backup, which the
+                # recovery steps compare it with; retry once that is resolved.
+                self._retain(manifest, rel, recorded_hash, modes[rel])
+                continue
             if self._is_generated(project_root, rel, prior):
                 self._retain(generated, rel, recorded_hash, "whole")
                 continue
@@ -398,6 +457,19 @@ class CodexIntegration(SkillsIntegration):
             if self._may_still_exist(project_root, rel):
                 self._retain(manifest, rel, prior.files[rel], "whole")
         return released
+
+    @staticmethod
+    def _has_backup(root: Path, rel: str) -> bool:
+        """Whether an interrupted update left a backup beside ``rel``; warn if so."""
+        backup = root / f"{rel}{_BACKUP_SUFFIX}"
+        if not (backup.exists() or backup.is_symlink()):
+            return False
+        logger.warning(
+            "Leaving %s in place: %s is left from an interrupted update; compare "
+            "them, keep the right copy and delete the backup",
+            rel, backup.name,
+        )
+        return True
 
     @staticmethod
     def _may_still_exist(root: Path, rel: str) -> bool:
@@ -427,7 +499,7 @@ class CodexIntegration(SkillsIntegration):
             return mode
         try:
             _validate_record_path(Path(rel), root)
-            if hashlib.sha256((root / rel).read_bytes()).hexdigest() != recorded_hash:
+            if hashlib.sha256(_read_policy(root, rel)).hexdigest() != recorded_hash:
                 return "partial"
         except (OSError, ValueError):
             pass
@@ -471,6 +543,39 @@ class CodexIntegration(SkillsIntegration):
             name.removeprefix("speckit-") in CORE_COMMAND_NAMES
         )
 
+    def _plan_policies(
+        self, root: Path, prior: IntegrationManifest | None,
+    ) -> dict[str, tuple[str, str | None, str, bytes | None] | None]:
+        """Plan every core command's policy, rejecting unusable layouts and files."""
+        from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+
+        plans: dict[str, tuple[str, str | None, str, bytes | None] | None] = {}
+        for name in sorted(CORE_COMMAND_NAMES):
+            rel = self._policy_rel(name)
+            try:
+                # Policies are recorded and cleaned up by their lexical path,
+                # which a symlinked skills or skill directory would not match.
+                _validate_record_path(Path(rel), root)
+            except ValueError as exc:
+                raise ValueError(f"Cannot use --no-model-invocation: {exc}") from exc
+            plans[name] = self._plan_policy(root, rel, prior)
+        return plans
+
+    def preflight_setup(
+        self,
+        project_root: Path,
+        parsed_options: dict[str, Any] | None = None,
+        *,
+        script_type: str | None = None,
+    ) -> None:
+        # Install, switch and upgrade call this before changing anything, so a
+        # file setup would refuse stops a switch before the outgoing
+        # integration is removed. Setup repeats the checks, since files can
+        # change in between.
+        if (parsed_options or {}).get("no_model_invocation") is True:
+            root = project_root.resolve()
+            self._plan_policies(root, self._prior_manifest(root))
+
     def setup(
         self,
         project_root: Path,
@@ -485,28 +590,16 @@ class CodexIntegration(SkillsIntegration):
         enabled = (parsed_options or {}).get("no_model_invocation") is True
         prior = self._prior_manifest(root)
         self._released_policy_rels = frozenset()
+        skills_rel = self.registrar_config["dir"]
         if enabled:
             # Reject unusable layouts and existing policy files before anything
-            # is written.
-            from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
-
-            skills_rel = self.registrar_config["dir"]
-            plans: dict[str, tuple[str, str | None, str] | None] = {}
-            for name in sorted(CORE_COMMAND_NAMES):
-                rel = self._policy_rel(name)
-                try:
-                    # Policies are recorded and cleaned up by their lexical
-                    # path, which a symlinked skills or skill directory would
-                    # not match.
-                    _validate_record_path(Path(rel), root)
-                except ValueError as exc:
-                    raise ValueError(f"Cannot use --no-model-invocation: {exc}") from exc
-                # ``super().setup`` writes only SKILL.md, so these plans stay valid.
-                plans[name] = self._plan_policy(root, rel, prior)
+            # is written. ``super().setup`` writes only SKILL.md, so these plans
+            # stay valid.
+            plans = self._plan_policies(root, prior)
         created = super().setup(
             project_root, manifest, parsed_options=parsed_options, **opts
         )
-        planned: list[tuple[str, str | None, str]] = []
+        planned: list[tuple[str, str | None, str, bytes | None]] = []
         if enabled:
             for skill_file in [f for f in created if f.name == "SKILL.md"]:
                 name = skill_file.parent.name
@@ -516,28 +609,34 @@ class CodexIntegration(SkillsIntegration):
                     plan = plans[name.removeprefix("speckit-")]
                     if plan is not None:
                         planned.append(plan)
-        # ``(rel, prior bytes or None if new, whether its directory was new)``
-        written: list[tuple[str, bytes | None, bool]] = []
+        # ``(rel, prior bytes or None if new, bytes written, whether its
+        # directory was new)``
+        written: list[tuple[str, bytes | None, bytes, bool]] = []
         try:
-            for rel, content, ownership in planned:
+            for rel, content, ownership, read in planned:
                 path = root / rel
-                if path.exists():
+                if read is not None:
                     # ``record_file`` truncates in place; keep the user's file
                     # intact if the write fails.
                     _validate_record_path(Path(rel), root)
                     if content is not None:
+                        new = content.encode("utf-8")
                         _replace_file(
-                            root, rel, content.encode("utf-8"),
-                            on_written=lambda original, rel=rel: written.append((rel, original, False)),
+                            root, rel, new, expected=read,
+                            on_written=lambda original, rel=rel, new=new: written.append(
+                                (rel, original, new, False)
+                            ),
                         )
                     manifest.record_existing(rel, ownership=ownership)
                     created.append(path)
                 else:
-                    written.append((rel, None, not path.parent.exists()))
+                    if path.exists() or path.is_symlink():
+                        raise ValueError(f"Cannot update {rel}: it was created while updating")
+                    written.append((rel, None, content.encode("utf-8"), not path.parent.exists()))
                     created.append(manifest.record_file(rel, content, ownership=ownership))
             if prior is not None:
                 self._released_policy_rels = frozenset(
-                    self._release_prior_policies(root, manifest, prior, {rel for rel, _, _ in planned})
+                    self._release_prior_policies(root, manifest, prior, {plan[0] for plan in planned})
                 )
         except BaseException:
             # A retry would see these policies untracked and take them for the
@@ -551,20 +650,36 @@ class CodexIntegration(SkillsIntegration):
         return created
 
     @staticmethod
-    def _roll_back_policies(root: Path, written: list[tuple[str, bytes | None, bool]]) -> None:
-        """Undo the policy writes of a setup that failed part-way."""
-        for rel, original, new_dir in reversed(written):
-            path = root / rel
+    def _roll_back_policies(root: Path, written: list[tuple[str, bytes | None, bytes, bool]]) -> None:
+        """Undo the policy writes of a setup that failed part-way.
+
+        A file that no longer holds what setup wrote is left alone. Only runs
+        outside a lifecycle transaction, so nothing journals it.
+        """
+        for rel, original, new, new_dir in reversed(written):
             try:
                 if original is not None:
-                    _replace_file(root, rel, original)
+                    _replace_file(root, rel, original, expected=new)
                     continue
-                # Only runs outside a lifecycle transaction, so nothing journals it.
-                if path.is_file() and not path.is_symlink():
-                    path.unlink()
-                if new_dir and path.parent.is_dir():
-                    path.parent.rmdir()
-            except OSError as exc:
+                parent = PurePosixPath(rel).parent.as_posix()
+                with FileHelper(root) as helper:
+                    # Deleting through the helper never follows a symlinked
+                    # ancestor out of the project.
+                    try:
+                        current = helper.read_bytes(rel)
+                    except FileNotFoundError:  # the write itself failed
+                        current = None
+                    if current is not None:
+                        if current != new:
+                            logger.warning("Leaving %s in place: it changed after it was written", rel)
+                            continue
+                        helper.delete(rel)
+                    if new_dir:
+                        try:
+                            helper.delete(parent)
+                        except FileNotFoundError:
+                            pass
+            except (OSError, ValueError) as exc:  # ValueError covers FileHelperError
                 logger.warning("Could not undo the policy written to %s: %s", rel, exc)
 
     def teardown(
@@ -581,8 +696,13 @@ class CodexIntegration(SkillsIntegration):
         # deletes them, and edited ones lose only the policy unless forced.
         root = project_root.resolve()
         cleaned: set[Path] = set()
-        for rel, mode in manifest.ownership_modes.items():
+        for rel, mode in list(manifest.ownership_modes.items()):
             if not self._is_policy_rel(rel):
+                continue
+            if self._has_backup(root, rel):
+                # ``uninstall`` never deletes a partial file, so both copies
+                # stay for the recovery steps.
+                manifest.set_ownership(rel, "partial")
                 continue
             if mode != "whole":
                 if self._remove_policy(root, rel, final=True):

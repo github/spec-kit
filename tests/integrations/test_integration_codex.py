@@ -25,6 +25,18 @@ from .test_integration_base_skills import SkillsIntegrationTests
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.fixture(autouse=True)
+def _private_backups(monkeypatch):
+    """Exercise in-place rewrites on every platform.
+
+    They are refused on Windows (``_backups_are_private``); the tests that
+    cover that refusal replace this again.
+    """
+    from specify_cli.integrations import codex
+
+    monkeypatch.setattr(codex, "_backups_are_private", lambda: True)
+
+
 class TestCodexIntegration(SkillsIntegrationTests):
     KEY = "codex"
     FOLDER = ".agents/"
@@ -413,14 +425,16 @@ class TestCodexNoModelInvocationOwnership:
     def test_unreadable_existing_file_aborts_without_overwriting(self, tmp_path, monkeypatch):
         path = self._seed(tmp_path)
         original = path.read_bytes()
-        real_read_text = Path.read_text
+        from specify_cli.file_helper import FileHelper
 
-        def read_text(self, *args, **kwargs):
-            if self.name == "openai.yaml":
+        real_read_bytes = FileHelper.read_bytes
+
+        def read_bytes(self, rel, *args, **kwargs):
+            if Path(rel).name == "openai.yaml":
                 raise PermissionError("denied")
-            return real_read_text(self, *args, **kwargs)
+            return real_read_bytes(self, rel, *args, **kwargs)
 
-        monkeypatch.setattr(Path, "read_text", read_text)
+        monkeypatch.setattr(FileHelper, "read_bytes", read_bytes)
         with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml"):
             self._setup(tmp_path)
         monkeypatch.undo()
@@ -1082,6 +1096,199 @@ class TestCodexNoModelInvocationOwnership:
         assert backup.read_bytes() == b"interface:\n  display_name: Earlier\n"
         assert manifest.ownership_modes[self.PLAN_REL] == "partial"
         assert "interrupted update" in caplog.text
+
+    def test_edit_made_after_planning_is_not_overwritten(self, tmp_path, monkeypatch):
+        from specify_cli.integrations.base import SkillsIntegration
+
+        path = self._seed(tmp_path)
+        edited = b"interface:\n  display_name: Edited\n"
+        real_setup = SkillsIntegration.setup
+
+        def setup(self, *args, **kwargs):
+            # Runs between planning and writing the policies.
+            created = real_setup(self, *args, **kwargs)
+            path.write_bytes(edited)
+            return created
+
+        monkeypatch.setattr(SkillsIntegration, "setup", setup)
+        with pytest.raises(PermissionError, match="changed since it was read"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == edited
+        assert not list(tmp_path.rglob("*.speckit-backup"))
+
+    def test_edit_made_while_backing_up_is_not_overwritten(self, tmp_path, monkeypatch):
+        from specify_cli.file_helper import FileHelper
+
+        path = self._seed(tmp_path)
+        real_create_bytes = FileHelper.create_bytes
+
+        def create_bytes(self, rel, *args, **kwargs):
+            real_create_bytes(self, rel, *args, **kwargs)
+            if str(rel).endswith(".speckit-backup"):
+                with path.open("ab") as stream:  # in place, so the inode is unchanged
+                    stream.write(b"# edited\n")
+
+        monkeypatch.setattr(FileHelper, "create_bytes", create_bytes)
+        with pytest.raises(PermissionError, match="changed while being updated"):
+            self._setup(tmp_path)
+        assert path.read_bytes().endswith(b"# edited\n")
+        assert not list(tmp_path.rglob("*.speckit-backup"))
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_read_does_not_follow_an_ancestor_swapped_for_a_symlink(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        path = self._seed(project)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "openai.yaml").write_bytes(b"interface:\n  display_name: Secret\n")
+        real_validate = codex._validate_record_path
+        calls = []
+
+        def validate(rel, root):
+            result = real_validate(rel, root)
+            if Path(rel).as_posix() == self.PLAN_REL:
+                calls.append(rel)
+                # The second check is the last one before the file is read.
+                if len(calls) == 2:
+                    path.parent.rename(project / "moved-agents")
+                    path.parent.symlink_to(outside, target_is_directory=True)
+            return result
+
+        monkeypatch.setattr(codex, "_validate_record_path", validate)
+        with pytest.raises(ValueError):
+            self._setup(project)
+        # Refused while planning, before any skill was written.
+        assert not list((project / ".agents" / "skills").glob("*/SKILL.md"))
+        assert (outside / "openai.yaml").read_bytes() == b"interface:\n  display_name: Secret\n"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_rollback_does_not_delete_through_an_ancestor_swapped_for_a_symlink(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.integrations.codex import CodexIntegration
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        path = self._seed(project)
+        original = path.read_bytes()
+        outside = tmp_path / "outside"
+        self._fail_policy_record(monkeypatch, project)
+        real_roll_back = CodexIntegration._roll_back_policies
+        swapped = []
+
+        def roll_back(root, written):
+            # A policy setup created, rather than rewrote.
+            rel = next(entry[0] for entry in written if entry[1] is None)
+            agents = (root / rel).parent
+            agents.rename(outside)
+            agents.symlink_to(outside, target_is_directory=True)
+            swapped.append(outside / "openai.yaml")
+            real_roll_back(root, written)
+
+        monkeypatch.setattr(CodexIntegration, "_roll_back_policies", staticmethod(roll_back))
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(project)
+        monkeypatch.undo()
+        assert swapped[0].is_file()
+        # Refusing one path does not stop the rest of the rollback.
+        assert path.read_bytes() == original
+        remaining = [
+            p for p in self._other_policies(project)
+            if not p.parent.is_symlink()
+        ]
+        assert remaining == []
+
+    def test_clearing_the_option_keeps_a_generated_file_beside_a_backup(self, tmp_path, caplog):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        generated = path.read_bytes()
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
+            manifest = self._setup(tmp_path, enabled=False)
+        assert path.read_bytes() == generated
+        assert backup.exists()
+        assert manifest.ownership_modes[self.PLAN_REL] == "whole"
+        assert "interrupted update" in caplog.text
+        manifest.save()
+
+        backup.unlink()
+        manifest = self._setup(tmp_path, enabled=False)
+        assert not path.exists()
+        assert self.PLAN_REL not in manifest.files
+
+    @pytest.mark.parametrize("force", [False, True])
+    def test_uninstall_keeps_a_generated_file_beside_a_backup(self, tmp_path, force):
+        manifest = self._setup(tmp_path)
+        path = tmp_path / self.PLAN_REL
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        _, skipped = get_integration("codex").teardown(tmp_path, manifest, force=force)
+        assert path.exists()
+        assert backup.exists()
+        assert path.resolve() in [p.resolve() for p in skipped]
+
+    def test_windows_refuses_to_rewrite_an_existing_file_before_writing(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        monkeypatch.setattr(codex, "_backups_are_private", lambda: False)
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        with pytest.raises(ValueError, match="Windows"):
+            get_integration("codex").preflight_setup(tmp_path, {"no_model_invocation": True})
+        with pytest.raises(ValueError, match="Windows"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == original
+        assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
+        assert not list(tmp_path.rglob("*.speckit-backup"))
+
+    def test_windows_accepts_a_file_that_already_sets_the_policy(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        monkeypatch.setattr(codex, "_backups_are_private", lambda: False)
+        content = b"interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n"
+        path = self._seed(tmp_path, content)
+        self._setup(tmp_path)
+        assert path.read_bytes() == content
+        assert len(self._other_policies(tmp_path)) == len(CORE_COMMAND_NAMES) - 1
+
+    def test_windows_cleanup_leaves_the_policy_in_a_user_file(self, tmp_path, monkeypatch, caplog):
+        from specify_cli.integrations import codex
+
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        with_policy = path.read_bytes()
+        monkeypatch.setattr(codex, "_backups_are_private", lambda: False)
+        with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
+            get_integration("codex").teardown(tmp_path, manifest)
+        assert path.read_bytes() == with_policy
+        assert "remove it by hand" in caplog.text
+        assert not list(tmp_path.rglob("*.speckit-backup"))
+
+    def test_preflight_refuses_a_switch_before_the_outgoing_integration_is_removed(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "claude")
+        bad = project / self.PLAN_REL
+        bad.parent.mkdir(parents=True)
+        bad.write_bytes(b"- not\n- a mapping\n")
+        state = (project / ".specify" / "integration.json").read_bytes()
+        claude_skills = sorted((project / ".claude" / "skills").glob("*/SKILL.md"))
+        assert claude_skills
+
+        result = _run_in_project(project, [
+            "integration", "switch", "codex", "--script", "sh",
+            "--integration-options", "--no-model-invocation",
+        ])
+
+        assert result.exit_code == 1, result.output
+        assert "openai.yaml" in " ".join(result.output.split())
+        assert (project / ".specify" / "integration.json").read_bytes() == state
+        assert sorted((project / ".claude" / "skills").glob("*/SKILL.md")) == claude_skills
+        assert not list((project / ".agents" / "skills").glob("*/SKILL.md"))
 
     def test_leftover_backup_beside_a_deleted_file_stops_setup(self, tmp_path):
         path = self._seed(tmp_path)

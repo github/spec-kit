@@ -61,7 +61,12 @@ description in Codex's context.
   policy is added or removed, such a file is rewritten as plain YAML, so its
   comments and formatting are not kept. It is rewritten in place, so its
   owner, group and access-control list are kept; a read-only file, or one with
-  other hard links, is refused instead.
+  other hard links, is refused instead, as is one that changes while Spec Kit
+  is updating it. On Windows an existing file is never rewritten, because its
+  backup (below) could not be kept as private as the file: setup stops with an
+  error naming it, and uninstall leaves the policy in it with a warning. Add
+  `policy.allow_implicit_invocation: false` to such a file yourself, or move it
+  aside, and run the command again.
   Its values are read and written by the YAML 1.2 rules Codex uses, so
   unquoted values such as `On` or `no` stay strings and numbers such as `007`
   keep their text. One that already sets it to `false` is left untouched, and
@@ -72,7 +77,9 @@ description in Codex's context.
   `true` and `1`), or has a field Codex would reject (for example
   `interface` or `dependencies.tools` of the wrong type, which makes Codex
   ignore the whole file), setup stops with an error naming the file and leaves
-  it unchanged. Setup with the option also stops before writing anything if
+  it unchanged; `specify integration install`, `switch` and `upgrade` check this before
+  changing anything, so a refused switch keeps the current integration. Setup
+  with the option also stops before writing anything if
   `.agents`, `.agents/skills` or a core `speckit-<command>` skill directory is a
   symlink, or if a path where a policy goes is a file rather than a directory.
   Once the policy has been removed from a file Spec Kit no longer tracks it, so
@@ -80,8 +87,8 @@ description in Codex's context.
   removing policies fails part-way through setup, the policies it had already
   written are undone. If Spec Kit is stopped while rewriting a file, the
   previous content is left beside it as `openai.yaml.speckit-backup`. While
-  that backup exists, setup stops with an error and policy cleanup leaves the
-  file alone, so the backup is never overwritten: compare the two files, keep
+  that backup exists, setup stops with an error and policy cleanup, including
+  uninstall, leaves both files alone, so neither is lost: compare the two, keep
   the right content in `openai.yaml`, delete the backup and run the command
   again. A file is never written through a symlinked directory, even one
   swapped in while the rewrite runs.
