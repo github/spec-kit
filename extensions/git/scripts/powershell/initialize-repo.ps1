@@ -8,10 +8,10 @@ $ErrorActionPreference = 'Stop'
 # Find project root
 function Find-ProjectRoot {
     param([string]$StartDir)
-    $current = Resolve-Path $StartDir
+    $current = Resolve-Path -LiteralPath $StartDir
     while ($true) {
         foreach ($marker in @('.specify', '.git')) {
-            if (Test-Path (Join-Path $current $marker)) {
+            if (Test-Path -LiteralPath (Join-Path $current $marker)) {
                 return $current
             }
         }
@@ -23,13 +23,13 @@ function Find-ProjectRoot {
 
 $repoRoot = Find-ProjectRoot -StartDir $PSScriptRoot
 if (-not $repoRoot) { $repoRoot = Get-Location }
-Set-Location $repoRoot
+Set-Location -LiteralPath $repoRoot
 
 # Read commit message from extension config, fall back to default
 $commitMsg = "[Spec Kit] Initial commit"
 $configFile = Join-Path $repoRoot ".specify/extensions/git/git-config.yml"
-if (Test-Path $configFile) {
-    foreach ($line in Get-Content $configFile) {
+if (Test-Path -LiteralPath $configFile) {
+    foreach ($line in Get-Content -LiteralPath $configFile) {
         if ($line -match '^init_commit_message:\s*(.+)$') {
             $val = $matches[1].Trim() -replace '^["'']' -replace '["'']$'
             if ($val) { $commitMsg = $val }

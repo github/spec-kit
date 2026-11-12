@@ -27,11 +27,11 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if ($MessageFile) {
-    if (-not (Test-Path $MessageFile -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath $MessageFile -PathType Leaf)) {
         Write-Warning "[specify] Error: message file '$MessageFile' not found"
         exit 1
     }
-    $GeneratedMessage = (Get-Content -Path $MessageFile -Raw)
+    $GeneratedMessage = (Get-Content -LiteralPath $MessageFile -Raw)
     if ($null -ne $GeneratedMessage) {
         $GeneratedMessage = $GeneratedMessage.TrimEnd("`r", "`n")
     }
@@ -41,15 +41,15 @@ if ($MessageFile) {
     # both the "any changes?" check below and by `git add .`, polluting the
     # commit or defeating the no-changes short-circuit even when nothing
     # else changed.
-    Remove-Item -Path $MessageFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $MessageFile -Force -ErrorAction SilentlyContinue
 }
 
 function Find-ProjectRoot {
     param([string]$StartDir)
-    $current = Resolve-Path $StartDir
+    $current = Resolve-Path -LiteralPath $StartDir
     while ($true) {
         foreach ($marker in @('.specify', '.git')) {
-            if (Test-Path (Join-Path $current $marker)) {
+            if (Test-Path -LiteralPath (Join-Path $current $marker)) {
                 return $current
             }
         }
@@ -61,7 +61,7 @@ function Find-ProjectRoot {
 
 $repoRoot = Find-ProjectRoot -StartDir $PSScriptRoot
 if (-not $repoRoot) { $repoRoot = Get-Location }
-Set-Location $repoRoot
+Set-Location -LiteralPath $repoRoot
 
 # Check if git is available
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
@@ -90,9 +90,9 @@ $enabled = $false
 $commitMsg = ""
 $commitStyle = "fixed"
 
-if (Test-Path $configFile) {
+if (Test-Path -LiteralPath $configFile) {
     # Top-level scalar key: commit_style (fixed | conventional)
-    foreach ($line in Get-Content $configFile) {
+    foreach ($line in Get-Content -LiteralPath $configFile) {
         if ($line -match '^commit_style:\s*(.+)$') {
             $styleVal = (($matches[1] -replace '\s+#.*$', '').Trim()) -replace '^["'']' -replace '["'']$'
             if ($styleVal) {
@@ -112,7 +112,7 @@ if (Test-Path $configFile) {
     $inEvent = $false
     $defaultEnabled = $false
 
-    foreach ($line in Get-Content $configFile) {
+    foreach ($line in Get-Content -LiteralPath $configFile) {
         # Detect auto_commit: section
         if ($line -match '^auto_commit:') {
             $inAutoCommit = $true
@@ -159,7 +159,7 @@ if (Test-Path $configFile) {
 
     # If event-specific key not found, use default
     if (-not $enabled -and $defaultEnabled) {
-        $hasEventKey = Select-String -Path $configFile -Pattern "^\s*${EventName}:" -Quiet
+        $hasEventKey = Select-String -LiteralPath $configFile -Pattern "^\s*${EventName}:" -Quiet
         if (-not $hasEventKey) {
             $enabled = $true
         }

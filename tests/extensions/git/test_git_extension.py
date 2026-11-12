@@ -186,7 +186,7 @@ class TestGitExtensionManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "git"
-        assert m.version == "1.0.4"
+        assert m.version == "1.0.5"
 
     def test_manifest_commands(self):
         """Manifest declares expected commands."""
@@ -398,6 +398,142 @@ class TestInitializeRepoPowerShellStderr:
             cwd=project, capture_output=True, text=True,
         )
         assert commits.stdout.strip() == "0"
+
+
+@pytest.mark.parametrize(
+    "exe",
+    [
+        pytest.param(
+            "pwsh",
+            marks=pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available"),
+            id="pwsh",
+        ),
+        pytest.param(
+            WINDOWS_POWERSHELL,
+            marks=pytest.mark.skipif(
+                not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
+            ),
+            id="windows-powershell-5.1",
+        ),
+    ],
+)
+class TestPowerShellBracketedProjectPath:
+    def test_initialize_repo(self, tmp_path: Path, exe: str):
+        """initialize-repo.ps1 reads its config and commits in a path containing [ and ]."""
+        project = _setup_project(tmp_path / "proj [v2]", git=False)
+        _write_config(project, 'init_commit_message: "bracketed init"\n')
+
+        result = _run_pwsh("initialize-repo.ps1", project, exe=exe)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        log = subprocess.run(
+            ["git", "log", "--format=%s", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert log.stdout.strip() == "bracketed init"
+
+    def test_create_feature_branch(self, tmp_path: Path, exe: str):
+        """create-new-feature-branch.ps1 numbers past existing specs in a bracketed path.
+
+        Core common.ps1 goes under .specify/scripts/powershell, where `specify init`
+        installs it: Windows PowerShell 5.1 started in a bracketed directory begins
+        in $PSHOME, so core Get-RepoRoot resolves the project from the script location.
+        """
+        project = _setup_project(tmp_path / "proj [v2]")
+        core_ps = project / ".specify" / "scripts" / "powershell"
+        core_ps.mkdir(parents=True)
+        shutil.copy(CORE_COMMON_PS, core_ps / "common.ps1")
+        (project / "specs" / "001-login-page").mkdir(parents=True)
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-ShortName", "payment-export", "Add payment export",
+            exe=exe,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout)["BRANCH_NAME"] == "002-payment-export"
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert branch.stdout.strip() == "002-payment-export"
+
+    def test_create_feature_branch_with_git_common_only(self, tmp_path: Path, exe: str):
+        """Without core scripts, create-new-feature-branch.ps1 loads git-common.ps1 in a bracketed path."""
+        project = _setup_project(tmp_path / "proj [v2]")
+        (project / "scripts" / "powershell" / "common.ps1").unlink()
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-ShortName", "payment-export", "Add payment export",
+            exe=exe,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout)["BRANCH_NAME"] == "001-payment-export"
+
+    def test_git_common_detects_git(self, tmp_path: Path, exe: str):
+        """git-common.ps1 Test-HasGit finds the repository at a bracketed path."""
+        project = _setup_project(tmp_path / "proj [v2]")
+        script = EXT_PS / "git-common.ps1"
+
+        result = subprocess.run(
+            [
+                exe, "-NoProfile", "-Command",
+                f". '{script}'; if (Test-HasGit -RepoRoot '{project}') {{ exit 0 }} else {{ exit 1 }}",
+            ],
+            capture_output=True, text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    def test_auto_commit_message_file(self, tmp_path: Path, exe: str):
+        """auto-commit.ps1 reads its config and -MessageFile in a bracketed path."""
+        project = _setup_project(tmp_path / "proj [v2]")
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        msg_file = project / "commit-msg.txt"
+        msg_file.write_text("feat: add payment export\n")
+
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "-MessageFile", str(msg_file),
+            exe=exe,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert not msg_file.exists()
+        log = subprocess.run(
+            ["git", "log", "--format=%s", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert log.stdout.strip() == "feat: add payment export"
+
+    def test_auto_commit_keeps_disabled_event(self, tmp_path: Path, exe: str):
+        """An event disabled in git-config.yml stays off under default: true in a bracketed path."""
+        project = _setup_project(tmp_path / "proj [v2]")
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: true\n"
+            "  after_specify:\n"
+            "    enabled: false\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify", exe=exe)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        count = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert count.stdout.strip() == "1"
 
 
 # ── create-new-feature-branch.sh Tests ──────────────────────────────────────────────
