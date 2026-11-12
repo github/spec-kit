@@ -26,6 +26,7 @@ from tests.parity_helpers import (
     make_repo,
     make_yaml_less_venv,
     ps_cmd,
+    ps_legacy_stdout_cmd,
     py_cmd,
     run,
 )
@@ -144,6 +145,23 @@ def test_python_json_preserves_constitution_on_legacy_stdout(tmp_path: Path) -> 
         "TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected,
     }
     assert template.read_bytes() == expected.encode("utf-8")
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_json_preserves_constitution_on_legacy_stdout(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    template = repo / ".specify/templates/overrides/constitution-template.md"
+    template.parent.mkdir(parents=True)
+    expected = "# Конституція\n\nПравила: 功能 → звіт.\n"
+    template.write_bytes(expected.encode("utf-8"))
+
+    result = run(ps_legacy_stdout_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected,
+    }
 
 
 def _setup_repo(tmp_path: Path) -> tuple[Path, str]:

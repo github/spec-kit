@@ -32,7 +32,7 @@ if ($Json) {
     [PSCustomObject]@{
         TEMPLATE_NAME = $TemplateName
         TEMPLATE_CONTENT = $templateContent
-    } | ConvertTo-Json -Compress
+    } | ConvertTo-AsciiJson
 } else {
     [Console]::Out.Write($templateContent)
 }
