@@ -198,7 +198,8 @@ def integration_upgrade(
     # Journal every write up to the manifest and state commit, so a failure
     # restores the project instead of leaving files the old manifest does
     # not describe.
-    with builtin_upgrade_journal(project_root, key, old_manifest.files):
+    extra_folders = integration.upgrade_output_folders(project_root, parsed_options, raw_options)
+    with builtin_upgrade_journal(project_root, key, old_manifest.files, extra_folders):
         # Ensure shared infrastructure is up to date; --force overwrites existing files.
         infra_integration = integration
         infra_key = key

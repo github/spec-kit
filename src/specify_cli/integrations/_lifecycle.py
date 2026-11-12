@@ -432,20 +432,34 @@ def _journalled(
         if not outcome["retained"]:
             # Snapshots keep their source's modes, so make a read-only one
             # writable; a removal failure must not fail a committed operation.
+            # Only retry removals, and only chmod real entries inside the
+            # snapshot: os.chmod follows a snapshotted symlink to its live
+            # target, and the backup root's parent is the system temp dir.
+            def inside_backup(path) -> bool:
+                path = Path(path)
+                return path == backup or backup in path.parents
+
             def writable_and_retry(function, path, _exc_info):
                 try:
-                    os.chmod(path, stat.S_IRWXU)
+                    if inside_backup(path) and not os.path.islink(path):
+                        os.chmod(path, stat.S_IRWXU)
                     parent = os.path.dirname(path)
-                    os.chmod(parent, stat.S_IRWXU)
-                    function(path)
+                    if inside_backup(parent):
+                        os.chmod(parent, stat.S_IRWXU)
+                    if function in (os.unlink, os.remove, os.rmdir):
+                        function(path)
                 except OSError:
                     pass
 
             shutil.rmtree(backup, onerror=writable_and_retry)
+            # A directory rmtree could not open was made readable above; a
+            # second pass removes what the first had to leave.
+            if os.path.lexists(backup):
+                shutil.rmtree(backup, onerror=writable_and_retry)
 
 
 @contextmanager
-def builtin_upgrade_journal(root: Path, key: str, manifest_files) -> Any:
+def builtin_upgrade_journal(root: Path, key: str, manifest_files, extra_folders=()) -> Any:
     """Journal a built-in upgrade's writes up to its manifest and state commit.
 
     ``setup()`` rewrites generated files in place before the new manifest is
@@ -455,7 +469,8 @@ def builtin_upgrade_journal(root: Path, key: str, manifest_files) -> Any:
     covers the operation. It takes no project lock and reads no other
     integration's state. If the journal cannot cover the upgrade (a symlinked
     or unsafe scope, an unreadable directory), the upgrade runs unjournalled,
-    as it did before, rather than failing.
+    as it did before, rather than failing. ``extra_folders`` adds the
+    integration's ``upgrade_output_folders()``, which its config cannot name.
     """
     if lifecycle_owns_rollback():
         yield
@@ -466,7 +481,11 @@ def builtin_upgrade_journal(root: Path, key: str, manifest_files) -> Any:
         folder = (integration.config or {}).get("folder") if integration else None
         if folder:
             folders.add(folder.rstrip("/"))
-        leaves = set(manifest_files) - folders
+        folders.update(extra.rstrip("/") for extra in extra_folders)
+        # Merge targets an integration leaves untracked (Copilot's
+        # .vscode/settings.json) must pass the same eligibility check.
+        exclusions = integration.stale_cleanup_exclusions() if integration else set()
+        leaves = (set(manifest_files) | exclusions) - folders
         paths = [
             installer.safe_project_path(root, entry, allow_leaf_symlink=entry in leaves)
             for entry in sorted(folders | leaves)
@@ -480,7 +499,10 @@ def builtin_upgrade_journal(root: Path, key: str, manifest_files) -> Any:
         initial = _initial_entries(paths)
         # The journal refuses a write to or beneath anything but a regular
         # file or directory, which an unjournalled upgrade would have made.
-        covered = all(
+        # Manifests record paths under the resolved root, so a root reached
+        # through a symlink or junction would make every observed write look
+        # like an escape; leave such a project unjournalled.
+        covered = root.absolute() == root.resolve() and all(
             stat.S_ISREG(state[0]) or stat.S_ISDIR(state[0]) for state in initial.values()
         )
     except (installer.IntegrationInstallError, OSError, ValueError, RuntimeError):

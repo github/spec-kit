@@ -1951,7 +1951,7 @@ class TestIntegrationUpgradeBasic:
 
 
 def _tree(root):
-    """Every file's bytes and every directory, without following links."""
+    """Every file's bytes and mode and every directory, without following links."""
     files, directories = {}, set()
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root).as_posix()
@@ -1960,7 +1960,7 @@ def _tree(root):
         elif path.is_dir():
             directories.add(relative)
         else:
-            files[relative] = path.read_bytes()
+            files[relative] = (path.read_bytes(), path.stat().st_mode & 0o7777)
     return files, directories
 
 
@@ -1979,6 +1979,13 @@ def test_builtin_upgrade_rolls_back_when_it_fails_before_committing(tmp_path, mo
     # --force makes the first shared-infrastructure pass overwrite this.
     template = next((project / ".specify" / "templates").glob("*.md"))
     template.write_text("customized\n", encoding="utf-8")
+    if os.name != "nt":
+        # No upgrade pass rewrites an extension script, so only the journal
+        # can undo ensure_executable_scripts() making it executable.
+        script = project / ".specify" / "extensions" / "demo" / "run.sh"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text("#!/bin/sh\n", encoding="utf-8")
+        script.chmod(0o644)
     before = _tree(project)
 
     def fail(*args, **kwargs):
@@ -2024,10 +2031,22 @@ def test_builtin_upgrade_journal_needs_no_trust_store_or_other_manifests(tmp_pat
         raise AssertionError("a built-in upgrade must not touch the trust store")
 
     monkeypatch.setattr(installer, "_trust_store", no_trust_store)
+    # A ValueError from the corrupt manifest must not silently disable the journal.
+    from specify_cli.integrations import _lifecycle
+
+    entered = []
+    real_journalled = _lifecycle._journalled
+
+    def journalled(*args, **kwargs):
+        entered.append(True)
+        return real_journalled(*args, **kwargs)
+
+    monkeypatch.setattr(_lifecycle, "_journalled", journalled)
 
     result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
 
     assert result.exit_code == 0, result.output
+    assert entered
 
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
@@ -2039,10 +2058,213 @@ def test_builtin_upgrade_runs_unjournalled_when_a_scope_is_a_symlink(tmp_path):
     extensions = project / ".specify" / "extensions"
     if extensions.exists():
         shutil.rmtree(extensions)
-    extensions.symlink_to(shared, target_is_directory=True)
+    try:
+        extensions.symlink_to(shared, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
 
     result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
 
     assert result.exit_code == 0, result.output
     assert extensions.is_symlink()
 
+
+def _symlink_or_skip(link, target, *, directory=False):
+    try:
+        link.symlink_to(target, target_is_directory=directory)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+
+def _fail_claude_setup(monkeypatch, integration_class=None):
+    from specify_cli.integrations.claude import ClaudeIntegration
+
+    integration_class = integration_class or ClaudeIntegration
+    real_setup = integration_class.setup
+
+    def setup(self, *args, **kwargs):
+        real_setup(self, *args, **kwargs)
+        raise OSError("disk full")
+
+    monkeypatch.setattr(integration_class, "setup", setup)
+
+
+def test_builtin_upgrade_snapshot_cleanup_leaves_symlink_targets_and_temp_dir_alone(tmp_path, monkeypatch):
+    """Removing a read-only snapshot never chmods a live symlink target or its temp parent."""
+    from specify_cli.integrations import _lifecycle
+
+    if os.name == "nt":
+        pytest.skip("POSIX permissions")
+    target = tmp_path / "live-target"
+    target.write_text("live\n", encoding="utf-8")
+    target.chmod(0o444)
+    temp_parent = tmp_path / "temp"
+    temp_parent.mkdir()
+    temp_mode = temp_parent.stat().st_mode & 0o7777
+    monkeypatch.setattr(_lifecycle.tempfile, "tempdir", str(temp_parent))
+    chmodded = []
+    real_chmod = os.chmod
+
+    def chmod(path, mode, *args, **kwargs):
+        chmodded.append(Path(path))
+        return real_chmod(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(_lifecycle.os, "chmod", chmod)
+
+    root = tmp_path / "project"
+    (root / ".specify" / "scripts").mkdir(parents=True)
+    with _lifecycle._journalled(root, [root / ".specify" / "scripts"], [], {"retained": False}):
+        backup = next(temp_parent.iterdir())
+        snapshot = backup / "writes"
+        snapshot.mkdir()
+        _symlink_or_skip(snapshot / "link", target)
+        snapshot.chmod(0o555)
+        backup.chmod(0o555)
+
+    assert not any(temp_parent.iterdir())
+    assert target.stat().st_mode & 0o7777 == 0o444
+    assert temp_parent.stat().st_mode & 0o7777 == temp_mode
+    assert target not in chmodded and temp_parent not in chmodded
+
+
+def test_builtin_upgrade_snapshot_cleanup_survives_a_directory_open_failure(tmp_path, monkeypatch):
+    """rmtree reporting a failed os.open must not fail a committed upgrade."""
+    from specify_cli.integrations import _lifecycle
+
+    real_rmtree = shutil.rmtree
+
+    def rmtree(path, onerror=None, **kwargs):
+        onerror(os.open, str(path), None)
+        return real_rmtree(path, **kwargs)
+
+    monkeypatch.setattr(_lifecycle.shutil, "rmtree", rmtree)
+    # A writable temp parent, so the callback reaches the retry it must skip.
+    temp_parent = tmp_path / "temp"
+    temp_parent.mkdir()
+    monkeypatch.setattr(_lifecycle.tempfile, "tempdir", str(temp_parent))
+    temp_mode = temp_parent.stat().st_mode & 0o7777
+    root = tmp_path / "project"
+    (root / ".specify").mkdir(parents=True)
+    with _lifecycle._journalled(root, [root / ".specify"], [], {"retained": False}):
+        pass
+
+    assert not any(temp_parent.iterdir())
+    assert temp_parent.stat().st_mode & 0o7777 == temp_mode
+
+
+def test_builtin_upgrade_snapshot_cleanup_removes_an_unreadable_snapshot_directory(tmp_path, monkeypatch):
+    """A snapshot directory that copied a mode rmtree cannot open is still removed."""
+    from specify_cli.integrations import _lifecycle
+
+    if os.name == "nt":
+        pytest.skip("POSIX permissions")
+    temp_parent = tmp_path / "temp"
+    temp_parent.mkdir()
+    monkeypatch.setattr(_lifecycle.tempfile, "tempdir", str(temp_parent))
+    root = tmp_path / "project"
+    (root / ".specify").mkdir(parents=True)
+    with _lifecycle._journalled(root, [root / ".specify"], [], {"retained": False}):
+        locked = next(temp_parent.iterdir()) / "writes" / "0"
+        locked.mkdir(parents=True)
+        (locked / "file").write_text("x\n", encoding="utf-8")
+        locked.chmod(0o000)
+
+    assert not any(temp_parent.iterdir())
+
+
+def test_ensure_executable_scripts_propagates_a_journal_refusal(tmp_path):
+    """A journal that refuses the chmod fails the operation instead of logging a warning."""
+    from specify_cli import ensure_executable_scripts
+    from specify_cli.integrations import installer
+    from specify_cli.integrations._file_changes import file_change_observer
+
+    if os.name == "nt":
+        pytest.skip("POSIX permissions")
+    script = tmp_path / ".specify" / "scripts" / "run.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/sh\n", encoding="utf-8")
+    script.chmod(0o644)
+
+    def refuse(*args):
+        raise installer.IntegrationInstallError("snapshot budget exceeded")
+
+    token = file_change_observer.set(refuse)
+    try:
+        with pytest.raises(installer.IntegrationInstallError):
+            ensure_executable_scripts(tmp_path)
+    finally:
+        file_change_observer.reset(token)
+    assert script.stat().st_mode & 0o777 == 0o644
+
+
+def test_builtin_upgrade_runs_unjournalled_through_a_symlinked_project_root(tmp_path, monkeypatch):
+    """A root reached through an alias falls back to the unjournalled upgrade."""
+    from specify_cli.integrations import _lifecycle
+
+    project = _init_project(tmp_path, "claude")
+    alias = tmp_path / "alias"
+    _symlink_or_skip(alias, project, directory=True)
+    entered = []
+    real_journalled = _lifecycle._journalled
+
+    def journalled(*args, **kwargs):
+        entered.append(args[0])
+        return real_journalled(*args, **kwargs)
+
+    monkeypatch.setattr(_lifecycle, "_journalled", journalled)
+
+    with _lifecycle.builtin_upgrade_journal(alias, "claude", []):
+        pass
+    with _lifecycle.builtin_upgrade_journal(project, "claude", []):
+        pass
+
+    assert entered == [project]
+
+
+def test_builtin_upgrade_runs_unjournalled_when_copilot_settings_is_a_symlink(tmp_path, monkeypatch):
+    """Copilot's untracked settings merge target is checked before any writes."""
+    from specify_cli.integrations.copilot import CopilotIntegration
+
+    template = tmp_path / "vscode-settings.json"
+    template.write_text('{"chat.promptFiles": true}\n', encoding="utf-8")
+    monkeypatch.setattr(CopilotIntegration, "_vscode_settings_path", lambda self: template)
+    # Only the commands layout writes the settings file.
+    project = _init_project(tmp_path, "copilot", "--commands")
+    settings = project / ".vscode" / "settings.json"
+    # A settings file the user already had is merged into, never tracked.
+    manifest_path = project / ".specify" / "integrations" / "copilot.manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["files"].pop(".vscode/settings.json", None) is not None
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    real = tmp_path / "real-settings.json"
+    # An empty object, so the upgrade's merge has to write.
+    real.write_text("{}\n", encoding="utf-8")
+    settings.parent.mkdir(exist_ok=True)
+    settings.unlink(missing_ok=True)
+    _symlink_or_skip(settings, real)
+
+    result = _run_in_project(project, ["integration", "upgrade", "copilot", "--force"])
+
+    assert result.exit_code == 0, result.output
+    assert settings.is_symlink()
+    assert json.loads(real.read_text(encoding="utf-8")) == {"chat.promptFiles": True}
+
+
+@pytest.mark.parametrize("commands_dir", [".new-commands/nested", "./.new-commands/nested"])
+def test_builtin_upgrade_rollback_removes_a_new_generic_commands_dir(tmp_path, monkeypatch, commands_dir):
+    """Changing --commands-dir and then failing leaves no new directories behind."""
+    from specify_cli.integrations.generic import GenericIntegration
+
+    project = _init_project(tmp_path, "generic", "--commands-dir .old-commands")
+    before = _tree(project)
+    _fail_claude_setup(monkeypatch, GenericIntegration)
+
+    result = _run_in_project(project, [
+        "integration", "upgrade", "generic", "--force",
+        "--integration-options", f"--commands-dir {commands_dir}",
+    ])
+
+    assert result.exit_code != 0
+    assert "disk full" in result.output
+    assert not (project / ".new-commands").exists()
+    assert _tree(project) == before
