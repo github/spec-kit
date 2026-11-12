@@ -33,7 +33,7 @@ After resolution, set `BUG_SLUG` and `BUG_DIR = .specify/bugs/<BUG_SLUG>`.
 ## Prerequisites
 
 - Ensure the directory `.specify/bugs/<BUG_SLUG>/` (i.e., `BUG_DIR`) exists, creating it (including any missing parents) if necessary. Use whatever mechanism is appropriate for the current environment.
-- If `BUG_DIR/assessment.md` already exists, ask the user whether to overwrite it before continuing (in interactive mode). Warn that confirming the overwrite will also delete any existing `fix.md` and `test.md` for that slug, that source-code changes made by the fix stage are not reverted, and that the fix and test stages must be run again. Only proceed after explicit confirmation; if confirmed, delete `BUG_DIR/fix.md` and `BUG_DIR/test.md` (when present) before writing the new assessment. Declining must leave all reports unchanged. In automated mode, refuse and pick a new unique slug instead.
+- If `BUG_DIR/assessment.md`, `BUG_DIR/fix.md`, or `BUG_DIR/test.md` already exists, inform the user which reports exist and stop before hooks or execution, without modifying anything or automatically switching slugs. A fresh assessment requires a separate invocation with a new slug.
 
 ## Safety When Fetching URLs
 
@@ -249,5 +249,5 @@ Check if `.specify/extensions.yml` exists in the project root.
 
 - Never modify source files during assessment — this command only reads and writes inside `.specify/bugs/<slug>/`.
 - Never invent reproduction steps or file paths that are not supported by either the report or the codebase.
-- Never overwrite an existing `assessment.md` without confirmation. Confirming the overwrite also deletes any existing `fix.md` and `test.md` for that slug; delete both files after confirmation, leave source-code changes untouched, and require the fix and test stages to be run again. Declining the confirmation leaves all reports unchanged.
+- Never modify an existing bug directory. If `BUG_DIR/assessment.md`, `BUG_DIR/fix.md`, or `BUG_DIR/test.md` already exists, inform the user which reports exist and stop without modifying anything. A fresh assessment requires a separate invocation with a new slug.
 - If the bug report cannot be understood at all (empty, unrelated, spam), set verdict to `invalid` with a clear reason and stop.
