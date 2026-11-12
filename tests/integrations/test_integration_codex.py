@@ -46,6 +46,15 @@ def _access(path: Path):
     return _sddl_of(descriptor)
 
 
+def _split_dacl(sddl: str) -> tuple[str, list[str]]:
+    """The DACL flags and ACEs of an SDDL string such as ``D:PAI(A;;FA;;;S-1-...)``."""
+    import re
+
+    match = re.search(r"D:([A-Z]*)((?:\([^)]*\))*)", sddl)
+    assert match, sddl
+    return match.group(1), re.findall(r"\([^)]*\)", match.group(2))
+
+
 def _canonical_sddl(sddl: str) -> str:
     """``sddl`` as Windows writes it back, so aliases such as ``WD`` compare equal."""
     import ctypes
@@ -1448,7 +1457,11 @@ class TestCodexNoModelInvocationOwnership:
         if os.name == "nt":
             from specify_cli.integrations.codex._private_file import owner_only_sddl
 
-            assert seen[0][1] == _canonical_sddl(owner_only_sddl())
+            # NTFS may add AI (auto-inherited) to the flags; P is what blocks inheritance.
+            flags, aces = _split_dacl(seen[0][1])
+            want_flags, want_aces = _split_dacl(_canonical_sddl(owner_only_sddl()))
+            assert "P" in flags and want_flags == "P"
+            assert aces == want_aces and len(aces) == 1
             assert ";WD)" in _access(path)  # the inherited grant to Everyone did apply here
         else:
             assert seen[0][1] == 0o600
@@ -1750,6 +1763,48 @@ class TestCodexFileHelperInternals:
             with pytest.raises(FileExistsError):
                 create_private(helper, rel, b"second")
         assert (tmp_path / rel).read_bytes() == b"first"
+
+    def test_create_private_removes_a_partial_file(self, tmp_path, monkeypatch):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex import _private_file
+
+        def fail(*args, **kwargs):
+            raise OSError("disk full")
+
+        if os.name == "nt":
+            real_fdopen = os.fdopen
+
+            def fdopen(fd, *args, **kwargs):
+                stream = real_fdopen(fd, *args, **kwargs)
+                monkeypatch.setattr(stream, "write", fail)
+                return stream
+
+            monkeypatch.setattr(_private_file.os, "fdopen", fdopen)
+        else:
+            monkeypatch.setattr(_private_file, "_fsync_posix", fail)
+        rel = f"{self.REL}.speckit-backup"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        with FileHelper(tmp_path) as helper, pytest.raises(OSError, match="disk full"):
+            _private_file.create_private(helper, rel, b"content")
+        assert not (tmp_path / rel).exists()
+
+    @pytest.mark.skipif(os.name != "nt", reason="needs Windows junctions")
+    def test_create_private_refuses_a_junctioned_parent(self, tmp_path):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        project = tmp_path / "project"
+        skill = project / ".agents" / "skills" / "speckit-plan"
+        skill.mkdir(parents=True)
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(skill / "agents"), str(outside)],
+            check=True, capture_output=True,
+        )
+        with FileHelper(project) as helper, pytest.raises((OSError, ValueError)):
+            create_private(helper, f"{self.REL}.speckit-backup", b"secret")
+        assert not list(outside.iterdir())
 
     @pytest.mark.skipif(os.name == "nt", reason="needs POSIX symlinks")
     def test_create_private_refuses_a_symlinked_parent(self, tmp_path):

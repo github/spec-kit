@@ -2,15 +2,17 @@
 
 ``FileHelper.create_bytes`` passes its mode to ``os.open``, which on Windows
 sets no access-control list, so the file would take the directory's inherited
-one. On Windows the file is therefore created with an explicit, protected
-access-control list that grants the current user full access and nobody else
-any. It is set by the call that creates the file, so the content is never
+one. On Windows the file is therefore created owned by the current user, with
+an explicit, protected access-control list that grants that user full access
+and nobody else any. Both are set by the call that creates the file, which
+also shares it with nobody until it is closed, so the content is never
 readable under the inherited list, not even briefly.
 """
 
 from __future__ import annotations
 
 import errno
+import functools
 import os
 from pathlib import Path
 
@@ -29,54 +31,76 @@ _SDDL_REVISION_1 = 1
 def create_private(helper: FileHelper, rel: str, content: bytes) -> None:
     """Exclusively create ``rel`` under ``helper``'s root, readable by its owner only.
 
-    Raises ``FileExistsError`` if any entry, including a link, is already there.
+    The content is flushed to disk before this returns. Raises
+    ``FileExistsError`` if any entry, including a link, is already there; a
+    failure after the file was created removes it, so a partial copy is never
+    left to be mistaken for a complete one.
     """
     if os.name != "nt":
         helper.create_bytes(rel, content, mode=0o600)
+        try:
+            _fsync_posix(helper, rel)
+        except BaseException:
+            _remove_partial(helper, rel)
+            raise
         return
     # FileHelper has no public way to pass a security descriptor; these are the
     # anchored resolution and parent pinning behind ``create_bytes``. Pinned by
     # ``TestCodexFileHelperInternals``.
     destination = helper._path(rel, allow_missing=True, follow_leaf=False)
     with helper._creation_directory(destination.parent) as directory:
-        _create_windows(Path(directory) / destination.name, content)
+        path = Path(directory) / destination.name
+        fd = _create_windows(path)
+        try:
+            try:
+                stream = os.fdopen(fd, "wb")
+            except BaseException:
+                os.close(fd)
+                raise
+            with stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+        except BaseException:
+            _remove_partial(helper, rel)
+            raise
+
+
+def _fsync_posix(helper: FileHelper, rel: str) -> None:
+    fd = os.open(helper._path(rel), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _remove_partial(helper: FileHelper, rel: str) -> None:
+    try:
+        helper.delete(rel)
+    except (OSError, ValueError):  # ValueError covers FileHelperError
+        pass
 
 
 def owner_only_sddl() -> str:
-    """The SDDL of the access-control list a Windows backup is created with."""
-    return f"D:P(A;;FA;;;{_current_user_sid()})"
+    """The security descriptor, as SDDL, a Windows backup is created with."""
+    sid = _current_user_sid()
+    return f"O:{sid}D:P(A;;FA;;;{sid})"
 
 
-def _create_windows(path: Path, content: bytes) -> None:
+def _create_windows(path: Path) -> int:
+    """Create ``path`` with the owner-only descriptor and return a CRT descriptor."""
     import ctypes
     import msvcrt
     from ctypes import wintypes
 
-    class SecurityAttributes(ctypes.Structure):
-        _fields_ = [
-            ("nLength", wintypes.DWORD),
-            ("lpSecurityDescriptor", ctypes.c_void_p),
-            ("bInheritHandle", wintypes.BOOL),
-        ]
-
-    kernel = _kernel32()
-    advapi = _advapi32()
-    convert = advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW
-    convert.argtypes = [
-        wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p), wintypes.LPVOID,
-    ]
-    convert.restype = wintypes.BOOL
-    kernel.CreateFileW.argtypes = [
-        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
-        ctypes.POINTER(SecurityAttributes), wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
-    ]
-    kernel.CreateFileW.restype = wintypes.HANDLE
-
+    kernel, advapi, attributes_type = _windows_api()
     descriptor = ctypes.c_void_p()
-    if not convert(owner_only_sddl(), _SDDL_REVISION_1, ctypes.byref(descriptor), None):
+    if not advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        owner_only_sddl(), _SDDL_REVISION_1, ctypes.byref(descriptor), None,
+    ):
         raise ctypes.WinError(ctypes.get_last_error())
     try:
-        attributes = SecurityAttributes(ctypes.sizeof(SecurityAttributes), descriptor, False)
+        attributes = attributes_type(ctypes.sizeof(attributes_type), descriptor, False)
         # No sharing: nobody else can open the file until it is written and closed.
         handle = kernel.CreateFileW(
             str(path), _GENERIC_WRITE, 0, ctypes.byref(attributes), _CREATE_NEW,
@@ -87,34 +111,18 @@ def _create_windows(path: Path, content: bytes) -> None:
     finally:
         kernel.LocalFree(descriptor)
     try:
-        fd = msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
+        return msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
     except BaseException:
         kernel.CloseHandle(handle)
         raise
-    with os.fdopen(fd, "wb") as stream:
-        stream.write(content)
 
 
+@functools.lru_cache(maxsize=1)
 def _current_user_sid() -> str:
     import ctypes
     from ctypes import wintypes
 
-    kernel = _kernel32()
-    advapi = _advapi32()
-    kernel.GetCurrentProcess.argtypes = []
-    kernel.GetCurrentProcess.restype = wintypes.HANDLE
-    advapi.OpenProcessToken.argtypes = [
-        wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE),
-    ]
-    advapi.OpenProcessToken.restype = wintypes.BOOL
-    advapi.GetTokenInformation.argtypes = [
-        wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD),
-    ]
-    advapi.GetTokenInformation.restype = wintypes.BOOL
-    advapi.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
-    advapi.ConvertSidToStringSidW.restype = wintypes.BOOL
-
+    kernel, advapi, _ = _windows_api()
     token = wintypes.HANDLE()
     if not advapi.OpenProcessToken(kernel.GetCurrentProcess(), _TOKEN_QUERY, ctypes.byref(token)):
         raise ctypes.WinError(ctypes.get_last_error())
@@ -145,19 +153,46 @@ def _current_user_sid() -> str:
     return value
 
 
-def _kernel32():
+@functools.lru_cache(maxsize=1)
+def _windows_api():
+    """kernel32 and advapi32 with the prototypes used here, and SECURITY_ATTRIBUTES."""
     import ctypes
     from ctypes import wintypes
 
+    class SecurityAttributes(ctypes.Structure):
+        _fields_ = [
+            ("nLength", wintypes.DWORD),
+            ("lpSecurityDescriptor", ctypes.c_void_p),
+            ("bInheritHandle", wintypes.BOOL),
+        ]
+
+    # Private instances, so these prototypes do not change ctypes.windll's.
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
     kernel.LocalFree.argtypes = [ctypes.c_void_p]
     kernel.LocalFree.restype = ctypes.c_void_p
     kernel.CloseHandle.argtypes = [wintypes.HANDLE]
     kernel.CloseHandle.restype = wintypes.BOOL
-    return kernel
-
-
-def _advapi32():
-    import ctypes
-
-    return ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel.GetCurrentProcess.argtypes = []
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel.CreateFileW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+        ctypes.POINTER(SecurityAttributes), wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+    ]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p), wintypes.LPVOID,
+    ]
+    advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
+    advapi.OpenProcessToken.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE),
+    ]
+    advapi.OpenProcessToken.restype = wintypes.BOOL
+    advapi.GetTokenInformation.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi.GetTokenInformation.restype = wintypes.BOOL
+    advapi.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi.ConvertSidToStringSidW.restype = wintypes.BOOL
+    return kernel, advapi, SecurityAttributes

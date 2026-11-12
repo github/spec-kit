@@ -101,6 +101,14 @@ def _replace_file(
                     f"with {rel}, keep the right copy and delete the backup",
                     str(root / backup_rel),
                 ) from exc
+            except PermissionError as exc:
+                # On Windows, also a backup name still pending deletion.
+                raise PermissionError(
+                    exc.errno or errno.EACCES,
+                    f"Could not create {backup_rel}: {exc.strerror or exc}; {rel} is "
+                    "unchanged, so retry",
+                    str(root / backup_rel),
+                ) from exc
         with changing_file(root / rel), ExitStack() as stack:
             try:
                 fd = stack.enter_context(helper._overwrite_descriptor(destination))
