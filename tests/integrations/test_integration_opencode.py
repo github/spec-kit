@@ -530,6 +530,30 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         assert result.exit_code == 0, result.output
         assert ignore.read_bytes() == b"keep me\n" + _RULES
 
+    def test_clearing_options_keeps_ignore_and_plain_upgrade_does_not_restore(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "opencode", "--configure-ignore-file")
+        ignore = project / ".ignore"
+        configured = ignore.read_bytes()
+        assert configured.endswith(_RULES)
+
+        result = _run_in_project(
+            project, ["integration", "upgrade", "opencode", "--integration-options", ""]
+        )
+        assert result.exit_code == 0, result.output
+        state = json.loads(
+            (project / ".specify" / "integration.json").read_text(encoding="utf-8")
+        )
+        assert not state["integration_settings"]["opencode"].get("parsed_options")
+        # Stale-file cleanup after the opt-out leaves the shared file as it was.
+        assert ignore.read_bytes() == configured
+
+        ignore.write_bytes(b"user rule\n")
+        result = _run_in_project(project, ["integration", "upgrade", "opencode"])
+        assert result.exit_code == 0, result.output
+        assert ignore.read_bytes() == b"user rule\n"
+
     def test_uninstall_preserves_partial_ignore_even_when_forced(self, tmp_path):
         integration = get_integration(self.KEY)
         for force in (False, True):
