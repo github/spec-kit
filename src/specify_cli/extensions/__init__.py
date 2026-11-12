@@ -1625,6 +1625,27 @@ class ExtensionManager:
             skill_dir_preexists = (
                 skill_subdir.exists() or skill_subdir.is_symlink()
             )
+            # Reject symlinked skill destinations before any write. The
+            # skills root itself is validated, but a symlinked per-skill
+            # directory would redirect SKILL.md outside the project, and
+            # the force path bypasses the pre-existing-directory guards
+            # below. Mirrors _find_extension_skill_dirs, which applies
+            # the same validation before removal.
+            from ..shared_infra import _validate_safe_shared_directory
+
+            trusted_root = self._extension_skill_trusted_root(skills_dir)
+            if trusted_root is None:
+                continue
+            try:
+                # Normalize relative destinations before validation: the
+                # trusted root is absolute, so a relative skill path (for
+                # example with ExtensionManager(Path("."))) would fail the
+                # containment check and the skill would be silently skipped.
+                _validate_safe_shared_directory(
+                    trusted_root, Path(os.path.abspath(skill_subdir))
+                )
+            except (OSError, ValueError):
+                continue
             CommandRegistrar._ensure_inside(cache_file, cache_root)
             if selected_ai == "generic" and skill_dir_preexists:
                 metadata = self.registry.get(manifest.id) or {}
@@ -1710,6 +1731,20 @@ class ExtensionManager:
                 integration, "post_process_skill_content"
             ):
                 skill_content = integration.post_process_skill_content(skill_content)
+
+            # A hard-linked SKILL.md shares its inode with other paths, so
+            # writing it in place would change every linked copy. Drop our
+            # link first so the write below creates a fresh file instead.
+            if skill_file.is_file() and not skill_file.is_symlink():
+                try:
+                    if skill_file.stat().st_nlink > 1:
+                        unlink(skill_file)
+                except OSError:
+                    # The detach failed (for example, the file lives in a
+                    # non-writable directory), so writing in place would
+                    # modify every hard-linked copy. Skip this skill
+                    # instead of writing through the link.
+                    continue
 
             if use_dev_symlink:
                 try:

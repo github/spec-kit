@@ -739,6 +739,29 @@ def register(app: typer.Typer) -> None:
                 )
                 manifest.save()
 
+                # Save the init options before the force re-registration
+                # below: extension registration reads the saved ai /
+                # ai_skills options to decide skill vs command rendering,
+                # so a skills-mode re-init must record ai_skills first
+                # (#5321). All inputs here are already resolved.
+                init_opts = {
+                    **previous_init_options,
+                    "ai": selected_ai,
+                    "integration": resolved_integration.key,
+                    "here": here,
+                    "script": selected_script,
+                    "feature_numbering": previous_init_options.get("feature_numbering", "sequential"),
+                    "speckit_version": get_speckit_version(),
+                    "allow_symlinks": allow_symlinks,
+                }
+                if resolved_integration.is_skills_mode(
+                    integration_parsed_options or None, project_root=project_path
+                ):
+                    init_opts["ai_skills"] = True
+                else:
+                    init_opts.pop("ai_skills", None)
+                save_init_options(project_path, init_opts)
+
                 if force:
                     from .integrations._helpers import (
                         _register_extensions_for_agent,
@@ -857,24 +880,6 @@ def register(app: typer.Typer) -> None:
                 except Exception as wf_err:
                     sanitized_wf = str(wf_err).replace("\n", " ").strip()
                     tracker.error("workflow", f"install failed: {sanitized_wf[:120]}")
-
-                init_opts = {
-                    **previous_init_options,
-                    "ai": selected_ai,
-                    "integration": resolved_integration.key,
-                    "here": here,
-                    "script": selected_script,
-                    "feature_numbering": previous_init_options.get("feature_numbering", "sequential"),
-                    "speckit_version": get_speckit_version(),
-                    "allow_symlinks": allow_symlinks,
-                }
-                if resolved_integration.is_skills_mode(
-                    integration_parsed_options or None, project_root=project_path
-                ):
-                    init_opts["ai_skills"] = True
-                else:
-                    init_opts.pop("ai_skills", None)
-                save_init_options(project_path, init_opts)
 
                 ensure_executable_scripts(project_path, tracker=tracker)
 
