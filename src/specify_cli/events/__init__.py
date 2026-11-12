@@ -53,6 +53,13 @@ event_app = typer.Typer(
 # install) would otherwise run unconfined script tokens.
 EVENT_SCRIPT_PATH_CONFINEMENT = True
 
+# Generated hook dispatchers refuse to delegate unless this name is True.
+# A stale global install that predates the #5336 runner contract (per-event
+# runner-failure exit codes, SPECKIT_EVENT_NAME propagation) still exposes
+# EVENT_SCRIPT_PATH_CONFINEMENT, so confinement alone cannot prove the
+# resolver honors the new contract.
+EVENT_RUNNER_CONTRACT = True
+
 EVENTS_DISPATCHER_DIR = Path(".specify")
 EVENTS_DISPATCHER_FILENAME = "events.py"
 # POSIX-form (forward-slash) relative path so it matches manifest keys, which
@@ -83,6 +90,23 @@ CANONICAL_EVENTS = frozenset({
     "user_prompt_submit",
     "stop",
 })
+
+# Events whose handlers act as guards: when a handler cannot run (timeout or
+# startup error), the runner failure must keep blocking the agent action.
+# Claude Code reads exit 2 from a PreToolUse hook as "block the tool call"
+# and from a UserPromptSubmit hook as "block the prompt, so it never reaches
+# Claude" (Claude Code Hooks reference, "Exit code 2 behavior per event":
+# https://code.claude.com/docs/en/hooks.md), so a pre_tool_use or
+# user_prompt_submit validation that never ran must still block. Every other
+# event fails open with exit 1 so a slow handler cannot keep the agent
+# running (#5336). Mirrored inside the generated dispatcher template
+# (_runner_failure_exit_code); keep both in sync.
+BLOCKING_FAILURE_EVENTS = frozenset({"pre_tool_use", "user_prompt_submit"})
+
+
+def _runner_failure_exit_code(event_name: str) -> int:
+    """Exit code for a runner failure (timeout/startup error) for *event_name*."""
+    return 2 if event_name in BLOCKING_FAILURE_EVENTS else 1
 
 # -- Events Dispatcher template ---------------------------------------------
 
@@ -124,6 +148,44 @@ def _script_under_base(base, token, project_root):
     return candidate
 
 
+def _strip_yaml_comment(value):
+    """Strip a trailing ``#`` comment outside quotes from a YAML scalar.
+
+    A ``#`` only starts a comment when preceded by whitespace (or at the
+    start of the value); ``#`` inside single or double quotes is part of
+    the value. Quoted escapes are honored so a quoted ``#`` never ends the
+    value early.
+    """
+    in_single = False
+    in_double = False
+    i = 0
+    while i < len(value):
+        ch = value[i]
+        if in_single:
+            if ch == "'":
+                if i + 1 < len(value) and value[i + 1] == "'":
+                    i += 2
+                    continue
+                in_single = False
+        elif in_double:
+            # chr(92) is a backslash: a literal "\\" here would collapse to
+            # a lone backslash in the generated dispatcher and break its
+            # string literal, since this helper lives inside the template.
+            if ch == chr(92):
+                i += 2
+                continue
+            if ch == '"':
+                in_double = False
+        elif ch == "'":
+            in_single = True
+        elif ch == '"':
+            in_double = True
+        elif ch == "#" and (i == 0 or value[i - 1] in (" ", "\t")):
+            return value[:i].rstrip()
+        i += 1
+    return value
+
+
 def _find_command_template(command_name, project_root):
     """Locate the command's .md template. Returns (path, ext_id|None)."""
     exts_dir = project_root / ".specify" / "extensions"
@@ -151,6 +213,9 @@ def _find_command_template(command_name, project_root):
                     yml_text = ext_yml.read_text(encoding="utf-8")
                     cur_name = None
                     cur_file = None
+                    # Indent of the dash that started the entry being read;
+                    # a deeper-indented dash belongs to a nested list.
+                    entry_indent = None
                     in_provides = False
                     in_commands = False
                     for line in yml_text.splitlines():
@@ -166,10 +231,35 @@ def _find_command_template(command_name, project_root):
                             in_commands = False
                             continue
                         if in_commands:
-                            if "name:" in line:
-                                cur_name = line.split("name:", 1)[1].strip().strip('"').strip("'")
-                            if "file:" in line:
-                                cur_file = line.split("file:", 1)[1].strip().strip('"').strip("'")
+                            # A new list item starts a new command entry:
+                            # drop any half-filled pair from the previous
+                            # entry so a name can never pair with the next
+                            # entry's file. Only a dash at (or above) the
+                            # entry's own indent starts a new entry: a
+                            # deeper-indented dash belongs to a nested list
+                            # (e.g. a block-style ``aliases:`` list) and
+                            # must not reset the entry being read.
+                            if stripped.startswith("- ") or stripped == "-":
+                                indent = len(line) - len(line.lstrip())
+                                if entry_indent is None or indent <= entry_indent:
+                                    cur_name = None
+                                    cur_file = None
+                                    entry_indent = indent
+                            # Match real ``name:``/``file:`` keys only: a
+                            # substring match mistakes ``file:`` inside a
+                            # description value (or ``file:`` inside
+                            # ``profile:``) for the entry's file, so a
+                            # guard can resolve to the wrong handler.
+                            name_match = re.match(r"^(?:-\\s+)?name\\s*:\\s*(.*)$", stripped)
+                            if name_match:
+                                cur_name = _strip_yaml_comment(
+                                    name_match.group(1).strip()
+                                ).strip('"').strip("'")
+                            file_match = re.match(r"^(?:-\\s+)?file\\s*:\\s*(.*)$", stripped)
+                            if file_match:
+                                cur_file = _strip_yaml_comment(
+                                    file_match.group(1).strip()
+                                ).strip('"').strip("'")
                             if cur_name and cur_file:
                                 if cur_name == command_name:
                                     candidate = ext_dir / cur_file
@@ -289,14 +379,52 @@ def _resolve_argv(template_path, project_root, ext_id):
     return [str(script_abs), *rest]
 
 
-def _run_inline(command_name, payload, project_root, timeout, envelope="plain", native_event=""):
+# Guard events (pre_tool_use, user_prompt_submit) fail closed: a runner
+# failure (timeout or handler failing to start) must keep blocking the
+# action (exit 2). Claude Code reads exit 2 from a PreToolUse hook as
+# "block the tool call" and from a UserPromptSubmit hook as "block the
+# prompt, so it never reaches Claude" (Claude Code Hooks reference,
+# "Exit code 2 behavior per event"). Every other event fails open with
+# exit 1. Mirrors BLOCKING_FAILURE_EVENTS / _runner_failure_exit_code in
+# the full resolver; keep both in sync.
+_BLOCKING_FAILURE_EVENTS = frozenset({"pre_tool_use", "user_prompt_submit"})
+
+
+def _runner_failure_exit_code(event_name):
+    """Exit code for a runner failure (timeout/startup error) for *event_name*."""
+    return 2 if event_name in _BLOCKING_FAILURE_EVENTS else 1
+
+
+def _run_inline(command_name, payload, project_root, timeout, envelope="plain", native_event="", event_name=""):
     """Resolve and run the event command with stdlib only (no specify_cli)."""
     template_path, ext_id = _find_command_template(command_name, project_root)
     if not template_path:
+        # The guard never ran: a configured guard command that cannot be
+        # resolved (missing file, unparsable manifest, disabled extension)
+        # must fail closed for guard events instead of silently letting
+        # the action through. Non-guard events still no-op with 0.
+        if event_name in _BLOCKING_FAILURE_EVENTS:
+            print(
+                f"Event {command_name} could not be resolved; blocking event "
+                f"{event_name} fails closed without validation",
+                file=sys.stderr,
+            )
+            return _runner_failure_exit_code(event_name)
         return 0  # command not found: fail open (no-op) for lifecycle events
     argv = _resolve_argv(template_path, project_root, ext_id)
     if not argv:
+        # Same fail-closed rule: the template resolved but declares no
+        # runnable script, so the guard never ran.
+        if event_name in _BLOCKING_FAILURE_EVENTS:
+            print(
+                f"Event {command_name} has no runnable script; blocking event "
+                f"{event_name} fails closed without validation",
+                file=sys.stderr,
+            )
+            return _runner_failure_exit_code(event_name)
         return 0
+    # Tell the handler which event fired (mirrors the full resolver below).
+    env = {**os.environ, "SPECKIT_EVENT_NAME": event_name} if event_name else None
     try:
         # ``payload`` is decoded above from the binary buffer with an explicit
         # ``utf-8``. Without ``encoding=`` here, ``text=True`` re-encodes it
@@ -312,6 +440,7 @@ def _run_inline(command_name, payload, project_root, timeout, envelope="plain", 
             encoding="utf-8",
             timeout=timeout,
             cwd=str(project_root),
+            env=env,
         )
         if result.stdout:
             _emit(result.stdout, envelope, native_event)
@@ -322,10 +451,16 @@ def _run_inline(command_name, payload, project_root, timeout, envelope="plain", 
         return 0
     except subprocess.TimeoutExpired:
         print(f"Event {command_name} timed out", file=sys.stderr)
-        return 2
+        # A runner failure is not the handler's decision. For guard events
+        # (pre_tool_use, user_prompt_submit) the failure must keep blocking
+        # (exit 2); for other events exit 1, since agents read exit 2 from
+        # a Stop hook as "don't stop, keep going".
+        return _runner_failure_exit_code(event_name)
     except Exception as e:
         print(f"Event {command_name} error: {e}", file=sys.stderr)
-        return 2
+        # The handler never ran, so its failure cannot be treated as a
+        # decision: guard events keep blocking (exit 2), others fail open.
+        return _runner_failure_exit_code(event_name)
 
 
 def _emit(output, envelope, native_event=""):
@@ -421,14 +556,19 @@ def main():
     # the full resolver, which also handles extension manifests whose file stem
     # differs from the command name and the project's custom script selection.
     # Require EVENT_SCRIPT_PATH_CONFINEMENT so a stale global install cannot
-    # bypass the generated dispatcher's path guard.
+    # bypass the generated dispatcher's path guard, and EVENT_RUNNER_CONTRACT
+    # so a stale install that predates the #5336 runner contract (per-event
+    # runner-failure exit codes, SPECKIT_EVENT_NAME) cannot bypass those fixes.
     try:
         from specify_cli.events import (
+            EVENT_RUNNER_CONTRACT as _contract_ok,
             EVENT_SCRIPT_PATH_CONFINEMENT as _confine_ok,
             resolve_and_run_event_command,
         )
         if _confine_ok is not True:
             raise ImportError("specify_cli.events lacks script path confinement")
+        if _contract_ok is not True:
+            raise ImportError("specify_cli.events lacks the event runner contract")
         sys.exit(
             resolve_and_run_event_command(
                 command_name, _event_name, payload, project_root, timeout=timeout, envelope=envelope, native_event=native_event
@@ -438,7 +578,7 @@ def main():
         pass
 
     # Fallback: self-contained stdlib resolver (one-time/temporary installs).
-    sys.exit(_run_inline(command_name, payload, project_root, timeout, envelope, native_event))
+    sys.exit(_run_inline(command_name, payload, project_root, timeout, envelope, native_event, _event_name))
 
 
 if __name__ == "__main__":
@@ -788,15 +928,43 @@ def resolve_and_run_event_command(
     required inside ``hookSpecificOutput`` by Qwen's hooks spec (and included
     by the Claude Code hooks spec Gemini/Tabnine/Devin derive from). Only
     used when *envelope* is ``hookSpecificOutput``.
+
+    A runner failure (timeout, or the handler failing to start) exits 2 for
+    guard events (``pre_tool_use``, ``user_prompt_submit``) so the action
+    stays blocked, and 1 for every other event so a slow handler cannot
+    keep the agent running. A handler's own non-zero exit code always
+    passes through unchanged. A guard command that cannot be resolved, or
+    resolves to a template with no runnable script, also fails closed
+    (exit 2) — the guard never ran, so the action must stay blocked;
+    non-guard events still no-op with 0 when no handler resolves.
     """
     template_path, ext_id = _find_command_template(command_name, project_root)
     if not template_path:
+        if event_name in BLOCKING_FAILURE_EVENTS:
+            logger.warning(
+                "Event command '%s' could not be resolved; blocking event "
+                "'%s' fails closed without validation",
+                command_name,
+                event_name,
+            )
+            return _runner_failure_exit_code(event_name)
         logger.warning("Event command '%s' not found", command_name)
         return 0
     argv = _resolve_event_command_argv(template_path, project_root, ext_id)
     if not argv:
+        if event_name in BLOCKING_FAILURE_EVENTS:
+            logger.warning(
+                "Event command '%s' has no runnable script; blocking event "
+                "'%s' fails closed without validation",
+                command_name,
+                event_name,
+            )
+            return _runner_failure_exit_code(event_name)
         logger.warning("No script found for event command '%s'", command_name)
         return 0
+    # Tell the handler which event fired so one script can serve several
+    # events (mirrors the inline fallback in the generated dispatcher).
+    env = {**os.environ, "SPECKIT_EVENT_NAME": event_name} if event_name else None
     try:
         # ``payload`` reaches here already decoded from stdin's binary buffer
         # with an explicit ``utf-8`` (see event_run/dispatcher main()). Without
@@ -813,6 +981,7 @@ def resolve_and_run_event_command(
             encoding="utf-8",
             timeout=timeout,
             cwd=str(project_root),
+            env=env,
         )
         if result.stdout:
             _emit_event_stdout(result.stdout, envelope, native_event)
@@ -823,10 +992,16 @@ def resolve_and_run_event_command(
         return 0
     except subprocess.TimeoutExpired:
         sys.stderr.write(f"Event command {command_name} timed out\n")
-        return 2
+        # A runner failure is not the handler's decision. For guard events
+        # (pre_tool_use, user_prompt_submit) the failure must keep blocking
+        # (exit 2); for other events exit 1, since agents read exit 2 from
+        # a Stop hook as "don't stop, keep going".
+        return _runner_failure_exit_code(event_name)
     except Exception as e:
         sys.stderr.write(f"Event command {command_name} error: {e}\n")
-        return 2
+        # The handler never ran, so its failure cannot be treated as a
+        # decision: guard events keep blocking (exit 2), others fail open.
+        return _runner_failure_exit_code(event_name)
 
 
 def _emit_event_stdout(output: str, envelope: str, native_event: str = "") -> None:

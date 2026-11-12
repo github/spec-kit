@@ -1510,6 +1510,35 @@ class TestCommandRunner:
         code = resolve_and_run_event_command("nonexistent.command", "session_start", "{}", tmp_path)
         assert code == 0  # no-ops gracefully
 
+    def test_run_command_not_found_fails_closed_for_guard_events(self, tmp_path):
+        """The delegated resolver must fail closed like the inline fallback:
+        a guard command that cannot be resolved exits 2 instead of
+        returning 0 without running the guard (Copilot round 3)."""
+        for event in ("pre_tool_use", "user_prompt_submit"):
+            code = resolve_and_run_event_command(
+                "nonexistent.command", event, "{}", tmp_path
+            )
+            assert code == 2, f"{event} did not fail closed"
+
+    def test_run_command_without_script_fails_closed_for_guard_events(self, tmp_path):
+        """A guard command that resolves to a template with no runnable
+        script must fail closed in the delegated resolver too: the guard
+        never ran, so the action stays blocked (Copilot round 3)."""
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "test.md").write_text(
+            "---\ndescription: \"Test\"\n---\nBody\n", encoding="utf-8"
+        )
+        for event, expected in (
+            ("pre_tool_use", 2),
+            ("user_prompt_submit", 2),
+            ("session_start", 0),
+        ):
+            code = resolve_and_run_event_command(
+                "speckit.test", event, "{}", tmp_path
+            )
+            assert code == expected, f"{event} returned {code}, expected {expected}"
+
     def test_extension_command_resolves_when_file_stem_differs(self, tmp_path):
         """S8: an extension command whose declared file differs from its
         command name resolves via the manifest, not a file-stem scan."""
@@ -1613,6 +1642,190 @@ class TestCommandRunner:
 
         code = resolve_and_run_event_command("speckit.test", "session_start", "{}", tmp_path)
         assert code == 0
+
+    def _write_sleep_command(self, tmp_path, seconds):
+        """Create a core command whose script sleeps, then return its name."""
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "slow.md").write_text(
+            "---\n"
+            "description: \"Slow\"\n"
+            "scripts:\n"
+            "  sh: scripts/slow.sh\n"
+            "---\n"
+            "Body\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script_file = script_dir / "slow.sh"
+        script_file.write_text(f"#!/bin/sh\nsleep {seconds}\nexit 0\n", encoding="utf-8")
+        script_file.chmod(0o755)
+
+    def _write_broken_command(self, tmp_path):
+        """Create a core command whose script cannot start: the file exists
+        (so argv resolves) but its shebang names a missing interpreter, so
+        exec fails with a genuine subprocess startup error."""
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "broken.md").write_text(
+            "---\n"
+            "description: \"Broken\"\n"
+            "scripts:\n"
+            "  sh: scripts/broken.sh\n"
+            "---\n"
+            "Body\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script_file = script_dir / "broken.sh"
+        script_file.write_text("#!/does/not/exist\nexit 0\n", encoding="utf-8")
+        script_file.chmod(0o755)
+
+    def test_timeout_returns_1_not_blocking_2(self, tmp_path, capsys):
+        """A handler that runs past its timeout must not exit 2: Claude Code
+        reads exit 2 from a Stop hook as "don't stop, keep going", so a slow
+        script would keep the agent running when it should stop."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        self._write_sleep_command(tmp_path, 5)
+        code = resolve_and_run_event_command(
+            "speckit.slow", "stop", "{}", tmp_path, timeout=1
+        )
+        assert code == 1
+        assert "timed out" in capsys.readouterr().err
+
+    def test_pre_tool_use_timeout_returns_2_blocking(self, tmp_path, capsys):
+        """A pre_tool_use handler that runs past its timeout must still exit
+        2: Claude Code reads exit 2 from a PreToolUse hook as "block the tool
+        call", so a guard that never ran must keep the call blocked instead
+        of failing open like a Stop hook."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        self._write_sleep_command(tmp_path, 5)
+        code = resolve_and_run_event_command(
+            "speckit.slow", "pre_tool_use", "{}", tmp_path, timeout=1
+        )
+        assert code == 2
+        assert "timed out" in capsys.readouterr().err
+
+    def test_pre_tool_use_startup_failure_returns_2_blocking(self, tmp_path, capsys):
+        """A pre_tool_use handler that cannot start must still exit 2: the
+        guard did not validate the tool call, so the call stays blocked."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        self._write_broken_command(tmp_path)
+        code = resolve_and_run_event_command(
+            "speckit.broken", "pre_tool_use", "{}", tmp_path
+        )
+        assert code == 2
+        assert "error:" in capsys.readouterr().err
+
+    def test_user_prompt_submit_timeout_returns_2_blocking(self, tmp_path, capsys):
+        """A user_prompt_submit handler that runs past its timeout must still
+        exit 2: Claude Code reads exit 2 from a UserPromptSubmit hook as
+        "block the prompt", so a prompt whose validation never ran must not
+        reach the model (Claude Code Hooks reference, "Exit code 2 behavior
+        per event": UserPromptSubmit blocks the prompt, so it never reaches
+        Claude)."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        self._write_sleep_command(tmp_path, 5)
+        code = resolve_and_run_event_command(
+            "speckit.slow", "user_prompt_submit", "{}", tmp_path, timeout=1
+        )
+        assert code == 2
+        assert "timed out" in capsys.readouterr().err
+
+    def test_user_prompt_submit_startup_failure_returns_2_blocking(self, tmp_path, capsys):
+        """A user_prompt_submit handler that cannot start must still exit 2:
+        the prompt was never validated, so it stays blocked."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        self._write_broken_command(tmp_path)
+        code = resolve_and_run_event_command(
+            "speckit.broken", "user_prompt_submit", "{}", tmp_path
+        )
+        assert code == 2
+        assert "error:" in capsys.readouterr().err
+
+    def test_startup_failure_returns_1_for_stop(self, tmp_path, capsys):
+        """A Stop handler that cannot start exits 1 with an error diagnostic:
+        the runner failure must not read as "don't stop, keep going", and the
+        generic error branch needs its own coverage so it cannot silently
+        revert to exit 2."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        self._write_broken_command(tmp_path)
+        code = resolve_and_run_event_command(
+            "speckit.broken", "stop", "{}", tmp_path
+        )
+        assert code == 1
+        assert "error:" in capsys.readouterr().err
+
+    def test_handler_own_exit_2_still_passes_through(self, tmp_path):
+        """A handler that deliberately exits 2 keeps that exit code: only a
+        runner failure (timeout/error) is downgraded to 1, never the
+        handler's own decision."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "block.md").write_text(
+            "---\n"
+            "description: \"Block\"\n"
+            "scripts:\n"
+            "  sh: scripts/block.sh\n"
+            "---\n"
+            "Body\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script_file = script_dir / "block.sh"
+        script_file.write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
+        script_file.chmod(0o755)
+
+        code = resolve_and_run_event_command("speckit.block", "stop", "{}", tmp_path)
+        assert code == 2
+
+    def test_event_name_passed_as_speckit_event_name_env(self, tmp_path):
+        """The handler sees which event fired via the SPECKIT_EVENT_NAME env var."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "which.md").write_text(
+            "---\n"
+            "description: \"Which\"\n"
+            "scripts:\n"
+            "  sh: scripts/which.sh\n"
+            "---\n"
+            "Body\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        out_file = tmp_path / "event.out"
+        script_file = script_dir / "which.sh"
+        script_file.write_text(
+            f"#!/bin/sh\necho \"$SPECKIT_EVENT_NAME\" > {shlex.quote(str(out_file))}\nexit 0\n",
+            encoding="utf-8",
+        )
+        script_file.chmod(0o755)
+
+        code = resolve_and_run_event_command("speckit.which", "stop", "{}", tmp_path)
+        assert code == 0
+        assert out_file.read_text().strip() == "stop"
 
     def test_py_variant_anchored_under_specify(self, tmp_path):
         """S2: the py variant resolves scripts/... under .specify/, not the
@@ -1831,6 +2044,9 @@ class TestCommandRunner:
         content = (tmp_path / EVENTS_DISPATCHER_REL).read_text()
         # Delegates to specify_cli when importable and confinement is present.
         assert "EVENT_SCRIPT_PATH_CONFINEMENT" in content
+        # Delegation also requires the #5336 runner contract, so a stale
+        # install with confinement alone cannot bypass the new runner.
+        assert "EVENT_RUNNER_CONTRACT" in content
         assert "from specify_cli.events import" in content
         assert "resolve_and_run_event_command" in content
         assert "except (ImportError, TypeError):" in content
@@ -1896,6 +2112,471 @@ class TestCommandRunner:
         # The inline resolver ran the script with the payload.
         assert out_file.exists(), f"inline fallback did not run script; stderr={result.stderr!r} rc={result.returncode}"
         assert out_file.read_text() == '{"tool_name":"x"}'
+
+    def _install_boot_dispatcher(self, tmp_path, script_text, event="session_start"):
+        """Install a dispatcher for speckit.boot and write its script.
+
+        Returns (dispatcher_path, out_file) — the script writes its output to
+        out_file when run. Mirrors test_dispatcher_inline_fallback_runs_script.
+        """
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {event: [{"command": "speckit.boot"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        assert dispatcher.is_file()
+
+        cmd_dir = tmp_path / ".specify" / "templates" / "commands"
+        cmd_dir.mkdir(parents=True)
+        out_file = tmp_path / "boot.out"
+        (cmd_dir / "boot.md").write_text(
+            "---\ndescription: \"Boot\"\nscripts:\n  sh: scripts/boot.sh\n---\nBody\n",
+            encoding="utf-8",
+        )
+        script_dir = tmp_path / ".specify" / "scripts"
+        script_dir.mkdir(parents=True)
+        script = script_dir / "boot.sh"
+        script.write_text(script_text, encoding="utf-8")
+        script.chmod(0o755)
+        return dispatcher, out_file
+
+    def _run_dispatcher_inline(self, tmp_path, dispatcher, command, event, timeout):
+        """Run the generated dispatcher with specify_cli shadowed so the
+        inline stdlib fallback handles the event. Returns the CompletedProcess."""
+        import subprocess as _sp
+        import sys as _sys
+
+        fake_dir = tmp_path / "_fake"
+        (fake_dir / "specify_cli").mkdir(parents=True, exist_ok=True)
+        (fake_dir / "specify_cli" / "__init__.py").write_text("", encoding="utf-8")
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(fake_dir)
+        return _sp.run(
+            [_sys.executable, str(dispatcher), command, event, str(timeout)],
+            input="{}",
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=str(tmp_path),
+            check=False,
+        )
+
+    def _install_extension_dispatcher(
+        self, tmp_path, manifest_text, command, event, script_text,
+        template_name="guard-check.md", script_name="guard.sh",
+        template_text=None,
+    ):
+        """Install a dispatcher for an extension command whose file stem
+        differs from the command name, so only the manifest path (not the
+        file-stem scan) can resolve it. Returns (dispatcher, out_file)."""
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {event: [{"command": command}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        assert dispatcher.is_file()
+
+        ext_dir = tmp_path / ".specify" / "extensions" / "guard-ext"
+        cmds_dir = ext_dir / "commands"
+        cmds_dir.mkdir(parents=True)
+        (ext_dir / "extension.yml").write_text(manifest_text, encoding="utf-8")
+        if template_text is None:
+            template_text = (
+                "---\ndescription: \"Guard\"\nscripts:\n"
+                f"  sh: scripts/{script_name}\n---\nBody\n"
+            )
+        (cmds_dir / template_name).write_text(template_text, encoding="utf-8")
+        script_dir = ext_dir / "scripts"
+        script_dir.mkdir(parents=True)
+        script = script_dir / script_name
+        script.write_text(script_text, encoding="utf-8")
+        script.chmod(0o755)
+        return dispatcher, tmp_path / "guard.out"
+
+    def test_dispatcher_inline_fallback_manifest_trailing_comment_resolves(self, tmp_path):
+        """The inline manifest scan must ignore a trailing ``#`` comment on
+        a ``file:`` value: the guard still resolves and runs instead of
+        silently returning 0 without validation."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        out_file = tmp_path / "guard.out"
+        dispatcher, _out = self._install_extension_dispatcher(
+            tmp_path,
+            "schema_version: '1.0'\n"
+            "extension:\n"
+            "  id: guard-ext\n"
+            "  name: Guard Ext\n"
+            "  version: 1.0.0\n"
+            "  description: test\n"
+            "provides:\n"
+            "  commands:\n"
+            "    - name: speckit.guard\n"
+            "      file: commands/guard-check.md  # the guard script lives here\n",
+            "speckit.guard",
+            "pre_tool_use",
+            f"#!/bin/sh\necho ran > {shlex.quote(str(out_file))}\nexit 0\n",
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.guard", "pre_tool_use", 60
+        )
+        assert result.returncode == 0, f"stderr={result.stderr!r}"
+        assert out_file.read_text().strip() == "ran", (
+            "inline fallback did not run the guard; "
+            f"stderr={result.stderr!r} rc={result.returncode}"
+        )
+
+    def test_dispatcher_inline_fallback_manifest_cross_pairing_runs_nothing(self, tmp_path):
+        """The inline manifest scan must not pair a ``name:`` with the next
+        entry's ``file:``: a guard entry with no file must not resolve to
+        another command's script, and the guard event then fails closed."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        out_file = tmp_path / "guard.out"
+        dispatcher, _out = self._install_extension_dispatcher(
+            tmp_path,
+            "schema_version: '1.0'\n"
+            "extension:\n"
+            "  id: guard-ext\n"
+            "  name: Guard Ext\n"
+            "  version: 1.0.0\n"
+            "  description: test\n"
+            "provides:\n"
+            "  commands:\n"
+            "    - name: speckit.guard\n"
+            "    - file: commands/other.md\n"
+            "      name: speckit.other\n",
+            "speckit.guard",
+            "pre_tool_use",
+            f"#!/bin/sh\necho ran > {shlex.quote(str(out_file))}\nexit 0\n",
+            template_name="other.md",
+            script_name="other.sh",
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.guard", "pre_tool_use", 60
+        )
+        assert not out_file.exists(), "cross-paired file ran the wrong guard"
+        assert result.returncode == 2, f"stderr={result.stderr!r}"
+        assert "could not be resolved" in result.stderr
+
+    def test_dispatcher_inline_fallback_description_file_text_ignored(self, tmp_path):
+        """The inline manifest scan must match real ``file:`` keys, not the
+        substring anywhere: a ``description:`` mentioning ``file:`` before
+        the real ``file:`` entry must not select the mentioned file, or the
+        guard is bypassed by a handler that exits 0 (Copilot round 3)."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        out_file = tmp_path / "guard.out"
+        dispatcher, _out = self._install_extension_dispatcher(
+            tmp_path,
+            "schema_version: '1.0'\n"
+            "extension:\n"
+            "  id: guard-ext\n"
+            "  name: Guard Ext\n"
+            "  version: 1.0.0\n"
+            "  description: test\n"
+            "provides:\n"
+            "  commands:\n"
+            "    - name: speckit.guard\n"
+            "      description: \"Inspect file: commands/allow.md\"\n"
+            "      file: commands/guard-check.md\n",
+            "speckit.guard",
+            "pre_tool_use",
+            f"#!/bin/sh\necho ran > {shlex.quote(str(out_file))}\nexit 0\n",
+        )
+        # The mentioned file exists as a decoy: its script exits 0, so
+        # selecting it would pass the guard without running the real one.
+        ext_dir = tmp_path / ".specify" / "extensions" / "guard-ext"
+        allow_out = tmp_path / "allow.out"
+        (ext_dir / "commands" / "allow.md").write_text(
+            "---\ndescription: \"Allow\"\nscripts:\n"
+            "  sh: scripts/allow.sh\n---\nBody\n",
+            encoding="utf-8",
+        )
+        (ext_dir / "scripts" / "allow.sh").write_text(
+            f"#!/bin/sh\necho allow > {shlex.quote(str(allow_out))}\nexit 0\n",
+            encoding="utf-8",
+        )
+        (ext_dir / "scripts" / "allow.sh").chmod(0o755)
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.guard", "pre_tool_use", 60
+        )
+        assert result.returncode == 0, f"stderr={result.stderr!r}"
+        assert not allow_out.exists(), "description text selected the wrong handler"
+        assert out_file.read_text().strip() == "ran", (
+            "inline fallback did not run the real guard; "
+            f"stderr={result.stderr!r} rc={result.returncode}"
+        )
+
+    def test_dispatcher_inline_fallback_block_aliases_keep_command_name(self, tmp_path):
+        """A block-style ``aliases:`` list between ``name:`` and ``file:``
+        must not reset the command entry: alias items are nested list
+        items, not sibling commands, so the guard still resolves and runs
+        (Copilot round 3)."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        out_file = tmp_path / "guard.out"
+        dispatcher, _out = self._install_extension_dispatcher(
+            tmp_path,
+            "schema_version: '1.0'\n"
+            "extension:\n"
+            "  id: guard-ext\n"
+            "  name: Guard Ext\n"
+            "  version: 1.0.0\n"
+            "  description: test\n"
+            "provides:\n"
+            "  commands:\n"
+            "    - name: speckit.guard\n"
+            "      aliases:\n"
+            "        - guard-alias\n"
+            "        - other-alias\n"
+            "      file: commands/guard-check.md\n",
+            "speckit.guard",
+            "pre_tool_use",
+            f"#!/bin/sh\necho ran > {shlex.quote(str(out_file))}\nexit 0\n",
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.guard", "pre_tool_use", 60
+        )
+        assert result.returncode == 0, f"stderr={result.stderr!r}"
+        assert out_file.read_text().strip() == "ran", (
+            "inline fallback did not run the guard after block aliases; "
+            f"stderr={result.stderr!r} rc={result.returncode}"
+        )
+
+    def test_dispatcher_inline_fallback_unresolved_guard_fails_closed(self, tmp_path):
+        """A guard command the inline resolver cannot find must fail closed:
+        pre_tool_use exits 2 with a diagnostic instead of returning 0
+        without running the guard; a non-guard event still no-ops with 0."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {
+                "pre_tool_use": [{"command": "speckit.missing"}],
+                "stop": [{"command": "speckit.missing"}],
+            },
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        assert dispatcher.is_file()
+
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.missing", "pre_tool_use", 60
+        )
+        assert result.returncode == 2, f"stderr={result.stderr!r}"
+        assert "could not be resolved" in result.stderr
+
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.missing", "stop", 60
+        )
+        assert result.returncode == 0, f"stderr={result.stderr!r}"
+
+    def test_dispatcher_inline_fallback_guard_without_script_fails_closed(self, tmp_path):
+        """A guard command that resolves to a template with no runnable
+        script must fail closed too: the guard never ran, so pre_tool_use
+        exits 2 instead of silently passing the tool call."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, _out = self._install_extension_dispatcher(
+            tmp_path,
+            "schema_version: '1.0'\n"
+            "extension:\n"
+            "  id: guard-ext\n"
+            "  name: Guard Ext\n"
+            "  version: 1.0.0\n"
+            "  description: test\n"
+            "provides:\n"
+            "  commands:\n"
+            "    - name: speckit.guard\n"
+            "      file: commands/guard-check.md\n",
+            "speckit.guard",
+            "pre_tool_use",
+            "#!/bin/sh\nexit 0\n",
+            template_text="---\ndescription: \"Guard\"\n---\nBody\n",
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.guard", "pre_tool_use", 60
+        )
+        assert result.returncode == 2, f"stderr={result.stderr!r}"
+        assert "no runnable script" in result.stderr
+
+    def test_dispatcher_inline_fallback_timeout_returns_1(self, tmp_path):
+        """The inline fallback must not exit 2 on timeout either: the same
+        Stop-hook "don't stop" misread applies when specify_cli is absent."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, _out = self._install_boot_dispatcher(
+            tmp_path, "#!/bin/sh\nsleep 5\nexit 0\n"
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.boot", "session_start", 1
+        )
+        assert result.returncode == 1, f"stderr={result.stderr!r}"
+        assert "timed out" in result.stderr
+
+    def test_dispatcher_inline_fallback_pre_tool_use_timeout_returns_2(self, tmp_path):
+        """The inline fallback must exit 2 on a pre_tool_use timeout: the
+        guard never ran, so the tool call stays blocked — same rule as the
+        full resolver."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, _out = self._install_boot_dispatcher(
+            tmp_path, "#!/bin/sh\nsleep 5\nexit 0\n", event="pre_tool_use"
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.boot", "pre_tool_use", 1
+        )
+        assert result.returncode == 2, f"stderr={result.stderr!r}"
+        assert "timed out" in result.stderr
+
+    def test_dispatcher_inline_fallback_user_prompt_submit_timeout_returns_2(self, tmp_path):
+        """The inline fallback must exit 2 on a user_prompt_submit timeout:
+        Claude Code reads exit 2 from a UserPromptSubmit hook as "block the
+        prompt", so a prompt whose validation never ran must not reach the
+        model — same rule as the full resolver."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, _out = self._install_boot_dispatcher(
+            tmp_path, "#!/bin/sh\nsleep 5\nexit 0\n", event="user_prompt_submit"
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.boot", "user_prompt_submit", 1
+        )
+        assert result.returncode == 2, f"stderr={result.stderr!r}"
+        assert "timed out" in result.stderr
+
+    def test_dispatcher_inline_fallback_user_prompt_submit_startup_failure_returns_2(self, tmp_path):
+        """The inline fallback must exit 2 when a user_prompt_submit handler
+        cannot start: the prompt was never validated, so it stays blocked."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, _out = self._install_boot_dispatcher(
+            tmp_path, "#!/does/not/exist\nexit 0\n", event="user_prompt_submit"
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.boot", "user_prompt_submit", 60
+        )
+        assert result.returncode == 2, f"stderr={result.stderr!r}"
+        assert "error:" in result.stderr
+
+    def test_dispatcher_inline_fallback_pre_tool_use_startup_failure_returns_2(self, tmp_path):
+        """The inline fallback must exit 2 when a pre_tool_use handler
+        cannot start: the tool call was never validated, so it stays
+        blocked. Completes the startup-failure matrix (both runners, all
+        three event classes) required by the round-1 review."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, _out = self._install_boot_dispatcher(
+            tmp_path, "#!/does/not/exist\nexit 0\n", event="pre_tool_use"
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.boot", "pre_tool_use", 60
+        )
+        assert result.returncode == 2, f"stderr={result.stderr!r}"
+        assert "error:" in result.stderr
+
+    def test_dispatcher_inline_fallback_startup_failure_returns_1(self, tmp_path):
+        """The inline fallback must exit 1 with an error diagnostic when a
+        Stop handler cannot start: the generic error branch needs its own
+        coverage in the fallback too, so it cannot silently revert to 2."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, _out = self._install_boot_dispatcher(
+            tmp_path, "#!/does/not/exist\nexit 0\n", event="stop"
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.boot", "stop", 60
+        )
+        assert result.returncode == 1, f"stderr={result.stderr!r}"
+        assert "error:" in result.stderr
+
+    def test_dispatcher_ignores_stale_specify_cli_without_runner_contract(self, tmp_path):
+        """A generated dispatcher must not delegate to an older specify_cli
+        that has EVENT_SCRIPT_PATH_CONFINEMENT but predates the #5336 runner
+        contract (per-event failure exit codes, SPECKIT_EVENT_NAME): after a
+        one-time uvx upgrade, that resolver would still return 2 on timeout
+        and omit SPECKIT_EVENT_NAME. The dispatcher must fall back to its inline
+        resolver instead."""
+        import subprocess as _sp
+        import sys as _sys
+
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, out_file = self._install_boot_dispatcher(
+            tmp_path, "#!/bin/sh\necho ran > " + shlex.quote(str(tmp_path / "boot.out")) + "\nexit 0\n"
+        )
+        ran = tmp_path / "delegated"
+        fake_dir = tmp_path / "_stale_pkg"
+        pkg = fake_dir / "specify_cli"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "events.py").write_text(
+            "EVENT_SCRIPT_PATH_CONFINEMENT = True\n"
+            "def resolve_and_run_event_command(*_a, **_k):\n"
+            f"    open({str(ran)!r}, 'w').write('delegated')\n"
+            "    return 0\n",
+            encoding="utf-8",
+        )
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(fake_dir)
+        result = _sp.run(
+            [_sys.executable, str(dispatcher), "speckit.boot", "session_start", "60"],
+            input="{}",
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            cwd=str(tmp_path),
+        )
+        assert not ran.exists(), f"stale package ran; stderr={result.stderr!r}"
+        assert result.returncode == 0, f"stderr={result.stderr!r}"
+        assert out_file.read_text().strip() == "ran", (
+            "inline fallback did not run the script after refusing delegation"
+        )
+
+    def test_dispatcher_inline_fallback_passes_speckit_event_name(self, tmp_path):
+        """The inline fallback passes the fired event to the handler via
+        SPECKIT_EVENT_NAME, same as the full resolver."""
+        if platform.system().lower().startswith("win"):
+            return  # sh is POSIX
+
+        dispatcher, out_file = self._install_boot_dispatcher(
+            tmp_path,
+            f"#!/bin/sh\necho \"$SPECKIT_EVENT_NAME\" > {shlex.quote(str(tmp_path / 'boot.out'))}\nexit 0\n",
+            event="stop",
+        )
+        result = self._run_dispatcher_inline(
+            tmp_path, dispatcher, "speckit.boot", "stop", 60
+        )
+        assert result.returncode == 0, f"stderr={result.stderr!r}"
+        assert out_file.read_text().strip() == "stop"
 
     def test_dispatcher_ignores_stale_specify_cli_without_confinement(self, tmp_path):
         """A generated dispatcher must not delegate to an older specify_cli

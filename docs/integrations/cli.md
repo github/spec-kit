@@ -473,6 +473,36 @@ Spec Kit hooks rather than merely stopping new hook generation.
 Agent-specific guides identify native event configuration paths and
 limitations. These runtime events are distinct from extension command hooks.
 
+### Handler contract
+
+A handler is a script-backed Spec Kit command. When its event fires, the
+runner passes the event JSON payload on stdin (UTF-8, capped at 1 MiB; a
+larger payload is rejected with exit 1) and exports the canonical event
+name as `SPECKIT_EVENT_NAME` (snake_case: `session_start`,
+`pre_tool_use`, `post_tool_use`, `session_end`, `user_prompt_submit`, or
+`stop`). `SPECKIT_EVENT_*` is the namespace for future event-related
+values, so handlers should read `SPECKIT_EVENT_NAME` and not rely on any
+other `SPECKIT_EVENT_*` name yet.
+
+Exit codes decide what happens next:
+
+- A handler's own exit code always passes through unchanged. A handler
+  that deliberately exits 2 still blocks, exactly as the agent reads it.
+- A runner failure — the handler timing out, or failing to start — exits
+  2 for guard events (`pre_tool_use`, `user_prompt_submit`) and 1 for
+  every other event. Claude Code reads exit 2 from a `PreToolUse` hook as
+  "block the tool call" and from a `UserPromptSubmit` hook as "block the
+  prompt, so it never reaches Claude" (Claude Code Hooks reference,
+  "Exit code 2 behavior per event"); exit 2 from a `Stop` hook would read
+  as "don't stop, keep going", so a slow Stop handler must never exit 2.
+- A guard handler that cannot be resolved at all — missing command file,
+  unparsable manifest, disabled extension, or no runnable script — fails
+  closed: the runner exits 2 with a diagnostic on stderr instead of
+  letting the action through without validation. Non-guard events still
+  no-op with exit 0 when no handler resolves. This is deliberate: a
+  misconfigured guard blocks the action until it is fixed, rather than
+  silently skipping the validation it was configured to run.
+
 ## Workflow CLI Dispatch
 
 The agent guides distinguish IDE setup from workflow CLI support. Some IDE
