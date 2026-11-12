@@ -902,10 +902,11 @@ class IntegrationBase(ABC):
     ) -> set[str]:
         """Return project-relative output directories an upgrade may create.
 
-        ``integration upgrade`` journals writes beneath the integration's
-        config ``folder``. An integration whose output location comes from its
-        options instead lists that location here, so a failed upgrade removes
-        directories it created. Default: none.
+        ``integration upgrade`` and ``init`` into an existing directory
+        journal writes beneath the integration's config ``folder``. An
+        integration whose output location comes from its options instead
+        lists that location here, so a failed operation removes directories it
+        created. Default: none.
         """
         return set()
 

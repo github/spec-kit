@@ -346,15 +346,17 @@ after their registries and agent outputs have been rolled back.
 Failed setup or durable package commit restores those
 changes, not entire agent directories or all of `.specify`. Independent workflow
 progress and unowned user files are left untouched.
-A built-in `upgrade` with no external transaction journals the same way from
-`setup()` until its manifest and integration state are saved, because `setup()`
-rewrites generated files in place before the new manifest exists. That journal
-starts before the first shared-infrastructure refresh and covers `.specify` and
-the upgraded integration's own output. It takes no project lock and reads no
-other integration's state; when it cannot cover the upgrade (a symlinked or
-unsafe scope, an unreadable directory), the upgrade runs unjournalled as before
-rather than failing. Extension and preset re-registration still runs after that
-commit, as best effort.
+A built-in `upgrade`, or a built-in `init` into an existing directory, with no
+external transaction journals the same way until its manifest and integration
+state are saved, because `setup()` writes generated files, in place where they
+exist, before the new manifest does. The upgrade journal starts before the first
+shared-infrastructure refresh; the init journal starts at `setup()`. Both cover
+`.specify` and the integration's own output. They take no project lock and read
+no other integration's state; when the journal cannot cover the operation (a
+symlinked or unsafe scope, an unreadable directory), it runs unjournalled as
+before rather than failing. Extension and preset re-registration runs after that
+commit, as best effort. A failed `init` into a new directory still removes the
+directory instead.
 While the lifecycle journal is active, install/switch failure handlers defer
 cleanup to it rather than forcing teardown or rewriting fallback state first.
 This preserves pending-file conflicts and the original directory inventory.

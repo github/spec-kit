@@ -166,7 +166,7 @@ def test_journal_snapshot_cleanup_removes_an_unreadable_snapshot_directory(tmp_p
     assert not any(temp_parent.iterdir())
 
 
-def test_builtin_upgrade_journal_runs_unjournalled_through_a_symlinked_project_root(tmp_path, monkeypatch):
+def test_builtin_journal_runs_unjournalled_through_a_symlinked_project_root(tmp_path, monkeypatch):
     """A root reached through an alias falls back to the unjournalled upgrade."""
     from specify_cli.integrations import _lifecycle
 
@@ -182,9 +182,29 @@ def test_builtin_upgrade_journal_runs_unjournalled_through_a_symlinked_project_r
 
     monkeypatch.setattr(_lifecycle, "_journalled", journalled)
 
-    with _lifecycle.builtin_upgrade_journal(alias, "claude", []):
+    with _lifecycle.builtin_journal(alias, "claude", []):
         pass
-    with _lifecycle.builtin_upgrade_journal(project, "claude", []):
+    with _lifecycle.builtin_journal(project, "claude", []):
         pass
 
     assert entered == [project]
+
+
+def test_builtin_journal_removes_directories_a_failed_init_created(tmp_path):
+    """Rolling back a first init into a plain directory leaves no new directories."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    project = tmp_path / "plain"
+    project.mkdir()
+    (project / "README.md").write_text("user file\n", encoding="utf-8")
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            for relative in (".specify/integrations/claude.manifest.json", ".claude/skills/x/SKILL.md"):
+                target = project / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                write_text(target, "generated\n")
+            raise OSError("disk full")
+
+    assert sorted(path.name for path in project.iterdir()) == ["README.md"]

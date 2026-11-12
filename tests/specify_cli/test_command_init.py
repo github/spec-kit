@@ -21,6 +21,7 @@ import importlib
 import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -376,3 +377,159 @@ def test_init_force_keeps_recovered_markers(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert IntegrationManifest.load("codex", project).is_recovered(rel)
+
+
+def _tree(root: Path):
+    """Every file's bytes and mode and every directory, without following links."""
+    files, directories = {}, set()
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            files[relative] = ("link", os.readlink(path))
+        elif path.is_dir():
+            directories.add(relative)
+        else:
+            files[relative] = (path.read_bytes(), path.stat().st_mode & 0o7777)
+    return files, directories
+
+
+def _init_args(key: str) -> list[str]:
+    args = ["--integration", key, "--script", "sh", "--ignore-agent-tools", "--non-interactive"]
+    if key == "generic":
+        args += ["--integration-options", "--commands-dir .myagent/commands/"]
+    return args
+
+
+def _fail_init_at(monkeypatch, failure: str, key: str) -> None:
+    """Make ``init`` raise after setup(), at its manifest save, or at its state write."""
+    from specify_cli.integrations import _commands, get_integration
+    from specify_cli.integrations.manifest import IntegrationManifest
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    if failure == "setup":
+        integration_class = type(get_integration(key))
+        real_setup = integration_class.setup
+
+        def setup(self, *args, **kwargs):
+            real_setup(self, *args, **kwargs)
+            fail()
+
+        monkeypatch.setattr(integration_class, "setup", setup)
+    elif failure == "manifest":
+        real_save = IntegrationManifest.save
+
+        def save(self, *args, **kwargs):
+            if self.key == key:
+                fail()
+            return real_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(IntegrationManifest, "save", save)
+    else:
+        monkeypatch.setattr(_commands, "_write_integration_json", fail)
+
+
+def _existing_target(tmp_path: Path, monkeypatch, existing: str, key: str) -> Path:
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "README.md").write_text("user file\n", encoding="utf-8")
+    if existing == "project":
+        monkeypatch.chdir(project)
+        result = CliRunner().invoke(app, ["init", "--here", "--force", *_init_args(key)])
+        assert result.exit_code == 0, result.output
+    return project
+
+
+@pytest.mark.parametrize("existing", ["project", "plain"])
+@pytest.mark.parametrize("failure", ["setup", "manifest", "state"])
+def test_init_here_rolls_back_when_it_fails_before_committing(tmp_path, monkeypatch, existing, failure):
+    """``init --here`` that fails before its manifest and state commit restores the directory."""
+    project = _existing_target(tmp_path, monkeypatch, existing, "claude")
+    if existing == "project":
+        skills = project / ".claude" / "skills"
+        (skills / "speckit-plan" / "SKILL.md").write_text("# user customization\n", encoding="utf-8")
+        (skills / "speckit-tasks" / "SKILL.md").unlink()
+        (skills / "speckit-tasks").rmdir()
+    before = _tree(project)
+    _fail_init_at(monkeypatch, failure, "claude")
+
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, ["init", "--here", "--force", *_init_args("claude")])
+
+    assert result.exit_code != 0
+    assert "disk full" in result.output
+    assert _tree(project) == before
+
+
+def _builtin_keys() -> list[str]:
+    from specify_cli.integrations._lifecycle import BUILTIN_INTEGRATION_KEYS
+
+    return sorted(BUILTIN_INTEGRATION_KEYS)
+
+
+@pytest.mark.parametrize("existing", ["project", "plain"])
+@pytest.mark.parametrize("key", _builtin_keys())
+def test_init_here_rolls_back_a_failed_setup_for_every_builtin(tmp_path, monkeypatch, key, existing):
+    """No built-in integration writes outside what the init journal can restore."""
+    import json as _json
+
+    project = _existing_target(tmp_path, monkeypatch, existing, key)
+    manifest = project / ".specify" / "integrations" / f"{key}.manifest.json"
+    if manifest.exists():
+        # A user edit to a generated file shows whether setup() rewrote it.
+        for relative in sorted(_json.loads(manifest.read_text(encoding="utf-8"))["files"]):
+            (project / relative).write_text("user edit\n", encoding="utf-8")
+            break
+    before = _tree(project)
+    _fail_init_at(monkeypatch, "setup", key)
+
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, ["init", "--here", "--force", *_init_args(key)])
+
+    assert result.exit_code != 0
+    assert "disk full" in result.output
+    assert _tree(project) == before
+
+
+def test_init_here_runs_unjournalled_when_a_scope_is_a_symlink(tmp_path, monkeypatch):
+    """A layout the journal cannot cover keeps initializing as it did before."""
+    from tests.specify_cli.integrations._helpers import _symlink_or_skip
+
+    project = _existing_target(tmp_path, monkeypatch, "project", "claude")
+    shared = tmp_path / "shared-extensions"
+    shared.mkdir()
+    extensions = project / ".specify" / "extensions"
+    if extensions.exists():
+        shutil.rmtree(extensions)
+    _symlink_or_skip(extensions, shared, directory=True)
+    from specify_cli.integrations import _lifecycle
+
+    entered = []
+    real_journalled = _lifecycle._journalled
+
+    def journalled(*args, **kwargs):
+        entered.append(args[0])
+        return real_journalled(*args, **kwargs)
+
+    monkeypatch.setattr(_lifecycle, "_journalled", journalled)
+
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, ["init", "--here", "--force", *_init_args("claude")])
+
+    assert result.exit_code == 0, result.output
+    assert extensions.is_symlink()
+    assert entered == []
+
+
+@pytest.mark.parametrize("failure", ["setup", "state"])
+def test_init_into_a_new_directory_removes_it_when_it_fails(tmp_path, monkeypatch, failure):
+    """A fresh ``init <name>`` keeps cleaning up the directory it created."""
+    _fail_init_at(monkeypatch, failure, "claude")
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(app, ["init", "proj", *_init_args("claude")])
+
+    assert result.exit_code != 0
+    assert "disk full" in result.output
+    assert not (tmp_path / "proj").exists()

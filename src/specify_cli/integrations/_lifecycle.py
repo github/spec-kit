@@ -459,18 +459,19 @@ def _journalled(
 
 
 @contextmanager
-def builtin_upgrade_journal(root: Path, key: str, manifest_files, extra_folders=()) -> Any:
-    """Journal a built-in upgrade's writes up to its manifest and state commit.
+def builtin_journal(root: Path, key: str, manifest_files, extra_folders=()) -> Any:
+    """Journal a built-in upgrade or init up to its manifest and state commit.
 
-    ``setup()`` rewrites generated files in place before the new manifest is
-    saved, so a failure in between would leave files the old manifest does
-    not describe, which later runs then treat as the user's. Inside an
-    external lifecycle transaction this does nothing, as that journal already
-    covers the operation. It takes no project lock and reads no other
-    integration's state. If the journal cannot cover the upgrade (a symlinked
-    or unsafe scope, an unreadable directory), the upgrade runs unjournalled,
-    as it did before, rather than failing. ``extra_folders`` adds the
-    integration's ``upgrade_output_folders()``, which its config cannot name.
+    ``setup()`` writes generated files, in place where they already exist,
+    before the new manifest is saved, so a failure in between would leave
+    files no manifest describes, which later runs then treat as the user's.
+    Inside an external lifecycle transaction this does nothing, as that
+    journal already covers the operation. It takes no project lock and reads
+    no other integration's state. If the journal cannot cover the operation
+    (a symlinked or unsafe scope, an unreadable directory), it runs
+    unjournalled, as it did before, rather than failing. ``manifest_files``
+    are the integration's currently recorded files and ``extra_folders`` its
+    ``upgrade_output_folders()``, which its config cannot name.
     """
     if lifecycle_owns_rollback():
         yield

@@ -221,7 +221,7 @@ class GenericIntegration(MarkdownIntegration):
         parsed_options: dict[str, Any] | None,
         raw_options: str | None,
     ) -> set[str]:
-        """Name a new ``--commands-dir`` so a failed upgrade removes it.
+        """Name a new ``--commands-dir`` so a failed upgrade or init removes it.
 
         An existing destination is left out: its files are journalled as they
         are written, and walking a large user directory would only add cost.
