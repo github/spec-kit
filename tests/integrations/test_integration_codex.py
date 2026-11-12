@@ -1898,17 +1898,21 @@ class TestCodexFileHelperInternals:
         (tmp_path / rel).parent.mkdir(parents=True)
         real_open, real_step = os.open, getattr(os, step)
         leaf: list[int] = []
+        live: set[int] = set()
 
         def open_(path, flags, *args, **kwargs):
             fd = real_open(path, flags, *args, **kwargs)
             if os.fspath(path).endswith(".speckit-backup"):
                 leaf.append(fd)
+                live.add(fd)
             return fd
 
         def fail(fd, *args):
-            if fd not in leaf:
+            if fd not in live:
                 return real_step(fd, *args)
             if step == "close":
+                # Its number may be reused once closed.
+                live.discard(fd)
                 real_step(fd)
             raise OSError("disk full")
 

@@ -498,12 +498,12 @@ class CodexIntegration(SkillsIntegration):
         """Ownership for a file kept tracked because its cleanup did not finish.
 
         A readable ``whole`` file that is no longer policy-only holds a user
-        edit, so it becomes ``partial``: upgrade re-hashes tracked files
-        afterwards, and a ``whole`` entry would then count as generated and be
-        deleted, edit included. Policy-only content stays ``whole``, so it is
-        still deleted once cleanup can finish. When the file cannot be read,
-        the prior mode is kept so a generated file is still recognised, and
-        deleted, once it can be read again.
+        edit, unparseable ones included, so it becomes ``partial``: upgrade
+        re-hashes tracked files afterwards, and a ``whole`` entry would then
+        count as generated and be deleted, edit included. Policy-only content
+        stays ``whole``, so it is still deleted once cleanup can finish. When
+        the file cannot be read, the prior mode is kept so a generated file is
+        still recognised, and deleted, once it can be read again.
         """
         mode = prior.ownership_modes[rel]
         if mode != "whole":

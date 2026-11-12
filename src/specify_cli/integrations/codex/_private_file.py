@@ -65,13 +65,18 @@ def _create_posix(directory: int, name: str, content: bytes) -> None:
     """Create ``name`` in the pinned ``directory``, then write and flush it.
 
     Everything goes through the one descriptor that created the file, so
-    nothing swapped in under its name afterwards is opened. Only a file this
-    call created is removed when a later step fails.
+    nothing swapped in under its name afterwards is opened. Only the file
+    this call created is removed when a later step fails. The directory is
+    flushed too, so the backup survives a crash that the rewrite after it
+    does.
     """
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
     fd = os.open(name, flags, 0o600, dir_fd=directory)
+    created = None
     try:
         try:
+            created = os.fstat(fd)
             view = memoryview(content)
             while view:
                 count = os.write(fd, view)
@@ -81,9 +86,12 @@ def _create_posix(directory: int, name: str, content: bytes) -> None:
             os.fsync(fd)
         finally:
             os.close(fd)
+        os.fsync(directory)
     except BaseException:
         try:
-            os.unlink(name, dir_fd=directory)
+            current = os.stat(name, dir_fd=directory, follow_symlinks=False)
+            if created is None or (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
+                os.unlink(name, dir_fd=directory)
         except OSError:
             pass
         raise
