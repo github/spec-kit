@@ -273,7 +273,7 @@ function Read-GitConfigValue {
 
     if (-not (Test-Path -LiteralPath $configFile -PathType Leaf)) { return '' }
     $escapedKey = [regex]::Escape($Key)
-    foreach ($line in Get-Content -LiteralPath $configFile) {
+    foreach ($line in Get-Content -LiteralPath $configFile -Encoding UTF8) {
         if ($line -match "^\s*$escapedKey\s*:\s*(.*)$") {
             $val = ($matches[1] -replace '\s+#.*$', '').Trim()
             $val = $val -replace '^["'']', '' -replace '["'']$', ''

@@ -31,7 +31,7 @@ if ($MessageFile) {
         Write-Warning "[specify] Error: message file '$MessageFile' not found"
         exit 1
     }
-    $GeneratedMessage = (Get-Content -Path $MessageFile -Raw)
+    $GeneratedMessage = (Get-Content -Path $MessageFile -Raw -Encoding UTF8)
     if ($null -ne $GeneratedMessage) {
         $GeneratedMessage = $GeneratedMessage.TrimEnd("`r", "`n")
     }
@@ -92,7 +92,7 @@ $commitStyle = "fixed"
 
 if (Test-Path $configFile) {
     # Top-level scalar key: commit_style (fixed | conventional)
-    foreach ($line in Get-Content $configFile) {
+    foreach ($line in Get-Content $configFile -Encoding UTF8) {
         if ($line -match '^commit_style:\s*(.+)$') {
             $styleVal = (($matches[1] -replace '\s+#.*$', '').Trim()) -replace '^["'']' -replace '["'']$'
             if ($styleVal) {
@@ -112,7 +112,7 @@ if (Test-Path $configFile) {
     $inEvent = $false
     $defaultEnabled = $false
 
-    foreach ($line in Get-Content $configFile) {
+    foreach ($line in Get-Content $configFile -Encoding UTF8) {
         # Detect auto_commit: section
         if ($line -match '^auto_commit:') {
             $inAutoCommit = $true
