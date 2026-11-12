@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import requires_bash
+from tests.conftest import HAS_BASH, requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
     _bash_posix_path,
@@ -27,7 +27,6 @@ from tests.parity_helpers import (
 SCRIPT = "setup-tasks"
 
 
-@requires_bash
 @pytest.mark.parametrize("feature_env", [False, True], ids=["persisted", "env"])
 @pytest.mark.parametrize(
     "layer",
@@ -66,10 +65,9 @@ def test_all_variants_setup_tasks_in_bracketed_project(
     if feature_env:
         env["SPECIFY_FEATURE_DIRECTORY"] = "specs/001-my-feature"
         env["SPECIFY_FEATURE"] = "001-my-feature"
-    commands = [
-        ("bash", bash_cmd(repo, SCRIPT, "--json")),
-        ("python", py_cmd(repo, SCRIPT, "--json")),
-    ]
+    commands = [("python", py_cmd(repo, SCRIPT, "--json"))]
+    if HAS_BASH:
+        commands.append(("bash", bash_cmd(repo, SCRIPT, "--json")))
     if HAS_POWERSHELL:
         commands.append(("powershell", ps_cmd(repo, SCRIPT, "-Json")))
     for variant, command in commands:

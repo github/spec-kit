@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from scripts.python import common as python_common
-from tests.conftest import requires_bash
+from tests.conftest import HAS_BASH, requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
     bash_cmd,
@@ -33,7 +33,6 @@ SCRIPT = "resolve-template"
 TEMPLATE = "constitution-template"
 
 
-@requires_bash
 @pytest.mark.parametrize(
     "layer",
     [
@@ -91,10 +90,9 @@ def test_all_variants_resolve_templates_in_bracketed_project(
         candidate.write_bytes(b"# Extension\n")
         expected = "# Extension\n"
 
-    commands = [
-        bash_cmd(repo, SCRIPT, TEMPLATE, "--json"),
-        py_cmd(repo, SCRIPT, TEMPLATE, "--json"),
-    ]
+    commands = [py_cmd(repo, SCRIPT, TEMPLATE, "--json")]
+    if HAS_BASH:
+        commands.append(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"))
     if HAS_POWERSHELL:
         commands.append(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"))
     for command in commands:
