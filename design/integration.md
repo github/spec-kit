@@ -350,7 +350,9 @@ A built-in `upgrade`, or a built-in `init` into an existing directory, with no
 external transaction journals the same way until its manifest and integration
 state are saved, because `setup()` writes generated files, in place where they
 exist, before the new manifest does. The upgrade journal starts before the first
-shared-infrastructure refresh; the init journal starts at `setup()`. Both cover
+shared-infrastructure refresh; the init journal starts at `setup()` and ends at
+the `integration.json` write, so init's later shared-infrastructure install and
+optional steps run after that commit, as before. Both journals' scopes are
 `.specify` and the integration's own output. They take no project lock and read
 no other integration's state; when the journal cannot cover the operation (a
 symlinked or unsafe scope, an unreadable directory), it runs unjournalled as

@@ -434,6 +434,9 @@ def _existing_target(tmp_path: Path, monkeypatch, existing: str, key: str) -> Pa
     project = tmp_path / "proj"
     project.mkdir()
     (project / "README.md").write_text("user file\n", encoding="utf-8")
+    # A user settings file some integrations merge into (Copilot).
+    (project / ".vscode").mkdir()
+    (project / ".vscode" / "settings.json").write_text('{"editor.tabSize": 2}\n', encoding="utf-8")
     if existing == "project":
         monkeypatch.chdir(project)
         result = CliRunner().invoke(app, ["init", "--here", "--force", *_init_args(key)])

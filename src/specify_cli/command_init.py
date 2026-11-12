@@ -735,23 +735,28 @@ def register(app: typer.Typer) -> None:
                 # of leaving files no manifest describes. A new directory is
                 # removed on failure instead.
                 journal = nullcontext()
-                if dir_existed_before:
+                if dir_existed_before and not lifecycle_owns_rollback():
+                    from .integrations._helpers import _MANIFEST_READ_ERRORS
+
                     try:
                         recorded = IntegrationManifest.load(
                             resolved_integration.key, project_path
                         ).files
-                    except (OSError, ValueError):
+                    except _MANIFEST_READ_ERRORS:
                         # Unreadable or absent: the journal still covers the
                         # integration's folder and observed writes.
                         recorded = {}
-                    journal = builtin_journal(
-                        project_path,
-                        resolved_integration.key,
-                        recorded,
-                        resolved_integration.upgrade_output_folders(
+                    try:
+                        extra_folders = resolved_integration.upgrade_output_folders(
                             project_path, integration_parsed_options or None, integration_options
-                        ),
-                    )
+                        )
+                    except (OSError, ValueError, RuntimeError):
+                        # Run unjournalled, as before, rather than fail init.
+                        extra_folders = None
+                    if extra_folders is not None:
+                        journal = builtin_journal(
+                            project_path, resolved_integration.key, recorded, extra_folders,
+                        )
                 with journal:
                     resolved_integration.setup(
                         project_path,
