@@ -283,10 +283,7 @@ defined in [Agent Integration Design](integration.md).
 
 Native registration follows the selected integration's output flavor. It
 renders primary names and aliases, so integrations whose native command format
-is `SKILL.md` create separate primary and alias skill directories. A skill name
-is always a single path component: `skill_name_for_command` turns dots and the
-path separators that free-form aliases may contain into hyphens, and every
-producer and cleanup path relies on that. Non-generic
+is `SKILL.md` create separate primary and alias skill directories. Non-generic
 native registration writes its selected destination and may replace an
 existing file; the generic integration applies its ownership checks first.
 
@@ -307,8 +304,15 @@ also uses copy-mode rendering and resource ownership.
 | --- | --- |
 | Install / render | Write and record hashes for copies; skip unowned existing destinations with a warning unless forced. |
 | Refresh / integration switch or upgrade | Overwrite hash-matching copies; preserve modified recorded copies with a warning unless the user supplies `--force`. |
-| Extension removal / update / force reinstall | Remove recorded resources even if edited. Project paths follow the recorded location across agent directories, including moved locations. Home paths are removed only under the resolved skills directories of integrations that declare `registrar_config.home_scoped` (as their `SKILL.md` cleanup does), so a moved home directory leaves its resources in place. Unsafe paths are skipped with a warning. Update and reinstall then install the new set. Update rollback snapshots every recorded resource path from both buckets. |
+| Extension removal / update / force reinstall | Remove recorded resources even if edited, but only a path below `<skills directory>/<generated skill name>/`, anchored at a skills directory that `skill_roots` authorizes: every configured integration skills directory, plus earlier generic output directories derived from the recorded `SKILL.md` paths. The registry is project-controlled, so a record elsewhere (for example under `.git` or `src`) is never removed, and a skill name only counts when it is a validated `speckit-` path (a nested alias has several segments). Home paths are removed only under the resolved skills directories of integrations that declare `registrar_config.home_scoped` (as their `SKILL.md` cleanup does), so a moved home directory, or a moved native directory that is no longer configured, leaves its resources in place. Unsafe paths are skipped with a warning. Update and reinstall then install the new set. Update rollback snapshots every recorded resource path from both buckets. |
 | Per-agent unregister | Restrict recorded-path cleanup to the agent's currently resolved skills directory; records outside it remain. |
+
+`skill_roots` in `extensions/_skill_resources.py` is the single answer to which
+directories may hold an extension's skills; `SKILL.md` removal, resource
+retirement and the update backup all use it and its `skill_name_parts`
+validation, and it expresses an already-resolved path (the generic output
+directory) below the lexical project root so a project reached through a
+symlink is judged the same way.
 
 Resource cleanup itself does not remove unrecorded paths. Native and generic
 skill cleanup leaves unrelated files in place, but existing non-generic

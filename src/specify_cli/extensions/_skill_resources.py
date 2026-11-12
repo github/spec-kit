@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import stat
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -27,12 +27,161 @@ def recorded_resource_hashes(metadata: dict | None) -> dict[str, dict[str, str]]
     }
 
 
+#: Every skill an extension generates is named ``speckit-...``. Path-based
+#: resource cleanup relies on it, because it has no ``SKILL.md`` marker to read.
+GENERATED_SKILL_PREFIX = "speckit-"
+
+
+def skill_name_parts(name: object, *, generated_only: bool = False) -> tuple[str, ...] | None:
+    """Return the path segments of a skill name, or ``None`` if it cannot be one.
+
+    A free-form alias may produce a nested skill (``speckit-ext/group-alias``),
+    so a name has one or more segments. Empty, ``.`` and ``..`` segments,
+    backslashes and drive prefixes never name a skill. ``generated_only`` also
+    requires the ``speckit-`` prefix every generated skill carries.
+    """
+    if (
+        not isinstance(name, str) or not name or "\\" in name
+        or PureWindowsPath(name).drive
+    ):
+        return None
+    parts = tuple(name.split("/"))
+    if any(part in ("", ".", "..") for part in parts):
+        return None
+    if generated_only and not parts[0].startswith(GENERATED_SKILL_PREFIX):
+        return None
+    return parts
+
+
+def _boundaries(project_root: Path) -> tuple[Path, Path]:
+    return Path(os.path.abspath(project_root)), Path(os.path.abspath(Path.home()))
+
+
+def locate_skills_dir(project_root: Path, skills_dir: Path) -> tuple[Path, Path] | None:
+    """Return *skills_dir* below its project or home root, and that root.
+
+    Paths are compared lexically, so a symlinked skills directory is judged by
+    where it is, not by where it points. A path that was already resolved (the
+    generic output root is) is expressed below the lexical root first, so a
+    project reached through a symlink, such as ``/var`` versus ``/private/var``,
+    is still recognised.
+    """
+    candidate = Path(os.path.abspath(skills_dir))
+    roots = _boundaries(project_root)
+    for root in roots:
+        if candidate.is_relative_to(root):
+            return candidate, root
+    for root in roots:
+        try:
+            resolved = root.resolve()
+        except OSError:
+            continue
+        if candidate.is_relative_to(resolved):
+            return root / candidate.relative_to(resolved), root
+    return None
+
+
 def skills_resource_root(project_root: Path, skills_dir: Path) -> tuple[str, Path] | None:
     """Choose the existing project-first, then home skills validation boundary."""
-    for bucket, root in (("project", project_root), ("home", Path.home())):
-        if skills_dir.is_relative_to(root):
-            return bucket, root
-    return None
+    located = locate_skills_dir(project_root, skills_dir)
+    if located is None:
+        return None
+    project, _ = _boundaries(project_root)
+    return ("project" if located[1] == project else "home"), located[1]
+
+
+def configured_skill_roots(project_root: Path) -> dict[Path, Path]:
+    """Return every skills directory an integration is configured to write, with its root."""
+    from .. import DEFAULT_SKILLS_DIR
+    from ..agents import CommandRegistrar
+    from ..integrations import get_integration
+    from ..integrations.installer import project_integrations
+
+    with project_integrations(project_root):
+        registrar = CommandRegistrar(project_root, include_generic=False)
+        folders = []
+        for key in registrar.AGENT_CONFIGS:
+            integration = get_integration(key)
+            if integration is not None:
+                folder = (integration.config or {}).get("folder")
+                if folder:
+                    folders.append(folder)
+
+    candidates: dict[Path, Path] = {}
+
+    def add_candidate(candidate: Path) -> None:
+        located = locate_skills_dir(project_root, candidate)
+        if located is not None:
+            candidates[located[0]] = located[1]
+
+    for folder in folders:
+        add_candidate(project_root / folder.rstrip("/") / "skills")
+    add_candidate(project_root / DEFAULT_SKILLS_DIR)
+
+    from ..integration_state import integration_setting, try_read_integration_json
+
+    state, error = try_read_integration_json(project_root)
+    if error is None and integration_setting(state or {}, "generic"):
+        from ..integrations.generic import registration_directory
+
+        try:
+            add_candidate(registration_directory(project_root))
+        except (OSError, ValueError):
+            # Recorded paths and static roots still allow safe cleanup.
+            pass
+
+    for agent_name, agent_config in registrar.AGENT_CONFIGS.items():
+        if agent_config.get("extension") != "/SKILL.md":
+            continue
+        add_candidate(registrar._resolve_agent_dir(agent_name, agent_config, project_root))
+    return candidates
+
+
+def skill_roots(
+    project_root: Path,
+    *,
+    skills_dir: Path | None = None,
+    extra_roots: Iterable[Path] = (),
+) -> dict[Path, Path]:
+    """Return the skills directories extension cleanup may touch, with each root.
+
+    This is the one answer to "which directories may hold an extension's
+    skills": skill removal, resource retirement and the update backup all ask
+    it. Without ``skills_dir`` that is every configured skills directory; with
+    it, only that one. ``extra_roots`` adds earlier locations the caller proved
+    from its own records, such as a generic output directory that moved.
+    """
+    roots: dict[Path, Path] = {}
+    if skills_dir is None:
+        roots.update(configured_skill_roots(project_root))
+    else:
+        located = locate_skills_dir(project_root, skills_dir)
+        if located is not None:
+            roots[located[0]] = located[1]
+    for extra in extra_roots:
+        located = locate_skills_dir(project_root, extra)
+        if located is not None:
+            roots[located[0]] = located[1]
+    return roots
+
+
+def historical_skill_roots(
+    project_root: Path, recorded_paths: Iterable[object], skill_names: Iterable[str],
+) -> list[Path]:
+    """Derive the skills directories that recorded ``SKILL.md`` paths were written under."""
+    names = [parts for parts in map(skill_name_parts, skill_names) if parts]
+    roots: list[Path] = []
+    for recorded in recorded_paths:
+        if not isinstance(recorded, str) or "\\" in recorded:
+            continue
+        path = PurePosixPath(recorded)
+        if path.is_absolute() or ".." in path.parts or path.name != "SKILL.md":
+            continue
+        directory = path.parts[:-1]
+        for parts in names:
+            if len(directory) > len(parts) and directory[-len(parts):] == parts:
+                roots.append(Path(project_root).joinpath(*directory[:-len(parts)]))
+    return roots
 
 
 #: Root entries a wildcard never selects: the dev-mode render cache holds
@@ -226,9 +375,13 @@ def remove_skill_resources(
     ext_id: str,
     trusted_root: Path,
     previous: dict[str, str],
-    allowed_skill_names: set[str],
 ) -> tuple[list[Path], list[Path]]:
-    """Remove canonical recorded paths belonging to a registered skill name."""
+    """Remove recorded paths the caller already authorized; reject malformed keys.
+
+    Authorization belongs to ``retire_skill_resources``. This only refuses keys
+    that are not canonical relative paths, then deletes through the manifest
+    safeguards (no symlink ancestors, files only).
+    """
     manifest = IntegrationManifest(ext_id, trusted_root)
     dropped: list[Path] = []
     for key, digest in previous.items():
@@ -236,7 +389,7 @@ def remove_skill_resources(
         if (
             not key or "\\" in key or path.is_absolute()
             or PureWindowsPath(key).drive or path.as_posix() != key
-            or ".." in path.parts or not set(path.parts[:-1]) & allowed_skill_names
+            or ".." in path.parts
         ):
             dropped.append(trusted_root / key)
             continue
@@ -267,6 +420,7 @@ def deliver_skill_resources(
         warnings.warn(f"Skipped resources outside project and home: {skills_dir}", stacklevel=2)
         return
     bucket, root = scope
+    skills_dir = locate_skills_dir(project_root, skills_dir)[0]
     try:
         hashes, written, messages = sync_skill_resources(
             ext_id, skills_dir, root, skill_name, ext_dir, paths,
@@ -290,57 +444,71 @@ def _home_skills_dirs(project_root: Path) -> list[Path]:
     for name, config in registrar.AGENT_CONFIGS.items():
         if config.get("extension") != "/SKILL.md" or config.get("home_scoped") is not True:
             continue
-        resolved = registrar._resolve_agent_dir(name, config, project_root)
-        scope = skills_resource_root(project_root, resolved)
-        if scope is not None and scope[0] == "home":
-            dirs.append(resolved)
+        located = locate_skills_dir(
+            project_root, registrar._resolve_agent_dir(name, config, project_root)
+        )
+        if located is not None and skills_resource_root(project_root, located[0])[0] == "home":
+            dirs.append(located[0])
     return dirs
+
+
+def _authorized_prefixes(
+    roots: dict[Path, Path], trusted: Path, names: list[tuple[str, ...]],
+) -> list[tuple[str, ...]]:
+    """Root-relative directory prefixes ``<skills root>/<skill name>`` under *trusted*."""
+    return [
+        (*root.relative_to(trusted).parts, *name)
+        for root, root_trusted in roots.items()
+        if root_trusted == trusted
+        for name in names
+    ]
 
 
 def retire_skill_resources(
     project_root: Path, ext_id: str, hashes: dict, skill_names: set[str],
-    *, skills_dir: Path | None = None,
+    *, skills_dir: Path | None = None, extra_roots: Iterable[Path] = (),
 ) -> None:
     """Remove recorded resources for these skill names and forget their keys.
 
-    Without ``skills_dir`` the project bucket follows recorded paths, even after
-    a skills directory moved. The home bucket is a far larger boundary, so it is
-    only cleaned under the skills directories of agents that declare
-    ``registrar_config["home_scoped"]``, as their ``SKILL.md`` cleanup does;
-    other records are left untouched.
+    A recorded path is removed only when it lies below
+    ``<authorized skills directory>/<generated skill name>/``, anchored at that
+    directory (see ``skill_roots``). The registry is project-controlled, so a
+    record that merely names a directory, such as ``.git`` or ``src``, is
+    never trusted. Without ``skills_dir`` the project bucket covers every
+    configured skills directory plus ``extra_roots``. The home bucket is a far
+    larger boundary and is only cleaned under the skills directories of agents
+    that declare ``registrar_config["home_scoped"]``, as their ``SKILL.md``
+    cleanup does; other records are left untouched.
     """
     import warnings
 
-    # (bucket, trusted root, skills-dir prefix under that root or None for any)
-    targets: list[tuple[str, Path, tuple[str, ...] | None]] = []
-    if skills_dir is not None:
-        scope = skills_resource_root(project_root, skills_dir)
-        if scope is None:
-            return
-        targets.append((scope[0], scope[1], skills_dir.relative_to(scope[1]).parts))
-    else:
-        targets.append(("project", project_root, None))
-        home = Path.home()
-        targets.extend(
-            ("home", home, directory.relative_to(home).parts)
-            for directory in _home_skills_dirs(project_root)
-        )
-    for bucket, root, prefix in targets:
+    names = [
+        parts for parts in (skill_name_parts(n, generated_only=True) for n in skill_names)
+        if parts
+    ]
+    if not names:
+        return
+    project, home = _boundaries(project_root)
+    roots = skill_roots(project, skills_dir=skills_dir, extra_roots=extra_roots)
+    if skills_dir is None:
+        home_dirs = set(_home_skills_dirs(project))
+        roots = {r: t for r, t in roots.items() if t == project or r in home_dirs}
+    for bucket, trusted in (("project", project), ("home", home)):
         records = hashes.get(bucket)
         if not isinstance(records, dict):
             continue
+        prefixes = _authorized_prefixes(roots, trusted, names)
         selected = {
             key: value for key, value in records.items()
-            if isinstance(key, str) and (
-                set(PurePosixPath(key).parts[:-1]) & skill_names if prefix is None else
-                PurePosixPath(key).parts[:len(prefix)] == prefix
-                and len(PurePosixPath(key).parts) > len(prefix) + 1
-                and PurePosixPath(key).parts[len(prefix)] in skill_names
+            if isinstance(key, str) and any(
+                (parts := PurePosixPath(key).parts)[:len(prefix)] == prefix
+                and len(parts) > len(prefix)
+                for prefix in prefixes
             )
         }
         if not selected:
             continue
-        _, skipped = remove_skill_resources(ext_id, root, selected, skill_names)
+        _, skipped = remove_skill_resources(ext_id, trusted, selected)
         for path in skipped:
             warnings.warn(f"Skipped unsafe skill resource {path}", stacklevel=2)
         for key in selected:

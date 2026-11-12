@@ -2269,13 +2269,12 @@ def test_update_rollback_native_resource_primary_and_alias(project_dir, monkeypa
     assert ExtensionRegistry(project_dir / ".specify/extensions").data["extensions"]["test-ext"]["skill_resource_hashes"] == hashes
 
 
-def test_update_rollback_restores_nested_alias_skill_from_an_older_version(project_dir, monkeypatch):
+def test_update_rollback_discards_resource_added_to_a_nested_alias_skill(project_dir, monkeypatch):
     monkeypatch.chdir(project_dir)
     (project_dir / ".specify/init-options.json").write_text('{"ai":"claude","ai_skills":false}')
     (project_dir / ".specify/extensions.yml").write_text(yaml.safe_dump({"installed": ["test-ext"], "hooks": {}}))
-    root = project_dir / ".claude/skills"
-    # The layout an older version wrote for the alias speckit.test-ext/group.alias.
-    skill = root / "speckit-test-ext/group-alias"
+    # A free-form alias such as speckit.test-ext/group.alias renders a nested skill.
+    skill = project_dir / ".claude/skills/speckit-test-ext/group-alias"
     _write_owned_extension_skill(skill, "test-ext", "OLD SKILL")
     entry = {"version": "1.0.0", "enabled": True,
              "registered_commands": {"claude": ["speckit.test-ext/group.alias"]},
@@ -2285,16 +2284,20 @@ def test_update_rollback_restores_nested_alias_skill_from_an_older_version(proje
     archive = project_dir / "mock.zip"
     _write_update_zip(archive)
     monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: archive)
-    monkeypatch.setattr(ExtensionManager, "remove", lambda self, ext_id, keep_config=False: shutil.rmtree(root / "speckit-test-ext"))
+    monkeypatch.setattr(ExtensionManager, "remove", lambda *args, **kwargs: None)
 
     def fail(*args, **kwargs):
-        raise RuntimeError("install failed")
+        # The incoming version rewrote the skill and added a resource before failing.
+        (skill / "SKILL.md").write_text("NEW SKILL")
+        (skill / "added.txt").write_text("new resource")
+        raise RuntimeError("install failed after removal")
 
     monkeypatch.setattr(ExtensionManager, "install_from_zip", fail)
     result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
     assert result.exit_code == 1, result.output
     assert "Rollback successful" in result.output
     assert "OLD SKILL" in (skill / "SKILL.md").read_text()
+    assert not (skill / "added.txt").exists()
 
 
 def test_update_rollback_supplemental_resources(project_dir, monkeypatch):

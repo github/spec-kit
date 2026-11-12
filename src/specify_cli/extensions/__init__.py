@@ -25,7 +25,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
-from typing import Any, BinaryIO, Callable, Dict, List, Optional, Set
+from typing import Any, BinaryIO, Callable, Dict, Iterable, List, Optional, Set
 
 import pathspec
 import yaml
@@ -46,12 +46,7 @@ from .._download_security import (
 from .._init_options import is_ai_skills_enabled
 from .._install_ignore import load_install_ignore
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
-from .._utils import (
-    dump_frontmatter,
-    relative_extension_path_violation,
-    skill_name_for_command,
-    version_satisfies,
-)
+from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
 from ..catalogs import CatalogEntry as BaseCatalogEntry
 from ..catalogs import CatalogStackBase
 from ..integration_state import (
@@ -1249,7 +1244,7 @@ class ExtensionManager:
         Normalize before comparing so all of
         them are caught, not just the exact dotted spelling.
         """
-        hyphenated = name.replace(".", "-").replace("/", "-")
+        hyphenated = name.replace(".", "-")
         if not hyphenated.startswith("speckit-"):
             hyphenated = f"speckit-{hyphenated}"
         return hyphenated
@@ -1410,7 +1405,10 @@ class ExtensionManager:
     @staticmethod
     def _skill_name_for_command(command_name: str) -> str:
         """Return the generated skill directory name for an extension command."""
-        return skill_name_for_command(command_name)
+        short_name = command_name
+        if short_name.startswith("speckit."):
+            short_name = short_name[len("speckit.") :]
+        return f"speckit-{short_name.replace('.', '-')}"
 
     def _active_command_registration_scope(self) -> Optional[set[str]]:
         """Return the agents a new extension install may render commands for.
@@ -1817,24 +1815,16 @@ class ExtensionManager:
         if not skill_names:
             return []
 
-        requested_skills_dir = skills_dir
+        from ._skill_resources import skill_name_parts, skill_roots
 
         project_root = Path(os.path.abspath(self.project_root))
-        fallback_candidates = {
-            candidate: trusted_root
-            for candidate, trusted_root in self._extension_skill_candidate_dirs().items()
-            if trusted_root == project_root
-        }
-        if requested_skills_dir is None:
-            candidate_dirs = dict(fallback_candidates)
-        elif skills_dir:
-            candidate = Path(os.path.abspath(skills_dir))
-            trusted_root = self._extension_skill_trusted_root(candidate)
-            candidate_dirs = (
-                {candidate: trusted_root} if trusted_root is not None else {}
-            )
-        else:
-            candidate_dirs = {}
+        candidate_dirs = skill_roots(self.project_root, skills_dir=skills_dir)
+        if skills_dir is None:
+            candidate_dirs = {
+                candidate: trusted_root
+                for candidate, trusted_root in candidate_dirs.items()
+                if trusted_root == project_root
+            }
 
         from ..shared_infra import _validate_safe_shared_directory
 
@@ -1854,10 +1844,10 @@ class ExtensionManager:
                 continue
             for skill_name in skill_names:
                 # Guard against path traversal from a corrupted registry entry.
-                sn_path = Path(skill_name)
-                if sn_path.is_absolute() or len(sn_path.parts) != 1:
+                name_parts = skill_name_parts(skill_name)
+                if name_parts is None:
                     continue
-                skill_subdir = skills_candidate / skill_name
+                skill_subdir = skills_candidate.joinpath(*name_parts)
                 try:
                     _validate_safe_shared_directory(trusted_root, skill_subdir)
                     resolved_skill_dir = skill_subdir.resolve()
@@ -1892,68 +1882,16 @@ class ExtensionManager:
 
     def _extension_skill_trusted_root(self, candidate: Path) -> Optional[Path]:
         """Return the project or home root allowed to contain *candidate*."""
-        candidate = Path(os.path.abspath(candidate))
-        for root in (
-            Path(os.path.abspath(self.project_root)),
-            Path(os.path.abspath(Path.home())),
-        ):
-            if candidate.is_relative_to(root):
-                return root
-        return None
+        from ._skill_resources import locate_skills_dir
+
+        located = locate_skills_dir(self.project_root, candidate)
+        return located[1] if located else None
 
     def _extension_skill_candidate_dirs(self) -> Dict[Path, Path]:
         """Return every configured skill output and its trusted root."""
-        from .. import DEFAULT_SKILLS_DIR
-        from ..agents import CommandRegistrar
-        from ..integrations import get_integration
-        from ..integrations.installer import project_integrations
+        from ._skill_resources import configured_skill_roots
 
-        with project_integrations(self.project_root):
-            registrar = CommandRegistrar(self.project_root, include_generic=False)
-            folders = []
-            for key in registrar.AGENT_CONFIGS:
-                integration = get_integration(key)
-                if integration is not None:
-                    folder = (integration.config or {}).get("folder")
-                    if folder:
-                        folders.append(folder)
-
-        candidates: Dict[Path, Path] = {}
-
-        def add_candidate(candidate: Path) -> None:
-            candidate = Path(os.path.abspath(candidate))
-            trusted_root = self._extension_skill_trusted_root(candidate)
-            if trusted_root is not None:
-                candidates[candidate] = trusted_root
-
-        for folder in folders:
-            add_candidate(
-                self.project_root / folder.rstrip("/") / "skills"
-            )
-        add_candidate(self.project_root / DEFAULT_SKILLS_DIR)
-
-        from ..integration_state import integration_setting, try_read_integration_json
-
-        state, error = try_read_integration_json(self.project_root)
-        if error is None and integration_setting(state or {}, "generic"):
-            from ..integrations.generic import registration_directory
-
-            try:
-                add_candidate(registration_directory(self.project_root))
-            except (OSError, ValueError):
-                # Recorded paths and static roots still allow safe cleanup.
-                pass
-
-        for agent_name, agent_config in registrar.AGENT_CONFIGS.items():
-            if agent_config.get("extension") != "/SKILL.md":
-                continue
-            add_candidate(
-                registrar._resolve_agent_dir(
-                    agent_name, agent_config, self.project_root
-                )
-            )
-
-        return candidates
+        return configured_skill_roots(self.project_root)
 
     def _generic_artifact_hashes(
         self,
@@ -2418,6 +2356,7 @@ class ExtensionManager:
             return []
 
         from ..shared_infra import _validate_safe_shared_directory
+        from ._skill_resources import skill_name_parts
 
         marker = f"extension:{extension_id}"
         owned: set = set()
@@ -2443,10 +2382,10 @@ class ExtensionManager:
             for skill_name in skill_names:
                 if skill_name in owned:
                     continue
-                sn_path = Path(skill_name)
-                if sn_path.is_absolute() or len(sn_path.parts) != 1:
+                name_parts = skill_name_parts(skill_name)
+                if name_parts is None:
                     continue
-                skill_subdir = skills_candidate / skill_name
+                skill_subdir = skills_candidate.joinpath(*name_parts)
                 # Validate every path component down to the skill's own
                 # subdirectory, not just the already-validated candidate
                 # parent: a per-skill child can itself be a symlink to
@@ -3735,7 +3674,10 @@ class ExtensionManager:
                 for command in manifest.commands
                 for name in [command["name"], *(command.get("aliases") or [])]
             )
-        retire_skill_resources(self.project_root, extension_id, hashes, skill_names)
+        retire_skill_resources(
+            self.project_root, extension_id, hashes, skill_names,
+            extra_roots=self._historical_generic_roots(metadata or {}, skill_names),
+        )
         if metadata:
             self._remove_generic_artifact_paths(extension_id, metadata)
 
@@ -3857,6 +3799,7 @@ class ExtensionManager:
                     retire_skill_resources(
                         self.project_root, extension_id, resource_hashes, set(skills),
                         skills_dir=directory,
+                        extra_roots=self._historical_generic_roots(metadata, skills),
                     )
                     updates["skill_resource_hashes"] = resource_hashes
                 self._remove_generic_artifact_paths(extension_id, metadata)
@@ -3891,6 +3834,17 @@ class ExtensionManager:
                     f"rollback failed: {'; '.join(rollback_errors)}"
                 ) from exc
             raise
+
+    def _historical_generic_roots(
+        self, metadata: Dict[str, Any], skill_names: Iterable[str]
+    ) -> List[Path]:
+        """Generic output directories recorded earlier, even after ``commands_dir`` moved."""
+        from ._skill_resources import historical_skill_roots
+
+        hashes = metadata.get("generic_artifact_hashes", {})
+        return historical_skill_roots(
+            self.project_root, hashes if isinstance(hashes, dict) else (), skill_names
+        )
 
     @staticmethod
     def _valid_name_list(value: Any) -> List[str]:
@@ -3963,10 +3917,14 @@ class ExtensionManager:
                     skills_dir=native_dir,
                 )
             if not commands_only:
+                owned_skills = set(self._valid_name_list(metadata.get("registered_skills", [])))
                 retire_skill_resources(
-                    self.project_root, ext_id, resource_hashes,
-                    set(self._valid_name_list(metadata.get("registered_skills", []))),
+                    self.project_root, ext_id, resource_hashes, owned_skills,
                     skills_dir=agent_skills_dir,
+                    extra_roots=(
+                        self._historical_generic_roots(metadata, owned_skills)
+                        if agent_name == "generic" else ()
+                    ),
                 )
             if resource_hashes != metadata.get("skill_resource_hashes", {}):
                 updates["skill_resource_hashes"] = resource_hashes
@@ -4368,6 +4326,10 @@ class ExtensionManager:
                                 retire_skill_resources(
                                     self.project_root, ext_id, resource_hashes, set(to_remove),
                                     skills_dir=agent_skills_dir,
+                                    extra_roots=(
+                                        self._historical_generic_roots(metadata, to_remove)
+                                        if agent_name == "generic" else ()
+                                    ),
                                 )
                                 self._unregister_extension_skills(
                                     to_remove, ext_id, skills_dir=agent_skills_dir,
@@ -5938,7 +5900,7 @@ class HookExecutor:
         command_id = command.strip()
         if not command_id.startswith("speckit."):
             return ""
-        return skill_name_for_command(command_id)
+        return f"speckit-{command_id[len('speckit.') :].replace('.', '-')}"
 
     def _render_hook_invocation(self, command: Any) -> str:
         """Render an agent-specific invocation string for a hook command."""

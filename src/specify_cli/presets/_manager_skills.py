@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import get_invocation_prefix
-from .._utils import dump_frontmatter, skill_name_for_command
+from .._utils import dump_frontmatter
 from ..integrations.base import IntegrationBase
 from ..integrations._registration import project_registration
 from ._manager_commands import _substitute_core_template
@@ -508,7 +508,7 @@ class _PresetSkillMethods:
         if raw_short_name.startswith("speckit."):
             raw_short_name = raw_short_name[len("speckit."):]
 
-        modern_skill_name = skill_name_for_command(cmd_name)
+        modern_skill_name = f"speckit-{raw_short_name.replace('.', '-')}"
         legacy_skill_name = f"speckit.{raw_short_name}"
         return modern_skill_name, legacy_skill_name
 

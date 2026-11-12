@@ -2854,6 +2854,43 @@ def test_generic_extension_remove_recorded_resource_after_directory_move(tmp_pat
     assert not resource.exists()
 
 
+def test_generic_disable_retires_resource_after_directory_move(tmp_path, generic_extension):
+    _declare_run_skill_resource(generic_extension)
+    project = generic_project(tmp_path, skills=True, commands_dir=".custom/skills")
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    resource = project / ".custom/skills/speckit-sample-run/scripts/run.sh"
+    assert resource.exists()
+    write_integration_json(
+        project, version="1.0.0", integration_key="generic",
+        settings={"generic": {"parsed_options": {"commands_dir": ".moved/skills", "skills": True}}},
+    )
+
+    manager.disable_generic_extension_artifacts("sample")
+
+    assert not resource.exists()
+    assert not manager.registry.get("sample").get("skill_resource_hashes")
+
+
+def test_generic_disable_retires_resource_through_a_symlinked_project_root(tmp_path, generic_extension):
+    _declare_run_skill_resource(generic_extension)
+    real = generic_project(tmp_path, skills=True)
+    project = tmp_path / "link"
+    try:
+        project.symlink_to(real, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    resource = real / ".custom/commands/speckit-sample-run/scripts/run.sh"
+    assert resource.exists()
+
+    manager.disable_generic_extension_artifacts("sample")
+
+    assert not resource.exists()
+    assert not manager.registry.get("sample").get("skill_resource_hashes")
+
+
 def _declare_run_skill_resource(source):
     path = source / "extension.yml"
     data = yaml.safe_load(path.read_text(encoding="utf-8"))

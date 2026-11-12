@@ -4069,27 +4069,7 @@ def test_resource_copy_keeps_execute_bits_of_non_shell_script(project_dir, temp_
     assert stat.S_IMODE((skill / "scripts/data.txt").stat().st_mode) == 0o644  # not made executable
 
 
-@pytest.mark.parametrize("command, expected", [
-    ("speckit.plan", "speckit-plan"),
-    ("speckit.test-ext.hello", "speckit-test-ext-hello"),
-    ("speckit.verify", "speckit-verify"),
-    ("speckit.test-ext/group.alias", "speckit-test-ext-group-alias"),
-    ("custom/nested/alias", "speckit-custom-nested-alias"),
-])
-def test_skill_name_for_command_is_always_a_single_path_component(command, expected):
-    from specify_cli._utils import skill_name_for_command
-    from specify_cli.agents import CommandRegistrar
-
-    assert skill_name_for_command(command) == expected
-    assert len(Path(expected).parts) == 1
-    # Every producer agrees, so no consumer ever sees a different spelling.
-    assert ExtensionManager._skill_name_for_command(command) == expected
-    assert CommandRegistrar._compute_output_name(
-        "claude", command, CommandRegistrar.AGENT_CONFIGS["claude"]
-    ) == expected
-
-
-def test_alias_with_separator_renders_a_flat_skill_and_cleans_up_with_its_resources(project_dir, temp_dir):
+def test_alias_with_separator_keeps_its_nested_skill_and_removes_its_resources(project_dir, temp_dir):
     _create_init_options(project_dir, ai="claude", ai_skills=False)
     skills = _create_skills_dir(project_dir)
     ext = _create_extension_dir(temp_dir)
@@ -4102,76 +4082,36 @@ def test_alias_with_separator_renders_a_flat_skill_and_cleans_up_with_its_resour
     manager = ExtensionManager(project_dir)
     manager.install_from_directory(ext, "0.1.0")
 
-    alias = skills / "speckit-test-ext-group-alias"
+    alias = skills / "speckit-test-ext/group-alias"
     primary = skills / "speckit-test-ext-hello"
     assert (alias / "SKILL.md").is_file() and (alias / "scripts/run.sh").is_file()
     assert (primary / "scripts/run.sh").is_file()
-    assert not (skills / "speckit-test-ext").exists()  # no nested skill directory
     recorded = manager.registry.get("test-ext")["skill_resource_hashes"]["project"]
-    depth = len(skills.relative_to(project_dir).parts)
-    assert {Path(key).parts[depth] for key in recorded} == {alias.name, primary.name}
+    assert alias.joinpath("scripts/run.sh").relative_to(project_dir).as_posix() in recorded
 
-    manager.remove("test-ext", keep_config=False)
-    assert not alias.exists() and not primary.exists()
-
-
-@pytest.mark.parametrize("command, expected", [
-    ("speckit.test-ext/group.alias", "speckit-test-ext/group-alias"),
-    ("custom/nested/alias", "speckit-custom/nested/alias"),
-    ("speckit.verify", None),  # already a single component
-    ("speckit.ext//alias", None),  # empty segment
-    ("speckit.ext/../escape", "speckit-ext/--/escape"),  # dots collapse, so no traversal segment
-    ("speckit.ext/./alias", "speckit-ext/-/alias"),
-])
-def test_legacy_skill_name_for_command(command, expected):
-    from specify_cli._utils import legacy_skill_name_for_command
-
-    assert legacy_skill_name_for_command(command) == expected
+    manager.remove("test-ext")
+    assert not (alias / "scripts/run.sh").exists() and not (alias / "SKILL.md").exists()
+    assert not primary.exists()
 
 
-def test_remove_cleans_nested_alias_skill_written_by_an_older_version(project_dir, temp_dir):
+def test_remove_ignores_registry_records_that_are_not_generated_skill_resources(project_dir, temp_dir):
     _create_init_options(project_dir, ai="claude", ai_skills=False)
-    skills = _create_skills_dir(project_dir)
-    ext = _create_extension_dir(temp_dir)
+    _create_skills_dir(project_dir)
     manager = ExtensionManager(project_dir)
-    manager.install_from_directory(ext, "0.1.0")
-    # What an older version rendered for the alias speckit.test-ext/group.alias.
-    old = skills / "speckit-test-ext/group-alias"
-    old.mkdir(parents=True)
-    frontmatter = yaml.safe_dump({
-        "name": old.name, "description": "d", "metadata": {"source": "extension:test-ext"},
-    })
-    (old / "SKILL.md").write_text(f"---\n{frontmatter}---\n\nbody\n")
-    registered = dict(manager.registry.get("test-ext")["registered_commands"])
-    registered["claude"] = [*registered["claude"], "speckit.test-ext/group.alias"]
-    manager.registry.update("test-ext", {"registered_commands": registered})
-    unrelated = skills / "speckit-test-ext/keep.txt"
-    unrelated.write_text("user file")
+    manager.install_from_directory(_create_extension_dir(temp_dir), "0.1.0")
+    victims = {".git/config": "[core]\n", "src/app.py": "print(1)\n"}
+    for name, content in victims.items():
+        (project_dir / name).parent.mkdir(parents=True, exist_ok=True)
+        (project_dir / name).write_text(content)
+    # A registry shipped with a cloned repository can name any directory as a skill.
+    entry = dict(manager.registry.get("test-ext"))
+    entry["registered_skills"] = [*entry.get("registered_skills", []), ".git", "src"]
+    entry["skill_resource_hashes"] = {"project": {name: "0" * 64 for name in victims}}
+    manager.registry.add("test-ext", entry)
 
-    manager.remove("test-ext", keep_config=False)
-
-    assert not (old / "SKILL.md").exists() and not old.exists()
-    assert unrelated.read_text() == "user file"  # only the emptied directory goes, not user files
-    assert not list(skills.glob("speckit-test-ext-*"))
-
-
-def test_remove_prunes_emptied_parent_of_nested_alias_skill(project_dir, temp_dir):
-    _create_init_options(project_dir, ai="claude", ai_skills=False)
-    skills = _create_skills_dir(project_dir)
-    ext = _create_extension_dir(temp_dir)
-    manager = ExtensionManager(project_dir)
-    manager.install_from_directory(ext, "0.1.0")
-    old = skills / "speckit-test-ext/group-alias"
-    old.mkdir(parents=True)
-    frontmatter = yaml.safe_dump({"name": old.name, "description": "d", "metadata": {"source": "extension:test-ext"}})
-    (old / "SKILL.md").write_text(f"---\n{frontmatter}---\n\nbody\n")
-    registered = dict(manager.registry.get("test-ext")["registered_commands"])
-    registered["claude"] = [*registered["claude"], "speckit.test-ext/group.alias"]
-    manager.registry.update("test-ext", {"registered_commands": registered})
-
-    manager.remove("test-ext", keep_config=False)
-
-    assert not (skills / "speckit-test-ext").exists()
+    manager.remove("test-ext")
+    for name, content in victims.items():
+        assert (project_dir / name).read_text() == content
 
 
 def test_remove_legacy_registry_without_resource_field(project_dir, temp_dir):

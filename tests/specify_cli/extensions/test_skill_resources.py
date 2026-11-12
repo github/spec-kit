@@ -9,9 +9,13 @@ import pytest
 from specify_cli._install_ignore import load_install_ignore
 from specify_cli.extensions import ValidationError
 from specify_cli.extensions._skill_resources import (
+    historical_skill_roots,
+    locate_skills_dir,
     recorded_resource_hashes,
     remove_skill_resources,
     resolve_skill_resources,
+    retire_skill_resources,
+    skill_name_parts,
     skills_resource_root,
     sync_skill_resources,
     track_skill_resource_writes,
@@ -217,10 +221,9 @@ def test_sync_skill_resources_rejects_symlinked_skills_directory(tmp_path):
     assert list(target.iterdir()) == []
 
 
-def test_remove_skill_resources_uses_recorded_paths_and_confines_names(tmp_path):
+def test_remove_skill_resources_removes_recorded_paths_and_rejects_malformed_keys(tmp_path):
     root = tmp_path / "project"
     recorded = put(root / "old/skills/skill/references/a", "original")
-    other = put(root / "old/skills/other/a", "other")
     target = put(tmp_path / "outside/target", "outside")
     leaf = root / "old/skills/skill/link"
     link(leaf, target)
@@ -228,7 +231,6 @@ def test_remove_skill_resources_uses_recorded_paths_and_confines_names(tmp_path)
     link(ancestor, target.parent, directory=True)
     hashes = {
         recorded.relative_to(root).as_posix(): _sha256(recorded),
-        other.relative_to(root).as_posix(): _sha256(other),
         leaf.relative_to(root).as_posix(): "old-hash",
         (ancestor / "target").relative_to(root).as_posix(): "old-hash",
         "old/skills/skill/../other/a": "invalid",
@@ -236,13 +238,12 @@ def test_remove_skill_resources_uses_recorded_paths_and_confines_names(tmp_path)
         "../outside/target": "invalid",
     }
     recorded.write_text("modified")
-    removed, skipped = remove_skill_resources("ext", root, hashes, {"skill"})
+    removed, skipped = remove_skill_resources("ext", root, hashes)
     assert set(removed) == {recorded, leaf}
     assert set(skipped) == {
-        other, ancestor / "target", root / "old/skills/skill/../other/a",
+        ancestor / "target", root / "old/skills/skill/../other/a",
         root / "old//skills/skill/a", root / "../outside/target",
     }
-    assert other.read_text() == "other"
     assert target.read_text() == "outside"
     assert not leaf.is_symlink()
 
@@ -252,9 +253,7 @@ def test_remove_skill_resources_skips_symlinked_skills_directory(tmp_path):
     root.mkdir()
     target = put(tmp_path / "outside/skill/a", "outside")
     link(root / "skills", target.parent.parent, directory=True)
-    removed, skipped = remove_skill_resources(
-        "ext", root, {"skills/skill/a": "old-hash"}, {"skill"}
-    )
+    removed, skipped = remove_skill_resources("ext", root, {"skills/skill/a": "old-hash"})
     assert not removed and skipped == [root / "skills/skill/a"]
     assert target.read_text() == "outside"
 
@@ -276,7 +275,7 @@ def test_home_resource_root_and_manifest(monkeypatch, tmp_path):
     dest = skills / "skill/references/a"
     assert written == [dest] and not warnings
     assert hashes == {".hermes/skills/skill/references/a": _sha256(dest)}
-    removed, skipped = remove_skill_resources("ext", home, hashes, {"skill"})
+    removed, skipped = remove_skill_resources("ext", home, hashes)
     assert removed == [dest] and not skipped
     assert not (home / ".specify/integrations/ext.manifest.json").exists()
 
@@ -383,6 +382,81 @@ def test_retire_skill_resources_ignores_home_dirs_of_unflagged_agents(monkeypatc
     monkeypatch.setitem(CommandRegistrar.AGENT_CONFIGS, "other", {**other, "home_scoped": True})
     retire_skill_resources(project, "test-ext", hashes, {name})
     assert not resource.exists() and hashes == {}
+
+
+@pytest.mark.parametrize(("name", "generated_only", "expected"), [
+    ("speckit-ext-run", False, ("speckit-ext-run",)),
+    ("speckit-ext/group-alias", True, ("speckit-ext", "group-alias")),
+    ("custom", False, ("custom",)),
+    ("custom", True, None),
+    ("", False, None), ("/abs", False, None), ("a//b", False, None), ("a/../b", False, None),
+    ("./a", False, None), ("a\\b", False, None), ("C:evil", False, None), (None, False, None),
+])
+def test_skill_name_parts(name, generated_only, expected):
+    assert skill_name_parts(name, generated_only=generated_only) == expected
+
+
+def test_retire_skill_resources_removes_only_generated_skills_under_configured_roots(tmp_path):
+    project = tmp_path / "project"
+    victims = [put(project / ".git/config"), put(project / "src/app.py")]
+    moved = put(project / "old/skills/speckit-x/a")
+    deeper = put(project / ".claude/skills/other/speckit-y/a")
+    owned = put(project / ".claude/skills/speckit-x/references/r.md")
+    nested = put(project / ".claude/skills/speckit-ext/group-alias/references/r.md")
+    paths = [*victims, moved, deeper, owned, nested]
+    keys = {p.relative_to(project).as_posix(): "any" for p in paths}
+    hashes = {"project": dict(keys)}
+
+    # A crafted registry names ordinary project directories as skills.
+    retire_skill_resources(project, "ext", hashes, {".git", "src", "old"})
+    assert all(p.exists() for p in paths) and hashes == {"project": keys}
+
+    retire_skill_resources(
+        project, "ext", hashes, {"speckit-x", "speckit-y", "speckit-ext/group-alias"},
+    )
+    # Anchored below a configured skills root: a skill name deeper in the path,
+    # or under an unknown directory, is not an extension skill.
+    assert not owned.exists() and not nested.exists()
+    assert all(p.exists() for p in [*victims, moved, deeper])
+    assert set(hashes["project"]) == {
+        p.relative_to(project).as_posix() for p in [*victims, moved, deeper]
+    }
+
+
+def test_retire_skill_resources_follows_historical_roots_only_when_given(tmp_path):
+    project = tmp_path / "project"
+    old = put(project / ".moved/skills/speckit-x/references/r.md")
+    hashes = {"project": {old.relative_to(project).as_posix(): "any"}}
+    retire_skill_resources(project, "ext", hashes, {"speckit-x"})
+    assert old.exists()
+    retire_skill_resources(
+        project, "ext", hashes, {"speckit-x"}, extra_roots=[project / ".moved/skills"],
+    )
+    assert not old.exists() and hashes == {}
+
+
+def test_locate_skills_dir_expresses_a_resolved_path_below_a_symlinked_project(tmp_path):
+    real = tmp_path / "real"
+    (real / ".agent/skills").mkdir(parents=True)
+    project = tmp_path / "link"
+    link(project, real, directory=True)
+    located = locate_skills_dir(project, real / ".agent/skills")
+    assert located == (project / ".agent/skills", project)
+    assert skills_resource_root(project, real / ".agent/skills") == ("project", project)
+    assert locate_skills_dir(project, tmp_path / "elsewhere") is None
+
+
+def test_historical_skill_roots_come_from_recorded_skill_files_including_nested_names(tmp_path):
+    recorded = [
+        ".old/skills/speckit-ext-run/SKILL.md",
+        ".old/nested/speckit-ext/group-alias/SKILL.md",
+        ".old/skills/speckit-ext-run/references/r.md",  # not a SKILL.md
+        "../escape/speckit-ext-run/SKILL.md", "/abs/speckit-ext-run/SKILL.md", 7,
+    ]
+    roots = historical_skill_roots(
+        tmp_path, recorded, ["speckit-ext-run", "speckit-ext/group-alias"],
+    )
+    assert roots == [tmp_path / ".old/skills", tmp_path / ".old/nested"]
 
 
 def test_written_resource_hashes_selects_only_files_written_in_the_attempt(tmp_path):

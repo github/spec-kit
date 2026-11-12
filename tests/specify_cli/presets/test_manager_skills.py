@@ -2903,7 +2903,7 @@ def test_preset_remove_warns_when_extension_resource_missing(project_dir, temp_d
         manager.remove("override")
     message = str(caught[0].message)
     assert "resources declared by its extension command" in message
-    assert str(project_dir / ".specify/extensions/res") in message
+    assert str((project_dir / ".specify/extensions/res").resolve()) in message
     assert "could not be read" not in message  # the command file itself was read fine
     assert "Fix or remove that file" not in message
     assert skill_file.read_text() == preset_content

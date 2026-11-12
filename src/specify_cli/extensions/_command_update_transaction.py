@@ -16,11 +16,10 @@ from rich.markup import escape as _escape_markup
 
 from .._console import console
 from .._init_options import is_ai_skills_enabled
-from .._utils import legacy_skill_name_for_command
 from . import _commands
 from ._command_update_artifacts import preflight_update_archive
 from ._command_update_discovery import discover_updates
-from ._skill_resources import recorded_resource_hashes
+from ._skill_resources import recorded_resource_hashes, skill_name_parts
 
 
 def run_update_command(extension: str | None) -> None:
@@ -205,9 +204,10 @@ def run_update_command(extension: str | None) -> None:
                     skill_dirs = []
                     if root is not None:
                         for name in skill_names:
-                            if not isinstance(name, str) or len(Path(name).parts) != 1:
+                            name_parts = skill_name_parts(name)
+                            if name_parts is None:
                                 continue
-                            skill_dir = skills_dir / name
+                            skill_dir = skills_dir.joinpath(*name_parts)
                             try:
                                 _validate_safe_shared_directory(root, skill_dir)
                             except (OSError, ValueError):
@@ -318,10 +318,6 @@ def run_update_command(extension: str | None) -> None:
                             and _AgentReg._is_safe_command_name(cmd_name)
                         ):
                             names_to_backup.append(cmd_name)
-                        if agent_config.get("extension") == "/SKILL.md":
-                            legacy_name = legacy_skill_name_for_command(cmd_name)
-                            if legacy_name:
-                                names_to_backup.append(legacy_name)
 
                         for dir_index, target_dir in enumerate(
                             dirs_to_backup
