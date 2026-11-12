@@ -424,7 +424,6 @@ class CodexIntegration(SkillsIntegration):
         this method released.
         """
         generated = IntegrationManifest(self.key, project_root, version="policy-cleanup")
-        modes = prior.ownership_modes
         released: set[str] = set()
         for rel, recorded_hash in prior.files.items():
             if rel in keep or not self._is_policy_rel(rel):
