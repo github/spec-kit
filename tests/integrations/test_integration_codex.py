@@ -1,8 +1,12 @@
 """Tests for CodexIntegration."""
 
+import errno
+import os
 import shutil
+import stat
 import subprocess
 import tomllib
+from pathlib import Path
 
 import pytest
 
@@ -11,12 +15,90 @@ from specify_cli.integrations.base import (
     DispatchSettingsError,
     effective_dispatch_settings,
 )
+from specify_cli.extensions import CORE_COMMAND_NAMES
 from specify_cli.integrations.manifest import IntegrationManifest
 from specify_cli.workflows.base import StepContext, StepStatus
 from specify_cli.workflows.step.command import CommandStep
 from specify_cli.workflows.step.prompt import PromptStep
 
 from .test_integration_base_skills import SkillsIntegrationTests
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _access(path: Path):
+    """The POSIX permission bits, or on Windows the access-control list as SDDL."""
+    if os.name != "nt":
+        return stat.S_IMODE(path.stat().st_mode)
+    import ctypes
+    from ctypes import wintypes
+
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    get = advapi.GetNamedSecurityInfoW
+    get.argtypes = [
+        wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD, wintypes.LPVOID, wintypes.LPVOID,
+        wintypes.LPVOID, wintypes.LPVOID, ctypes.POINTER(ctypes.c_void_p),
+    ]
+    get.restype = wintypes.DWORD
+    descriptor = ctypes.c_void_p()
+    code = get(str(path), 1, 0x4, None, None, None, None, ctypes.byref(descriptor))  # SE_FILE_OBJECT, DACL
+    if code:
+        raise ctypes.WinError(code)
+    return _sddl_of(descriptor)
+
+
+def _split_dacl(sddl: str) -> tuple[str, list[str]]:
+    """The DACL flags and ACEs of an SDDL string such as ``D:PAI(A;;FA;;;S-1-...)``."""
+    import re
+
+    match = re.search(r"D:([A-Z]*)((?:\([^)]*\))*)", sddl)
+    assert match, sddl
+    return match.group(1), re.findall(r"\([^)]*\)", match.group(2))
+
+
+def _canonical_sddl(sddl: str) -> str:
+    """``sddl`` as Windows writes it back, so aliases such as ``WD`` compare equal."""
+    import ctypes
+    from ctypes import wintypes
+
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    convert = advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW
+    convert.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p), wintypes.LPVOID,
+    ]
+    convert.restype = wintypes.BOOL
+    descriptor = ctypes.c_void_p()
+    if not convert(sddl, 1, ctypes.byref(descriptor), None):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return _sddl_of(descriptor)
+
+
+def _sddl_of(descriptor) -> str:
+    """The DACL of a ``LocalAlloc``ed security descriptor as SDDL; frees it."""
+    import ctypes
+    from ctypes import wintypes
+
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    to_text = advapi.ConvertSecurityDescriptorToStringSecurityDescriptorW
+    to_text.argtypes = [
+        ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+        ctypes.POINTER(wintypes.LPWSTR), wintypes.LPVOID,
+    ]
+    to_text.restype = wintypes.BOOL
+    kernel.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel.LocalFree.restype = ctypes.c_void_p
+    dacl = 0x4  # DACL_SECURITY_INFORMATION
+    try:
+        text = wintypes.LPWSTR()
+        if not to_text(descriptor, 1, dacl, ctypes.byref(text), None):
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            return text.value
+        finally:
+            kernel.LocalFree(ctypes.cast(text, ctypes.c_void_p))
+    finally:
+        kernel.LocalFree(descriptor)
 
 
 class TestCodexIntegration(SkillsIntegrationTests):
@@ -204,6 +286,1885 @@ class TestCodexHookCommandNote:
         assert "For each executable hook" not in lines[note_line_idx], (
             "Note and instruction must not be on the same line"
         )
+
+
+class TestCodexNoModelInvocationOption:
+    """``--integration-options="--no-model-invocation"`` opts core skills out of implicit invocation (#2654)."""
+
+    @staticmethod
+    def _policy(skill_dir):
+        import yaml
+
+        return yaml.safe_load((skill_dir / "agents" / "openai.yaml").read_text(encoding="utf-8"))
+
+    def test_options_include_no_model_invocation_flag(self):
+        opts = get_integration("codex").options()
+        matching = [o for o in opts if o.name == "--no-model-invocation"]
+        assert len(matching) == 1
+        assert matching[0].is_flag is True
+        assert matching[0].default is False
+
+    def test_setup_with_option_writes_policy_for_core_skills(self, tmp_path):
+        i = get_integration("codex")
+        m = IntegrationManifest("codex", tmp_path)
+        created = i.setup(
+            tmp_path, m, parsed_options={"no_model_invocation": True}, script_type="sh"
+        )
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            assert self._policy(f.parent) == {"policy": {"allow_implicit_invocation": False}}, f.parent.name
+        yamls = [f for f in created if f.name == "openai.yaml"]
+        assert len(yamls) == len(skill_files)
+        assert all(
+            y.relative_to(tmp_path).as_posix() in m.files for y in yamls
+        )
+
+    def test_setup_without_option_writes_no_policy(self, tmp_path):
+        i = get_integration("codex")
+        created = i.setup(tmp_path, IntegrationManifest("codex", tmp_path), script_type="sh")
+        assert not [f for f in created if f.name == "openai.yaml"]
+        assert not list((tmp_path / ".agents" / "skills").glob("*/agents"))
+
+    def test_extension_named_skill_dirs_are_not_core(self):
+        i = get_integration("codex")
+        assert i._is_core_command_skill_dir("speckit-plan")
+        assert not i._is_core_command_skill_dir("speckit-git-feature")
+        assert not i._is_core_command_skill_dir("plan")
+
+    def test_cli_rejects_value_for_flag(self, tmp_path):
+        import os
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "codex-bad-option"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                ["init", "--here", "--integration", "codex", "--integration-options",
+                 "--no-model-invocation=yes", "--script", "sh", "--ignore-agent-tools"],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code != 0
+        assert "does not accept a value" in result.output
+        assert not (project / ".agents" / "skills").exists()
+
+    def test_option_persists_across_upgrade_and_clearing_removes_policy(self, tmp_path):
+        import json
+
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "codex", "--no-model-invocation")
+        skills_dir = project / ".agents" / "skills"
+        policies = sorted(skills_dir.glob("*/agents/openai.yaml"))
+        assert len(policies) > 0
+        state = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert state["integration_settings"]["codex"]["parsed_options"] == {"no_model_invocation": True}
+
+        result = _run_in_project(project, ["integration", "upgrade", "codex", "--force"])
+        assert result.exit_code == 0, result.output
+        assert sorted(skills_dir.glob("*/agents/openai.yaml")) == policies
+
+        result = _run_in_project(
+            project,
+            ["integration", "upgrade", "codex", "--force", "--integration-options", ""],
+        )
+        assert result.exit_code == 0, result.output
+        assert not list(skills_dir.glob("*/agents/openai.yaml"))
+        manifest = (project / ".specify" / "integrations" / "codex.manifest.json").read_text(encoding="utf-8")
+        assert "openai.yaml" not in manifest
+
+    def test_extension_skills_have_no_policy_after_upgrade(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "codex", "--no-model-invocation")
+        result = _run_in_project(
+            project, ["extension", "add", "--dev", str(REPO_ROOT / "extensions" / "git")]
+        )
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["integration", "upgrade", "codex", "--force"])
+        assert result.exit_code == 0, result.output
+        skills_dir = project / ".agents" / "skills"
+        git_skills = sorted(skills_dir.glob("speckit-git-*/SKILL.md"))
+        assert git_skills, "git extension skills were not generated"
+        for f in git_skills:
+            assert not (f.parent / "agents").exists(), f.parent.name
+        assert (skills_dir / "speckit-specify" / "agents" / "openai.yaml").exists()
+
+    def test_existing_openai_yaml_keys_are_preserved(self, tmp_path):
+        import yaml
+
+        existing = tmp_path / ".agents" / "skills" / "speckit-plan" / "agents" / "openai.yaml"
+        existing.parent.mkdir(parents=True)
+        existing.write_text("interface:\n  display_name: Plan\n", encoding="utf-8")
+        i = get_integration("codex")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("codex", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        data = yaml.safe_load(existing.read_text(encoding="utf-8"))
+        assert data == {
+            "interface": {"display_name": "Plan"},
+            "policy": {"allow_implicit_invocation": False},
+        }
+
+
+class TestCodexNoModelInvocationOwnership:
+    """``agents/openai.yaml`` handling must never destroy user configuration (#2654)."""
+
+    PLAN_REL = ".agents/skills/speckit-plan/agents/openai.yaml"
+    POLICY = {"allow_implicit_invocation": False}
+
+    @staticmethod
+    def _setup(project, enabled=True, manifest=None):
+        manifest = manifest or IntegrationManifest("codex", project)
+        get_integration("codex").setup(
+            project,
+            manifest,
+            parsed_options={"no_model_invocation": True} if enabled else None,
+            script_type="sh",
+        )
+        return manifest
+
+    @staticmethod
+    def _init(project, *options):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        args = ["init", "--here", "--force", "--integration", "codex",
+                "--script", "sh", "--ignore-agent-tools"]
+        if options:
+            args += ["--integration-options", " ".join(options)]
+        result = _run_in_project(project, args)
+        assert result.exit_code == 0, result.output
+        return result
+
+    @staticmethod
+    def _manifest(project):
+        return IntegrationManifest.load("codex", project)
+
+    @staticmethod
+    def _yaml(path):
+        import yaml
+
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    def _seed(self, project, content=b"interface:\n  display_name: Plan\n"):
+        path = project / self.PLAN_REL
+        path.parent.mkdir(parents=True)
+        path.write_bytes(content)
+        return path
+
+    def _other_policies(self, project):
+        return [
+            p for p in (project / ".agents" / "skills").glob("*/agents/openai.yaml")
+            if p.relative_to(project).as_posix() != self.PLAN_REL
+        ]
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            b"interface: [unclosed\n",
+            b"- not\n- a mapping\n",
+            b"policy: not-a-mapping\n",
+            b"\xff\xfe\x00 invalid utf-8\n",
+        ],
+        ids=["invalid-yaml", "list-root", "scalar-policy", "invalid-utf8"],
+    )
+    def test_unusable_existing_file_aborts_without_overwriting(self, tmp_path, content):
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+        assert self._other_policies(tmp_path) == []
+        assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
+
+    def test_unreadable_existing_file_aborts_without_overwriting(self, tmp_path, monkeypatch):
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        from specify_cli.file_helper import FileHelper
+
+        real_read_bytes = FileHelper.read_bytes
+
+        def read_bytes(self, rel, *args, **kwargs):
+            if Path(rel).name == "openai.yaml":
+                raise PermissionError("denied")
+            return real_read_bytes(self, rel, *args, **kwargs)
+
+        monkeypatch.setattr(FileHelper, "read_bytes", read_bytes)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert path.read_bytes() == original
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    @pytest.mark.parametrize("linked", ["file", "agents-dir"])
+    def test_symlink_outside_project_is_not_written(self, tmp_path, linked):
+        project = tmp_path / "proj"
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        external = outside / "openai.yaml"
+        external.write_bytes(b"interface:\n  display_name: External\n")
+        agents_dir = project / ".agents" / "skills" / "speckit-plan" / "agents"
+        if linked == "file":
+            agents_dir.mkdir(parents=True)
+            (agents_dir / "openai.yaml").symlink_to(external)
+        else:
+            agents_dir.parent.mkdir(parents=True)
+            agents_dir.symlink_to(outside, target_is_directory=True)
+        with pytest.raises(ValueError, match="symlink"):
+            self._setup(project)
+        assert external.read_bytes() == b"interface:\n  display_name: External\n"
+
+    def test_existing_user_file_is_partial_and_keeps_its_keys(self, tmp_path):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        assert self._yaml(path) == {
+            "interface": {"display_name": "Plan"},
+            "policy": self.POLICY,
+        }
+        assert manifest.ownership_modes[self.PLAN_REL] == "partial"
+        generated = self._other_policies(tmp_path)[0].relative_to(tmp_path).as_posix()
+        assert manifest.ownership_modes[generated] == "whole"
+
+    def test_user_file_already_disabling_implicit_invocation_is_not_claimed(self, tmp_path):
+        content = b"policy:\n  allow_implicit_invocation: false\n"
+        path = self._seed(tmp_path, content)
+        manifest = self._setup(tmp_path)
+        assert self.PLAN_REL not in manifest.files
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert path.read_bytes() == content
+
+    def test_teardown_removes_only_the_managed_policy_from_user_file(self, tmp_path):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+
+    def test_user_file_survives_upgrade_option_clearing_and_uninstall(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        path = self._seed(tmp_path)
+        self._init(tmp_path, "--no-model-invocation")
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "partial"
+
+        result = _run_in_project(tmp_path, ["integration", "upgrade", "codex", "--force"])
+        assert result.exit_code == 0, result.output
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "partial"
+        assert self._yaml(path)["policy"] == self.POLICY
+
+        result = _run_in_project(
+            tmp_path, ["integration", "upgrade", "codex", "--force", "--integration-options", ""]
+        )
+        assert result.exit_code == 0, result.output
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+        assert not [k for k in self._manifest(tmp_path).files if k.endswith("openai.yaml")]
+
+        result = _run_in_project(
+            tmp_path,
+            ["integration", "upgrade", "codex", "--force",
+             "--integration-options", "--no-model-invocation"],
+        )
+        assert result.exit_code == 0, result.output
+        assert self._yaml(path)["policy"] == self.POLICY
+
+        result = _run_in_project(tmp_path, ["integration", "uninstall", "codex"])
+        assert result.exit_code == 0, result.output
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+
+    def test_reinit_without_option_reconciles_previous_policies(self, tmp_path):
+        path = self._seed(tmp_path)
+        self._init(tmp_path, "--no-model-invocation")
+        assert self._other_policies(tmp_path)
+
+        self._init(tmp_path)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+        assert not list((tmp_path / ".agents" / "skills").glob("speckit-specify/agents"))
+        assert not [k for k in self._manifest(tmp_path).files if k.endswith("openai.yaml")]
+
+    def test_clearing_option_keeps_user_edits_to_a_generated_file(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        self._init(tmp_path, "--no-model-invocation")
+        path = tmp_path / self.PLAN_REL
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "whole"
+        path.write_text(
+            "interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n",
+            encoding="utf-8",
+        )
+
+        result = _run_in_project(
+            tmp_path, ["integration", "upgrade", "codex", "--force", "--integration-options", ""]
+        )
+        assert result.exit_code == 0, result.output
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+
+    def test_teardown_does_not_report_cleaned_user_file_as_preserved(self, tmp_path):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        _, skipped = get_integration("codex").teardown(tmp_path, manifest)
+        assert path.resolve() not in [p.resolve() for p in skipped]
+
+    def test_setup_accepts_unresolved_project_root(self, tmp_path):
+        if not hasattr(os, "symlink"):
+            pytest.skip("symlinks are unavailable")
+        real = tmp_path / "real"
+        real.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(real, target_is_directory=True)
+        manifest = self._setup(link)
+        assert self._yaml(real / self.PLAN_REL) == {"policy": self.POLICY}
+        assert self.PLAN_REL in manifest.files
+
+    @pytest.mark.parametrize(
+        "edited",
+        [b"interface: [half-edited\n", b"\xff\xfe\x00 invalid utf-8\n"],
+        ids=["invalid-yaml", "invalid-utf8"],
+    )
+    def test_clearing_option_keeps_unparseable_edit_of_generated_file(self, tmp_path, edited):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        self._init(tmp_path, "--no-model-invocation")
+        path = tmp_path / self.PLAN_REL
+        path.write_bytes(edited)
+
+        result = _run_in_project(
+            tmp_path, ["integration", "upgrade", "codex", "--force", "--integration-options", ""]
+        )
+        assert result.exit_code == 0, result.output
+        assert path.read_bytes() == edited
+        assert self._other_policies(tmp_path) == []
+        # Upgrade's resync re-hashes the edit, so it must not stay ``whole``.
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "partial"
+
+        result = _run_in_project(
+            tmp_path, ["integration", "upgrade", "codex", "--force", "--integration-options", ""]
+        )
+        assert result.exit_code == 0, result.output
+        assert path.read_bytes() == edited
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "partial"
+
+        result = _run_in_project(tmp_path, ["integration", "uninstall", "codex"])
+        assert result.exit_code == 0, result.output
+        assert path.read_bytes() == edited
+
+    def test_clearing_option_deletes_generated_file_after_cosmetic_change(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        self._init(tmp_path, "--no-model-invocation")
+        path = tmp_path / self.PLAN_REL
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n") + b"# note\r\n")
+
+        result = _run_in_project(tmp_path, ["integration", "upgrade", "codex", "--force"])
+        assert result.exit_code == 0, result.output
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "whole"
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n") + b"# note\r\n")
+
+        self._init(tmp_path)
+        assert not path.exists()
+        assert self._other_policies(tmp_path) == []
+
+    def test_teardown_strips_policy_from_edited_generated_file(self, tmp_path):
+        manifest = self._setup(tmp_path)
+        path = tmp_path / self.PLAN_REL
+        path.write_text(
+            "interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n",
+            encoding="utf-8",
+        )
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+
+    def test_teardown_deletes_generated_file_after_cosmetic_change(self, tmp_path):
+        manifest = self._setup(tmp_path)
+        path = tmp_path / self.PLAN_REL
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n") + b"# note\r\n")
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert not path.exists()
+
+    def test_user_file_whose_policy_cannot_be_removed_stays_tracked(self, tmp_path):
+        path = self._seed(tmp_path)
+        self._setup(tmp_path).save()
+        broken = path.read_bytes() + b"interface: [broken\n"
+        path.write_bytes(broken)
+        manifest = self._setup(tmp_path, enabled=False)
+        assert path.read_bytes() == broken
+        assert manifest.ownership_modes[self.PLAN_REL] == "partial"
+
+    @pytest.mark.skipif(
+        os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+        reason="needs POSIX permissions enforced for the current user",
+    )
+    def test_clearing_option_keeps_unreadable_edit_of_generated_file(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        self._init(tmp_path, "--no-model-invocation")
+        path = tmp_path / self.PLAN_REL
+        edited = b"interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n"
+        path.write_bytes(edited)
+        path.chmod(0)
+        try:
+            result = _run_in_project(
+                tmp_path, ["integration", "upgrade", "codex", "--force", "--integration-options", ""]
+            )
+        finally:
+            path.chmod(0o644)
+        assert result.exit_code == 0, result.output
+        assert path.read_bytes() == edited
+        assert self.PLAN_REL in self._manifest(tmp_path).files
+        assert self._other_policies(tmp_path) == []
+
+        self._init(tmp_path)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self.PLAN_REL not in self._manifest(tmp_path).files
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_teardown_preserves_generated_file_under_symlinked_agents_dir(self, tmp_path):
+        manifest = self._setup(tmp_path)
+        agents_dir = (tmp_path / self.PLAN_REL).parent
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        (elsewhere / "openai.yaml").write_bytes((agents_dir / "openai.yaml").read_bytes())
+        (agents_dir / "openai.yaml").unlink()
+        agents_dir.rmdir()
+        agents_dir.symlink_to(elsewhere, target_is_directory=True)
+        content = (elsewhere / "openai.yaml").read_bytes()
+
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert (elsewhere / "openai.yaml").read_bytes() == content
+        assert agents_dir.is_symlink()
+        assert self._other_policies(tmp_path) == []
+
+    def test_policy_the_user_sets_after_clearing_is_never_claimed(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        def upgrade(options):
+            result = _run_in_project(
+                tmp_path, ["integration", "upgrade", "codex", "--force", "--integration-options", options]
+            )
+            assert result.exit_code == 0, result.output
+
+        self._init(tmp_path, "--no-model-invocation")
+        path = tmp_path / self.PLAN_REL
+        path.write_text(
+            "interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n",
+            encoding="utf-8",
+        )
+        upgrade("")
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self.PLAN_REL not in self._manifest(tmp_path).files
+
+        user_owned = "interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n"
+        path.write_text(user_owned, encoding="utf-8")
+        upgrade("--no-model-invocation")
+        assert self.PLAN_REL not in self._manifest(tmp_path).files
+        upgrade("")
+        assert path.read_text(encoding="utf-8") == user_owned
+
+    def test_generated_file_that_cannot_be_deleted_stays_tracked_for_retry(self, tmp_path, monkeypatch):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        real_unlink = Path.unlink
+
+        def unlink(self, *args, **kwargs):
+            if self.resolve() == path.resolve():
+                raise PermissionError("locked")
+            return real_unlink(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", unlink)
+        manifest = self._setup(tmp_path, enabled=False)
+        monkeypatch.undo()
+        assert path.exists()
+        assert manifest.ownership_modes[self.PLAN_REL] == "whole"
+        assert self._other_policies(tmp_path) == []
+        manifest.save()
+
+        manifest = self._setup(tmp_path, enabled=False)
+        assert not path.exists()
+        assert self.PLAN_REL not in manifest.files
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_symlinked_skills_dir_inside_project_is_rejected_before_writing(self, tmp_path):
+        shared = tmp_path / "shared-skills"
+        shared.mkdir()
+        (tmp_path / ".agents").mkdir()
+        (tmp_path / ".agents" / "skills").symlink_to(shared, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="--no-model-invocation.*symlink"):
+            self._setup(tmp_path)
+        assert not list(shared.rglob("*"))
+
+        manifest = self._setup(tmp_path, enabled=False)
+        assert list(shared.glob("*/SKILL.md"))
+        assert not [k for k in manifest.files if k.endswith("openai.yaml")]
+
+    @pytest.mark.skipif(
+        os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+        reason="needs POSIX permissions enforced for the current user",
+    )
+    def test_generated_file_unreadable_at_cleanup_is_deleted_on_retry(self, tmp_path):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        path.chmod(0)
+        try:
+            manifest = self._setup(tmp_path, enabled=False)
+        finally:
+            path.chmod(0o644)
+        assert manifest.ownership_modes[self.PLAN_REL] == "whole"
+        manifest.save()
+
+        self._setup(tmp_path, enabled=False)
+        assert not path.exists()
+        assert not path.parent.exists()
+
+    def test_cleaned_edit_of_a_former_core_policy_survives_upgrade(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        self._init(tmp_path)
+        rel = ".agents/skills/speckit-retired/agents/openai.yaml"
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "interface:\n  display_name: Retired\npolicy:\n  allow_implicit_invocation: false\n",
+            encoding="utf-8",
+        )
+        manifest = self._manifest(tmp_path)
+        manifest._files[rel] = "0" * 64
+        manifest._ownership_modes[rel] = "whole"
+        manifest.save()
+
+        result = _run_in_project(tmp_path, ["integration", "upgrade", "codex", "--force"])
+        assert result.exit_code == 0, result.output
+        assert self._yaml(path) == {"interface": {"display_name": "Retired"}}
+        # Once the policy is gone the file is the user's, not tracked.
+        assert rel not in self._manifest(tmp_path).files
+
+        user_owned = "interface:\n  display_name: Retired\npolicy:\n  allow_implicit_invocation: false\n"
+        path.write_text(user_owned, encoding="utf-8")
+        result = _run_in_project(tmp_path, ["integration", "upgrade", "codex", "--force"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(tmp_path, ["integration", "uninstall", "codex"])
+        assert result.exit_code == 0, result.output
+        assert path.read_text(encoding="utf-8") == user_owned
+
+    def test_directory_at_policy_path_is_not_kept_tracked(self, tmp_path):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        path.unlink()
+        path.mkdir()
+        manifest = self._setup(tmp_path, enabled=False)
+        assert path.is_dir()
+        assert self.PLAN_REL not in manifest.files
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_symlinked_skill_dir_is_rejected_before_writing(self, tmp_path):
+        shared = tmp_path / "shared-plan"
+        shared.mkdir()
+        skills = tmp_path / ".agents" / "skills"
+        skills.mkdir(parents=True)
+        (skills / "speckit-plan").symlink_to(shared, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="--no-model-invocation.*symlink"):
+            self._setup(tmp_path)
+        assert not list(skills.glob("*/SKILL.md"))
+        assert not list(shared.iterdir())
+
+    def test_round_trip_keeps_values_yaml_1_1_would_reinterpret(self, tmp_path):
+        content = (
+            "interface:\n"
+            "  display_name: On\n"
+            "  short_description: no\n"
+            "  default_prompt: 1:30\n"
+            "  brand_color: '0o12'\n"
+            "  icon_small: =\n"
+            "custom:\n"
+            "  count: 010\n"
+            "  big: 1_000\n"
+            "  ratio: 1e3\n"
+            "  when: 2026-01-01\n"
+            "  enabled: yes\n"
+        )
+        path = self._seed(tmp_path, content.encode("utf-8"))
+        manifest = self._setup(tmp_path)
+        # The strings are written quoted, so YAML 1.1 readers see them too.
+        assert self._yaml(path)["interface"]["display_name"] == "On"
+        assert self._yaml(path)["custom"]["enabled"] == "yes"
+
+        import yaml
+        from specify_cli.integrations.codex._openai_yaml import Yaml12Loader
+
+        original = yaml.load(content, Loader=Yaml12Loader)
+        assert original["interface"]["display_name"] == "On"
+        written = path.read_text(encoding="utf-8")
+        assert yaml.load(written, Loader=Yaml12Loader) == {**original, "policy": self.POLICY}
+        assert "count: 010\n" in written and "ratio: 1e3\n" in written
+
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert yaml.load(path.read_text(encoding="utf-8"), Loader=Yaml12Loader) == original
+
+    def test_round_trip_keeps_the_text_of_numbers(self, tmp_path):
+        content = (
+            b"interface:\n  display_name: 1.10\n  short_description: 007\n"
+            b"  brand_color: 0x1F\n  default_prompt: +1\n"
+            b"dependencies:\n  tools:\n  - type: mcp\n    value: docs\n"
+            b"    oauth:\n      callbackPort: 8080\n"
+        )
+        path = self._seed(tmp_path, content)
+        manifest = self._setup(tmp_path)
+        assert path.read_bytes().startswith(content)
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert path.read_bytes() == content
+
+    def test_int_and_string_keys_with_the_same_text_are_both_kept(self, tmp_path):
+        content = b"custom:\n  1: a\n  '1': b\n"
+        path = self._seed(tmp_path, content)
+        manifest = self._setup(tmp_path)
+        assert self._yaml(path)["custom"] == {1: "a", "1": "b"}
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert path.read_bytes() == content
+
+    @pytest.mark.parametrize("content", [b"x: !!int abc\n", b"x: !!float abc\n"])
+    def test_invalid_tagged_number_aborts_without_overwriting(self, tmp_path, content):
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+
+    def test_schema_error_names_the_yaml_type(self, tmp_path):
+        self._seed(tmp_path, b"interface: 5\n")
+        with pytest.raises(ValueError, match="'interface' must be a mapping, got int$"):
+            self._setup(tmp_path)
+
+    def test_tracked_file_already_holding_the_policy_is_not_rewritten(self, tmp_path):
+        path = self._seed(tmp_path)
+        self._setup(tmp_path).save()
+        commented = b"# my note\n" + path.read_bytes()
+        path.write_bytes(commented)
+        manifest = self._setup(tmp_path)
+        assert path.read_bytes() == commented
+        assert manifest.ownership_modes[self.PLAN_REL] == "partial"
+
+    @pytest.mark.skipif(
+        os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+        reason="needs POSIX permissions enforced for the current user",
+    )
+    def test_read_only_user_file_is_not_replaced(self, tmp_path):
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        path.chmod(0o444)
+        try:
+            with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*read-only"):
+                self._setup(tmp_path)
+            assert path.read_bytes() == original
+            assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
+        finally:
+            path.chmod(0o644)
+
+    def test_generated_file_with_a_non_boolean_policy_is_not_deleted(self, tmp_path):
+        manifest = self._setup(tmp_path)
+        path = tmp_path / self.PLAN_REL
+        edited = b"policy:\n  allow_implicit_invocation: 0  # keep off\n"
+        path.write_bytes(edited)
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert path.read_bytes() == edited
+
+    def test_teardown_warns_when_a_user_file_keeps_the_policy(self, tmp_path, caplog):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        broken = path.read_bytes() + b"interface: [broken\n"
+        path.write_bytes(broken)
+        with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
+            get_integration("codex").teardown(tmp_path, manifest)
+        assert path.read_bytes() == broken
+        assert "remove it by hand" in caplog.text
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            b"interface: invalid\n",
+            b"dependencies: invalid\n",
+            b"dependencies:\n  tools: invalid\n",
+            b"dependencies:\n  tools:\n    - not-a-mapping\n",
+            b"dependencies:\n  tools:\n    - type: mcp\n      oauth: 8080\n",
+            b"policy:\n  products: codex\n",
+            b"dependencies:\n  tools:\n    - null\n",
+            b"interface: invalid\npolicy:\n  allow_implicit_invocation: false\n",
+        ],
+        ids=[
+            "interface", "dependencies", "tools", "tool-item", "oauth", "products",
+            "null-tool-item", "untracked-already-set",
+        ],
+    )
+    def test_file_codex_would_ignore_aborts_without_overwriting(self, tmp_path, content):
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*Codex would ignore"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+        assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
+
+    def test_file_with_every_supported_field_is_accepted(self, tmp_path):
+        content = (
+            b"interface:\n  display_name: Plan\n  short_description: Plans\n"
+            b"dependencies:\n  tools:\n    - type: mcp\n      value: docs\n"
+            b"      oauth:\n        callbackPort: 8080\n"
+            b"policy:\n  products: [codex]\n"
+        )
+        path = self._seed(tmp_path, content)
+        self._setup(tmp_path)
+        assert self._yaml(path)["policy"] == {"products": ["codex"], **self.POLICY}
+        assert self._yaml(path)["dependencies"]["tools"][0]["oauth"] == {"callbackPort": 8080}
+
+    @staticmethod
+    def _fail_policy_writes(monkeypatch):
+        """Simulate a rewrite of an existing file that fails part-way.
+
+        Each rewrite fails and the restore that follows it succeeds.
+        """
+        from specify_cli.integrations import codex
+
+        real_write = codex._write_fd
+        calls = []
+
+        def write_fd(fd, content):
+            calls.append(content)
+            if len(calls) % 2:
+                real_write(fd, content[:5])
+                raise OSError("disk full")
+            real_write(fd, content)
+
+        monkeypatch.setattr(codex, "_write_fd", write_fd)
+
+    def test_failed_write_at_setup_leaves_user_file_intact(self, tmp_path, monkeypatch):
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        self._fail_policy_writes(monkeypatch)
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert path.read_bytes() == original
+        assert [p.name for p in path.parent.iterdir()] == ["openai.yaml"]
+
+    def test_failed_write_at_cleanup_leaves_user_file_intact_and_tracked(self, tmp_path, monkeypatch):
+        path = self._seed(tmp_path)
+        self._setup(tmp_path).save()
+        with_policy = path.read_bytes()
+        self._fail_policy_writes(monkeypatch)
+        manifest = self._setup(tmp_path, enabled=False)
+        monkeypatch.undo()
+        assert path.read_bytes() == with_policy
+        assert manifest.ownership_modes[self.PLAN_REL] == "partial"
+        assert [p.name for p in path.parent.iterdir()] == ["openai.yaml"]
+
+        manifest.save()
+        self._setup(tmp_path, enabled=False)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+
+    @pytest.mark.skipif(os.name == "nt", reason="needs POSIX file modes")
+    def test_rewritten_user_file_keeps_its_mode(self, tmp_path):
+        path = self._seed(tmp_path)
+        path.chmod(0o640)
+        manifest = self._setup(tmp_path)
+        assert stat.S_IMODE(path.stat().st_mode) == 0o640
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert stat.S_IMODE(path.stat().st_mode) == 0o640
+
+    def test_rewritten_user_file_keeps_its_inode(self, tmp_path):
+        # The same inode keeps the owner, group and access-control list, which
+        # a sibling-and-rename swap would replace.
+        path = self._seed(tmp_path)
+        inode = path.stat().st_ino
+        manifest = self._setup(tmp_path)
+        assert path.stat().st_ino == inode
+        assert self._yaml(path)["policy"] == self.POLICY
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert path.stat().st_ino == inode
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert [p.name for p in path.parent.iterdir()] == ["openai.yaml"]
+
+    @pytest.mark.skipif(not hasattr(os, "link"), reason="hard links are unavailable")
+    def test_hard_linked_user_file_is_not_rewritten(self, tmp_path):
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        outside = tmp_path / "shared-template.yaml"
+        os.link(path, outside)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*hard links"):
+            self._setup(tmp_path)
+        assert outside.read_bytes() == original
+
+    def test_failed_restore_keeps_a_backup_of_the_previous_content(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        from specify_cli.integrations import codex
+
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        real_write = codex._write_fd
+
+        def write_fd(fd, content):
+            real_write(fd, content[:5])
+            raise OSError("disk full")
+
+        monkeypatch.setattr(codex, "_write_fd", write_fd)
+        with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
+            with pytest.raises(OSError, match="disk full"):
+                self._setup(tmp_path)
+        backup = path.with_name("openai.yaml.speckit-backup")
+        assert backup.read_bytes() == original
+        assert backup.name in caplog.text
+
+    def test_retry_after_a_failed_restore_keeps_the_backup(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        real_write = codex._write_fd
+
+        def write_fd(fd, content):
+            real_write(fd, content[:5])
+            raise OSError("disk full")
+
+        monkeypatch.setattr(codex, "_write_fd", write_fd)
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        backup = path.with_name("openai.yaml.speckit-backup")
+        # A half-written file can still be valid YAML.
+        path.write_bytes(b"interface: {}\n")
+        with pytest.raises(ValueError, match="speckit-backup is left from an interrupted update"):
+            self._setup(tmp_path)
+        assert backup.read_bytes() == original
+        assert path.read_bytes() == b"interface: {}\n"
+        assert self._other_policies(tmp_path) == []
+
+    def test_leftover_backup_stops_policy_cleanup(self, tmp_path, caplog):
+        path = self._seed(tmp_path)
+        self._setup(tmp_path).save()
+        with_policy = path.read_bytes()
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
+            manifest = self._setup(tmp_path, enabled=False)
+        assert path.read_bytes() == with_policy
+        assert backup.read_bytes() == b"interface:\n  display_name: Earlier\n"
+        assert manifest.ownership_modes[self.PLAN_REL] == "partial"
+        assert "interrupted update" in caplog.text
+
+    def test_edit_made_after_planning_is_not_overwritten(self, tmp_path, monkeypatch):
+        from specify_cli.integrations.base import SkillsIntegration
+
+        path = self._seed(tmp_path)
+        edited = b"interface:\n  display_name: Edited\n"
+        real_setup = SkillsIntegration.setup
+
+        def setup(self, *args, **kwargs):
+            # Runs between planning and writing the policies.
+            created = real_setup(self, *args, **kwargs)
+            path.write_bytes(edited)
+            return created
+
+        monkeypatch.setattr(SkillsIntegration, "setup", setup)
+        with pytest.raises(PermissionError, match="changed since it was read"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == edited
+        assert not list(tmp_path.rglob("*.speckit-backup"))
+
+    def test_edit_made_while_backing_up_is_not_overwritten(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        path = self._seed(tmp_path)
+        real_create_private = codex.create_private
+
+        def create_private(helper, rel, content):
+            real_create_private(helper, rel, content)
+            with path.open("ab") as stream:  # in place, so the inode is unchanged
+                stream.write(b"# edited\n")
+
+        monkeypatch.setattr(codex, "create_private", create_private)
+        with pytest.raises(PermissionError, match="changed while being updated"):
+            self._setup(tmp_path)
+        assert path.read_bytes().endswith(b"# edited\n")
+        assert not list(tmp_path.rglob("*.speckit-backup"))
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_read_does_not_follow_an_ancestor_swapped_for_a_symlink(self, tmp_path, monkeypatch):
+        from specify_cli.file_helper import FileHelper
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        path = self._seed(project)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "openai.yaml").write_bytes(b"interface:\n  display_name: Secret\n")
+        real_read_bytes = FileHelper.read_bytes
+        reads = []
+
+        def read_bytes(self, rel, *args, **kwargs):
+            if Path(rel).as_posix() == self_rel and not reads:
+                # Every earlier check passed; swap just before the read.
+                path.parent.rename(project / "moved-agents")
+                path.parent.symlink_to(outside, target_is_directory=True)
+            try:
+                content = real_read_bytes(self, rel, *args, **kwargs)
+            except BaseException:
+                reads.append(None)
+                raise
+            reads.append(content)
+            return content
+
+        self_rel = self.PLAN_REL
+        monkeypatch.setattr(FileHelper, "read_bytes", read_bytes)
+        with pytest.raises(ValueError, match="Cannot update .*speckit-plan/agents/openai.yaml: Refusing symlink"):
+            self._setup(project)
+        monkeypatch.undo()
+        assert reads and reads[0] is None
+        assert all(b"Secret" not in (content or b"") for content in reads)
+        # Refused while planning, before any skill was written.
+        assert not list((project / ".agents" / "skills").glob("*/SKILL.md"))
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_new_policy_is_not_written_through_an_ancestor_swapped_for_a_symlink(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.integrations.base import SkillsIntegration
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        real_setup = SkillsIntegration.setup
+
+        def setup(self, *args, **kwargs):
+            # Runs between planning and writing the policies.
+            created = real_setup(self, *args, **kwargs)
+            (project / self_rel).parent.symlink_to(outside, target_is_directory=True)
+            return created
+
+        self_rel = self.PLAN_REL
+        monkeypatch.setattr(SkillsIntegration, "setup", setup)
+        with pytest.raises(ValueError, match="Refusing symlink"):
+            self._setup(project)
+        assert not list(outside.iterdir())
+
+    def test_rollback_keeps_a_policy_someone_else_created(self, tmp_path, monkeypatch):
+        from specify_cli.file_helper import FileHelper
+
+        theirs = tmp_path / self.PLAN_REL
+        real_create_bytes = FileHelper.create_bytes
+
+        def create_bytes(self, rel, *args, **kwargs):
+            if Path(rel).as_posix() == TestCodexNoModelInvocationOwnership.PLAN_REL:
+                theirs.write_bytes(b"")  # appears just before the exclusive create
+            return real_create_bytes(self, rel, *args, **kwargs)
+
+        monkeypatch.setattr(FileHelper, "create_bytes", create_bytes)
+        with pytest.raises(ValueError, match="created while updating"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert theirs.read_bytes() == b""
+        assert self._other_policies(tmp_path) == []
+
+    def test_rollback_deletes_a_policy_whose_write_failed_part_way(self, tmp_path, monkeypatch):
+        from specify_cli.file_helper import FileHelper
+
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        real_create_bytes = FileHelper.create_bytes
+
+        def create_bytes(self, rel, content, *args, **kwargs):
+            if Path(rel).as_posix().endswith("speckit-tasks/agents/openai.yaml"):
+                real_create_bytes(self, rel, content[:5], *args, **kwargs)
+                raise OSError("disk full")
+            return real_create_bytes(self, rel, content, *args, **kwargs)
+
+        monkeypatch.setattr(FileHelper, "create_bytes", create_bytes)
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert path.read_bytes() == original
+        assert self._other_policies(tmp_path) == []
+        assert list((tmp_path / ".agents" / "skills").glob("*/agents")) == [path.parent]
+
+    def test_preflight_without_the_option_reads_nothing(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        self._seed(tmp_path, b"- not\n- a mapping\n")
+
+        def unexpected(*args, **kwargs):
+            raise AssertionError("preflight read a policy file")
+
+        monkeypatch.setattr(codex, "_read_policy", unexpected)
+        assert get_integration("codex").preflight_setup(tmp_path, {}, script_type="sh") is None
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_rollback_does_not_delete_through_an_ancestor_swapped_for_a_symlink(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.integrations.codex import CodexIntegration
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        path = self._seed(project)
+        original = path.read_bytes()
+        outside = tmp_path / "outside"
+        self._fail_policy_record(monkeypatch, project)
+        real_roll_back = CodexIntegration._roll_back_policies
+        swapped = []
+
+        def roll_back(root, written):
+            # A policy setup created, rather than rewrote.
+            rel = next(entry[0] for entry in written if entry[1] is None)
+            agents = (root / rel).parent
+            agents.rename(outside)
+            agents.symlink_to(outside, target_is_directory=True)
+            swapped.append(outside / "openai.yaml")
+            real_roll_back(root, written)
+
+        monkeypatch.setattr(CodexIntegration, "_roll_back_policies", staticmethod(roll_back))
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(project)
+        monkeypatch.undo()
+        assert swapped[0].is_file()
+        # Refusing one path does not stop the rest of the rollback.
+        assert path.read_bytes() == original
+        remaining = [
+            p for p in self._other_policies(project)
+            if not p.parent.is_symlink()
+        ]
+        assert remaining == []
+
+    def test_clearing_the_option_keeps_a_generated_file_beside_a_backup(self, tmp_path, caplog):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        generated = path.read_bytes()
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
+            manifest = self._setup(tmp_path, enabled=False)
+        assert path.read_bytes() == generated
+        assert backup.exists()
+        assert manifest.ownership_modes[self.PLAN_REL] == "whole"
+        assert "interrupted update" in caplog.text
+        manifest.save()
+
+        backup.unlink()
+        manifest = self._setup(tmp_path, enabled=False)
+        assert not path.exists()
+        assert self.PLAN_REL not in manifest.files
+
+    @pytest.mark.parametrize("force", [False, True])
+    def test_uninstall_keeps_a_generated_file_beside_a_backup(self, tmp_path, force):
+        manifest = self._setup(tmp_path)
+        path = tmp_path / self.PLAN_REL
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        _, skipped = get_integration("codex").teardown(tmp_path, manifest, force=force)
+        assert path.exists()
+        assert backup.exists()
+        assert path.resolve() in [p.resolve() for p in skipped]
+
+    def test_preflight_refuses_a_switch_before_the_outgoing_integration_is_removed(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "claude")
+        bad = project / self.PLAN_REL
+        bad.parent.mkdir(parents=True)
+        bad.write_bytes(b"- not\n- a mapping\n")
+        state = (project / ".specify" / "integration.json").read_bytes()
+        claude_skills = sorted((project / ".claude" / "skills").glob("*/SKILL.md"))
+        assert claude_skills
+
+        result = _run_in_project(project, [
+            "integration", "switch", "codex", "--script", "sh",
+            "--integration-options", "--no-model-invocation",
+        ])
+
+        assert result.exit_code == 1, result.output
+        assert "openai.yaml" in " ".join(result.output.split())
+        assert (project / ".specify" / "integration.json").read_bytes() == state
+        assert sorted((project / ".claude" / "skills").glob("*/SKILL.md")) == claude_skills
+        assert not list((project / ".agents" / "skills").glob("*/SKILL.md"))
+
+    def test_leftover_backup_beside_a_deleted_file_stops_setup(self, tmp_path):
+        path = self._seed(tmp_path)
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        path.unlink()
+        with pytest.raises(ValueError, match="speckit-backup is left from an interrupted update"):
+            self._setup(tmp_path)
+        assert not path.exists()
+        assert backup.read_bytes() == b"interface:\n  display_name: Earlier\n"
+
+    @pytest.mark.parametrize("tracked", [False, True])
+    def test_leftover_backup_beside_a_file_that_already_holds_the_policy_stops_setup(
+        self, tmp_path, tracked
+    ):
+        # An interrupted rewrite can leave the new policy written and the
+        # backup in place; a retry must not take the file for the user's own.
+        if tracked:
+            self._setup(tmp_path).save()
+            path = tmp_path / self.PLAN_REL
+        else:
+            path = self._seed(
+                tmp_path,
+                b"interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n",
+            )
+        before = path.read_bytes()
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        with pytest.raises(ValueError, match="speckit-backup is left from an interrupted update"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == before
+        assert backup.read_bytes() == b"interface:\n  display_name: Earlier\n"
+
+        backup.unlink()
+        self._setup(tmp_path)
+        assert path.read_bytes() == before
+        assert len(self._other_policies(tmp_path)) == len(CORE_COMMAND_NAMES) - 1
+
+    def test_clearing_option_beside_a_backup_keeps_user_edits_after_recovery(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        self._init(tmp_path, "--no-model-invocation")
+        path = tmp_path / self.PLAN_REL
+        edited = b"interface:\n  display_name: Mine\npolicy:\n  allow_implicit_invocation: false\n"
+        path.write_bytes(edited)
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        clear = ["integration", "upgrade", "codex", "--force", "--integration-options", ""]
+
+        result = _run_in_project(tmp_path, clear)
+        assert result.exit_code == 0, result.output
+        assert path.read_bytes() == edited
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "partial"
+
+        backup.unlink()
+        result = _run_in_project(tmp_path, clear)
+        assert result.exit_code == 0, result.output
+        assert self._yaml(path) == {"interface": {"display_name": "Mine"}}
+        assert self.PLAN_REL not in self._manifest(tmp_path).files
+
+    def test_clearing_option_beside_a_backup_keeps_a_policy_only_file_generated(self, tmp_path):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+        backup = path.with_name("openai.yaml.speckit-backup")
+        backup.write_bytes(b"interface:\n  display_name: Earlier\n")
+        manifest = self._setup(tmp_path, enabled=False)
+        assert manifest.ownership_modes[self.PLAN_REL] == "whole"
+        manifest.save()
+
+        backup.unlink()
+        manifest = self._setup(tmp_path, enabled=False)
+        assert not path.exists()
+        assert self.PLAN_REL not in manifest.files
+
+    def test_generated_file_edited_during_cleanup_is_kept(self, tmp_path, monkeypatch):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        edited = b"interface:\n  display_name: Mine\npolicy:\n  allow_implicit_invocation: false\n"
+        real_uninstall = IntegrationManifest.uninstall
+
+        def uninstall(self, *args, **kwargs):
+            # Runs after the generated-file check, just before the delete.
+            if self.version == "policy-cleanup":
+                path.write_bytes(edited)
+            return real_uninstall(self, *args, **kwargs)
+
+        monkeypatch.setattr(IntegrationManifest, "uninstall", uninstall)
+        manifest = self._setup(tmp_path, enabled=False)
+        assert path.read_bytes() == edited
+        assert manifest.ownership_modes[self.PLAN_REL] == "partial"
+        monkeypatch.undo()
+        manifest.save()
+
+        manifest = self._setup(tmp_path, enabled=False)
+        assert self._yaml(path) == {"interface": {"display_name": "Mine"}}
+        assert self.PLAN_REL not in manifest.files
+
+    @pytest.mark.parametrize("edited", [
+        b"interface:\n  display_name: Mine\npolicy:\n  allow_implicit_invocation: false\n",
+        b"policy:\n  allow_implicit_invocation: true\n",
+    ])
+    def test_tracked_policy_edited_after_planning_stops_setup(self, tmp_path, monkeypatch, edited):
+        from specify_cli.integrations.base import SkillsIntegration
+
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        real_setup = SkillsIntegration.setup
+
+        def setup(self, *args, **kwargs):
+            # Runs between planning and recording the policies.
+            created = real_setup(self, *args, **kwargs)
+            path.write_bytes(edited)
+            return created
+
+        monkeypatch.setattr(SkillsIntegration, "setup", setup)
+        with pytest.raises(ValueError, match="changed while updating"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == edited
+
+    def test_failed_restore_keeps_the_original_exception(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        self._seed(tmp_path)
+        calls = []
+
+        def write_fd(fd, content):
+            calls.append(content)
+            if len(calls) == 1:
+                raise KeyboardInterrupt
+            raise OSError("disk full")
+
+        monkeypatch.setattr(codex, "_write_fd", write_fd)
+        with pytest.raises(KeyboardInterrupt):
+            self._setup(tmp_path)
+
+    def test_backup_is_readable_by_its_owner_only(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        if os.name == "nt":
+            # Everyone may read anything created here unless inheritance is blocked.
+            subprocess.run(
+                ["icacls", str(tmp_path), "/grant", "*S-1-1-0:(OI)(CI)R"],
+                check=True, capture_output=True,
+            )
+        path = self._seed(tmp_path)
+        backup = path.with_name("openai.yaml.speckit-backup")
+        seen = []
+        real_write = codex._write_fd
+
+        def write_fd(fd, content):
+            if not seen:
+                seen.append((backup.read_bytes(), _access(backup)))
+            real_write(fd, content)
+
+        monkeypatch.setattr(codex, "_write_fd", write_fd)
+        original = path.read_bytes()
+        self._setup(tmp_path)
+        assert seen and seen[0][0] == original
+        if os.name == "nt":
+            from specify_cli.integrations.codex._private_file import owner_only_sddl
+
+            # NTFS may add AI (auto-inherited) to the flags; P is what blocks inheritance.
+            flags, aces = _split_dacl(seen[0][1])
+            want_flags, want_aces = _split_dacl(_canonical_sddl(owner_only_sddl()))
+            assert "P" in flags and want_flags == "P"
+            assert aces == want_aces and len(aces) == 1
+            assert ";WD)" in _access(path)  # the inherited grant to Everyone did apply here
+        else:
+            assert seen[0][1] == 0o600
+        assert not backup.exists()
+
+    def test_failed_backup_removal_restores_the_original(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        real_remove = codex._remove_backup
+        calls = []
+
+        def remove_backup(*args):
+            calls.append(args)
+            if len(calls) == 1:
+                raise OSError("device busy")
+            real_remove(*args)
+
+        monkeypatch.setattr(codex, "_remove_backup", remove_backup)
+        with pytest.raises(OSError, match="device busy"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert path.read_bytes() == original
+        assert [p.name for p in path.parent.iterdir()] == ["openai.yaml"]
+        assert self._other_policies(tmp_path) == []
+
+        # Nothing was left untracked, so a retry claims and later clears the policy.
+        self._setup(tmp_path).save()
+        assert self._yaml(path)["policy"] == self.POLICY
+        self._setup(tmp_path, enabled=False)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+
+    @pytest.mark.skipif(os.name == "nt", reason="needs POSIX symlinks")
+    def test_parent_swapped_for_a_symlink_is_not_written_through(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        path = self._seed(tmp_path)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "openai.yaml").write_bytes(b"interface:\n  display_name: Outside\n")
+        real_changing_file = codex.changing_file
+
+        def changing_file(target, **kwargs):
+            # Swap the parent after every path check, just before the open.
+            if target == path and path.parent.is_dir() and not path.parent.is_symlink():
+                path.parent.rename(tmp_path / "moved")
+                path.parent.symlink_to(outside, target_is_directory=True)
+            return real_changing_file(target, **kwargs)
+
+        monkeypatch.setattr(codex, "changing_file", changing_file)
+        with pytest.raises((OSError, ValueError)):
+            self._setup(tmp_path)
+        assert (outside / "openai.yaml").read_bytes() == b"interface:\n  display_name: Outside\n"
+        assert sorted(p.name for p in outside.iterdir()) == ["openai.yaml"]
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            b"custom:\n  true: first\n  1: second\n",
+            b"custom:\n  1: first\n  1.0: second\n",
+            b"custom:\n  a: first\n  a: second\n",
+        ],
+        ids=["bool-and-int", "int-and-float", "repeated"],
+    )
+    def test_colliding_keys_abort_without_overwriting(self, tmp_path, content):
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*keys that collide"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+        assert self._other_policies(tmp_path) == []
+
+    def test_explicit_merge_override_is_not_a_collision(self, tmp_path):
+        content = b"base: &b {a: 1}\ncustom: {!!merge <<: *b, a: 2}\n"
+        path = self._seed(tmp_path, content)
+        self._setup(tmp_path)
+        assert self._yaml(path)["custom"] == {"a": 2}
+
+    def test_aliased_policy_is_changed_without_touching_its_anchor(self, tmp_path):
+        path = self._seed(tmp_path, b"shared: &p\n  products: [codex]\npolicy: *p\n")
+        manifest = self._setup(tmp_path)
+        assert self._yaml(path) == {
+            "shared": {"products": ["codex"]},
+            "policy": {"products": ["codex"], **self.POLICY},
+        }
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert self._yaml(path) == {
+            "shared": {"products": ["codex"]},
+            "policy": {"products": ["codex"]},
+        }
+
+    def test_removing_an_aliased_policy_keeps_its_anchor(self, tmp_path):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        path.write_bytes(b"shared: &p\n  allow_implicit_invocation: false\npolicy: *p\n")
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert self._yaml(path) == {"shared": self.POLICY}
+
+    @staticmethod
+    def _fail_policy_record(monkeypatch, project, failing_skill="speckit-tasks"):
+        """Fail the policy write for ``failing_skill``, after the plan file is rewritten."""
+        from specify_cli.file_helper import FileHelper
+
+        real_create_bytes = FileHelper.create_bytes
+        plan = project / TestCodexNoModelInvocationOwnership.PLAN_REL
+
+        def create_bytes(self, rel, *args, **kwargs):
+            if Path(rel).as_posix().endswith(f"{failing_skill}/agents/openai.yaml"):
+                assert b"allow_implicit_invocation" in plan.read_bytes()
+                raise OSError("disk full")
+            return real_create_bytes(self, rel, *args, **kwargs)
+
+        monkeypatch.setattr(FileHelper, "create_bytes", create_bytes)
+
+    def test_failed_later_policy_write_rolls_back_so_a_retry_can_clear_them(
+        self, tmp_path, monkeypatch
+    ):
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        self._fail_policy_record(monkeypatch, tmp_path)
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert path.read_bytes() == original
+        assert self._other_policies(tmp_path) == []
+        assert list((tmp_path / ".agents" / "skills").glob("*/agents")) == [path.parent]
+
+        self._setup(tmp_path).save()
+        assert len(self._other_policies(tmp_path)) == len(CORE_COMMAND_NAMES) - 1
+        self._setup(tmp_path, enabled=False)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+
+    def test_failed_release_of_prior_policies_rolls_back_new_ones(self, tmp_path, monkeypatch):
+        from specify_cli.integrations.codex import CodexIntegration
+
+        self._setup(tmp_path, enabled=False).save()
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+
+        def release(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(CodexIntegration, "_release_prior_policies", release)
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == original
+        assert self._other_policies(tmp_path) == []
+
+    def test_failed_policy_write_is_left_to_an_active_lifecycle_journal(self, tmp_path, monkeypatch):
+        from specify_cli.integrations._file_changes import file_change_observer
+
+        self._seed(tmp_path)
+        self._fail_policy_record(monkeypatch, tmp_path)
+        token = file_change_observer.set(lambda *args: None)
+        try:
+            with pytest.raises(OSError, match="disk full"):
+                self._setup(tmp_path)
+        finally:
+            file_change_observer.reset(token)
+        assert self._yaml(tmp_path / self.PLAN_REL)["policy"] == self.POLICY
+        # Every policy before the failing one, the plan aside.
+        assert len(self._other_policies(tmp_path)) == len(CORE_COMMAND_NAMES) - 2
+
+    def test_unreadable_prior_manifest_leaves_policies_in_place(self, tmp_path, caplog):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        manifest.save()
+        policies = {p: p.read_bytes() for p in [path, *self._other_policies(tmp_path)]}
+        manifest.manifest_path.write_text("{not json", encoding="utf-8")
+        with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
+            self._setup(tmp_path, enabled=False)
+        assert "Could not read prior manifest" in caplog.text
+        assert {p: p.read_bytes() for p in policies} == policies
+
+    def test_forced_teardown_deletes_an_edited_generated_file(self, tmp_path):
+        manifest = self._setup(tmp_path)
+        path = tmp_path / self.PLAN_REL
+        path.write_text(
+            "interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n",
+            encoding="utf-8",
+        )
+        get_integration("codex").teardown(tmp_path, manifest, force=True)
+        assert not path.exists()
+        assert self._other_policies(tmp_path) == []
+
+    def test_forced_teardown_keeps_a_user_file_and_removes_only_the_policy(self, tmp_path):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        get_integration("codex").teardown(tmp_path, manifest, force=True)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_policy_behind_dangling_agents_symlink_stays_tracked(self, tmp_path):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        generated = path.read_bytes()
+        agents_dir = path.parent
+        path.unlink()
+        agents_dir.rmdir()
+        agents_dir.symlink_to(tmp_path / "missing", target_is_directory=True)
+
+        manifest = self._setup(tmp_path, enabled=False)
+        assert manifest.ownership_modes[self.PLAN_REL] == "whole"
+        manifest.save()
+
+        agents_dir.unlink()
+        agents_dir.mkdir()
+        path.write_bytes(generated)
+        manifest = self._setup(tmp_path, enabled=False)
+        assert not path.exists()
+        assert self.PLAN_REL not in manifest.files
+
+    @pytest.mark.parametrize(
+        "blocker",
+        [".agents/skills/speckit-plan/agents", ".agents/skills/speckit-plan"],
+        ids=["agents-file", "skill-dir-file"],
+    )
+    def test_non_directory_on_policy_path_is_rejected_before_writing(self, tmp_path, blocker):
+        (tmp_path / blocker).parent.mkdir(parents=True)
+        (tmp_path / blocker).write_bytes(b"not a directory\n")
+        with pytest.raises(ValueError, match=f"{blocker} is not a directory"):
+            self._setup(tmp_path)
+        assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
+        assert (tmp_path / blocker).read_bytes() == b"not a directory\n"
+
+    def test_stale_cleanup_never_deletes_policy_files(self):
+        exclusions = get_integration("codex").stale_cleanup_exclusions()
+        assert self.PLAN_REL in exclusions
+        assert ".agents/skills/speckit-specify/agents/openai.yaml" in exclusions
+
+
+@pytest.mark.filterwarnings("ignore:Cannot compose command 'speckit.wrap-test':UserWarning")
+class TestCodexNoModelInvocationPresets:
+    """Preset overrides rewrite ``SKILL.md`` without running ``setup()`` (#2654)."""
+
+    SKILL = ".agents/skills/speckit-specify"
+
+    @staticmethod
+    def _add_and_remove_self_test_preset(project):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        skill_md = project / TestCodexNoModelInvocationPresets.SKILL / "SKILL.md"
+        result = _run_in_project(
+            project, ["preset", "add", "--dev", str(REPO_ROOT / "presets" / "self-test")]
+        )
+        assert result.exit_code == 0, result.output
+        overridden = "preset:self-test" in skill_md.read_text(encoding="utf-8")
+        policy_while_overridden = sorted((skill_md.parent).rglob("openai.yaml"))
+        result = _run_in_project(project, ["preset", "remove", "self-test"])
+        assert result.exit_code == 0, result.output
+        assert "preset:self-test" not in skill_md.read_text(encoding="utf-8")
+        return overridden, policy_while_overridden
+
+    def test_policy_survives_preset_override_and_removal(self, tmp_path):
+        import yaml
+
+        from tests.specify_cli.integrations._helpers import _init_project
+
+        project = _init_project(tmp_path, "codex", "--no-model-invocation")
+        policy = project / self.SKILL / "agents" / "openai.yaml"
+        before = policy.read_bytes()
+        overridden, during = self._add_and_remove_self_test_preset(project)
+        assert overridden
+        assert during == [policy]
+        assert policy.read_bytes() == before
+        assert yaml.safe_load(before) == {"policy": {"allow_implicit_invocation": False}}
+
+    def test_preset_override_adds_no_policy_without_option(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _init_project
+
+        project = _init_project(tmp_path, "codex")
+        overridden, during = self._add_and_remove_self_test_preset(project)
+        assert overridden
+        assert during == []
+        assert not (project / self.SKILL / "agents").exists()
+
+
+class TestCodexFileHelperInternals:
+    """Pins the ``FileHelper`` internals ``_replace_file`` rewrites through.
+
+    ``FileHelper`` has no public in-place byte rewrite, so the Codex package
+    uses ``_path`` and ``_overwrite_descriptor``, and creates its backup
+    through ``_creation_directory``. A change to any of them should
+    fail here rather than silently in a policy rewrite.
+    """
+
+    REL = ".agents/skills/speckit-plan/agents/openai.yaml"
+
+    def test_create_private_creates_exclusively(self, tmp_path):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        rel = f"{self.REL}.speckit-backup"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        with FileHelper(tmp_path) as helper:
+            create_private(helper, rel, b"first")
+            with pytest.raises(FileExistsError):
+                create_private(helper, rel, b"second")
+        assert (tmp_path / rel).read_bytes() == b"first"
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows creation path")
+    def test_create_private_removes_a_partial_file(self, tmp_path, monkeypatch):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex import _private_file
+
+        def fail(*args, **kwargs):
+            raise OSError("disk full")
+
+        real_fdopen = os.fdopen
+
+        def fdopen(fd, *args, **kwargs):
+            stream = real_fdopen(fd, *args, **kwargs)
+            monkeypatch.setattr(stream, "write", fail)
+            return stream
+
+        monkeypatch.setattr(_private_file.os, "fdopen", fdopen)
+        rel = f"{self.REL}.speckit-backup"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        with FileHelper(tmp_path) as helper, pytest.raises(OSError, match="disk full"):
+            _private_file.create_private(helper, rel, b"content")
+        assert not (tmp_path / rel).exists()
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+    @pytest.mark.parametrize("step", ["write", "fsync", "close"])
+    def test_posix_create_private_uses_one_descriptor_and_removes_a_partial_file(
+        self, tmp_path, monkeypatch, step
+    ):
+        # Reopening the backup by name could block on a FIFO swapped in for it.
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        rel = f"{self.REL}.speckit-backup"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        real_open, real_step = os.open, getattr(os, step)
+        leaf: list[int] = []
+        live: set[int] = set()
+
+        def open_(path, flags, *args, **kwargs):
+            fd = real_open(path, flags, *args, **kwargs)
+            if os.fspath(path).endswith(".speckit-backup"):
+                leaf.append(fd)
+                live.add(fd)
+            return fd
+
+        def fail(fd, *args):
+            if fd not in live:
+                return real_step(fd, *args)
+            if step == "close":
+                # Its number may be reused once closed.
+                live.discard(fd)
+                real_step(fd)
+            raise OSError("disk full")
+
+        monkeypatch.setattr(os, "open", open_)
+        monkeypatch.setattr(os, step, fail)
+        with FileHelper(tmp_path) as helper, pytest.raises(OSError, match="disk full"):
+            create_private(helper, rel, b"content")
+        monkeypatch.undo()
+        assert len(leaf) == 1
+        assert not (tmp_path / rel).exists()
+
+    @staticmethod
+    def _fail_directory_fsync(monkeypatch, pinned_only):
+        """Make ``fsync`` of a directory fail as it does on Linux's ``O_PATH`` descriptors."""
+        from specify_cli.file_helper import FileHelper
+
+        real_fsync = os.fsync
+        pinned: set[int] = set()
+        if pinned_only:
+            real_creation = FileHelper._creation_directory
+
+            from contextlib import contextmanager
+
+            @contextmanager
+            def creation_directory(self, directory):
+                with real_creation(self, directory) as handle:
+                    pinned.add(handle)
+                    try:
+                        yield handle
+                    finally:
+                        pinned.discard(handle)
+
+            monkeypatch.setattr(FileHelper, "_creation_directory", creation_directory)
+
+        def fsync(fd):
+            if (fd in pinned) if pinned_only else stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise OSError(errno.EBADF, "Bad file descriptor")
+            return real_fsync(fd)
+
+        monkeypatch.setattr(os, "fsync", fsync)
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+    @pytest.mark.parametrize("pinned_only", [True, False])
+    def test_posix_create_private_keeps_the_backup_when_the_directory_cannot_be_flushed(
+        self, tmp_path, monkeypatch, pinned_only
+    ):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        rel = f"{self.REL}.speckit-backup"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        self._fail_directory_fsync(monkeypatch, pinned_only)
+        with FileHelper(tmp_path) as helper:
+            create_private(helper, rel, b"content")
+        monkeypatch.undo()
+        assert (tmp_path / rel).read_bytes() == b"content"
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+    def test_posix_create_private_flushes_the_directory_through_its_own_descriptor(
+        self, tmp_path, monkeypatch
+    ):
+        from contextlib import contextmanager
+
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        rel = f"{self.REL}.speckit-backup"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        real_creation, real_fsync = FileHelper._creation_directory, os.fsync
+        pinned: list[int] = []
+        directories: list[int] = []
+
+        @contextmanager
+        def creation_directory(self, directory):
+            with real_creation(self, directory) as handle:
+                pinned.append(handle)
+                yield handle
+
+        def fsync(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                directories.append(fd)
+            return real_fsync(fd)
+
+        monkeypatch.setattr(FileHelper, "_creation_directory", creation_directory)
+        monkeypatch.setattr(os, "fsync", fsync)
+        with FileHelper(tmp_path) as helper:
+            create_private(helper, rel, b"content")
+        monkeypatch.undo()
+        # The pinned descriptor may be O_PATH, which fsync rejects.
+        assert len(directories) == 1 and directories[0] not in pinned
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+    def test_rewrite_succeeds_when_the_directory_cannot_be_flushed(self, tmp_path, monkeypatch):
+        owner = TestCodexNoModelInvocationOwnership()
+        path = owner._seed(tmp_path)
+        self._fail_directory_fsync(monkeypatch, pinned_only=True)
+        owner._setup(tmp_path)
+        monkeypatch.undo()
+        assert owner._yaml(path)["policy"] == {"allow_implicit_invocation": False}
+        assert not list(tmp_path.rglob("*.speckit-backup"))
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+    def test_posix_create_private_flushes_through_one_descriptor(self, tmp_path, monkeypatch):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        rel = f"{self.REL}.speckit-backup"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        real_open, real_fsync = os.open, os.fsync
+        leaf: list[int] = []
+        synced: list[int] = []
+
+        def open_(path, flags, *args, **kwargs):
+            fd = real_open(path, flags, *args, **kwargs)
+            if os.fspath(path).endswith(".speckit-backup"):
+                leaf.append(fd)
+            return fd
+
+        def fsync(fd):
+            synced.append(fd)
+            return real_fsync(fd)
+
+        monkeypatch.setattr(os, "open", open_)
+        monkeypatch.setattr(os, "fsync", fsync)
+        with FileHelper(tmp_path) as helper:
+            create_private(helper, rel, b"content")
+        monkeypatch.undo()
+        assert len(leaf) == 1 and leaf[0] in synced
+        assert (tmp_path / rel).read_bytes() == b"content"
+        assert stat.S_IMODE((tmp_path / rel).stat().st_mode) & 0o077 == 0
+
+    @pytest.mark.skipif(os.name != "nt", reason="needs Windows junctions")
+    def test_create_private_refuses_a_junctioned_parent(self, tmp_path):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        project = tmp_path / "project"
+        skill = project / ".agents" / "skills" / "speckit-plan"
+        skill.mkdir(parents=True)
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(skill / "agents"), str(outside)],
+            check=True, capture_output=True,
+        )
+        with FileHelper(project) as helper, pytest.raises((OSError, ValueError)):
+            create_private(helper, f"{self.REL}.speckit-backup", b"secret")
+        assert not list(outside.iterdir())
+
+    @pytest.mark.skipif(os.name == "nt", reason="needs POSIX symlinks")
+    def test_create_private_refuses_a_symlinked_parent(self, tmp_path):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        project = tmp_path / "project"
+        (project / ".agents" / "skills" / "speckit-plan").mkdir(parents=True)
+        (project / ".agents" / "skills" / "speckit-plan" / "agents").symlink_to(outside)
+        with FileHelper(project) as helper, pytest.raises((OSError, ValueError)):
+            create_private(helper, f"{self.REL}.speckit-backup", b"secret")
+        assert not list(outside.iterdir())
+
+    def test_overwrite_descriptor_rewrites_in_place_without_truncating(self, tmp_path):
+        from specify_cli.file_helper import FileHelper
+
+        path = tmp_path / self.REL
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"0123456789")
+        inode = path.stat().st_ino
+        with FileHelper(tmp_path) as helper:
+            destination = helper._path(self.REL)
+            assert destination == path.resolve()
+            with helper._overwrite_descriptor(destination) as fd:
+                assert os.fstat(fd).st_size == 10
+                os.write(fd, b"ab")
+        assert path.read_bytes() == b"ab23456789"
+        assert path.stat().st_ino == inode
+
+    @pytest.mark.skipif(os.name == "nt", reason="needs POSIX symlinks")
+    def test_overwrite_descriptor_refuses_a_symlinked_parent(self, tmp_path):
+        from specify_cli.file_helper import FileHelper
+
+        path = tmp_path / self.REL
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"inside")
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "openai.yaml").write_bytes(b"outside")
+        with FileHelper(tmp_path) as helper:
+            destination = helper._path(self.REL)
+            path.parent.rename(tmp_path / "moved")
+            path.parent.symlink_to(outside, target_is_directory=True)
+            with pytest.raises(OSError):
+                with helper._overwrite_descriptor(destination) as fd:
+                    os.write(fd, b"written")
+        assert (outside / "openai.yaml").read_bytes() == b"outside"
+
+
+class TestCodexManifestInternals:
+    """Pins the manifest internals the Codex policy cleanup depends on.
+
+    The public manifest API cannot record a prior hash without re-reading the
+    file, and has no public path validator, so the Codex package uses
+    ``IntegrationManifest._files`` and ``_validate_record_path``. A change to
+    either should fail here rather than silently in cleanup.
+    """
+
+    REL = ".agents/skills/speckit-plan/agents/openai.yaml"
+
+    def test_retained_entry_is_public_and_survives_save_and_load(self, tmp_path):
+        codex = get_integration("codex")
+        manifest = IntegrationManifest("codex", tmp_path)
+        codex._retain(manifest, self.REL, "0" * 64, "partial")
+        assert manifest.files == {self.REL: "0" * 64}
+        assert manifest.ownership_modes == {self.REL: "partial"}
+
+        manifest.save()
+        loaded = IntegrationManifest.load("codex", tmp_path)
+        assert loaded.files == {self.REL: "0" * 64}
+        assert loaded.ownership_modes == {self.REL: "partial"}
+
+    def test_uninstall_honours_retained_entries(self, tmp_path):
+        import hashlib
+
+        codex = get_integration("codex")
+        kept = tmp_path / ".agents/skills/speckit-specify/agents/openai.yaml"
+        removed = tmp_path / self.REL
+        for path in (kept, removed):
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"policy:\n  allow_implicit_invocation: false\n")
+        digest = hashlib.sha256(removed.read_bytes()).hexdigest()
+        manifest = IntegrationManifest("codex", tmp_path)
+        codex._retain(manifest, kept.relative_to(tmp_path).as_posix(), digest, "partial")
+        codex._retain(manifest, self.REL, digest, "whole")
+
+        manifest.uninstall(tmp_path, remove_manifest=False)
+        assert kept.exists()
+        assert not removed.exists()
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_validate_record_path_accepts_missing_file_and_rejects_symlinked_ancestor(self, tmp_path):
+        from specify_cli.integrations.manifest import _validate_record_path
+
+        assert _validate_record_path(Path(self.REL), tmp_path) == tmp_path / self.REL
+
+        real = tmp_path / "elsewhere"
+        real.mkdir()
+        (tmp_path / ".agents").symlink_to(real, target_is_directory=True)
+        with pytest.raises(ValueError):
+            _validate_record_path(Path(self.REL), tmp_path)
 
 
 _COMMAND_STEP = (CommandStep, {"command": "speckit.plan", "input": {"args": "body"}})

@@ -45,8 +45,8 @@ _COMMANDS = {
 
 
 def test_default_preflight_accepts(tmp_path):
-    assert CodexIntegration().preflight_setup(tmp_path, {}, script_type="sh") is None
-    assert IntegrationBase.preflight_setup is CodexIntegration.preflight_setup
+    assert ClaudeIntegration().preflight_setup(tmp_path, {}, script_type="sh") is None
+    assert IntegrationBase.preflight_setup is ClaudeIntegration.preflight_setup
 
 
 @pytest.mark.parametrize("command", sorted(_COMMANDS))
