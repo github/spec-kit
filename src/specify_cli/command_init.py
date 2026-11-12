@@ -7,6 +7,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -262,7 +263,7 @@ def ensure_constitution_from_template(
 
 
 def register(app: typer.Typer) -> None:
-    from .integrations._lifecycle import external_lifecycle, initial_directory_state, lifecycle_owns_rollback, lifecycle_success
+    from .integrations._lifecycle import builtin_journal, external_lifecycle, initial_directory_state, lifecycle_owns_rollback, lifecycle_success
 
     @app.command()
     @external_lifecycle("init")
@@ -729,16 +730,60 @@ def register(app: typer.Typer) -> None:
                     project_path,
                     integration_parsed_options or None,
                 )
-                resolved_integration.setup(
-                    project_path,
-                    manifest,
-                    parsed_options=integration_parsed_options or None,
-                    script_type=selected_script,
-                    raw_options=integration_options,
-                    events=events_map,
-                )
-                manifest.save()
+                # Into an existing directory, journal every write up to the
+                # manifest and state commit, so a failure restores it instead
+                # of leaving files no manifest describes. A new directory is
+                # removed on failure instead.
+                journal = nullcontext()
+                if dir_existed_before and not lifecycle_owns_rollback():
+                    from .integrations._helpers import _MANIFEST_READ_ERRORS
 
+                    try:
+                        recorded = IntegrationManifest.load(
+                            resolved_integration.key, project_path
+                        ).files
+                    except _MANIFEST_READ_ERRORS:
+                        # Unreadable or absent: the journal still covers the
+                        # integration's folder and observed writes.
+                        recorded = {}
+                    try:
+                        extra_folders = resolved_integration.upgrade_output_folders(
+                            project_path, integration_parsed_options or None, integration_options
+                        )
+                    except (OSError, ValueError, RuntimeError):
+                        # Run unjournalled, as before, rather than fail init.
+                        extra_folders = None
+                    if extra_folders is not None:
+                        journal = builtin_journal(
+                            project_path, resolved_integration.key, recorded, extra_folders,
+                        )
+                with journal:
+                    resolved_integration.setup(
+                        project_path,
+                        manifest,
+                        parsed_options=integration_parsed_options or None,
+                        script_type=selected_script,
+                        raw_options=integration_options,
+                        events=events_map,
+                    )
+                    manifest.save()
+                    integration_settings = _with_integration_setting(
+                        {},
+                        resolved_integration.key,
+                        resolved_integration,
+                        script_type=selected_script,
+                        raw_options=integration_options,
+                        parsed_options=integration_parsed_options or None,
+                        project_root=project_path,
+                    )
+                    _write_integration_json(
+                        project_path,
+                        resolved_integration.key,
+                        [resolved_integration.key],
+                        integration_settings,
+                    )
+
+                # Re-registration is best effort, so it runs after the commit.
                 if force:
                     from .integrations._helpers import (
                         _register_extensions_for_agent,
@@ -773,22 +818,6 @@ def register(app: typer.Typer) -> None:
                         unmodified_files=set(manifest.files),
                         continuing="The project was re-initialized, but its manifest hashes may be stale.",
                     )
-
-                integration_settings = _with_integration_setting(
-                    {},
-                    resolved_integration.key,
-                    resolved_integration,
-                    script_type=selected_script,
-                    raw_options=integration_options,
-                    parsed_options=integration_parsed_options or None,
-                    project_root=project_path,
-                )
-                _write_integration_json(
-                    project_path,
-                    resolved_integration.key,
-                    [resolved_integration.key],
-                    integration_settings,
-                )
 
                 tracker.complete(
                     "integration",

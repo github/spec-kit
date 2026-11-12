@@ -215,6 +215,29 @@ class GenericIntegration(MarkdownIntegration):
         skill_content = _GenericSkillsHelper().post_process_skill_content(skill_content)
         return skill_name, skill_content
 
+    def upgrade_output_folders(
+        self,
+        project_root: Path,
+        parsed_options: dict[str, Any] | None,
+        raw_options: str | None,
+    ) -> set[str]:
+        """Name a new ``--commands-dir`` so a failed upgrade or init removes it.
+
+        An existing destination is left out: its files are journalled as they
+        are written, and walking a large user directory would only add cost.
+        """
+        try:
+            commands_dir = self._resolve_commands_dir(parsed_options, {"raw_options": raw_options})
+        except ValueError:
+            return set()
+        if not isinstance(commands_dir, str):
+            return set()
+        root = project_root.resolve()
+        destination = (project_root / commands_dir).resolve()
+        if destination == root or not destination.is_relative_to(root) or destination.exists():
+            return set()
+        return {destination.relative_to(root).as_posix()}
+
     def commands_dest(self, project_root: Path) -> Path:
         """Not supported for GenericIntegration — use setup() directly.
 

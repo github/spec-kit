@@ -23,7 +23,7 @@ from ._command_upgrade_layout import (
     _manifest_tracks_skill_layout,
 )
 from ._commands import integration_app
-from ._lifecycle import external_lifecycle, lifecycle_success
+from ._lifecycle import builtin_journal, external_lifecycle, lifecycle_success
 from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _cli_error_detail, _cli_phase_label, _get_speckit_version, _preflight_setup_or_exit, _read_integration_json, _refresh_init_options_speckit_version, _register_extensions_for_agent, _register_presets_for_agent, _resolve_integration_options, _resolve_integration_script_type, _resync_manifest_after_registration, _unregister_enabled_extension_commands_for_agent, _update_init_options_for_integration, _write_integration_json
 
 
@@ -195,104 +195,109 @@ def integration_upgrade(
             )
             raise typer.Exit(1)
 
-    # Ensure shared infrastructure is up to date; --force overwrites existing files.
-    infra_integration = integration
-    infra_key = key
-    infra_parsed = parsed_options
-    if installed_key and installed_key != key:
-        default_integration = get_integration(installed_key)
-        if default_integration is not None:
-            infra_integration = default_integration
-            infra_key = installed_key
-            _, infra_parsed = _resolve_integration_options(
-                default_integration, current, installed_key, None
-            )
-    _install_shared_infra_or_exit(
-        project_root,
-        selected_script,
-        force=force,
-        invoke_separator=_invoke_separator_for_integration(
-            infra_integration, current, infra_key, infra_parsed,
-            project_root=project_root,
-        ),
-        invoke_prefix=_invoke_prefix_for_integration(
-            infra_integration, infra_key, infra_parsed, project_root
-        ),
-    )
-    if os.name != "nt":
-        from .. import ensure_executable_scripts
-        ensure_executable_scripts(project_root)
-
-    # Phase 1: Install new files (overwrites existing; old-only files remain)
-    console.print(f"Upgrading integration: [cyan]{key}[/cyan]")
-    new_manifest = IntegrationManifest(key, project_root, version=_get_speckit_version())
-
-    from ..events import resolve_events
-    events_map = resolve_events(
-        key,
-        integration.config,
-        project_root,
-        parsed_options,
-    )
-    try:
-        integration.setup(
-            project_root,
-            new_manifest,
-            parsed_options=parsed_options,
-            script_type=selected_script,
-            raw_options=raw_options,
-            events=events_map,
-            force=force,
-        )
-        settings = _with_integration_setting(
-            current,
-            key,
-            integration,
-            script_type=selected_script,
-            raw_options=raw_options,
-            parsed_options=parsed_options,
-            project_root=project_root,
-        )
-        if installed_key == key:
-            try:
-                _install_shared_infra(
-                    project_root,
-                    selected_script,
-                    invoke_separator=_invoke_separator_for_integration(
-                        integration, {"integration_settings": settings}, key, parsed_options,
-                        project_root=project_root,
-                    ),
-                    invoke_prefix=_invoke_prefix_for_integration(
-                        integration, key, parsed_options, project_root
-                    ),
-                    force=force,
-                    refresh_managed=True,
+    # Journal every write up to the manifest and state commit, so a failure
+    # restores the project instead of leaving files the old manifest does
+    # not describe.
+    extra_folders = integration.upgrade_output_folders(project_root, parsed_options, raw_options)
+    with builtin_journal(project_root, key, old_manifest.files, extra_folders):
+        # Ensure shared infrastructure is up to date; --force overwrites existing files.
+        infra_integration = integration
+        infra_key = key
+        infra_parsed = parsed_options
+        if installed_key and installed_key != key:
+            default_integration = get_integration(installed_key)
+            if default_integration is not None:
+                infra_integration = default_integration
+                infra_key = installed_key
+                _, infra_parsed = _resolve_integration_options(
+                    default_integration, current, installed_key, None
                 )
-            except (ValueError, OSError) as exc:
-                raise _SharedTemplateRefreshError(
-                    f"Failed to refresh shared infrastructure for '{key}': {exc}"
-                ) from exc
-            if os.name != "nt":
-                from .. import ensure_executable_scripts
-                ensure_executable_scripts(project_root)
-        new_manifest.save()
-        _write_integration_json(project_root, installed_key, installed_keys, settings)
-        if installed_key == key:
-            _update_init_options_for_integration(
+        _install_shared_infra_or_exit(
+            project_root,
+            selected_script,
+            force=force,
+            invoke_separator=_invoke_separator_for_integration(
+                infra_integration, current, infra_key, infra_parsed,
+                project_root=project_root,
+            ),
+            invoke_prefix=_invoke_prefix_for_integration(
+                infra_integration, infra_key, infra_parsed, project_root
+            ),
+        )
+        if os.name != "nt":
+            from .. import ensure_executable_scripts
+            ensure_executable_scripts(project_root)
+
+        # Phase 1: Install new files (overwrites existing; old-only files remain)
+        console.print(f"Upgrading integration: [cyan]{key}[/cyan]")
+        new_manifest = IntegrationManifest(key, project_root, version=_get_speckit_version())
+
+        from ..events import resolve_events
+        events_map = resolve_events(
+            key,
+            integration.config,
+            project_root,
+            parsed_options,
+        )
+        try:
+            integration.setup(
                 project_root,
+                new_manifest,
+                parsed_options=parsed_options,
+                script_type=selected_script,
+                raw_options=raw_options,
+                events=events_map,
+                force=force,
+            )
+            settings = _with_integration_setting(
+                current,
+                key,
                 integration,
                 script_type=selected_script,
+                raw_options=raw_options,
                 parsed_options=parsed_options,
+                project_root=project_root,
             )
-        else:
-            _refresh_init_options_speckit_version(project_root)
-    except Exception as exc:
-        # Don't teardown — setup overwrites in-place, so teardown would
-        # delete files that were working before the upgrade.  Just report.
-        console.print(f"[red]Error:[/red] Failed to {_cli_phase_label('upgrade', 'integration', key)}.")
-        console.print(f"[dim]Details:[/dim] {_cli_error_detail(exc)}")
-        console.print("[yellow]The previous integration files may still be in place.[/yellow]")
-        raise typer.Exit(1)
+            if installed_key == key:
+                try:
+                    _install_shared_infra(
+                        project_root,
+                        selected_script,
+                        invoke_separator=_invoke_separator_for_integration(
+                            integration, {"integration_settings": settings}, key, parsed_options,
+                            project_root=project_root,
+                        ),
+                        invoke_prefix=_invoke_prefix_for_integration(
+                            integration, key, parsed_options, project_root
+                        ),
+                        force=force,
+                        refresh_managed=True,
+                    )
+                except (ValueError, OSError) as exc:
+                    raise _SharedTemplateRefreshError(
+                        f"Failed to refresh shared infrastructure for '{key}': {exc}"
+                    ) from exc
+                if os.name != "nt":
+                    from .. import ensure_executable_scripts
+                    ensure_executable_scripts(project_root)
+            new_manifest.save()
+            _write_integration_json(project_root, installed_key, installed_keys, settings)
+            if installed_key == key:
+                _update_init_options_for_integration(
+                    project_root,
+                    integration,
+                    script_type=selected_script,
+                    parsed_options=parsed_options,
+                )
+            else:
+                _refresh_init_options_speckit_version(project_root)
+        except Exception as exc:
+            # Don't teardown — setup overwrites in-place, so teardown would
+            # delete files that were working before the upgrade.  Just report.
+            console.print(f"[red]Error:[/red] Failed to {_cli_phase_label('upgrade', 'integration', key)}.")
+            console.print(f"[dim]Details:[/dim] {_cli_error_detail(exc)}")
+            console.print("[yellow]The previous integration files may still be in place.[/yellow]")
+            raise typer.Exit(1)
 
     # Phase 2: Remove stale files from old manifest that are not in the new one
     old_files = old_manifest.files

@@ -22,6 +22,8 @@ from tests.specify_cli.integrations._helpers import (
     _integration_list_row_cells,  # noqa: F401
     _move_kilocode_install_to_legacy_layout,  # noqa: F401
     _run_in_project,  # noqa: F401
+    _symlink_or_skip,
+    _tree,
     _write_invalid_manifest,  # noqa: F401
     runner,  # noqa: F401
 )
@@ -1948,3 +1950,195 @@ class TestIntegrationUpgradeBasic:
             os.chdir(old)
         assert result.exit_code == 0
         assert "Nothing to upgrade" in result.output
+
+
+@pytest.mark.parametrize("failure", ["setup", "manifest", "state"])
+def test_builtin_upgrade_rolls_back_when_it_fails_before_committing(tmp_path, monkeypatch, failure):
+    """A failure after setup() starts and before the state commit restores the project."""
+    from specify_cli.integrations import command_upgrade
+    from specify_cli.integrations.claude import ClaudeIntegration
+    from specify_cli.integrations.manifest import IntegrationManifest
+
+    project = _init_project(tmp_path, "claude")
+    skills = project / ".claude" / "skills"
+    (skills / "speckit-plan" / "SKILL.md").write_text("# user customization\n", encoding="utf-8")
+    (skills / "speckit-tasks" / "SKILL.md").unlink()
+    (skills / "speckit-tasks").rmdir()
+    # --force makes the first shared-infrastructure pass overwrite this.
+    template = next((project / ".specify" / "templates").glob("*.md"))
+    template.write_text("customized\n", encoding="utf-8")
+    if os.name != "nt":
+        # No upgrade pass rewrites an extension script, so only the journal
+        # can undo ensure_executable_scripts() making it executable.
+        script = project / ".specify" / "extensions" / "demo" / "run.sh"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text("#!/bin/sh\n", encoding="utf-8")
+        script.chmod(0o644)
+    before = _tree(project)
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    if failure == "setup":
+        real_setup = ClaudeIntegration.setup
+
+        def setup(self, *args, **kwargs):
+            real_setup(self, *args, **kwargs)
+            fail()
+
+        monkeypatch.setattr(ClaudeIntegration, "setup", setup)
+    elif failure == "manifest":
+        real_save = IntegrationManifest.save
+
+        def save(self, *args, **kwargs):
+            if self.key == "claude":
+                fail()
+            return real_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(IntegrationManifest, "save", save)
+    else:
+        monkeypatch.setattr(command_upgrade, "_write_integration_json", fail)
+
+    result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+
+    assert result.exit_code != 0
+    assert "disk full" in result.output
+    assert _tree(project) == before
+
+
+def test_builtin_upgrade_journal_needs_no_trust_store_or_other_manifests(tmp_path, monkeypatch):
+    """The journal adds no precondition a built-in upgrade did not already have."""
+    from specify_cli.integrations import installer
+
+    project = _init_project(tmp_path, "claude")
+    result = _run_in_project(project, ["integration", "install", "copilot", "--script", "sh", "--force"])
+    assert result.exit_code == 0, result.output
+    (project / ".specify" / "integrations" / "copilot.manifest.json").write_bytes(b"\xff")
+
+    def no_trust_store(*args, **kwargs):
+        raise AssertionError("a built-in upgrade must not touch the trust store")
+
+    monkeypatch.setattr(installer, "_trust_store", no_trust_store)
+    # A ValueError from the corrupt manifest must not silently disable the journal.
+    from specify_cli.integrations import _lifecycle
+
+    entered = []
+    real_journalled = _lifecycle._journalled
+
+    def journalled(*args, **kwargs):
+        entered.append(True)
+        return real_journalled(*args, **kwargs)
+
+    monkeypatch.setattr(_lifecycle, "_journalled", journalled)
+
+    result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+
+    assert result.exit_code == 0, result.output
+    assert entered
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+def test_builtin_upgrade_runs_unjournalled_when_a_scope_is_a_symlink(tmp_path):
+    """A layout the journal cannot cover keeps upgrading as it did before."""
+    project = _init_project(tmp_path, "claude")
+    shared = tmp_path / "shared-extensions"
+    shared.mkdir()
+    extensions = project / ".specify" / "extensions"
+    if extensions.exists():
+        shutil.rmtree(extensions)
+    try:
+        extensions.symlink_to(shared, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+
+    assert result.exit_code == 0, result.output
+    assert extensions.is_symlink()
+
+
+def _fail_claude_setup(monkeypatch, integration_class=None):
+    from specify_cli.integrations.claude import ClaudeIntegration
+
+    integration_class = integration_class or ClaudeIntegration
+    real_setup = integration_class.setup
+
+    def setup(self, *args, **kwargs):
+        real_setup(self, *args, **kwargs)
+        raise OSError("disk full")
+
+    monkeypatch.setattr(integration_class, "setup", setup)
+
+
+def test_ensure_executable_scripts_propagates_a_journal_refusal(tmp_path):
+    """A journal that refuses the chmod fails the operation instead of logging a warning."""
+    from specify_cli import ensure_executable_scripts
+    from specify_cli.integrations import installer
+    from specify_cli.integrations._file_changes import file_change_observer
+
+    if os.name == "nt":
+        pytest.skip("POSIX permissions")
+    script = tmp_path / ".specify" / "scripts" / "run.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/sh\n", encoding="utf-8")
+    script.chmod(0o644)
+
+    def refuse(*args):
+        raise installer.IntegrationInstallError("snapshot budget exceeded")
+
+    token = file_change_observer.set(refuse)
+    try:
+        with pytest.raises(installer.IntegrationInstallError):
+            ensure_executable_scripts(tmp_path)
+    finally:
+        file_change_observer.reset(token)
+    assert script.stat().st_mode & 0o777 == 0o644
+
+
+def test_builtin_upgrade_runs_unjournalled_when_copilot_settings_is_a_symlink(tmp_path, monkeypatch):
+    """Copilot's untracked settings merge target is checked before any writes."""
+    from specify_cli.integrations.copilot import CopilotIntegration
+
+    template = tmp_path / "vscode-settings.json"
+    template.write_text('{"chat.promptFiles": true}\n', encoding="utf-8")
+    monkeypatch.setattr(CopilotIntegration, "_vscode_settings_path", lambda self: template)
+    # Only the commands layout writes the settings file.
+    project = _init_project(tmp_path, "copilot", "--commands")
+    settings = project / ".vscode" / "settings.json"
+    # A settings file the user already had is merged into, never tracked.
+    manifest_path = project / ".specify" / "integrations" / "copilot.manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["files"].pop(".vscode/settings.json", None) is not None
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    real = tmp_path / "real-settings.json"
+    # An empty object, so the upgrade's merge has to write.
+    real.write_text("{}\n", encoding="utf-8")
+    settings.parent.mkdir(exist_ok=True)
+    settings.unlink(missing_ok=True)
+    _symlink_or_skip(settings, real)
+
+    result = _run_in_project(project, ["integration", "upgrade", "copilot", "--force"])
+
+    assert result.exit_code == 0, result.output
+    assert settings.is_symlink()
+    assert json.loads(real.read_text(encoding="utf-8")) == {"chat.promptFiles": True}
+
+
+@pytest.mark.parametrize("commands_dir", [".new-commands/nested", "./.new-commands/nested"])
+def test_builtin_upgrade_rollback_removes_a_new_generic_commands_dir(tmp_path, monkeypatch, commands_dir):
+    """Changing --commands-dir and then failing leaves no new directories behind."""
+    from specify_cli.integrations.generic import GenericIntegration
+
+    project = _init_project(tmp_path, "generic", "--commands-dir .old-commands")
+    before = _tree(project)
+    _fail_claude_setup(monkeypatch, GenericIntegration)
+
+    result = _run_in_project(project, [
+        "integration", "upgrade", "generic", "--force",
+        "--integration-options", f"--commands-dir {commands_dir}",
+    ])
+
+    assert result.exit_code != 0
+    assert "disk full" in result.output
+    assert not (project / ".new-commands").exists()
+    assert _tree(project) == before
