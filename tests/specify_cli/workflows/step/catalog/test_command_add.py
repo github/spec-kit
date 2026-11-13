@@ -49,3 +49,18 @@ def test_workflow_step_catalog_add_reports_unchanged(project_dir, monkeypatch):
 
     assert unchanged.exit_code == 0, unchanged.output
     assert "already configured" in unchanged.output
+
+
+def test_workflow_step_catalog_add_escapes_invalid_url_in_error(
+    project_dir, monkeypatch
+):
+    monkeypatch.chdir(project_dir)
+
+    result = CliRunner().invoke(
+        app,
+        ["workflow", "step", "catalog", "add", "https://[/x]"],
+    )
+
+    assert result.exit_code == 1
+    assert "https://[/x]" in result.output
+    assert "MarkupError" not in result.output
