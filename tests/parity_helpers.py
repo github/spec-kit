@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -90,7 +91,43 @@ def clean_env() -> dict[str, str]:
     # silently override the "unset" baseline for every other test.
     env.pop("SPECKIT_PYTHON_EXECUTABLE", None)
     env.pop("SPECKIT_PYTHON", None)
+    # The script variants resolve python3 -> python -> py -3 through PATH.
+    # Under `uv run` the venv's bin directory is already first on PATH, so
+    # the scripts see the interpreter the suite runs on, including its
+    # site-packages (PyYAML among them). A direct
+    # `.venv/bin/python -m pytest` — the invocation AGENTS.md prescribes —
+    # leaves PATH untouched, and an ambient python3 without PyYAML then
+    # fails every composed-template test with "PyYAML is required".
+    # Prepend the running interpreter's own directory so subprocesses see
+    # the same Python under either invocation. A Windows venv ships
+    # ``python.exe`` but no ``python3.exe``, so the bin directory alone
+    # cannot shadow an ambient ``python3`` — the first name the script
+    # resolvers probe — and a cached ``python3`` shim (see
+    # :func:`make_python3_path_shim`, shell shim plus a ``.cmd`` for
+    # PowerShell) covers that first candidate on every platform.
+    env["PATH"] = (
+        f"{_python3_shim_dir()}{os.pathsep}"
+        f"{Path(sys.executable).absolute().parent}"
+        f"{os.pathsep}{env.get('PATH', '')}"
+    )
     return env
+
+
+_PYTHON3_SHIM_DIR: Path | None = None
+
+
+def _python3_shim_dir() -> Path:
+    """A cached directory whose ``python3`` execs the suite interpreter.
+
+    Built once per pytest process with :func:`make_python3_path_shim`, which
+    deliberately does not resolve the interpreter so the venv's
+    ``site-packages`` (PyYAML among them) stay reachable.
+    """
+    global _PYTHON3_SHIM_DIR
+    if _PYTHON3_SHIM_DIR is None:
+        _PYTHON3_SHIM_DIR = Path(tempfile.mkdtemp(prefix="spec-kit-parity-shim-"))
+        make_python3_path_shim(_PYTHON3_SHIM_DIR)
+    return _PYTHON3_SHIM_DIR
 
 
 def venv_python3_exe(venv_dir: Path) -> Path:
@@ -135,19 +172,27 @@ def _bash_posix_path(path: Path) -> str:
     resolved = os.path.abspath(path)
     if os.name != "nt":
         return resolved
-    converted = subprocess.run(
-        [
-            "bash",
-            "-lc",
-            'command -v cygpath >/dev/null 2>&1 && cygpath -u "$1"',
-            "bash",
-            resolved,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if converted.returncode == 0 and converted.stdout.strip():
+    try:
+        converted = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                'command -v cygpath >/dev/null 2>&1 && cygpath -u "$1"',
+                "bash",
+                resolved,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except OSError:
+        # Bash is not on PATH (e.g. a Windows machine without Git-for-Windows
+        # in it). The converted form is only needed by bash-invoked tests,
+        # which skip when bash is unavailable, so fall through to the static
+        # /mnt/ form rather than failing environment setup for every parity
+        # test, including the ones that never invoke bash.
+        converted = None
+    if converted is not None and converted.returncode == 0 and converted.stdout.strip():
         return converted.stdout.strip()
     drive = path.drive.rstrip(":").lower()
     posix = path.as_posix()
