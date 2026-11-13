@@ -48,6 +48,23 @@ def _registered_agents(project, kind, package_id):
     return set(registry[kind][package_id]["registered_commands"])
 
 class TestIntegrationUninstall:
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
+    )
+    def test_uninstall_default_keeps_fallback_scripts_executable(self, tmp_path):
+        """Falling back to another installed integration must keep shared scripts runnable."""
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        scripts = sorted((project / ".specify" / "scripts" / "bash").glob("*.sh"))
+        assert scripts and all(os.access(script, os.X_OK) for script in scripts)
+
+        result = _run_in_project(project, ["integration", "uninstall", "claude"])
+
+        assert result.exit_code == 0, result.output
+        not_executable = [script.name for script in scripts if not os.access(script, os.X_OK)]
+        assert not not_executable, f"uninstall left shared scripts non-executable: {not_executable}"
+
     @pytest.mark.parametrize("command", ["uninstall", "switch"])
     def test_unreadable_dispatcher_preserves_other_cleanup(self, tmp_path, monkeypatch, caplog, command):
         from specify_cli.events import install_integration_events
