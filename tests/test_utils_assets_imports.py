@@ -47,6 +47,24 @@ def test_get_speckit_version_survives_invalid_metadata(monkeypatch):
     assert isinstance(get_speckit_version(), str)
 
 
+def test_get_speckit_version_survives_non_mapping_project(monkeypatch, tmp_path):
+    """A present but non-mapping ``project`` value must not raise.
+
+    The narrowed pyproject branch previously called ``.get`` on whatever the
+    ``project`` key held, so ``project = 5`` turned the fallback into an
+    AttributeError.
+    """
+    (tmp_path / "pyproject.toml").write_text("project = 5\n", encoding="utf-8")
+    monkeypatch.setattr(_assets, "_repo_root", lambda: tmp_path)
+
+    def _not_found(name):
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(importlib.metadata, "version", _not_found)
+
+    assert get_speckit_version() == "unknown"
+
+
 def test_get_speckit_version_reads_pyproject_fallback(monkeypatch, tmp_path):
     """When the distribution is missing, a valid pyproject.toml is the source."""
     (tmp_path / "pyproject.toml").write_text(
