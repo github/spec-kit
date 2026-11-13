@@ -60,6 +60,28 @@ def _project_file_state(project):
 
 
 class TestIntegrationSwitch:
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
+    )
+    @pytest.mark.parametrize(
+        ("target_state", "flags"),
+        [("new", []), ("installed", []), ("default", ["--force"]), ("default", ["--refresh-shared-infra"])],
+    )
+    def test_switch_keeps_shared_scripts_executable(self, tmp_path, target_state, flags):
+        """Every switch path refreshes shared scripts; they must stay runnable."""
+        if target_state == "default":
+            project = _init_project(tmp_path, "codex")
+        else:
+            project = _init_codex_switch_project(tmp_path, target_state)
+        scripts = sorted((project / ".specify" / "scripts" / "bash").glob("*.sh"))
+        assert scripts and all(os.access(script, os.X_OK) for script in scripts)
+
+        result = _run_in_project(project, ["integration", "switch", "codex", *flags])
+
+        assert result.exit_code == 0, result.output
+        not_executable = [script.name for script in scripts if not os.access(script, os.X_OK)]
+        assert not not_executable, f"switch left shared scripts non-executable: {not_executable}"
+
     @pytest.mark.parametrize("target_state", ["new", "installed", "default"])
     @pytest.mark.parametrize(
         "flags", [[], ["--force"], ["--refresh-shared-infra"], ["--force", "--refresh-shared-infra"]],

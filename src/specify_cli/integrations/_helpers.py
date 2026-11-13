@@ -369,6 +369,11 @@ def _set_default_integration(
             raise _SharedTemplateRefreshError(
                 f"Failed to refresh shared infrastructure for '{key}': {exc}"
             ) from exc
+        # The refresh rewrites shared scripts with the packaged (non-executable)
+        # mode, so restore execute bits as init, install and upgrade do.
+        if os.name != "nt":
+            from .. import ensure_executable_scripts
+            ensure_executable_scripts(project_root)
 
     _write_integration_json(project_root, key, installed_keys, settings)
     _update_init_options_for_integration(

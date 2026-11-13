@@ -23,6 +23,23 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationUse:
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
+    )
+    def test_use_keeps_shared_scripts_executable(self, tmp_path):
+        """Making an installed integration the default must keep shared scripts runnable."""
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        scripts = sorted((project / ".specify" / "scripts" / "bash").glob("*.sh"))
+        assert scripts and all(os.access(script, os.X_OK) for script in scripts)
+
+        result = _run_in_project(project, ["integration", "use", "codex"])
+
+        assert result.exit_code == 0, result.output
+        not_executable = [script.name for script in scripts if not os.access(script, os.X_OK)]
+        assert not not_executable, f"use left shared scripts non-executable: {not_executable}"
+
     @pytest.mark.parametrize("edited_command", [None, "plan", "tasks"])
     def test_use_syncs_manifest_without_blessing_user_edits(
         self, tmp_path, tasks_preset_src, edited_command
