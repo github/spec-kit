@@ -86,6 +86,19 @@ class SkillsIntegrationTests:
                 f"{f} is not under {expected_dir}"
             )
 
+    def test_all_skill_files_are_tracked_in_manifest(self, tmp_path):
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+
+        created_skill_files = {
+            path.resolve().relative_to(tmp_path.resolve()).as_posix()
+            for path in created
+            if path.name.casefold() == "skill.md"
+        }
+        tracked_skill_files = set(m.files)
+        assert created_skill_files <= tracked_skill_files
+
     def test_skill_directory_structure(self, tmp_path):
         """Each command produces speckit-<name>/SKILL.md."""
         i = get_integration(self.KEY)
