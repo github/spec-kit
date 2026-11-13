@@ -10,7 +10,7 @@ for arg in "$@"; do
         --json)
             JSON_MODE=true
             ;;
-        --help|-h)
+        --help | -h)
             echo "Usage: $0 [--json]"
             echo "  --json    Output results in JSON format"
             echo "  --help    Show this help message"
@@ -25,10 +25,14 @@ done
 
 # Get script directory and load common functions
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
 source "$SCRIPT_DIR/common.sh"
 
 # Get all paths and variables from common functions
-_paths_output=$(get_feature_paths) || { echo "ERROR: Failed to resolve feature paths" >&2; exit 1; }
+_paths_output=$(get_feature_paths) || {
+    echo "ERROR: Failed to resolve feature paths" >&2
+    exit 1
+}
 eval "$_paths_output"
 unset _paths_output
 
@@ -45,13 +49,13 @@ if [[ -f "$IMPL_PLAN" ]]; then
 else
     template_file=$(mktemp)
     trap 'rm -f "$template_file"' EXIT
-    if resolve_template_content "plan-template" "$REPO_ROOT" > "$template_file"; then
+    if resolve_template_content "plan-template" "$REPO_ROOT" >"$template_file"; then
         if [[ ! -s "$template_file" ]]; then
             echo "ERROR: Plan template is empty; no new plan.md was created." >&2
             echo "Restore a valid plan template and rerun plan setup." >&2
             exit 1
         fi
-        cat "$template_file" > "$IMPL_PLAN"
+        cat "$template_file" >"$IMPL_PLAN"
         if $JSON_MODE; then
             echo "Copied plan template to $IMPL_PLAN" >&2
         else
