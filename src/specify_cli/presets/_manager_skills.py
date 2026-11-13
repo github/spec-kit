@@ -451,7 +451,13 @@ class _PresetSkillMethods:
                 registered_here = self._layers_registered_in(
                     layers[owner_idx:], skills_dir, active_ai, active_skills_dir
                 )
-                if owner_idx == 0 and len(registered_here) == len(layers):
+                # A project override wins the command for every agent, so the
+                # owner's composition is not what belongs there: let the
+                # winner pass below render the override, as a rescaffold does.
+                overridden = layers[0]["source"] == "project override"
+                if overridden or (
+                    owner_idx == 0 and len(registered_here) == len(layers)
+                ):
                     prior_agent, prior_names = extra_dirs.get(skills_dir, (agent, []))
                     extra_dirs[skills_dir] = (
                         prior_agent, list(dict.fromkeys([*prior_names, name]))
@@ -563,7 +569,8 @@ class _PresetSkillMethods:
         preset is added or removed, its aliases would otherwise keep the old
         composition. Rewrite each from the current stack, or remove it when
         nothing is left to compose onto, the same as its primary skill. Only
-        outputs still carrying the preset's marker are touched.
+        outputs still carrying the preset's marker for that command are
+        touched.
 
         Args:
             create_missing: Also render a recorded alias that is missing from
@@ -677,8 +684,14 @@ class _PresetSkillMethods:
                         source = (
                             metadata.get("source") if isinstance(metadata, dict) else None
                         )
-                        if not (
-                            isinstance(source, str) and source.startswith(f"{pack_id}:")
+                        # Command registration marks the alias with the file
+                        # it was rendered from. Requiring this command's own
+                        # file (raw or composed) leaves alone an alias name
+                        # another command of the preset declares too and was
+                        # registered for last.
+                        if source not in (
+                            f"{pack_id}:{tmpl.get('file')}",
+                            f"{pack_id}:.composed/{tmpl['name']}.md",
                         ):
                             continue
 
