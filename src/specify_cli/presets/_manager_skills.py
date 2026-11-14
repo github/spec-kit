@@ -150,14 +150,19 @@ class _PresetSkillMethods:
         # directory-independent, so it's computed once and then applied to
         # every affected directory below.
         preset_cmds: Dict[str, List[str]] = {}
+        # Commands won by a composing preset whose stack no longer has any
+        # replace base: nothing resolves, so their owned output is removed.
+        unresolvable_cmds: Set[str] = set()
         non_preset_skills: List[tuple] = []
         managed_skill_names: set = set()
         reconciled_skill_commands: set[str] = set()
+        cmd_layers: Dict[str, List[Dict[str, Any]]] = {}
 
         for cmd_name in command_names:
             layers = resolver.collect_all_layers(cmd_name, "command")
             if not layers:
                 continue
+            cmd_layers[cmd_name] = layers
 
             skill_name, legacy_skill_name = self._skill_names_for_command(
                 cmd_name
@@ -194,6 +199,11 @@ class _PresetSkillMethods:
                 pack_dir = self.presets_dir / pack_id
                 if top_path.is_relative_to(pack_dir):
                     preset_cmds.setdefault(pack_id, []).append(cmd_name)
+                    if (
+                        all(layer["strategy"] != "replace" for layer in layers)
+                        and resolver.resolve_content(cmd_name, "command") is None
+                    ):
+                        unresolvable_cmds.add(cmd_name)
                     found_preset = True
                     break
             if not found_preset:
@@ -301,6 +311,7 @@ class _PresetSkillMethods:
                             skills_dir,
                             skill_subdir / "SKILL.md",
                             skill_content,
+                            preserve_mode=True,
                         )
                         wrote_override = True
                     if (
@@ -326,6 +337,19 @@ class _PresetSkillMethods:
                         for name in self._skill_names_for_command(cmd)
                     )
                 ]
+                stale_cmds = [cmd for cmd in dir_cmds if cmd in unresolvable_cmds]
+                if stale_cmds:
+                    for cmd in stale_cmds:
+                        self._remove_owned_skills(
+                            skills_dir,
+                            cmd,
+                            [
+                                name
+                                for name in self._skill_names_for_command(cmd)
+                                if name in dir_managed_names
+                            ],
+                        )
+                    dir_cmds = [cmd for cmd in dir_cmds if cmd not in unresolvable_cmds]
                 if not dir_cmds:
                     continue
                 pack_dir = self.presets_dir / pack_id
@@ -361,11 +385,14 @@ class _PresetSkillMethods:
                     # Preserve exact prior behaviour for the currently
                     # active directory (including the ability to create
                     # brand-new skill subdirectories when ai_skills is on).
-                    written = self._register_skills(filtered_manifest, pack_dir)
+                    written = self._register_skills(
+                        filtered_manifest, pack_dir, only_skill_names=managed_names,
+                    )
                 else:
                     written = self._register_skills(
                         filtered_manifest, pack_dir,
                         target_dir=skills_dir, target_agent=dir_agent or "",
+                        only_skill_names=managed_names,
                     )
                 if target_agent is None:
                     written_names = {
@@ -390,7 +417,56 @@ class _PresetSkillMethods:
                 # reconciliation just wrote to on its behalf (#2948).
                 self._merge_pack_registered_skills(pack_id, written)
 
-        extra_dirs = extra_skills_dirs or {}
+        extra_dirs = dict(extra_skills_dirs or {})
+        # {(skills_dir, agent, owner_id): {cmd_name: [skill_name, ...]}}
+        owner_refreshes: Dict[tuple, Dict[str, List[str]]] = {}
+        if extra_skills_dirs is not None:
+            # _unregister_skills only restored what the removed preset owned.
+            # Skills a surviving preset composed on top of it are its own, so
+            # refresh those recorded destinations from that owner's layer and
+            # the layers below it. A replace owner never depended on lower
+            # layers, and a higher preset that never registered there must
+            # not be rendered into it (#2948), so the global winner is used
+            # only when it is the owner.
+            for skills_dir, agent, owner_id, cmd_name, name in self._surviving_owned_skills(
+                command_names, presets_by_priority, active_ai, active_skills_dir
+            ):
+                layers = cmd_layers.get(cmd_name, [])
+                owner_dir = self.presets_dir / owner_id
+                owner_idx = next(
+                    (
+                        idx
+                        for idx, layer in enumerate(layers)
+                        if layer["path"].is_relative_to(owner_dir)
+                    ),
+                    None,
+                )
+                if owner_idx is None or layers[owner_idx]["strategy"] == "replace":
+                    continue
+                # A layer under the owner that was never registered in this
+                # destination (a preset installed while another agent was
+                # active) must not be composed into it either. The global
+                # winner's own composition is only right when nothing is
+                # filtered out; otherwise compose from the owner's layers
+                # that belong here.
+                registered_here = self._layers_registered_in(
+                    layers[owner_idx:], skills_dir, active_ai, active_skills_dir
+                )
+                # A project override wins the command for every agent, so the
+                # owner's composition is not what belongs there: let the
+                # winner pass below render the override, as a rescaffold does.
+                overridden = layers[0]["source"] == "project override"
+                if overridden or (
+                    owner_idx == 0 and len(registered_here) == len(layers)
+                ):
+                    prior_agent, prior_names = extra_dirs.get(skills_dir, (agent, []))
+                    extra_dirs[skills_dir] = (
+                        prior_agent, list(dict.fromkeys([*prior_names, name]))
+                    )
+                    continue
+                owner_refreshes.setdefault(
+                    (skills_dir, agent, owner_id), {}
+                ).setdefault(cmd_name, []).append(name)
         if active_skills_dir:
             active_provenance = extra_dirs.get(active_skills_dir)
             if extra_skills_dirs is None or active_provenance:
@@ -415,7 +491,592 @@ class _PresetSkillMethods:
                 managed_names=set(extra_names),
             )
 
+        for (skills_dir, agent, owner_id), owned in owner_refreshes.items():
+            owner_dir = self.presets_dir / owner_id
+            try:
+                manifest = PresetManifest(owner_dir / "preset.yml")
+            except PresetValidationError:
+                continue
+            overrides: Dict[str, str] = {}
+            for cmd_name, names in owned.items():
+                layers = cmd_layers[cmd_name]
+                owner_idx = next(
+                    idx
+                    for idx, layer in enumerate(layers)
+                    if layer["path"].is_relative_to(owner_dir)
+                )
+                owner_layers = self._layers_registered_in(
+                    layers[owner_idx:], skills_dir, active_ai, active_skills_dir
+                )
+                composed = resolver.resolve_content(
+                    cmd_name, "command", layers=owner_layers
+                )
+                if composed is not None:
+                    overrides[cmd_name] = composed
+                elif all(layer["strategy"] != "replace" for layer in owner_layers):
+                    # Nothing left under the owner to compose onto.
+                    self._remove_owned_skills(skills_dir, cmd_name, names)
+                # Otherwise a surviving layer is unreadable: keep the
+                # existing output rather than deleting it.
+            if not overrides:
+                continue
+            written = self._register_skills(
+                self._FilteredManifest(manifest, set(overrides)),
+                owner_dir,
+                target_dir=skills_dir,
+                target_agent=agent or "",
+                only_skill_names={
+                    name
+                    for cmd_name in overrides
+                    for name in owned[cmd_name]
+                },
+                content_overrides=overrides,
+            )
+            if target_agent is None or agent == target_agent:
+                written_names = {n for names in written.values() for n in names}
+                reconciled_skill_commands.update(
+                    cmd_name
+                    for cmd_name, names in owned.items()
+                    if written_names.intersection(names)
+                )
+
+        self._reconcile_preset_aliases(
+            command_names,
+            presets_by_priority,
+            active_ai,
+            active_skills_dir,
+            create_missing=extra_skills_dirs is None,
+            removal_pass=extra_skills_dirs is not None,
+        )
+
         return reconciled_skill_commands
+
+    def _reconcile_preset_aliases(
+        self,
+        command_names: List[str],
+        presets_by_priority: List[Any],
+        active_ai: Optional[str],
+        active_skills_dir: Optional[Path],
+        *,
+        create_missing: bool = False,
+        removal_pass: bool = False,
+    ) -> None:
+        """Re-render, retire or restore native-skill aliases of composed commands.
+
+        For native skill agents, a preset's command aliases are written by
+        command registration (``<id>:<file>`` source marker) and recorded in
+        its ``registered_commands``, not in ``registered_skills``, so the
+        skill pass above never sees them. When a layer under a composing
+        preset is added or removed, its aliases would otherwise keep the old
+        composition. Rewrite each from the current stack, or remove it when
+        nothing is left to compose onto, the same as its primary skill. Only
+        outputs still carrying the preset's marker for that command are
+        touched.
+
+        Args:
+            create_missing: Also render a recorded alias that is missing from
+                the active agent's directory (e.g. one retired when its base
+                was removed, once a new base makes it composable again). Like
+                the primary skill, this only happens for the active agent.
+            removal_pass: True when called after a preset was removed, where
+                the primary-skill pass also repairs historical agents'
+                directories. On install/activation passes, rendering stays
+                active-only (the single-active rule of #2948); an alias that
+                is no longer composable is still retired wherever it is
+                recorded, mirroring stale-output retirement.
+        """
+        from ..integrations._file_changes import unlink_in_directory
+
+        try:
+            registrar = self._command_registrar()
+        except ImportError:
+            return
+        registrar._ensure_configs()
+        resolver = PresetResolver(self.project_root)
+        wanted = set(command_names)
+
+        for pack_id, meta in presets_by_priority:
+            if not isinstance(meta, dict):
+                continue
+            recorded = meta.get("registered_commands")
+            if not isinstance(recorded, dict):
+                continue
+            pack_dir = self.presets_dir / pack_id
+            manifest = resolver._get_manifest(pack_dir)
+            if not manifest:
+                continue
+            alias_to_tmpl: Dict[str, Dict[str, Any]] = {}
+            for tmpl in manifest.templates:
+                if tmpl.get("type") != "command" or tmpl.get("name") not in wanted:
+                    continue
+                if tmpl.get("strategy", "replace") == "replace":
+                    # A replace layer's own file did not change.
+                    continue
+                for alias in tmpl.get("aliases") or []:
+                    if isinstance(alias, str):
+                        alias_to_tmpl[alias] = tmpl
+            if not alias_to_tmpl:
+                continue
+
+            # Several native skill agents can resolve to one physical
+            # directory (agy/codex/zed all use ``.agents/skills``). Rendering
+            # it once per recorded agent would let whichever agent is iterated
+            # last win, writing another agent's command-reference syntax over
+            # the active one's. Group by resolved directory and render with
+            # the active agent when it shares that directory, exactly as
+            # ``_unregister_skills`` does.
+            groups: Dict[Path, Dict[str, Any]] = {}
+            for agent, names in recorded.items():
+                agent_config = registrar.AGENT_CONFIGS.get(agent)
+                if (
+                    not isinstance(names, list)
+                    or not agent_config
+                    or agent_config.get("extension") != "/SKILL.md"
+                ):
+                    continue
+                skills_dir = (
+                    active_skills_dir
+                    if agent == active_ai
+                    else self._safe_skills_dir_for_agent(agent)
+                )
+                if skills_dir is None:
+                    continue
+                group = groups.setdefault(skills_dir, {"agents": [], "aliases": []})
+                group["agents"].append(agent)
+                for name in names:
+                    if isinstance(name, str) and name not in group["aliases"]:
+                        group["aliases"].append(name)
+
+            for skills_dir, group in groups.items():
+                agents = group["agents"]
+                agent = (
+                    active_ai if active_ai in agents else sorted(agents)[0]
+                )
+                agent_config = registrar.AGENT_CONFIGS[agent]
+                # Rendering follows the single-active rule outside a removal
+                # pass; retiring an uncomposable alias is allowed anywhere.
+                may_render = removal_pass or skills_dir == active_skills_dir
+                for alias in group["aliases"]:
+                    tmpl = alias_to_tmpl.get(alias) if isinstance(alias, str) else None
+                    if tmpl is None:
+                        continue
+                    skill_name = registrar._compute_output_name(agent, alias, agent_config)
+                    skill_dir = skills_dir / skill_name
+                    skill_file = skill_dir / "SKILL.md"
+                    # Retiring an alias removes only ``SKILL.md``; its
+                    # directory stays when it holds other files. So "missing"
+                    # is about the file, not the directory.
+                    missing = not skill_file.exists() and not skill_file.is_symlink()
+                    hard_linked = False
+                    if missing:
+                        if not (create_missing and skills_dir == active_skills_dir):
+                            continue
+                    else:
+                        if not self._validate_skill_subdir(
+                            skill_dir, create=False, skills_root=skills_dir
+                        ) or not skill_file.is_file():
+                            continue
+                        try:
+                            content = skill_file.read_text(encoding="utf-8")
+                            hard_linked = skill_file.stat().st_nlink > 1
+                        except (OSError, UnicodeDecodeError):
+                            continue
+                        metadata = registrar.parse_frontmatter(content)[0].get("metadata")
+                        source = (
+                            metadata.get("source") if isinstance(metadata, dict) else None
+                        )
+                        # Command registration marks the alias with the file
+                        # it was rendered from. Requiring this command's own
+                        # file (raw or composed) leaves alone an alias name
+                        # another command of the preset declares too and was
+                        # registered for last.
+                        if source not in (
+                            f"{pack_id}:{tmpl.get('file')}",
+                            f"{pack_id}:.composed/{tmpl['name']}.md",
+                        ):
+                            continue
+
+                    primary = tmpl["name"]
+                    layers = resolver.collect_all_layers(primary, "command")
+                    owner_idx = next(
+                        (
+                            idx
+                            for idx, layer in enumerate(layers)
+                            if layer["path"].is_relative_to(pack_dir)
+                        ),
+                        None,
+                    )
+                    if owner_idx is None:
+                        continue
+                    # The alias belongs to the highest layer that declares
+                    # it, not to whichever layer wins the primary command: a
+                    # higher preset that does not declare this alias leaves
+                    # it to us. Only a higher declarer shadows it.
+                    alias_shadowed = any(
+                        self._layer_declares_alias(resolver, layer, primary, alias)
+                        for layer in layers[:owner_idx]
+                    )
+                    if alias_shadowed and missing:
+                        continue
+                    # A shadowed alias is not ours to render outside a
+                    # removal pass. It still goes through the retirement
+                    # check below: a rescaffold re-registers it from the raw
+                    # fragment, which must not stay executable once nothing
+                    # is left to compose onto. On a removal pass an existing
+                    # shadowed alias is refreshed from its own layer down, as
+                    # its primary skill is.
+                    shadowed = alias_shadowed and not removal_pass
+                    owner_layers = self._layers_registered_in(
+                        layers[owner_idx:], skills_dir, active_ai, active_skills_dir
+                    )
+                    composed = resolver.resolve_content(
+                        primary, "command", layers=owner_layers
+                    )
+                    if composed is None:
+                        if missing or any(
+                            layer["strategy"] == "replace" for layer in owner_layers
+                        ):
+                            # A replace base is still there, so this is a
+                            # resolution failure (e.g. an unreadable layer),
+                            # not a missing base: keep the alias, as the
+                            # primary-skill path keeps its output.
+                            continue
+                        alias_file = skill_dir / "SKILL.md"
+                        unlink_in_directory(
+                            alias_file,
+                            root=self.project_root if alias_file.is_relative_to(self.project_root) else skills_dir,
+                        )
+                        continue
+                    if shadowed or not may_render:
+                        continue
+                    if hard_linked:
+                        # Command registration writes the alias in place,
+                        # which would reach every other link of the file.
+                        # As elsewhere for generated artifacts with extra
+                        # links, it is not ours to rewrite: leave it.
+                        continue
+                    if missing and not self._validate_skill_subdir(
+                        skill_dir, create=True, skills_root=skills_dir
+                    ):
+                        continue
+                    composed_file = pack_dir / ".composed" / f"{primary}.md"
+                    try:
+                        self._write_alias_composed_cache(composed_file, composed)
+                    except (ValueError, OSError):
+                        continue
+                    registrar.register_commands(
+                        agent,
+                        [{"name": alias, "file": f".composed/{primary}.md"}],
+                        pack_id,
+                        pack_dir,
+                        self.project_root,
+                        _resolved_dir=skills_dir,
+                    )
+
+    def _write_alias_composed_cache(self, composed_file: Path, composed: str) -> None:
+        """Write a preset's ``.composed`` cache entry for an alias refresh.
+
+        Every ancestor and the cache file itself must stay inside the project
+        and off symlinks, so a planted ``.composed`` link cannot redirect the
+        write. An existing entry goes through the shared writer, which
+        replaces it atomically (a hard link to an outside file is broken, not
+        written through) and keeps its permission bits. A missing entry is
+        created exclusively, so the kernel applies the process umask, as it
+        does for the other ``.composed`` writes, and nothing planted at the
+        path in the meantime is opened or followed.
+
+        Raises:
+            ValueError, OSError: The path is unsafe or the write failed.
+        """
+        from ..integrations._file_changes import changing_file
+        from ..shared_infra import (
+            _ensure_safe_shared_destination,
+            _ensure_safe_shared_directory,
+            _write_shared_text,
+        )
+
+        _ensure_safe_shared_directory(
+            self.project_root,
+            composed_file.parent,
+            create=True,
+            context="preset composed cache directory",
+        )
+        if composed_file.exists() or composed_file.is_symlink():
+            _write_shared_text(
+                self.project_root, composed_file, composed, preserve_mode=True
+            )
+            return
+        _ensure_safe_shared_destination(self.project_root, composed_file)
+        with changing_file(composed_file):
+            with open(composed_file, "x", encoding="utf-8") as cache:
+                cache.write(composed)
+
+    def _layers_registered_in(
+        self,
+        layers: List[Dict[str, Any]],
+        skills_dir: Path,
+        active_ai: Optional[str],
+        active_skills_dir: Optional[Path],
+    ) -> List[Dict[str, Any]]:
+        """Drop preset layers that were never registered in ``skills_dir``.
+
+        Presets are registered for the active agent only (#2948), so a preset
+        installed while another agent was active has no output in a
+        historical agent's directory and must not be composed into one. A
+        preset counts as registered here when its ``registered_skills`` names
+        an agent that resolves to this directory, or its
+        ``registered_commands`` names a native skill agent that does: only
+        for those is a registered command a file in the skills directory. A
+        command-backed agent's entry records command files elsewhere, and
+        its skills directory can be another agent's (Amp's resolves to
+        Codex's ``.agents/skills``). The active directory is never filtered,
+        non-preset layers (core, extensions, project overrides) always stay,
+        and so does a preset whose provenance is unknown (a legacy flat
+        list).
+        """
+        if active_skills_dir is not None and skills_dir == active_skills_dir:
+            return layers
+        registered: Dict[str, bool] = {}
+        try:
+            registrar = self._command_registrar()
+            registrar._ensure_configs()
+            agent_configs = registrar.AGENT_CONFIGS
+        except ImportError:
+            agent_configs = {}
+
+        def writes_skills(agent: Any) -> bool:
+            config = agent_configs.get(agent) if isinstance(agent, str) else None
+            return bool(config) and config.get("extension") == "/SKILL.md"
+
+        def resolves_here(agent: Any) -> bool:
+            if not isinstance(agent, str):
+                return False
+            agent_dir = (
+                active_skills_dir
+                if agent == active_ai
+                else self._safe_skills_dir_for_agent(agent)
+            )
+            return agent_dir is not None and agent_dir == skills_dir
+
+        def is_registered(pack_id: str) -> bool:
+            meta = self.registry.get(pack_id)
+            if not isinstance(meta, dict):
+                return True
+            if isinstance(meta.get("registered_skills"), list):
+                return True
+            for key in ("registered_skills", "registered_commands"):
+                recorded = meta.get(key)
+                if isinstance(recorded, dict) and any(
+                    names
+                    and (key == "registered_skills" or writes_skills(agent))
+                    and resolves_here(agent)
+                    for agent, names in recorded.items()
+                ):
+                    return True
+            return False
+
+        kept: List[Dict[str, Any]] = []
+        for layer in layers:
+            try:
+                rel = layer["path"].relative_to(self.presets_dir)
+            except (KeyError, TypeError, ValueError):
+                kept.append(layer)
+                continue
+            if not rel.parts:
+                kept.append(layer)
+                continue
+            pack_id = rel.parts[0]
+            if pack_id not in registered:
+                registered[pack_id] = is_registered(pack_id)
+            if registered[pack_id]:
+                kept.append(layer)
+        return kept
+
+    def _layer_declares_alias(
+        self, resolver: Any, layer: Dict[str, Any], primary: str, alias: str
+    ) -> bool:
+        """Whether ``layer`` comes from a preset declaring ``alias`` for ``primary``."""
+        try:
+            rel = layer["path"].relative_to(self.presets_dir)
+        except (KeyError, TypeError, ValueError):
+            return False
+        if not rel.parts:
+            return False
+        manifest = resolver._get_manifest(self.presets_dir / rel.parts[0])
+        if not manifest:
+            return False
+        return any(
+            tmpl.get("type") == "command"
+            and tmpl.get("name") == primary
+            and alias in (tmpl.get("aliases") or [])
+            for tmpl in manifest.templates
+        )
+
+    def _drop_survivor_owned_aliases(
+        self, pack_id: str, registered_commands: Dict[str, List[str]]
+    ) -> Dict[str, List[str]]:
+        """Leave out native-skill outputs another installed preset now owns.
+
+        Two presets can declare the same command alias. For native skill
+        agents both record it in ``registered_commands``, but only one file
+        exists, carrying the ``<id>:<file>`` marker of whichever registered
+        it last. Deleting it with the preset being removed would drop a
+        survivor's alias that post-removal reconciliation (which does not
+        create missing outputs on a removal pass) cannot bring back, so keep
+        those names out of the unregister list and let reconciliation
+        recompose them.
+        """
+        try:
+            registrar = self._command_registrar()
+        except ImportError:
+            return registered_commands
+        registrar._ensure_configs()
+        survivors = [pid for pid in self.registry.list() if pid != pack_id]
+        if not survivors:
+            return registered_commands
+        result: Dict[str, List[str]] = {}
+        for agent, names in registered_commands.items():
+            agent_config = registrar.AGENT_CONFIGS.get(agent)
+            if (
+                not isinstance(names, list)
+                or not agent_config
+                or agent_config.get("extension") != "/SKILL.md"
+            ):
+                result[agent] = names
+                continue
+            skills_dir = self._safe_skills_dir_for_agent(agent)
+            kept: List[str] = []
+            for name in names:
+                if skills_dir is not None and isinstance(name, str):
+                    skill_dir = skills_dir / registrar._compute_output_name(
+                        agent, name, agent_config
+                    )
+                    skill_file = skill_dir / "SKILL.md"
+                    source = None
+                    if self._validate_skill_subdir(
+                        skill_dir, create=False, skills_root=skills_dir
+                    ) and skill_file.is_file():
+                        try:
+                            metadata = registrar.parse_frontmatter(
+                                skill_file.read_text(encoding="utf-8")
+                            )[0].get("metadata")
+                        except (OSError, UnicodeDecodeError):
+                            metadata = None
+                        if isinstance(metadata, dict):
+                            source = metadata.get("source")
+                    if isinstance(source, str) and any(
+                        source.startswith(f"{other}:") for other in survivors
+                    ):
+                        continue
+                kept.append(name)
+            if kept:
+                result[agent] = kept
+        return result
+
+    def _surviving_owned_skills(
+        self,
+        command_names: List[str],
+        presets_by_priority: List[Any],
+        active_ai: Optional[str],
+        active_skills_dir: Optional[Path],
+    ) -> List[tuple[Path, Optional[str], str, str, str]]:
+        """Recorded skill destinations of ``command_names`` still owned by a survivor.
+
+        Reads each remaining preset's ``registered_skills`` (inferring per-agent
+        provenance for legacy flat lists) and keeps the names whose ``SKILL.md``
+        still carries that preset's ``preset:<id>`` marker, as
+        ``(skills_dir, agent, owner_id, command_name, skill_name)`` tuples.
+        """
+        registrar = self._command_registrar()
+        affected = {
+            name: cmd_name
+            for cmd_name in command_names
+            for name in self._skill_names_for_command(cmd_name)
+        }
+        found: List[tuple[Path, Optional[str], str, str, str]] = []
+        for pack_id, meta in presets_by_priority:
+            if not isinstance(meta, dict):
+                continue
+            recorded = meta.get("registered_skills")
+            if isinstance(recorded, list) and active_ai:
+                recorded = self._infer_legacy_skill_provenance(
+                    [n for n in recorded if isinstance(n, str)], pack_id, active_ai
+                )
+            if not isinstance(recorded, dict):
+                continue
+            for agent, names in recorded.items():
+                if not isinstance(agent, str) or not isinstance(names, list):
+                    continue
+                skills_dir = (
+                    active_skills_dir
+                    if agent == active_ai
+                    else self._safe_skills_dir_for_agent(agent)
+                )
+                if skills_dir is None:
+                    continue
+                for name in names:
+                    if name not in affected:
+                        continue
+                    skill_file = skills_dir / name / "SKILL.md"
+                    if not self._validate_skill_subdir(
+                        skill_file.parent, create=False, skills_root=skills_dir
+                    ) or not skill_file.is_file():
+                        continue
+                    try:
+                        content = skill_file.read_text(encoding="utf-8")
+                    except (OSError, UnicodeDecodeError):
+                        continue
+                    metadata = registrar.parse_frontmatter(content)[0].get("metadata")
+                    if isinstance(metadata, dict) and metadata.get("source") == f"preset:{pack_id}":
+                        found.append((skills_dir, agent, pack_id, affected[name], name))
+        return found
+
+    def _remove_owned_skills(
+        self, skills_dir: Path, cmd_name: str, skill_names: List[str]
+    ) -> None:
+        """Delete ``cmd_name``'s preset-rendered skills among ``skill_names`` (journaled).
+
+        A skill is one when its ``SKILL.md`` source marker says an installed
+        preset rendered this command into it: ``preset:<id>`` (skill
+        registration) or ``<id>:<file>`` with that preset's own file for the
+        command, raw or composed (command registration for native skill
+        agents). Anything else is left untouched, including another
+        command's alias that happens to use this skill's name.
+        """
+        from ..integrations._file_changes import unlink_in_directory
+
+        registrar = self._command_registrar()
+        resolver = PresetResolver(self.project_root)
+        owned_sources: Set[str] = set()
+        for pack_id in self.registry.list():
+            owned_sources.add(f"preset:{pack_id}")
+            owned_sources.add(f"{pack_id}:.composed/{cmd_name}.md")
+            manifest = resolver._get_manifest(self.presets_dir / pack_id)
+            for tmpl in manifest.templates if manifest else []:
+                if (
+                    tmpl.get("type") == "command"
+                    and tmpl.get("name") == cmd_name
+                    and isinstance(tmpl.get("file"), str)
+                ):
+                    owned_sources.add(f"{pack_id}:{tmpl['file']}")
+        for name in dict.fromkeys(skill_names):
+            skill_dir = skills_dir / name
+            skill_file = skill_dir / "SKILL.md"
+            if not self._validate_skill_subdir(
+                skill_dir, create=False, skills_root=skills_dir
+            ) or not skill_file.is_file():
+                continue
+            try:
+                content = skill_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            metadata = registrar.parse_frontmatter(content)[0].get("metadata")
+            source = metadata.get("source") if isinstance(metadata, dict) else None
+            if isinstance(source, str) and source in owned_sources:
+                unlink_in_directory(
+                    skill_file,
+                    root=self.project_root if skill_file.is_relative_to(self.project_root) else skills_dir,
+                )
 
     def _resolve_agent_skills_dir(self, agent_name: str) -> Path:
         """Resolve the real skill output directory for an integration."""
@@ -625,6 +1286,8 @@ class _PresetSkillMethods:
         *,
         target_dir: Optional[Path] = None,
         target_agent: Optional[str] = None,
+        only_skill_names: Optional[Set[str]] = None,
+        content_overrides: Optional[Dict[str, str]] = None,
     ) -> Dict[str, List[str]]:
         """Generate SKILL.md files for preset command overrides.
 
@@ -650,6 +1313,12 @@ class _PresetSkillMethods:
                 subdirectories are never created for a non-active,
                 explicitly targeted directory (that creation path is only
                 meaningful for the currently active agent).
+            only_skill_names: When given, write only these skill
+                directory names; any other existing modern or legacy
+                skill for the same command is left untouched.
+            content_overrides: ``{command_name: content}`` to render instead
+                of the preset's command file or ``.composed`` cache, for a
+                composition that has already been resolved by the caller.
 
         Returns:
             ``{agent_name: [skill_name, ...]}`` for the single active
@@ -735,11 +1404,19 @@ class _PresetSkillMethods:
                 missing_skill_dir = skills_dir / skill_name
                 if not missing_skill_dir.exists():
                     target_skill_names.append(skill_name)
+            if only_skill_names is not None:
+                target_skill_names = [
+                    name for name in target_skill_names if name in only_skill_names
+                ]
             if not target_skill_names:
                 continue
 
             # Parse the command file
-            content = source_file.read_text(encoding="utf-8")
+            override = (content_overrides or {}).get(cmd_name)
+            content = (
+                override if override is not None
+                else source_file.read_text(encoding="utf-8")
+            )
             frontmatter, body = registrar.parse_frontmatter(content)
 
             # A composition-strategy command (wrap/prepend/append) needs a
@@ -758,9 +1435,12 @@ class _PresetSkillMethods:
                 or frontmatter.get("strategy")
                 or "replace"
             )
+            # A cached composition can outlive its base (e.g. one removed
+            # while its composer was disabled), so the resolver decides even
+            # when the cache exists.
             if (
-                effective_strategy != "replace"
-                and not composed_file.exists()
+                override is None
+                and effective_strategy != "replace"
                 and resolver.resolve_content(cmd_name, "command") is None
             ):
                 continue
@@ -819,7 +1499,7 @@ class _PresetSkillMethods:
 
                 skill_file = skill_subdir / "SKILL.md"
                 _write_shared_text(
-                    skills_dir, skill_file, skill_content
+                    skills_dir, skill_file, skill_content, preserve_mode=True
                 )
                 written.append(target_skill_name)
                 self._merge_pack_registered_skills(
@@ -1480,7 +2160,9 @@ class _PresetSkillMethods:
                     skill_content = integration.post_process_skill_content(
                         skill_content
                     )
-                _write_shared_text(skills_dir, skill_file, skill_content)
+                _write_shared_text(
+                    skills_dir, skill_file, skill_content, preserve_mode=True
+                )
                 mutated_names.append(skill_name)
                 continue
 
@@ -1538,7 +2220,9 @@ class _PresetSkillMethods:
                     skill_content = integration.post_process_skill_content(
                         skill_content
                     )
-                _write_shared_text(skills_dir, skill_file, skill_content)
+                _write_shared_text(
+                    skills_dir, skill_file, skill_content, preserve_mode=True
+                )
                 mutated_names.append(skill_name)
             else:
                 # No core or extension template — remove only the generated file
