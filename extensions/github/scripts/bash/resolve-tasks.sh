@@ -70,6 +70,13 @@ json_escape() {
     # LC_ALL=C ensures ${#s} counts bytes and ${s:$i:1} yields single bytes,
     # so multi-byte UTF-8 sequences (first byte >= 0xC0) pass through intact.
     local LC_ALL=C
+    # Fast path: with no control bytes left there is nothing to escape, so
+    # skip the byte-by-byte loop, which is slow on large values such as
+    # template content. [[:cntrl:]] also matches DEL, which takes the loop.
+    if [[ "$s" != *[[:cntrl:]]* ]]; then
+        printf '%s' "$s"
+        return
+    fi
     local i char code
     for (( i=0; i<${#s}; i++ )); do
         char="${s:$i:1}"
