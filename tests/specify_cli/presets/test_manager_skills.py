@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from specify_cli.extensions import ExtensionManager
 from specify_cli.presets import PresetManager
 from tests.specify_cli.presets._helpers import (
     PresetArtifactTestHelpers,
@@ -2732,6 +2733,77 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             content = output.read_text(encoding="utf-8")
             assert "Low body" not in content and "Base preset body" not in content
             assert "Core custom body" in content and "Middle body" in content
+
+    @pytest.mark.parametrize("extension_agent", ["codex", "claude"])
+    def test_historical_skill_uses_only_registered_extension(
+        self, project_dir, temp_dir, extension_agent
+    ):
+        """Removing a base must not introduce another agent's extension
+        into a historical skill or alias; a registered base must survive."""
+        self._write_init_options(project_dir, ai=extension_agent, ai_skills=True)
+        for folder in (".agents", ".claude"):
+            (project_dir / folder / "skills").mkdir(parents=True)
+        extension = temp_dir / "foreign-extension"
+        (extension / "commands").mkdir(parents=True)
+        (extension / "commands" / "run.md").write_text(
+            "---\ndescription: Foreign command\n---\n\nFOREIGN EXTENSION BODY\n",
+            encoding="utf-8",
+        )
+        manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "foreign", "name": "Foreign",
+                "version": "1.0.0", "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": [{
+                "name": "speckit.foreign.run",
+                "file": "commands/run.md", "description": "Run",
+            }]},
+        }
+        (extension / "extension.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        extensions = ExtensionManager(project_dir)
+        extensions.install_from_directory(extension, "0.1.5")
+        assert extensions.registry.get("foreign")["registered_commands"] == {
+            extension_agent: ["speckit.foreign.run"]
+        }
+        assert extensions.registry.get("foreign")["registered_skills"] == []
+
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-foreign-run")
+        manager = PresetManager(project_dir)
+        for preset_id, body, strategy, priority in [
+            ("base-preset", "BASE BODY", "replace", 10),
+            ("append-preset", "APPEND BODY", "append", 5),
+        ]:
+            preset = self._create_command_preset(
+                temp_dir, preset_id, "speckit.foreign.run", preset_id, body
+            )
+            path = preset / "preset.yml"
+            manifest = yaml.safe_load(path.read_text(encoding="utf-8"))
+            manifest["provides"]["templates"][0]["strategy"] = strategy
+            if strategy == "append":
+                manifest["provides"]["templates"][0]["aliases"] = ["speckit.foreign.short"]
+            path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+            manager.install_from_directory(preset, "0.1.5", priority=priority)
+        skill = project_dir / ".claude" / "skills" / "speckit-foreign-run" / "SKILL.md"
+        alias = project_dir / ".claude" / "skills" / "speckit-foreign-short" / "SKILL.md"
+        assert "BASE BODY" in skill.read_text(encoding="utf-8")
+        assert "FOREIGN EXTENSION BODY" not in skill.read_text(encoding="utf-8")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        assert manager.remove("base-preset")
+        for output in (skill, alias):
+            if extension_agent == "codex":
+                assert not output.exists(), output.read_text(encoding="utf-8")
+            else:
+                content = output.read_text(encoding="utf-8")
+                assert "FOREIGN EXTENSION BODY" in content
+                assert "APPEND BODY" in content
+                assert "BASE BODY" not in content
+        active = project_dir / ".agents" / "skills" / "speckit-foreign-run" / "SKILL.md"
+        assert "FOREIGN EXTENSION BODY" in active.read_text(encoding="utf-8")
+        assert "APPEND BODY" in active.read_text(encoding="utf-8")
 
     @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
     def test_remove_base_does_not_compose_command_mode_layer_into_shared_skills_dir(

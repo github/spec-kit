@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import get_invocation_prefix
 from .._utils import dump_frontmatter
+from ..extensions import ExtensionRegistry
 from ..integrations.base import IntegrationBase
 from ..integrations._registration import project_registration
 from ._manager_commands import _substitute_core_template
@@ -818,7 +819,7 @@ class _PresetSkillMethods:
         active_ai: Optional[str],
         active_skills_dir: Optional[Path],
     ) -> List[Dict[str, Any]]:
-        """Drop preset layers that were never registered in ``skills_dir``.
+        """Drop pack layers that were never registered in ``skills_dir``.
 
         Presets are registered for the active agent only (#2948), so a preset
         installed while another agent was active has no output in a
@@ -830,13 +831,15 @@ class _PresetSkillMethods:
         command-backed agent's entry records command files elsewhere, and
         its skills directory can be another agent's (Amp's resolves to
         Codex's ``.agents/skills``). The active directory is never filtered,
-        non-preset layers (core, extensions, project overrides) always stay,
-        and so does a preset whose provenance is unknown (a legacy flat
-        list).
+        core and project overrides always stay, and so do packs whose
+        provenance is unknown. Extensions record native skill commands per
+        agent, but their optional skill registrations are still a flat list.
         """
         if active_skills_dir is not None and skills_dir == active_skills_dir:
             return layers
         registered: Dict[str, bool] = {}
+        extensions_dir = self.project_root / ".specify" / "extensions"
+        extension_registry = None
         try:
             registrar = self._command_registrar()
             registrar._ensure_configs()
@@ -877,6 +880,26 @@ class _PresetSkillMethods:
 
         kept: List[Dict[str, Any]] = []
         for layer in layers:
+            try:
+                ext_rel = layer["path"].relative_to(extensions_dir)
+            except (KeyError, TypeError, ValueError):
+                ext_rel = None
+            if ext_rel is not None and ext_rel.parts:
+                if extension_registry is None:
+                    extension_registry = ExtensionRegistry(extensions_dir)
+                meta = extension_registry.get(ext_rel.parts[0])
+                # A nonempty flat skill list cannot establish which agent
+                # owns those files. Preserve that legacy fallback, as well
+                # as extensions without registration metadata.
+                if isinstance(meta, dict) and not meta.get("registered_skills"):
+                    commands = meta.get("registered_commands")
+                    if isinstance(commands, dict) and not any(
+                        names and writes_skills(agent) and resolves_here(agent)
+                        for agent, names in commands.items()
+                    ):
+                        continue
+                kept.append(layer)
+                continue
             try:
                 rel = layer["path"].relative_to(self.presets_dir)
             except (KeyError, TypeError, ValueError):
