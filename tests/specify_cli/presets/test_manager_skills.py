@@ -2909,6 +2909,38 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         manager.register_enabled_presets_for_agent("claude")
         assert alias_file.read_text(encoding="utf-8") == installed
 
+    def test_rescaffold_keeps_other_presets_alias_named_like_baseless_command(
+        self, project_dir, temp_dir
+    ):
+        """``speckit.custom`` lost its base, so its skill is retired while its
+        composer stays installed. Another preset then registers an alias of
+        that name for its own command. A rescaffold still finds the command
+        uncomposable, but the file under its skill name is the other
+        preset's alias, not a stale output of the command."""
+        manager = self._install_custom_layers(project_dir, temp_dir)
+        skills_dir = project_dir / ".claude" / "skills"
+        target = skills_dir / "speckit-custom" / "SKILL.md"
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+        assert not target.exists()
+        self._create_skill(skills_dir, "speckit-other")
+        other = self._create_command_preset(
+            temp_dir, "other-preset", "speckit.other", "other", "Other body"
+        )
+        manifest_path = other / "preset.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        manifest["provides"]["templates"][0]["aliases"] = ["speckit.custom"]
+        manifest_path.write_text(yaml.dump(manifest))
+        manager.install_from_directory(other, "0.1.5", priority=20)
+        installed = target.read_text(encoding="utf-8")
+        assert "source: other-preset:commands/speckit.other.md" in installed
+        assert "Other body" in installed
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            manager.register_enabled_presets_for_agent("claude")
+
+        assert target.read_text(encoding="utf-8") == installed
+
     def test_alias_refresh_rewrites_the_same_file(self, project_dir, temp_dir):
         """The alias is refreshed in place, as command registration always
         wrote it: the same inode keeps its owner, ACL and mode."""

@@ -339,15 +339,16 @@ class _PresetSkillMethods:
                 ]
                 stale_cmds = [cmd for cmd in dir_cmds if cmd in unresolvable_cmds]
                 if stale_cmds:
-                    self._remove_owned_skills(
-                        skills_dir,
-                        [
-                            name
-                            for cmd in stale_cmds
-                            for name in self._skill_names_for_command(cmd)
-                            if name in dir_managed_names
-                        ],
-                    )
+                    for cmd in stale_cmds:
+                        self._remove_owned_skills(
+                            skills_dir,
+                            cmd,
+                            [
+                                name
+                                for name in self._skill_names_for_command(cmd)
+                                if name in dir_managed_names
+                            ],
+                        )
                     dir_cmds = [cmd for cmd in dir_cmds if cmd not in unresolvable_cmds]
                 if not dir_cmds:
                     continue
@@ -514,7 +515,7 @@ class _PresetSkillMethods:
                     overrides[cmd_name] = composed
                 elif all(layer["strategy"] != "replace" for layer in owner_layers):
                     # Nothing left under the owner to compose onto.
-                    self._remove_owned_skills(skills_dir, names)
+                    self._remove_owned_skills(skills_dir, cmd_name, names)
                 # Otherwise a surviving layer is unreadable: keep the
                 # existing output rather than deleting it.
             if not overrides:
@@ -1030,18 +1031,34 @@ class _PresetSkillMethods:
                         found.append((skills_dir, agent, pack_id, affected[name], name))
         return found
 
-    def _remove_owned_skills(self, skills_dir: Path, skill_names: List[str]) -> None:
-        """Delete preset-owned skills among ``skill_names`` (journaled).
+    def _remove_owned_skills(
+        self, skills_dir: Path, cmd_name: str, skill_names: List[str]
+    ) -> None:
+        """Delete ``cmd_name``'s preset-rendered skills among ``skill_names`` (journaled).
 
-        A skill is preset-owned when its ``SKILL.md`` source marker names an
-        installed preset, either as ``preset:<id>`` (skill registration) or
-        ``<id>:<file>`` (command registration for native skill agents);
-        anything else is left untouched.
+        A skill is one when its ``SKILL.md`` source marker says an installed
+        preset rendered this command into it: ``preset:<id>`` (skill
+        registration) or ``<id>:<file>`` with that preset's own file for the
+        command, raw or composed (command registration for native skill
+        agents). Anything else is left untouched, including another
+        command's alias that happens to use this skill's name.
         """
         from ..integrations._file_changes import unlink_in_directory
 
         registrar = self._command_registrar()
-        pack_ids = list(self.registry.list())
+        resolver = PresetResolver(self.project_root)
+        owned_sources: Set[str] = set()
+        for pack_id in self.registry.list():
+            owned_sources.add(f"preset:{pack_id}")
+            owned_sources.add(f"{pack_id}:.composed/{cmd_name}.md")
+            manifest = resolver._get_manifest(self.presets_dir / pack_id)
+            for tmpl in manifest.templates if manifest else []:
+                if (
+                    tmpl.get("type") == "command"
+                    and tmpl.get("name") == cmd_name
+                    and isinstance(tmpl.get("file"), str)
+                ):
+                    owned_sources.add(f"{pack_id}:{tmpl['file']}")
         for name in dict.fromkeys(skill_names):
             skill_dir = skills_dir / name
             skill_file = skill_dir / "SKILL.md"
@@ -1055,10 +1072,7 @@ class _PresetSkillMethods:
                 continue
             metadata = registrar.parse_frontmatter(content)[0].get("metadata")
             source = metadata.get("source") if isinstance(metadata, dict) else None
-            if isinstance(source, str) and any(
-                source == f"preset:{pack_id}" or source.startswith(f"{pack_id}:")
-                for pack_id in pack_ids
-            ):
+            if isinstance(source, str) and source in owned_sources:
                 unlink_in_directory(
                     skill_file,
                     root=self.project_root if skill_file.is_relative_to(self.project_root) else skills_dir,
