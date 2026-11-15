@@ -267,13 +267,13 @@ class PresetManifest:
             # Validate template name format
             if tmpl["type"] == "command":
                 # Commands use dot notation (e.g. speckit.specify)
-                if not re.match(r'^[a-z0-9.-]+$', tmpl["name"]):
+                if not re.fullmatch(r'[a-z0-9.-]+', tmpl["name"]):
                     raise PresetValidationError(
                         f"Invalid command name '{tmpl['name']}': "
                         "must be lowercase alphanumeric with hyphens and dots only"
                     )
             else:
-                if not re.match(r'^[a-z0-9-]+$', tmpl["name"]):
+                if not re.fullmatch(r'[a-z0-9-]+', tmpl["name"]):
                     raise PresetValidationError(
                         f"Invalid template name '{tmpl['name']}': "
                         "must be lowercase alphanumeric with hyphens only"
