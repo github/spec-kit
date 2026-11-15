@@ -1557,6 +1557,7 @@ class ExtensionManager:
         from ..integrations import get_integration
         from ..integrations.base import IntegrationBase
         from ..integrations._file_changes import changing_file, unlink, write_text
+        from ..shared_infra import _validate_safe_shared_directory
 
         written: List[str] = []
         opts = load_init_options(self.project_root)
@@ -1618,6 +1619,10 @@ class ExtensionManager:
 
             # Check if skill already exists before creating the directory
             skill_subdir = skills_dir / skill_name
+            try:
+                _validate_safe_shared_directory(skills_dir, skill_subdir)
+            except (OSError, ValueError):
+                continue
             skill_file = skill_subdir / "SKILL.md"
             cache_root = extension_dir / ".specify-dev" / "extension-skills"
             cache_file = cache_root / skill_name / "SKILL.md"

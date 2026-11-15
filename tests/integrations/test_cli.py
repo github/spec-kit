@@ -1292,6 +1292,37 @@ class TestInitIntegrationFlag:
         assert skill.exists() is skills_mode
         assert command.exists() is not skills_mode
 
+    def test_init_force_preserves_external_extension_skill(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import _locate_bundled_extension, app
+        from specify_cli.extensions import ExtensionManager
+
+        project = tmp_path / "force-extension-symlink"
+        project.mkdir()
+        extension = _locate_bundled_extension("git")
+        assert extension is not None
+        ExtensionManager(project).install_from_directory(
+            extension, "1.3.2", register_commands=False,
+        )
+        external = tmp_path / "external"
+        external.mkdir()
+        external_file = external / "SKILL.md"
+        external_file.write_bytes(b"Keep external skill\r\n")
+        skill = project / ".github" / "skills" / "speckit-git-feature"
+        skill.parent.mkdir(parents=True)
+        skill.symlink_to(external, target_is_directory=True)
+        monkeypatch.chdir(project)
+
+        result = CliRunner().invoke(app, [
+            "init", "--here", "--force", "--non-interactive", "--offline",
+            "--integration", "copilot", "--script", "sh",
+            "--ignore-agent-tools", "--integration-options", "--skills",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert skill.is_symlink()
+        assert external_file.read_bytes() == b"Keep external skill\r\n"
+
     def test_init_here_without_force_does_not_reapply_presets(self, tmp_path):
         """Without --force (fresh project), _register_presets_for_agent should NOT be called."""
         from unittest.mock import MagicMock, patch
