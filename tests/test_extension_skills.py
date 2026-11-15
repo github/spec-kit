@@ -3084,7 +3084,10 @@ class TestRegisterExtensionSkillsForceFlag:
         external_file = external / "SKILL.md"
         external_file.write_bytes(b"External user content\r\n")
         link = skills_dir / "speckit-test-ext-hello"
-        link.symlink_to(external, target_is_directory=True)
+        try:
+            link.symlink_to(external, target_is_directory=True)
+        except OSError:
+            pytest.skip("Current platform/user cannot create directory symlinks")
 
         manager = ExtensionManager(project_dir)
         manifest = ExtensionManifest(ext_dir / "extension.yml")

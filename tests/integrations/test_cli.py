@@ -1310,7 +1310,10 @@ class TestInitIntegrationFlag:
         external_file.write_bytes(b"Keep external skill\r\n")
         skill = project / ".github" / "skills" / "speckit-git-feature"
         skill.parent.mkdir(parents=True)
-        skill.symlink_to(external, target_is_directory=True)
+        try:
+            skill.symlink_to(external, target_is_directory=True)
+        except OSError:
+            pytest.skip("Current platform/user cannot create directory symlinks")
         monkeypatch.chdir(project)
 
         result = CliRunner().invoke(app, [
