@@ -17,6 +17,7 @@ def workflow_update(
     from .catalog import WorkflowCatalog, WorkflowCatalogError
 
     project_root = cli._require_specify_project()
+    cli._load_project_workflow_plugins_or_exit(project_root)
     registry = cli._open_workflow_registry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
     cli._reject_unsafe_dir(project_root / ".specify", ".specify")

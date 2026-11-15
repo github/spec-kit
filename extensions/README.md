@@ -87,12 +87,12 @@ For the raw catalog data, see [`catalog.community.json`](catalog.community.json)
 
 To add your extension to the community catalog:
 
-1. **Prepare your extension** following the [Extension Development Guide](EXTENSION-DEVELOPMENT-GUIDE.md)
+1. **Prepare your extension** following the [Extension Development Guide](https://github.github.io/spec-kit/extensions/developing.html)
 2. **Create a GitHub release** for your extension
 3. **File an issue** using the [Extension Submission](https://github.com/github/spec-kit/issues/new?template=extension_submission.yml) template with all required metadata
 4. **Wait for review** — a maintainer will review the submission, update the catalog, and close the issue
 
-See the [Extension Publishing Guide](EXTENSION-PUBLISHING-GUIDE.md) for detailed step-by-step instructions.
+See the [Extension Publishing Guide](https://github.github.com/spec-kit/extensions/publishing.html) for detailed step-by-step instructions.
 
 ### Submission Checklist
 
@@ -120,4 +120,4 @@ specify extension add <extension-name> --from https://github.com/<org>/<repo>/ar
 specify extension list
 ```
 
-For more information, see the [Extension User Guide](EXTENSION-USER-GUIDE.md).
+For more information, see the [Extension User Guide](../docs/extensions/overview.md).

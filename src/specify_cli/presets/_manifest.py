@@ -97,7 +97,7 @@ class PresetManifest:
         # Validate preset metadata
         pack = self.data["preset"]
         # Check presence AND type: the format/version checks below feed these
-        # values straight to ``re.match`` and ``packaging.Version``, both of
+        # values straight to ``re.fullmatch`` and ``packaging.Version``, both of
         # which raise a bare TypeError on a non-string. YAML makes that an easy
         # authoring slip -- unquoted ``version: 1.0`` parses as a float and
         # ``id: 2`` as an int -- and TypeError is not a PresetValidationError,

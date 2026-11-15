@@ -122,6 +122,35 @@ def test_http_source_refused_when_offline():
         stack.resolve("anything")
 
 
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+def test_project_catalog_loopback_http_refused_before_network(
+    tmp_path, monkeypatch, host
+):
+    from unittest.mock import Mock
+
+    from specify_cli.bundles.catalogs import load_source_stack
+
+    config_dir = tmp_path / ".specify"
+    config_dir.mkdir()
+    (config_dir / "bundle-catalogs.yml").write_text(
+        "schema_version: '1.0'\ncatalogs:\n"
+        "  - id: default\n"
+        f"    url: 'http://{host}:8080/catalog.json?channel=test'\n"
+        "    priority: 1\n"
+        "    install_policy: discovery-only\n",
+        encoding="utf-8",
+    )
+    sources = load_source_stack(tmp_path, user_config_dir=tmp_path / "user")
+    open_url = Mock(side_effect=AssertionError("Catalog URL reached the network"))
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", open_url)
+    stack = CatalogStack(sources, make_catalog_fetcher())
+
+    with pytest.raises(BundlerError, match="HTTPS"):
+        stack.search()
+
+    open_url.assert_not_called()
+
+
 def test_missing_file_catalog_errors_offline(tmp_path: Path):
     fetcher = make_catalog_fetcher(allow_network=False)
     stack = CatalogStack([_src("local", str(tmp_path / "nope.json"))], fetcher)

@@ -468,6 +468,15 @@ class TestPresetResolver:
         assert result["source"] == "core"
         assert "spec-template.md" in result["path"]
 
+    def test_resolve_with_source_core_name_starting_with_overrides(self, project_dir):
+        """A core filename sharing the overrides prefix is still core."""
+        core = project_dir / ".specify" / "templates" / "overrides-report.md"
+        core.write_text("# Core report\n")
+
+        result = PresetResolver(project_dir).resolve_with_source("overrides-report")
+
+        assert result == {"path": str(core), "source": "core"}
+
     def test_resolve_with_source_override(self, project_dir):
         """Test resolve_with_source for override template."""
         overrides_dir = project_dir / ".specify" / "templates" / "overrides"
@@ -1095,6 +1104,53 @@ class TestResolveContent:
         resolver = PresetResolver(project_dir)
         content = resolver.resolve_content("nonexistent")
         assert content is None
+
+    def test_resolve_content_non_mapping_command_frontmatter(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """Valid YAML that is not a mapping must not crash composition.
+
+        ``_parse_fm_yaml`` returned whatever ``yaml.safe_load`` produced, and the
+        caller then called ``.pop`` on it, so ``preset add`` surfaced a raw
+        ``AttributeError``. ``CommandRegistrar.parse_frontmatter`` already treats
+        a non-dict result as ``{}``; the resolver now agrees.
+        """
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {
+            **valid_pack_data["preset"],
+            "id": "odd-frontmatter-pack",
+            "name": "Odd Frontmatter",
+        }
+        pack_data["provides"] = {
+            "templates": [
+                {
+                    "type": "command",
+                    "name": "speckit.demo",
+                    "file": "commands/speckit.demo.md",
+                    "strategy": "append",
+                }
+            ]
+        }
+        pack_dir = temp_dir / "odd-frontmatter-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "commands").mkdir()
+        (pack_dir / "commands" / "speckit.demo.md").write_text(
+            "---\njust a note\n---\nAPPENDED\n", encoding="utf-8"
+        )
+        core_command = project_dir / ".specify" / "templates" / "commands" / "speckit.demo.md"
+        core_command.parent.mkdir(parents=True, exist_ok=True)
+        core_command.write_text("---\ndescription: core\n---\nCORE BODY\n", encoding="utf-8")
+
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+
+        content = PresetResolver(project_dir).resolve_content("speckit.demo", "command")
+
+        assert content is not None
+        assert "CORE BODY" in content
+        assert "APPENDED" in content
+        assert "just a note" not in content
 
     def test_resolve_content_unreadable_winning_layer_returns_none(self, project_dir):
         """An undecodable winning layer must yield None, not a raw traceback.

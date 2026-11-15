@@ -16,6 +16,7 @@ import typer
 
 from . import (
     ArtifactError,
+    ArtifactResolutionError,
     NotASpecKitProjectError,
 )
 
@@ -36,16 +37,35 @@ def _resolve_project_root() -> Path:
     ``typer.Exit`` on failure, which would corrupt the strict JSON envelope
     ``specify artifact list --json`` and ``specify artifact info --json``
     emit on stdout/stderr. The Rich output is suppressed here and the
-    failure is re-raised as the module-local :class:`NotASpecKitProjectError`
-    for the shared error handler to serialize instead.
+    Missing-project failures become :class:`NotASpecKitProjectError`; policy
+    failures retain their actionable message for the shared JSON error handler.
     """
     from .. import _require_specify_project  # lazy: avoids circular import
+    from .._file_policy import ProjectPolicyError
+    from .._project import ProjectResolutionError
 
     with contextlib.redirect_stderr(io.StringIO()):
         try:
-            return _require_specify_project()
-        except typer.Exit:
+            root = _require_specify_project()
+        except typer.Exit as exc:
+            cause = exc.__cause__
+            if isinstance(cause, ProjectResolutionError) and isinstance(
+                cause.__cause__, ProjectPolicyError
+            ):
+                error = ArtifactError(str(cause))
+                error.message = str(cause)
+                raise error from exc
             raise NotASpecKitProjectError() from None
+    from ..integrations.installer import (
+        IntegrationInstallError,
+        load_installed_integrations,
+    )
+
+    try:
+        load_installed_integrations(root)
+    except (IntegrationInstallError, OSError) as exc:
+        raise ArtifactResolutionError(str(exc)) from exc
+    return root
 
 
 def _emit_error_and_exit(exc: ArtifactError) -> None:

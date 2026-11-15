@@ -30,6 +30,7 @@ safe-outputs:
   add-labels:
     allowed: [needs-reproduction, invalid, severity-critical, severity-high, severity-medium, severity-low]
     max: 2
+    issue-intent: false
 ---
 
 # Assess Bug from Labeled Issue
@@ -41,6 +42,14 @@ remediation. The GitHub Issues API does not support true file attachments, so
 you deliver the assessment by **posting the full `assessment.md` as a single
 issue comment** — that comment *is* the attachment maintainers read directly on
 the issue.
+
+## Label Responsibilities
+
+Applying the outcome labels is your responsibility, not a recommendation for a
+maintainer. Use the `add_labels` safe output on source issue
+#${{ github.event.issue.number }}, with plain strings in its `labels` array.
+Never emit label objects with `suggest: true` or suggestion-only output.
+Follow the outcome rules below for label selection and limits.
 
 ## Triggering Conditions
 

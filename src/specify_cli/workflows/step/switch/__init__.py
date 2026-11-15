@@ -29,8 +29,8 @@ class SwitchStep(StepBase):
         # ``run: echo approve`` resolves to ``"approve\n"`` and matches no
         # ``approve:`` case -- the switch silently falls through to ``default:``
         # while still reporting COMPLETED. A workflow cannot strip it itself:
-        # the registered filters are default/join/map/contains/from_json, there
-        # is no ``trim``. ``evaluate_condition`` and ``InitStep._resolve_bool``
+        # no registered filter trims whitespace (there is no ``trim``).
+        # ``evaluate_condition`` and ``InitStep._resolve_bool``
         # already strip before matching a resolved string against declared
         # literals, and case keys are exactly such literals. ``expression_value``
         # below still reports the raw value, so nothing downstream loses it.

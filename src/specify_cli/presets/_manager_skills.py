@@ -2,7 +2,6 @@
 
 import copy
 import os
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
@@ -14,6 +13,7 @@ from .._init_options import is_ai_skills_enabled
 from .._invocation_style import get_invocation_prefix
 from .._utils import dump_frontmatter
 from ..integrations.base import IntegrationBase
+from ..integrations._registration import project_registration
 from ._manager_commands import _substitute_core_template
 from ._manifest import PresetManifest, PresetValidationError
 from ._resolver import PresetResolver
@@ -96,6 +96,7 @@ class _PresetSkillMethods:
         if changed:
             self.registry.update(pack_id, {"registered_skills": merged_skills})
 
+    @project_registration
     def _reconcile_skills(
         self,
         command_names: List[str],
@@ -214,7 +215,7 @@ class _PresetSkillMethods:
                 managed_skill_names if managed_names is None else managed_names
             )
             # Restore skills for commands whose winner is non-preset.
-            # _unregister_skills_in_dir can rmtree the skill dir, so
+            # _unregister_skills_in_dir can remove the skill file, so
             # overrides must be handled directly (create dir + write)
             # without that call.
             dir_core_ext_names = [
@@ -241,9 +242,8 @@ class _PresetSkillMethods:
                     continue
                 try:
                     from .. import SKILL_DESCRIPTIONS
-                    from ..agents import CommandRegistrar
                     from ..shared_infra import _write_shared_text
-                    registrar = CommandRegistrar()
+                    registrar = self._command_registrar()
                     content = top_layer["path"].read_text(encoding="utf-8")
                     fm, body = registrar.parse_frontmatter(content)
                     short_name = cmd_name
@@ -420,9 +420,8 @@ class _PresetSkillMethods:
     def _resolve_agent_skills_dir(self, agent_name: str) -> Path:
         """Resolve the real skill output directory for an integration."""
         from .. import _get_skills_dir as _project_skills_dir
-        from ..agents import CommandRegistrar
 
-        registrar = CommandRegistrar()
+        registrar = self._command_registrar()
         agent_config = registrar.AGENT_CONFIGS.get(agent_name)
         if agent_config and agent_config.get("extension") == "/SKILL.md":
             return registrar._resolve_agent_dir(
@@ -437,6 +436,7 @@ class _PresetSkillMethods:
                 return root
         return None
 
+    @project_registration
     def _get_skills_dir(self) -> Optional[Path]:
         """Return the active skills directory for preset skill overrides.
 
@@ -455,6 +455,9 @@ class _PresetSkillMethods:
             resolve_active_skills_dir,
         )
         from ..shared_infra import _ensure_safe_shared_directory
+        opts = load_init_options(self.project_root)
+        if isinstance(opts, dict) and opts.get("ai") == "generic":
+            return None
         try:
             skills_dir = resolve_active_skills_dir(self.project_root)
         except (ValueError, OSError) as exc:
@@ -466,7 +469,6 @@ class _PresetSkillMethods:
         if skills_dir is None:
             return None
 
-        opts = load_init_options(self.project_root)
         selected_ai = opts.get("ai") if isinstance(opts, dict) else None
         if not isinstance(selected_ai, str) or not selected_ai:
             return skills_dir
@@ -615,6 +617,7 @@ class _PresetSkillMethods:
 
         return restore_index
 
+    @project_registration
     def _register_skills(
         self,
         manifest: "PresetManifest",
@@ -672,7 +675,6 @@ class _PresetSkillMethods:
         resolver = PresetResolver(self.project_root)
 
         from .. import SKILL_DESCRIPTIONS, load_init_options
-        from ..agents import CommandRegistrar
         from ..integrations import get_integration
         from ..shared_infra import _write_shared_text
 
@@ -689,7 +691,7 @@ class _PresetSkillMethods:
         # only controls whether brand-new skill subdirectories may be
         # created below, which is only meaningful for the active agent.
         ai_skills_enabled = target_agent is None and is_ai_skills_enabled(init_opts)
-        registrar = CommandRegistrar()
+        registrar = self._command_registrar()
         integration = get_integration(selected_ai)
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
         # Native skill agents (e.g. codex/kimi/agy/trae) materialize brand-new
@@ -867,9 +869,8 @@ class _PresetSkillMethods:
         ``fallback_agent``, preserving the previous best-effort behaviour
         for the unrecoverable case.
         """
-        from ..agents import CommandRegistrar
 
-        registrar = CommandRegistrar()
+        registrar = self._command_registrar()
         candidate_agents = sorted(registrar.AGENT_CONFIGS)
 
         # Multiple agent names can resolve to the same physical directory
@@ -987,10 +988,9 @@ class _PresetSkillMethods:
         touched; directories that don't exist or fail validation are
         skipped rather than raising.
         """
-        from ..agents import CommandRegistrar
         from ..shared_infra import _ensure_safe_shared_directory
 
-        if agent_name not in CommandRegistrar.AGENT_CONFIGS:
+        if agent_name not in self._command_registrar().AGENT_CONFIGS:
             return None
         skills_dir = self._resolve_agent_skills_dir(agent_name)
         validation_root = self._skills_validation_root(skills_dir)
@@ -1227,9 +1227,8 @@ class _PresetSkillMethods:
         if skills_dir is None:
             return
 
-        from ..agents import CommandRegistrar
 
-        registrar = CommandRegistrar()
+        registrar = self._command_registrar()
         marker = f"preset:{pack_id}"
         override_sources: Dict[str, str] = {}
         manifest = PresetResolver(self.project_root)._get_manifest(
@@ -1275,7 +1274,12 @@ class _PresetSkillMethods:
             if override_source:
                 owned_sources.add(override_source)
             if source in owned_sources:
-                shutil.rmtree(skill_subdir)
+                from ..integrations._file_changes import unlink_in_directory
+
+                unlink_in_directory(
+                    skill_file,
+                    root=self.project_root if skill_file.is_relative_to(self.project_root) else skills_dir,
+                )
 
     @staticmethod
     def _warn_unrestored_skill(
@@ -1301,6 +1305,7 @@ class _PresetSkillMethods:
             stacklevel=2,
         )
 
+    @project_registration
     def _unregister_skills_in_dir(
         self,
         skill_names: List[str],
@@ -1326,13 +1331,12 @@ class _PresetSkillMethods:
             Skill names whose files were restored or removed.
         """
         from .. import SKILL_DESCRIPTIONS
-        from ..agents import CommandRegistrar
         from ..integrations import get_integration
         from ..shared_infra import _write_shared_text
 
         # Locate core command templates from the project's installed templates
         core_templates_dir = self.project_root / ".specify" / "templates" / "commands"
-        registrar = CommandRegistrar()
+        registrar = self._command_registrar()
         integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
         extension_restore_index = self._build_extension_skill_restore_index()
         mutated_names: List[str] = []
@@ -1366,7 +1370,7 @@ class _PresetSkillMethods:
             # is_dir() follows symlinks, so a symlinked skill subdirectory
             # (with a safe, non-symlinked parent) would otherwise slip past
             # _safe_skills_dir_for_agent's parent-only check and have
-            # write_text/rmtree operate through it (#2948).
+            # writes/removals operate through it (#2948).
             if not self._validate_skill_subdir(
                 skill_subdir, create=False, skills_root=skills_dir
             ):
@@ -1431,7 +1435,7 @@ class _PresetSkillMethods:
                 # source cannot produce restored content, so leave the
                 # existing skill untouched rather than leaking a raw
                 # OSError/UnicodeDecodeError out of `preset remove` — and
-                # rather than falling through to the rmtree below, which
+                # rather than falling through to the removal below, which
                 # would delete a skill precisely when its replacement
                 # cannot be generated. Matches the `continue` guards above
                 # (unsafe name, missing subdir, foreign owner), which also
@@ -1537,8 +1541,13 @@ class _PresetSkillMethods:
                 _write_shared_text(skills_dir, skill_file, skill_content)
                 mutated_names.append(skill_name)
             else:
-                # No core or extension template — remove the skill entirely
-                shutil.rmtree(skill_subdir)
+                # No core or extension template — remove only the generated file
+                from ..integrations._file_changes import unlink_in_directory
+
+                unlink_in_directory(
+                    skill_file,
+                    root=self.project_root if skill_file.is_relative_to(self.project_root) else skills_dir,
+                )
                 mutated_names.append(skill_name)
 
         return mutated_names

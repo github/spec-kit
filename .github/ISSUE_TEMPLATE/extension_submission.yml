@@ -1,7 +1,7 @@
 name: Extension Submission
 description: Submit your extension to the Spec Kit catalog
 title: "[Extension]: Add "
-labels: ["enhancement", "needs-triage"]
+labels: ["triage-must-have"]
 body:
   - type: markdown
     attributes:
@@ -9,12 +9,12 @@ body:
         Thanks for contributing an extension! This template helps you submit your extension to the community catalog.
 
         **Before submitting:**
-        - Review the [Extension Publishing Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md)
+        - Review the [Extension Publishing Guide](https://github.github.com/spec-kit/extensions/publishing.html)
         - Ensure your extension has a valid `extension.yml` manifest
         - Create a GitHub release with a version tag (e.g., v1.0.0)
         - Test installation: `specify extension add <extension-name> --from <your-release-url>`
 
-        **After submitting:** a maintainer applies the `extension-submission` label during issue triage, which starts the automated catalog validation. You don't need to apply any label or ask for one.
+        **After submitting:** GitHub automatically applies the `triage-must-have` intake verdict. A maintainer separately applies the `extension-submission` label during issue triage, which starts the automated catalog validation. You don't need to apply any label or ask for one.
 
   - type: input
     id: extension-id

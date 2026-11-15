@@ -48,4 +48,9 @@ def bundle_init(
         f"{_escape_markup(str(project_root))}."
     )
     if bundle:
-        bundle_install(bundle, integration=integration, offline=offline)
+        bundle_install(
+            bundle,
+            integration=integration,
+            offline=offline,
+            refresh=False,
+        )

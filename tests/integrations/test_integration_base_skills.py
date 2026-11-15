@@ -95,7 +95,7 @@ class SkillsIntegrationTests:
 
         expected_commands = {
             "analyze", "clarify", "constitution", "converge", "implement",
-            "plan", "checklist", "specify", "tasks", "taskstoissues",
+            "plan", "checklist", "specify", "tasks",
         }
 
         # Derive command names from the skill directory names
@@ -466,7 +466,7 @@ class SkillsIntegrationTests:
 
     _SKILL_COMMANDS = [
         "analyze", "clarify", "constitution", "converge", "implement",
-        "plan", "checklist", "specify", "tasks", "taskstoissues",
+        "plan", "checklist", "specify", "tasks",
     ]
 
     def _expected_files(self, script_variant: str) -> list[str]:

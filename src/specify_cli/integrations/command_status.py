@@ -79,7 +79,7 @@ def integration_status(
     from .. import _require_specify_project
     from ..integration_status import build_integration_status_report
 
-    project_root = _require_specify_project()
+    project_root = _require_specify_project(load_integrations=False)
     report = build_integration_status_report(project_root)
 
     if json_output:

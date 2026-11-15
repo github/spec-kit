@@ -2,12 +2,33 @@
 
 from __future__ import annotations
 
+import inspect
 import shutil
 from pathlib import Path
 from typing import Any
 
+from specify_cli.integrations.base import (
+    DispatchSettingsError,
+    check_dispatch_settings,
+    requested_dispatch_settings,
+)
+from specify_cli.integrations.installer import project_dispatch
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
+from specify_cli.workflows.step._capture import (
+    capture_errors,
+    capture_failure,
+    capture_limit,
+    record_capture,
+    timeout_error,
+)
+from specify_cli.workflows.step._dispatch_settings import (
+    dispatch_setting_errors,
+    dispatch_settings_failure,
+    resolve_dispatch_settings,
+)
+
+_DEFAULT_CAPTURE_TIMEOUT = 600
 
 
 class CommandStep(StepBase):
@@ -23,7 +44,11 @@ class CommandStep(StepBase):
         CLI output is streamed to the terminal for live progress.
         ``output.exit_code`` is always captured and can be referenced
         by later steps (e.g. ``{{ steps.specify.output.exit_code }}``).
-        Full ``stdout``/``stderr`` capture is a planned enhancement.
+        ``capture: true`` retains the CLI's textual stdout and stderr in
+        ``output.stdout``/``output.stderr`` instead of streaming them,
+        capped per stream by ``capture_max_bytes`` and bounded by
+        ``timeout`` (default 600 seconds). ``timeout`` applies only to a
+        captured step; a streaming step has none.
     """
 
     type_key = "command"
@@ -112,6 +137,10 @@ class CommandStep(StepBase):
                 ),
             )
 
+        dispatch = resolve_dispatch_settings(config, context, "Command")
+        if isinstance(dispatch, str):
+            return StepResult(status=StepStatus.FAILED, error=dispatch)
+
         # Merge options (workflow defaults ← step overrides)
         options = dict(context.default_options)
         step_options = config.get("options", {})
@@ -133,11 +162,35 @@ class CommandStep(StepBase):
             return StepResult(status=StepStatus.FAILED, error=runtime_config)
         integration_args, integration_options = runtime_config
 
-        args_str = str(resolved_input.get("args", ""))
+        # Same rationale as the guards above: an unvalidated run must fail the
+        # step on a malformed capture/timeout rather than dispatch with a
+        # coerced default or crash inside the subprocess wait. 'timeout' only
+        # applies to a captured step, so it is only checked for one.
+        capture_config_errors = capture_errors(config, "Command")
+        if capture_config_errors:
+            return StepResult(
+                status=StepStatus.FAILED, error=capture_config_errors[0]
+            )
+        capture_max_bytes = capture_limit(config)
+        timeout = _DEFAULT_CAPTURE_TIMEOUT
+        if capture_max_bytes is not None:
+            invalid_timeout = timeout_error(config, "Command")
+            if invalid_timeout is not None:
+                return StepResult(status=StepStatus.FAILED, error=invalid_timeout)
+            timeout = config.get("timeout", _DEFAULT_CAPTURE_TIMEOUT)
+
+        # A lone ``{{ }}`` block keeps its typed value, so an ``args`` reference
+        # with nothing behind it (an optional input that was not supplied, an
+        # output key the earlier step does not produce) is None. ``str()`` sent
+        # that to the agent as the text "None"; send no arguments instead, as
+        # for a missing 'args' key and as interpolation renders None in text.
+        raw_args = resolved_input.get("args", "")
+        args_str = "" if raw_args is None else str(raw_args)
         output: dict[str, Any] = {
             "command": command,
             "integration": integration,
             "model": model,
+            **dispatch.outputs,
             "options": options,
             "input": resolved_input,
             "integration_args": integration_args,
@@ -156,6 +209,19 @@ class CommandStep(StepBase):
                 context,
                 integration_args,
                 integration_options,
+                capture_max_bytes=capture_max_bytes,
+                timeout=timeout,
+                **dispatch.settings,
+            )
+        except DispatchSettingsError as exc:
+            output["exit_code"] = 1
+            output["dispatched"] = False
+            return StepResult(
+                status=StepStatus.FAILED,
+                output=output,
+                error=dispatch_settings_failure(
+                    "Command", config, exc, dispatch.sources
+                ),
             )
         except ValueError as exc:
             output["exit_code"] = 1
@@ -171,11 +237,22 @@ class CommandStep(StepBase):
             output["stdout"] = dispatch_result["stdout"]
             output["stderr"] = dispatch_result["stderr"]
             output["dispatched"] = True
+            if capture_max_bytes is not None:
+                record_capture(output, dispatch_result)
             if dispatch_result["exit_code"] != 0:
+                if capture_max_bytes is not None:
+                    error = capture_failure(
+                        dispatch_result, subject="Command", timeout=timeout
+                    )
+                else:
+                    error = (
+                        dispatch_result["stderr"]
+                        or f"Command exited with code {dispatch_result['exit_code']}"
+                    )
                 return StepResult(
                     status=StepStatus.FAILED,
                     output=output,
-                    error=dispatch_result["stderr"] or f"Command exited with code {dispatch_result['exit_code']}",
+                    error=error,
                 )
             return StepResult(
                 status=StepStatus.COMPLETED,
@@ -189,12 +266,17 @@ class CommandStep(StepBase):
                 output=output,
                 error=(
                     f"Cannot dispatch command {command!r}: "
-                    f"integration {integration!r} CLI not found or not installed. "
-                    f"Install the CLI tool or check 'specify integration list'."
+                    f"integration {integration!r} CLI not found or not installed, "
+                    f"or the integration does not support CLI dispatch. "
+                    f"If the CLI is missing, install it or check "
+                    f"'specify integration list'; if the integration does not "
+                    f"support CLI dispatch, set the step's 'integration' to one "
+                    f"that does."
                 ),
             )
 
     @staticmethod
+    @project_dispatch
     def _try_dispatch(
         command: str,
         integration_key: str | None,
@@ -203,6 +285,11 @@ class CommandStep(StepBase):
         context: StepContext,
         integration_args: list[str],
         integration_options: dict[str, Any],
+        *,
+        capture_max_bytes: int | None = None,
+        timeout: float = _DEFAULT_CAPTURE_TIMEOUT,
+        reasoning_effort: str | None = None,
+        context_size: str | None = None,
     ) -> dict[str, Any] | None:
         """Invoke *command* by name through the integration CLI.
 
@@ -211,9 +298,19 @@ class CommandStep(StepBase):
         markdown agents, ``/speckit-specify`` for skills agents),
         then executes the CLI non-interactively.
 
+        With *capture_max_bytes* set, the CLI's textual output is captured
+        (bounded by that limit and by *timeout*) instead of streamed.
+
+        *reasoning_effort* and *context_size* are checked by
+        ``check_dispatch_settings`` before executable detection and forwarded
+        to ``dispatch_command`` only when set.
+
         Returns the dispatch result dict, or ``None`` if dispatch is
         not possible (integration not found, CLI not installed, or
-        dispatch not supported).
+        dispatch not supported). Raises ``ValueError`` if capture is
+        requested from an integration whose ``dispatch_command`` predates
+        the capture keywords, and ``DispatchSettingsError`` if the
+        integration rejects a dispatch setting.
         """
         if not integration_key or not isinstance(integration_key, str):
             # A non-string integration (a list/dict/expression that resolved to
@@ -232,6 +329,11 @@ class CommandStep(StepBase):
             return None
 
         impl.validate_runtime_config(integration_args, integration_options)
+        dispatch_settings = requested_dispatch_settings(
+            reasoning_effort=reasoning_effort, context_size=context_size
+        )
+        if dispatch_settings:
+            check_dispatch_settings(impl, dispatch_settings, via="dispatch_command")
 
         project_root = Path(context.project_root) if context.project_root else None
 
@@ -251,6 +353,27 @@ class CommandStep(StepBase):
         if cli_path is None and fallback_cli_path is None:
             return None
 
+        capture_kwargs: dict[str, Any] = {}
+        if capture_max_bytes is not None:
+            capture_kwargs = {
+                "stream": False,
+                "output_json": False,
+                "timeout": timeout,
+                "capture_max_bytes": capture_max_bytes,
+            }
+            # An installed integration may override dispatch_command() with
+            # the signature from before these keywords existed; calling it
+            # would raise a raw TypeError and take down the run.
+            parameters = inspect.signature(impl.dispatch_command).parameters
+            if not any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters.values()
+            ) and not all(name in parameters for name in capture_kwargs):
+                raise ValueError(
+                    f"integration {integration_key!r} does not support "
+                    f"'capture: true'."
+                )
+
         try:
             return impl.dispatch_command(
                 command,
@@ -259,6 +382,8 @@ class CommandStep(StepBase):
                 model=model,
                 integration_args=integration_args,
                 integration_options=integration_options,
+                **capture_kwargs,
+                **dispatch_settings,
             )
         except (NotImplementedError, OSError):
             return None
@@ -380,4 +505,12 @@ class CommandStep(StepBase):
                 f"Command step {config.get('id', '?')!r}: 'model' must be a "
                 f"string, got {type(model).__name__}."
             )
+        errors.extend(dispatch_setting_errors(config, "Command"))
+        errors.extend(capture_errors(config, "Command"))
+        # 'timeout' is only applied to a captured step, so a streaming step's
+        # value is left unchecked as it always was.
+        if config.get("capture") is True:
+            invalid_timeout = timeout_error(config, "Command")
+            if invalid_timeout is not None:
+                errors.append(invalid_timeout)
         return errors

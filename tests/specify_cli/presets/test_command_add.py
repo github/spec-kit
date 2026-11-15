@@ -5,7 +5,7 @@ import json
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import ANY, MagicMock
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 import yaml
@@ -220,6 +220,80 @@ class TestPresetAdd:
         assert result.exit_code == 0, result.output
         assert "Lean Workflow" in result.output
         assert "installed" in result.output.lower()
+
+    def test_bundled_exact_version_installs_packaged_preset(self, project_dir):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        entry = {
+            "id": "lean",
+            "name": "Lean Workflow",
+            "version": "1.0.0",
+            "bundled": True,
+            "_install_allowed": True,
+        }
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch("specify_cli.get_speckit_version", return_value="0.6.0"),
+            patch.object(PresetCatalog, "get_pack_info", return_value=entry),
+            patch.object(PresetCatalog, "download_pack_info") as download,
+            patch.object(PresetManager, "install_from_zip") as install_zip,
+        ):
+            result = CliRunner().invoke(
+                app, ["preset", "add", "lean", "--version", "1.0"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Lean Workflow" in result.output
+        assert PresetManager(project_dir).get_pack("lean").version == "1.0.0"
+        download.assert_not_called()
+        install_zip.assert_not_called()
+
+    @pytest.mark.parametrize("packaged", ["missing", "wrong-id", "wrong-version"])
+    def test_bundled_exact_version_rejects_wrong_package(
+        self, project_dir, pack_dir, packaged
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        entry = {
+            "id": "lean",
+            "name": "Lean Workflow",
+            "version": "1.0.0",
+            "bundled": True,
+            "_install_allowed": True,
+        }
+        if packaged == "missing":
+            packaged_path = None
+        else:
+            packaged_path = pack_dir
+            if packaged == "wrong-version":
+                manifest_path = pack_dir / "preset.yml"
+                manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+                manifest["preset"].update(id="lean", version="2.0.0")
+                manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch("specify_cli._locate_bundled_preset", return_value=packaged_path),
+            patch("specify_cli.get_speckit_version", return_value="0.6.0"),
+            patch.object(PresetCatalog, "get_pack_info", return_value=entry),
+            patch.object(PresetCatalog, "download_pack_info") as download,
+            patch.object(PresetManager, "install_from_directory") as install_dir,
+        ):
+            result = CliRunner().invoke(
+                app, ["preset", "add", "lean", "--version", "1.0.0"]
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "requested version could not be found" in " ".join(
+            result.output.split()
+        )
+        assert PresetManager(project_dir).get_pack("lean") is None
+        download.assert_not_called()
+        install_dir.assert_not_called()
 
     def test_preset_add_catalog_forwards_catalog_name(self, project_dir, monkeypatch):
         """Catalog installs pass resolved provenance into the manager boundary."""

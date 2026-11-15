@@ -10,12 +10,14 @@ jobs:
       (github.event.action == 'opened' && (
         contains(github.event.issue.labels.*.name, 'extension-submission') ||
         contains(github.event.issue.labels.*.name, 'preset-submission') ||
-        contains(github.event.issue.labels.*.name, 'bundle-submission')
+        contains(github.event.issue.labels.*.name, 'bundle-submission') ||
+        contains(github.event.issue.labels.*.name, 'workflow-step-submission')
       )) ||
       (github.event.action == 'labeled' && (
         github.event.label.name == 'extension-submission' ||
         github.event.label.name == 'preset-submission' ||
-        github.event.label.name == 'bundle-submission'
+        github.event.label.name == 'bundle-submission' ||
+        github.event.label.name == 'workflow-step-submission'
       ))
     runs-on: ubuntu-latest
     permissions:
