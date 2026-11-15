@@ -59,6 +59,7 @@ Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `ba
 | Scheme | Header | Use for |
 |---|---|---|
 | `bearer` | `Authorization: Bearer <token>` | PATs, fine-grained PATs, OAuth tokens, GitHub App tokens |
+| `github-cli` | `Authorization: Bearer <token>` | Credentials acquired on demand via `gh auth token` |
 
 **Example — PAT via environment variable:**
 
@@ -70,6 +71,51 @@ Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `ba
   "token_env": "GH_TOKEN"
 }
 ```
+
+**Example — GitHub CLI:**
+
+```json
+{
+  "providers": [
+    {
+      "hosts": [
+        "github.com",
+        "api.github.com",
+        "raw.githubusercontent.com",
+        "codeload.github.com"
+      ],
+      "provider": "github",
+      "auth": "github-cli"
+    }
+  ]
+}
+```
+
+Install [GitHub CLI](https://cli.github.com/) and run `gh auth login` before
+using this mode. Specify runs the fixed command
+`gh auth token --hostname github.com` without a shell, caches the result in
+memory for the current process, and never writes the token to disk.
+Surrounding whitespace is trimmed; tokens containing non-ASCII characters,
+embedded carriage returns, or newlines are rejected without including the
+token in the error.
+Credential acquisition failures fail the affected request without trying another
+credential or an unauthenticated request. They use the existing URL-error
+category, so callers retain their normal error handling (for example, warning
+and skipping an unavailable catalog).
+Release checks and upgrades preserve the authentication diagnostic rather than
+reporting a network outage. Online bundle catalog fetching and reference
+validation treat authentication failures as errors, not as availability
+fallbacks to packaged snapshots or unchecked references.
+
+For `github-cli` only, the **first hostname in `hosts`** is passed to
+`gh auth token --hostname`. Put `github.com` or your enterprise instance's
+GitHub CLI login hostname first. It must be an exact hostname, not a wildcard.
+All listed hosts remain request-matching destinations authorized to receive
+that credential; later entries may use supported wildcards. Specify does not
+infer the credential hostname from service prefixes or the requested URL.
+The in-memory cache is keyed by the first hostname. Use separate provider
+entries for hosts requiring different credentials. Host order has no effect
+on existing authentication modes.
 
 ### GitHub Enterprise Server (GHES)
 
@@ -97,6 +143,53 @@ live there. If your instance uses subdomain isolation, also list the `raw.`
 and `codeload.` subdomains your catalog/extension URLs use. A
 `*.ghes.example.com` wildcard matches subdomains but **not** the bare host,
 so always include the bare host explicitly.
+
+With `auth: "github-cli"`, list your enterprise instance's GitHub CLI login
+hostname first, followed by any request hosts or wildcard patterns that should
+receive the same credential:
+
+```json
+{
+  "hosts": [
+    "ghes.example.com",
+    "raw.ghes.example.com",
+    "codeload.ghes.example.com"
+  ],
+  "provider": "github",
+  "auth": "github-cli"
+}
+```
+
+Specify runs `gh auth token --hostname ghes.example.com`, using the first
+hostname exactly as configured. Use separate provider entries for separate
+GitHub instances. The selected host must already be
+authenticated in GitHub CLI; failures suggest `gh auth login --hostname <host>`
+without including GitHub CLI command output.
+
+### GitHub Enterprise Cloud with data residency (GHE.com)
+
+GHE.com tenants use separate web and REST API hostnames. List both hosts so
+Specify can authenticate the release-metadata lookup and asset download:
+
+```json
+{
+  "providers": [
+    {
+      "hosts": ["tenant.ghe.com", "api.tenant.ghe.com"],
+      "provider": "github",
+      "auth": "bearer",
+      "token_env": "GH_ENTERPRISE_TOKEN"
+    }
+  ]
+}
+```
+
+For a release URL on `tenant.ghe.com`, Specify resolves metadata and release
+assets through `api.tenant.ghe.com`. The returned asset must identify the same
+owner and repository and use the exact numeric
+`/repos/.../releases/assets/...` endpoint. A wildcard such as
+`*.tenant.ghe.com` matches the API hostname but not the bare tenant web
+hostname, so list the web hostname explicitly.
 
 ### Azure DevOps (`azure-devops`)
 
@@ -236,16 +329,49 @@ You can configure multiple entries for different hosts or organizations:
 
 ## How it works
 
+The shared HTTP helpers require initial request URLs to use HTTPS with a
+hostname. They allow HTTP only for unambiguous loopback hosts, such as
+`localhost`, `127.0.0.1`, and `::1`. Catalog sources have a stricter policy:
+they require HTTPS even on loopback hosts.
+Unsafe URLs are rejected before credentials are resolved or any request is
+made, including when no authentication is configured.
+Online bundle catalog fetching and reference validation treat URL-policy
+rejections as definitive errors, not as availability fallbacks to packaged
+snapshots or unchecked references.
+
 1. For each outbound HTTP request, the URL hostname is matched against
    the `hosts` patterns in `auth.json`.
 2. If a match is found, the corresponding provider resolves the token
-   and attaches the appropriate `Authorization` header.
-3. If the request receives a 401 or 403, the next matching entry is tried.
-4. After all matching entries are exhausted, an unauthenticated request
-   is attempted as a final fallback.
+   and attaches the appropriate `Authorization` header. A `github-cli`
+   acquisition failure ends the request immediately, without trying later
+   matching entries or making an unauthenticated request.
+3. After successful token acquisition, if the request receives a 401 or 403,
+   the next matching entry is tried.
+4. After all matching entries are exhausted without an acquisition failure,
+   an unauthenticated request is attempted as a final fallback.
 5. On redirects, the `Authorization` header is stripped if the redirect
    target leaves the entry's declared hosts — preventing credential
    leakage to CDNs or third-party services.
+
+## TLS certificates
+
+HTTPS catalog requests use Python's `urllib` and `ssl` certificate verification.
+The trusted certificate authorities depend on the Python distribution and its
+OpenSSL configuration. Trusting a development CA in a browser or macOS Keychain
+alone does not necessarily make it trusted by the Python interpreter running
+Specify.
+
+For a private or local development CA, set `SSL_CERT_FILE` to the absolute path
+of a PEM CA bundle containing that CA before running Specify:
+
+```bash
+export SSL_CERT_FILE="/absolute/path/to/ca-bundle.pem"
+```
+
+This selects a CA file rather than appending to Python's default CA file. Keep
+any other required trust roots in the bundle, including those needed for public
+catalogs and downloads. The server certificate must still be valid for the
+requested hostname or IP address. Keep certificate verification enabled.
 
 ## Template
 

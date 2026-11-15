@@ -4,9 +4,41 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 
 import pytest
+
+
+@pytest.mark.parametrize("entries,expected", [
+    ({}, "No workflows installed.\n\nInstall a workflow with:\n  specify workflow add <workflow-id>\n"),
+    ({"bad": None}, "\nInstalled Workflows:\n\n  Warning: Skipping corrupted registry entry 'bad'.\n\n"),
+    ({"z": {"enabled": False}, "bad": 1, "a": {"name": "[Name]", "description": "[desc]"}},
+     "\nInstalled Workflows:\n\n  z (z) v? [disabled]\n\n  Warning: Skipping corrupted registry entry 'bad'.\n\n  [Name] (a) v?\n    [desc]\n\n"),
+])
+def test_list_preserves_complete_cli_text(tmp_path, monkeypatch, entries, expected):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    directory = tmp_path / ".specify" / "workflows"
+    directory.mkdir(parents=True)
+    (directory / "workflow-registry.json").write_text(json.dumps({"workflows": entries}), encoding="utf-8")
+    monkeypatch.setenv("SPECIFY_INIT_DIR", str(tmp_path))
+    result = CliRunner().invoke(app, ["workflow", "list"])
+    assert result.exit_code == 0, result.output
+    assert result.output == expected
+
+
+def test_cli_does_not_adopt_mcp_entry_limit(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    directory = tmp_path / ".specify" / "workflows"
+    directory.mkdir(parents=True)
+    entries = {f"workflow-{i}": {} for i in range(1001)}
+    (directory / "workflow-registry.json").write_text(json.dumps({"workflows": entries}), encoding="utf-8")
+    monkeypatch.setenv("SPECIFY_INIT_DIR", str(tmp_path))
+    result = CliRunner().invoke(app, ["workflow", "list"])
+    assert result.exit_code == 0, result.output
+    assert "workflow-1000 (workflow-1000) v?" in result.output
 
 
 
@@ -96,7 +128,7 @@ steps:
         is exactly the fail-open state a caller could otherwise mistake for
         "safe to (re)install", overwriting real files. Covers the read/query
         boundary fix required at every WorkflowRegistry call site."""
-        import builtins
+        from specify_cli.file_helper import FileHelper
         from typer.testing import CliRunner
         from specify_cli import app
         from specify_cli.workflows.catalog import WorkflowRegistry
@@ -106,14 +138,14 @@ steps:
         self._install_dev(runner, app, project_dir)
 
         registry_path = WorkflowRegistry(project_dir).registry_path.resolve()
-        real_open = builtins.open
+        real_read = FileHelper.read_bytes
 
-        def _raising_open(file, mode="r", *args, **kwargs):
-            if Path(file).resolve() == registry_path and "r" in mode:
+        def _raising_read(files, file):
+            if (files.root / file).resolve() == registry_path:
                 raise OSError("simulated read failure")
-            return real_open(file, mode, *args, **kwargs)
+            return real_read(files, file)
 
-        monkeypatch.setattr(builtins, "open", _raising_open)
+        monkeypatch.setattr(FileHelper, "read_bytes", _raising_read)
         result = runner.invoke(app, ["workflow", "list"])
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)

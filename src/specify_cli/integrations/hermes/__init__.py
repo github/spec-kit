@@ -204,17 +204,25 @@ class HermesIntegration(SkillsIntegration):
 
             # Write directly to global ~/.hermes/skills/speckit-<name>/SKILL.md
             skill_dir = global_skills_dir / skill_name
-            skill_dir.mkdir(parents=True, exist_ok=True)
             skill_file = skill_dir / "SKILL.md"
             normalized = skill_content.replace("\r\n", "\n")
-            skill_file.write_bytes(normalized.encode("utf-8"))
+            from .._file_changes import changing_file
+
+            with changing_file(skill_file):
+                skill_dir.mkdir(parents=True, exist_ok=True)
+                skill_file.write_bytes(normalized.encode("utf-8"))
             created.append(skill_file)
 
 
         # Create project-local marker directory so extension commands
         # (e.g. git) can detect Hermes as an active integration.
         # Hermes itself ignores this directory — skills live globally.
-        (project_root / ".hermes" / "skills").mkdir(parents=True, exist_ok=True)
+        marker = project_root / ".hermes" / "skills"
+        if not marker.exists():
+            from .._file_changes import changing_file
+
+            with changing_file(marker):
+                marker.mkdir(parents=True, exist_ok=True)
 
         return created
 
@@ -245,10 +253,14 @@ class HermesIntegration(SkillsIntegration):
         # Remove project-local marker directory if empty
         local_skills_dir = project_root / ".hermes" / "skills"
         if local_skills_dir.is_dir() and not any(local_skills_dir.iterdir()):
-            local_skills_dir.rmdir()
+            from .._file_changes import changing_file
+
+            with changing_file(local_skills_dir, removal=True):
+                local_skills_dir.rmdir()
             hermes_dir = project_root / ".hermes"
             if hermes_dir.is_dir() and not any(hermes_dir.iterdir()):
-                hermes_dir.rmdir()
+                with changing_file(hermes_dir, removal=True):
+                    hermes_dir.rmdir()
 
         # Remove all global Hermes skills for speckit — these are always
         # removed on uninstall regardless of the force flag, matching the
@@ -258,7 +270,10 @@ class HermesIntegration(SkillsIntegration):
             for skill_dir in sorted(global_skills_dir.iterdir()):
                 if skill_dir.is_dir() and skill_dir.name.startswith("speckit-"):
                     try:
-                        rmtree(skill_dir)
+                        from .._file_changes import changing_file
+
+                        with changing_file(skill_dir, removal=True):
+                            rmtree(skill_dir)
                         removed.append(skill_dir)
                     except OSError:
                         skipped.append(skill_dir)

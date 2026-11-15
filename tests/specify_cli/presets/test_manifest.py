@@ -199,14 +199,28 @@ class TestPresetManifest:
         with pytest.raises(PresetValidationError, match="Missing preset.id"):
             PresetManifest(manifest_path)
 
-    def test_invalid_pack_id_format(self, temp_dir, valid_pack_data):
+    @pytest.mark.parametrize(
+        "pack_id",
+        ["Invalid_ID", "", "test-pack\n", "test-pack\r\n", "test\npack",
+         " test-pack", "test-pack ", "../test-pack", "test/pack"],
+    )
+    def test_invalid_pack_id_format(self, temp_dir, valid_pack_data, pack_id):
         """Test invalid pack ID format."""
-        valid_pack_data["preset"]["id"] = "Invalid_ID"
+        valid_pack_data["preset"]["id"] = pack_id
         manifest_path = temp_dir / "preset.yml"
         with open(manifest_path, 'w') as f:
             yaml.dump(valid_pack_data, f)
         with pytest.raises(PresetValidationError, match="Invalid preset ID"):
             PresetManifest(manifest_path)
+
+    @pytest.mark.parametrize("pack_id", ["test-pack", "preset123", "123", "a"])
+    def test_valid_pack_id_format(self, temp_dir, valid_pack_data, pack_id):
+        """Accept IDs containing only lowercase letters, digits, and hyphens."""
+        valid_pack_data["preset"]["id"] = pack_id
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_text(yaml.safe_dump(valid_pack_data), encoding="utf-8")
+
+        assert PresetManifest(manifest_path).id == pack_id
 
     def test_invalid_version(self, temp_dir, valid_pack_data):
         """Test invalid semantic version."""

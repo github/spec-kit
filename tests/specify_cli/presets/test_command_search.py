@@ -3,12 +3,87 @@ from __future__ import annotations
 from pathlib import Path
 from typing import ClassVar
 
+import pytest
+import yaml
+
 from specify_cli.presets import PresetCatalog
 from tests.conftest import strip_ansi
 from tests.specify_cli.presets._helpers import (
     default_catalog_entries,
     seed_catalog,
 )
+
+
+class TestPresetSearchCatalogFailures:
+    @pytest.mark.parametrize("layer", ["project", "user", "environment"])
+    @pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+    def test_invalid_http_catalog_reports_error(
+        self, project_dir, tmp_path, monkeypatch, layer, host
+    ):
+        from unittest.mock import Mock
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "cwd", lambda: project_dir)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        monkeypatch.delenv("SPECKIT_PRESET_CATALOG_URL", raising=False)
+        url = f"http://{host}:8080/catalog.json"
+        if layer == "environment":
+            monkeypatch.setenv("SPECKIT_PRESET_CATALOG_URL", url)
+        else:
+            root = project_dir if layer == "project" else home
+            config_dir = root / ".specify"
+            config_dir.mkdir(exist_ok=True)
+            (config_dir / "preset-catalogs.yml").write_text(
+                yaml.safe_dump({"catalogs": [{"name": "local", "url": url}]}),
+                encoding="utf-8",
+            )
+        open_url = Mock(side_effect=AssertionError("Unexpected network request"))
+        monkeypatch.setattr("specify_cli.authentication.http.open_url", open_url)
+
+        result = CliRunner().invoke(app, ["preset", "search"])
+
+        assert result.exit_code == 1, result.output
+        output = " ".join(strip_ansi(result.output).split())
+        assert "must use HTTPS" in output
+        assert "No presets found" not in output
+        open_url.assert_not_called()
+
+    def test_recoverable_fetch_failure_reports_no_results(
+        self, project_dir, monkeypatch
+    ):
+        from unittest.mock import Mock
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.presets import PresetError
+
+        monkeypatch.setattr(Path, "cwd", lambda: project_dir)
+        monkeypatch.delenv("SPECKIT_PRESET_CATALOG_URL", raising=False)
+        (project_dir / ".specify" / "preset-catalogs.yml").write_text(
+            yaml.safe_dump({
+                "catalogs": [{
+                    "name": "unavailable",
+                    "url": "https://example.com/catalog.json",
+                }],
+            }),
+            encoding="utf-8",
+        )
+        fetch = Mock(side_effect=PresetError("catalog unavailable"))
+        monkeypatch.setattr(PresetCatalog, "_fetch_single_catalog", fetch)
+
+        result = CliRunner().invoke(app, ["preset", "search"])
+
+        assert result.exit_code == 0, result.output
+        output = strip_ansi(result.output)
+        assert "No presets found" in output
+        assert "Error:" not in output
+        fetch.assert_called_once()
 
 
 class TestPresetTagsNonString:

@@ -9,20 +9,27 @@ is unavailable.
 
 from __future__ import annotations
 
+import errno
+import io
 import json
 import os
+import re
+import runpy
 import shutil
 import subprocess
 import sys
 import time
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
 
+from tests.conftest import requires_bash
 from tests.extensions.test_extension_agent_context import (
     BASH,
     EXT_DIR,
     POWERSHELL,
+    _bash_posix_path,
     _bundled_script_env,
 )
 
@@ -38,7 +45,7 @@ requires_posix_bash = pytest.mark.skipif(
 
 def run_bash(project_root: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [BASH, str(BASH_SCRIPT), *args],
+        [BASH, _bash_posix_path(BASH_SCRIPT), *args],
         cwd=project_root,
         env=_bundled_script_env(project_root, for_bash=True),
         capture_output=True,
@@ -341,6 +348,279 @@ def test_python_mtime_fallback_finds_nested_plan_matching_bash(
     content = (repo_b / "AGENTS.md").read_bytes()
     assert content == (repo_a / "AGENTS.md").read_bytes()
     assert b"at specs/backend/001-nested/plan.md" in content
+
+
+@pytest.mark.parametrize(
+    "run_script",
+    [
+        pytest.param(run_python, id="python"),
+        pytest.param(run_bash, id="bash", marks=requires_bash),
+    ],
+)
+@pytest.mark.parametrize("has_regular_plan", [False, True], ids=["alone", "with-plan"])
+@pytest.mark.parametrize(
+    "candidate_kind",
+    [
+        "regular-file",
+        "directory",
+        "dangling-link",
+        "non-directory-link",
+        "directory-link",
+        "file-link",
+        "escaping-link",
+    ],
+)
+def test_mtime_fallback_selects_only_in_project_files(
+    tmp_path: Path, run_script, has_regular_plan: bool, candidate_kind: str
+) -> None:
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    expected_plan = ""
+    if has_regular_plan:
+        expected_plan = "specs/backend/001-valid/plan.md"
+        plan = repo / expected_plan
+        plan.parent.mkdir(parents=True)
+        plan.write_text("# older plan\n", encoding="utf-8")
+        os.utime(plan, (1_600_000_000, 1_600_000_000))
+
+    candidate = repo / "specs/999-candidate/plan.md"
+    candidate.parent.mkdir(parents=True)
+    if candidate_kind == "regular-file":
+        candidate.write_text("# newer plan\n", encoding="utf-8")
+        os.utime(candidate, (1_700_000_000, 1_700_000_000))
+        expected_plan = "specs/999-candidate/plan.md"
+    elif candidate_kind == "directory":
+        candidate.mkdir()
+        os.utime(candidate, (1_700_000_000, 1_700_000_000))
+    else:
+        target = repo / "plans/current.md"
+        if candidate_kind == "escaping-link":
+            target = tmp_path / "outside.md"
+        if candidate_kind == "non-directory-link":
+            target.parent.parent.mkdir(parents=True, exist_ok=True)
+            target.parent.write_text("not a directory\n", encoding="utf-8")
+        elif candidate_kind == "directory-link":
+            target.mkdir(parents=True)
+        elif candidate_kind != "dangling-link":
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("# linked plan\n", encoding="utf-8")
+        try:
+            candidate.symlink_to(
+                target, target_is_directory=candidate_kind == "directory-link"
+            )
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+        if candidate_kind not in ("dangling-link", "non-directory-link"):
+            os.utime(target, (1_700_000_000, 1_700_000_000))
+        if candidate_kind == "file-link":
+            # Valid file links retain target mtime ordering and resolved paths,
+            # including targets outside specs/ that are still in the project.
+            expected_plan = "plans/current.md"
+
+    result = run_script(repo)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert result.stdout == "agent-context: updated AGENTS.md\n"
+    expected = (
+        "<!-- SPECKIT START -->\n"
+        "For additional context about technologies to be used, project structure,\n"
+        "shell commands, and other important information, read the current plan\n"
+    )
+    if expected_plan:
+        expected += f"at {expected_plan}\n"
+    expected += "<!-- SPECKIT END -->\n"
+    assert (repo / "AGENTS.md").read_bytes() == expected.encode("utf-8")
+
+
+@pytest.fixture(params=["python", "bash-python"])
+def mtime_resolver(request, monkeypatch):
+    """Run actual resolver code; the Bash heredoc needs no shell for IO injection."""
+    if request.param == "python":
+        return runpy.run_path(str(PY_SCRIPT))["_resolve_plan_path"]
+
+    matches = re.findall(
+        r"_plan_rel=\"\$\(\"\$_python\" - \"\$PROJECT_ROOT\" <<'PY'\n(.*?)\nPY\n\)\"",
+        BASH_SCRIPT.read_text(encoding="utf-8"),
+        re.DOTALL,
+    )
+    assert len(matches) == 1, "expected exactly one mtime fallback heredoc"
+    code = compile(matches[0], str(BASH_SCRIPT), "exec")
+
+    def resolve(project_root):
+        output = io.StringIO()
+        with monkeypatch.context() as patch, redirect_stdout(output):
+            patch.setattr(sys, "argv", ["-", str(project_root)])
+            exec(code, {})
+        return output.getvalue().strip()
+
+    return resolve
+
+
+@pytest.fixture(params=[False, True], ids=["alone", "with-plan"])
+def mtime_candidate(tmp_path, request):
+    repo = make_project(tmp_path.resolve() / "project", context_file="AGENTS.md")
+    expected_plan = ""
+    if request.param:
+        expected_plan = "specs/backend/001-valid/plan.md"
+        plan = repo / expected_plan
+        plan.parent.mkdir(parents=True)
+        plan.write_text("# older plan\n", encoding="utf-8")
+        os.utime(plan, (1_600_000_000, 1_600_000_000))
+    candidate = repo / "specs/999-candidate/plan.md"
+    candidate.parent.mkdir(parents=True)
+    candidate.write_text("# candidate\n", encoding="utf-8")
+    return repo, candidate, expected_plan
+
+
+def _patch_candidate_io(
+    monkeypatch, specs_root, candidate, stat_errors, *, resolved=None, resolve_error=None
+):
+    """Inject at os.stat so Python 3.14's os.path.isfile path is covered too.
+
+    Resolve is controlled separately: these tests distinguish excluded paths
+    from stat failures after successful in-project containment, on every OS.
+    """
+    original_rglob = Path.rglob
+    original_stat = os.stat
+    original_resolve = Path.resolve
+    # Literal-name globbing can stat candidates before yielding them. Capture
+    # real enumeration first so injected errors reach only resolver operations.
+    candidates = tuple(original_rglob(specs_root, "plan.md"))
+    assert candidate in candidates, "expected the candidate in real specs enumeration"
+    calls = []
+
+    def rglob(path, pattern, *args, **kwargs):
+        if path == specs_root and pattern == "plan.md":
+            return iter(candidates)
+        return original_rglob(path, pattern, *args, **kwargs)
+
+    def stat(path, *args, **kwargs):
+        if isinstance(path, (str, os.PathLike)) and Path(path) == candidate:
+            calls.append(path)
+            error = stat_errors.get(len(calls))
+            if error is not None:
+                raise OSError(error, "injected candidate stat error", str(path))
+        return original_stat(path, *args, **kwargs)
+
+    def resolve(path, *args, **kwargs):
+        if path == candidate:
+            if resolve_error is not None:
+                raise OSError(resolve_error, "injected resolve error", str(path))
+            return candidate if resolved is None else resolved
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "rglob", rglob)
+    monkeypatch.setattr(os, "stat", stat)
+    monkeypatch.setattr(Path, "resolve", resolve)
+    return calls
+
+
+@pytest.mark.parametrize("resolve_fails", [False, True], ids=["external", "resolve-error"])
+def test_mtime_fallback_ignores_excluded_candidate_errors(
+    monkeypatch, mtime_resolver, mtime_candidate, resolve_fails
+):
+    repo, candidate, expected_plan = mtime_candidate
+    calls = _patch_candidate_io(
+        monkeypatch,
+        repo / "specs",
+        candidate,
+        {1: errno.EACCES},
+        resolved=repo.parent / "private/plan.md",
+        resolve_error=errno.EACCES if resolve_fails else None,
+    )
+    assert mtime_resolver(str(repo)) == expected_plan
+    assert calls == [], "excluded candidates must not reach the stat precheck"
+
+
+@pytest.mark.parametrize("error", [errno.EACCES, errno.EPERM, errno.EIO])
+def test_mtime_fallback_preserves_contained_stat_errors(
+    monkeypatch, mtime_resolver, mtime_candidate, error
+):
+    repo, candidate, _ = mtime_candidate
+    calls = _patch_candidate_io(monkeypatch, repo / "specs", candidate, {1: error})
+    with pytest.raises(OSError) as exc:
+        mtime_resolver(str(repo))
+    assert type(exc.value) is type(OSError(error, ""))
+    assert exc.value.errno == error
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("error", [errno.ENOENT, errno.ENOTDIR])
+def test_mtime_fallback_skips_missing_candidate_at_precheck(
+    monkeypatch, mtime_resolver, mtime_candidate, error
+):
+    repo, candidate, expected_plan = mtime_candidate
+    calls = _patch_candidate_io(monkeypatch, repo / "specs", candidate, {1: error})
+    assert mtime_resolver(str(repo)) == expected_plan
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("error", [errno.EACCES, errno.ENOENT, errno.ENOTDIR])
+def test_mtime_fallback_propagates_sort_stat_errors(
+    monkeypatch, mtime_resolver, mtime_candidate, error
+):
+    repo, candidate, _ = mtime_candidate
+    calls = _patch_candidate_io(monkeypatch, repo / "specs", candidate, {2: error})
+    with pytest.raises(OSError) as exc:
+        mtime_resolver(str(repo))
+    assert type(exc.value) is type(OSError(error, ""))
+    assert exc.value.errno == error
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize(
+    "run_script",
+    [
+        pytest.param(run_python, id="python"),
+        pytest.param(run_bash, id="bash", marks=requires_bash),
+    ],
+)
+@pytest.mark.parametrize("has_regular_plan", [False, True], ids=["alone", "with-plan"])
+def test_mtime_fallback_skips_inaccessible_external_symlink(
+    tmp_path, run_script, has_regular_plan
+):
+    repo = make_project(tmp_path / "project", context_file="AGENTS.md")
+    expected_plan = ""
+    if has_regular_plan:
+        expected_plan = "specs/001-valid/plan.md"
+        plan = repo / expected_plan
+        plan.parent.mkdir(parents=True)
+        plan.write_text("# plan\n", encoding="utf-8")
+    private = tmp_path / "private"
+    private.mkdir()
+    target = private / "plan.md"
+    target.write_text("# external plan\n", encoding="utf-8")
+    candidate = repo / "specs/999-candidate/plan.md"
+    candidate.parent.mkdir(parents=True)
+    try:
+        candidate.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    original_mode = private.stat().st_mode
+    try:
+        private.chmod(0)
+        try:
+            candidate.stat()
+        except PermissionError as exc:
+            assert exc.errno == errno.EACCES
+        else:
+            pytest.skip("directory permissions do not cause EACCES for this user/filesystem")
+        result = run_script(repo)
+    finally:
+        private.chmod(original_mode)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "agent-context: updated AGENTS.md\n"
+    assert result.stderr == ""
+    expected = (
+        "<!-- SPECKIT START -->\n"
+        "For additional context about technologies to be used, project structure,\n"
+        "shell commands, and other important information, read the current plan\n"
+    )
+    if expected_plan:
+        expected += f"at {expected_plan}\n"
+    expected += "<!-- SPECKIT END -->\n"
+    assert (repo / "AGENTS.md").read_bytes() == expected.encode("utf-8")
 
 
 @requires_posix_bash

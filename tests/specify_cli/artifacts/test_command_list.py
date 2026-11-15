@@ -4,26 +4,33 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 import yaml
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli.artifacts import command_list
+from specify_cli.artifacts._operation_list import ArtifactListResult
 from specify_cli.extensions import ExtensionRegistry
 from specify_cli.presets import PresetRegistry
 from tests.conftest import install_preset
 
 
 class TestCommandList:
-    def test_list_requires_json_flag(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_list_requires_json_flag(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.chdir(spec_kit_project)
         runner = CliRunner()
         result = runner.invoke(app, ["artifact", "list"])
         assert result.exit_code == 2
         assert result.stdout == ""
 
-    def test_list_json_emits_array(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_list_json_emits_array(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.chdir(spec_kit_project)
         runner = CliRunner()
         result = runner.invoke(app, ["artifact", "list", "--json"])
@@ -31,8 +38,49 @@ class TestCommandList:
         payload = json.loads(result.stdout)
         assert isinstance(payload, list)
         assert result.stdout.endswith("\n")
+        assert result.stderr == ""
 
-    def test_list_json_rows_include_stack(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_list_dispatches_directly_to_shared_operation(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        expected = ArtifactListResult(
+            rows=(
+                {
+                    "id": "template:example",
+                    "name": "example",
+                    "kind": "template",
+                    "description": "Example",
+                    "stack": [],
+                },
+            )
+        )
+        operation = Mock(return_value=expected)
+        monkeypatch.setattr(command_list, "list_artifacts", operation)
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(app, ["artifact", "list", "--json"])
+
+        assert result.exit_code == 0, result.stderr
+        assert json.loads(result.stdout) == list(expected.rows)
+        request = operation.call_args.args[0]
+        assert request.project_directory == spec_kit_project
+
+    def test_list_json_matches_shared_operation_result(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.chdir(spec_kit_project)
+        expected = command_list.list_artifacts(
+            command_list.ArtifactListRequest(spec_kit_project)
+        )
+
+        result = CliRunner().invoke(app, ["artifact", "list", "--json"])
+
+        assert result.exit_code == 0, result.stderr
+        assert json.loads(result.stdout) == list(expected.rows)
+
+    def test_list_json_rows_include_stack(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.chdir(spec_kit_project)
         runner = CliRunner()
         result = runner.invoke(app, ["artifact", "list", "--json"])
@@ -85,7 +133,9 @@ class TestCommandList:
             / "SKILL.md"
         )
         skill_file.parent.mkdir(parents=True)
-        skill_file.write_text("---\nname: speckit-compliance-plan\n---\n", encoding="utf-8")
+        skill_file.write_text(
+            "---\nname: speckit-compliance-plan\n---\n", encoding="utf-8"
+        )
 
         extension_dir = spec_kit_project / ".specify" / "extensions" / "quality"
         (extension_dir / "templates").mkdir(parents=True)
@@ -140,14 +190,32 @@ class TestCommandList:
                 assert (spec_kit_project / source_path).is_file()
                 non_null_source_paths.add(source_path)
 
-        assert ".github/skills/speckit-compliance-plan/SKILL.md" in non_null_source_paths
-        assert ".specify/extensions/quality/templates/checklist.md" in non_null_source_paths
+        assert (
+            ".github/skills/speckit-compliance-plan/SKILL.md" in non_null_source_paths
+        )
+        assert (
+            ".specify/extensions/quality/templates/checklist.md"
+            in non_null_source_paths
+        )
 
-    def test_list_json_is_pretty_printed(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_list_json_is_pretty_printed(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.chdir(spec_kit_project)
         runner = CliRunner()
         result = runner.invoke(app, ["artifact", "list", "--json"])
         assert '  "id"' in result.stdout  # 2-space indent visible
+        assert result.stdout == (
+            json.dumps(
+                json.loads(result.stdout),
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+        assert "\x1b[" not in result.stdout
+        assert result.stderr == ""
 
     def test_list_corrupt_extension_registry_uses_json_error_envelope(
         self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
@@ -159,8 +227,27 @@ class TestCommandList:
         assert result.exit_code == 1
         assert result.stdout == ""
         assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
+        assert result.stderr.count("\n") == 1
+        assert "\x1b[" not in result.stderr
 
-    def test_not_a_project_error_envelope(self, non_project: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_cli_context_filesystem_failure_uses_json_error_envelope(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(
+            command_list,
+            "_project_directory_from_cli_context",
+            Mock(side_effect=OSError("unreadable cwd")),
+        )
+
+        result = CliRunner().invoke(app, ["artifact", "list", "--json"])
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
+
+    def test_not_a_project_error_envelope(
+        self, non_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.chdir(non_project)
         runner = CliRunner()
         result = runner.invoke(app, ["artifact", "list", "--json"])
@@ -169,7 +256,9 @@ class TestCommandList:
         err = json.loads(result.stderr)
         assert err["error"] == "not a Spec Kit project: no .specify/ directory found"
 
-    def test_output_is_utf8_without_bom(self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_output_is_utf8_without_bom(
+        self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.chdir(spec_kit_project)
         runner = CliRunner()
         result = runner.invoke(app, ["artifact", "list", "--json"])

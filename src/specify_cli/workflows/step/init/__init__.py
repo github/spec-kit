@@ -295,9 +295,34 @@ class InitStep(StepBase):
             # steps.<id>.output.stderr for error details.
             stderr = stdout if result.exit_code != 0 else ""
 
-        if result.exit_code != 0 and result.exception is not None:
+        # Record the exception only for an UNEXPECTED crash. ``typer.Exit(n)``
+        # -- how ``specify init`` reports every ordinary failure -- surfaces
+        # through ``CliRunner`` as ``result.exception = SystemExit(n)``, so this
+        # branch used to fire on routine errors too. ``init`` prints its
+        # diagnostics through Rich to stdout, leaving ``result.stderr`` empty,
+        # so the synthesized "SystemExit: 1" became the whole of ``stderr`` and
+        # preempted ``execute``'s ``stderr.strip() or stdout.strip()`` fallback.
+        # Every failing init step then reported ``error: 'SystemExit: 1'`` while
+        # init's real message -- e.g. the list of valid integrations for a
+        # typo'd ``integration:`` -- sat unread in stdout.
+        if (
+            result.exit_code != 0
+            and result.exception is not None
+            and not isinstance(result.exception, SystemExit)
+        ):
             detail = f"{type(result.exception).__name__}: {result.exception}"
             stderr = f"{stderr}\n{detail}".strip() if stderr else detail
+        elif result.exit_code != 0 and not stderr.strip():
+            # Ordinary failure with no real stderr: under click >= 8.2 the
+            # streams are separate and ``init`` prints its diagnostics through
+            # Rich to stdout, so ``result.stderr`` is genuinely empty. Merely
+            # dropping the synthesized "SystemExit: 1" would leave
+            # ``steps.<id>.output.stderr`` empty -- still no diagnostic for a
+            # downstream step to read, and still contrary to the contract above
+            # ("treat stdout as stderr so workflows can consistently read
+            # steps.<id>.output.stderr for error details"). Carry the captured
+            # output across, matching what the older-Click branch already does.
+            stderr = stdout.strip()
 
         return (result.exit_code, stdout, stderr)
 

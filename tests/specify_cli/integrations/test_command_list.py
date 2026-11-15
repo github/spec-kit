@@ -24,6 +24,20 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationList:
+    def test_cli_requirement_does_not_imply_ide_classification(self, tmp_path, monkeypatch):
+        from types import SimpleNamespace
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+
+        project = _init_project(tmp_path, "copilot")
+        monkeypatch.setitem(INTEGRATION_REGISTRY, "artifact-free", SimpleNamespace(
+            config={"name": "Artifact-free", "requires_cli": False},
+        ))
+        result = _run_in_project(project, ["integration", "list"])
+        assert result.exit_code == 0, result.output
+        assert _integration_list_row_cells(result.output, "artifact-free")[-2] == "no"
+        assert _integration_list_row_cells(result.output, "claude")[-2] == "yes"
+        assert "(IDE)" not in result.output
+
     def test_list_requires_speckit_project(self, tmp_path):
         old_cwd = os.getcwd()
         try:

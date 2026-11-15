@@ -21,13 +21,16 @@ jobs:
         id: version
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: '$VERSION' is not a valid release tag (expected vX.Y.Z)"
+            exit 1
+          fi
+          echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building release for $VERSION"
 
       - name: Check if release already exists
         id: check_release
         run: |
-          VERSION="${{ steps.version.outputs.tag }}"
           if gh release view "$VERSION" >/dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "Release $VERSION already exists, skipping..."
@@ -36,12 +39,14 @@ jobs:
             echo "Release $VERSION does not exist, proceeding..."
           fi
         env:
+          VERSION: ${{ steps.version.outputs.tag }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate release notes
         if: steps.check_release.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.tag }}
         run: |
-          VERSION="${{ steps.version.outputs.tag }}"
           VERSION_NO_V=${VERSION#v}
 
           # Find previous tag
@@ -79,10 +84,10 @@ jobs:
       - name: Create GitHub Release
         if: steps.check_release.outputs.exists == 'false'
         run: |
-          VERSION="${{ steps.version.outputs.tag }}"
           VERSION_NO_V=${VERSION#v}
           gh release create "$VERSION" \
             --title "Spec Kit - $VERSION_NO_V" \
             --notes-file release_notes.md
         env:
+          VERSION: ${{ steps.version.outputs.tag }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

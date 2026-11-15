@@ -1,7 +1,20 @@
 """Tests for CodexIntegration."""
 
+import shutil
+import subprocess
+import tomllib
+
+import pytest
+
 from specify_cli.integrations import get_integration
+from specify_cli.integrations.base import (
+    DispatchSettingsError,
+    effective_dispatch_settings,
+)
 from specify_cli.integrations.manifest import IntegrationManifest
+from specify_cli.workflows.base import StepContext, StepStatus
+from specify_cli.workflows.step.command import CommandStep
+from specify_cli.workflows.step.prompt import PromptStep
 
 from .test_integration_base_skills import SkillsIntegrationTests
 
@@ -191,3 +204,222 @@ class TestCodexHookCommandNote:
         assert "For each executable hook" not in lines[note_line_idx], (
             "Note and instruction must not be on the same line"
         )
+
+
+_COMMAND_STEP = (CommandStep, {"command": "speckit.plan", "input": {"args": "body"}})
+_PROMPT_STEP = (PromptStep, {"type": "prompt", "prompt": "Summarise"})
+# Captured agent output that passes the host's value pattern, so only Codex's
+# own rule rejects it.
+_SECRET_OUTPUT = "FAKEsecret0123456789"
+
+
+class TestCodexDispatchSettings:
+    """Per-step ``reasoning_effort`` and ``context_size`` (#4916)."""
+
+    _CODEX_RULE = "positive integer token count (model_context_window)"
+
+    @pytest.fixture
+    def runs(self, monkeypatch):
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append(list(args))
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        return calls
+
+    @pytest.mark.parametrize("via", ["dispatch_command", "build_exec_args"])
+    def test_build_exec_args_declares_both_settings(self, via):
+        assert effective_dispatch_settings(
+            get_integration("codex"), via=via
+        ) == frozenset({"reasoning_effort", "context_size"})
+
+    def test_settings_become_config_overrides_after_model(self):
+        args = get_integration("codex").build_exec_args(
+            "do it", model="gpt-5", reasoning_effort="high", context_size="200000"
+        )
+        assert args == [
+            "codex", "exec", "do it",
+            "--model", "gpt-5",
+            "-c", 'model_reasoning_effort="high"',
+            "-c", "model_context_window=200000",
+            "--json",
+        ]
+
+    @pytest.mark.parametrize("value", ["high", "xhigh", "v2.max-ultra_1"])
+    def test_reasoning_effort_is_embedded_as_a_toml_string(self, value):
+        args = get_integration("codex").build_exec_args(
+            "do it", reasoning_effort=value, output_json=False
+        )
+        assert args[-2] == "-c"
+        assert tomllib.loads(args[-1]) == {"model_reasoning_effort": value}
+
+    def test_reasoning_effort_values_are_left_to_codex(self):
+        args = get_integration("codex").build_exec_args(
+            "do it", reasoning_effort="bogus"
+        )
+        assert args[-3:] == ["-c", 'model_reasoning_effort="bogus"', "--json"]
+
+    @pytest.mark.parametrize("value", ["1", "200000", "9223372036854775807"])
+    def test_context_size_accepts_canonical_i64_token_counts(self, value):
+        args = get_integration("codex").build_exec_args(
+            "do it", context_size=value, output_json=False
+        )
+        assert args[-2:] == ["-c", f"model_context_window={value}"]
+        assert tomllib.loads(args[-1]) == {"model_context_window": int(value)}
+
+    @pytest.mark.parametrize(
+        ("value", "reason"),
+        [
+            ("0", _CODEX_RULE),
+            ("01", _CODEX_RULE),
+            ("9223372036854775808", _CODEX_RULE),
+            ("1e5", _CODEX_RULE),
+            ("long_context", _CODEX_RULE),
+            ("-5", "starting with a letter or digit"),
+        ],
+        ids=["zero", "leading-zero", "above-i64", "exponent", "tier-name", "negative"],
+    )
+    def test_context_size_rejects_other_values(self, value, reason):
+        with pytest.raises(DispatchSettingsError) as excinfo:
+            get_integration("codex").build_exec_args("do it", context_size=value)
+        assert excinfo.value.setting == "context_size"
+        assert reason in str(excinfo.value)
+
+    def test_rejected_context_size_is_not_echoed(self):
+        with pytest.raises(DispatchSettingsError) as excinfo:
+            get_integration("codex").build_exec_args(
+                "do it", context_size=_SECRET_OUTPUT
+            )
+        message = str(excinfo.value)
+        assert _SECRET_OUTPUT not in message
+        assert self._CODEX_RULE in message
+
+    def test_unset_settings_leave_argv_unchanged(self):
+        codex = get_integration("codex")
+        baseline = ["codex", "exec", "do it", "--model", "gpt-5", "--json"]
+        assert codex.build_exec_args("do it", model="gpt-5") == baseline
+        assert codex.build_exec_args(
+            "do it", model="gpt-5", reasoning_effort=None, context_size=None
+        ) == baseline
+
+    def test_dispatch_command_forwards_settings(self, runs):
+        get_integration("codex").dispatch_command(
+            "speckit.plan",
+            "body",
+            stream=False,
+            reasoning_effort="low",
+            context_size="128000",
+        )
+        (args,) = runs
+        assert args[1:] == [
+            "exec", "$speckit-plan body",
+            "-c", 'model_reasoning_effort="low"',
+            "-c", "model_context_window=128000",
+            "--json",
+        ]
+
+    def test_overrides_follow_extra_args(self, monkeypatch, runs):
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CODEX_EXTRA_ARGS", "--sandbox workspace-write"
+        )
+        codex = get_integration("codex")
+        settings = {"reasoning_effort": "high", "context_size": "200000"}
+        tail = [
+            "--model", "gpt-5",
+            "-c", 'model_reasoning_effort="high"',
+            "-c", "model_context_window=200000",
+            "--json",
+        ]
+        assert codex.build_exec_args("do it", model="gpt-5", **settings) == [
+            "codex", "exec", "do it", "--sandbox", "workspace-write", *tail
+        ]
+        codex.dispatch_command(
+            "speckit.plan", "body", model="gpt-5", stream=False, **settings
+        )
+        (args,) = runs
+        assert args[1:] == [
+            "exec", "$speckit-plan body", "--sandbox", "workspace-write", *tail
+        ]
+
+    def test_dispatch_command_rejects_before_the_cli_starts(self, runs):
+        with pytest.raises(DispatchSettingsError) as excinfo:
+            get_integration("codex").dispatch_command(
+                "speckit.plan", stream=False, context_size="long_context"
+            )
+        assert excinfo.value.setting == "context_size"
+        assert self._CODEX_RULE in str(excinfo.value)
+        assert runs == []
+
+    @staticmethod
+    def _execute(monkeypatch, tmp_path, step, config, *, steps=None, **settings):
+        monkeypatch.setattr(shutil, "which", lambda name, *a, **k: f"/bin/{name}")
+        return step().execute(
+            {"id": "ask", **config, **settings},
+            StepContext(
+                default_integration="codex",
+                project_root=str(tmp_path),
+                steps=steps or {},
+            ),
+        )
+
+    @pytest.mark.parametrize(
+        ("step", "config", "prompt"),
+        [(*_COMMAND_STEP, "$speckit-plan body"), (*_PROMPT_STEP, "Summarise")],
+        ids=["command", "prompt"],
+    )
+    def test_workflow_steps_dispatch_settings(
+        self, monkeypatch, tmp_path, runs, step, config, prompt
+    ):
+        result = self._execute(
+            monkeypatch,
+            tmp_path,
+            step,
+            config,
+            reasoning_effort="high",
+            context_size="200000",
+        )
+        assert result.status == StepStatus.COMPLETED, result.error
+        assert result.output["reasoning_effort"] == "high"
+        assert result.output["context_size"] == "200000"
+        (args,) = runs
+        assert args[1:] == [
+            "exec", prompt,
+            "-c", 'model_reasoning_effort="high"',
+            "-c", "model_context_window=200000",
+        ]
+
+    @pytest.mark.parametrize(
+        ("step", "config"), [_COMMAND_STEP, _PROMPT_STEP], ids=["command", "prompt"]
+    )
+    def test_workflow_steps_reject_invalid_context_size(
+        self, monkeypatch, tmp_path, runs, step, config
+    ):
+        result = self._execute(
+            monkeypatch, tmp_path, step, config, context_size="long_context"
+        )
+        assert result.status == StepStatus.FAILED
+        assert result.output["dispatched"] is False
+        assert self._CODEX_RULE in result.error
+        assert runs == []
+
+    @pytest.mark.parametrize(
+        ("step", "config"), [_COMMAND_STEP, _PROMPT_STEP], ids=["command", "prompt"]
+    )
+    def test_workflow_steps_do_not_echo_captured_output(
+        self, monkeypatch, tmp_path, runs, step, config
+    ):
+        result = self._execute(
+            monkeypatch,
+            tmp_path,
+            step,
+            config,
+            steps={"probe": {"output": {"stdout": _SECRET_OUTPUT}}},
+            context_size="{{ steps.probe.output.stdout }}",
+        )
+        assert result.status == StepStatus.FAILED
+        assert _SECRET_OUTPUT not in result.error
+        assert self._CODEX_RULE in result.error
+        assert result.error.endswith(" (set by step)")
+        assert runs == []

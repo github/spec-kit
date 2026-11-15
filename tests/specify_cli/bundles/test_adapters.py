@@ -132,6 +132,32 @@ def test_http_get_json_preserves_client_error_as_bundler_error(monkeypatch):
     assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
 
 
+@pytest.mark.parametrize("status", [403, 404, 408, 429, 500, 503])
+@pytest.mark.parametrize("already_closed", [False, True])
+def test_http_error_response_is_closed_before_catalog_error_translation(
+    monkeypatch, status, already_closed
+):
+    body = io.BytesIO(b"error response")
+    error = urllib.error.HTTPError(
+        "https://example.com/catalog.json", status, "response failed", {}, body,
+    )
+    if already_closed:
+        error.close()
+
+    def failed(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", failed)
+    with pytest.raises(BundlerError, match=f"HTTP {status}") as raised:
+        adapters._http_get_json("team", error.url)
+    assert raised.value.__cause__ is error
+    assert isinstance(raised.value, adapters._CatalogUnavailable) == (
+        status in (408, 429) or status >= 500
+    )
+    assert body.closed
+    assert error.closed
+
+
 def test_http_get_json_preserves_malformed_json(monkeypatch):
     def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
         return _FakeResponse(b"not json", url)
@@ -139,6 +165,19 @@ def test_http_get_json_preserves_malformed_json(monkeypatch):
     monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
 
     with pytest.raises(BundlerError) as excinfo:
+        adapters._http_get_json("team", "https://example.com/c.json")
+    assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
+
+
+def test_http_get_json_rejects_duplicate_catalog_keys(monkeypatch):
+    body = b'{"schema_version":"1.0","bundles":{"one":{},"one":{}}}'
+
+    def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
+        return _FakeResponse(body, url)
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
+
+    with pytest.raises(BundlerError, match="duplicate key 'one'") as excinfo:
         adapters._http_get_json("team", "https://example.com/c.json")
     assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
 
@@ -194,6 +233,20 @@ def test_local_catalog_decode_errors_are_wrapped(tmp_path, use_file_url):
         fetcher(_source(url))
 
 
+@pytest.mark.parametrize("use_file_url", [False, True], ids=["path", "file-url"])
+def test_local_catalog_rejects_duplicate_release_keys(tmp_path, use_file_url):
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_text(
+        '{"bundles":{"history":{"id":"history","releases":'
+        '{"1.1.0":{},"1.1.0":{}}}}}',
+        encoding="utf-8",
+    )
+    url = catalog_path.as_uri() if use_file_url else str(catalog_path)
+
+    with pytest.raises(BundlerError, match="duplicate key '1.1.0'"):
+        adapters.make_catalog_fetcher(allow_network=False)(_source(url))
+
+
 _SNAPSHOT_BODY = (
     '{"schema_version":"1.0","bundles":{"packaged":{'
     '"id":"packaged","name":"Packaged","version":"1.0.0",'
@@ -209,6 +262,20 @@ def _write_snapshot(tmp_path, filename):
     path.parent.mkdir(exist_ok=True)
     path.write_text(_SNAPSHOT_BODY, encoding="utf-8")
     return path
+
+
+def test_packaged_catalog_rejects_duplicate_keys(monkeypatch, tmp_path):
+    path = tmp_path / "bundles" / "catalog.json"
+    path.parent.mkdir()
+    path.write_text(
+        '{"bundles":{"history":{"id":"history","releases":'
+        '{"1.1.0":{},"1.1.0":{}}}}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
+
+    with pytest.raises(BundlerError, match="duplicate key '1.1.0'"):
+        adapters._load_packaged_catalog("catalog.json")
 
 
 _BUILTIN_CASES = [
@@ -398,6 +465,36 @@ def test_builtin_community_catalog_does_not_fall_back_for_redirect_policy_errors
     with pytest.raises(BundlerError, match="Failed to fetch catalog") as excinfo:
         fetcher(_source("builtin://community"))
     assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
+
+
+def test_builtin_community_catalog_does_not_fall_back_for_initial_url_policy_error(
+    monkeypatch, tmp_path,
+):
+    from specify_cli.authentication import http
+
+    monkeypatch.setitem(
+        adapters._BUILTIN_REPOSITORY_URLS,
+        "builtin://community",
+        "https://ex%61mple.com/catalog.json",
+    )
+    catalog_path = tmp_path / "bundles" / "catalog.community.json"
+    catalog_path.parent.mkdir()
+    catalog_path.write_text(
+        '{"schema_version":"1.0","bundles":{}}', encoding="utf-8",
+    )
+    monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
+    fetcher = adapters.make_catalog_fetcher(allow_network=True)
+
+    with patch.object(http, "_load_config") as load_config, patch.object(
+        http.urllib.request, "build_opener",
+    ) as build_opener, warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with pytest.raises(BundlerError, match="unsafe request URL") as excinfo:
+            fetcher(_source("builtin://community"))
+        assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
+        assert caught == []
+        load_config.assert_not_called()
+        build_opener.assert_not_called()
 
 
 def test_builtin_community_catalog_falls_back_for_incomplete_read(

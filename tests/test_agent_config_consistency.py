@@ -121,7 +121,7 @@ class TestAgentConfigConsistency:
 
     def test_issue_template_agent_lists_match_runtime_integrations(self):
         """GitHub issue templates should list all concrete built-in agents."""
-        concrete_agent_keys = set(AGENT_CONFIG) - {"generic"}
+        concrete_agent_keys = set(AGENT_CONFIG) - {"generic", "none"}
         issue_template_agent_keys = set(ISSUE_TEMPLATE_AGENT_KEYS)
 
         missing_agent_keys = sorted(concrete_agent_keys - issue_template_agent_keys)

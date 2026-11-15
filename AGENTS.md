@@ -11,10 +11,18 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 ## Adding or Updating CLI Commands
 
 Before adding, updating, or reorganizing Specify CLI commands, read
-[Specify CLI Command Architecture](design/cli.md). It defines command-module
-naming, private command phases, nested command groups, registration ownership,
-mirrored tests, and the rationale for making the CLI structure predictable for
-both humans and coding agents.
+[Shared Command Application Architecture](design/shared.md) and
+[Specify CLI Command Architecture](design/cli.md). They define the shared
+operation boundary, command-module naming, private phases, nested command
+groups, registration ownership, and mirrored tests.
+
+## Adding or Updating MCP Commands
+
+Before adding or changing MCP tools for Specify commands, read
+[Shared Command Application Architecture](design/shared.md) and
+[Specify MCP Command Architecture](design/mcp.md). They define the shared
+operation boundary, typed contracts, explicit inventory, side-effect metadata,
+the local stdio protocol boundary, and mirrored tests.
 
 ## Adding or Updating Agent Integrations
 
@@ -35,6 +43,16 @@ an LLM, read
 [Testing deterministic behavior](CONTRIBUTING.md#testing-deterministic-behavior).
 Behavioral changes need positive and negative coverage; bug fixes need
 before-and-after regression evidence.
+
+## PowerShell Compatibility
+
+All PowerShell scripts in the repository and all generated PowerShell
+functionality MUST target Windows PowerShell 5.1, the version included with
+Windows. When adding or changing PowerShell code, use only syntax, cmdlets,
+parameters, and .NET APIs available in Windows PowerShell 5.1. Account for
+encoding and other runtime differences, preserve the required behavioral
+parity with Bash and Python implementations, and provide Windows PowerShell
+5.1 validation evidence for behavioral changes.
 
 ## Branches and Agent Contributions
 

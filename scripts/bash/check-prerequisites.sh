@@ -148,6 +148,12 @@ if [[ ! -f "$IMPL_PLAN" ]]; then
     exit 1
 fi
 
+if [[ ! -s "$IMPL_PLAN" ]]; then
+    echo "ERROR: plan.md is empty in $FEATURE_DIR" >&2
+    echo "Populate it, or remove the empty file and rerun $(format_speckit_command plan "$REPO_ROOT") with a valid plan template." >&2
+    exit 1
+fi
+
 # Check for spec.md if required
 if $REQUIRE_SPEC && [[ ! -f "$FEATURE_SPEC" ]]; then
     echo "ERROR: spec.md not found in $FEATURE_DIR" >&2

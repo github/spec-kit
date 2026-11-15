@@ -97,12 +97,22 @@ def discover_updates(
             )
             continue
 
+        if "version" not in ext_info:
+            console.print(f"⚠  {safe_ext_id}: Missing catalog version (skipping)")
+            continue
+        raw_catalog_version = ext_info["version"]
+        if not isinstance(raw_catalog_version, str):
+            console.print(
+                f"⚠  {safe_ext_id}: Invalid catalog version: expected a string, "
+                f"got {type(raw_catalog_version).__name__} (skipping)"
+            )
+            continue
         try:
-            catalog_version = pkg_version.Version(ext_info["version"])
+            catalog_version = pkg_version.Version(raw_catalog_version)
         except pkg_version.InvalidVersion:
             console.print(
                 f"⚠  {safe_ext_id}: Invalid catalog version "
-                f"'{_escape_markup(str(ext_info.get('version')))}' (skipping)"
+                f"'{_escape_markup(raw_catalog_version)}' (skipping)"
             )
             continue
 

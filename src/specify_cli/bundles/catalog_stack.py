@@ -22,6 +22,35 @@ from .catalogs import (
 CatalogFetcher = Callable[[CatalogSource], dict]
 
 
+class BundleNotFoundError(BundlerError):
+    """A bundle ID is absent from every configured catalog."""
+
+    def __init__(self, bundle_id: str) -> None:
+        super().__init__(f"Bundle '{bundle_id}' was not found in any configured catalog.")
+
+
+class ReleaseNotFoundError(BundlerError):
+    """A requested release is absent from the winning catalog entry."""
+
+    def __init__(
+        self,
+        bundle_id: str,
+        version: str,
+        source_id: str,
+        advertised: tuple[str, ...],
+    ) -> None:
+        self.bundle_id = bundle_id
+        self.version = version
+        self.source_id = source_id
+        self.advertised = advertised
+        offered = ", ".join(advertised)
+        super().__init__(
+            f"Bundle '{bundle_id}' has no release {version} in catalog source "
+            f"'{source_id}' (advertised: {offered}). Only the "
+            "highest-precedence source that lists a bundle is consulted."
+        )
+
+
 @dataclass
 class ResolvedBundle:
     entry: CatalogEntry
@@ -70,16 +99,27 @@ class CatalogStack:
             self._payloads[source.id] = load_catalog_payload(raw)
         return self._payloads[source.id]
 
-    def resolve(self, bundle_id: str) -> ResolvedBundle:
+    def resolve(self, bundle_id: str, version: str | None = None) -> ResolvedBundle:
         """Return the highest-precedence entry for *bundle_id* or raise."""
+        from .catalog_versions import available_versions, select_release
+
         for source in self._sources:
             entries = self._entries_for(source)
             entry = entries.get(bundle_id)
             if entry is not None:
-                return ResolvedBundle(entry=entry.with_provenance(source), source=source)
-        raise BundlerError(
-            f"Bundle '{bundle_id}' was not found in any configured catalog."
-        )
+                selected = select_release(entry, version)
+                if selected is None:
+                    raise ReleaseNotFoundError(
+                        bundle_id=bundle_id,
+                        version=version,
+                        source_id=source.id,
+                        advertised=tuple(available_versions(entry)),
+                    )
+                return ResolvedBundle(
+                    entry=selected.with_provenance(source),
+                    source=source,
+                )
+        raise BundleNotFoundError(bundle_id)
 
     def search(self, query: str = "") -> list[ResolvedBundle]:
         """Return entries matching *query* (substring over id/name/role/tags/description).

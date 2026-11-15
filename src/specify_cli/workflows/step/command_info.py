@@ -2,13 +2,36 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from .. import _commands as cli
 from . import step_app
+
+
+def _format_source(installed_meta: dict) -> str:
+    """Render a registry entry's provenance as a human-facing source label.
+
+    Local and URL installs deliberately store no path/URL, so only the source
+    kind is shown.
+    """
+    source = installed_meta.get("source")
+    if source == "catalog":
+        catalog_name = installed_meta.get("catalog_name")
+        if catalog_name:
+            return f"catalog ({cli._escape_markup(str(catalog_name))})"
+        return "catalog"
+    if source in ("local", "url"):
+        return str(source)
+    return ""
 
 
 @step_app.command("info")
 def workflow_step_info(
     step_id: str = cli.typer.Argument(..., help="Step type ID"),
+    versions: Annotated[
+        bool,
+        cli.typer.Option("--versions", help="List releases in the winning catalog"),
+    ] = False,
 ):
     """Show details for a step type."""
     from .. import STEP_REGISTRY
@@ -25,11 +48,43 @@ def workflow_step_info(
     is_builtin = builtin_step is not None and not installed_meta
 
     if is_builtin:
+        if versions:
+            cli.console.print(
+                f"[red]Error:[/red] Built-in step type '{safe_step_id}' "
+                "has no catalog releases"
+            )
+            raise cli.typer.Exit(1)
         cli.console.print(
             f"\n[bold cyan]{safe_step_id}[/bold cyan] [dim](built-in)[/dim]"
         )
         cli.console.print(f"  Type key: {safe_step_id}")
         cli.console.print("  [green]Built-in step type[/green]")
+        return
+
+    if versions:
+        from .catalog._versions import available_versions
+
+        catalog = StepCatalog(project_root)
+        try:
+            info = catalog.get_step_info(step_id)
+            if info is None:
+                cli.console.print(
+                    f"[red]Error:[/red] Step type '{safe_step_id}' not found"
+                )
+                raise cli.typer.Exit(1)
+            releases = available_versions(info, step_id)
+        except StepCatalogError as exc:
+            cli.console.print(f"[red]Error:[/red] {exc}")
+            raise cli.typer.Exit(1)
+        name = cli._escape_markup(str(info.get("name", step_id)))
+        policy = (
+            "" if info.get("_install_allowed", True)
+            else " [dim](discovery only; not installable)[/dim]"
+        )
+        cli.console.print(f"\n[bold cyan]{name}[/bold cyan] ({safe_step_id}){policy}")
+        for index, release in enumerate(releases):
+            label = " (current)" if index == 0 else ""
+            cli.console.print(f"  {cli._escape_markup(release)}{label}")
         return
 
     if installed_meta:
@@ -46,6 +101,9 @@ def workflow_step_info(
                 f"  Description: "
                 f"{cli._escape_markup(str(installed_meta['description']))}"
             )
+        source_label = _format_source(installed_meta)
+        if source_label:
+            cli.console.print(f"  Source:      {source_label}")
         cli.console.print("  [green]Installed[/green]")
         return
 
@@ -53,8 +111,9 @@ def workflow_step_info(
     catalog = StepCatalog(project_root)
     try:
         info = catalog.get_step_info(step_id)
-    except StepCatalogError:
-        info = None
+    except StepCatalogError as exc:
+        cli.console.print(f"[red]Error:[/red] {exc}")
+        raise cli.typer.Exit(1)
 
     if info:
         name = cli._escape_markup(str(info.get("name", step_id)))

@@ -39,7 +39,7 @@ Required fields:
 
 ## Publishing
 
-See the [Preset Publishing Guide](../PUBLISHING.md) for details on submitting to the catalog.
+See the [Preset Publishing Guide](https://github.github.io/spec-kit/presets/publishing.html) for details on submitting to the catalog.
 
 ## License
 

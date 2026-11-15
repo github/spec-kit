@@ -15,6 +15,7 @@ clean CLI error.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 import pytest
@@ -143,3 +144,56 @@ def test_event_run_multibyte_payload_enforces_byte_limit():
     assert result.exit_code == 1, result.output
     assert "1 MiB limit" in result.output
     assert not mock_run.called
+
+
+@pytest.mark.parametrize("options", [None, {}, {"allow_symlinks": False}, {"allow_symlinks": True}])
+def test_event_policy_accepts_missing_or_valid_configuration(tmp_path, monkeypatch, options):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("SPECIFY_INIT_DIR", str(tmp_path / "unrelated"))
+    if options is not None:
+        (tmp_path / ".specify").mkdir()
+        (tmp_path / ".specify/init-options.json").write_text(json.dumps(options))
+    with patch("specify_cli.events.resolve_and_run_event_command", return_value=0) as handler:
+        result = CliRunner().invoke(app, ["event", "run", "test", "session_start"], input="{}")
+    assert result.exit_code == 0, result.output
+    assert handler.call_args[0][3] == tmp_path
+
+
+@pytest.mark.parametrize("document", [
+    "{", "[]", "null", '{"allow_symlinks": "true"}', '{"allow_symlinks": 1}',
+    '{"allow_symlinks": null}',
+])
+def test_event_policy_rejects_invalid_configuration_before_handler(tmp_path, monkeypatch, document):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".specify").mkdir()
+    (tmp_path / ".specify/init-options.json").write_text(document)
+    with patch("specify_cli.events.resolve_and_run_event_command", return_value=0) as handler:
+        result = CliRunner().invoke(app, ["event", "run", "test", "session_start"], input="{}")
+    assert result.exit_code == 1
+    assert "init-options.json" in result.stderr
+    assert not handler.called
+
+
+@pytest.mark.parametrize("leaf,dangling", [(False, False), (False, True), (True, False), (True, True)])
+def test_event_policy_denies_bootstrap_links_before_handler(tmp_path, monkeypatch, leaf, dangling):
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "target"
+    if leaf:
+        (tmp_path / ".specify").mkdir()
+        if not dangling:
+            target.write_text('{"allow_symlinks": true}')
+        marker = tmp_path / ".specify/init-options.json"
+    else:
+        if not dangling:
+            target.mkdir()
+            (target / "init-options.json").write_text('{"allow_symlinks": true}')
+        marker = tmp_path / ".specify"
+    try:
+        marker.symlink_to(target, target_is_directory=not leaf)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"Symlinks unavailable: {exc}")
+    with patch("specify_cli.events.resolve_and_run_event_command", return_value=0) as handler:
+        result = CliRunner().invoke(app, ["event", "run", "test", "session_start"], input="{}")
+    assert result.exit_code == 1
+    assert "symlink" in result.stderr
+    assert not handler.called

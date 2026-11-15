@@ -43,7 +43,15 @@ if [[ -f "$IMPL_PLAN" ]]; then
         echo "Plan already exists at $IMPL_PLAN, skipping template copy"
     fi
 else
-    if resolve_template_content "plan-template" "$REPO_ROOT" > "$IMPL_PLAN"; then
+    template_file=$(mktemp)
+    trap 'rm -f "$template_file"' EXIT
+    if resolve_template_content "plan-template" "$REPO_ROOT" > "$template_file"; then
+        if [[ ! -s "$template_file" ]]; then
+            echo "ERROR: Plan template is empty; no new plan.md was created." >&2
+            echo "Restore a valid plan template and rerun plan setup." >&2
+            exit 1
+        fi
+        cat "$template_file" > "$IMPL_PLAN"
         if $JSON_MODE; then
             echo "Copied plan template to $IMPL_PLAN" >&2
         else
@@ -51,16 +59,12 @@ else
         fi
     else
         resolve_status=$?
-        rm -f "$IMPL_PLAN"
         if [ "$resolve_status" -ne 1 ]; then
             exit "$resolve_status"
         fi
-        if $JSON_MODE; then
-            echo "Warning: Plan template not found" >&2
-        else
-            echo "Warning: Plan template not found"
-        fi
-        touch "$IMPL_PLAN"
+        echo "ERROR: Plan template not found; no new plan.md was created." >&2
+        echo "Restore a valid plan template and rerun plan setup." >&2
+        exit 1
     fi
 fi
 

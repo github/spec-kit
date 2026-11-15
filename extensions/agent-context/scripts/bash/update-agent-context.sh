@@ -310,6 +310,7 @@ PY
     _plan_rel="$("$_python" - "$PROJECT_ROOT" <<'PY'
 import sys
 from pathlib import Path
+from stat import S_ISREG
 root = Path(sys.argv[1]).resolve()
 specs = root / "specs"
 
@@ -329,7 +330,14 @@ def _resolved_rel(p):
 candidates = []
 for p in specs.rglob("plan.md"):
     rel = _resolved_rel(p)
-    if rel:
+    if rel is None:
+        continue
+    # Follow file links without suppressing errors for contained candidates.
+    try:
+        mode = p.stat().st_mode
+    except (FileNotFoundError, NotADirectoryError):
+        continue
+    if S_ISREG(mode):
         candidates.append((p, rel))
 candidates.sort(key=lambda pr: pr[0].stat().st_mtime, reverse=True)
 if candidates:

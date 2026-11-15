@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import stat
 import tempfile
@@ -25,6 +26,10 @@ from ..._download_security import (
     MAX_JSON_CATALOG_BYTES as MAX_JSON_CATALOG_BYTES,
     read_response_limited,
 )
+from ...file_helper import FileHelper, FileHelperError
+from .._catalog_cache import read_cache_json, write_cache_json
+
+logger = logging.getLogger(__name__)
 
 
 def _max_json_catalog_bytes() -> int:
@@ -78,10 +83,15 @@ class WorkflowRegistry:
     REGISTRY_FILE = "workflow-registry.json"
     SCHEMA_VERSION = "1.0"
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(
+        self, project_root: Path, *, read_files: FileHelper | None = None
+    ) -> None:
         self.project_root = project_root
         self.workflows_dir = project_root / ".specify" / "workflows"
         self.registry_path = self.workflows_dir / self.REGISTRY_FILE
+        # Optional read-policy handoff for workflow.list. Existing callers and
+        # all mutation paths retain their established behavior.
+        self._read_files = read_files
         self.data = self._load()
 
     def _has_symlinked_parent(self) -> bool:
@@ -112,14 +122,22 @@ class WorkflowRegistry:
                 f"Refusing to read workflow registry at {self.registry_path}: "
                 "a parent directory or the registry file itself is a symlink"
             )
-        if self.registry_path.exists():
+        if self._read_files is not None or self.registry_path.exists():
             try:
-                with open(self.registry_path, encoding="utf-8") as f:
-                    data = json.load(f)
-            except OSError as exc:
-                # The real data may still be intact on disk. Fail closed at
-                # construction rather than fabricating an empty registry that
-                # a read-only caller could mistake for "nothing installed."
+                if self._read_files is None:
+                    with open(self.registry_path, encoding="utf-8") as f:
+                        data = json.load(f)
+                else:
+                    try:
+                        text = self._read_files.read_text(self.registry_path)
+                    except FileNotFoundError:
+                        return default_registry
+                    # Match the legacy text stream's universal-newline handling,
+                    # including JSON error offsets for malformed CRLF files.
+                    text = text.replace("\r\n", "\n").replace("\r", "\n")
+                    data = json.loads(text)
+            except (OSError, FileHelperError) as exc:
+                # Do not fabricate an empty registry on access/policy failures.
                 raise OSError(
                     f"Failed to read workflow registry at {self.registry_path}: {exc}"
                 ) from exc
@@ -148,6 +166,9 @@ class WorkflowRegistry:
 
     def save(self) -> None:
         """Persist registry to disk atomically."""
+        from ...integrations._file_changes import after_file_change, before_file_change
+
+        before_file_change(self.registry_path)
         # Refuse to write through symlinked parents (mirrors StepRegistry.save
         # and the CLI-level _reject_unsafe_dir guard).
         if self._has_symlinked_parent() or self.registry_path.is_symlink():
@@ -209,6 +230,7 @@ class WorkflowRegistry:
             os.close(fd)
             fd = -1
             os.replace(tmp, self.registry_path)
+            after_file_change(self.registry_path)
         except BaseException:
             if fd >= 0:
                 try:
@@ -307,7 +329,7 @@ class WorkflowCatalog:
     # -- Catalog resolution -----------------------------------------------
 
     def _validate_catalog_url(self, url: str) -> None:
-        """Validate that a catalog URL uses HTTPS (localhost HTTP allowed)."""
+        """Validate that a catalog URL uses HTTPS, including local hosts."""
         from urllib.parse import urlparse
 
         # A malformed authority (e.g. an unterminated IPv6 bracket
@@ -324,13 +346,12 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Catalog URL is malformed: {url}"
             ) from None
-        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (
-            parsed.scheme == "http" and is_localhost
-        ):
+        if parsed.scheme != "https":
+            # A scheme-less value (``example.com/catalog.json``) would otherwise read
+            # "got ://". The value itself is not echoed: callers render errors as Rich markup.
+            got = f"{parsed.scheme}://" if parsed.scheme else "a URL with no scheme"
             raise WorkflowValidationError(
-                f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
-                "HTTP is only allowed for localhost."
+                f"Catalog URL must use HTTPS (got {got})."
             )
         if not hostname:
             raise WorkflowValidationError(
@@ -349,6 +370,15 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
             ) from exc
+        indexed_entries = self._parse_catalog_config(data, config_path)
+        if indexed_entries is None:
+            return None
+        return [entry for _, entry in indexed_entries]
+
+    def _parse_catalog_config(
+        self, data: Any, config_path: Path, *, validate_urls: bool = True
+    ) -> list[tuple[int, WorkflowCatalogEntry]] | None:
+        """Validate and order sources, retaining their original YAML positions."""
         # An empty document (or explicit ``null``) parses to None -> this config
         # layer contributes nothing, so ``get_active_catalogs`` moves on to the
         # next layer (this loader serves both the project and user configs;
@@ -384,7 +414,7 @@ class WorkflowCatalog:
             # is valid — fall back to built-in defaults.
             return None
 
-        entries: list[WorkflowCatalogEntry] = []
+        entries: list[tuple[int, WorkflowCatalogEntry]] = []
         for idx, item in enumerate(catalogs_data):
             if not isinstance(item, dict):
                 raise WorkflowValidationError(
@@ -394,7 +424,8 @@ class WorkflowCatalog:
             url = str(item.get("url", "")).strip()
             if not url:
                 continue
-            self._validate_catalog_url(url)
+            if validate_urls:
+                self._validate_catalog_url(url)
             raw_priority = item.get("priority", idx + 1)
             # bool is an int subclass: int(True) == 1 would silently accept a
             # ``priority: true`` as priority 1. Reject it explicitly, mirroring
@@ -424,15 +455,18 @@ class WorkflowCatalog:
             else:
                 install_allowed = bool(raw_install)
             entries.append(
-                WorkflowCatalogEntry(
-                    url=url,
-                    name=str(item.get("name", f"catalog-{idx + 1}")),
-                    priority=priority,
-                    install_allowed=install_allowed,
-                    description=str(item.get("description", "")),
+                (
+                    idx,
+                    WorkflowCatalogEntry(
+                        url=url,
+                        name=str(item.get("name", f"catalog-{idx + 1}")),
+                        priority=priority,
+                        install_allowed=install_allowed,
+                        description=str(item.get("description", "")),
+                    ),
                 )
             )
-        entries.sort(key=lambda e: e.priority)
+        entries.sort(key=lambda item: item[1].priority)
         if not entries:
             raise WorkflowValidationError(
                 f"Catalog config {config_path} contains {len(catalogs_data)} "
@@ -499,16 +533,13 @@ class WorkflowCatalog:
     def _is_url_cache_valid(self, url: str) -> bool:
         """Check if cached data for a URL is still fresh."""
         _, meta_file = self._get_cache_paths(url)
-        if not meta_file.exists():
-            return False
         try:
-            with open(meta_file, encoding="utf-8") as f:
-                meta = json.load(f)
+            meta = read_cache_json(self.project_root, meta_file)
             if not isinstance(meta, dict):
                 return False
             fetched_at = float(meta.get("fetched_at", 0))
             return (time.time() - fetched_at) < self.CACHE_DURATION
-        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        except (UnicodeError, json.JSONDecodeError, OSError, TypeError, ValueError):
             return False
 
     def _fetch_single_catalog(
@@ -519,8 +550,7 @@ class WorkflowCatalog:
 
         if not force_refresh and self._is_url_cache_valid(entry.url):
             try:
-                with open(cache_file, encoding="utf-8") as f:
-                    cached = json.load(f)
+                cached = read_cache_json(self.project_root, cache_file)
                 if isinstance(cached, dict):
                     return cached
             except (UnicodeDecodeError, json.JSONDecodeError, OSError):
@@ -529,7 +559,7 @@ class WorkflowCatalog:
 
         # Fetch from URL — validate scheme before opening and after redirects
         from urllib.parse import urlparse
-        from specify_cli.authentication.http import open_url as _open_url
+        from specify_cli.authentication.http import URLPolicyError, open_url as _open_url
 
         def _validate_catalog_url(url: str) -> None:
             # A malformed authority (e.g. "https://[::1") makes urlparse /
@@ -542,22 +572,17 @@ class WorkflowCatalog:
                 hostname = parsed.hostname
                 _ = parsed.port
             except (TypeError, ValueError):
-                raise WorkflowCatalogError(
+                raise URLPolicyError(
                     f"Refusing to fetch catalog from malformed URL: {url}"
                 ) from None
-            is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-            if parsed.scheme != "https" and not (
-                parsed.scheme == "http" and is_localhost
-            ):
-                raise WorkflowCatalogError(
+            if parsed.scheme != "https":
+                raise URLPolicyError(
                     f"Refusing to fetch catalog from non-HTTPS URL: {url}"
                 )
             if not hostname:
-                raise WorkflowCatalogError(
+                raise URLPolicyError(
                     f"Refusing to fetch catalog from URL with no hostname: {url}"
                 )
-
-        _validate_catalog_url(entry.url)
 
         # Validate EVERY redirect hop, not just the final URL: _open_url follows
         # redirects, so an https:// entry that 30x-redirects through http:// (or
@@ -570,6 +595,7 @@ class WorkflowCatalog:
             _validate_catalog_url(new_url)
 
         try:
+            _validate_catalog_url(entry.url)
             with _open_url(
                 entry.url, timeout=30, redirect_validator=_validate_redirect
             ) as resp:
@@ -582,17 +608,19 @@ class WorkflowCatalog:
                         label="workflow catalog",
                     ).decode("utf-8")
                 )
+        except URLPolicyError as exc:
+            raise WorkflowCatalogError(
+                f"Failed to fetch catalog from {entry.url}: {exc.reason}"
+            ) from exc
         except Exception as exc:
             # Fall back to cache if available
-            if cache_file.exists():
-                try:
-                    with open(cache_file, encoding="utf-8") as f:
-                        cached = json.load(f)
-                    if isinstance(cached, dict):
-                        return cached
-                except (json.JSONDecodeError, ValueError, OSError):
-                    # Stale-cache read failed; let the original fetch error propagate.
-                    pass
+            try:
+                cached = read_cache_json(self.project_root, cache_file)
+                if isinstance(cached, dict):
+                    return cached
+            except (UnicodeError, json.JSONDecodeError, ValueError, OSError):
+                # Stale-cache read failed; let the original fetch error propagate.
+                pass
             raise WorkflowCatalogError(
                 f"Failed to fetch catalog from {entry.url}: {exc}"
             ) from exc
@@ -604,13 +632,13 @@ class WorkflowCatalog:
 
         # Write cache
         try:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-            with open(meta_file, "w", encoding="utf-8") as f:
-                json.dump({"url": entry.url, "fetched_at": time.time()}, f)
-        except OSError:
-            pass  # Proceed without caching if disk write fails
+            write_cache_json(self.project_root, cache_file, data, indent=2)
+            write_cache_json(
+                self.project_root, meta_file,
+                {"url": entry.url, "fetched_at": time.time()},
+            )
+        except OSError as exc:
+            logger.warning("Could not safely cache workflow catalog %s: %s", entry.url, exc)
 
         return data
 
@@ -821,7 +849,12 @@ class WorkflowCatalog:
         return "added"
 
     def remove_catalog(self, index: int) -> str:
-        """Remove a catalog source by index (0-based). Returns the removed name."""
+        """Remove a project source by its index in the active catalog list."""
+        if os.environ.get("SPECKIT_WORKFLOW_CATALOG_URL", "").strip():
+            raise WorkflowValidationError(
+                "The active catalog comes from SPECKIT_WORKFLOW_CATALOG_URL. "
+                "Unset that variable to remove a project catalog source."
+            )
         config_path = self.project_root / ".specify" / "workflow-catalogs.yml"
         if not config_path.exists():
             raise WorkflowValidationError("No catalog config file found.")
@@ -832,25 +865,17 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        if data is None:
-            data = {}
-        elif not isinstance(data, dict):
+        entries = self._parse_catalog_config(
+            data, config_path, validate_urls=False
+        ) or []
+
+        if index < 0 or index >= len(entries):
             raise WorkflowValidationError(
-                "Catalog config file is corrupted (expected a mapping)."
-            )
-        catalogs = data.get("catalogs", [])
-        if not isinstance(catalogs, list):
-            raise WorkflowValidationError(
-                "Catalog config 'catalogs' must be a list."
+                f"Catalog index {index} out of range (0-{len(entries) - 1})."
             )
 
-        if index < 0 or index >= len(catalogs):
-            raise WorkflowValidationError(
-                f"Catalog index {index} out of range (0-{len(catalogs) - 1})."
-            )
-
-        removed = catalogs.pop(index)
-        data["catalogs"] = catalogs
+        source_index, entry = entries[index]
+        data["catalogs"].pop(source_index)
 
         try:
             with open(config_path, "w", encoding="utf-8") as f:
@@ -860,6 +885,4 @@ class WorkflowCatalog:
                 f"Failed to write catalog config {config_path}: {exc}"
             ) from exc
 
-        if isinstance(removed, dict):
-            return removed.get("name", f"catalog-{index + 1}")
-        return f"catalog-{index + 1}"
+        return entry.name

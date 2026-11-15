@@ -28,7 +28,7 @@ ALL_INTEGRATION_KEYS = [
     "gemini", "tabnine",
     # Stage 5 — skills, generic & option-driven integrations
     "codex", "kimi", "agy", "zed", "generic",
-    "droid", "command-code", "dsh", "muse", "mcode",
+    "droid", "command-code", "dsh", "muse", "mcode", "none",
 ]
 
 
@@ -141,15 +141,16 @@ class TestRegistryCompleteness:
 
 
 class TestRegistrarKeyAlignment:
-    """Every integration key must have a matching AGENT_CONFIGS entry.
+    """Every rendering integration key must have a matching AGENT_CONFIGS entry.
 
     ``generic`` is excluded because it has no fixed directory — its
-    output path comes from ``--commands-dir`` at runtime.
+    output path comes from ``--commands-dir`` at runtime. ``none`` does
+    not render command files.
     """
 
     @pytest.mark.parametrize(
         "key",
-        [k for k in ALL_INTEGRATION_KEYS if k != "generic"],
+        [k for k in ALL_INTEGRATION_KEYS if k not in {"generic", "none"}],
     )
     def test_integration_key_in_registrar(self, key):
         from specify_cli.agents import CommandRegistrar
@@ -161,6 +162,24 @@ class TestRegistrarKeyAlignment:
         """The old 'cursor' shorthand must not appear in AGENT_CONFIGS."""
         from specify_cli.agents import CommandRegistrar
         assert "cursor" not in CommandRegistrar.AGENT_CONFIGS
+
+    @pytest.mark.parametrize(
+        "key", sorted(k for k in INTEGRATION_REGISTRY if k not in {"generic", "none"})
+    )
+    def test_command_mode_separator_matches_registered_names(self, key):
+        """A ``-`` command-mode separator must mean hyphenated registration.
+
+        Extension listings derive the command names they show from the
+        separator, so an integration that registered dotted names under ``-``
+        (or the reverse) would list commands the user cannot invoke.
+        """
+        from specify_cli.agents import CommandRegistrar
+
+        registered = CommandRegistrar._compute_output_name(
+            key, "speckit.ext.cmd", CommandRegistrar.AGENT_CONFIGS[key]
+        )
+        hyphenated = INTEGRATION_REGISTRY[key].invoke_separator_for_mode(False) == "-"
+        assert registered == ("speckit-ext-cmd" if hyphenated else "speckit.ext.cmd")
 
 
 class TestMultiInstallSafeContracts:
@@ -176,7 +195,18 @@ class TestMultiInstallSafeContracts:
         assert all(sorted(order) == safe_keys for order in orders)
 
     @pytest.mark.parametrize("key", _multi_install_safe_keys())
-    def test_safe_integrations_have_static_isolated_paths(self, key):
+    def test_safe_integrations_have_static_or_no_output_paths(self, key, tmp_path):
+        integration = INTEGRATION_REGISTRY[key]
+        if integration.registrar_config is None:
+            from specify_cli.integrations.manifest import IntegrationManifest
+
+            assert _integration_root_dir(key) is None
+            manifest = IntegrationManifest(key, tmp_path)
+            before = list(tmp_path.iterdir())
+            assert integration.setup(tmp_path, manifest) == []
+            assert manifest.files == {}
+            assert list(tmp_path.iterdir()) == before
+            return
         assert _integration_root_dir(key), (
             f"{key} is declared multi-install safe but has no static root directory"
         )

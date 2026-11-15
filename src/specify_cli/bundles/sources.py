@@ -5,8 +5,16 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .._download_security import MAX_DOWNLOAD_BYTES, read_response_limited
+from .._download_security import (
+    MAX_DOWNLOAD_BYTES,
+    is_https_or_localhost_http,
+    read_response_limited,
+)
 from . import BundlerError
+from .catalog_stack import BundleNotFoundError, ReleaseNotFoundError
+from .expansion import LoadedBundle, SourceMismatchError
+from .manifest import BundleRef
+from .versioning import same_version
 
 # ZIP magic-byte signatures cover local headers, empty archives, and spanning markers.
 _ZIP_SIGNATURES = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
@@ -31,7 +39,7 @@ def _local_manifest_source(arg: str):
             raise BundlerError(f"No bundle.yml found in '{candidate}'.")
         return BundleManifest.from_file(manifest_path)
 
-    if candidate.suffix == ".zip":
+    if candidate.suffix.lower() == ".zip":
         import yaml as _yaml
 
         from .._download_security import open_zip_bounded, read_zip_member_limited
@@ -80,6 +88,107 @@ def _local_manifest_source(arg: str):
     raise BundlerError(
         f"'{candidate}' is not a recognised bundle source (.zip artifact, bundle "
         "directory, or bundle.yml)."
+    )
+
+
+class CatalogBundleLoader:
+    """Load referenced bundles from an already-resolved catalog stack.
+
+    The caller owns construction of the effective stack.  In particular, this
+    loader must not create a second stack: source precedence and project/user
+    overrides are part of the resolution contract for bundle references.
+    """
+
+    def __init__(self, stack, *, offline: bool, download=None) -> None:
+        self._stack = stack
+        self._offline = offline
+        self._download = download
+
+    def _offline_snapshot_may_lag(self, source_id: str | None = None) -> bool:
+        """Whether going online could change a miss.
+
+        Offline, a built-in catalog is the packaged snapshot, which can lag the
+        live catalog. With *source_id*, only that source counts (the winner of a
+        release lookup); otherwise any configured source does (a missing
+        bundle has no winner). Matching goes through the source, never its id,
+        so a project catalog named ``default`` is not mistaken for the built-in.
+        """
+        if not self._offline:
+            return False
+        return any(
+            source.is_builtin
+            for source in self._stack.sources
+            if source_id is None or source.id == source_id
+        )
+
+    def load(self, ref: BundleRef, chain: tuple[str, ...]) -> LoadedBundle:
+        """Resolve and download the exact release named by *ref*.
+
+        A source pin is an assertion about the winning catalog, rather than a
+        selector.  Consequently it is checked after stack resolution and
+        before the manifest download; a mismatch never falls through to a
+        lower-precedence catalog or performs network I/O.
+        """
+        try:
+            resolved = self._stack.resolve(ref.id, ref.version)
+        except BundleNotFoundError as exc:
+            if self._offline_snapshot_may_lag():
+                raise BundlerError(
+                    f"{exc} Network access disabled; a built-in catalog may be "
+                    f"outdated, so {ref.id}@{ref.version or '<unpinned>'} may "
+                    "resolve online. Re-run without --offline."
+                ) from exc
+            raise
+        except ReleaseNotFoundError as exc:
+            missing = _missing_release_error(
+                ref,
+                chain,
+                exc,
+                snapshot_may_lag=self._offline_snapshot_may_lag(exc.source_id),
+            )
+            if missing is not None:
+                raise missing from exc
+            raise
+
+        if ref.source and resolved.source.id != ref.source:
+            raise SourceMismatchError(ref, resolved.source.id, chain)
+
+        download = self._download or _download_manifest
+        manifest = download(resolved, offline=self._offline)
+
+        return LoadedBundle(
+            manifest,
+            resolved.source.id,
+            resolved.install_allowed,
+            resolved.entry.verified,
+        )
+
+
+def _missing_release_error(
+    ref, chain, error: ReleaseNotFoundError, *, snapshot_may_lag: bool = False
+):
+    """Format the catalog stack's exact-release failure for bundle authors.
+
+    ``CatalogStack.resolve`` provides the advertised versions and winning source
+    as structured exception attributes, so this translation does not depend on
+    the wording of its diagnostic message. When *snapshot_may_lag* is set, the
+    winner is an offline packaged snapshot, so the pin may be valid online and
+    the advice is to retry rather than to change the reference.
+    """
+    if ref.version is None:
+        return None
+
+    parent = chain[-1] if chain else "<root>"
+    offered = ", ".join(error.advertised)
+    advice = (
+        "Network access disabled; the built-in catalog may be outdated, so "
+        "the pin may resolve online. Re-run without --offline."
+        if snapshot_may_lag
+        else "Update the reference to an advertised version."
+    )
+    return BundlerError(
+        f"'{parent}' pins {error.bundle_id} {error.version}, but catalog "
+        f"'{error.source_id}' offers {offered}. {advice}"
     )
 
 
@@ -155,25 +264,8 @@ def _download_manifest(resolved, *, offline: bool):
 
 
 def _require_https(label: str, url: str) -> None:
-    from urllib.parse import urlparse
-
-    # urlparse / hostname access raise ValueError on a malformed authority;
-    # keep the documented BundlerError contract (older Pythons surface this via
-    # the .hostname access below rather than at the urlparse call).
-    try:
-        parsed = urlparse(url)
-        hostname = parsed.hostname
-        # Accessing ``port`` performs urllib's syntax/range validation.
-        _ = parsed.port
-    except ValueError:
-        raise BundlerError(
-            f"Refusing to download {label}: URL is malformed: {url}"
-        ) from None
-    is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-    if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+    if not is_https_or_localhost_http(url):
         raise BundlerError(f"Refusing to download {label} over non-HTTPS URL: {url}")
-    if not parsed.hostname:
-        raise BundlerError(f"Refusing to download {label} from URL with no host: {url}")
 
 
 def _download_remote_manifest(
@@ -334,7 +426,7 @@ def _validate_catalog_manifest(entry, manifest) -> None:
             f"Downloaded bundle id mismatch: catalog entry {entry.id!r} points to "
             f"a manifest for {manifest.bundle.id!r}."
         )
-    if manifest.bundle.version != entry.version:
+    if not same_version(manifest.bundle.version, entry.version):
         raise BundlerError(
             f"Downloaded bundle version mismatch for {entry.id!r}: catalog declares "
             f"{entry.version!r}, but the manifest declares "

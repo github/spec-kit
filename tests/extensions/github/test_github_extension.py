@@ -3,7 +3,7 @@
 Validates:
 - Bundled layout (manifest, README, command file, script twins)
 - Catalog registration and wheel/source resolution via ``_locate_bundled_extension``
-- Manifest validation, including that no alias claims the core command name
+- Manifest validation, including no legacy compatibility aliases
 - Install/uninstall through ``ExtensionManager``
 - Rendered command artifacts across command mode and skills mode, and in
   particular that ``{SCRIPT}`` resolves to a script the extension actually
@@ -36,7 +36,6 @@ from tests.parity_helpers import (
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "github"
-CORE_COMMAND = PROJECT_ROOT / "templates" / "commands" / "taskstoissues.md"
 
 # A released Spec Kit version that satisfies the manifest floor. Installs are
 # refused below it, so this cannot be an arbitrary synthetic value.
@@ -104,11 +103,11 @@ class TestExtensionLayout:
         assert "/speckit.taskstoissues" in text
         assert COMMAND_NAME in text
 
-    def test_readme_discloses_generic_registration_exception(self):
+    def test_readme_documents_generic_registration(self):
         text = (EXT_DIR / "README.md").read_text(encoding="utf-8")
         assert "`generic`" in text
-        assert "does **not** create" in text
-        assert "either layout" in text
+        assert "configured `--commands-dir`" in text
+        assert "commands and skills layouts" in text
 
     def test_command_file_exists(self):
         assert COMMAND_FILE.is_file()
@@ -158,8 +157,16 @@ class TestManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "github"
-        assert m.version == "1.0.0"
+        assert m.version == "1.0.5"
         assert [c["name"] for c in m.commands] == [COMMAND_NAME]
+
+    def test_manifest_does_not_restore_legacy_alias(self):
+        from specify_cli.extensions import ExtensionManifest
+
+        manifest = ExtensionManifest(EXT_DIR / "extension.yml")
+        for command in manifest.commands:
+            assert command["name"] != "speckit.taskstoissues"
+            assert not command.get("aliases")
 
     def test_manifest_command_files_exist(self):
         from specify_cli.extensions import ExtensionManifest
@@ -167,19 +174,6 @@ class TestManifest:
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         for cmd in m.commands:
             assert (EXT_DIR / cmd["file"]).is_file()
-
-    def test_no_alias_claims_the_core_command(self):
-        """Stage 1 keeps the core command; nothing here may shadow it.
-
-        Alias names are not pattern-checked and the core-namespace guard
-        applies to primary names only, so this is author discipline that a
-        test has to hold in place.
-        """
-        from specify_cli.extensions import ExtensionManifest
-
-        m = ExtensionManifest(EXT_DIR / "extension.yml")
-        aliases = [a for cmd in m.commands for a in cmd.get("aliases", []) or []]
-        assert aliases == []
 
     def test_declares_its_mandatory_external_tools(self):
         """The command runs ``git config`` and needs the GitHub MCP tools."""
@@ -205,17 +199,12 @@ class TestManifest:
         # And the version the install tests use must satisfy it.
         assert INSTALL_SPECKIT_VERSION in spec, floor
 
-    def test_core_command_remains_unchanged(self):
-        """Stage 1 is additive: the core command still ships."""
-        assert CORE_COMMAND.is_file()
-
-
 # -- Install / uninstall ------------------------------------------------------
 
 
 class TestExtensionInstall:
     @pytest.mark.parametrize("skills_mode", [False, True], ids=["commands", "skills"])
-    def test_generic_installs_sources_without_registering_an_artifact(
+    def test_generic_registers_and_removes_artifact_in_configured_directory(
         self, tmp_path: Path, skills_mode: bool
     ):
         from specify_cli.extensions import ExtensionManager
@@ -248,6 +237,12 @@ class TestExtensionInstall:
         )
         commands_dir = project / ".myagent" / "commands"
         commands_dir.mkdir(parents=True)
+        core = commands_dir / (
+            "speckit-tasks/SKILL.md"
+            if skills_mode else "speckit.tasks.md"
+        )
+        core.parent.mkdir(parents=True, exist_ok=True)
+        core.write_text("core command remains unchanged\n", encoding="utf-8")
 
         manager = ExtensionManager(project)
         manager.install_from_directory(
@@ -258,17 +253,20 @@ class TestExtensionInstall:
         assert (
             project / ".specify" / "extensions" / "github" / "extension.yml"
         ).is_file()
-        assert not (
-            commands_dir
-            / (
-                "speckit-github-taskstoissues/SKILL.md"
-                if skills_mode
-                else f"{COMMAND_NAME}.md"
-            )
-        ).exists()
+        artifact = commands_dir / (
+            "speckit-github-taskstoissues/SKILL.md"
+            if skills_mode else f"{COMMAND_NAME}.md"
+        )
+        assert artifact.is_file()
+        content = artifact.read_text(encoding="utf-8")
+        assert ".specify/extensions/github/scripts/bash/resolve-tasks.sh" in content
+        assert "{SCRIPT}" not in content
         assert not (
             project / ".agents" / "skills" / "speckit-github-taskstoissues" / "SKILL.md"
         ).exists()
+        assert manager.remove("github")
+        assert not artifact.exists()
+        assert core.read_text(encoding="utf-8") == "core command remains unchanged\n"
 
     def test_install_copies_command_and_scripts(self, tmp_path: Path):
         from specify_cli.extensions import ExtensionManager
@@ -310,12 +308,12 @@ class TestExtensionInstall:
                     f".github/agents/{COMMAND_NAME}.agent.md",
                     f".github/prompts/{COMMAND_NAME}.prompt.md",
                 ],
-                ".github/agents/speckit.taskstoissues.agent.md",
+                ".github/agents/speckit.tasks.agent.md",
             ),
             (
                 "claude",
                 [".claude/skills/speckit-github-taskstoissues/SKILL.md"],
-                ".claude/skills/speckit-taskstoissues/SKILL.md",
+                ".claude/skills/speckit-tasks/SKILL.md",
             ),
         ],
         ids=["command-mode", "skills-mode"],
@@ -335,7 +333,7 @@ class TestExtensionInstall:
         )
         core = tmp_path / core_artifact
         core.parent.mkdir(parents=True)
-        core.write_text("core taskstoissues\n", encoding="utf-8")
+        core.write_text("core tasks\n", encoding="utf-8")
 
         manager = ExtensionManager(tmp_path)
         manager.install_from_directory(
@@ -348,18 +346,18 @@ class TestExtensionInstall:
 
         for rel_path in extension_artifacts:
             assert not (tmp_path / rel_path).exists(), f"Left behind: {rel_path}"
-        assert core.read_text(encoding="utf-8") == "core taskstoissues\n"
+        assert core.read_text(encoding="utf-8") == "core tasks\n"
 
 
 # -- Rendered command artifacts -----------------------------------------------
 
 
 class TestScriptPathResolution:
-    def test_extension_registrar_scope_excludes_generic(self):
+    def test_extension_registrar_scope_excludes_generic_and_none(self):
         from specify_cli.integrations import INTEGRATION_REGISTRY
 
         assert set(EXTENSION_REGISTRAR_AGENTS) == set(INTEGRATION_REGISTRY) - {
-            "generic"
+            "generic", "none"
         }
 
     def test_frontmatter_uses_plain_extension_local_spelling(self):
@@ -515,7 +513,7 @@ class TestScriptPathResolution:
         assert (project / expected).is_file()
 
 
-# -- Behaviour parity with the core command -----------------------------------
+# -- Preserved conversion contracts ------------------------------------------
 
 
 class TestCommandBody:
@@ -588,38 +586,6 @@ class TestCommandBody:
         assert "Stop paginating as soon as every task ID has been matched" in body
         # Four-digit and longer task IDs must still match.
         assert r"\bT\d{3,}\b" in body
-
-    def test_body_differs_from_core_only_in_the_script_invocation(self):
-        """Behaviour parity, enforced as a diff rather than as spot checks.
-
-        Everything except the ``scripts:`` frontmatter and the two lines that
-        read the new ``TASKS`` value must match the core command verbatim, so
-        the two cannot silently drift while both exist.
-        """
-        import difflib
-
-        core = CORE_COMMAND.read_text(encoding="utf-8").splitlines()
-        ext = COMMAND_FILE.read_text(encoding="utf-8").splitlines()
-        changed = [
-            line
-            for line in difflib.unified_diff(core, ext, n=0)
-            if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
-        ]
-
-        # 3 script lines + 2 outline lines, each as one removal and one addition.
-        assert len(changed) == 10, "\n".join(changed)
-
-        markers = (
-            "check-prerequisites",
-            "check_prerequisites",
-            "resolve-tasks",
-            "resolve_tasks",
-            "AVAILABLE_DOCS",
-            "path to **tasks**",
-        )
-        assert all(
-            any(marker in line for marker in markers) for line in changed
-        ), "\n".join(changed)
 
     def test_uses_the_portable_command_reference_token(self):
         """A literal invocation would be correct for exactly one agent."""

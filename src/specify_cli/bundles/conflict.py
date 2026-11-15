@@ -1,54 +1,139 @@
-"""Conflict detection across the installed-bundle stack.
-
-The single cross-bundle conflict point is the active integration (FR-019).
-Component-level overlaps (same preset id at different priorities, etc.) are
-resolved by the existing primitive machinery's own precedence rules, so the
-bundler only needs to guard the integration invariant and surface informational
-overlaps.
-"""
+"""Conflict detection across the installed-bundle stack."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .manifest import BundleManifest
+from .manifest import BundleManifest, ComponentRef
+from .primitives import DEFAULT_PRIORITY
 from .records import InstalledBundleRecord
+from .versioning import same_version
 
 
 @dataclass
 class ConflictReport:
     integration_clash: str | None = None  # message when a hard clash exists
-    overlaps: list[str] = field(default_factory=list)  # components already provided
+    version_clashes: list[str] = field(default_factory=list)
+    overlaps: list[str] = field(default_factory=list)  # components already required
 
     @property
     def has_blocking_conflict(self) -> bool:
-        return self.integration_clash is not None
+        return self.integration_clash is not None or bool(self.version_clashes)
+
+
+def effective_setting(
+    kind: str, field: str, value, *, extension_priority: bool = True
+):
+    """Return *value* as it affects install for a component of *kind*.
+
+    ``priority`` applies to presets and, when *extension_priority* is true,
+    extensions, where an omitted value installs as ``DEFAULT_PRIORITY``.
+    ``strategy`` applies to presets only. Settings that do not apply return
+    ``None``; ``source`` always applies.
+    """
+    if field == "priority":
+        if kind == "extensions" and extension_priority:
+            return DEFAULT_PRIORITY if value is None else value
+        return value if kind == "presets" else None
+    if field == "strategy":
+        return value if kind == "presets" else None
+    return value
+
+
+def component_setting_differences(
+    a: ComponentRef, b: ComponentRef, *, extension_priority: bool = True
+) -> list[str]:
+    """Return install-affecting setting fields that differ between two refs.
+
+    Compares ``source``, ``priority`` and ``strategy`` through
+    :func:`effective_setting`. Versions are intentionally not compared.
+    """
+    return [
+        field
+        for field in ("source", "priority", "strategy")
+        if effective_setting(
+            a.kind, field, getattr(a, field), extension_priority=extension_priority
+        )
+        != effective_setting(
+            b.kind, field, getattr(b, field), extension_priority=extension_priority
+        )
+    ]
+
+
+def component_differences(
+    a: ComponentRef, b: ComponentRef, *, extension_priority: bool = True
+) -> list[str]:
+    """Install-affecting differences between two refs of the same kind:id.
+
+    Version is compared through ``same_version`` (``v1.0.0`` == ``1.0.0``);
+    ``source``, ``priority`` and ``strategy`` through ``effective_setting``.
+    An empty list means the two refs install identically.
+    """
+    different: list[str] = []
+    if a.version is None or b.version is None:
+        if a.version != b.version:
+            different.append("version")
+    elif not same_version(a.version, b.version):
+        different.append("version")
+    different.extend(
+        component_setting_differences(a, b, extension_priority=extension_priority)
+    )
+    return different
+
+
+def same_requirement(
+    a: ComponentRef, b: ComponentRef, *, extension_priority: bool = True
+) -> bool:
+    """True when *a* and *b* describe the same installable requirement."""
+    return (
+        a.kind == b.kind
+        and a.id == b.id
+        and not component_differences(a, b, extension_priority=extension_priority)
+    )
 
 
 def detect_conflicts(
     manifest: BundleManifest,
     active_integration: str | None,
     installed: list[InstalledBundleRecord],
+    components: list[ComponentRef] | None = None,
 ) -> ConflictReport:
     report = ConflictReport()
 
-    if manifest.integration is not None and active_integration:
-        if manifest.integration.id != active_integration:
-            report.integration_clash = (
-                f"Bundle targets integration '{manifest.integration.id}' but the "
-                f"project's active integration is '{active_integration}'."
-            )
+    if (
+        manifest.integration is not None
+        and active_integration
+        and manifest.integration.id != active_integration
+    ):
+        report.integration_clash = (
+            f"Bundle targets integration '{manifest.integration.id}' but the "
+            f"project's active integration is '{active_integration}'."
+        )
 
-    already: dict[tuple[str, str], str] = {}
+    already: dict[tuple[str, str], list[tuple[str, str | None]]] = {}
     for record in installed:
-        for component in record.contributed_components:
-            already[(component.kind, component.id)] = record.bundle_id
-
-    for component in manifest.components:
-        owner = already.get((component.kind, component.id))
-        if owner and owner != manifest.bundle.id:
-            report.overlaps.append(
-                f"{component.kind[:-1]} '{component.id}' is already provided by "
-                f"bundle '{owner}'."
+        for component in record.required_components:
+            already.setdefault((component.kind, component.id), []).append(
+                (record.bundle_id, component.version)
             )
+
+    selected_components = manifest.components if components is None else components
+    for component in selected_components:
+        for owner, version in already.get((component.kind, component.id), []):
+            if owner == manifest.bundle.id:
+                continue
+            if component.version and (
+                not version or not same_version(component.version, version)
+            ):
+                report.version_clashes.append(
+                    f"{component.kind[:-1]} '{component.id}' requires version "
+                    f"{component.version}, but bundle '{owner}' already requires "
+                    f"version {version or '<unknown>'}. Only one version can be "
+                    "installed per ID."
+                )
+            else:
+                report.overlaps.append(
+                    f"{component.kind[:-1]} '{component.id}' is already required by "
+                    f"bundle '{owner}'."
+                )
 
     return report

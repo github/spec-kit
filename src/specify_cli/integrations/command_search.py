@@ -21,7 +21,6 @@ def integration_search(
 ):
     """Search for integrations in the active catalog stack."""
     from . import (
-        INTEGRATION_REGISTRY,
         IntegrationCatalog,
         IntegrationCatalogError,
         IntegrationValidationError,
@@ -95,13 +94,8 @@ def integration_search(
 
         if iid_value == installed_key:
             console.print("\n  [green]✓ Installed[/green] (currently active)")
-        elif iid_value in INTEGRATION_REGISTRY:
-            console.print(f"\n  [cyan]Install:[/cyan] specify integration install {iid}")
         elif install_allowed:
-            console.print(
-                "\n  [yellow]Found in catalog.[/yellow] Only built-in integration IDs "
-                "can be installed with 'specify integration install'."
-            )
+            console.print(f"\n  [cyan]Install:[/cyan] specify integration install {iid}")
         else:
             console.print(
                 f"\n  [yellow]⚠[/yellow]  Not directly installable from '{cat_name}'."

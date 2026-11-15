@@ -42,7 +42,18 @@ def extension_disable(
         console.print(f"[yellow]Extension '{_escape_markup(str(display_name))}' is already disabled[/yellow]")
         raise typer.Exit(0)
 
-    manager.registry.update(extension_id, {"enabled": False})
+    from .. import load_init_options
+
+    if load_init_options(project_root).get("ai") == "generic":
+        from . import ExtensionError
+
+        try:
+            manager.disable_generic_extension_artifacts(extension_id)
+        except (ExtensionError, ValueError, OSError) as exc:
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1) from exc
+    else:
+        manager.registry.update(extension_id, {"enabled": False})
 
     # Disable hooks in extensions.yml
     config = hook_executor.get_project_config()

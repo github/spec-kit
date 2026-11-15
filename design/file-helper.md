@@ -1,0 +1,453 @@
+# Scoped FileHelper and project policy
+
+`specify_cli.file_helper.FileHelper` owns filesystem operations under one
+explicitly established root. Project-command boundaries now validate persisted
+policy, and init-options bootstrap I/O uses the helper. Other existing command
+filesystem operations are **not yet migrated**: loading policy alone does not
+enforce symlink behavior on those operations. Shared infrastructure, registration,
+managed storage, catalogs, scripts and runtime operations retain their existing
+behavior until their dependent migration stages.
+
+Only `specify init --allow-symlinks` exposes the setting; init defaults to deny
+and persists the literal JSON boolean `allow_symlinks` in
+`.specify/init-options.json`. Re-init without the flag records `false`.
+Other project-scoped commands validate the selected project's current
+configuration each invocation, including successive invocations in one process.
+No global flag, per-command override, mutable global policy, or cache is used.
+Projectless help/version/tool operations do not require configuration.
+`check` is an optional project consumer: it validates any present policy at its
+selected cwd/override boundary before loading installed integrations or checking
+tools, but still permits a missing project marker or configuration in cwd.
+Existing resolution rules, including `SPECIFY_INIT_DIR`, bundle ancestor search,
+direct workflow-file roots and explicit init targets, determine which root is
+checked; policy loading does not add ancestor discovery.
+Event execution retains its cwd-only selection and does not acquire an
+override or project-marker requirement; it preflights any present cwd policy
+before invoking handlers. Bundle ancestor search continues only when a marker
+is genuinely absent. A nearer forbidden/present invalid `.specify` entry fails
+at that candidate rather than selecting an ancestor or initializing elsewhere.
+
+Missing configuration or a missing key means deny. Only literal JSON
+`true`/`false` values are valid. Invalid JSON, non-object documents, invalid
+encoding, unreadable files and invalid values fail explicitly before mutations
+at the project boundary. Dangling configuration links are present forbidden
+entries, not missing defaults.
+
+Configuration bootstrap reads **and writes** always use a deny-mode helper,
+even when stored operational policy or the init flag allows symlinks.
+`.specify` and `init-options.json` below the trusted project root must not be
+links or unsupported reparse points. Root/OS aliases retain the foundation's
+trusted-boundary treatment. For a new init root, `prepare_init_root` creates its
+missing suffix using a deny-mode helper rooted at the nearest existing parent;
+an existing explicitly supplied root alias is trusted. `preflight_init_root`
+validates the original requested spelling without creating a root, including
+missing-parent traversal and dangling-parent evidence before canonicalization.
+Before presence probes, every prefix preceding `..` must be an existing
+directory: Windows can otherwise fold `missing/../existing` into an apparently
+existing target. Valid existing-directory/root-alias traversal remains trusted;
+prefix permission and other I/O failures remain explicit errors.
+Init's external-adapter lifecycle validates existing target policy before
+reading integration records, loading adapters or preparing catalog packages.
+When that lifecycle requires a
+transaction, it creates the target under the existing lock using the original
+requested spelling and `prepare_init_root`, before invoking the inner handler.
+The recorded pre-transaction directory state retains that spelling, so a newly
+created root does not become a spurious existing-directory conflict. Lock,
+journal and handler operations retain their canonical project identity after
+the original spelling has been validated.
+
+## Policy handoff for dependent migrations
+
+`specify_cli._file_policy.read_project_options(root)` is the strict bootstrap
+reader; it is separate from the legacy tolerant `load_init_options` library
+API. `project_files(root)` reads policy afresh and returns an immutable
+`FileHelper(root, allow_symlinks=...)`. Pass that returned operation owner
+explicitly to domain consumers; do not reconstruct a default helper and lose
+the policy. `specify_cli._project.resolve_specify_project_files()` performs the
+normal existing-project resolution and returns the same handoff for new CLI
+adapters. Commands using another established root call `project_files` on
+their actually selected root. Retain a helper only for the current operation;
+a later invocation resolves a new helper, so manual edits take effect. Use the
+returned owner as a context manager, or call `close()` in the owner's cleanup
+path, to release retained root handles at that operation boundary.
+
+The `specify_cli.integration_state` helpers are an explicit managed-metadata
+exception to this handoff. Their reads and writes of `.specify/integration.json`
+always use deny mode, including contained links when `allow_symlinks` is true.
+This preserves the
+[integration lifecycle's restriction](integration.md#storage-loading-and-lifecycle)
+against symlinked write destinations before snapshotting and mutation.
+This guarantee does not cover unmigrated consumers such as
+`bundles.project.active_integration`, whose containment-checked reads can still
+follow contained state-file links.
+
+Existing Path-returning resolvers preflight policy without changing their return
+type or domain constructors. They do not implicitly equip unmigrated domain
+consumers with an operation helper. Failures are translated into existing
+command diagnostics, with a single `{"error": "..."}` on stderr and empty
+stdout for JSON policy failures; artifact/list surfaces preserve their error
+envelope contracts. Artifact list/info validate their explicit project roots in
+the shared application operations, so CLI and MCP peer adapters share the same
+policy semantics while retaining their own error envelopes.
+
+`save_project_options` and the compatibility `save_init_options` writer use
+deny-mode bootstrap I/O. Init merges its owned settings into existing valid
+options, preserving unrelated fields. Integration option update/clear/version
+paths use the strict reader and retain `allow_symlinks`. Unmigrated tolerant
+library readers keep their existing missing/malformed fallback contracts.
+Configuration writers validate their deny-mode destination before the existing
+file-change observer snapshots it, then retain the before/after observer hooks
+around the write. Downstream init failures therefore remain covered by the
+existing lifecycle rollback, including prior policy and unrelated options.
+
+```python
+from specify_cli.file_helper import FileHelper
+
+with FileHelper(project_root) as files:  # deny symlinks by default
+    files.mkdir("generated", exist_ok=True)
+    files.create_text("generated/config.txt", "initial\n")
+    files.write_text("generated/config.txt", "updated\n")
+    content = files.read_text("generated/config.txt")
+    files.delete("generated", recursive=True)
+```
+
+## Boundary and policy
+
+Each helper has a frozen root and `allow_symlinks` setting. Relative operation
+paths are root-relative. Absolute paths must be beneath the supplied root or
+its canonical equivalent. User operation paths containing `..` are rejected
+in their root-relative suffix rather than normalized before inspection. A
+caller-established root spelling may itself contain `..`; absolute operation
+paths derived from that exact supplied root prefix are supported. Only that
+trusted prefix is removed before checking operation components, without
+lexically collapsing the root or ignoring traversal in the remaining suffix.
+Link targets may contain `..`, but
+are walked component by component and may not leave the root, even temporarily.
+Windows rooted-but-not-absolute paths (`/outside/file`, `\outside\file`) and
+drive-relative paths (`C:outside/file`, `C:`) are rejected for both operation
+paths and link targets. They are not root-relative: joining them can reset the
+root or drive. Fully absolute paths still require scoped root matching.
+For Windows containment comparisons, extended-length drive and UNC spellings
+(`\\?\D:\project\file`, `\\?\UNC\server\share\project\file`) are compared with
+their ordinary equivalents on both the target and root sides. This does not
+resolve links or collapse `..`: accessed hierarchy evidence is retained for
+the component walk. The UNC namespace marker is matched case-insensitively,
+while the remaining path's original spelling is preserved. External targets,
+ambiguous rooted-relative paths, and
+unsupported device namespaces are still rejected. POSIX filenames are not
+reinterpreted as Windows path spellings.
+
+The caller must establish a trusted, existing directory root. Its alias is
+resolved once, including OS and worktree aliases; the root itself and OS
+ancestors above it are not subjected to the traversal policy. Thus explicitly
+establishing a linked directory as a root trusts that alias even in deny mode.
+Links *below* that boundary are checked in both the original accessed path and
+any followed target hierarchy. An unrelated project symlink does not prevent
+an operation. A helper cannot cross to another root; callers establish separate
+helpers for independent project/source/managed boundaries.
+
+On supported deletion backends, construction retains a handle to the canonical
+root until `close()` or context-manager exit. Keeping the original directory open
+prevents its identity from being reused for a different directory while the
+helper is alive; stored device/inode numbers alone are not the binding. On POSIX,
+the handle uses search-only access where available. On Windows, construction
+requests only root metadata access (`FILE_READ_ATTRIBUTES`) and permits delete
+sharing; it does not request directory-list access on the canonical ancestors.
+The retained reference selects a tagged identity scheme from that handle.
+The full 128-bit `FileIdInfo` identity is preferred. If that query reports
+`ERROR_INVALID_FUNCTION`, `ERROR_NOT_SUPPORTED`, or `ERROR_INVALID_PARAMETER`,
+or returns an all-zero ID, the helper queries the opened volume's filesystem
+and uses `GetFileInformationByHandle`'s volume serial plus nonzero 64-bit file
+index only for FAT, FAT32, exFAT, or NTFS. The volume query is handle-relative
+and works through the filesystem driver rather than a pathname-based volume
+lookup, including when a network driver exposes the necessary information.
+ReFS and unrecognized filesystems do not fall back to potentially ambiguous
+64-bit indexes. Access-denied, sharing, and other unrelated errors still
+propagate rather than selecting a weaker identity.
+Before accepting it, construction compares Python-native metadata obtained from
+the acquired handle with the initially observed root metadata. This comparison
+does not reopen the root pathname, so replacement followed by restoration cannot
+substitute a different retained object. The metadata query uses a temporary
+non-inheritable duplicate and leaves the original reference open.
+If that reference or identity query is unavailable, the native capability error
+is deferred to `delete()` rather than preventing ordinary read/write operations.
+The cached error remains traceback-free; each failed deletion raises an
+independent shallow copy retaining the native error type and filesystem details.
+
+Windows deletion separately pins the canonical ancestry through the drive/share
+root without delete sharing, then queries both that root handle and the retained
+reference using the already selected scheme. It compares their live identities,
+not a cached legacy index: FAT IDs can change after renaming. It neither
+renegotiates identity schemes mid-operation nor compares identities from
+different schemes. Those operation-time handles require both
+`FILE_LIST_DIRECTORY` and `FILE_READ_ATTRIBUTES` on every canonical ancestor,
+including those above the helper root, and reject reparse points. An ACL allowing
+traversal but not listing can therefore prevent deletion while still allowing
+bootstrap reads. Windows deletion also retains non-reparse handles to accessed
+parent directories throughout link resolution, before classifying child entries
+or reading link targets. Each child is opened relative to its native parent
+handle, not by reconstructing an absolute pathname. Metadata and symbolic-link
+targets are read from opened leaf handles; directory names are enumerated from
+the directory handle. Relative native opens request both
+`FILE_SYNCHRONOUS_IO_NONALERT` and `SYNCHRONIZE`, including directories, so
+enumeration cannot consume a buffer before a pending directory query completes.
+These accessed directories also require
+directory-list/read-attribute access. The resolution handles are released after
+selection; native mutation parents and root ancestry remain retained during
+preflight and removal. Directory sharing locks alone do not prevent in-place
+reparse changes: handle-relative operations retain the opened directory object
+instead of following its changed pathname. These locks are released at the end of
+deletion; the metadata-only reference remains until the helper closes. Automatic
+finalization is a compatibility fallback, not a substitute for deterministic
+cleanup. Bootstrap configuration and managed integration-state consumers close
+their own helpers explicitly. Installed-workflow listing also closes its
+`project_files()` owner on every validation, registry-read, and successful exit;
+other consumers receiving `project_files()` own its lifetime.
+Pinning the root does not make other pathname-based operations
+descriptor-relative or change their documented concurrency limitations.
+
+| Operation | Default deny | Explicit allow |
+|---|---|---|
+| Read file | Reject accessed parent or leaf links | Follow only existing contained regular-file targets |
+| Create directory | Reject accessed links before creating parents | Follow contained directory links; reject dangling targets |
+| Exclusively create file | Reject accessed links | Follow contained parents; reject an existing leaf without opening its target |
+| Atomic write/upsert | Reject accessed links | Replace the resolved regular-file target and preserve every link |
+| Non-atomic text overwrite/upsert | Reject accessed links | Update the resolved regular-file target in place and preserve every link |
+| Delete leaf link | Reject without mutation | Unlink the link, including dangling, cyclic, or external-target links |
+| Delete through linked parent | Reject without mutation | Delete the contained target entry, leaving the parent link intact |
+| Recursive delete | Preflight all descendants and reject any link before mutation | Preflight all descendants; unlink links without traversing their targets |
+| Create symlink | Reject | Require an existing contained file/directory target |
+
+## API and failures
+
+- `close()` releases the helper's retained root handles and is idempotent.
+  `with FileHelper(...) as files:` closes on both success and failure. Operations
+  on an explicitly closed helper raise `FileHelperError`.
+- `mkdir(path, parents=False, exist_ok=False)` creates directories.
+- `read_bytes(path)` / `read_text(path, encoding="utf-8")` read regular files.
+- `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
+  create files with existing parents. A no-follow `lstat` preflight rejects
+  existing leaves, including dangling links, before opening the destination.
+  This avoids target creation on backends that follow dangling links despite
+  exclusive-open flags. `O_EXCL` and `O_NOFOLLOW` (where available) remain in use;
+  the policy-resolved parent hierarchy is anchored through creation. POSIX
+  opens each resolved directory without following links and creates the leaf
+  relative to the final directory descriptor. Search-only handles (`O_PATH`
+  or `O_SEARCH`, where available) avoid adding a directory-read permission
+  requirement; macOS uses the native `O_SEARCH` value when an older Python
+  build does not expose it. Traversal closes each previous parent after opening
+  its child, keeping the number of live directory descriptors independent of
+  path depth.
+  Windows pins the canonical root and every resolved parent with non-reparse
+  handles withholding delete sharing. Each anchored directory must permit
+  `FILE_LIST_DIRECTORY` and `FILE_READ_ATTRIBUTES` access. An ACL that permits
+  creating files but denies directory listing can therefore cause creation to
+  fail before opening the leaf.
+  Allowed contained parent links and trusted root aliases are resolved before
+  anchoring; they are not banned. Parents must already exist, and the supplied
+  mode remains filtered by the process umask. Unsupported anchoring primitives
+  fail explicitly rather than falling back to unanchored creation.
+- `write_bytes(path, content, mode=0o644)` / `write_text(...)` atomically
+  create or update files with existing parents. Text variants also accept
+  `encoding="utf-8"`. Replacement files use the supplied mode; metadata and
+  hard-link identity are not preserved. Atomic means same-directory
+  `os.replace`, not crash durability.
+- `overwrite_text(path, content, encoding="utf-8")` is a **non-atomic** text
+  upsert with existing parents, used for configuration compatibility. It uses
+  the same accessed-path/link/containment checks as other operations, follows
+  only allowed existing contained file targets, and preserves link chains and
+  the target inode (including hard-link identity and permissions). New files
+  use `0o666` filtered by the process umask; text encoding and native newline
+  translation match the previous configuration writer. An encoding or I/O
+  failure propagates, and a write failure can leave truncated/partial content.
+  This is not hard-link confinement: a hard-linked alias can observe updates.
+  After policy resolution, POSIX opens each resolved directory relative to an
+  already-open parent descriptor with no-follow flags, using search/path-only
+  access where supported so unreadable but searchable parents remain usable,
+  and closes the previous directory after opening its child. Descriptor usage
+  stays bounded independently of path depth. It then opens the leaf without
+  truncation. Windows pins the canonical root and every resolved parent with
+  non-reparse handles withholding delete sharing. Each anchored directory must
+  permit `FILE_LIST_DIRECTORY` and `FILE_READ_ATTRIBUTES` access. An ACL that
+  permits file writing but denies directory listing can therefore cause an
+  overwrite to fail before opening the leaf. Existing non-reparse leaves are
+  opened without truncation. For a missing leaf, an empty, randomly named
+  CRT-created probe in an independently owned runtime temporary directory
+  captures the masked creation attributes without changing the process mask. This scratch root is
+  pinned separately, contains no project data, and is removed before native
+  no-follow exclusive creation of the destination. No disposable sibling is
+  created in the project, so destination creation does not require project
+  deletion rights. Runtime temporary-storage failures remain explicit errors.
+  A leaf introduced between these calls causes an explicit creation error.
+  The opened leaf remains held through text I/O. Both paths check the opened
+  file type before truncating that same descriptor. On POSIX, an exchanged
+  parent cannot redirect creation or truncation through a new link. Allowed
+  links are still resolved by the normal policy walk; the anchored traversal
+  operates on their resolved target, not on the original link spelling.
+  Windows creation also honors the CRT process mask: masking the owner-write
+  bit creates a read-only file, matching native text creation, without changing
+  the attributes of an existing file.
+- `delete(path, recursive=False)` unlinks files/links or removes directories.
+  Nonrecursive directory deletion requires an empty directory. The established
+  root cannot be deleted. Recursive enumeration and each removal use anchored
+  directories. Each deletion borrows the root handle retained at construction,
+  checks the currently named root for replacement, and uses that original anchor through
+  preflight and all removals. POSIX uses this retained root for component
+  classification, link-target reads and resolution, recursive preflight, and
+  per-entry revalidation, as well as descriptor-relative enumeration and
+  `unlink`/`rmdir`. Canonical pathnames identify root-relative entries but are not
+  reopened for metadata or link resolution. Windows verifies the full canonical
+  ancestry during root acquisition and then carries native directory handles
+  through child opens, metadata queries, link-target reads, and enumeration.
+  Removal opens the leaf itself with `DELETE` access and marks that same handle
+  with `FileDispositionInfo`; it does not call pathname `unlink` or `rmdir`.
+  This does not change the trusted treatment of aliases resolved
+  at root establishment. Allowed contained parent links are resolved within the
+  retained boundary, and leaf links are still unlinked rather than followed.
+  Platforms lacking the required directory-descriptor operations fail with
+  `ENOTSUP`, not pathname-only deletion.
+  POSIX traversal and removal use search/path-only descriptors (`O_SEARCH` or
+  `O_PATH`) where available, including Darwin's native `O_SEARCH` value on Python
+  builds that do not expose it, so known entries in write-and-execute-only parents
+  can still be removed. Read-capable descriptors are requested only for directories
+  being enumerated; systems without search/path-only flags retain read-capable
+  traversal. Recursive enumeration still requires directory read permission, and
+  removal still requires the operating system's normal directory permissions.
+  Preflight opens the enumerated child directly as readable, relative to its
+  anchored parent, without a search-only open or `"."` reopening first. An empty
+  readable directory therefore does not need its own search permission to be
+  removed; accessing children in a nonempty directory still requires search
+  permission. The parent still needs the permissions required to remove its
+  directory entry.
+  On systems using the read-capable fallback, root establishment also requires
+  read permission on the root.
+  POSIX component resolution and final parent anchoring retain only the current
+  traversal descriptor, opening its child before releasing the preceding one.
+  Their live descriptor count is bounded independently of operation-path depth,
+  in addition to the helper's retained root. Link-target jumps and `..` are
+  re-anchored through that root rather than following an opened directory's
+  physical parent after a rename. Windows retains native directory handles for
+  its child-relative traversal, including during recursive preflight and removal.
+  POSIX recursive preflight and mutation use explicit worklists and separate
+  eight-directory handle caches. The selected parent and established root remain
+  anchored outside those caches. An uncached parent is reacquired component by
+  component from the nearest retained prefix with no-follow flags, releasing
+  least-recently-used handles as the cache fills. Removed directories are evicted,
+  and preflight handles are not reused for mutation. Live descriptors are bounded
+  independently of recursive depth, including transient opens and enumeration;
+  worklist and complete-plan memory still scale with the selected tree.
+  Reacquiring evicted prefixes trades additional opens for that fixed handle
+  budget. Total opens can grow with the sum of visited path lengths, rather than
+  being unconditionally linear in the directory count. Windows retains its
+  native-handle traversal instead of evicting handles needed for child-relative
+  operations. The complete plan is still preflighted before any removal.
+- `symlink(target, path)` creates a link exclusively. Relative targets are
+  interpreted relative to the link parent, not the helper root.
+
+`SymlinkDeniedError`, `PathEscapeError`, and `UnsupportedPathError` derive from
+`FileHelperError` and describe policy failures. Missing paths (including
+dangling read/update targets), permissions, existing exclusive-create
+destinations, non-directory parents, and OS I/O failures retain native Python
+exceptions. Nothing prints, warns-and-skips, or exits the CLI. Callers own
+translation into their normal command error envelopes.
+
+Only regular files, directories, and explicitly allowed symlinks are supported.
+Below the established root, Windows directory junctions and other non-symlink
+reparse entries are unsupported and rejected with `UnsupportedPathError` in
+**both** policy modes. This includes contained junctions, leaf deletion, and
+recursive deletion: preflight rejects them without traversing or removing
+them. `allow_symlinks=True` does not authorize junction traversal or deletion.
+The trusted root alias boundary may itself resolve through a junction just as
+it may through a symlink; this does not authorize junctions below that root.
+Read/update cycles and excessive link chains fail explicitly. A recursive
+delete includes the entire selected tree; there is no exclusion filter in this
+foundation. Future operations with exclusions must inspect only included
+entries, not reject a whole project for excluded/unrelated links.
+
+## Safety limits and migration
+
+POSIX reads, exclusive file creation, and text overwrites share one parent
+directory walk for capability checks, search flags, no-follow traversal, and
+descriptor cleanup. Leaf open flags, file-type validation, and truncation
+remain operation-specific.
+
+Reads resolve supported contained links under the existing policy, then open
+the resolved hierarchy without following substituted links. POSIX reads use
+descriptor-relative directory traversal with `O_DIRECTORY` and `O_NOFOLLOW`.
+Directory descriptors use `O_SEARCH` or `O_PATH` where available so searchable
+directories need not be listable, including Darwin's native `O_SEARCH` value
+when a Python build uses an older SDK that omits the constant. Each superseded
+parent is closed as soon as its child is open. The leaf uses `O_NOFOLLOW` and
+`O_NONBLOCK`. Windows reads open the canonical root with `FILE_TRAVERSE` and
+`FILE_READ_ATTRIBUTES`, then open each resolved child relative to its validated
+parent handle with `NtCreateFile`. Directory opens do not request enumeration
+access. Relative opens prevent an in-place junction change on an already-open
+parent from redirecting the next open; write-sharing restrictions alone cannot
+prevent attribute-only reparse updates. Each new handle rejects reparse points,
+and handles withhold delete sharing. Reads duplicate the validated leaf handle
+into an independently owned descriptor, never reopen its pathname.
+Both paths validate the opened file with `fstat` before reading its descriptor,
+and release all handles on success or failure. Windows child-open ABI
+structures and pointer types are initialized lazily in a Windows-only module
+and reused through Python's import cache. This avoids type retention in older
+supported Python versions without requiring `ctypes` for POSIX startup.
+Handle values and path buffers remain operation-local. Platforms without the
+required safe-open primitives fail explicitly rather than fall back to
+unchecked pathname reads. A concurrent replacement can fail the read or leave
+it reading the already-open original file, but cannot redirect it through a
+substituted symlink. This does not freeze file contents against in-place edits.
+
+Preflight detects static policy failures before recursive deletion or parent
+creation. Atomic writes recheck the original path before replacement, and
+deletion rechecks each accessed entry. Deletion also anchors directory
+enumeration and removal so exchanging an accessed parent for a link cannot
+redirect those operations. Reopening the absolute root pathname for each entry is
+avoided; the established root handle is never rebound to a replacement, even if
+device/inode values are reused. POSIX removal stays attached to
+the opened directory even if that directory is renamed; validation continues to
+inspect that same directory tree. Windows prevents ancestor renames while handles
+are held. Concurrent changes may still cause deletion to fail or leave
+partial results, and preflight is not a transaction or an immutable tree snapshot.
+POSIX leaf removal acts on the current entry in the anchored parent; Windows
+removal acts on its opened leaf handle. No operation is a general race-free
+sandbox. For operations that still
+use validated paths (reads, directory creation, atomic writes, and symlink
+creation), portable path checks are **not**
+a race-free sandbox: another process can exchange parents or entries between
+checks and syscalls, and an I/O failure during mutation can leave partial
+results. Protect against concurrent untrusted mutation separately.
+Exclusive file creation anchors its resolved parent hierarchy as described
+above. On POSIX, renaming an opened directory does not redirect creation to
+its replacement: creation stays with the opened directory, even if it is
+renamed out of the root. This is not a guarantee of stable namespace membership
+under concurrent renames, nor does parent anchoring make every leaf preflight
+atomic with the subsequent open.
+On Windows, exclusive creation and text overwrite still open their leaf by
+pathname after pinning the parent hierarchy. Attribute-only reparse updates
+can redirect those opens; they do not have the read path's parent-relative
+handle protection.
+The helper does not constrain subprocesses or third-party code.
+
+Existing safe-write mechanisms informed this helper, but existing shared
+infrastructure warning/skip behavior and development-mode link creation are
+unchanged. Migrate one owned operation boundary at a time, carrying original
+paths and an explicit root/policy into the helper before any early resolution.
+Linked command directories and development-mode registration remain dependent
+stages. Non-atomic configuration writes preserve legacy metadata semantics.
+`overwrite_text` keeps the resolved directory/file objects open, but does not
+freeze directory membership on POSIX: an opened directory or file may be
+renamed, and the operation continues against that opened object. The trusted
+root's OS ancestors remain outside the helper's policy boundary. This is not
+a general sandbox against concurrent namespace changes or hard-linked aliases.
+Platforms without the required descriptor/handle primitives fail explicitly
+rather than falling back to path-based overwrite.
+
+Windows path classification and directory-mode reparse rejection have portable
+regression tests. Native Windows path and junction tests also exist and are
+skipped on other hosts; running the portable cases on macOS does not validate
+Windows filesystem syscalls or junction behavior. Deletion replacement tests
+exercise swaps at enumeration and removal boundaries on the native host; Windows
+handle-sharing behavior requires a native Windows run. Exclusive-creation tests
+cover parent replacement before anchoring and at the final open, along with
+native Windows parent-handle pinning and portable handle-lifetime checks;
+portable checks do not substitute for native Windows execution.

@@ -12,7 +12,7 @@ The bundled, opt-in **assess** extension provides five stages:
 
 [Install Spec Kit and initialize a project](../installation.md). An empty project
 is enough, or you can use an
-[existing repository](existing-projects.md) when the idea relates to its code.
+[existing repository](../how-to/existing-projects.md) when the idea relates to its code.
 In a terminal at the initialized project root, install the extension:
 
 ```bash
@@ -22,7 +22,7 @@ specify extension add assess
 Then launch your coding agent in that directory. The examples below use
 GitHub Copilot's default skills mode (`--integration copilot`). Other agents
 use their own
-[command invocation syntax](../reference/integrations.md#command-invocation).
+[command invocation syntax](../integrations/cli.md#command-invocation).
 Invoke each `/speckit-assess-*` skill separately in your agent's chat, reviewing
 the artifact before moving on. These are agent skills, not terminal commands;
 the terminal command above only installs the extension.

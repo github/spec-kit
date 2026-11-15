@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json  # noqa: F401
 import os  # noqa: F401
 import shutil  # noqa: F401
 from pathlib import Path  # noqa: F401
 
 import pytest  # noqa: F401
+import yaml
 
 from specify_cli import app  # noqa: F401
 from tests.conftest import strip_ansi  # noqa: F401
@@ -21,7 +23,71 @@ from tests.specify_cli.integrations._helpers import (
     runner,  # noqa: F401
 )
 
+
+def _add_sample_preset(project, tmp_path):
+    """Install a dev preset that overrides ``speckit.specify``."""
+    preset = tmp_path / "sample-preset"
+    (preset / "commands").mkdir(parents=True)
+    (preset / "commands" / "speckit.specify.md").write_text(
+        "---\ndescription: Sample preset command\n---\nSample preset guidance\n",
+        encoding="utf-8",
+    )
+    (preset / "preset.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "preset": {"id": "sample-preset", "name": "Sample Preset", "version": "1.0.0", "description": "Sample guidance"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"templates": [{"type": "command", "name": "speckit.specify", "file": "commands/speckit.specify.md"}]},
+    }), encoding="utf-8")
+    result = _run_in_project(project, ["preset", "add", "--dev", str(preset)])
+    assert result.exit_code == 0, f"preset add failed: {result.output}"
+
+
+def _registered_agents(project, kind, package_id):
+    """Agents whose artifacts the extension or preset registry tracks for ``package_id``."""
+    registry = json.loads((project / ".specify" / kind / ".registry").read_text(encoding="utf-8"))
+    return set(registry[kind][package_id]["registered_commands"])
+
 class TestIntegrationUninstall:
+    @pytest.mark.parametrize("command", ["uninstall", "switch"])
+    def test_unreadable_dispatcher_preserves_other_cleanup(self, tmp_path, monkeypatch, caplog, command):
+        from specify_cli.events import install_integration_events
+        from specify_cli.integrations.claude import ClaudeIntegration
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, "claude", "--events false")
+        manifest = IntegrationManifest.load("claude", project)
+        install_integration_events(
+            ClaudeIntegration(), project, manifest,
+            {"pre_tool_use": [{"command": "speckit.x"}]},
+        )
+        manifest.save()
+        dispatcher = project / ".specify/events.py"
+        original = dispatcher.read_text(encoding="utf-8")
+        read_bytes = Path.read_bytes
+
+        def deny_dispatcher_read(path):
+            if path == dispatcher:
+                raise PermissionError("dispatcher denied")
+            return read_bytes(path)
+
+        monkeypatch.setattr(Path, "read_bytes", deny_dispatcher_read)
+        args = ["integration", command]
+        if command == "switch":
+            args += ["copilot", "--integration-options", "--events false"]
+
+        result = _run_in_project(project, args)
+
+        assert result.exit_code == 0, result.output
+        assert not (project / ".claude/skills/speckit-plan/SKILL.md").exists()
+        assert not manifest.manifest_path.exists()
+        assert dispatcher.read_text(encoding="utf-8") == original
+        assert "unreadable dispatcher" in caplog.text
+        state_path = project / ".specify/integration.json"
+        if command == "switch":
+            assert json.loads(state_path.read_text(encoding="utf-8"))["default_integration"] == "copilot"
+        else:
+            assert not state_path.exists()
+
     def test_uninstall_requires_speckit_project(self, tmp_path):
         old_cwd = os.getcwd()
         try:
@@ -167,6 +233,78 @@ class TestIntegrationUninstall:
         assert "/speckit-plan" in template.read_text(encoding="utf-8")
         assert "/speckit-plan" in script.read_text(encoding="utf-8")
 
+    def test_uninstall_unregisters_extension_and_preset_artifacts(self, tmp_path):
+        """Uninstall must not leave extension or preset files orphaned in the agent's directory."""
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        _add_sample_preset(project, tmp_path)
+        claude_git_feature = project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md"
+        claude_specify = project / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
+        assert claude_git_feature.exists()
+        assert "Sample preset guidance" in claude_specify.read_text(encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "uninstall", "claude"])
+        assert result.exit_code == 0, result.output
+
+        assert not claude_git_feature.exists(), "Extension skill should be removed with its agent"
+        assert not claude_specify.exists(), "Preset skill should be removed with its agent"
+        assert "claude" not in _registered_agents(project, "extensions", "git")
+        assert "claude" not in _registered_agents(project, "presets", "sample-preset")
+
+    @pytest.mark.parametrize("missing_manifest", [False, True])
+    def test_uninstall_default_registers_contributions_for_fallback(self, tmp_path, missing_manifest):
+        """The integration promoted to default receives enabled extensions and presets, like ``use``."""
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        _add_sample_preset(project, tmp_path)
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+        codex_git_feature = project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        codex_specify = project / ".agents" / "skills" / "speckit-specify" / "SKILL.md"
+        assert not codex_git_feature.exists(), "precondition: secondary install has no extension artifacts"
+        assert "Sample preset guidance" not in codex_specify.read_text(encoding="utf-8"), (
+            "precondition: secondary install has no preset artifacts"
+        )
+        if missing_manifest:
+            (project / ".specify" / "integrations" / "claude.manifest.json").unlink()
+
+        result = _run_in_project(project, ["integration", "uninstall", "claude"])
+        assert result.exit_code == 0, result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "codex"
+        assert codex_git_feature.exists(), "Promoted default should receive enabled extensions"
+        assert "Sample preset guidance" in codex_specify.read_text(encoding="utf-8"), (
+            "Promoted default should receive enabled presets"
+        )
+        assert not (project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md").exists()
+        assert not (project / ".claude" / "skills" / "speckit-specify" / "SKILL.md").exists()
+
+    def test_uninstall_non_default_preserves_default_contributions(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        _add_sample_preset(project, tmp_path)
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        result = _run_in_project(project, ["integration", "uninstall", "codex"])
+        assert result.exit_code == 0, result.output
+
+        assert (project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md").exists()
+        claude_specify = project / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
+        assert "Sample preset guidance" in claude_specify.read_text(encoding="utf-8")
+        assert "claude" in _registered_agents(project, "extensions", "git")
+        assert "claude" in _registered_agents(project, "presets", "sample-preset")
+
     def test_uninstall_preserves_shared_infra(self, tmp_path):
         """Shared scripts and templates are not removed by integration uninstall."""
         project = _init_project(tmp_path, "claude")
@@ -184,6 +322,94 @@ class TestIntegrationUninstall:
         # Shared infrastructure preserved
         assert shared_script.exists()
         assert (project / ".specify" / "templates").is_dir()
+
+
+class TestUninstallFallbackManifest:
+    @pytest.mark.parametrize("missing_manifest", [False, True])
+    @pytest.mark.parametrize("edited_command", [None, "plan", "tasks"])
+    def test_uninstall_syncs_fallback_manifest_without_blessing_user_edits(
+        self, tmp_path, tasks_preset_src, missing_manifest, edited_command,
+    ):
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+        if missing_manifest:
+            (project / ".specify/integrations/claude.manifest.json").unlink()
+        if edited_command:
+            edited_rel = f".agents/skills/speckit-{edited_command}/SKILL.md"
+            before = IntegrationManifest.load("codex", project).files[edited_rel]
+            (project / edited_rel).write_bytes(b"User-edited skill\n")
+
+        result = _run_in_project(project, ["integration", "uninstall", "claude"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads((project / ".specify/integration.json").read_bytes())
+        assert data["integration"] == "codex"
+        manifest = IntegrationManifest.load("codex", project)
+        rel = ".agents/skills/speckit-tasks/SKILL.md"
+        content = (project / rel).read_bytes()
+        assert b"Preset tasks body" in content
+        if edited_command:
+            assert manifest.files[edited_rel] == before, "pre-existing edits must not be recorded as pristine"
+            assert edited_rel in manifest.check_modified()
+        else:
+            assert manifest.files[rel] == hashlib.sha256(content).hexdigest()
+        result = _run_in_project(project, ["integration", "status", "--json"])
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output)["modified_managed_files"] == (1 if edited_command else 0)
+        result = _run_in_project(project, ["integration", "upgrade", "codex", "--script", "sh"])
+        assert result.exit_code == (1 if edited_command else 0), result.output
+        if edited_command:
+            assert "modified since installation" in result.output
+
+    @pytest.mark.parametrize("missing_manifest", [False, True])
+    @pytest.mark.parametrize("state", ["missing", "corrupt", "save-error"])
+    def test_uninstall_fallback_manifest_refresh_is_best_effort(
+        self, tmp_path, tasks_preset_src, monkeypatch, missing_manifest, state,
+    ):
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+        if missing_manifest:
+            (project / ".specify/integrations/claude.manifest.json").unlink()
+        manifest_path = project / ".specify/integrations/codex.manifest.json"
+        if state == "missing":
+            manifest_path.unlink()
+        elif state == "corrupt":
+            manifest_path.write_bytes(b"{invalid")
+        else:
+            original_save = IntegrationManifest.save
+
+            def fail_fallback_save(self):
+                if self.key == "codex":
+                    raise OSError("injected manifest save failure")
+                return original_save(self)
+
+            monkeypatch.setattr(IntegrationManifest, "save", fail_fallback_save)
+
+        result = _run_in_project(project, ["integration", "uninstall", "claude"])
+
+        assert result.exit_code == 0, result.output
+        assert b"Preset tasks body" in (project / ".agents/skills/speckit-tasks/SKILL.md").read_bytes()
+        output = " ".join(strip_ansi(result.output).split())
+        if state == "missing":
+            assert not manifest_path.exists(), "no manifest may be created"
+            assert "Warning:" not in output
+        elif state == "corrupt":
+            assert manifest_path.read_bytes() == b"{invalid"
+            assert "snapshot manifest hashes for integration 'codex'" in output
+            assert "resync manifest hashes" not in output
+        else:
+            assert "injected manifest save failure" in output
+            assert "The fallback integration was selected, but its manifest hashes may be stale." in output
 
 
 class TestUninstallNoManifestClearsInitOptions:

@@ -5,11 +5,15 @@ import json  # noqa: F401
 from pathlib import Path
 from unittest.mock import patch  # noqa: F401
 
+import pytest
 import yaml  # noqa: F401
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli.bundles.command_info import _format_component
+from specify_cli.bundles.manifest import BundleManifest, ComponentRef
 from specify_cli.bundles.packager import build_bundle  # noqa: F401
+from specify_cli.bundles.records import InstalledBundleRecord, save_records
 from tests.conftest import strip_ansi  # noqa: F401
 from tests.specify_cli.bundles._command_helpers import (
     MARKUP_BUNDLE_ID,
@@ -19,6 +23,7 @@ from tests.specify_cli.bundles._command_helpers import (
 )
 from tests.specify_cli.bundles.helpers import (
     catalog_entry_dict,
+    reference_manifest_dict,
     valid_manifest_dict,
     write_catalog_file,
 )
@@ -71,11 +76,279 @@ def test_info_unknown_bundle_without_project_reports_not_found(
     assert "Spec Kit project" not in result.output
 
 
-def test_info_expands_full_component_set(project: Path, monkeypatch):
-    bundle_dir = project / "src-bundle"
+def test_info_renders_reference_provenance(project: Path, monkeypatch):
+    parent_dir = project / "parent-bundle"
+    child_dir = project / "child-bundle"
+    parent_dir.mkdir()
+    child_dir.mkdir()
+    parent_data = reference_manifest_dict(
+        [{"id": "child-bundle", "version": "1.0.0"}],
+        extensions=[{"id": "child-extension", "version": "2.0.0"}],
+    )
+    child_data = reference_manifest_dict(
+        [{"id": "grandchild-bundle", "version": "1.0.0"}],
+        bundle_id="child-bundle",
+        extensions=[{"id": "child-extension", "version": "1.0.0"}],
+    )
+    child_data["bundle"]["version"] = "1.0.0"
+    parent_path = parent_dir / "bundle.yml"
+    child_path = child_dir / "bundle.yml"
+    grandchild_dir = project / "grandchild-bundle"
+    grandchild_dir.mkdir()
+    grandchild_data = reference_manifest_dict(
+        [], bundle_id="grandchild-bundle",
+        extensions=[{"id": "grandchild-extension", "version": "1.0.0"}],
+    )
+    grandchild_data["bundle"]["version"] = "1.0.0"
+    grandchild_path = grandchild_dir / "bundle.yml"
+    parent_path.write_text(yaml.safe_dump(parent_data), encoding="utf-8")
+    child_path.write_text(yaml.safe_dump(child_data), encoding="utf-8")
+    grandchild_path.write_text(yaml.safe_dump(grandchild_data), encoding="utf-8")
+    catalog = project / "references-catalog.json"
+    write_catalog_file(
+        catalog,
+        {
+            "demo-bundle": catalog_entry_dict("demo-bundle"),
+            "child-bundle": catalog_entry_dict(
+                "child-bundle", version="1.0.0", download_url="https://example.com/child.zip"
+            ),
+            "grandchild-bundle": catalog_entry_dict(
+                "grandchild-bundle", version="1.0.0", download_url="https://example.com/grandchild.zip"
+            ),
+        },
+    )
+    added = runner.invoke(app, ["bundle", "catalog", "add", str(catalog), "--id", "local"])
+    assert added.exit_code == 0, added.output
+
+    def fake_download(resolved, *, offline):
+        paths = {
+            "demo-bundle": parent_path,
+            "child-bundle": child_path,
+            "grandchild-bundle": grandchild_path,
+        }
+        return BundleManifest.from_file(paths[resolved.entry.id])
+
+    monkeypatch.setattr("specify_cli.bundles.command_info._download_manifest", fake_download)
+    result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json", "--offline"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["references"] == [
+        {
+            "id": "child-bundle",
+            "version": "1.0.0",
+            "source": "local",
+            "install_policy": "install-allowed",
+            "via": [],
+            "verified": True,
+            "trust": "verified",
+        },
+        {
+            "id": "grandchild-bundle",
+            "version": "1.0.0",
+            "source": "local",
+            "install_policy": "install-allowed",
+            "via": ["child-bundle"],
+            "verified": True,
+            "trust": "verified",
+        },
+    ]
+    component = next(c for c in payload["components"] if c["id"] == "child-extension")
+    assert "origin" not in component
+    assert component["overrides"] == [{"version": "1.0.0", "origin": ["child-bundle"]}]
+    transitive = next(c for c in payload["components"] if c["id"] == "grandchild-extension")
+    assert transitive["origin"] == ["child-bundle", "grandchild-bundle"]
+    text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
+    assert "References:" in text.output
+    assert "    - child-bundle v1.0.0 (local; verified)" in text.output
+    assert "    - grandchild-bundle v1.0.0 (local; verified; via child-bundle)" in text.output
+    assert "overrides 1.0.0 from child-bundle" in text.output
+
+
+def test_info_exposes_trust_of_unverified_reference(project: Path, monkeypatch):
+    parent_dir = project / "parent-bundle"
+    child_dir = project / "child-bundle"
+    parent_dir.mkdir()
+    child_dir.mkdir()
+    parent_path = parent_dir / "bundle.yml"
+    child_path = child_dir / "bundle.yml"
+    parent_data = reference_manifest_dict([{"id": "child-bundle", "version": "1.0.0"}])
+    child_data = reference_manifest_dict(
+        [],
+        bundle_id="child-bundle",
+        extensions=[{"id": "child-extension", "version": "1.0.0"}],
+    )
+    child_data["bundle"]["version"] = "1.0.0"
+    parent_path.write_text(yaml.safe_dump(parent_data), encoding="utf-8")
+    child_path.write_text(yaml.safe_dump(child_data), encoding="utf-8")
+    catalog = project / "trust-catalog.json"
+    write_catalog_file(
+        catalog,
+        {
+            "demo-bundle": catalog_entry_dict("demo-bundle", verified=True),
+            "child-bundle": catalog_entry_dict(
+                "child-bundle",
+                version="1.0.0",
+                download_url="https://example.com/child.zip",
+                verified=False,
+            ),
+        },
+    )
+    added = runner.invoke(app, ["bundle", "catalog", "add", str(catalog), "--id", "local"])
+    assert added.exit_code == 0, added.output
+
+    def fake_download(resolved, *, offline):
+        path = {"demo-bundle": parent_path, "child-bundle": child_path}[resolved.entry.id]
+        return BundleManifest.from_file(path)
+
+    monkeypatch.setattr("specify_cli.bundles.command_info._download_manifest", fake_download)
+    result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json", "--offline"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert (payload["verified"], payload["trust"]) == (True, "verified")
+    (reference,) = payload["references"]
+    assert (reference["verified"], reference["trust"]) == (False, "community")
+
+    text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
+    assert "Trust: ✔ verified" in text.output
+    assert "    - child-bundle v1.0.0 (local; community)" in text.output
+
+
+def test_format_component_equivalent_override_is_labelled_historical():
+    text = _format_component(
+        {
+            "kind": "extensions",
+            "id": "e",
+            "version": "1.0.0",
+            "overrides": [
+                {"version": "1.0.0", "origin": ["child", "leaf"]},
+                {"version": "2.0.0", "origin": ["child"]},
+            ],
+        }
+    )
+
+    assert "also declared by child → leaf (same as final)" in text
+    assert "overrides 1.0.0" not in text
+    assert "overrides 2.0.0 from child" in text
+
+
+def test_format_component_describes_setting_overrides():
+    text = _format_component(
+        {
+            "id": "shared",
+            "version": "1.0.0",
+            "source": "winning",
+            "priority": 10,
+            "strategy": "replace",
+            "overrides": [
+                {
+                    "version": "v1.0.0",
+                    "source": "lower",
+                    "priority": 5,
+                    "strategy": "append",
+                    "origin": ["child-bundle"],
+                }
+            ],
+        }
+    )
+
+    assert "overrides source=lower, priority=5, strategy=append from child-bundle" in text
+    assert "overrides 1.0.0 from child-bundle" not in text
+
+
+def test_format_component_does_not_claim_unpinned_version_changed():
+    text = _format_component(
+        {
+            "id": "shared",
+            "version": None,
+            "source": "winning",
+            "overrides": [
+                {"version": None, "source": "lower", "origin": ["child-bundle"]}
+            ],
+        }
+    )
+
+    assert "overrides source=lower from child-bundle" in text
+    assert "overrides unpinned" not in text
+
+
+def _override_text(kind, item_fields, override_fields):
+    return _format_component(
+        {
+            "kind": kind,
+            "id": "shared",
+            "version": "2.0.0",
+            **item_fields,
+            "overrides": [
+                {"version": "1.0.0", "origin": ["child-bundle"], **override_fields}
+            ],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("item_fields", "override_fields"),
+    [({"priority": 10}, {}), ({}, {"priority": 10})],
+)
+def test_format_component_omitted_extension_priority_equals_default(item_fields, override_fields):
+    text = _override_text("extensions", item_fields, override_fields)
+    assert "overrides 1.0.0 from child-bundle" in text
+    assert "priority=" not in text.split("overrides", 1)[1]
+
+
+def test_format_component_extension_non_default_priority_is_reported():
+    text = _override_text("extensions", {"priority": 11}, {})
+    assert "overrides 1.0.0, priority=<unset> from child-bundle" in text
+
+
+def test_format_component_ignores_extension_strategy():
+    text = _override_text("extensions", {"strategy": "replace"}, {"strategy": "append"})
+    assert "strategy=" not in text.split("overrides", 1)[1]
+
+
+def test_format_component_preset_settings_still_compare_raw():
+    text = _override_text("presets", {"priority": 10, "strategy": "replace"}, {"strategy": "append"})
+    assert "overrides 1.0.0, priority=<unset>, strategy=append from child-bundle" in text
+
+
+@pytest.mark.parametrize("extra_args", [[], ["--versions"]])
+def test_info_catalog_id_ignores_same_named_path(
+    project: Path, monkeypatch, extra_args: list[str]
+):
+    bundle_dir = project / "demo-bundle"
     bundle_dir.mkdir()
     (bundle_dir / "bundle.yml").write_text(
         yaml.safe_dump(valid_manifest_dict()), encoding="utf-8"
+    )
+    catalog = project / "local-catalog.json"
+    write_catalog_file(
+        catalog,
+        {
+            "demo-bundle": catalog_entry_dict(
+                "demo-bundle", download_url="https://example.com/demo-bundle.zip"
+            )
+        },
+    )
+    added = runner.invoke(
+        app, ["bundle", "catalog", "add", str(catalog), "--id", "local"]
+    )
+    assert added.exit_code == 0, added.output
+    _mock_manifest_download(monkeypatch, bundle_dir / "bundle.yml")
+
+    result = runner.invoke(
+        app, ["bundle", "info", "demo-bundle", "--offline", *extra_args]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "demo-bundle" in result.output
+
+
+def test_info_expands_full_component_set(project: Path, monkeypatch):
+    bundle_dir = project / "src-bundle"
+    bundle_dir.mkdir()
+    manifest_data = valid_manifest_dict()
+    manifest_data["provides"]["extensions"][0]["source"] = "cat"
+    (bundle_dir / "bundle.yml").write_text(
+        yaml.safe_dump(manifest_data), encoding="utf-8"
     )
     catalog = project / "local-catalog.json"
     entry = catalog_entry_dict(
@@ -95,15 +368,158 @@ def test_info_expands_full_component_set(project: Path, monkeypatch):
     payload = json.loads(result.output)
     components = {(c["kind"], c["id"]): c for c in payload["components"]}
     assert ("extensions", "ext-a") in components
+    assert "source" not in components[("extensions", "ext-a")]
     preset = components[("presets", "preset-a")]
     assert preset["version"] == "2.0.0"
     assert preset["priority"] == 10
     assert preset["strategy"] == "append"
     assert payload["trust"] == "verified"
+    assert "references" not in payload
+
+    save_records(
+        project,
+        [
+            InstalledBundleRecord.create(
+                bundle_id="other",
+                version="1.0.0",
+                components=[],
+                required_components=[
+                    ComponentRef(kind="presets", id="preset-a", version="2.0.0")
+                ],
+            )
+        ],
+    )
+    overlap = "preset 'preset-a' is already required by bundle 'other'."
+    json_with_overlap = runner.invoke(
+        app, ["bundle", "info", "demo-bundle", "--json", "--offline"]
+    )
+    assert json_with_overlap.exit_code == 0, json_with_overlap.output
+    assert json.loads(json_with_overlap.output)["overlaps"] == [overlap]
 
     text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
+    assert overlap in text.output
     assert "preset-a v2.0.0" in text.output
     assert "Trust" in text.output
+
+
+def test_info_versions_lists_history_without_downloading_manifest(project: Path):
+    catalog = project / "history-catalog.json"
+    entry = catalog_entry_dict(
+        "history",
+        version="1.2.0",
+        releases={
+            "1.1.0": {
+                "download_url": "https://example.com/history-1.1.0.zip",
+                "sha256": "a" * 64,
+            }
+        },
+    )
+    write_catalog_file(catalog, {"history": entry})
+    added = runner.invoke(
+        app, ["bundle", "catalog", "add", str(catalog), "--id", "history"]
+    )
+    assert added.exit_code == 0, added.output
+
+    text = runner.invoke(app, ["bundle", "info", "history", "--versions", "--offline"])
+    assert text.exit_code == 0, text.output
+    assert "Catalog versions for history:" in text.output
+    assert "1.2.0 (current)" in text.output
+    assert "1.1.0" in text.output
+    assert "1.1.0 (current)" not in text.output
+    assert text.output.index("1.2.0") < text.output.index("1.1.0")
+    assert "Source: history (install-allowed)" in text.output
+    assert "Discovery only" not in text.output
+
+    as_json = runner.invoke(
+        app, ["bundle", "info", "history", "--versions", "--json", "--offline"]
+    )
+    assert as_json.exit_code == 0, as_json.output
+    assert json.loads(as_json.output) == {
+        "id": "history",
+        "versions": ["1.2.0", "1.1.0"],
+        "current": "1.2.0",
+        "source": "history",
+        "install_policy": "install-allowed",
+    }
+
+
+def _add_history_catalog(project: Path, releases, *, policy="install-allowed") -> None:
+    catalog = project / "history-catalog.json"
+    entry = catalog_entry_dict(
+        "history",
+        version="1.2.0",
+        download_url="https://example.com/history-1.2.0.zip",
+        releases=releases,
+    )
+    write_catalog_file(catalog, {"history": entry})
+    added = runner.invoke(
+        app,
+        ["bundle", "catalog", "add", str(catalog), "--id", "history", "--policy", policy],
+    )
+    assert added.exit_code == 0, added.output
+
+
+def test_info_versions_notes_discovery_only_winner(project: Path):
+    _add_history_catalog(
+        project,
+        {"1.1.0": {"download_url": "https://example.com/history-1.1.0.zip", "sha256": "a" * 64}},
+        policy="discovery-only",
+    )
+
+    text = runner.invoke(app, ["bundle", "info", "history", "--versions", "--offline"])
+    as_json = runner.invoke(
+        app, ["bundle", "info", "history", "--versions", "--json", "--offline"]
+    )
+
+    assert text.exit_code == 0, text.output
+    assert "Source: history (discovery-only)" in text.output
+    assert "Discovery only; catalog installation is disabled." in text.output
+    assert as_json.exit_code == 0, as_json.output
+    assert json.loads(as_json.output)["install_policy"] == "discovery-only"
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_info_versions_rejects_malformed_history_cleanly(project: Path, as_json: bool):
+    _add_history_catalog(project, {"1.1.0": {"download_url": "https://example.com/x.zip"}})
+    args = ["bundle", "info", "history", "--versions", "--offline"]
+    if as_json:
+        args.append("--json")
+
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 1
+    assert "release '1.1.0' needs a SHA-256 digest" in " ".join(result.output.split())
+    assert "Traceback" not in result.output
+    assert isinstance(result.exception, SystemExit)
+
+
+def test_search_rejects_malformed_history_cleanly(project: Path):
+    _add_history_catalog(project, {"1.1.0": {"download_url": "https://example.com/x.zip"}})
+
+    result = runner.invoke(app, ["bundle", "search", "--offline"])
+
+    assert result.exit_code == 1
+    assert "release '1.1.0' needs a SHA-256 digest" in " ".join(result.output.split())
+    assert "Traceback" not in result.output
+
+
+def test_info_without_versions_is_unchanged_by_history(project: Path, monkeypatch):
+    bundle_dir = project / "history-bundle"
+    manifest = valid_manifest_dict()
+    manifest["bundle"]["id"] = "history"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    _add_history_catalog(
+        project,
+        {"1.1.0": {"download_url": "https://example.com/history-1.1.0.zip", "sha256": "a" * 64}},
+    )
+    _mock_manifest_download(monkeypatch, bundle_dir / "bundle.yml")
+
+    result = runner.invoke(app, ["bundle", "info", "history", "--offline"])
+
+    assert result.exit_code == 0, result.output
+    assert "Catalog versions for" not in result.output
+    assert "preset-a v2.0.0" in result.output
 
 
 def test_info_escapes_catalog_markup(project: Path, monkeypatch):
@@ -154,6 +570,68 @@ def test_info_escapes_catalog_markup(project: Path, monkeypatch):
         "[blink]markup-overlap[/blink]",
     ):
         assert value in output
+
+
+def test_info_escapes_reference_and_component_markup(project: Path, monkeypatch):
+    parent_path = project / "markup-parent" / "bundle.yml"
+    child_path = project / "markup-child" / "bundle.yml"
+    parent_path.parent.mkdir()
+    child_path.parent.mkdir()
+    parent_path.write_text(
+        yaml.safe_dump(
+            reference_manifest_dict(
+                [{"id": "child", "version": "1.0.0"}], bundle_id="parent"
+            )
+        ),
+        encoding="utf-8",
+    )
+    child_data = valid_manifest_dict(
+        bundle={
+            "id": "child", "name": "Child", "version": "1.0.0",
+            "role": "developer", "description": "child", "author": "tests",
+            "license": "MIT",
+        }
+    )
+    child_data["provides"]["extensions"][0]["id"] = "[bold]x[/bold]"
+    child_path.write_text(yaml.safe_dump(child_data), encoding="utf-8")
+    catalog = project / "markup-reference-catalog.json"
+    write_catalog_file(
+        catalog,
+        {
+            "parent": catalog_entry_dict("parent"),
+            "child": catalog_entry_dict(
+                "child", version="1.0.0", download_url="https://example.com/child.zip"
+            ),
+        },
+    )
+    (project / ".specify" / "bundle-catalogs.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1.0",
+                "catalogs": [{
+                    "id": MARKUP_SOURCE_ID,
+                    "url": str(catalog),
+                    "priority": 1,
+                    "install_policy": "install-allowed",
+                }],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_download(resolved, *, offline):
+        return BundleManifest.from_file(
+            parent_path if resolved.entry.id == "parent" else child_path
+        )
+
+    monkeypatch.setattr("specify_cli.bundles.command_info._download_manifest", fake_download)
+    result = runner.invoke(app, ["bundle", "info", "parent", "--offline"])
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(strip_ansi(result.output).split())
+    assert "References:" in output
+    assert MARKUP_SOURCE_ID in output
+    assert "[bold]x[/bold] v1.0.0" in output
 
 
 def test_info_escapes_catalog_provides_fallback_markup(project: Path, monkeypatch):
@@ -216,6 +694,76 @@ def test_info_expands_discovery_only_bundle(project: Path, monkeypatch):
     assert ("extensions", "ext-a") in components
 
 
+def test_info_expands_discovery_only_referenced_bundle(project: Path, monkeypatch):
+    parent_dir = project / "disc-parent"
+    child_dir = project / "disc-child"
+    parent_dir.mkdir()
+    child_dir.mkdir()
+    parent_path = parent_dir / "bundle.yml"
+    child_path = child_dir / "bundle.yml"
+    parent_path.write_text(
+        yaml.safe_dump(
+            reference_manifest_dict(
+                [{"id": "child", "version": "1.0.0"}], bundle_id="demo-bundle"
+            )
+        ),
+        encoding="utf-8",
+    )
+    child_path.write_text(
+        yaml.safe_dump(
+            valid_manifest_dict(
+                bundle={
+                    "id": "child", "name": "Child", "version": "1.0.0",
+                    "role": "developer", "description": "child", "author": "tests",
+                    "license": "MIT",
+                }
+            )
+        ),
+        encoding="utf-8",
+    )
+    catalog = project / "disc-reference-catalog.json"
+    write_catalog_file(
+        catalog,
+        {
+            "demo-bundle": catalog_entry_dict("demo-bundle"),
+            "child": catalog_entry_dict(
+                "child", version="1.0.0", download_url="https://example.com/child.zip"
+            ),
+        },
+    )
+    (project / ".specify" / "bundle-catalogs.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1.0",
+                "catalogs": [{
+                    "id": "disc",
+                    "url": str(catalog),
+                    "priority": 1,
+                    "install_policy": "discovery-only",
+                }],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_download(resolved, *, offline):
+        return BundleManifest.from_file(
+            parent_path if resolved.entry.id == "demo-bundle" else child_path
+        )
+
+    monkeypatch.setattr("specify_cli.bundles.command_info._download_manifest", fake_download)
+    result = runner.invoke(
+        app, ["bundle", "info", "demo-bundle", "--json", "--offline"]
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["references"][0]["install_policy"] == "discovery-only"
+    components = {(c["kind"], c["id"]) for c in payload["components"]}
+    assert ("extensions", "ext-a") in components
+    text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
+    assert "discovery-only, not installable" in text.output
+
+
 def test_info_expands_zip_sourced_bundle(project: Path, monkeypatch):
     # A .zip artifact is extracted to read bundle.yml; info expands it. (The
     # download itself is HTTPS-only now and mocked here — see contract note.)
@@ -266,6 +814,42 @@ def test_info_fails_loudly_when_manifest_unresolvable_offline(project: Path):
     result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
     assert result.exit_code == 1
     assert "Network access disabled" in result.output
+
+
+def test_info_reference_offline_error_names_child(project: Path, monkeypatch):
+    parent = project / "parent" / "bundle.yml"
+    parent.parent.mkdir()
+    parent.write_text(
+        yaml.safe_dump(reference_manifest_dict(
+            [{"id": "child", "version": "1.0.0"}], bundle_id="demo-bundle"
+        )),
+        encoding="utf-8",
+    )
+    catalog = project / "reference-catalog.json"
+    write_catalog_file(
+        catalog,
+        {
+            "demo-bundle": catalog_entry_dict("demo-bundle"),
+            "child": catalog_entry_dict(
+                "child", version="1.0.0", download_url="https://example.com/child.zip"
+            ),
+        },
+    )
+    _make_catalog_config(catalog, project)
+    from specify_cli.bundles import command_info
+
+    original_download = command_info._download_manifest
+
+    def download(resolved, *, offline):
+        if resolved.entry.id == "demo-bundle":
+            return BundleManifest.from_file(parent)
+        return original_download(resolved, offline=offline)
+
+    monkeypatch.setattr(command_info, "_download_manifest", download)
+    result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
+
+    assert result.exit_code == 1
+    assert "Cannot resolve bundle reference child@1.0.0" in result.output
 
 
 def test_bundle_info_resolves_github_browser_release_url(project: Path):
@@ -578,6 +1162,60 @@ def test_bundle_info_resolves_ghes_browser_release_url(project: Path):
     assert payload["id"] == "demo-bundle"
 
 
+def test_bundle_info_resolves_ghecom_browser_release_url_zip(project: Path):
+    """bundle info resolves a GHE.com release ZIP through its API subdomain."""
+    import zipfile
+
+    web_host = "msft.ghe.com"
+    api_host = f"api.{web_host}"
+    browser_url = f"https://{web_host}/org/repo/releases/download/v2.0/bundle.zip"
+    api_asset_url = f"https://{api_host}/repos/org/repo/releases/assets/42"
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("bundle.yml", yaml.safe_dump(valid_manifest_dict()))
+    zip_bytes = archive.getvalue()
+    captured = []
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        captured.append((url, extra_headers))
+        if "releases/tags/" in url:
+            return FakeBundleResponse(
+                json.dumps(
+                    {"assets": [{"name": "bundle.zip", "url": api_asset_url}]}
+                ).encode(),
+                url=url,
+            )
+        return FakeBundleResponse(zip_bytes, url=api_asset_url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=browser_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with (
+        patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url),
+        patch(
+            "specify_cli.authentication.http.github_provider_hosts",
+            return_value=(web_host, api_host),
+        ),
+    ):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    assert result.exit_code == 0, result.output
+
+    tag_calls = [url for url, _ in captured if "releases/tags/" in url]
+    assert tag_calls == [f"https://{api_host}/repos/org/repo/releases/tags/v2.0"]
+
+    asset_calls = [(url, headers) for url, headers in captured if url == api_asset_url]
+    assert asset_calls == [(api_asset_url, {"Accept": "application/octet-stream"})]
+
+    payload = json.loads(result.output)
+    assert payload["id"] == "demo-bundle"
+
+
 def test_bundle_download_rejects_oversized_response(project: Path, monkeypatch):
     """Bundle download rejects responses exceeding MAX_DOWNLOAD_BYTES."""
     # Monkeypatch to a small limit so the test is fast and low-memory.
@@ -604,3 +1242,135 @@ def test_bundle_download_rejects_oversized_response(project: Path, monkeypatch):
     # Rich may wrap the message across lines; normalise whitespace before checking.
     output_flat = " ".join(result.output.split())
     assert "exceeds maximum size of 100 bytes" in output_flat
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets", "workflows"])
+@pytest.mark.parametrize(
+    ("field", "old", "new"),
+    [
+        ("priority", None, 10),
+        ("priority", 10, None),
+        ("priority", 1, 2),
+        ("strategy", None, "append"),
+        ("strategy", "append", "replace"),
+    ],
+)
+def test_override_marker_agrees_with_component_setting_differences(kind, field, old, new):
+    from specify_cli.bundles.conflict import component_setting_differences
+
+    def ref(value):
+        return ComponentRef(kind=kind, id="shared", **{field: value})
+
+    differs = field in component_setting_differences(ref(old), ref(new))
+    text = _override_text(
+        kind,
+        {} if new is None else {field: new},
+        {} if old is None else {field: old},
+    )
+    assert (f"{field}=" in text.split("overrides", 1)[1]) is differs
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets", "steps", "workflows"])
+@pytest.mark.parametrize(
+    ("field", "old", "new"),
+    [
+        ("version", "1.0.0", "v1.0.0"),
+        ("version", "1.0.0", "2.0.0"),
+        ("version", None, "1.0.0"),
+        ("source", None, "catalog"),
+        ("source", "a", "b"),
+        ("priority", None, 10),
+        ("priority", 10, None),
+        ("priority", 5, 10),
+        ("strategy", None, "append"),
+        ("strategy", "append", "replace"),
+    ],
+)
+def test_format_override_agrees_with_component_differences(kind, field, old, new):
+    from specify_cli.bundles.conflict import component_differences
+    from specify_cli.bundles.command_info import _format_override
+
+    old_ref = ComponentRef(kind=kind, id="c", **({field: old} if old is not None else {}))
+    new_ref = ComponentRef(kind=kind, id="c", **({field: new} if new is not None else {}))
+
+    diffs = component_differences(old_ref, new_ref)
+
+    item = {
+        "kind": kind,
+        "id": "c",
+        "version": new_ref.version,
+        "source": new_ref.source,
+        "priority": new_ref.priority,
+        "strategy": new_ref.strategy,
+    }
+    override = {
+        "version": old_ref.version,
+        "source": old_ref.source,
+        "priority": old_ref.priority,
+        "strategy": old_ref.strategy,
+        "origin": ["child"],
+    }
+    text = _format_override(item, override)
+
+    if not diffs:
+        assert "also declared by" in text or "same as final" in text
+    else:
+        assert text.startswith("overrides ")
+        assert "from child" in text
+        if field in diffs:
+            if field == "version":
+                assert (str(old) if old else "unpinned") in text
+            else:
+                assert f"{field}=" in text
+
+
+def test_info_strips_redundant_v_prefix_from_reference_label(
+    project: Path, monkeypatch
+):
+    """An accepted ``v1.0.1`` pin shows one prefix in text, raw in JSON."""
+    parent_dir = project / "parent-bundle"
+    child_dir = project / "child-bundle"
+    parent_dir.mkdir()
+    child_dir.mkdir()
+    parent_path = parent_dir / "bundle.yml"
+    child_path = child_dir / "bundle.yml"
+    parent_data = reference_manifest_dict(
+        [{"id": "child-bundle", "version": "v1.0.1"}]
+    )
+    child_data = reference_manifest_dict([])
+    child_data["bundle"]["id"] = "child-bundle"
+    child_data["bundle"]["version"] = "1.0.1"
+    parent_path.write_text(yaml.safe_dump(parent_data), encoding="utf-8")
+    child_path.write_text(yaml.safe_dump(child_data), encoding="utf-8")
+    catalog = project / "prefix-catalog.json"
+    write_catalog_file(
+        catalog,
+        {
+            "demo-bundle": catalog_entry_dict("demo-bundle"),
+            "child-bundle": catalog_entry_dict(
+                "child-bundle",
+                version="1.0.1",
+                download_url="https://example.com/child.zip",
+            ),
+        },
+    )
+    added = runner.invoke(app, ["bundle", "catalog", "add", str(catalog), "--id", "local"])
+    assert added.exit_code == 0, added.output
+
+    def fake_download(resolved, *, offline):
+        path = {"demo-bundle": parent_path, "child-bundle": child_path}[resolved.entry.id]
+        return BundleManifest.from_file(path)
+
+    monkeypatch.setattr("specify_cli.bundles.command_info._download_manifest", fake_download)
+
+    text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
+    assert text.exit_code == 0, text.output
+    output = " ".join(strip_ansi(text.output).split())
+    assert "- child-bundle v1.0.1 (local; verified)" in output
+    assert "vv1.0.1" not in output
+
+    result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json", "--offline"])
+    assert result.exit_code == 0, result.output
+    (reference,) = json.loads(result.output)["references"]
+    # JSON keeps the recorded pin, including the prefix.
+    assert reference["version"] == "v1.0.1"
