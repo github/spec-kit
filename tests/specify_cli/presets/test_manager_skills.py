@@ -2699,8 +2699,9 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert list(outside.iterdir()) == []
 
     @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    @pytest.mark.parametrize("legacy", [False, True], ids=["per-agent", "legacy"])
     def test_remove_base_does_not_compose_other_agents_layer_into_historical_dir(
-        self, project_dir, temp_dir, core
+        self, project_dir, temp_dir, core, legacy
     ):
         """``low`` is installed while Codex is active, so it was never
         registered for Claude. When the base under Claude's composing owner
@@ -2720,6 +2721,8 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         self._write_init_options(project_dir, ai="codex", ai_skills=True)
         manager.register_enabled_presets_for_agent("codex")
         install("low-preset", "Low body", "replace", 12, alias=False)
+        if legacy:
+            manager.registry.update("low-preset", {"registered_skills": ["speckit-custom"]})
 
         assert manager.remove("base-preset") is True
 

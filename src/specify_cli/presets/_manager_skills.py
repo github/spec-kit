@@ -866,7 +866,16 @@ class _PresetSkillMethods:
             if not isinstance(meta, dict):
                 return True
             if isinstance(meta.get("registered_skills"), list):
-                return True
+                if not active_ai:
+                    return True
+                meta = {
+                    **meta,
+                    "registered_skills": self._infer_legacy_skill_provenance(
+                        [n for n in meta["registered_skills"] if isinstance(n, str)],
+                        pack_id,
+                        active_ai,
+                    ),
+                }
             for key in ("registered_skills", "registered_commands"):
                 recorded = meta.get(key)
                 if isinstance(recorded, dict) and any(
