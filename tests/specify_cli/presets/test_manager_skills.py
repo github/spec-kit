@@ -3124,6 +3124,46 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "Core custom body" in content and "Appended body" in content
         assert "Base preset body" not in content
 
+    @pytest.mark.parametrize("survivor_id", ["unrelated", "preset"])
+    def test_remove_native_skill_with_survivor_named_preset(
+        self, project_dir, temp_dir, monkeypatch, survivor_id
+    ):
+        """A preset named ``preset`` must not own every ``preset:<id>``
+        marker when command cleanup handles a partial skills record."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        manager = PresetManager(project_dir)
+        for preset_id, command in [
+            ("base-preset", "speckit.custom"),
+            (survivor_id, "speckit.other"),
+        ]:
+            preset = self._create_command_preset(temp_dir, preset_id, command, preset_id, preset_id)
+            manager.install_from_directory(preset, "0.1.5")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        original = manager._merge_pack_registered_skills
+
+        def fail_base_record(pack_id, written):
+            if pack_id == "base-preset" and written and "codex" in written:
+                raise OSError("simulated skill registry write failure")
+            return original(pack_id, written)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(manager, "_merge_pack_registered_skills", fail_base_record)
+            with pytest.warns(UserWarning, match="simulated skill registry write failure"):
+                manager.register_enabled_presets_for_agent("codex")
+
+        skill = project_dir / ".agents" / "skills" / "speckit-custom" / "SKILL.md"
+        assert "preset:base-preset" in skill.read_text(encoding="utf-8")
+        base = manager.registry.get("base-preset")
+        assert "speckit.custom" in base["registered_commands"]["codex"]
+        assert not base["registered_skills"].get("codex")
+
+        assert manager.remove("base-preset") is True
+
+        assert not skill.exists()
+        assert manager.registry.is_installed(survivor_id)
+
     def test_baseless_lower_composer_alias_stays_retired_after_rescaffold(
         self, project_dir, temp_dir
     ):

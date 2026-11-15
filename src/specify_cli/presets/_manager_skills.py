@@ -999,9 +999,13 @@ class _PresetSkillMethods:
                             metadata = None
                         if isinstance(metadata, dict):
                             source = metadata.get("source")
-                    if isinstance(source, str) and any(
-                        source == f"preset:{other}" or source.startswith(f"{other}:")
-                        for other in survivors
+                    if (
+                        isinstance(source, str)
+                        and source != f"preset:{pack_id}"
+                        and any(
+                            source == f"preset:{other}" or source.startswith(f"{other}:")
+                            for other in survivors
+                        )
                     ):
                         continue
                 kept.append(name)
