@@ -47,6 +47,7 @@ def test_bundle_init_rejects_incompatible_bundle_before_initializing(
     result = runner.invoke(app, ["bundle", "init", str(bundle), "--offline"])
 
     assert result.exit_code == 1, result.output
+    assert "requires Spec Kit >=9999.0.0" in " ".join(result.output.split())
     assert not (project / ".specify").exists()
 
 
