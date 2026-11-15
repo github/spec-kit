@@ -3090,6 +3090,40 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         manager.register_enabled_presets_for_agent("claude")
         assert alias_file.read_text(encoding="utf-8") == content
 
+    @pytest.mark.parametrize("historical", [False, True], ids=["active", "historical"])
+    def test_remove_base_keeps_native_survivor_after_partial_skill_registration(
+        self, project_dir, temp_dir, monkeypatch, historical
+    ):
+        """A failed base skill phase must not let command cleanup delete
+        the surviving composer's successfully registered native skill."""
+        manager = self._install_custom_layers(project_dir, temp_dir, core=True)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        original = manager._register_skills
+
+        def fail_base(manifest, *args, **kwargs):
+            if manifest.id == "base-preset":
+                raise RuntimeError("simulated base skills phase failure")
+            return original(manifest, *args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(manager, "_register_skills", fail_base)
+            manager.register_enabled_presets_for_agent("codex")
+
+        skill = project_dir / ".agents" / "skills" / "speckit-custom" / "SKILL.md"
+        assert "preset:append-preset" in skill.read_text(encoding="utf-8")
+        base = manager.registry.get("base-preset")
+        assert "speckit.custom" in base["registered_commands"]["codex"]
+        assert not base["registered_skills"].get("codex")
+        if historical:
+            self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        assert manager.remove("base-preset") is True
+
+        content = skill.read_text(encoding="utf-8")
+        assert "Core custom body" in content and "Appended body" in content
+        assert "Base preset body" not in content
+
     def test_baseless_lower_composer_alias_stays_retired_after_rescaffold(
         self, project_dir, temp_dir
     ):

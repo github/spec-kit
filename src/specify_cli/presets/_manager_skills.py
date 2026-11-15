@@ -949,12 +949,15 @@ class _PresetSkillMethods:
     ) -> Dict[str, List[str]]:
         """Leave out native-skill outputs another installed preset now owns.
 
-        Two presets can declare the same command alias. For native skill
+        Two presets can declare the same command or alias. For native skill
         agents both record it in ``registered_commands``, but only one file
         exists, carrying the ``<id>:<file>`` marker of whichever registered
-        it last. Deleting it with the preset being removed would drop a
-        survivor's alias that post-removal reconciliation (which does not
-        create missing outputs on a removal pass) cannot bring back, so keep
+        it last, or a ``preset:<id>`` marker after skill registration.
+        A partial skill registration can leave a primary command in this
+        cleanup list too. Deleting either output with the preset being
+        removed would drop a survivor's skill that post-removal
+        reconciliation (which does not create missing outputs on a removal
+        pass) cannot bring back, so keep
         those names out of the unregister list and let reconciliation
         recompose them.
         """
@@ -997,7 +1000,8 @@ class _PresetSkillMethods:
                         if isinstance(metadata, dict):
                             source = metadata.get("source")
                     if isinstance(source, str) and any(
-                        source.startswith(f"{other}:") for other in survivors
+                        source == f"preset:{other}" or source.startswith(f"{other}:")
+                        for other in survivors
                     ):
                         continue
                 kept.append(name)
