@@ -584,12 +584,41 @@ def run_update_command(extension: str | None) -> None:
                             if manifest is None:
                                 raise RuntimeError(f"Extension '{extension_id}' missing after install")
                             for agent_name in missing_agents:
-                                rendered = registrar.register_commands_for_agent(
-                                    agent_name, manifest,
-                                    manager.extensions_dir / extension_id, project_root,
+                                config = registrar.AGENT_CONFIGS[agent_name]
+                                output_dir = _AgentReg._resolve_agent_dir(
+                                    agent_name, config, project_root,
                                 )
-                                if rendered:
-                                    refreshed_commands[agent_name] = rendered
+                                detect_dir = config.get("detect_dir")
+                                if not output_dir.is_dir() or (
+                                    detect_dir and not (project_root / detect_dir).is_dir()
+                                ):
+                                    continue
+                                # Shared skills must retain the active integration's
+                                # rendering, including its command reference syntax.
+                                shared_commands = None
+                                if config.get("extension") == "/SKILL.md":
+                                    for refreshed_agent, commands in refreshed_commands.items():
+                                        refreshed_config = registrar.AGENT_CONFIGS[refreshed_agent]
+                                        if (
+                                            refreshed_config.get("extension") == "/SKILL.md"
+                                            and _AgentReg._same_lexical_path(
+                                                output_dir,
+                                                _AgentReg._resolve_agent_dir(
+                                                    refreshed_agent, refreshed_config, project_root,
+                                                ),
+                                            )
+                                        ):
+                                            shared_commands = commands
+                                            break
+                                if shared_commands is not None:
+                                    refreshed_commands[agent_name] = list(shared_commands)
+                                else:
+                                    refreshed_commands.update(
+                                        registrar.register_commands_for_all_agents(
+                                            manifest, manager.extensions_dir / extension_id,
+                                            project_root, only_agent=agent_name,
+                                        )
+                                    )
                             if refreshed_commands != new_metadata.get("registered_commands", {}):
                                 manager.registry.update(
                                     extension_id, {"registered_commands": refreshed_commands}
