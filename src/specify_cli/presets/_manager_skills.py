@@ -451,7 +451,8 @@ class _PresetSkillMethods:
                 # filtered out; otherwise compose from the owner's layers
                 # that belong here.
                 registered_here = self._layers_registered_in(
-                    layers[owner_idx:], skills_dir, active_ai, active_skills_dir
+                    layers[owner_idx:], skills_dir, active_ai, active_skills_dir,
+                    cmd_name,
                 )
                 # A project override wins the command for every agent, so the
                 # owner's composition is not what belongs there: let the
@@ -507,7 +508,8 @@ class _PresetSkillMethods:
                     if layer["path"].is_relative_to(owner_dir)
                 )
                 owner_layers = self._layers_registered_in(
-                    layers[owner_idx:], skills_dir, active_ai, active_skills_dir
+                    layers[owner_idx:], skills_dir, active_ai, active_skills_dir,
+                    cmd_name,
                 )
                 composed = resolver.resolve_content(
                     cmd_name, "command", layers=owner_layers
@@ -650,8 +652,15 @@ class _PresetSkillMethods:
 
             for skills_dir, group in groups.items():
                 agents = group["agents"]
+                # Same choice as the primary skill of that directory.
                 agent = (
-                    active_ai if active_ai in agents else sorted(agents)[0]
+                    active_ai
+                    if active_ai in agents
+                    or (
+                        skills_dir == active_skills_dir
+                        and active_ai in registrar.AGENT_CONFIGS
+                    )
+                    else sorted(agents)[0]
                 )
                 agent_config = registrar.AGENT_CONFIGS[agent]
                 # Rendering follows the single-active rule outside a removal
@@ -728,7 +737,8 @@ class _PresetSkillMethods:
                     # its primary skill is.
                     shadowed = alias_shadowed and not removal_pass
                     owner_layers = self._layers_registered_in(
-                        layers[owner_idx:], skills_dir, active_ai, active_skills_dir
+                        layers[owner_idx:], skills_dir, active_ai, active_skills_dir,
+                        primary,
                     )
                     composed = resolver.resolve_content(
                         primary, "command", layers=owner_layers
@@ -818,16 +828,19 @@ class _PresetSkillMethods:
         skills_dir: Path,
         active_ai: Optional[str],
         active_skills_dir: Optional[Path],
+        cmd_name: str,
     ) -> List[Dict[str, Any]]:
-        """Drop pack layers that were never registered in ``skills_dir``.
+        """Drop pack layers of ``cmd_name`` never registered in ``skills_dir``.
 
         Presets are registered for the active agent only (#2948), so a preset
         installed while another agent was active has no output in a
         historical agent's directory and must not be composed into one. A
-        preset counts as registered here when its ``registered_skills`` names
-        an agent that resolves to this directory, or its
-        ``registered_commands`` names a native skill agent that does: only
-        for those is a registered command a file in the skills directory. A
+        preset counts as registered here when its ``registered_skills`` lists
+        this command's skill for an agent that resolves to this directory, or
+        its ``registered_commands`` lists the command for a native skill
+        agent that does: only for those is a registered command a file in
+        the skills directory. Another command of the same pack recorded
+        there says nothing about this one (a registration can be partial). A
         command-backed agent's entry records command files elsewhere, and
         its skills directory can be another agent's (Amp's resolves to
         Codex's ``.agents/skills``). The active directory is never filtered,
@@ -846,6 +859,16 @@ class _PresetSkillMethods:
             agent_configs = registrar.AGENT_CONFIGS
         except ImportError:
             agent_configs = {}
+
+        wanted = {
+            "registered_skills": set(self._skill_names_for_command(cmd_name)),
+            "registered_commands": {cmd_name},
+        }
+
+        def lists_command(key: str, names: Any) -> bool:
+            return isinstance(names, list) and any(
+                isinstance(name, str) and name in wanted[key] for name in names
+            )
 
         def writes_skills(agent: Any) -> bool:
             config = agent_configs.get(agent) if isinstance(agent, str) else None
@@ -879,7 +902,7 @@ class _PresetSkillMethods:
             for key in ("registered_skills", "registered_commands"):
                 recorded = meta.get(key)
                 if isinstance(recorded, dict) and any(
-                    names
+                    lists_command(key, names)
                     and (key == "registered_skills" or writes_skills(agent))
                     and resolves_here(agent)
                     for agent, names in recorded.items()
@@ -903,7 +926,9 @@ class _PresetSkillMethods:
                 if isinstance(meta, dict) and not meta.get("registered_skills"):
                     commands = meta.get("registered_commands")
                     if isinstance(commands, dict) and not any(
-                        names and writes_skills(agent) and resolves_here(agent)
+                        lists_command("registered_commands", names)
+                        and writes_skills(agent)
+                        and resolves_here(agent)
                         for agent, names in commands.items()
                     ):
                         continue
@@ -1026,6 +1051,12 @@ class _PresetSkillMethods:
         provenance for legacy flat lists) and keeps the names whose ``SKILL.md``
         still carries that preset's ``preset:<id>`` marker, as
         ``(skills_dir, agent, owner_id, command_name, skill_name)`` tuples.
+
+        Several agents can record one physical directory (agy/codex/zed all
+        use ``.agents/skills``), so each file is returned once, with the
+        agent to render it: the active agent when it uses that directory,
+        otherwise the first recorded agent in sorted order, as
+        ``_unregister_skills`` and the alias pass choose.
         """
         registrar = self._command_registrar()
         affected = {
@@ -1044,6 +1075,7 @@ class _PresetSkillMethods:
                 )
             if not isinstance(recorded, dict):
                 continue
+            groups: Dict[Path, Dict[str, List[str]]] = {}
             for agent, names in recorded.items():
                 if not isinstance(agent, str) or not isinstance(names, list):
                     continue
@@ -1054,9 +1086,24 @@ class _PresetSkillMethods:
                 )
                 if skills_dir is None:
                     continue
+                group = groups.setdefault(skills_dir, {"agents": [], "names": []})
+                group["agents"].append(agent)
                 for name in names:
-                    if name not in affected:
-                        continue
+                    if (
+                        isinstance(name, str)
+                        and name in affected
+                        and name not in group["names"]
+                    ):
+                        group["names"].append(name)
+            for skills_dir, group in groups.items():
+                agents = group["agents"]
+                agent = (
+                    active_ai
+                    if active_ai
+                    and (active_ai in agents or skills_dir == active_skills_dir)
+                    else sorted(agents)[0]
+                )
+                for name in group["names"]:
                     skill_file = skills_dir / name / "SKILL.md"
                     if not self._validate_skill_subdir(
                         skill_file.parent, create=False, skills_root=skills_dir
