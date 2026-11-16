@@ -317,6 +317,20 @@ def _ensure_safe_shared_destination(
             raise ValueError(f"Shared infrastructure destination escapes project root: {label}") from None
 
 
+def _shared_script_mode(src_path: Path, content: bytes) -> int:
+    """Return the mode a shared script is written with.
+
+    Packaged scripts are 0644. A POSIX shell script that starts with a shebang
+    gets an execute bit for each class that can read it (always for the owner),
+    the rule ``ensure_executable_scripts`` applies, so a refresh that rewrites
+    it leaves it runnable without a separate chmod pass.
+    """
+    mode = src_path.stat().st_mode & 0o777
+    if os.name != "nt" and src_path.suffix == ".sh" and content.startswith(b"#!"):
+        mode |= ((mode & 0o444) >> 2) | 0o100
+    return mode
+
+
 def _write_shared_text(project_path: Path, dest: Path, content: str) -> None:
     _write_shared_bytes(project_path, dest, content.encode("utf-8"))
 
@@ -636,13 +650,9 @@ def install_shared_infra(
                     content = _resolve_dynamic_command_refs(
                         content, invoke_separator, invoke_prefix
                     )
+                    data = content.encode("utf-8")
                     planned_copies.append(
-                        (
-                            dst_path,
-                            rel,
-                            content.encode("utf-8"),
-                            src_path.stat().st_mode & 0o777,
-                        )
+                        (dst_path, rel, data, _shared_script_mode(src_path, data))
                     )
 
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
