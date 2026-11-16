@@ -9,8 +9,10 @@ frontmatter must be escaped by the YAML emitter.
 
 from pathlib import Path
 
+import pytest
 import yaml
 
+from specify_cli.agents import CommandRegistrar
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.base import yaml_quote
 from specify_cli.integrations.manifest import IntegrationManifest
@@ -59,6 +61,84 @@ def _fake_templates(tmp_path: Path, body: str) -> Path:
     templates.mkdir(exist_ok=True)
     (templates / "plan.md").write_text(body, encoding="utf-8")
     return templates
+
+
+class TestSkillVersionProvenance:
+    @pytest.mark.parametrize("all_agents", [False, True])
+    def test_registration_without_version_omits_it_for_aliases(self, tmp_path, all_agents):
+        source = _fake_templates(
+            tmp_path, "---\ndescription: Example\n---\n\nBody of the command.\n"
+        )
+        skills_dir = tmp_path / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+        commands = [{
+            "name": "speckit.example.plan",
+            "file": "plan.md",
+            "aliases": ["speckit.example.alias"],
+        }]
+        registrar = CommandRegistrar(tmp_path)
+        if all_agents:
+            registrar.register_commands_for_all_agents(
+                commands, "example", source, tmp_path, only_agent="codex",
+            )
+        else:
+            registrar.register_commands("codex", commands, "example", source, tmp_path)
+        for name in ("speckit-example-plan", "speckit-example-alias"):
+            skill_file = skills_dir / name / "SKILL.md"
+            parsed = _parse_frontmatter_line_anchored(skill_file)
+            assert parsed["metadata"] == {
+                "author": "github-spec-kit",
+                "source": "example:plan.md",
+            }
+            assert parsed["name"] == name
+            assert parsed["description"] == "Example"
+            assert "Body of the command." in skill_file.read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("version", ["1.0", "2.3.4-rc.1+build.5", None, "", "unknown"])
+    def test_optional_version_preserves_existing_frontmatter(self, version):
+        baseline = CommandRegistrar.build_skill_frontmatter(
+            "claude", "speckit-plan", MULTILINE, "preset:example", author="Acme"
+        )
+        actual = CommandRegistrar.build_skill_frontmatter(
+            "claude", "speckit-plan", MULTILINE, "preset:example",
+            author="Acme", version=version,
+        )
+        parsed = yaml.safe_load(CommandRegistrar.render_frontmatter(actual).split("---", 2)[1])
+        if version and version != "unknown":
+            assert parsed["metadata"].pop("version") == version
+        else:
+            assert "version" not in parsed["metadata"]
+        assert parsed == baseline
+
+    @pytest.mark.parametrize("agent", ["agy", "claude", "alquimia", "vibe", "copilot", "hermes", "generic"])
+    @pytest.mark.parametrize("version", ["8.7.6", "unknown"])
+    def test_core_setup_records_generator_version(self, tmp_path, monkeypatch, agent, version):
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: version)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+        integration = get_integration(agent)
+        templates = _fake_templates(tmp_path, HOSTILE_TEMPLATE)
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.IntegrationBase.shared_commands_dir",
+            lambda self: templates,
+        )
+        options: dict[str, object] = {"skills": True}
+        if agent == "generic":
+            options["commands_dir"] = ".custom/skills"
+        created = integration.setup(
+            tmp_path, IntegrationManifest(agent, tmp_path), parsed_options=options,
+        )
+        skills = [path for path in created if path.name == "SKILL.md"]
+        assert skills
+        for path in skills:
+            parsed = _parse_frontmatter_line_anchored(path)
+            if version == "unknown":
+                assert "version" not in parsed["metadata"]
+            else:
+                assert parsed["metadata"]["version"] == version
+            assert parsed["metadata"]["author"] == "github-spec-kit"
+            assert parsed["metadata"]["source"] == "templates/commands/plan.md"
+            assert parsed["description"] == MULTILINE
+            assert "Body of the command." in path.read_text(encoding="utf-8")
 
 
 class TestYamlQuote:

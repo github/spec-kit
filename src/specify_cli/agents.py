@@ -408,6 +408,7 @@ class CommandRegistrar:
         project_root: Path,
         extension_id: Optional[str] = None,
         author: object = "github-spec-kit",
+        version: str | None = None,
     ) -> str:
         """Render a command override as a SKILL.md file.
 
@@ -419,7 +420,8 @@ class CommandRegistrar:
         Spec-kit currently has multiple SKILL.md generators (template packaging,
         init-time conversion, and extension/preset overrides). Keep the skill
         frontmatter keys aligned (name/description/compatibility/metadata, with
-        metadata.author and metadata.source subkeys) to avoid drift across agents.
+        metadata.author, metadata.source, and optional metadata.version subkeys)
+        to avoid drift across agents.
         """
         if not isinstance(frontmatter, dict):
             frontmatter = {}
@@ -439,6 +441,7 @@ class CommandRegistrar:
             description,
             f"{source_id}:{source_file}",
             author=author,
+            version=version,
         )
         return self.render_frontmatter(skill_frontmatter) + "\n" + body
 
@@ -449,6 +452,7 @@ class CommandRegistrar:
         description: str,
         source: str,
         author: object = "github-spec-kit",
+        version: str | None = None,
     ) -> dict:
         """Build consistent SKILL.md frontmatter across all skill generators."""
         normalized_author = (
@@ -463,6 +467,8 @@ class CommandRegistrar:
                 "source": source,
             },
         }
+        if version and version != "unknown":
+            skill_frontmatter["metadata"]["version"] = version
         return skill_frontmatter
 
     @staticmethod
@@ -651,6 +657,7 @@ class CommandRegistrar:
         link_outputs: bool = False,
         extension_id: Optional[str] = None,
         author: object = "github-spec-kit",
+        version: str | None = None,
     ) -> List[str]:
         """Register commands for a specific agent.
 
@@ -670,6 +677,7 @@ class CommandRegistrar:
                 to a normal file write when symlinks are unavailable.
             extension_id: Extension id when rendering extension-owned commands.
             author: Author attributed in generated skill metadata.
+            version: Supplying component version, omitted from skills if unknown.
 
         Returns:
             List of registered command names
@@ -838,6 +846,7 @@ class CommandRegistrar:
                     project_root,
                     extension_id=extension_id,
                     author=author,
+                    version=version,
                 )
             elif agent_config["format"] == "markdown":
                 body = self.resolve_skill_placeholders(
@@ -930,6 +939,7 @@ class CommandRegistrar:
                             project_root,
                             extension_id=extension_id,
                             author=author,
+                            version=version,
                         )
                     elif agent_config["format"] == "markdown":
                         alias_output = self.render_markdown_command(
@@ -964,6 +974,7 @@ class CommandRegistrar:
                             project_root,
                             extension_id=extension_id,
                             author=author,
+                            version=version,
                         )
 
                 alias_file = (
@@ -1122,6 +1133,7 @@ class CommandRegistrar:
         extension_id: Optional[str] = None,
         only_agent: Optional[str] = None,
         author: object = "github-spec-kit",
+        version: str | None = None,
     ) -> Dict[str, List[str]]:
         """Register commands for all detected agents in the project.
 
@@ -1140,6 +1152,7 @@ class CommandRegistrar:
                 creation fails.
             extension_id: Extension id when rendering extension-owned commands.
             author: Author attributed in generated skill metadata.
+            version: Supplying component version, omitted from skills if unknown.
             only_agent: If set, restrict registration to this single agent
                 while keeping all detection and recovery safeguards (#2948).
 
@@ -1248,6 +1261,7 @@ class CommandRegistrar:
                         link_outputs=link_outputs,
                         extension_id=extension_id,
                         author=author,
+                        version=version,
                     )
                     if registered:
                         results[agent_name] = registered

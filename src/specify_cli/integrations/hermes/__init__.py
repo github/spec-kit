@@ -19,7 +19,7 @@ from typing import Any
 
 import yaml
 
-from ..base import IntegrationOption, SkillsIntegration, yaml_quote
+from ..base import IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
 
 
@@ -184,18 +184,12 @@ class HermesIntegration(SkillsIntegration):
             if not description:
                 description = f"Spec Kit: {command_name} workflow"
 
-            # Build SKILL.md with manually formatted frontmatter. yaml_quote
-            # escapes newlines and control characters that a plain quoted
-            # f-string cannot carry.
+            frontmatter_text = self._render_core_skill_frontmatter(
+                skill_name, description, f"templates/commands/{src_file.name}"
+            )
             skill_content = (
                 f"---\n"
-                f"name: {yaml_quote(skill_name)}\n"
-                f"description: {yaml_quote(description)}\n"
-                f"compatibility: "
-                f"{yaml_quote('Requires spec-kit project structure with .specify/ directory')}\n"
-                f"metadata:\n"
-                f"  author: {yaml_quote('github-spec-kit')}\n"
-                f"  source: {yaml_quote('templates/commands/' + src_file.name)}\n"
+                f"{frontmatter_text}\n"
                 f"---\n"
                 f"{processed_body}"
             )
