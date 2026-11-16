@@ -53,6 +53,7 @@ and commands read the constitution at runtime and are not modified here.
     ## Extension Hooks
 
     **Optional Pre-Hook**: {extension}
+    SPECKIT_FEATURE_DIR: {FEATURE_DIR}
     Command: `/{command}`
     Description: {description}
 
@@ -64,6 +65,7 @@ and commands read the constitution at runtime and are not modified here.
     ## Extension Hooks
 
     **Automatic Pre-Hook**: {extension}
+    SPECKIT_FEATURE_DIR: {FEATURE_DIR}
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
 
@@ -161,6 +163,7 @@ Check if `.specify/extensions.yml` exists in the project root.
     ## Extension Hooks
 
     **Optional Hook**: {extension}
+    SPECKIT_FEATURE_DIR: {FEATURE_DIR}
     Command: `/{command}`
     Description: {description}
 
@@ -172,6 +175,7 @@ Check if `.specify/extensions.yml` exists in the project root.
     ## Extension Hooks
 
     **Automatic Hook**: {extension}
+    SPECKIT_FEATURE_DIR: {FEATURE_DIR}
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
     ```

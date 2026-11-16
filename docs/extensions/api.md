@@ -788,6 +788,30 @@ Executing: `/{command}`
 EXECUTE_COMMAND: {command}
 ```
 
+### Hook Context
+
+Every rendered hook block carries the feature directory its command is running for, so a hook does
+not have to derive it from the branch name or `.specify/feature.json`:
+
+```markdown
+## Extension Hooks
+
+**Optional Hook**: {extension}
+SPECKIT_FEATURE_DIR: /repo/specs/003-user-auth
+Command: `/{command}`
+Description: {description}
+
+Prompt: {prompt}
+To execute: `/{command}`
+```
+
+- `SPECKIT_FEATURE_DIR` is the absolute path of the current feature directory, the `FEATURE_DIR`
+  the command's setup script resolves before the hooks run.
+- It resolves to nothing for `before_specify`, because the feature directory does not exist yet at
+  that point. A hook must treat the empty value as "no feature yet" rather than guessing one.
+- Hooks are prompts run in the same session, so the value reaches the hook through the block, not
+  through an environment variable.
+
 ---
 
 ## Extension Runtime Events
