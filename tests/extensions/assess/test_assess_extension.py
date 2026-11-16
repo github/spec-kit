@@ -97,6 +97,9 @@ class TestExtensionLayout:
             for line in text.splitlines()
             if line.lstrip().startswith("- **needs-clarification** →")
         )
+        # The opening summary must not contradict the report-back step by
+        # sending the idea back to an earlier stage unconditionally.
+        assert "sends it back to an earlier stage" not in text
         # decide reports and stops; it does not resolve the unknowns itself.
         assert "report the blocking questions and stop" in step
         # Refinement happens in the artifact, driven by the user.
