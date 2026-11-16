@@ -489,7 +489,9 @@ def _builtin_keys() -> list[str]:
 
 @pytest.mark.parametrize("existing", ["project", "plain"])
 @pytest.mark.parametrize("key", _builtin_keys())
-def test_init_here_rolls_back_a_failed_setup_for_every_builtin(tmp_path, monkeypatch, key, existing):
+def test_init_here_rolls_back_a_failed_setup_for_every_builtin(
+    tmp_path, monkeypatch, key, existing, _isolate_home,
+):
     """No built-in integration writes outside what the init journal can restore."""
     import json as _json
 
@@ -500,7 +502,13 @@ def test_init_here_rolls_back_a_failed_setup_for_every_builtin(tmp_path, monkeyp
         for relative in sorted(_json.loads(manifest.read_text(encoding="utf-8"))["files"]):
             (project / relative).write_text("user edit\n", encoding="utf-8")
             break
+    home_skills = _isolate_home / ".hermes" / "skills"
+    if key == "hermes" and existing == "project":
+        # Hermes writes its skills under the home directory, not the project.
+        customized = sorted(home_skills.rglob("SKILL.md"))[0]
+        customized.write_text("# user customization\n", encoding="utf-8")
     before = _tree(project)
+    before_home = _tree(_isolate_home)
     _fail_init_at(monkeypatch, "setup", key)
 
     monkeypatch.chdir(project)
@@ -509,6 +517,9 @@ def test_init_here_rolls_back_a_failed_setup_for_every_builtin(tmp_path, monkeyp
     assert result.exit_code != 0
     assert "disk full" in result.output
     assert _tree(project) == before
+    assert _tree(_isolate_home) == before_home
+    if key == "hermes" and existing == "project":
+        assert customized.read_text(encoding="utf-8") == "# user customization\n"
 
 
 def test_init_here_runs_unjournalled_when_a_scope_is_a_symlink(tmp_path, monkeypatch):
