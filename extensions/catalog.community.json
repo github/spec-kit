@@ -2350,6 +2350,41 @@
       "created_at": "2026-07-08T00:00:00Z",
       "updated_at": "2026-07-08T00:00:00Z"
     },
+    "egm": {
+      "name": "Elephant-Goldfish Model",
+      "id": "egm",
+      "description": "Design with an elephant. Review with a goldfish.",
+      "author": "Kapil Sachdeva",
+      "version": "0.9.1",
+      "download_url": "https://github.com/ksachdeva/spec-kit-extensions/releases/download/egm-v0.9.1/egm-0.9.1.zip",
+      "sha256": "920f2570be2d40f2a5abe359dd7f58658e90aea317b38438bb8444f8a01d4deb",
+      "repository": "https://github.com/ksachdeva/spec-kit-extensions",
+      "homepage": "https://github.com/ksachdeva/spec-kit-extensions",
+      "documentation": "https://github.com/ksachdeva/spec-kit-extensions/blob/main/extensions/egm/README.md",
+      "changelog": "https://github.com/ksachdeva/spec-kit-extensions/blob/main/extensions/egm/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 0
+      },
+      "tags": [
+        "assessment",
+        "discovery",
+        "triage",
+        "product",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-16T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z"
+    },
     "epic": {
       "name": "Epic",
       "id": "epic",
