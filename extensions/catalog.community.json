@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-12T00:00:00Z",
+  "updated_at": "2026-11-16T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "ado": {
@@ -3300,6 +3300,56 @@
       "stars": 0,
       "created_at": "2026-03-05T00:00:00Z",
       "updated_at": "2026-03-05T00:00:00Z"
+    },
+    "jira-lifecycle": {
+      "name": "Spec Kit lifecycle for Jira",
+      "id": "jira-lifecycle",
+      "description": "A Jira story to Done through Spec Kit, with a human sign-off before every Jira or PR write.",
+      "author": "praveenlavu",
+      "version": "0.1.0",
+      "download_url": "https://github.com/praveenlavu/spec-kit-jira/archive/refs/tags/v0.1.0.zip",
+      "sha256": "2ef9ca5ea40b3cc05b1043fc39dd01019615ad9d5766e46e5d7389d2e1159902",
+      "repository": "https://github.com/praveenlavu/spec-kit-jira",
+      "homepage": "https://github.com/praveenlavu/spec-kit-jira",
+      "documentation": "https://github.com/praveenlavu/spec-kit-jira/blob/v0.1.0/README.md",
+      "changelog": "https://github.com/praveenlavu/spec-kit-jira/blob/v0.1.0/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.2.1",
+        "tools": [
+          {
+            "name": "skj",
+            "version": ">=0.1.0",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "gh",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 13,
+        "hooks": 2
+      },
+      "tags": [
+        "jira",
+        "issue-tracking",
+        "hitl",
+        "workflow",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-16T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z"
     },
     "jira-mirror": {
       "name": "Jira Mirror",
