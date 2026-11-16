@@ -763,7 +763,7 @@
       "name": "OKR Bet Spec Section",
       "id": "okr-bet",
       "version": "0.2.1",
-      "description": "Adds a Hypothesis &amp; Bet section (with the bet&#39;s verification contract) to every spec and teaches /speckit.specify to fill it from an okr:/H-n bet. Companion of the okr extension.",
+      "description": "Adds a Hypothesis & Bet section (with the bet's verification contract) to every spec and teaches /speckit.specify to fill it from an okr:<team>/H-n bet. Companion of the okr extension.",
       "author": "juanl",
       "repository": "https://github.com/juanl/spec-kit-okr",
       "download_url": "https://github.com/juanl/spec-kit-okr/releases/download/v0.2.1/spec-kit-okr-bet-preset-0.2.1.zip",
