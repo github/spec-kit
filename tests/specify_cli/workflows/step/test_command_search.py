@@ -41,6 +41,7 @@ def test_workflow_step_search_displays_query_markup_literally(
     project_dir, monkeypatch, query
 ):
     monkeypatch.chdir(project_dir)
+    monkeypatch.setattr(StepCatalog, "search", lambda _catalog, query=None: [])
 
     result = CliRunner().invoke(app, ["workflow", "step", "search", query])
 
