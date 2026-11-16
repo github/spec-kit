@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-12T00:00:00Z",
+  "updated_at": "2026-11-16T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -758,6 +758,34 @@
       ],
       "created_at": "2026-09-23T00:00:00Z",
       "updated_at": "2026-09-23T00:00:00Z"
+    },
+    "okr-bet": {
+      "name": "OKR Bet Spec Section",
+      "id": "okr-bet",
+      "version": "0.2.1",
+      "description": "Adds a Hypothesis &amp; Bet section (with the bet&#39;s verification contract) to every spec and teaches /speckit.specify to fill it from an okr:/H-n bet. Companion of the okr extension.",
+      "author": "juanl",
+      "repository": "https://github.com/juanl/spec-kit-okr",
+      "download_url": "https://github.com/juanl/spec-kit-okr/releases/download/v0.2.1/spec-kit-okr-bet-preset-0.2.1.zip",
+      "sha256": "90c6e1e58956696a6b5fd13082ddcf45ab669c3c742e203f81882ef6a8498cc8",
+      "homepage": "https://github.com/juanl/spec-kit-okr",
+      "documentation": "https://github.com/juanl/spec-kit-okr/blob/v0.2.1/README.md#install",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 1
+      },
+      "tags": [
+        "okr",
+        "hypothesis",
+        "spec-template",
+        "metrics"
+      ],
+      "created_at": "2026-11-16T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z"
     },
     "openproject": {
       "name": "OpenProject Work Packages",
