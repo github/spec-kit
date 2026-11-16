@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-12T00:00:00Z",
+  "updated_at": "2026-11-16T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "ado": {
@@ -4227,6 +4227,42 @@
       "stars": 0,
       "created_at": "2026-05-04T02:51:52Z",
       "updated_at": "2026-06-18T00:00:00Z"
+    },
+    "multi-repo": {
+      "name": "Multi-Repo Workspace Orchestration",
+      "id": "multi-repo",
+      "description": "Orchestrate spec-driven implementation across a workspace: a central specs repository dispatches implementation to member repositories",
+      "author": "Joao Victor",
+      "version": "0.7.1",
+      "download_url": "https://github.com/joaopaschuino/speckit-multirepo/archive/refs/tags/v0.7.1.zip",
+      "sha256": "d2206a8285491886f9b548cfca4db5b752d19667239d7d403d7b7ecc075271b9",
+      "repository": "https://github.com/joaopaschuino/speckit-multirepo",
+      "homepage": "https://github.com/joaopaschuino/speckit-multirepo",
+      "documentation": "https://github.com/joaopaschuino/speckit-multirepo/blob/main/README.md",
+      "changelog": "https://github.com/joaopaschuino/speckit-multirepo/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.1.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 1
+      },
+      "tags": [
+        "multi-repo",
+        "orchestration",
+        "workspace",
+        "specs",
+        "spec-driven-development",
+        "dependency-graph"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-16T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z"
     },
     "multi-repo-sync": {
       "name": "Multi-Repo Branch Sync",
