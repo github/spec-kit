@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.4.1] - 2026-11-16
+
+### Changed
+
+- Add Elephant-Goldfish Model extension to community catalog (#5444)
+- Add Spec Kit lifecycle for Jira extension to community catalog (#5438)
+- [preset] Add OKR Bet Spec Section preset to community catalog (#5439)
+- Add Multi-Repo Workspace Orchestration extension to community catalog (#5436)
+- fix(powershell): treat bracketed project paths literally in the git extension (#5404)
+- fix(powershell): treat bracketed project paths literally in create-new-feature (#5399)
+- fix(powershell): treat project and preset template paths literally (#5396)
+- docs(extensions): list the converge hook events (#5328)
+- [extension] Add OKR Bets extension to community catalog (#5412)
+- Update T-Shirt Sizing Gate extension to v0.2.0 (#5407)
+- Update Intake Sequencing Governance preset to v0.2.13 (#5406)
+- fix(workflows): expose bundled review verdict inputs (#5392)
+- Update Intake Review Governance preset to v0.2.8 (#5388)
+- fix(integrations): honor shared refresh for installed targets (#5377)
+- Update ado-lifecycle to 0.3.2 (#5345)
+- Use handle-based deletion in FileHelper (#5352)
+- [extension] Add A·I·DID·IT — Agile Expansion Pack extension to community catalog (#5375)
+- Update DocGuard — CDD Enforcement to v0.47.0 (#5374)
+- Update Intake Authoring Governance preset to v0.3.12 (#5372)
+- chore: release 1.4.0, begin 1.4.1.dev0 development (#5371)
+
 ## [1.4.0] - 2026-11-10
 
 ### Changed
