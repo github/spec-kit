@@ -1052,6 +1052,12 @@ class _PresetSkillMethods:
         still carries that preset's ``preset:<id>`` marker, as
         ``(skills_dir, agent, owner_id, command_name, skill_name)`` tuples.
 
+        For native skill agents command registration writes the same file
+        first, marked ``<id>:<file>``, and records it in
+        ``registered_commands``. When the skills phase then fails, that is
+        all there is, so those records and that marker (for the command's own
+        file, raw or composed) count as well.
+
         Several agents can record one physical directory (agy/codex/zed all
         use ``.agents/skills``), so each file is returned once, with the
         agent to render it: the active agent when it uses that directory,
@@ -1059,6 +1065,8 @@ class _PresetSkillMethods:
         ``_unregister_skills`` and the alias pass choose.
         """
         registrar = self._command_registrar()
+        registrar._ensure_configs()
+        resolver = PresetResolver(self.project_root)
         affected = {
             name: cmd_name
             for cmd_name in command_names
@@ -1073,28 +1081,54 @@ class _PresetSkillMethods:
                 recorded = self._infer_legacy_skill_provenance(
                     [n for n in recorded if isinstance(n, str)], pack_id, active_ai
                 )
-            if not isinstance(recorded, dict):
-                continue
+            recorded_commands = meta.get("registered_commands")
             groups: Dict[Path, Dict[str, List[str]]] = {}
-            for agent, names in recorded.items():
-                if not isinstance(agent, str) or not isinstance(names, list):
-                    continue
-                skills_dir = (
-                    active_skills_dir
-                    if agent == active_ai
-                    else self._safe_skills_dir_for_agent(agent)
-                )
-                if skills_dir is None:
-                    continue
-                group = groups.setdefault(skills_dir, {"agents": [], "names": []})
-                group["agents"].append(agent)
-                for name in names:
-                    if (
-                        isinstance(name, str)
-                        and name in affected
-                        and name not in group["names"]
+            for from_commands, records in (
+                (False, recorded if isinstance(recorded, dict) else {}),
+                (True, recorded_commands if isinstance(recorded_commands, dict) else {}),
+            ):
+                for agent, names in records.items():
+                    if not isinstance(agent, str) or not isinstance(names, list):
+                        continue
+                    agent_config = registrar.AGENT_CONFIGS.get(agent)
+                    if from_commands and not (
+                        agent_config and agent_config.get("extension") == "/SKILL.md"
                     ):
-                        group["names"].append(name)
+                        continue
+                    skills_dir = (
+                        active_skills_dir
+                        if agent == active_ai
+                        else self._safe_skills_dir_for_agent(agent)
+                    )
+                    if skills_dir is None:
+                        continue
+                    group = groups.setdefault(skills_dir, {"agents": [], "names": []})
+                    if agent not in group["agents"]:
+                        group["agents"].append(agent)
+                    for name in names:
+                        if not isinstance(name, str):
+                            continue
+                        if from_commands:
+                            # Only a primary command: aliases are reconciled
+                            # by ``_reconcile_preset_aliases``.
+                            output = registrar._compute_output_name(
+                                agent, name, agent_config
+                            )
+                            if affected.get(output) != name:
+                                continue
+                            name = output
+                        if name in affected and name not in group["names"]:
+                            group["names"].append(name)
+            manifest = resolver._get_manifest(self.presets_dir / pack_id)
+            # {command_name: markers command registration writes for it}
+            command_sources: Dict[str, Set[str]] = {}
+            for tmpl in manifest.templates if manifest else []:
+                if tmpl.get("type") == "command" and isinstance(tmpl.get("name"), str):
+                    sources = command_sources.setdefault(
+                        tmpl["name"], {f"{pack_id}:.composed/{tmpl['name']}.md"}
+                    )
+                    if isinstance(tmpl.get("file"), str):
+                        sources.add(f"{pack_id}:{tmpl['file']}")
             for skills_dir, group in groups.items():
                 agents = group["agents"]
                 agent = (
@@ -1114,7 +1148,11 @@ class _PresetSkillMethods:
                     except (OSError, UnicodeDecodeError):
                         continue
                     metadata = registrar.parse_frontmatter(content)[0].get("metadata")
-                    if isinstance(metadata, dict) and metadata.get("source") == f"preset:{pack_id}":
+                    source = metadata.get("source") if isinstance(metadata, dict) else None
+                    if source == f"preset:{pack_id}" or (
+                        isinstance(source, str)
+                        and source in command_sources.get(affected[name], ())
+                    ):
                         found.append((skills_dir, agent, pack_id, affected[name], name))
         return found
 

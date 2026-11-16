@@ -3165,6 +3165,66 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             assert "Core custom body" in text and "Base preset body" not in text
             assert "$speckit-plan" in text and "/speckit-plan" not in text
 
+    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    @pytest.mark.parametrize("historical", [False, True], ids=["active", "historical"])
+    def test_remove_base_refreshes_survivor_skill_left_by_command_registration(
+        self, project_dir, temp_dir, monkeypatch, core, historical
+    ):
+        """The composer's skills phase fails while Codex is activated, so its
+        primary skill there is the composed command registration
+        (``<id>:.composed/<command>.md``) and only ``registered_commands``
+        records it. Removing the base must still recompose or retire that
+        skill, as it does the alias, instead of leaving the removed preset's
+        text in it."""
+        manager = self._install_custom_layers(
+            project_dir, temp_dir, core=core, alias=self._ALIAS
+        )
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        shared = project_dir / ".agents" / "skills"
+        shared.mkdir(parents=True)
+        original = manager._register_skills
+
+        def fail_composer(manifest, *args, **kwargs):
+            if manifest.id == "append-preset":
+                raise RuntimeError("simulated composer skills phase failure")
+            return original(manifest, *args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(manager, "_register_skills", fail_composer)
+            with pytest.warns(UserWarning, match="simulated composer skills phase"):
+                manager.register_enabled_presets_for_agent("codex")
+        skill = shared / "speckit-custom" / "SKILL.md"
+        alias = shared / "speckit-custom-short" / "SKILL.md"
+        for output in (skill, alias):
+            content = output.read_text(encoding="utf-8")
+            assert "source: append-preset:.composed/speckit.custom.md" in content
+            assert "Base preset body" in content
+        composer = manager.registry.get("append-preset")
+        assert "speckit.custom" in composer["registered_commands"]["codex"]
+        assert not composer["registered_skills"].get("codex")
+        if historical:
+            self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        if core:
+            assert manager.remove("base-preset") is True
+        else:
+            with pytest.warns(UserWarning, match="no base layer"):
+                assert manager.remove("base-preset") is True
+
+        for output in (skill, alias):
+            if not core:
+                assert not output.exists()
+                continue
+            content = output.read_text(encoding="utf-8")
+            assert "Base preset body" not in content
+            assert "Core custom body" in content and "Appended body" in content
+        if core:
+            removed = skill.read_text(encoding="utf-8")
+            assert "source: preset:append-preset" in removed
+            self._write_init_options(project_dir, ai="codex", ai_skills=True)
+            manager.register_enabled_presets_for_agent("codex")
+            assert skill.read_text(encoding="utf-8") == removed
+
     def test_alias_refresh_rewrites_the_same_file(self, project_dir, temp_dir):
         """The alias is refreshed in place, as command registration always
         wrote it: the same inode keeps its owner, ACL and mode."""
