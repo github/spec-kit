@@ -2142,3 +2142,66 @@ def test_builtin_upgrade_rollback_removes_a_new_generic_commands_dir(tmp_path, m
     assert "disk full" in result.output
     assert not (project / ".new-commands").exists()
     assert _tree(project) == before
+
+
+@pytest.mark.parametrize("error", [OSError, ValueError, RuntimeError])
+def test_builtin_upgrade_runs_unjournalled_when_output_discovery_fails(tmp_path, monkeypatch, error):
+    """An integration that cannot name its output folders still upgrades, unjournalled."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations.claude import ClaudeIntegration
+
+    project = _init_project(tmp_path, "claude")
+
+    def fail(self, *args, **kwargs):
+        raise error("cannot resolve output folders")
+
+    monkeypatch.setattr(ClaudeIntegration, "upgrade_output_folders", fail)
+    entered = []
+    real_journalled = _lifecycle._journalled
+
+    def journalled(*args, **kwargs):
+        entered.append(True)
+        return real_journalled(*args, **kwargs)
+
+    monkeypatch.setattr(_lifecycle, "_journalled", journalled)
+
+    result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+
+    assert result.exit_code == 0, result.output
+    assert not entered
+
+
+def test_builtin_upgrade_rollback_removes_a_commands_dir_created_before_the_first_write(tmp_path, monkeypatch):
+    """A new --commands-dir created before setup() fails is removed with its new parents."""
+    from specify_cli.integrations.generic import GenericIntegration
+
+    project = _init_project(tmp_path, "generic", "--commands-dir .old-commands")
+    before = _tree(project)
+    missing = tmp_path / "templates" / "plan.md"
+    monkeypatch.setattr(GenericIntegration, "list_command_templates", lambda self: [missing])
+
+    result = _run_in_project(project, [
+        "integration", "upgrade", "generic", "--force",
+        "--integration-options", "--commands-dir .new-commands/nested",
+    ])
+
+    assert result.exit_code != 0
+    assert _tree(project) == before
+
+
+def test_builtin_upgrade_runs_unjournalled_when_a_new_generic_output_is_a_symlink(tmp_path):
+    """Switching --commands-dir to an untracked directory with a symlinked output upgrades as before."""
+    project = _init_project(tmp_path, "generic", "--commands-dir .old-commands")
+    commands = project / ".new-commands"
+    commands.mkdir()
+    target = project / "shared-plan.md"
+    target.write_text("user plan\n", encoding="utf-8")
+    _symlink_or_skip(commands / "speckit.plan.md", target)
+
+    result = _run_in_project(project, [
+        "integration", "upgrade", "generic", "--force",
+        "--integration-options", "--commands-dir .new-commands",
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert (commands / "speckit.plan.md").is_symlink()

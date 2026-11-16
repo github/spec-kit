@@ -306,7 +306,31 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
                 shutil.copy2(saved, path)
         else:
             _prune_new_parents(root, journal, path)
+    _prune_new_directories(root, journal)
     return conflicts
+
+
+def _prune_new_directories(root: Path, journal: _FileJournal) -> None:
+    """Remove empty directories the operation created without writing into them.
+
+    ``setup()`` can create its output directory before its first observed
+    write, so a failure in between leaves directories no journal entry
+    covers. Only directories absent from the census and still empty are
+    removed; files are never touched here.
+    """
+    for scope in journal.paths:
+        if scope.is_dir() and not scope.is_symlink():
+            for directory, _folders, _files in os.walk(scope, topdown=False, followlinks=False):
+                path = Path(directory)
+                if path in journal.initial:
+                    continue
+                try:
+                    journal.safe_path(path)
+                    path.rmdir()
+                except (OSError, installer.IntegrationInstallError):
+                    continue
+        if scope not in journal.initial and not os.path.lexists(scope):
+            _prune_new_parents(root, journal, scope)
 
 
 _SPECIFY_SCOPE = (
@@ -474,7 +498,7 @@ def _journalled(
 
 
 @contextmanager
-def builtin_journal(root: Path, key: str, manifest_files, extra_folders=()) -> Any:
+def builtin_journal(root: Path, key: str, manifest_files, discover_folders=lambda: ()) -> Any:
     """Journal a built-in upgrade or init up to its manifest and state commit.
 
     ``setup()`` writes generated files, in place where they already exist,
@@ -485,8 +509,10 @@ def builtin_journal(root: Path, key: str, manifest_files, extra_folders=()) -> A
     no other integration's state. If the journal cannot cover the operation
     (a symlinked or unsafe scope, an unreadable directory), it runs
     unjournalled, as it did before, rather than failing. ``manifest_files``
-    are the integration's currently recorded files and ``extra_folders`` its
-    ``upgrade_output_folders()``, which its config cannot name.
+    are the integration's currently recorded files. ``discover_folders``
+    returns its ``upgrade_output_folders()``, which its config cannot name;
+    it is called outside an external transaction only, and if it fails the
+    operation runs unjournalled.
     """
     if lifecycle_owns_rollback():
         yield
@@ -497,7 +523,7 @@ def builtin_journal(root: Path, key: str, manifest_files, extra_folders=()) -> A
         folder = (integration.config or {}).get("folder") if integration else None
         if folder:
             folders.add(folder.rstrip("/"))
-        folders.update(extra.rstrip("/") for extra in extra_folders)
+        folders.update(extra.rstrip("/") for extra in discover_folders())
         # Merge targets an integration leaves untracked (Copilot's
         # .vscode/settings.json) must pass the same eligibility check.
         exclusions = integration.stale_cleanup_exclusions() if integration else set()

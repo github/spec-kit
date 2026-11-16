@@ -359,6 +359,9 @@ symlinked or unsafe scope, an unreadable directory), it runs unjournalled as
 before rather than failing. Extension and preset re-registration runs after that
 commit, as best effort. A failed `init` into a new directory still removes the
 directory instead.
+Rollback also removes directories under its scopes that the census did not
+record and that are still empty, such as an output directory `setup()` created
+before failing; it never removes a file that way.
 While the lifecycle journal is active, install/switch failure handlers defer
 cleanup to it rather than forcing teardown or rewriting fallback state first.
 This preserves pending-file conflicts and the original directory inventory.

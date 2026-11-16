@@ -522,6 +522,40 @@ def test_init_here_rolls_back_a_failed_setup_for_every_builtin(
         assert customized.read_text(encoding="utf-8") == "# user customization\n"
 
 
+@pytest.mark.parametrize("key", ["generic", "amp", "gemini", "goose", "forge", "rovodev"])
+def test_init_here_rollback_removes_a_commands_dir_created_before_the_first_write(tmp_path, monkeypatch, key):
+    """A setup() that fails after creating its commands directory leaves none of it behind."""
+    from specify_cli.integrations import get_integration
+
+    project = _existing_target(tmp_path, monkeypatch, "plain", key)
+    before = _tree(project)
+    # Reading the first template fails after setup() has created the directory.
+    missing = tmp_path / "templates" / "plan.md"
+    monkeypatch.setattr(type(get_integration(key)), "list_command_templates", lambda self: [missing])
+
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, ["init", "--here", "--force", *_init_args(key)])
+
+    assert result.exit_code != 0
+    assert _tree(project) == before
+
+
+def test_init_here_runs_unjournalled_when_an_existing_generic_output_is_a_symlink(tmp_path, monkeypatch):
+    """An untracked commands directory holding a symlinked output initializes as before."""
+    project = _existing_target(tmp_path, monkeypatch, "plain", "generic")
+    commands = project / ".myagent" / "commands"
+    commands.mkdir(parents=True)
+    target = project / "shared-plan.md"
+    target.write_text("user plan\n", encoding="utf-8")
+    _symlink_or_skip(commands / "speckit.plan.md", target)
+
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, ["init", "--here", "--force", *_init_args("generic")])
+
+    assert result.exit_code == 0, result.output
+    assert (commands / "speckit.plan.md").is_symlink()
+
+
 def test_init_here_runs_unjournalled_when_a_scope_is_a_symlink(tmp_path, monkeypatch):
     """A layout the journal cannot cover keeps initializing as it did before."""
     project = _existing_target(tmp_path, monkeypatch, "project", "claude")
