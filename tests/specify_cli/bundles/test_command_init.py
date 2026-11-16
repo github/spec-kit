@@ -32,6 +32,30 @@ def test_bundle_init_uses_declared_integration_in_new_project(tmp_path, monkeypa
     assert (project / ".specify/bundle-records.json").is_file()
 
 
+def test_bundle_init_rejects_integration_override_conflict_before_initializing(
+    tmp_path, monkeypatch
+):
+    bundle = write_manifest(
+        tmp_path / "claude-bundle",
+        valid_manifest_dict(provides={}, integration={"id": "claude"}),
+    )
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(
+        app,
+        ["bundle", "init", str(bundle), "--integration", "copilot", "--offline"],
+    )
+
+    assert result.exit_code == 1, result.output
+    message = " ".join(result.output.split())
+    assert "targets integration 'claude'" in message
+    assert "active integration is 'copilot'" in message
+    assert "Installing it would conflict" in message
+    assert not (project / ".specify").exists()
+
+
 def test_bundle_init_rejects_incompatible_bundle_before_initializing(
     tmp_path,
     monkeypatch,
