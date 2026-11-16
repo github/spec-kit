@@ -536,3 +536,139 @@ def test_track_skill_resource_writes_chains_the_outer_observer(tmp_path):
     finally:
         file_change_observer.reset(token)
     assert file_change_observer.get() is None
+
+
+def test_register_commands_for_all_agents_preflights_resources_before_rendering_non_skill_agents(
+    tmp_path,
+):
+    from specify_cli.agents import CommandRegistrar
+    from specify_cli.extensions import ValidationError
+
+    project = tmp_path / "project"
+    amp_file = put(project / ".agents/commands/speckit.ext.run.md", "existing amp")
+    (project / ".claude/skills").mkdir(parents=True)
+    ext = tmp_path / "ext"
+    put(ext / "commands/run.md", "---\ndescription: Run\n---\nBody\n")
+    commands = [{"name": "speckit.ext.run", "file": "commands/run.md", "resources": ["missing.txt"]}]
+    registrar = CommandRegistrar(project, include_generic=False)
+
+    with pytest.raises(ValidationError):
+        registrar.register_commands_for_all_agents(
+            commands, "ext", ext, project, extension_id="ext", resource_hashes={},
+        )
+
+    assert amp_file.read_text(encoding="utf-8") == "existing amp"
+
+
+def test_register_commands_for_all_agents_preserves_non_skill_only_registration_with_missing_resource(
+    tmp_path,
+):
+    from specify_cli.agents import CommandRegistrar
+
+    project = tmp_path / "project"
+    amp_file = put(project / ".agents/commands/speckit.ext.run.md", "existing amp")
+    ext = tmp_path / "ext"
+    put(ext / "commands/run.md", "---\ndescription: Run\n---\nBody\n")
+    commands = [{"name": "speckit.ext.run", "file": "commands/run.md", "resources": ["missing.txt"]}]
+    registrar = CommandRegistrar(project, include_generic=False)
+
+    results = registrar.register_commands_for_all_agents(
+        commands, "ext", ext, project, extension_id="ext", resource_hashes={},
+    )
+
+    assert results == {"amp": ["speckit.ext.run"]}
+    assert amp_file.read_text(encoding="utf-8") != "existing amp"
+
+
+def test_copy_mode_registration_requires_resource_hashes_and_claude_wrapper_forwards_them(
+    tmp_path,
+):
+    from specify_cli.agents import CommandRegistrar
+    from specify_cli.extensions import (
+        CommandRegistrar as ExtensionCommandRegistrar,
+        ExtensionManifest,
+    )
+
+    project = tmp_path / "project"
+    (project / ".claude/skills").mkdir(parents=True)
+    ext = tmp_path / "ext"
+    put(ext / "commands/run.md", "---\ndescription: Run\n---\nBody\n")
+    put(ext / "references/guide.md", "guide")
+    manifest_file = put(
+        ext / "extension.yml",
+        (
+            "schema_version: '1.0'\n"
+            "extension:\n  id: ext\n  name: Ext\n  version: 1.0.0\n  description: Desc\n"
+            "requires:\n  speckit_version: '>=0.1.0'\n"
+            "provides:\n  commands:\n    - name: speckit.ext.run\n"
+            "      file: commands/run.md\n      resources: [references/guide.md]\n"
+        ),
+    )
+    manifest = ExtensionManifest(manifest_file)
+    registrar = CommandRegistrar(project, include_generic=False)
+    ext_registrar = ExtensionCommandRegistrar()
+
+    with pytest.raises(ValueError, match="resource_hashes"):
+        registrar.register_commands(
+            "claude", manifest.commands, "ext", ext, project, extension_id="ext",
+        )
+    with pytest.raises(ValueError, match="resource_hashes"):
+        registrar.register_commands_for_all_agents(
+            manifest.commands, "ext", ext, project, extension_id="ext",
+        )
+    with pytest.raises(ValueError, match="resource_hashes"):
+        ext_registrar.register_commands_for_claude(manifest, ext, project)
+
+    assert not (project / ".claude/skills/speckit-ext-run").exists()
+
+    hashes = {}
+    registered = ext_registrar.register_commands_for_claude(
+        manifest, ext, project, resource_hashes=hashes,
+    )
+    assert registered == ["speckit.ext.run"]
+    assert ".claude/skills/speckit-ext-run/references/guide.md" in hashes.get("project", {})
+
+
+def test_supplemental_skill_registration_requires_resource_hashes_in_copy_mode(
+    tmp_path,
+):
+    from specify_cli.extensions import ExtensionManager, ExtensionManifest
+
+    project = tmp_path / "project"
+    put(project / ".specify/init-options.json", '{"ai": "claude", "ai_skills": true}')
+    (project / ".claude/skills").mkdir(parents=True)
+    ext = tmp_path / "ext"
+    put(ext / "commands/run.md", "---\ndescription: Run\n---\nBody\n")
+    put(ext / "references/guide.md", "guide")
+    manifest_file = put(
+        ext / "extension.yml",
+        (
+            "schema_version: '1.0'\n"
+            "extension:\n  id: ext\n  name: Ext\n  version: 1.0.0\n  description: Desc\n"
+            "requires:\n  speckit_version: '>=0.1.0'\n"
+            "provides:\n  commands:\n    - name: speckit.ext.run\n"
+            "      file: commands/run.md\n      resources: [references/guide.md]\n"
+        ),
+    )
+    manifest = ExtensionManifest(manifest_file)
+    manager = ExtensionManager(project)
+
+    with pytest.raises(ValueError, match="resource_hashes"):
+        manager._register_extension_skills(manifest, ext)
+
+    assert not (project / ".claude/skills/speckit-ext-run").exists()
+
+
+def test_retire_skill_resources_skips_root_discovery_when_buckets_are_empty(
+    monkeypatch, tmp_path,
+):
+    from specify_cli.extensions import _skill_resources
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("skill root discovery should not run when buckets are empty")
+
+    monkeypatch.setattr(_skill_resources, "skill_roots", fail)
+    monkeypatch.setattr(_skill_resources, "_home_skills_dirs", fail)
+
+    retire_skill_resources(tmp_path, "ext", {}, {"speckit-ext-run"})
+    retire_skill_resources(tmp_path, "ext", {"project": {}, "home": {}}, {"speckit-ext-run"})

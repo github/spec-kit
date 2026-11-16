@@ -1600,6 +1600,10 @@ class ExtensionManager:
             cmd["name"]: resolve_skill_resources(extension_dir, cmd["resources"])
             for cmd in manifest.commands if cmd.get("resources")
         }
+        if resolved_resources and resource_hashes is None:
+            raise ValueError(
+                "resource_hashes is required when registering commands with skill resources"
+            )
         from .. import load_init_options
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
@@ -1777,10 +1781,11 @@ class ExtensionManager:
                 write_text(skill_file, skill_content, encoding="utf-8")
             written.append(skill_name)
             if copy_mode:
+                assert resource_hashes is not None
                 deliver_skill_resources(
                     self.project_root, manifest.id, skills_dir, skill_name, extension_dir,
                     resolved_resources[cmd_name], previous_resource_hashes or {},
-                    resource_hashes if resource_hashes is not None else {},
+                    resource_hashes,
                     overwrite_modified=overwrite_modified,
                 )
 
@@ -4722,10 +4727,15 @@ class CommandRegistrar:
         extension_dir: Path,
         project_root: Path,
         link_outputs: bool = False,
+        *, previous_resource_hashes: Optional[dict] = None,
+        resource_hashes: Optional[dict] = None,
+        overwrite_modified: bool = False,
     ) -> List[str]:
         """Register extension commands for Claude Code agent."""
         return self.register_commands_for_agent(
-            "claude", manifest, extension_dir, project_root, link_outputs=link_outputs
+            "claude", manifest, extension_dir, project_root, link_outputs=link_outputs,
+            previous_resource_hashes=previous_resource_hashes,
+            resource_hashes=resource_hashes, overwrite_modified=overwrite_modified,
         )
 
 

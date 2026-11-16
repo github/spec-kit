@@ -643,6 +643,17 @@ class CommandRegistrar:
             return None
         return agent
 
+    @staticmethod
+    def _resolve_command_resources(
+        source_dir: Path, commands: List[Dict[str, Any]],
+    ) -> dict[str, list[str]]:
+        from .extensions._skill_resources import resolve_skill_resources
+
+        return {
+            cmd["name"]: resolve_skill_resources(source_dir, cmd["resources"])
+            for cmd in commands if cmd.get("resources")
+        }
+
     @project_registration
     def register_commands(
         self,
@@ -653,6 +664,7 @@ class CommandRegistrar:
         project_root: Path,
         context_note: Optional[str] = None,
         _resolved_dir: Optional[Path] = None,
+        _resolved_resources: Optional[dict[str, list[str]]] = None,
         link_outputs: bool = False,
         extension_id: Optional[str] = None,
         author: object = "github-spec-kit",
@@ -693,14 +705,17 @@ class CommandRegistrar:
         commands_dir = _resolved_dir or self._resolve_agent_dir(
             agent_name, agent_config, project_root,
         )
-        resolved_resources = {}
+        resolved_resources: dict[str, list[str]] = {}
         if extension_id and agent_config.get("extension") == "/SKILL.md":
-            from .extensions._skill_resources import resolve_skill_resources
-
-            resolved_resources = {
-                cmd["name"]: resolve_skill_resources(source_dir, cmd["resources"])
-                for cmd in commands if cmd.get("resources")
-            }
+            resolved_resources = (
+                _resolved_resources
+                if _resolved_resources is not None
+                else self._resolve_command_resources(source_dir, commands)
+            )
+            if resolved_resources and resource_hashes is None:
+                raise ValueError(
+                    "resource_hashes is required when registering commands with skill resources"
+                )
         commands_dir.mkdir(parents=True, exist_ok=True)
 
         registered = []
@@ -925,10 +940,11 @@ class CommandRegistrar:
             if copy_mode:
                 from .extensions._skill_resources import deliver_skill_resources
 
+                assert resource_hashes is not None
                 deliver_skill_resources(
                     project_root, extension_id, commands_dir, output_name, source_dir,
                     resolved_resources[cmd_name], previous_resource_hashes or {},
-                    resource_hashes if resource_hashes is not None else {},
+                    resource_hashes,
                     overwrite_modified=overwrite_modified,
                 )
 
@@ -1017,10 +1033,11 @@ class CommandRegistrar:
                     self.write_copilot_prompt(project_root, alias)
                 registered.append(alias)
                 if copy_mode:
+                    assert resource_hashes is not None
                     deliver_skill_resources(
                         project_root, extension_id, commands_dir, alias_output_name, source_dir,
                         resolved_resources[cmd_name], previous_resource_hashes or {},
-                        resource_hashes if resource_hashes is not None else {},
+                        resource_hashes,
                         overwrite_modified=overwrite_modified,
                     )
 
@@ -1202,6 +1219,7 @@ class CommandRegistrar:
                 active_skills_dir = self._resolve_agent_dir(
                     active_skills_agent, active_skills_config, project_root,
                 )
+        targets: list[tuple[str, dict[str, Any], Path, bool]] = []
         active_created_skills_dir: Optional[Path] = None
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
             if only_agent is not None and agent_name != only_agent:
@@ -1275,34 +1293,51 @@ class CommandRegistrar:
             ) or register_missing_active_skills_agent
 
             if should_register:
-                try:
-                    registered = self.register_commands(
-                        agent_name,
-                        commands,
-                        source_id,
-                        source_dir,
-                        project_root,
-                        context_note=context_note,
-                        _resolved_dir=agent_dir,
-                        link_outputs=link_outputs,
-                        extension_id=extension_id,
-                        author=author,
-                        previous_resource_hashes=previous_resource_hashes,
-                        resource_hashes=resource_hashes,
-                        overwrite_modified=overwrite_modified,
-                    )
-                    if registered:
-                        results[agent_name] = registered
-                    if register_missing_active_skills_agent:
-                        active_created_skills_dir = (
-                            recovered_active_skills_dir or agent_dir
-                        )
-                except ValueError:
+                targets.append((
+                    agent_name,
+                    agent_config,
+                    agent_dir,
+                    register_missing_active_skills_agent,
+                ))
+
+        resolved_resources: Optional[dict[str, list[str]]] = None
+        if extension_id and any(
+            cfg.get("extension") == "/SKILL.md" for _, cfg, _, _ in targets
+        ):
+            resolved_resources = self._resolve_command_resources(
+                source_dir, commands,
+            )
+            if resolved_resources and resource_hashes is None:
+                raise ValueError(
+                    "resource_hashes is required when registering commands with skill resources"
+                )
+
+        for agent_name, _agent_config, agent_dir, register_missing_active_skills_agent in targets:
+            try:
+                registered = self.register_commands(
+                    agent_name,
+                    commands,
+                    source_id,
+                    source_dir,
+                    project_root,
+                    context_note=context_note,
+                    _resolved_dir=agent_dir,
+                    _resolved_resources=resolved_resources,
+                    link_outputs=link_outputs,
+                    extension_id=extension_id,
+                    author=author,
+                    previous_resource_hashes=previous_resource_hashes,
+                    resource_hashes=resource_hashes,
+                    overwrite_modified=overwrite_modified,
+                )
+                if registered:
+                    results[agent_name] = registered
+            except ValueError:
+                continue
+            except OSError:
+                if register_missing_active_skills_agent:
                     continue
-                except OSError:
-                    if register_missing_active_skills_agent:
-                        continue
-                    raise
+                raise
 
         return results
 

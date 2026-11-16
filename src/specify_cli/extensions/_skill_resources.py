@@ -485,6 +485,8 @@ def retire_skill_resources(
     """
     import warnings
 
+    if not any(isinstance(hashes.get(b), dict) and hashes[b] for b in ("project", "home")):
+        return
     names = [
         parts for parts in (skill_name_parts(n, generated_only=True) for n in skill_names)
         if parts
