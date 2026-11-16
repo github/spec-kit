@@ -511,7 +511,7 @@ def test_copy_mode_skill_preserves_authored_paths(project_dir, tmp_path):
     (project_dir / ".specify/init-options.json").write_text('{"script": "sh"}')
     cmd = {"name": "speckit.example.run", "file": "commands/run.md", "resources": ["references/r.md"]}
     registrar = CommandRegistrar(project_dir)
-    registrar.register_commands("claude", [cmd], "example", ext, project_dir, extension_id="example")
+    registrar.register_commands("claude", [cmd], "example", ext, project_dir, extension_id="example", resource_hashes={})
     content = (project_dir / ".claude/skills/speckit-example-run/SKILL.md").read_text()
     assert "Run scripts/bash/x.sh --json; read references/r.md and templates/t.md" in content
 
@@ -599,7 +599,7 @@ def test_copy_mode_resolves_non_path_placeholders_and_python_prefix(project_dir,
     (project_dir / ".specify/init-options.json").write_text('{"script": "py"}')
     cmd = {"name": "speckit.example.run", "file": "commands/run.md", "resources": ["scripts/x.py"]}
     CommandRegistrar(project_dir).register_commands(
-        "claude", [cmd], "example", ext, project_dir, extension_id="example"
+        "claude", [cmd], "example", ext, project_dir, extension_id="example", resource_hashes={},
     )
     content = (project_dir / ".claude/skills/speckit-example-run/SKILL.md").read_text()
     assert "scripts/x.py $ARGUMENTS" in content
