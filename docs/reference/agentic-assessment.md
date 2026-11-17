@@ -83,7 +83,8 @@ A documented decision to stop is a useful result.
 Run each stage once in the usual flow. To resolve clarification markers or a
 `needs-clarification` verdict, edit the affected Markdown directly or ask the
 agent in free-form chat to incorporate the missing facts. Preserve sources and
-confidence tags and review dependent wording in the refined artifacts.
+confidence tags, and review dependent wording across the affected artifacts —
+a clarification in one artifact can leave a downstream artifact stale.
 `decision.md` itself is not revised in place: once the refined artifacts answer
 the blocking questions, request reassessment by re-running the decide command,
 which rebuilds the scorecard, verdict, and handoff from the updated artifacts

@@ -65,7 +65,7 @@ Resolve them by refining the existing file:
 1. **Edit the Markdown directly** (fill in the missing metric, owner, constraint, and so on), or
 2. **Ask the agent in free-form chat** to incorporate the missing information into that artifact.
 
-Then ask whether the new information clears the blocker and to update any downstream wording in the refined artifact that depended on it. `decision.md` is the exception — it is rebuilt by the command, not edited in place: once the refined artifacts answer the blocking questions, request reassessment by re-running `/speckit-assess-decide`. It rebuilds the scorecard, rationale, verdict, and handoff from the updated artifacts, and asks before overwriting the previous decision.
+Then ask whether the new information clears the blocker and to review and update dependent wording across the affected artifacts — a clarification in `problem.md` can leave downstream `concept.md` wording stale, and `decide` reads both. `decision.md` is the exception — it is rebuilt by the command, not edited in place: once the refined artifacts answer the blocking questions, request reassessment by re-running `/speckit-assess-decide`. It rebuilds the scorecard, rationale, verdict, and handoff from the updated artifacts, and asks before overwriting the previous decision.
 
 When you add evidence, keep the source and confidence tags the research stage already uses (`ASSUMPTION` vs cited claims). Do not invent citations.
 
