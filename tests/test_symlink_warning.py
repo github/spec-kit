@@ -20,6 +20,7 @@ from typer.testing import CliRunner
 from specify_cli import _file_handles, app
 from specify_cli._download_security import safe_extract_tar, safe_extract_zip
 from specify_cli.file_helper import FileHelper, SymlinkDeniedError
+from specify_cli.integrations import opencode
 from specify_cli.integrations.manifest import IntegrationManifest
 from specify_cli.symlink_warning import (
     SymlinkDeprecationWarning,
@@ -63,6 +64,41 @@ def test_non_file_helper_encounter_warns_without_changing_rejection(tmp_path):
     with pytest.warns(FutureWarning, match="Symlinks are not specifically supported"):
         with pytest.raises(ValueError):
             IntegrationManifest("copilot", root).record_file("linked/file", "content")
+
+
+@pytest.mark.parametrize("symlink", [False, True])
+@pytest.mark.parametrize("location", [".rgignore", ".specify", ".specify/.ignore"])
+def test_opencode_ignore_layers_warn_without_changing_skip_policy(tmp_path, symlink, location):
+    root = tmp_path / "project"
+    root.mkdir()
+    path = root / location
+    path.parent.mkdir(parents=True, exist_ok=True)
+    target = tmp_path / "target"
+    content = b"*.tmp\n"
+    if location == ".specify":
+        target.mkdir()
+        (target / ".ignore").write_bytes(content)
+    else:
+        target.write_bytes(content)
+    if symlink:
+        _link(path, target)
+    elif location == ".specify":
+        path.mkdir()
+        (path / ".ignore").write_bytes(content)
+    else:
+        path.write_bytes(content)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        layers = opencode._ignore_layers(root, b"")
+    extra = ".specify/.ignore" if location == ".specify" else location
+    assert [layer[2] for layer in layers] == [root / ".ignore"] + (
+        [] if symlink else [root / extra]
+    )
+    assert bool(caught) is symlink
+    assert all(item.category is SymlinkDeprecationWarning for item in caught)
+    preserved = target / ".ignore" if location == ".specify" else target
+    assert preserved.read_bytes() == content
 
 
 def test_file_helper_does_not_scan_unrelated_symlinks(tmp_path):
