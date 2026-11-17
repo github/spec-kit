@@ -1667,6 +1667,30 @@ class TestCodexNoModelInvocationOwnership:
 
         real_create_bytes = FileHelper.create_bytes
         plan = project / TestCodexNoModelInvocationOwnership.PLAN_REL
+    @pytest.mark.parametrize(
+        "content",
+        [
+            b"base: &b {true: first}\ncustom: {!!merge <<: *b, 1: second}\n",
+            b"a: &a {true: first}\nb: &b {1: second}\ncustom: {!!merge <<: [*a, *b]}\n",
+            b"custom: {!!merge <<: {true: first, 1: second}}\n",
+        ],
+        ids=["merged-and-own", "two-merged", "inline-merged"],
+    )
+    def test_keys_a_merge_brings_in_that_collide_abort_without_overwriting(
+        self, tmp_path, content
+    ):
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*keys that collide"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+        assert self._other_policies(tmp_path) == []
+
+    def test_same_key_from_two_merges_is_not_a_collision(self, tmp_path):
+        content = b"a: &a {k: 1}\nb: &b {k: 2}\ncustom: {!!merge <<: [*a, *b]}\n"
+        path = self._seed(tmp_path, content)
+        self._setup(tmp_path)
+        assert self._yaml(path)["custom"] == {"k": 1}
+
 
         def create_bytes(self, rel, *args, **kwargs):
             if Path(rel).as_posix().endswith(f"{failing_skill}/agents/openai.yaml"):

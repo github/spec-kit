@@ -8,6 +8,7 @@ and ``010`` into 8, changing user values on a round trip.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Any
 
 import yaml
@@ -16,6 +17,7 @@ _YAML11_ONLY_TAGS = {
     f"tag:yaml.org,2002:{name}"
     for name in ("bool", "int", "float", "timestamp", "value", "merge")
 }
+_MERGE_TAG = "tag:yaml.org,2002:merge"
 _YAML12_RESOLVERS = (
     ("tag:yaml.org,2002:bool", r"true|True|TRUE|false|False|FALSE", "tTfF"),
     ("tag:yaml.org,2002:int", r"[-+]?[0-9]+|0o[0-7]+|0x[0-9a-fA-F]+", "-+0123456789"),
@@ -34,26 +36,40 @@ class Yaml12Loader(yaml.SafeLoader):
     def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
         # A dict keeps one of two keys Python treats as equal, such as ``true``
         # and ``1``, or a key given twice; rewriting would drop the other.
-        # serde_yaml rejects a repeated key too. Keys an explicit ``!!merge``
-        # brings in may be overridden, so only the mapping's own keys count.
+        # serde_yaml rejects a repeated key too. A key an explicit ``!!merge``
+        # brings in may be overridden by the same key, so the mapping's own
+        # keys must be distinct, and once merged keys are added, keys that
+        # are equal must also have the same type.
         if isinstance(node, yaml.MappingNode):
-            seen: dict[Any, None] = {}
-            for key_node, _ in node.value:
-                if key_node.tag == "tag:yaml.org,2002:merge":
-                    continue
-                key = self.construct_object(key_node, deep=True)
-                try:
-                    collides = key in seen
-                except TypeError:  # unhashable; the base constructor reports it
-                    continue
-                if collides:
-                    raise yaml.constructor.ConstructorError(
-                        None, None,
-                        "found keys that collide, such as a repeated key or both true and 1",
-                        key_node.start_mark,
-                    )
-                seen[key] = None
+            own = [key for key, _ in node.value if key.tag != _MERGE_TAG]
+            self._check_keys(own, lambda previous, key_node: True)
+            self.flatten_mapping(node)  # merged keys first, then the mapping's own
+            self._check_keys(
+                [key for key, _ in node.value],
+                lambda previous, key_node: previous.tag != key_node.tag,
+            )
         return super().construct_mapping(node, deep=deep)
+
+    def _check_keys(
+        self,
+        key_nodes: list[yaml.Node],
+        collide: Callable[[yaml.Node, yaml.Node], bool],
+    ) -> None:
+        """Raise if ``collide`` holds for two key nodes whose keys are equal."""
+        seen: dict[Any, yaml.Node] = {}
+        for key_node in key_nodes:
+            key = self.construct_object(key_node, deep=True)
+            try:
+                previous = seen.get(key)
+            except TypeError:  # unhashable; the base constructor reports it
+                continue
+            if previous is not None and collide(previous, key_node):
+                raise yaml.constructor.ConstructorError(
+                    None, None,
+                    "found keys that collide, such as a repeated key or both true and 1",
+                    key_node.start_mark,
+                )
+            seen.setdefault(key, key_node)
 
 
 Yaml12Loader.yaml_implicit_resolvers = {
