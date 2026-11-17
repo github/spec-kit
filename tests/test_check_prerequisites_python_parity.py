@@ -12,7 +12,12 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import requires_bash
-from tests.parity_helpers import install_composition_stack, ps_legacy_stdout_cmd, run
+from tests.parity_helpers import (
+    clean_env,
+    install_composition_stack,
+    ps_legacy_stdout_cmd,
+    run,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
@@ -56,11 +61,9 @@ def _write_feature_json(
 
 
 def _clean_env() -> dict[str, str]:
-    env = os.environ.copy()
-    for key in list(env):
-        if key.startswith("SPECIFY_"):
-            env.pop(key)
-    return env
+    # Delegate to the shared helper so the PATH fix that pins the suite's
+    # own interpreter (see parity_helpers.clean_env) applies here too.
+    return clean_env()
 
 
 def _git_init(repo: Path) -> None:
