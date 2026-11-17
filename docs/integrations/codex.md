@@ -70,15 +70,16 @@ description in Codex's context.
   policy from your own file, it logs a warning naming the file so you can
   remove it by hand. If an existing file cannot be read, is not valid YAML, is
   not a mapping, repeats a key or has keys that would merge into one (such as
-  `true` and `1`, including keys a `!!merge` brings in), or has a field Codex would reject (for example
-  `interface` or `dependencies.tools` of the wrong type, or a
-  `dependencies.tools` or `policy.products` set to null, which makes Codex
-  ignore the whole file), setup stops with an error naming the file and leaves
-  it unchanged; `specify integration install`, `switch` and `upgrade` check this before
-  changing anything, so a refused switch keeps the current integration. Setup
-  with the option also stops before writing anything if
-  `.agents`, `.agents/skills` or a core `speckit-<command>` skill directory is a
-  symlink, a Windows junction or another reparse point, or if a path where a policy goes is a file rather than a directory.
+  `true` and `1`, including keys a `!!merge` brings in), or has a field Codex
+  would reject (for example `interface` or `dependencies.tools` of the wrong
+  type, or a `dependencies.tools` or `policy.products` set to null, which
+  makes Codex ignore the whole file), setup stops with an error naming the
+  file and leaves it unchanged; `specify integration install`, `switch` and
+  `upgrade` check this before changing anything, so a refused switch keeps
+  the current integration. Setup with the option also stops before writing
+  anything if `.agents`, `.agents/skills` or a core `speckit-<command>` skill
+  directory is a symlink, a Windows junction or another reparse point, or if a
+  path where a policy goes is a file rather than a directory.
   Once the policy has been removed from a file Spec Kit no longer tracks it, so
   a policy you set there yourself afterwards is never removed. If writing or
   removing policies fails part-way through setup, the policies it had already
@@ -91,8 +92,9 @@ description in Codex's context.
   Codex, still completes and removes Codex's manifest, so running it again
   reports that Codex is not installed rather than cleaning up: remove
   `allow_implicit_invocation: false` from that `openai.yaml` yourself, or
-  delete the file if Spec Kit created it and you have not changed it. A file is never written through a symlinked directory, even one
-  swapped in while the rewrite runs.
+  delete the file if Spec Kit created it and you have not changed it. A file
+  is never written through a symlinked directory, even one swapped in while
+  the rewrite runs.
 - Core command skills registered without running Codex's `setup()` get no
   `agents/openai.yaml`: those registered by commands that install, remove or
   update presets (including `specify bundle` commands that carry presets),
