@@ -33,6 +33,10 @@ _YAML12_RESOLVERS = (
 class Yaml12Loader(yaml.SafeLoader):
     """Safe loader that resolves plain scalars by the YAML 1.2 core schema."""
 
+    def __init__(self, stream: Any) -> None:
+        super().__init__(stream)
+        self._own_keys_checked: set[yaml.Node] = set()
+
     def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
         # A dict keeps one of two keys Python treats as equal, such as ``true``
         # and ``1``, or a key given twice; rewriting would drop the other.
@@ -49,17 +53,19 @@ class Yaml12Loader(yaml.SafeLoader):
             )
         return super().construct_mapping(node, deep=deep)
 
-    def _check_own_keys(self, node: yaml.MappingNode) -> None:
+    def _check_own_keys(
+        self, node: yaml.MappingNode, merging: frozenset[yaml.Node] = frozenset(),
+    ) -> None:
         """Raise if ``node``, or a mapping merged into it, repeats a key.
 
         Runs before ``node`` is flattened, which adds the keys merged into it
         to its own, and only once per node, since an anchored node merged
         again later has been flattened by then.
         """
-        checked: set[int] = self.__dict__.setdefault("_own_keys_checked", set())
-        if id(node) in checked:
+        if node in self._own_keys_checked:
             return
-        checked.add(id(node))
+        self._own_keys_checked.add(node)
+        merging |= {node}
         merge_keys = [key for key, _ in node.value if key.tag == _MERGE_TAG]
         if len(merge_keys) > 1:
             raise _collision(merge_keys[1])
@@ -73,8 +79,13 @@ class Yaml12Loader(yaml.SafeLoader):
             if key.tag != _MERGE_TAG:
                 continue
             for merged in value.value if isinstance(value, yaml.SequenceNode) else [value]:
+                if merged in merging:
+                    # PyYAML would drop it, losing the keys; serde_yaml rejects it.
+                    raise yaml.constructor.ConstructorError(
+                        None, None, "found a mapping that merges itself", key.start_mark,
+                    )
                 if isinstance(merged, yaml.MappingNode):
-                    self._check_own_keys(merged)
+                    self._check_own_keys(merged, merging)
 
     def _check_keys(
         self,

@@ -1759,8 +1759,9 @@ class TestCodexNoModelInvocationOwnership:
         [
             b"c: &c {k: 1}\nb: &b {!!merge <<: *c, k: 2}\ncustom: {!!merge <<: *b}\n",
             b"custom: {!!merge <<: &b {!!merge <<: {k: 1}, k: 2}}\nother: {!!merge <<: *b}\n",
+            b"custom: {!!merge <<: &b {!!merge <<: {k: 1}, k: 2}}\nother: *b\n",
         ],
-        ids=["anchored", "inline-anchored"],
+        ids=["anchored", "inline-anchored", "inline-anchored-reused"],
     )
     def test_merging_a_mapping_that_overrides_its_own_merge_is_not_a_collision(
         self, tmp_path, content
@@ -1768,6 +1769,17 @@ class TestCodexNoModelInvocationOwnership:
         path = self._seed(tmp_path, content)
         self._setup(tmp_path)
         assert self._yaml(path)["custom"] == {"k": 2}
+
+    @pytest.mark.parametrize(
+        "content",
+        [b"policy: &p {!!merge <<: *p}\n", b"policy: &p {!!merge <<: [{a: 1}, *p]}\n"],
+        ids=["direct", "in-list"],
+    )
+    def test_mapping_that_merges_itself_aborts_without_overwriting(self, tmp_path, content):
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*merges itself"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
 
     def test_same_key_from_two_merges_is_not_a_collision(self, tmp_path):
         content = b"a: &a {k: 1}\nb: &b {k: 2}\ncustom: {!!merge <<: [*a, *b]}\n"
