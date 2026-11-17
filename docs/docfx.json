@@ -6,6 +6,7 @@
           "*.md",
           "toc.yml",
           "community/*.md",
+          "community/presets/*.md",
           "bundles/*.md",
           "extensions/*.md",
           "guides/*.md",
@@ -33,7 +34,8 @@
     "resource": [
       {
         "files": [
-          "images/**"
+          "images/**",
+          "assets/**"
         ]
       },
       {
