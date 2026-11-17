@@ -37,6 +37,27 @@ from tests.specify_cli.extensions._helpers import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolate_post_install_refresh(monkeypatch):
+    """Keep source/format unit cases independent of the full-project fixture.
+
+    Full readiness, deferred registration, and failure retention are exercised
+    with real recorded integrations in integrations/test_refresh.py.
+    """
+    from specify_cli.integrations.refresh import RefreshResult
+
+    original_init = ExtensionManager.__init__
+
+    def initialize(manager, project_root, *, defer_registration=False):
+        original_init(manager, project_root)
+
+    monkeypatch.setattr(ExtensionManager, "__init__", initialize)
+    monkeypatch.setattr(
+        "specify_cli.integrations.refresh.refresh_installed_integrations",
+        lambda *args, **kwargs: RefreshResult(completed=["unit-adapter"], shared_ready=True),
+    )
+
+
 class TestExtensionAddCLI:
     """CLI tests for ``specify extension add``."""
 

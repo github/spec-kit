@@ -202,11 +202,10 @@ class HermesIntegration(SkillsIntegration):
             skill_dir = global_skills_dir / skill_name
             skill_file = skill_dir / "SKILL.md"
             normalized = skill_content.replace("\r\n", "\n")
-            from .._file_changes import changing_file
+            from .._file_changes import write_bytes
 
-            with changing_file(skill_file):
-                skill_dir.mkdir(parents=True, exist_ok=True)
-                skill_file.write_bytes(normalized.encode("utf-8"))
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            write_bytes(skill_file, normalized.encode("utf-8"))
             created.append(skill_file)
 
 

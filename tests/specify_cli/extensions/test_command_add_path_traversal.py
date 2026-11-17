@@ -46,6 +46,10 @@ def project_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     project = tmp_path / "project"
     project.mkdir()
     (project / ".specify").mkdir()
+    with monkeypatch.context() as scoped:
+        scoped.chdir(project)
+        result = runner.invoke(app, ["integration", "install", "claude", "--script", "py"])
+    assert result.exit_code == 0, result.output
     monkeypatch.chdir(project)
     return project
 
@@ -263,7 +267,7 @@ def test_url_install_succeeds_without_dir_fd_support(
             commands=[],
         )
 
-    monkeypatch.setattr(os, "supports_dir_fd", set())
+    monkeypatch.setattr(_commands, "_has_secure_dir_fd", lambda: False)
     monkeypatch.setattr(typer, "confirm", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         ExtensionCatalog,

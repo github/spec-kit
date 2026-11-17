@@ -504,8 +504,12 @@ The integration does **not** own agent context files such as `AGENTS.md` or
 `CLAUDE.md`. The opt-in `extensions/agent-context/` owns their defaults,
 configuration, and managed sections; do not add `context_file` fields or
 context-file handling to the CLI. `specify init` does not enable the extension
-implicitly. Extensions and presets register command or skill overrides for the
-current default integration, not every installed integration.
+implicitly. Successful `extension add` regenerates every recorded installed
+integration's managed setup with its saved options, then layers enabled extension
+and preset contributions. Shared assets stay aligned with the unchanged default.
+The domain refresh preserves ownership and adapter consent and reports partial
+failure without undoing completed refreshes. Other extension/preset lifecycle
+operations retain their existing active-integration registration policy.
 
 ## Integration delivery boundary
 

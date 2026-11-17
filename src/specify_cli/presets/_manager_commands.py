@@ -20,6 +20,10 @@ from ._manifest import PresetManifest
 from ._resolver import PresetResolver
 
 
+class UncomposableCommandWarning(UserWarning):
+    """A composition intentionally skipped because its base is absent."""
+
+
 def _substitute_core_template(
     body: str,
     cmd_name: str,
@@ -170,6 +174,7 @@ class _PresetCommandMethods:
                             f"compose onto; skipping. Provide a lower-priority "
                             f"preset, extension, or core command for it before "
                             f"using composition strategies.",
+                            UncomposableCommandWarning,
                             stacklevel=2,
                         )
                         continue
@@ -233,7 +238,7 @@ class _PresetCommandMethods:
             version=manifest.version,
         )
 
-    def register_enabled_presets_for_agent(self, agent_name: str) -> None:
+    def register_enabled_presets_for_agent(self, agent_name: str, *, strict: bool = False) -> None:
         """Re-register enabled presets' command overrides and skills for ``agent_name``.
 
         Mirrors ``ExtensionManager.register_enabled_extensions_for_agent`` for
@@ -410,6 +415,21 @@ class _PresetCommandMethods:
                             (pack_id, primary_name)
                         )
                 raw_existing_skills = metadata.get("registered_skills")
+                if strict:
+                    missing = [
+                        template["name"] for template in manifest.templates
+                        if template.get("type") == "command"
+                        and (
+                            template.get("strategy", "replace") == "replace"
+                            or resolver.resolve_content(template["name"], "command") is not None
+                        )
+                        and (pack_id, template["name"]) not in successful_command_replacements
+                        and (pack_id, template["name"]) not in successful_skill_replacements
+                    ]
+                    if missing:
+                        raise ValueError(
+                            f"Missing preset invocation artifacts for '{agent_name}': {', '.join(missing)}"
+                        )
                 if isinstance(raw_existing_skills, list) and raw_existing_skills:
                     # Legacy flat-list value: don't assume agent_name wrote
                     # every name (the first post-upgrade operation may be a
@@ -529,6 +549,8 @@ class _PresetCommandMethods:
                         )
                     )
             except Exception as pack_err:
+                if strict:
+                    raise
                 from .. import _print_cli_warning
 
                 _print_cli_warning(
@@ -555,6 +577,8 @@ class _PresetCommandMethods:
                     list(affected_cmd_names), target_agent=agent_name
                 )
             except Exception as exc:
+                if strict:
+                    raise
                 import warnings
 
                 warnings.warn(
@@ -1087,6 +1111,7 @@ class _PresetCommandMethods:
                     warnings.warn(
                         f"Cannot compose command '{cmd_name}': no base layer. "
                         f"Stale command files may remain.",
+                        UncomposableCommandWarning,
                         stacklevel=2,
                     )
                     registrar._ensure_configs()

@@ -332,8 +332,11 @@ def _write_shared_bytes(
     mode: int = 0o644,
 ) -> None:
     _ensure_safe_shared_destination(project_path, dest)
+    from .integration_runtime import should_write_file
     from .integrations._file_changes import after_file_change, before_file_change
 
+    if not should_write_file(dest, content):
+        return
     before_file_change(dest)
     fd, temp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
     temp_path = Path(temp_name)
@@ -474,6 +477,20 @@ def script_variant_dirs(script_type: str) -> tuple[str, ...]:
     return ("bash" if script_type == "sh" else "powershell",)
 
 
+def refresh_shared_infrastructure(
+    project_path: Path, script_type: str, *, invoke_separator: str, invoke_prefix: str,
+) -> bool:
+    """Regenerate shared outputs; the caller must enforce overwrite ownership."""
+    from ._assets import _locate_core_pack, _repo_root, get_speckit_version
+    from ._console import console
+
+    return install_shared_infra(
+        project_path, script_type, version=get_speckit_version(),
+        core_pack=_locate_core_pack(), repo_root=_repo_root(), console=console,
+        force=True, strict=True, invoke_separator=invoke_separator, invoke_prefix=invoke_prefix,
+    )
+
+
 def install_shared_infra(
     project_path: Path,
     script_type: str,
@@ -487,6 +504,7 @@ def install_shared_infra(
     invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
+    strict: bool = False,
 ) -> bool:
     """Install shared scripts and templates into *project_path*.
 
@@ -557,6 +575,8 @@ def install_shared_infra(
         try:
             _ensure_safe_shared_destination(project_path, dst, parent_must_exist=parent_must_exist)
         except SymlinkedSharedPathError:
+            if strict:
+                raise
             symlinked_files.append(rel)
             return False
         return True
@@ -572,6 +592,8 @@ def install_shared_infra(
         try:
             _ensure_safe_shared_directory(project_path, directory)
         except SymlinkedSharedPathError:
+            if strict:
+                raise
             symlinked_files.append(directory.relative_to(project_path).as_posix())
             return False
         return True

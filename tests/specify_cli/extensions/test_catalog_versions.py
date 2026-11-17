@@ -86,6 +86,17 @@ class _ArchiveResponse(BytesIO):
         return "application/zip"
 
 
+@pytest.fixture
+def initialized_project(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    with monkeypatch.context() as scoped:
+        scoped.chdir(project)
+        result = CliRunner().invoke(app, ["integration", "install", "claude", "--script", "py"])
+    assert result.exit_code == 0, result.output
+    return project
+
+
 def test_legacy_entry_still_selects_its_current_release(tmp_path, monkeypatch):
     entry = {
         "id": "legacy",
@@ -163,10 +174,9 @@ def test_requested_version_does_not_fall_through_to_lower_priority_catalog(
 
 @pytest.mark.parametrize("second_lookup", ["lower_priority", "unavailable"])
 def test_exact_cli_install_uses_first_resolved_catalog_snapshot(
-    tmp_path, monkeypatch, second_lookup
+    tmp_path, monkeypatch, second_lookup, initialized_project
 ):
-    project = tmp_path / "project"
-    (project / ".specify").mkdir(parents=True)
+    project = initialized_project
     old_archive = _archive(tmp_path, "0.4.12")
     high = _entry(old_archive)
     low = _entry(old_archive)
@@ -398,10 +408,9 @@ def test_exact_cli_install_rejects_wrong_historical_digest_before_writing(
 
 
 def test_unqualified_cli_install_uses_current_release_with_history(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, initialized_project
 ):
-    project = tmp_path / "project"
-    (project / ".specify").mkdir(parents=True)
+    project = initialized_project
     old_archive = _archive(tmp_path, "0.4.12")
     current_archive = _archive(tmp_path, "0.5.1")
     entry = _entry(old_archive)
@@ -429,9 +438,8 @@ def test_unqualified_cli_install_uses_current_release_with_history(
 
 
 @pytest.mark.parametrize("requested_version", ["0.4.12", "v0.4.12"])
-def test_exact_cli_install_historical_release(tmp_path, monkeypatch, requested_version):
-    project = tmp_path / "project"
-    (project / ".specify").mkdir(parents=True)
+def test_exact_cli_install_historical_release(tmp_path, monkeypatch, requested_version, initialized_project):
+    project = initialized_project
     old_archive = _archive(tmp_path, "0.4.12")
     _catalog(monkeypatch, project, _entry(old_archive))
     monkeypatch.chdir(project)
@@ -594,7 +602,7 @@ def test_exact_cli_does_not_bypass_discovery_policy_via_bundled_copy(
 
 @pytest.mark.parametrize("version_case", ["exact", "equivalent", "mismatch"])
 def test_exact_cli_bundled_version_must_match_packaged_manifest(
-    tmp_path, monkeypatch, version_case
+    tmp_path, monkeypatch, version_case, initialized_project
 ):
     from specify_cli._assets import _locate_bundled_extension
 
@@ -606,8 +614,7 @@ def test_exact_cli_bundled_version_must_match_packaged_manifest(
         "equivalent": f"v{packaged_version}",
         "mismatch": "9999.0.0",
     }[version_case]
-    project = tmp_path / "project"
-    (project / ".specify").mkdir(parents=True)
+    project = initialized_project
     entry = {
         "id": "agent-context",
         "name": "Agent Context",

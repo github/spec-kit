@@ -33,6 +33,11 @@ The optional `--integration-options="--skills"` flag restates the default.
 
 Setup can replace another project's global Spec Kit skill files.
 
+Extension addition is more conservative: it compares untracked global skills
+against the fully regenerated content, preserving identical files and reporting
+a readiness failure instead of overwriting differing content. Missing skills are
+restored. The project default is unchanged.
+
 **Uninstall removes every global `speckit-*` skill directory, even if edited
 and even without `--force`.** These global files are not protected by the
 project-local manifest's modified-file checks. Back up customizations before

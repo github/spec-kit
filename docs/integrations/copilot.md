@@ -100,6 +100,10 @@ cannot be parsed as a JSON object, the merge is skipped with a warning and
 manual instructions. An existing merged settings file is retained on uninstall;
 a newly created settings file is manifest-tracked.
 
+Extension addition is stricter: if the required settings cannot be merged,
+`specify extension add` reports integration readiness failure and preserves the
+existing settings. Reconcile the file before retrying the addition.
+
 ## Runtime Events and Workflow Permissions
 
 Native events use `.github/hooks/speckit.json`.

@@ -300,10 +300,16 @@ Format bases implement setup and teardown. Custom layouts may override:
 | `setup(project_root, manifest, parsed_options=None, **opts) -> list[Path]` | Write and record agent files; return created paths |
 | `teardown(project_root, manifest, *, force=False) -> tuple[list[Path], list[Path]]` | Return removed and preserved paths; inherited behavior preserves modified files unless forced |
 | `stale_cleanup_exclusions() -> set[str]` | Project-relative paths upgrade must not delete as stale |
+| `mergeable_settings_paths() -> set[str]` | Settings with content-preserving integration mergers; does not authorize replacing generated files protected from stale deletion |
 
 Call inherited behavior where appropriate and preserve host-supplied options,
 including `script_type`, `events`, and `force`. Keep generated files under the
 declared agent root; the host owns shared Spec Kit scripts and templates.
+Extension-add refresh also supplies `strict=True`: required managed settings
+that cannot be merged must fail rather than report readiness after a warning.
+The default mergeable-settings paths include the native event configuration;
+override `mergeable_settings_paths()` for additional content-preserving settings
+mergers. Stale-cleanup exclusions alone do not authorize overwriting files.
 
 The host supplies an `IntegrationManifest` to setup and teardown. For custom
 writes, use these supported operations:

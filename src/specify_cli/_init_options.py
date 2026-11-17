@@ -28,6 +28,11 @@ def save_init_options(project_path: Path, options: dict[str, Any]) -> None:
 
 def load_init_options(project_path: Path) -> dict[str, Any]:
     """Load persisted init options, returning an empty dict when unavailable."""
+    from .integration_runtime import current_registration_options
+
+    scoped = current_registration_options(project_path)
+    if scoped is not None:
+        return scoped
     path = project_path / INIT_OPTIONS_FILE
     if not path.exists():
         return {}
@@ -65,6 +70,12 @@ def resolve_active_agent_for_registration(
       or pass a non-string key into agent-config lookups.
     - Returns the active agent key (a non-empty string) otherwise.
     """
+    from .integration_runtime import current_registration_options
+
+    scoped = current_registration_options(project_path)
+    if scoped is not None:
+        active = scoped.get("ai")
+        return active if isinstance(active, str) and active else None
     path = project_path / INIT_OPTIONS_FILE
     # A dangling symlink's target doesn't exist, so Path.exists() (which
     # follows symlinks) returns False even though the path itself is

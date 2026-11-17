@@ -503,6 +503,13 @@ def update_event_recovery_ownership(
     root: Path, key: str, manifest: IntegrationManifest, touched: set[str],
 ) -> None:
     """Advance only ownership touched by a verified host event refresh."""
+    update_generated_recovery_ownership(root, key, manifest, touched)
+
+
+def update_generated_recovery_ownership(
+    root: Path, key: str, manifest: IntegrationManifest, touched: set[str],
+) -> None:
+    """Advance ownership after verified host generation without granting trust."""
     from . import get_integration
 
     root = root.resolve()

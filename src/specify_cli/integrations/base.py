@@ -926,6 +926,11 @@ class IntegrationBase(ABC):
             exclusions.update(events_stale_exclusions(self.key))
         return exclusions
 
+    def mergeable_settings_paths(self) -> set[str]:
+        """Return settings with integration-owned, content-preserving mergers."""
+        config_file = getattr(self, "events_config_file", None)
+        return {config_file} if config_file and self.supports_events() else set()
+
     def commands_dest(self, project_root: Path) -> Path:
         """Return the absolute path to the commands output directory.
 
@@ -960,8 +965,10 @@ class IntegrationBase(ABC):
         recording it in the manifest.
         """
         dst = dest_dir / filename
-        from ._file_changes import after_file_change, before_file_change
+        from ._file_changes import after_file_change, before_file_change, should_write_file
 
+        if not should_write_file(dst, src.read_bytes()):
+            return dst
         before_file_change(dst)
         dest_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
@@ -996,8 +1003,11 @@ class IntegrationBase(ABC):
         writing.  Returns *dest*.
         """
         normalized = content.replace("\r\n", "\n")
-        from ._file_changes import after_file_change, before_file_change
+        from ._file_changes import after_file_change, before_file_change, should_write_file
 
+        if not should_write_file(dest, normalized.encode("utf-8")):
+            manifest.record_existing(dest.relative_to(project_root), recovered=True)
+            return dest
         before_file_change(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(normalized.encode("utf-8"))

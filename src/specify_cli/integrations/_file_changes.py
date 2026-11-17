@@ -1,4 +1,4 @@
-"""Observe integration-owned writes only while a lifecycle transaction is active."""
+"""Observe integration-owned writes during a lifecycle operation."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ from collections.abc import Callable
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from pathlib import Path
+
+from ..integration_runtime import should_write_file
 
 file_change_observer: ContextVar[Callable[[Path, bool, bool], None] | None] = ContextVar(
     "integration_file_change_observer", default=None
@@ -73,11 +75,16 @@ def changing_file(path: Path, *, removal: bool = False):
 
 
 def write_text(path: Path, content: str, *, encoding: str = "utf-8", errors: str | None = None) -> int:
+    encoded = content.replace("\n", os.linesep).encode(encoding, errors or "strict")
+    if not should_write_file(path, encoded):
+        return len(content)
     with changing_file(path):
         return path.write_text(content, encoding=encoding, errors=errors)
 
 
 def write_bytes(path: Path, content: bytes) -> int:
+    if not should_write_file(path, content):
+        return len(content)
     with changing_file(path):
         return path.write_bytes(content)
 

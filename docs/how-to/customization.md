@@ -85,8 +85,10 @@ The default replacement order is:
 4. Spec Kit core templates in `.specify/templates/`.
 
 Templates are resolved when needed, using the first match by default.
-Commands are different: installing extensions or presets materializes command
-files into the active integration's directory. Agents do not re-resolve that
+Commands are different: successful extension addition materializes the effective
+command stack for every recorded installed integration without changing the
+default. Preset installation and other extension/preset lifecycle operations
+retain active-integration registration. Agents do not re-resolve that
 stack every time they invoke a command. Removing an overriding component
 restores the surviving command layer through reconciliation.
 

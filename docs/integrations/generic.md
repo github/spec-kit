@@ -44,11 +44,11 @@ does not add native command discovery to the agent.
 
 ## Extensions
 
-Once `generic` is the active integration, `specify extension add` registers
-extension commands in its configured `--commands-dir`, as command files or
-skills according to `--skills`. `specify extension remove` removes unchanged
-extension-owned artifacts while leaving core commands, user files, and edited
-extension files intact.
+When `generic` is recorded as installed, `specify extension add` registers
+extension commands in its configured `--commands-dir`, even when it is not the
+default integration, as command files or skills according to `--skills`.
+`specify extension remove` removes unchanged extension-owned artifacts while
+leaving core commands, user files, and edited extension files intact.
 
 ## Workflow Limitation
 

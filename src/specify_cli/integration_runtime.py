@@ -2,14 +2,74 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from pathlib import Path
 from typing import Any
 
 from ._invocation_style import get_invocation_prefix
 from .integration_state import integration_setting, integration_settings
 
-
 ParseOptions = Callable[[Any, str], dict[str, Any] | None]
+_registration_options: ContextVar[tuple[Path, dict[str, Any]] | None] = ContextVar(
+    "integration_registration_options", default=None,
+)
+file_write_validator: ContextVar[Callable[[Path, bytes], bool] | None] = ContextVar(
+    "integration_file_write_validator", default=None,
+)
+
+
+def should_write_file(path: Path, content: bytes) -> bool:
+    """Let lifecycle composition validate final bytes before replacing content."""
+    validator = file_write_validator.get()
+    return validator(path, content) if validator is not None else True
+
+
+@contextmanager
+def registration_options(project_root: Path, options: dict[str, Any]) -> Iterator[None]:
+    """Scope contribution rendering without persisting a different default."""
+    token = _registration_options.set((project_root.resolve(), dict(options)))
+    try:
+        yield
+    finally:
+        _registration_options.reset(token)
+
+
+def current_registration_options(project_root: Path) -> dict[str, Any] | None:
+    context = _registration_options.get()
+    if context is not None and context[0] == project_root.resolve():
+        return dict(context[1])
+    return None
+
+
+def parse_integration_options(integration: Any, raw_options: str) -> dict[str, Any] | None:
+    """Parse saved integration options without CLI output or process exits."""
+    import shlex
+
+    tokens = shlex.split(raw_options)
+    declared = {option.name.lstrip("-"): option for option in integration.options()}
+    parsed: dict[str, Any] = {}
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        name, separator, value = token.lstrip("-").partition("=")
+        option = declared.get(name) if token.startswith("-") else None
+        if option is None:
+            raise ValueError(f"Unknown integration option {token!r}")
+        if option.is_flag:
+            if separator:
+                raise ValueError(f"Option {option.name!r} is a flag and does not accept a value")
+            parsed[name.replace("-", "_")] = True
+        else:
+            if not separator:
+                index += 1
+                if index == len(tokens) or tokens[index].startswith("-"):
+                    raise ValueError(f"Option {option.name!r} requires a value")
+                value = tokens[index]
+            parsed[name.replace("-", "_")] = value
+        index += 1
+    return parsed or None
 
 
 def resolve_integration_options(

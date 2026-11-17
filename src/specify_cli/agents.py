@@ -1027,8 +1027,11 @@ class CommandRegistrar:
         agent_config: dict[str, Any] | None = None,
     ) -> None:
         """Write a rendered agent artifact, optionally as a dev-mode symlink."""
+        from .integration_runtime import should_write_file
         from .integrations._file_changes import after_file_change, before_file_change
 
+        if not should_write_file(dest_file, content.replace("\n", os.linesep).encode("utf-8")):
+            return
         if dest_file.is_symlink():
             before_file_change(dest_file, removal=True)
             dest_file.unlink()
@@ -1082,11 +1085,14 @@ class CommandRegistrar:
         prompt_file = prompts_dir / f"{cmd_name}.prompt.md"
         CommandRegistrar._ensure_inside(prompt_file, prompts_dir)
         prompt_file.parent.mkdir(parents=True, exist_ok=True)
+        from .integration_runtime import should_write_file
         from .integrations._file_changes import after_file_change, before_file_change
 
-        before_file_change(prompt_file)
-        prompt_file.write_text(f"---\nagent: {cmd_name}\n---\n", encoding="utf-8")
-        after_file_change(prompt_file)
+        content = f"---\nagent: {cmd_name}\n---\n"
+        if should_write_file(prompt_file, content.replace("\n", os.linesep).encode("utf-8")):
+            before_file_change(prompt_file)
+            prompt_file.write_text(content, encoding="utf-8")
+            after_file_change(prompt_file)
 
     @staticmethod
     def _resolve_agent_dir(

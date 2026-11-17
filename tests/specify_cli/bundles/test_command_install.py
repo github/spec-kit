@@ -558,6 +558,8 @@ def test_local_bundle_refuses_independently_installed_extension_at_other_version
 ):
     from specify_cli.bundles.records import records_path
 
+    initialized = runner.invoke(app, ["integration", "install", "claude", "--script", "py"])
+    assert initialized.exit_code == 0, initialized.output
     older = project / "bug-older"
     shutil.copytree(REPO_ROOT / "extensions" / "bug", older)
     ext_manifest = yaml.safe_load((older / "extension.yml").read_text(encoding="utf-8"))

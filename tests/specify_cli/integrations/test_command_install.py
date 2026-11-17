@@ -481,15 +481,8 @@ class TestIntegrationInstall:
             project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
         ).exists()
 
-    def test_extension_add_registers_active_integration_only(self, tmp_path):
-        """``extension add`` registers commands for the active integration only.
-
-        Maintainer-requested behavior for #2948: with multiple integrations
-        installed, ``extension add`` must treat the project as single-active —
-        only the current integration gets the new extension's commands.
-        Non-active integrations receive them when selected via
-        ``integration use`` / ``switch`` (rescaffold).
-        """
+    def test_extension_add_registers_all_installed_integrations(self, tmp_path):
+        """Addition prepares recorded integrations without selecting a new default."""
         project = _init_project(tmp_path, "claude")
 
         result = _run_in_project(project, [
@@ -506,17 +499,15 @@ class TestIntegrationInstall:
             "extensions"
         ]["git"]["registered_commands"]
         assert "claude" in registered, "active integration gets the extension"
-        assert "codex" not in registered, (
-            "non-active integration must not be registered on add (#2948)"
-        )
+        assert "codex" in registered, "the recorded secondary integration is ready on add"
         assert (
             project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md"
         ).exists()
-        assert not (
+        assert (
             project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
         ).exists()
 
-        # Selecting the other integration rescaffolds it with the extension.
+        # A later default selection still preserves the prepared contribution.
         result = _run_in_project(project, ["integration", "use", "codex"])
         assert result.exit_code == 0, result.output
 
@@ -528,17 +519,8 @@ class TestIntegrationInstall:
             project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
         ).exists()
 
-    def test_extension_add_generic_active_does_not_backfill_other_agents(self, tmp_path):
-        """A recorded but unsupported active key (``generic``) must not
-        fall back to registering every detected agent.
-
-        ``generic`` is deliberately excluded from ``AGENT_CONFIGS`` because
-        its output directory is only known via ``--commands-dir``, not a
-        static config. Before the fix, treating that active key like "no
-        active integration recorded" made the fallback register the
-        extension for every other detected agent — exactly the multi-target
-        behavior #2948 is meant to stop.
-        """
+    def test_extension_add_generic_and_recorded_secondary_are_ready(self, tmp_path):
+        """Saved generic destinations and recorded secondary integrations are eligible."""
         project = _init_project(
             tmp_path, "generic",
             integration_options="--commands-dir .myagent/commands",
@@ -558,10 +540,9 @@ class TestIntegrationInstall:
         registered = json.loads(registry_path.read_text(encoding="utf-8"))[
             "extensions"
         ]["git"]["registered_commands"]
-        assert "codex" not in registered, (
-            "a recorded but unsupported active key must not target other "
-            "detected agents (#2948)"
-        )
+        assert "generic" in registered
+        assert "codex" in registered
+        assert (project / ".myagent/commands/speckit.git.feature.md").is_file()
 
     def test_extension_add_malformed_ai_value_fails_closed(self, tmp_path):
         """A recorded but malformed ``ai`` value (e.g. a list) must not be
@@ -589,7 +570,8 @@ class TestIntegrationInstall:
         init_options_path.write_text(json.dumps(init_options), encoding="utf-8")
 
         result = _run_in_project(project, ["extension", "add", "git"])
-        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        assert result.exit_code == 1, result.output
+        assert "Invalid saved default" in result.output
 
         registry_path = project / ".specify" / "extensions" / ".registry"
         registered = json.loads(registry_path.read_text(encoding="utf-8"))[
