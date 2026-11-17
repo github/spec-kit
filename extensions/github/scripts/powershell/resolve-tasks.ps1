@@ -240,3 +240,5 @@ if ($Json) {
         Write-Output "  [OK] $d"
     }
 }
+
+exit 0

@@ -605,3 +605,5 @@ if ($Json) {
         Write-Output "# To persist in your shell: $featureAssignment"
     }
 }
+
+exit 0
