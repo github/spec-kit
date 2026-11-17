@@ -894,6 +894,22 @@ class IntegrationBase(ABC):
         """
         return f"speckit.{template_name}.md"
 
+    def upgrade_output_folders(
+        self,
+        project_root: Path,
+        parsed_options: dict[str, Any] | None,
+        raw_options: str | None,
+    ) -> set[str]:
+        """Return project-relative output directories an upgrade may create.
+
+        ``integration upgrade`` and ``init`` into an existing directory
+        journal writes beneath the integration's config ``folder``. An
+        integration whose output location comes from its options instead
+        lists that location here, so a failed operation removes directories it
+        created. Default: none.
+        """
+        return set()
+
     def stale_cleanup_exclusions(self) -> set[str]:
         """Return project-relative paths that upgrade must never stale-delete.
 
@@ -1515,7 +1531,9 @@ class MarkdownIntegration(IntegrationBase):
                 f"Integration destination {dest} escapes "
                 f"project root {project_root_resolved}"
             ) from exc
-        dest.mkdir(parents=True, exist_ok=True)
+        from ._file_changes import make_directories
+
+        make_directories(dest)
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = (
@@ -1735,7 +1753,9 @@ class TomlIntegration(IntegrationBase):
                 f"Integration destination {dest} escapes "
                 f"project root {project_root_resolved}"
             ) from exc
-        dest.mkdir(parents=True, exist_ok=True)
+        from ._file_changes import make_directories
+
+        make_directories(dest)
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = (
@@ -1967,7 +1987,9 @@ class YamlIntegration(IntegrationBase):
                 f"Integration destination {dest} escapes "
                 f"project root {project_root_resolved}"
             ) from exc
-        dest.mkdir(parents=True, exist_ok=True)
+        from ._file_changes import make_directories
+
+        make_directories(dest)
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = (
