@@ -4646,6 +4646,33 @@ Run {SCRIPT}
         assert "extension#1" in shell
         assert "extension%231" not in shell
 
+    def test_rewrite_extension_require_uses_native_path_across_drives(
+        self, temp_dir, monkeypatch
+    ):
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        ext_dir = temp_dir / "extension#1"
+        source_path = ext_dir / "scripts" / "adapter.cjs"
+        (source_path.parent / "lib").mkdir(parents=True)
+        output_root = temp_dir / "generated"
+        output_root.mkdir()
+
+        def different_drive(_path, *, start):
+            raise ValueError("paths are on different drives")
+
+        monkeypatch.setattr("specify_cli.agents.os.path.relpath", different_drive)
+        rewritten = AgentCommandRegistrar.rewrite_extension_paths(
+            "require('./lib/helper.cjs');\n",
+            "extension#1",
+            ext_dir,
+            source_path=source_path,
+            relative_to=output_root,
+        )
+
+        assert str((source_path.parent / "lib").resolve()) in rewritten
+        assert "file:" not in rewritten
+        assert "%23" not in rewritten
+
     def test_rewrite_extension_paths_missing_dir_returns_text(self, temp_dir):
         """A missing extension directory leaves the text unchanged."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
