@@ -33,6 +33,7 @@ from tests.parity_helpers import (
     normalize_repo_paths,
     normalize_script_names,
     ps_cmd,
+    ps_legacy_stdout_cmd,
     py_cmd,
     run,
 )
@@ -145,6 +146,16 @@ def test_python_outputs_unicode_when_default_encoding_is_cp1252(
         assert json_stdout(result)["BRANCH_NAME"] == "001-添加用户"
     else:
         assert "BRANCH_NAME: 001-添加用户" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_json_outputs_unicode_on_legacy_stdout(repo: Path) -> None:
+    result = run(ps_legacy_stdout_cmd(repo, SCRIPT, "-Json", "添加用户"), repo)
+
+    assert result.returncode == 0, result.stderr
+    payload = json_stdout(result)
+    assert payload["BRANCH_NAME"] == "001-添加用户"
+    assert Path(payload["SPEC_FILE"]) == repo / "specs" / "001-添加用户" / "spec.md"
 
 
 @pytest.mark.parametrize(

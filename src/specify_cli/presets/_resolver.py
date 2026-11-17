@@ -8,7 +8,13 @@ import yaml
 
 from .._utils import dump_frontmatter
 from ..extensions import ExtensionRegistry, normalize_priority
-from ._manifest import VALID_PRESET_STRATEGIES, PresetManifest, PresetValidationError
+from ..markdown_sections import SectionReplacementError, replace_section
+from ._manifest import (
+    VALID_PRESET_STRATEGIES,
+    PresetManifest,
+    PresetSectionValidationError,
+    PresetValidationError,
+)
 from ._registry import PresetRegistry
 
 
@@ -43,6 +49,8 @@ class PresetResolver:
             if manifest_path.exists():
                 try:
                     self._manifest_cache[key] = PresetManifest(manifest_path)
+                except PresetSectionValidationError:
+                    raise
                 except PresetValidationError:
                     self._manifest_cache[key] = None
             else:
@@ -565,9 +573,14 @@ class PresetResolver:
                 # Read strategy and manifest file path from preset manifest
                 strategy = "replace"
                 manifest_has_strategy = False
-                entry, manifest_candidate = self._manifest_declared_template(
-                    pack_dir, template_name, template_type
-                )
+                try:
+                    entry, manifest_candidate = self._manifest_declared_template(
+                        pack_dir, template_name, template_type
+                    )
+                except PresetSectionValidationError:
+                    if any(layer["strategy"] == "replace" for layer in layers):
+                        continue
+                    raise
                 if entry is not None:
                     strategy = entry.get("strategy", "replace")
                     manifest_has_strategy = "strategy" in entry
@@ -601,8 +614,17 @@ class PresetResolver:
                                     fm_data = yaml.safe_load(fm_text)
                                     if isinstance(fm_data, dict):
                                         fm_strategy = fm_data.get("strategy")
+                                        if isinstance(fm_strategy, str) and fm_strategy.lower() == "replace-section":
+                                            raise PresetSectionValidationError(
+                                                f"Declare replace-section and selector in {pack_dir / 'preset.yml'}, "
+                                                "not command frontmatter"
+                                            )
                                         if isinstance(fm_strategy, str) and fm_strategy.lower() in VALID_PRESET_STRATEGIES:
                                             strategy = fm_strategy.lower()
+                        except PresetSectionValidationError:
+                            if any(layer["strategy"] == "replace" for layer in layers):
+                                continue
+                            raise
                         except (UnicodeDecodeError, yaml.YAMLError, OSError):
                             # Best-effort legacy frontmatter parsing: keep default
                             # strategy ("replace") when content is unreadable/invalid.
@@ -612,6 +634,8 @@ class PresetResolver:
                         "path": candidate,
                         "source": f"{pack_id} v{version}",
                         "strategy": strategy,
+                        **({"selector": entry["selector"], "preset_id": pack_id}
+                           if strategy == "replace-section" and entry else {}),
                     })
 
         # Priority 3: Extension-provided templates (always "replace")
@@ -759,6 +783,12 @@ class PresetResolver:
         if not layers:
             return None
 
+        section_composition = False
+        for layer in layers:
+            if layer["strategy"] == "replace":
+                break
+            section_composition |= layer["strategy"] == "replace-section"
+
         def _read_layer_content(layer: Dict[str, Any]) -> Optional[str]:
             """Read a layer's raw text, rewriting extension-relative subdir
             references (agents/, knowledge-base/, etc.) to their installed
@@ -778,8 +808,15 @@ class PresetResolver:
             not a raw UnicodeDecodeError at composition time.
             """
             try:
-                text = layer["path"].read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+                text = (
+                    layer["path"].read_bytes().decode("utf-8") if section_composition
+                    else layer["path"].read_text(encoding="utf-8")
+                )
+            except (OSError, UnicodeDecodeError) as exc:
+                if section_composition:
+                    raise PresetSectionValidationError(
+                        f"Could not read section composition layer {layer['path']}: {exc}"
+                    ) from exc
                 return None
             extension_id = layer.get("extension_id")
             extension_dir = layer.get("extension_dir")
@@ -813,6 +850,10 @@ class PresetResolver:
                 break
 
         if base_layer_idx is None:
+            if section_composition:
+                raise PresetSectionValidationError(
+                    f"Template '{template_name}' has section replacements but no replace base"
+                )
             return None  # no replace base found
 
         # Convert to reversed_layers index
@@ -827,7 +868,10 @@ class PresetResolver:
         # For command composition, strip frontmatter from each layer to avoid
         # leaking YAML metadata into the composed body. The highest-priority
         # layer's frontmatter will be reattached at the end.
-        is_command = template_type == "command"
+        is_command = template_type == "command" and any(
+            layer["strategy"] != "replace-section"
+            for layer in layers[:base_layer_idx]
+        )
         top_frontmatter_text = None
         base_frontmatter_text = None
 
@@ -861,15 +905,57 @@ class PresetResolver:
                 base_frontmatter_text = fm
                 content = body
 
+        def _render_command(body: str) -> str:
+            if not is_command or not top_frontmatter_text:
+                return body
+
+            def _parse_fm_yaml(fm_block: str) -> dict:
+                try:
+                    parsed = yaml.safe_load("\n".join(fm_block.splitlines()[1:-1])) or {}
+                except yaml.YAMLError:
+                    return {}
+                return parsed if isinstance(parsed, dict) else {}
+
+            top_fm = _parse_fm_yaml(top_frontmatter_text)
+            if base_frontmatter_text and base_frontmatter_text != top_frontmatter_text:
+                base_fm = _parse_fm_yaml(base_frontmatter_text)
+                for key in ("scripts", "agent_scripts", "argument-hint"):
+                    if key not in top_fm and key in base_fm:
+                        top_fm[key] = base_fm[key]
+            top_fm.pop("strategy", None)
+            if not top_fm:
+                return body
+            return "---\n" + dump_frontmatter(top_fm) + "\n---\n\n" + body
+
         # Apply composition layers from bottom to top
         for layer in reversed_layers[start_idx:]:
             try:
-                layer_content = layer["path"].read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+                layer_content = (
+                    layer["path"].read_bytes().decode("utf-8") if section_composition
+                    else layer["path"].read_text(encoding="utf-8")
+                )
+            except (OSError, UnicodeDecodeError) as exc:
+                if section_composition:
+                    raise PresetSectionValidationError(
+                        f"Could not read section composition layer {layer['path']}: {exc}"
+                    ) from exc
                 # Same tolerance as _read_layer_content: an unreadable layer
                 # means the composed result cannot be produced.
                 return None
             strategy = layer["strategy"]
+
+            if strategy == "replace-section":
+                command_prefix = _render_command("")
+                try:
+                    content = replace_section(
+                        command_prefix + content, layer_content, layer["selector"],
+                        preset=layer["preset_id"], contribution=str(layer["path"]),
+                        artifact=template_name,
+                    )
+                except SectionReplacementError as exc:
+                    raise PresetSectionValidationError(str(exc)) from exc
+                content = content[len(command_prefix):]
+                continue
 
             if is_command:
                 fm, layer_body = _split_frontmatter(layer_content)
@@ -903,50 +989,4 @@ class PresetResolver:
                     )
                 content = layer_content.replace(placeholder, content)
 
-        # Reattach the highest-priority frontmatter for commands,
-        # inheriting scripts/agent_scripts from the base if missing
-        # and stripping the strategy key (internal-only, not for agent output).
-        if is_command and top_frontmatter_text:
-            def _parse_fm_yaml(fm_block: str) -> dict:
-                """Parse YAML from a frontmatter block (with --- fences)."""
-                lines = fm_block.splitlines()
-                # Parse only interior lines (between --- fences)
-                if len(lines) >= 2:
-                    yaml_lines = lines[1:-1]
-                else:
-                    yaml_lines = []
-                try:
-                    parsed = yaml.safe_load("\n".join(yaml_lines)) or {}
-                except yaml.YAMLError:
-                    return {}
-                # Valid YAML that is not a mapping is treated like invalid
-                # frontmatter, matching CommandRegistrar.parse_frontmatter.
-                return parsed if isinstance(parsed, dict) else {}
-
-            top_fm = _parse_fm_yaml(top_frontmatter_text)
-
-            # Inherit scripts/agent_scripts from base frontmatter if missing
-            if base_frontmatter_text and base_frontmatter_text != top_frontmatter_text:
-                base_fm = _parse_fm_yaml(base_frontmatter_text)
-                for key in ("scripts", "agent_scripts", "argument-hint"):
-                    if key not in top_fm and key in base_fm:
-                        top_fm[key] = base_fm[key]
-
-            # Strip strategy key — it's an internal composition directive,
-            # not meant for rendered agent command files
-            top_fm.pop("strategy", None)
-
-            if top_fm:
-                top_frontmatter_text = (
-                    "---\n"
-                    + dump_frontmatter(top_fm)
-                    + "\n---"
-                )
-            else:
-                # Empty frontmatter — omit rather than emitting {}
-                top_frontmatter_text = None
-
-            if top_frontmatter_text:
-                content = top_frontmatter_text + "\n\n" + content
-
-        return content
+        return _render_command(content)

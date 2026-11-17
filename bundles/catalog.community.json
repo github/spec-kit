@@ -1,18 +1,18 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-10T00:00:00Z",
+  "updated_at": "2026-11-16T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/bundles/catalog.community.json",
   "bundles": {
     "ado": {
       "name": "Spec Kit for Azure DevOps",
       "id": "ado",
-      "version": "0.3.2",
+      "version": "0.4.0",
       "role": "developer",
       "description": "The ado extension plus the ado-lifecycle workflow: an ADO story to Done with a human gate on every board or PR change.",
       "author": "praveenlavu",
       "license": "MIT",
-      "download_url": "https://github.com/praveenlavu/spec-kit-ado/releases/download/v0.3.2/ado-0.3.2.zip",
-      "sha256": "c18f719069734378954ecdae66bc29fcc2400eef951154724822f33820719c5d",
+      "download_url": "https://github.com/praveenlavu/spec-kit-ado/releases/download/v0.4.0/ado-0.4.0.zip",
+      "sha256": "aa77078fc2ed14775f9a759699f4a1a948d56a27b47b5739fc16dc810747ff27",
       "repository": "https://github.com/praveenlavu/spec-kit-ado",
       "requires": {
         "speckit_version": ">=1.2.1"
@@ -47,6 +47,29 @@
         "workflows": 1
       },
       "tags": ["architecture", "governance", "multi-vendor", "codex"],
+      "verified": false
+    },
+    "ghp": {
+      "name": "Spec Kit for GitHub Projects",
+      "id": "ghp",
+      "version": "0.1.2",
+      "role": "developer",
+      "description": "The ghp extension and the ghp-lifecycle workflow together: GitHub issue to Done through Spec Kit, with a human sign-off before every write.",
+      "author": "praveenlavu",
+      "license": "MIT",
+      "download_url": "https://github.com/praveenlavu/spec-kit-ghp/releases/download/v0.1.2/ghp-0.1.2.zip",
+      "sha256": "5c210249d649ceeebfbae1d10f1a693f4b7ba73a45a77635b6113fd2a7b33b61",
+      "repository": "https://github.com/praveenlavu/spec-kit-ghp",
+      "requires": {
+        "speckit_version": ">=1.2.1"
+      },
+      "provides": {
+        "extensions": 1,
+        "presets": 0,
+        "steps": 0,
+        "workflows": 1
+      },
+      "tags": ["github-projects", "workflow", "governance"],
       "verified": false
     },
     "sicario-spec": {

@@ -9,6 +9,7 @@ directory instead of flat ``speckit.<name>.md`` files.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +59,10 @@ class _GenericSkillsHelper(SkillsIntegration):
     """
 
     key = "generic"
+
+
+def _skill_name(command_name: str) -> str:
+    return f"speckit-{command_name.replace('.', '-')}"
 
 
 class GenericIntegration(MarkdownIntegration):
@@ -167,7 +172,7 @@ class GenericIntegration(MarkdownIntegration):
         """
         raw = src_file.read_text(encoding="utf-8")
         command_name = src_file.stem
-        skill_name = f"speckit-{command_name.replace('.', '-')}"
+        skill_name = _skill_name(command_name)
 
         frontmatter: dict[str, Any] = {}
         if raw.startswith("---"):
@@ -213,6 +218,45 @@ class GenericIntegration(MarkdownIntegration):
         skill_content = _GenericSkillsHelper().post_process_skill_content(skill_content)
         return skill_name, skill_content
 
+    def upgrade_output_folders(
+        self,
+        project_root: Path,
+        parsed_options: dict[str, Any] | None,
+        raw_options: str | None,
+    ) -> set[str]:
+        """Name ``--commands-dir`` output so the journal covers it.
+
+        A new destination is named whole, so a failed upgrade or init removes
+        it. For an existing one only the planned outputs are named: the census
+        then finds one the journal cannot cover, such as a symlink, and the
+        operation runs unjournalled instead of failing, without walking the
+        rest of a user directory.
+        """
+        try:
+            commands_dir = self._resolve_commands_dir(parsed_options, {"raw_options": raw_options})
+        except ValueError:
+            return set()
+        if not isinstance(commands_dir, str):
+            return set()
+        root = project_root.resolve()
+        destination = (project_root / commands_dir).resolve()
+        if destination == root or not destination.is_relative_to(root):
+            return set()
+        relative = destination.relative_to(root).as_posix()
+        if not os.path.lexists(destination):
+            return {relative}
+        if not destination.is_dir():
+            return set()
+        skills_enabled = bool((parsed_options or {}).get("skills"))
+        outputs = set()
+        for template in self.list_command_templates():
+            name = (
+                _skill_name(template.stem) if skills_enabled
+                else self.command_filename(template.stem)
+            )
+            outputs.add(f"{relative}/{name}")
+        return outputs
+
     def commands_dest(self, project_root: Path) -> Path:
         """Not supported for GenericIntegration — use setup() directly.
 
@@ -254,7 +298,9 @@ class GenericIntegration(MarkdownIntegration):
                 f"Integration destination {dest} escapes "
                 f"project root {project_root_resolved}"
             ) from exc
-        dest.mkdir(parents=True, exist_ok=True)
+        from .._file_changes import make_directories
+
+        make_directories(dest)
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = "$ARGUMENTS"

@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.4.2] - 2026-11-17
+
+### Changed
+
+- fix(extensions): omit config hint when no scaffolding fails (#5459)
+- fix(powershell): write -Json output of the PowerShell helpers as ASCII (#5417)
+- Add ghp community bundle entry (#5457)
+- fix(bundles): honor bundle integration during init (#5111)
+- Update ado community bundle to v0.4.0 (#5454)
+- Update A·I·DID·IT — Agile Expansion Pack to v0.2.4 (#5451)
+- Update Autonomous Run Governance preset to v0.4.12 (#5446)
+- feat(tasks): cite canonical field constraints and analyze drift (#5458)
+- Update Spec Kit for Azure DevOps — human-gated lifecycle extension to v0.4.0 (#5453)
+- Update DocGuard — CDD Enforcement extension to v0.48.0 (#5450)
+- Update SpecKit Companion extension to v0.27.0 (#5447)
+- feat: add version provenance to generated skills (#5456)
+- fix(5076): escape Rich markup in workflow output (#5112)
+- Update ado-lifecycle to 0.4.0 (#5427)
+- chore: shorten stale lifecycle to 30/30 days (#5440)
+- Add Spec Status extension to community catalog (#5414)
+- fix: opt-in OpenCode discovery of hidden Spec Kit files (#5032)
+- test: pin the suite interpreter on PATH for parity script subprocesses (#5361)
+- chore(deps): bump the codeql-action group with 2 updates (#5420)
+- chore: release 1.4.1, begin 1.4.2.dev0 development (#5445)
+
 ## [1.4.1] - 2026-11-16
 
 ### Changed

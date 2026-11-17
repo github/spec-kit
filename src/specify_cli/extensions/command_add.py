@@ -348,11 +348,6 @@ def extension_add(
                 "Verify the extension manifest and template files."
             )
 
-        # Only warn when configuration is actually unresolved. Scaffolding that
-        # deployed or preserved every template has already answered this, and an
-        # extension without provides.config has nothing to configure; the blanket
-        # warning contradicted the output directly above it.
-        if failed or not (deployed or skipped):
             console.print("\n[yellow]⚠[/yellow]  Configuration may be required")
             console.print(f"   Check: {config_home}/")
 

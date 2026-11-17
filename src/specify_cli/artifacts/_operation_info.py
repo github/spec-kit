@@ -326,7 +326,7 @@ def _convert_named_stack(
             or not _is_optional_string(item["sourceId"])
             or not _is_optional_string(item["presetId"])
             or not _is_optional_string(item["presetName"])
-            or item["strategy"] not in ("replace", "wrap", "prepend", "append")
+            or item["strategy"] not in ("replace", "wrap", "prepend", "append", "replace-section")
             or not isinstance(item["active"], bool)
             or not isinstance(item["hidden"], bool)
             or not _is_optional_string(item["manifestPath"])

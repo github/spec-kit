@@ -112,7 +112,9 @@ class HermesIntegration(SkillsIntegration):
         )
 
         global_skills_dir = self._hermes_home_skills_dir()
-        global_skills_dir.mkdir(parents=True, exist_ok=True)
+        from .._file_changes import make_directories
+
+        make_directories(global_skills_dir)
 
         created: list[Path] = []
 

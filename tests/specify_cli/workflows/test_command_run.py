@@ -5,12 +5,184 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 import yaml
 
 from tests.specify_cli.workflows.helpers import force_gate_stdin as _force_gate_stdin
+
+
+class TestWorkflowStartupArtifacts:
+    @pytest.fixture(params=["missing", "numeric", "enum"])
+    def invalid_input(self, request):
+        return {
+            "missing": ({"type": "string", "required": True}, [], "Required input"),
+            "numeric": ({"type": "number"}, ["--input", "value=invalid"], "expected a number"),
+            "enum": ({"type": "string", "enum": ["yes"]}, ["--input", "value=no"], "not in allowed"),
+        }[request.param]
+
+    @pytest.fixture
+    def startup_workflows(self, project_dir, monkeypatch):
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setenv("SPECKIT_WORKFLOW_RUN_ID", "reused-startup")
+        _force_gate_stdin(monkeypatch, tty=False)
+        original = project_dir / "original.yml"
+        original.write_text(yaml.safe_dump({
+            "schema_version": "1.0",
+            "workflow": {"id": "original", "name": "Original", "version": "1.0.0"},
+            "inputs": {"verdict": {"type": "string"}},
+            "steps": [
+                {"id": "prefix", "type": "shell", "run": "echo prefix>>prefix.txt"},
+                {"id": "review", "type": "gate", "message": "Review", "verdict_input": "verdict"},
+                {"id": "suffix", "type": "shell", "run": "echo suffix>>suffix.txt"},
+            ],
+        }), encoding="utf-8")
+        return original
+
+    def _replacement(self, project_dir, input_definition):
+        path = project_dir / "replacement.yml"
+        path.write_text(yaml.safe_dump({
+            "schema_version": "1.0",
+            "workflow": {"id": "replacement", "name": "Replacement", "version": "1.0.0"},
+            "inputs": {"value": input_definition},
+            "steps": [
+                {"id": "replacement", "type": "shell", "run": "echo ran>replacement.txt"},
+                {"id": "replacement-after", "type": "shell", "run": "echo after>replacement-after.txt"},
+            ],
+        }), encoding="utf-8")
+        return path
+
+    def _invoke(self, project_dir, arguments, transport="runner"):
+        if transport == "subprocess":
+            executable = shutil.which("specify", path=str(Path(sys.executable).parent))
+            assert executable is not None, "checkout's specify executable is required"
+            result = subprocess.run(
+                [str(Path(executable).absolute()), "workflow", *arguments],
+                cwd=project_dir, input="",
+                capture_output=True, text=True, timeout=30,
+            )
+            return result.returncode, result.stdout, result.stderr
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        result = CliRunner().invoke(app, ["workflow", *arguments], catch_exceptions=False)
+        return result.exit_code, result.stdout, result.stderr
+
+    def _artifacts(self, run_dir):
+        return {
+            str(path.relative_to(run_dir)): path.read_bytes() if path.is_file() else None
+            for path in run_dir.rglob("*")
+        }
+
+    @pytest.mark.parametrize("transport", ["runner", "subprocess"])
+    def test_invalid_startup_preserves_paused_run_and_resume(
+        self, project_dir, startup_workflows, invalid_input, transport
+    ):
+        code, stdout, stderr = self._invoke(
+            project_dir, ["run", str(startup_workflows), "--json"], transport
+        )
+        assert code == 0, (stdout, stderr)
+        paused = json.loads(stdout)
+        assert paused["status"] == "paused"
+        assert paused["run_id"] == "reused-startup"
+        run_dir = project_dir / ".specify" / "workflows" / "runs" / paused["run_id"]
+        before = self._artifacts(run_dir)
+        assert {"workflow.yml", "state.json", "inputs.json", "log.jsonl"} <= before.keys()
+        input_definition, arguments, diagnostic = invalid_input
+        replacement = self._replacement(project_dir, input_definition)
+
+        code, stdout, stderr = self._invoke(
+            project_dir, ["run", str(replacement), "--json", *arguments], transport
+        )
+
+        assert code == 1
+        assert stdout == ""
+        assert diagnostic in stderr
+        assert "Traceback" not in stderr
+        after = self._artifacts(run_dir)
+        assert not (project_dir / "replacement.txt").exists()
+        assert not (project_dir / "replacement-after.txt").exists()
+        # Attempt resume even on the broken baseline to expose snapshot damage.
+        resume_code, resume_stdout, resume_stderr = self._invoke(
+            project_dir, ["resume", paused["run_id"], "--input", "verdict=approve", "--json"],
+            transport,
+        )
+        changed = sorted(key for key in before.keys() | after.keys() if before.get(key) != after.get(key))
+        assert before.keys() == after.keys()
+        assert changed == [], f"Changed artifacts: {changed}; resume: {resume_code}, {resume_stdout}, {resume_stderr}"
+        assert resume_code == 0, (resume_stdout, resume_stderr)
+        resumed = json.loads(resume_stdout)
+        assert resumed["status"] == "completed"
+        assert resumed["workflow_id"] == "original"
+        assert resumed["run_id"] == paused["run_id"]
+        assert (project_dir / "prefix.txt").read_text().splitlines() == ["prefix"]
+        assert (project_dir / "suffix.txt").read_text().splitlines() == ["suffix"]
+
+    @pytest.mark.parametrize("json_output", [True, False])
+    @pytest.mark.parametrize("automatic_id", [True, False])
+    def test_invalid_startup_creates_no_run_directory(
+        self, project_dir, startup_workflows, invalid_input, monkeypatch,
+        json_output, automatic_id,
+    ):
+        if automatic_id:
+            monkeypatch.delenv("SPECKIT_WORKFLOW_RUN_ID")
+        input_definition, arguments, diagnostic = invalid_input
+        replacement = self._replacement(project_dir, input_definition)
+        code, stdout, stderr = self._invoke(
+            project_dir, ["run", str(replacement), *(["--json"] if json_output else []), *arguments]
+        )
+
+        assert code == 1
+        if json_output:
+            assert stdout == ""
+            assert diagnostic in stderr
+        else:
+            assert "Running workflow:" in stdout
+            assert diagnostic in stdout
+            assert stderr == ""
+            assert "▸" not in stdout
+            assert "Status:" not in stdout
+        assert "Traceback" not in stdout + stderr
+        assert not (project_dir / "replacement.txt").exists()
+        assert not (project_dir / ".specify" / "workflows" / "runs").exists()
+
+    @pytest.mark.parametrize("initial_status", ["paused", "completed"])
+    def test_successful_startup_reuses_run_id(
+        self, project_dir, startup_workflows, initial_status
+    ):
+        arguments = ["--input", "verdict=approve"] if initial_status == "completed" else []
+        code, stdout, stderr = self._invoke(
+            project_dir, ["run", str(startup_workflows), "--json", *arguments]
+        )
+        assert code == 0, (stdout, stderr)
+        original = json.loads(stdout)
+        assert original["status"] == initial_status
+        run_dir = project_dir / ".specify" / "workflows" / "runs" / original["run_id"]
+        previous_log = (run_dir / "log.jsonl").read_bytes()
+        replacement = self._replacement(project_dir, {"type": "number", "default": "7"})
+
+        code, stdout, stderr = self._invoke(project_dir, ["run", str(replacement), "--json"])
+
+        assert code == 0, (stdout, stderr)
+        outcome = json.loads(stdout)
+        assert outcome["run_id"] == original["run_id"]
+        assert outcome["workflow_id"] == "replacement"
+        assert outcome["status"] == "completed"
+        assert (project_dir / "replacement.txt").read_text().splitlines() == ["ran"]
+        assert yaml.safe_load((run_dir / "workflow.yml").read_text())["workflow"]["id"] == "replacement"
+        state = json.loads((run_dir / "state.json").read_text())
+        assert state["workflow_id"] == "replacement"
+        assert state["inputs"] == {"value": 7}
+        assert set(state["step_results"]) == {"replacement", "replacement-after"}
+        assert json.loads((run_dir / "inputs.json").read_text()) == {"inputs": {"value": 7}}
+        current_log = (run_dir / "log.jsonl").read_bytes()
+        assert current_log.startswith(previous_log)
+        assert len(current_log) > len(previous_log)
 
 
 class TestWorkflowRunNumberInputs:

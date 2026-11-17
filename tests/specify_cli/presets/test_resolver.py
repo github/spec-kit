@@ -17,6 +17,109 @@ from tests.specify_cli.presets._helpers import (
     CORE_TEMPLATE_NAMES,
     install_self_test_preset,
 )
+from tests.parity_helpers import install_section_stack
+
+
+@pytest.mark.parametrize("kind", ["template", "command"])
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_section_replacement_preserves_raw_document(tmp_path, kind, newline):
+    base = "---\ndescription: 'Keep exact quoting'\n---\n\n# Doc\n## Target\nold\n### Child\nnested\n## Next\nupstream"
+    base = base.replace("\n", newline)
+    name, _ = install_section_stack(tmp_path, base, "new\n", kind=kind)
+    expected = base[:base.index("old")] + "new\n" + base[base.index("## Next"):]
+    assert PresetResolver(tmp_path).resolve_content(name, kind) == expected
+
+
+@pytest.mark.parametrize(
+    "content,code,count",
+    [("# Missing\n", "SECTION_NOT_FOUND", 0), ("## Target\n## TARGET!\n", "SECTION_AMBIGUOUS", 2)],
+)
+def test_section_replacement_selection_errors(tmp_path, content, code, count):
+    name, body = install_section_stack(tmp_path, content, "")
+    with pytest.raises(PresetValidationError) as caught:
+        PresetResolver(tmp_path).resolve_content(name)
+    details = json.loads(str(caught.value))
+    assert details["code"] == code
+    assert details["match_count"] == count
+    assert details["contribution"] == str(body)
+    assert details["preset"] == "team"
+
+
+def test_section_invalid_declaration_cannot_fall_back_to_whole_file(tmp_path):
+    name, _ = install_section_stack(tmp_path, "## Target\nold\n", "wrong full file", selector=None)
+    with pytest.raises(PresetValidationError, match="selector"):
+        PresetResolver(tmp_path).resolve_content(name)
+
+
+def test_section_without_base_fails_explicitly(tmp_path):
+    name, _ = install_section_stack(tmp_path, "## Target\nold\n", "new\n")
+    (tmp_path / ".specify/templates" / f"{name}.md").unlink()
+    with pytest.raises(PresetValidationError, match="no replace base"):
+        PresetResolver(tmp_path).resolve_content(name)
+
+
+@pytest.mark.parametrize("unreadable", ["body", "base"])
+def test_section_unreadable_input_fails_explicitly(tmp_path, unreadable):
+    name, body = install_section_stack(tmp_path, "## Target\nold\n", "new\n")
+    path = body if unreadable == "body" else tmp_path / ".specify/templates" / f"{name}.md"
+    path.write_bytes(b"\xff")
+    with pytest.raises(PresetValidationError, match="Could not read"):
+        PresetResolver(tmp_path).resolve_content(name)
+
+
+@pytest.mark.parametrize("field", ["file", "name", "type", "version", "schema_version"])
+def test_invalid_section_manifest_never_uses_convention_fallback(tmp_path, field):
+    name, body = install_section_stack(tmp_path, "## Target\nold\n", "new\n")
+    manifest_path = body.parent / "preset.yml"
+    data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    if field == "version":
+        data["preset"][field] = 5
+    elif field == "schema_version":
+        data[field] = "invalid"
+    else:
+        data["provides"]["templates"][0][field] = 5
+    manifest_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    conventional = body.parent / "templates" / f"{name}.md"
+    conventional.parent.mkdir()
+    conventional.write_text("Wrong full-file fallback\n", encoding="utf-8")
+    with pytest.raises(PresetValidationError):
+        PresetResolver(tmp_path).resolve_content(name)
+
+
+@pytest.mark.parametrize("kind", ["template", "command"])
+@pytest.mark.parametrize("winner", ["override", "preset", "wrapped-preset"])
+def test_hidden_invalid_section_presets_do_not_block_replace(tmp_path, kind, winner):
+    name, body = install_section_stack(
+        tmp_path, "## Target\nold\n", "invalid lower contribution\n", selector=None, kind=kind,
+    )
+    expected = "# Winning replacement\n"
+    presets = body.parent.parent
+    data = yaml.safe_load((body.parent / "preset.yml").read_text(encoding="utf-8"))
+    registry = PresetRegistry(presets)
+    registry.add("team", {"priority": 20, "enabled": True})
+    if winner == "override":
+        override = tmp_path / ".specify/templates/overrides" / f"{name}.md"
+        override.parent.mkdir()
+        override.write_bytes(expected.encode("utf-8"))
+    else:
+        for preset_id, priority, strategy, content in [
+            ("winner", 10, "replace", expected),
+            *([("outer", 5, "wrap", "before\n{CORE_TEMPLATE}\nafter")] if winner == "wrapped-preset" else []),
+        ]:
+            directory = presets / preset_id
+            directory.mkdir()
+            manifest = json.loads(json.dumps(data))
+            manifest["preset"]["id"] = preset_id
+            entry = manifest["provides"]["templates"][0]
+            entry["strategy"] = strategy
+            del entry["selector"]
+            (directory / "preset.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+            (directory / "body.md").write_bytes(content.encode("utf-8"))
+            registry.add(preset_id, {"priority": priority, "enabled": True})
+        if winner == "wrapped-preset":
+            expected = f"before\n{expected}\nafter"
+    resolver = PresetResolver(tmp_path)
+    assert resolver.resolve_content(name, kind) == expected
 
 
 class TestPresetResolver:

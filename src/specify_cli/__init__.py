@@ -219,9 +219,15 @@ def ensure_executable_scripts(
 ) -> None:
     """Set execute bits on shebang shell scripts, scanning .specify by default."""
     if os.name == "nt":
-        return
+        return  # Windows: skip silently
+    from .integrations._file_changes import changing_file
+    from .integrations.installer import IntegrationInstallError
+
     if files is None:
-        scan_roots = [project_path / ".specify" / "scripts", project_path / ".specify" / "extensions"]
+        scan_roots = [
+            project_path / ".specify" / "scripts",
+            project_path / ".specify" / "extensions",
+        ]
         files = (script for root in scan_roots if root.is_dir() for script in root.rglob("*.sh"))
     failures: list[str] = []
     updated = 0
@@ -235,7 +241,8 @@ def ensure_executable_scripts(
                         continue
             except Exception:
                 continue
-            mode = script.stat().st_mode
+            st = script.stat()
+            mode = st.st_mode
             if mode & 0o111:
                 continue
             new_mode = mode
@@ -247,8 +254,13 @@ def ensure_executable_scripts(
                 new_mode |= 0o001
             if not (new_mode & 0o100):
                 new_mode |= 0o100
-            os.chmod(script, new_mode)
+            # Journalled, so a rolled-back upgrade restores the old mode.
+            with changing_file(script):
+                os.chmod(script, new_mode)
             updated += 1
+        except IntegrationInstallError:
+            # The upgrade journal refused the change; fail the operation.
+            raise
         except Exception as e:
             failures.append(f"{_display_project_path(project_path, script)}: {e}")
     if tracker:

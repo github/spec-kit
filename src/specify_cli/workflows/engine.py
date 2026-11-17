@@ -1190,6 +1190,9 @@ class WorkflowEngine:
         )
         self._execution_state.set(state)
 
+        # Validate inputs before creating or replacing any run artifacts.
+        resolved_inputs = self._resolve_inputs(definition, inputs or {})
+
         # Persist the definition the run was started with. Storage contract
         # (see RunState.definition_path): read by resume and by
         # `specify workflow definition`; do not change location or content.
@@ -1197,8 +1200,6 @@ class WorkflowEngine:
         with open(state.definition_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(definition.data, f, sort_keys=False, allow_unicode=True)
 
-        # Resolve inputs
-        resolved_inputs = self._resolve_inputs(definition, inputs or {})
         state.inputs = resolved_inputs
         workflow_dir = workflow_dir_for(definition)
         state.workflow_dir = workflow_dir
