@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import os
 import warnings
@@ -123,10 +124,6 @@ class _PreserveOutputs:
         if merged:
             return True
         if path.exists() and (path in self.pending or not self._managed(path, relative)):
-            if path not in self.pending and path.is_file() and path.read_bytes() == content:
-                self.current[path] = _digest(path)
-                self.owners.setdefault(path, set()).add(self.key)
-                return False
             self.pending[path] = content
             return False
         self.approved.add(path)
@@ -274,6 +271,7 @@ def _refresh_loaded(
     from ..events import resolve_events
     from ..extensions import ExtensionManager
     from ..presets import PresetManager
+    from ..presets._manager_commands import UncomposableCommandWarning
     from ..shared_infra import refresh_shared_infrastructure
     from . import get_integration
 
@@ -321,6 +319,7 @@ def _refresh_loaded(
         for key in keys:
             result.unattempted.remove(key)
             refreshed = None
+            registration_snapshots = []
             try:
                 integration = get_integration(key)
                 if integration is None:
@@ -351,6 +350,8 @@ def _refresh_loaded(
                 with registration_options(root, scoped), warnings.catch_warnings():
                     _validate_contribution_sources(root)
                     integration.preflight_setup(root, parsed, script_type=script)
+                    if integration.registrar_config is not None and not integration.list_command_templates():
+                        raise ValueError("Core command templates are unavailable; restore the installed CLI before retry")
                     refreshed = IntegrationManifest(key, root, prior.version)
                     events = resolve_events(key, integration.config, root, parsed)
                     core_outputs = integration.setup(
@@ -367,14 +368,20 @@ def _refresh_loaded(
                             f"Required native event settings were not merged: {config_file}; "
                             "reconcile the existing file before retry"
                         )
-                    if integration.list_command_templates() and not core_outputs:
+                    if integration.registrar_config is not None and not core_outputs:
                         raise ValueError("No core invocation artifacts were generated")
                     for output in core_outputs or []:
                         if not output.is_file():
                             raise ValueError(f"Missing generated core output: {output}")
                     core_paths = set(refreshed.files)
                     warnings.simplefilter("error")
+                    warnings.simplefilter("default", UncomposableCommandWarning)
                     if integration.registrar_config is not None:
+                        presets = PresetManager(root)
+                        registration_snapshots = [
+                            (manager.registry, copy.deepcopy(manager.registry.list()))
+                            for manager in (extensions, presets)
+                        ]
                         for path in extensions.obsolete_registration_paths(key):
                             relative = guard._label(path)
                             if path.exists() and relative not in guard.hashes:
@@ -385,7 +392,7 @@ def _refresh_loaded(
                         extensions.register_enabled_extensions_for_agent(
                             key, force=True, strict=True, development_extension=development_extension,
                         )
-                        PresetManager(root).register_enabled_presets_for_agent(key, strict=True)
+                        presets.register_enabled_presets_for_agent(key, strict=True)
                     guard.finish()
                     fresh_contributions = _ContributionManifest(key, root, prior.version)
                     for path in list(guard.current):
@@ -413,6 +420,21 @@ def _refresh_loaded(
                 result.completed.append(key)
             except Exception as exc:  # noqa: BLE001 - continue independent integrations and report partial readiness
                 result.failed[key] = str(exc)
+                # Registration grants removal authority; a failed render must
+                # not claim an untracked file whose bytes were preserved.
+                try:
+                    for registry, snapshot in registration_snapshots:
+                        registry = type(registry)(registry.registry_path.parent)
+                        for component_id, metadata in snapshot.items():
+                            restored = {
+                                "registered_commands": metadata.get("registered_commands", {}),
+                                "registered_skills": metadata.get("registered_skills", []),
+                            }
+                            if "generic_artifact_hashes" in metadata:
+                                restored["generic_artifact_hashes"] = metadata["generic_artifact_hashes"]
+                            registry.update(component_id, restored)
+                except (OSError, ValueError, KeyError) as save_error:
+                    result.failed[key] += f"; registration ownership update failed: {save_error}"
                 # Preserve usable ownership for completed writes in this failed
                 # refresh too; do not make a retry mistake them for user changes.
                 if refreshed is not None:

@@ -20,6 +20,10 @@ from ._manifest import PresetManifest
 from ._resolver import PresetResolver
 
 
+class UncomposableCommandWarning(UserWarning):
+    """A composition intentionally skipped because its base is absent."""
+
+
 def _substitute_core_template(
     body: str,
     cmd_name: str,
@@ -170,6 +174,7 @@ class _PresetCommandMethods:
                             f"compose onto; skipping. Provide a lower-priority "
                             f"preset, extension, or core command for it before "
                             f"using composition strategies.",
+                            UncomposableCommandWarning,
                             stacklevel=2,
                         )
                         continue
@@ -413,6 +418,10 @@ class _PresetCommandMethods:
                     missing = [
                         template["name"] for template in manifest.templates
                         if template.get("type") == "command"
+                        and (
+                            template.get("strategy", "replace") == "replace"
+                            or resolver.resolve_content(template["name"], "command") is not None
+                        )
                         and (pack_id, template["name"]) not in successful_command_replacements
                         and (pack_id, template["name"]) not in successful_skill_replacements
                     ]
@@ -1101,6 +1110,7 @@ class _PresetCommandMethods:
                     warnings.warn(
                         f"Cannot compose command '{cmd_name}': no base layer. "
                         f"Stale command files may remain.",
+                        UncomposableCommandWarning,
                         stacklevel=2,
                     )
                     registrar._ensure_configs()

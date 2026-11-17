@@ -3885,6 +3885,7 @@ class ExtensionManager:
         """Remove old flat commands whose replacement skills were written."""
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
+        from ..integrations._file_changes import unlink
 
         integration = get_integration(agent_name)
         legacy_dir = getattr(integration, "legacy_flat_command_dir", None)
@@ -3942,7 +3943,7 @@ class ExtensionManager:
 
             legacy_file = legacy_root / f"{command_name}{legacy_extension}"
             if legacy_file.is_symlink() or legacy_file.is_file():
-                legacy_file.unlink()
+                unlink(legacy_file)
                 removed.append(legacy_file)
 
         return removed
@@ -3972,6 +3973,7 @@ class ExtensionManager:
 
         active_agent = init_options.get("ai")
         ai_skills_enabled = is_ai_skills_enabled(init_options)
+        native_skills = bool(agent_config) and agent_config.get("extension") == "/SKILL.md"
         skills_mode_active = (
             active_agent == agent_name
             and ai_skills_enabled
@@ -4087,8 +4089,11 @@ class ExtensionManager:
                 # #2948 callers only pass the active agent anyway).
                 if agent_name == active_agent:
                     try:
+                        # Native registration already rendered these files.
+                        # Strict refresh must not replace them with a second format.
                         registered_skills = self._register_extension_skills(
-                            manifest, ext_dir, force=force,
+                            manifest, ext_dir,
+                            force=force and not (strict and native_skills),
                             **({"link_outputs": True} if ext_id == development_extension else {}),
                         )
                         if agent_name == "generic" and skills_mode_active:

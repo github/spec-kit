@@ -102,8 +102,11 @@ remains discovery-only.
 
 Installing an additional integration does not change the default integration. Use `specify integration use <key>` to change the default.
 
-Extensions and presets follow the default integration only. Use `use <key>` or
-`switch <key>` to activate another integration and register their commands for it.
+Successful `extension add` refreshes every recorded installed integration,
+including effective extension and preset commands, without changing the default.
+Other extension and preset lifecycle operations retain default-integration
+registration. Use `use <key>` or `switch <key>` to change the default and refresh
+its commands.
 
 ### Catalog-installed external adapters
 

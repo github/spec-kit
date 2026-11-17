@@ -602,3 +602,116 @@ def test_replacement_does_not_orphan_unverified_legacy_commands(tmp_path, monkey
         retried = add_local(tmp_path, monkeypatch, "--force")
         assert retried.exit_code == 0, retried.output
     assert not obsolete.exists()
+
+
+def install_review_preset(root, command="speckit.plan", strategy="replace"):
+    import yaml
+
+    from specify_cli.presets import PresetManager
+
+    source = root / "preset-source"
+    source.mkdir()
+    (source / "command.md").write_text("---\ndescription: Review preset\n---\n# Preset content\n{CORE_TEMPLATE}\n")
+    (source / "preset.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "preset": {"id": "review-preset", "name": "Review", "version": "1.0.0", "description": "Test"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"templates": [
+            {"type": "command", "name": command, "file": "command.md", "strategy": strategy},
+        ]},
+    }), encoding="utf-8")
+    PresetManager(root).install_from_directory(source, get_speckit_version())
+
+
+@pytest.mark.parametrize("home_scoped", [False, True])
+def test_intermediate_core_equality_cannot_authorize_preset_overwrite(tmp_path, monkeypatch, home_scoped):
+    from specify_cli.integrations.refresh import refresh_installed_integrations
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    root = tmp_path / "project"
+    key = "hermes" if home_scoped else "claude"
+    prepare_project(root, (key,))
+    output = (
+        home / ".hermes/skills/speckit-plan/SKILL.md"
+        if home_scoped else root / ".claude/skills/speckit-plan/SKILL.md"
+    )
+    core = output.read_bytes()
+    install_review_preset(root)
+    assert add_assess(root, monkeypatch).exit_code == 0
+    assert output.read_bytes() != core
+    output.write_bytes(core)
+    result = refresh_installed_integrations(root)
+    assert not result.success and key in result.failed
+    assert output.read_bytes() == core
+
+
+@pytest.mark.parametrize("empty_directory", [False, True])
+def test_missing_core_sources_cannot_delete_existing_invocations(tmp_path, monkeypatch, empty_directory):
+    prepare_project(tmp_path)
+    output = tmp_path / ".agents/skills/speckit-plan/SKILL.md"
+    before = output.read_bytes()
+    source = tmp_path / "empty-commands"
+    if empty_directory:
+        source.mkdir()
+    monkeypatch.setattr(type(get_integration("codex")), "shared_commands_dir", lambda self: source)
+    added = add_assess(tmp_path, monkeypatch)
+    assert added.exit_code == 1, added.output
+    assert "Core command templates are unavailable" in " ".join(added.output.split())
+    assert output.read_bytes() == before
+
+
+@pytest.mark.parametrize("ownership", ["untracked", "customized", "managed"])
+def test_legacy_qoder_retirement_requires_verified_ownership(tmp_path, monkeypatch, ownership):
+    prepare_project(tmp_path, ("qodercli",))
+    relative = ".qoder/commands/speckit.assess.intake.md"
+    output = tmp_path / relative
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(b"old generated command\n")
+    if ownership != "untracked":
+        manifest = IntegrationManifest.load("qodercli", tmp_path)
+        manifest.record_existing(relative)
+        manifest.save()
+    if ownership == "customized":
+        output.write_bytes(b"my customized legacy command\n")
+    before = output.read_bytes()
+    added = add_assess(tmp_path, monkeypatch)
+    assert added.exit_code == (0 if ownership == "managed" else 1), added.output
+    if ownership == "managed":
+        assert not output.exists()
+    else:
+        assert output.read_bytes() == before
+        assert relative in added.output
+
+
+@pytest.mark.parametrize("key", ["claude", "copilot"])
+def test_failed_add_does_not_grant_removal_ownership_of_untracked_file(tmp_path, monkeypatch, key):
+    from specify_cli.extensions import ExtensionManager
+
+    prepare_project(tmp_path, (key,), {"copilot": {"commands": True}})
+    output = tmp_path / (
+        ".claude/skills/speckit-assess-intake/SKILL.md"
+        if key == "claude" else ".github/agents/speckit.assess.intake.agent.md"
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(b"my unrelated invocation\n")
+    added = add_assess(tmp_path, monkeypatch)
+    assert added.exit_code == 1, added.output
+    assert output.read_bytes() == b"my unrelated invocation\n"
+    assert ExtensionManager(tmp_path).remove("assess")
+    assert output.read_bytes() == b"my unrelated invocation\n"
+
+
+@pytest.mark.parametrize("strategy", ["wrap", "prepend", "append"])
+@pytest.mark.parametrize("key", ["claude", "copilot"])
+def test_no_base_preset_composition_does_not_block_unrelated_add(tmp_path, monkeypatch, strategy, key):
+    prepare_project(tmp_path, (key,), {"copilot": {"commands": True}})
+    with pytest.warns(UserWarning):
+        install_review_preset(tmp_path, "speckit.absent.review", strategy)
+    added = add_assess(tmp_path, monkeypatch)
+    assert added.exit_code == 0, added.output
+    directory = ".claude/skills" if key == "claude" else ".github/agents"
+    assert not list((tmp_path / directory).glob("*absent*"))
+    assert list((tmp_path / directory).glob("*assess*"))
