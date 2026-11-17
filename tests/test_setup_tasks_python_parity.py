@@ -19,6 +19,7 @@ from tests.parity_helpers import (
     make_repo,
     normalize_status_text,
     ps_cmd,
+    ps_legacy_stdout_cmd,
     py_cmd,
     run,
     write_feature_json,
@@ -140,6 +141,20 @@ def _setup_repo(tmp_path: Path) -> Path:
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     return _setup_repo(tmp_path)
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_json_preserves_non_ascii_template_on_legacy_stdout(repo: Path) -> None:
+    template = repo / ".specify" / "templates" / "tasks-template.md"
+    expected = "# Tasks 🎯\n\nПравила: 功能 → звіт.\n"
+    template.write_bytes(expected.encode("utf-8"))
+
+    result = run(ps_legacy_stdout_cmd(repo, SCRIPT, "-Json"), repo)
+
+    assert result.returncode == 0, result.stderr
+    payload = json_stdout(result)
+    assert payload["TASKS_TEMPLATE_CONTENT"] == expected
+    assert Path(payload["TASKS_TEMPLATE"]) == template
 
 
 @requires_bash

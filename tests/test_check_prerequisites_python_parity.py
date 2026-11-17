@@ -15,6 +15,7 @@ from tests.conftest import requires_bash
 from tests.parity_helpers import (
     clean_env,
     install_composition_stack,
+    ps_legacy_stdout_cmd,
     run,
 )
 
@@ -135,6 +136,27 @@ def test_python_json_preserves_non_ascii_feature_on_legacy_stdout(
     env["PYTHONIOENCODING"] = "cp1252"
 
     result = run(_py_cmd(prereq_repo, "--json"), prereq_repo, env)
+
+    assert result.returncode == 0, result.stderr
+    payload = _json_stdout(result)
+    assert Path(payload["FEATURE_DIR"]) == feature
+    assert payload["AVAILABLE_DOCS"] == []
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_powershell_json_preserves_non_ascii_feature_on_legacy_stdout(
+    prereq_repo: Path,
+) -> None:
+    feature = prereq_repo / "specs/001-功能"
+    feature.mkdir(parents=True)
+    (feature / "plan.md").write_bytes(b"# Plan\r\n")
+    _write_feature_json(prereq_repo, "specs/001-功能")
+
+    result = run(
+        ps_legacy_stdout_cmd(prereq_repo, "check-prerequisites", "-Json"),
+        prereq_repo,
+        _clean_env(),
+    )
 
     assert result.returncode == 0, result.stderr
     payload = _json_stdout(result)
