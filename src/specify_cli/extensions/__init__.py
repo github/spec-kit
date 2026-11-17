@@ -2298,7 +2298,7 @@ class ExtensionManager:
                 every configured agent's skills directory is scanned
                 instead of resolving just the currently active one.
         """
-        from ..integrations._file_changes import changing_file, unlink
+        from ..integrations._file_changes import unlink
 
         generic_roots = {
             Path(path).parent.parent
@@ -2332,8 +2332,37 @@ class ExtensionManager:
                     except OSError:
                         pass
                     continue
-            with changing_file(skill_subdir, removal=True):
-                shutil.rmtree(skill_subdir)
+            # Remove only the extension's own output. Ownership of the
+            # directory is established through the SKILL.md provenance
+            # marker alone, so every other file in it is the user's (notes,
+            # extra references) and must survive removal (#5381) — the same
+            # per-file discipline the generic branch above applies with its
+            # hash check. The directory itself goes only once it is empty.
+            if skill_file.is_symlink():
+                # A symlink the user re-pointed outside this extension is not
+                # our rendered output; leave it, as the generic branch does.
+                # A dev-mode link into a ``.specify-dev/extension-skills``
+                # cache (which may live in the original --dev source tree,
+                # outside the installed directory) is still ours to remove.
+                try:
+                    target = skill_file.resolve()
+                except OSError:
+                    continue
+                parts = target.parts
+                is_dev_cache_link = any(
+                    parts[i] == ".specify-dev"
+                    and parts[i + 1] == "extension-skills"
+                    for i in range(len(parts) - 1)
+                )
+                if not is_dev_cache_link and not target.is_relative_to(
+                    (self.extensions_dir / extension_id).resolve()
+                ):
+                    continue
+            unlink(skill_file)
+            try:
+                skill_subdir.rmdir()
+            except OSError:
+                pass
 
     def _extension_owned_skill_names(
         self, skill_names: List[str], extension_id: str

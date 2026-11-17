@@ -3172,6 +3172,65 @@ class TestRegisterExtensionSkillsForceFlag:
 class TestExtensionSkillUnregistration:
     """Test _unregister_extension_skills() on ExtensionManager."""
 
+    def test_remove_preserves_user_files_in_extension_skill_dir(
+        self, project_dir, extension_dir
+    ):
+        """``extension remove`` must not delete the user's own files (#5381).
+
+        Uses the supplemental skills route (``_register_extension_skills``,
+        here via auggie): ownership of such a skill directory is established
+        through the SKILL.md provenance marker alone, so any other file in
+        it — notes, extra references — is the user's. The removal fallback
+        used ``shutil.rmtree`` on the whole directory, deleting them; the
+        generic branch already removes only its hash-verified SKILL.md and
+        then ``rmdir``s. Pin the same per-file discipline for the fallback.
+        """
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            extension_dir, "1.0.0", register_commands=False
+        )
+        manager.register_enabled_extensions_for_agent("auggie")
+
+        skill_dir = project_dir / ".augment" / "skills" / "speckit-test-ext-hello"
+        assert (skill_dir / "SKILL.md").is_file(), (
+            "sanity: registration should write the extension's SKILL.md"
+        )
+        user_notes = skill_dir / "my-notes.md"
+        user_notes.write_text("personal notes", encoding="utf-8")
+
+        assert manager.remove("test-ext") is True
+
+        assert not (skill_dir / "SKILL.md").exists(), (
+            "the extension's own SKILL.md must still be removed"
+        )
+        assert user_notes.is_file() and user_notes.read_text(
+            encoding="utf-8"
+        ) == "personal notes", (
+            "removal must not delete files the user added to the skill "
+            "directory (#5381)"
+        )
+
+    def test_remove_still_deletes_emptied_skill_dir(
+        self, project_dir, extension_dir
+    ):
+        """With no user files, removal still cleans up the directory itself."""
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            extension_dir, "1.0.0", register_commands=False
+        )
+        manager.register_enabled_extensions_for_agent("auggie")
+        skill_dir = project_dir / ".augment" / "skills" / "speckit-test-ext-hello"
+        assert (skill_dir / "SKILL.md").is_file()
+
+        assert manager.remove("test-ext") is True
+
+        assert not skill_dir.exists(), (
+            "an emptied extension skill directory is still removed, as the "
+            "generic branch's rmdir does"
+        )
+
     def test_read_only_discovery_includes_fallback_when_target_is_missing(
         self, project_dir
     ):
