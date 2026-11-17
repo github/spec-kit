@@ -140,6 +140,47 @@ class TestPresetSetPriority(PresetArtifactTestHelpers):
         assert "BODY-B" in skill_file.read_text()
         assert "BODY-A" not in skill_file.read_text()
 
+    def test_set_priority_keeps_update_after_reconciliation_failure(
+        self, project_dir, temp_dir
+    ):
+        """Artifact failures warn without undoing the priority or skipping constitution sync."""
+        from unittest.mock import patch
+
+        import pytest
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        (project_dir / ".gemini" / "commands").mkdir(parents=True)
+        preset_id = "priority-failure"
+        preset_dir = self._create_command_preset(
+            temp_dir, preset_id, "speckit.demo", "Demo", "BODY"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5", priority=10)
+
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch.object(
+                PresetManager,
+                "_reconcile_composed_commands",
+                side_effect=OSError("write failed"),
+            ) as reconcile_commands,
+            patch.object(PresetManager, "reconcile_constitution") as reconcile_constitution,
+            pytest.warns(UserWarning, match="Post-priority reconciliation failed"),
+        ):
+            result = CliRunner().invoke(
+                app, ["preset", "set-priority", preset_id, "1"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert PresetManager(project_dir).registry.get(preset_id)["priority"] == 1
+        reconcile_commands.assert_called_once_with(["speckit.demo"])
+        reconcile_constitution.assert_called_once_with(
+            f"Failed to reconcile constitution after changing priority for preset {preset_id}"
+        )
+
     def test_set_priority_same_value_no_change(self, project_dir, pack_dir):
         """Test set-priority with same value shows already set message."""
         from unittest.mock import patch
