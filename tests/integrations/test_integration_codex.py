@@ -844,6 +844,24 @@ class TestCodexNoModelInvocationOwnership:
             self._setup(tmp_path)
         assert not [p for p in tmp_path.rglob("*") if p.is_file()]
 
+    def test_unreadable_entry_on_a_policy_path_is_not_taken_as_no_reparse_point(
+        self, tmp_path, monkeypatch
+    ):
+        skills = tmp_path / ".agents" / "skills"
+        skills.mkdir(parents=True)
+        real_lstat = os.lstat
+
+        def lstat(path, *args, **kwargs):
+            if not args and not kwargs and Path(path) == skills:
+                raise PermissionError(errno.EACCES, "Access is denied", str(path))
+            return real_lstat(path, *args, **kwargs)
+
+        monkeypatch.setattr(os, "lstat", lstat)
+        with pytest.raises(PermissionError):
+            get_integration("codex").preflight_setup(
+                tmp_path, {"no_model_invocation": True}, script_type="sh",
+            )
+
     @pytest.mark.skipif(sys.platform != "win32", reason="needs Windows junctions")
     def test_junctioned_skills_dir_inside_project_is_rejected_before_writing(self, tmp_path):
         shared = tmp_path / "shared-skills"

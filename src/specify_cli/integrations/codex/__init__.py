@@ -216,7 +216,7 @@ def _reparse_point_on(root: Path, rel: str) -> str | None:
         current = current / part
         try:
             info = os.lstat(current)
-        except OSError:
+        except (FileNotFoundError, NotADirectoryError):
             return None
         if (
             getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
