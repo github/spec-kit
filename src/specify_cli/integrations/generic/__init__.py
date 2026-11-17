@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from ..base import IntegrationOption, MarkdownIntegration, SkillsIntegration, yaml_quote
+from ..base import IntegrationOption, MarkdownIntegration, SkillsIntegration
 from ..manifest import IntegrationManifest
 
 
@@ -201,14 +201,12 @@ class GenericIntegration(MarkdownIntegration):
                 )
 
         description = frontmatter.get("description") or f"Spec Kit: {command_name} workflow"
+        frontmatter_text = _GenericSkillsHelper()._render_core_skill_frontmatter(
+            skill_name, description, f"templates/commands/{src_file.name}"
+        )
         skill_content = (
             f"---\n"
-            f"name: {yaml_quote(skill_name)}\n"
-            f"description: {yaml_quote(description)}\n"
-            f"compatibility: {yaml_quote('Requires spec-kit project structure with .specify/ directory')}\n"
-            f"metadata:\n"
-            f"  author: {yaml_quote('github-spec-kit')}\n"
-            f"  source: {yaml_quote('templates/commands/' + src_file.name)}\n"
+            f"{frontmatter_text}\n"
             f"---\n"
             f"{processed_body}"
         )

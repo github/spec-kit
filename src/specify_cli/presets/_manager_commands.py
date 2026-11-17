@@ -230,6 +230,7 @@ class _PresetCommandMethods:
             self.project_root,
             create_missing_active_skills_dir=True,
             only_agent=active_agent,
+            version=manifest.version,
         )
 
     def register_enabled_presets_for_agent(self, agent_name: str) -> None:
