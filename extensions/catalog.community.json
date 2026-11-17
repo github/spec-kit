@@ -8,13 +8,13 @@
       "id": "ado",
       "description": "Azure DevOps story to Done through Spec Kit, with a human sign-off before every board change.",
       "author": "praveenlavu",
-      "version": "0.3.2",
-      "download_url": "https://github.com/praveenlavu/spec-kit-ado/archive/refs/tags/v0.3.2.zip",
-      "sha256": "1f6806c67de462a3a5e34e818c070dd49bd689bf0cb22a0fdc6078467b2fae4c",
+      "version": "0.4.0",
+      "download_url": "https://github.com/praveenlavu/spec-kit-ado/archive/refs/tags/v0.4.0.zip",
+      "sha256": "f869ea60786c8687e37172428fc327b3ca08e54b7111f7db915351fd490bb6e9",
       "repository": "https://github.com/praveenlavu/spec-kit-ado",
       "homepage": "https://github.com/praveenlavu/spec-kit-ado",
-      "documentation": "https://github.com/praveenlavu/spec-kit-ado/blob/v0.3.2/README.md",
-      "changelog": "https://github.com/praveenlavu/spec-kit-ado/blob/v0.3.2/CHANGELOG.md",
+      "documentation": "https://github.com/praveenlavu/spec-kit-ado/blob/v0.4.0/README.md",
+      "changelog": "https://github.com/praveenlavu/spec-kit-ado/blob/v0.4.0/CHANGELOG.md",
       "license": "MIT",
       "category": "integration",
       "effect": "read-write",
@@ -23,7 +23,7 @@
         "tools": [
           {
             "name": "ado",
-            "version": ">=0.3.0",
+            "version": ">=0.4.0",
             "required": true
           },
           {
@@ -37,7 +37,7 @@
         ]
       },
       "provides": {
-        "commands": 13,
+        "commands": 14,
         "hooks": 2
       },
       "tags": [
@@ -51,7 +51,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-11-09T00:00:00Z",
-      "updated_at": "2026-11-09T00:00:00Z"
+      "updated_at": "2026-11-16T00:00:00Z"
     },
     "adrkit": {
       "name": "adrkit — decision memory for spec-driven development",
@@ -203,13 +203,13 @@
       "id": "aididit",
       "description": "Runs every work item through Assemble, Ideate, Draft, Iterate, Deliver, Investigate and Tidy, with a simulated agile team and a web-cited practitioner panel in place of human gates.",
       "author": "Rubber Duck Engineering",
-      "version": "0.2.1",
-      "download_url": "https://github.com/RubberDuckEngineering/ai-did-it/releases/download/v0.2.1/aididit-v0.2.1.zip",
-      "sha256": "32fd832e46e0972e2f06bab8723dc981ee41a3d0d0bb18daff0a0cb7da97993f",
+      "version": "0.2.4",
+      "download_url": "https://github.com/RubberDuckEngineering/ai-did-it/releases/download/v0.2.4/aididit-v0.2.4.zip",
+      "sha256": "f52b17a2b53d0dd3a0d1f9cd4810811a48b716ecb8247f86e4a389a37aef7d4f",
       "repository": "https://github.com/RubberDuckEngineering/ai-did-it",
       "homepage": "https://github.com/RubberDuckEngineering/ai-did-it",
-      "documentation": "https://github.com/RubberDuckEngineering/ai-did-it/blob/v0.2.1/README.md",
-      "changelog": "https://github.com/RubberDuckEngineering/ai-did-it/blob/v0.2.1/CHANGELOG.md",
+      "documentation": "https://github.com/RubberDuckEngineering/ai-did-it/blob/v0.2.4/README.md",
+      "changelog": "https://github.com/RubberDuckEngineering/ai-did-it/blob/v0.2.4/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
@@ -246,7 +246,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-11-10T00:00:00Z",
-      "updated_at": "2026-11-10T00:00:00Z"
+      "updated_at": "2026-11-16T00:00:00Z"
     },
     "agent-assign": {
       "name": "Agent Assign",

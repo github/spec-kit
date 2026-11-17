@@ -4,9 +4,11 @@ import copy
 import importlib.util
 import io
 import json
+import shutil
 import subprocess
 import sys
 from html.parser import HTMLParser
+from http.client import IncompleteRead
 from pathlib import Path
 
 import pytest
@@ -103,18 +105,64 @@ def test_generation_is_deterministic_and_removes_deleted_pages(catalog):
 def test_untrusted_metadata_is_text_not_markup_or_markdown(catalog):
     data, path, docs = catalog
     entry = data["presets"]["sample"]
-    payload = '<script>alert("x")</script> ![x](javascript:alert(1)) & |'
+    payload = '<script>alert("x")</script>\n\n\r\n![x](javascript:alert(1)) & |'
     entry.update(name=payload, description=payload, author=payload, tags=[payload])
     path.write_text(json.dumps(data), encoding="utf-8")
     generator.generate(path, docs)
+    for generated in (
+        docs / "_generated/preset-directory.md",
+        docs / "community/presets/sample.md",
+    ):
+        source = generated.read_text(encoding="utf-8")
+        assert payload not in source
+        assert generator.escape_metadata(payload) in source
     listing = (docs / "_generated/preset-directory.md").read_text(encoding="utf-8")
     detail = (docs / "community/presets/sample.md").read_text(encoding="utf-8")
     parsed = DirectoryParser()
     parsed.feed(listing)
     assert parsed.scripts == ["../assets/preset-catalog.js"]
     assert json.loads(parsed.entries[0]["data-preset-tags"]) == [payload]
-    assert generator.html.escape(payload) in detail
+    assert generator.escape_metadata(payload) in detail
     assert "<script>" not in detail
+
+
+@pytest.mark.skipif(shutil.which("docfx") is None, reason="DocFX is required to verify rendered Markdown")
+@pytest.mark.parametrize("line_break", ["\n", "\r\n", "\r"])
+def test_multiline_metadata_cannot_inject_links_in_rendered_docfx(catalog, line_break):
+    data, path, docs = catalog
+    entry = data["presets"]["sample"]
+    payload = f"Literal text{line_break}{line_break}[injected](javascript:alert%281%29)"
+    entry.update(
+        name=payload, description=payload, author=payload, version=payload,
+        license=payload, tags=[payload], updated_at=payload, sha256=payload,
+    )
+    entry["requires"] = {"speckit_version": payload, "extensions": [payload]}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    generator.generate(path, docs)
+    (docs / "community/presets.md").write_text(
+        "# Community Presets\n\n"
+        "[!INCLUDE [Directory](../_generated/preset-directory.md)]\n",
+        encoding="utf-8",
+    )
+    config = {
+        "build": {
+            "content": [{"files": ["community/**.md"]}],
+            "dest": "_site",
+            "template": ["default", "modern"],
+        },
+    }
+    (docs / "docfx.json").write_text(json.dumps(config), encoding="utf-8")
+    result = subprocess.run(
+        [shutil.which("docfx"), "docfx.json", "--logLevel", "Error"],
+        cwd=docs, capture_output=True, text=True, timeout=120, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    for page in ("community/presets.html", "community/presets/sample.html"):
+        rendered = (docs / "_site" / page).read_text(encoding="utf-8")
+        parsed = DirectoryParser()
+        parsed.feed(rendered)
+        assert not any(link.startswith("javascript:") for link in parsed.links)
+        assert "[injected](javascript:alert%281%29)" in rendered
 
 
 def test_optional_metadata_and_versioned_dependencies_are_present(catalog):
@@ -255,6 +303,22 @@ def test_star_network_failure_does_not_prevent_building_documentation(catalog, m
     assert generator.generate(path, docs, fetch_stars=True) == 1
     assert "GitHub lookup timed out" in capsys.readouterr().err
     assert "Stars unavailable" in (docs / "_generated/preset-directory.md").read_text(encoding="utf-8")
+
+
+def test_truncated_star_response_does_not_prevent_building_documentation(catalog, monkeypatch, capsys):
+    _, path, docs = catalog
+
+    class TruncatedResponse(io.BytesIO):
+        def read(self, *args):
+            raise IncompleteRead(b'{"stargazers_count":', 10)
+
+    monkeypatch.setattr(generator, "urlopen", lambda *args, **kwargs: TruncatedResponse())
+    assert generator.generate(path, docs, fetch_stars=True) == 1
+    assert "IncompleteRead" in capsys.readouterr().err
+    assert "Stars unavailable" in (docs / "_generated/preset-directory.md").read_text(encoding="utf-8")
+    assert "<dt>Repository stars</dt><dd>Unavailable</dd>" in (
+        docs / "community/presets/sample.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_zero_stars_is_a_real_count_and_no_token_is_required(catalog, monkeypatch):

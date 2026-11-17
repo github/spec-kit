@@ -8,6 +8,7 @@ import re
 import shlex
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from http.client import HTTPException
 from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -20,6 +21,11 @@ def text(value: object, context: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{context} must be a non-empty string")
     return value
+
+
+def escape_metadata(value: str) -> str:
+    # Literal blank lines end raw HTML blocks in DocFX's Markdown parser.
+    return html.escape(value).replace("\r", "&#13;").replace("\n", "&#10;")
 
 
 def url(value: object, context: str) -> str:
@@ -148,7 +154,7 @@ def repository_stars(presets: list[dict]) -> dict[str, int | None]:
             if not isinstance(count, int) or isinstance(count, bool) or count < 0:
                 raise ValueError("GitHub response has no valid stargazers_count")
             return count
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, HTTPException) as exc:
             print(f"Warning: stars unavailable for {repository}: {exc}", file=sys.stderr)
             return None
 
@@ -174,7 +180,7 @@ def star_badge(entry: dict, count: int | None) -> str:
 
 
 def directory(presets: list[dict], stars: dict[str, int | None]) -> str:
-    escape = html.escape
+    escape = escape_metadata
     tags = sorted({tag for entry in presets for tag in entry["tags"]}, key=str.casefold)
     options = "".join(f'<option value="{escape(tag)}">{escape(tag)}</option>' for tag in tags)
     rows = []
@@ -216,7 +222,7 @@ def directory(presets: list[dict], stars: dict[str, int | None]) -> str:
 
 
 def detail(entry: dict, stars: int | None) -> str:
-    escape = html.escape
+    escape = escape_metadata
     metadata = {
         "Preset ID": entry["id"],
         "Catalog version": entry["version"],
