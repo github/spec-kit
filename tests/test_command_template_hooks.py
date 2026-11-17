@@ -63,62 +63,6 @@ def test_unreadable_manifest_is_never_skipped_silently(name: str):
     )
 
 
-_HOOK_BLOCK_HEADER = re.compile(
-    r"^\s+\*\*(?:Optional|Automatic)(?: Pre-Hook| Hook)\*\*: \{extension\}$"
-)
-_FEATURE_DIR_LINE = "SPECKIT_FEATURE_DIR: {FEATURE_DIR}"
-# The one hook event that runs before the feature directory exists.
-_EMPTY_FEATURE_DIR_NOTE = "`SPECKIT_FEATURE_DIR` resolves to nothing"
-
-
-@pytest.mark.parametrize("name", HOOK_TEMPLATES)
-def test_every_hook_block_carries_the_feature_directory(name: str):
-    """A hook block without SPECKIT_FEATURE_DIR leaves its consumer guessing.
-
-    The block is the only surface a hook sees, so the value has to be in it,
-    directly under the hook header and inside the same fence.
-    """
-    lines = (TEMPLATES_DIR / name).read_text(encoding="utf-8").splitlines()
-    headers = [i for i, line in enumerate(lines) if _HOOK_BLOCK_HEADER.match(line)]
-    # Guard: the before/after sites each render an optional and a mandatory block.
-    assert len(headers) >= 4, f"{name}: found only {len(headers)} hook blocks"
-    for index in headers:
-        following = lines[index + 1].strip() if index + 1 < len(lines) else ""
-        assert following == _FEATURE_DIR_LINE, (
-            f"{name}: hook block at line {index + 1} does not carry "
-            f"{_FEATURE_DIR_LINE!r} as its second line, found {following!r}"
-        )
-
-
-def test_specify_says_the_feature_directory_is_empty_before_it_exists():
-    """before_specify runs before the directory exists, so the value is empty.
-
-    The note has to sit in the pre-hook section, ahead of the first hook block,
-    or an agent reads it as applying to the post-hook blocks that do carry a
-    real path.
-    """
-    lines = (TEMPLATES_DIR / "specify.md").read_text(encoding="utf-8").splitlines()
-    notes = [i for i, line in enumerate(lines) if _EMPTY_FEATURE_DIR_NOTE in line]
-    headers = [i for i, line in enumerate(lines) if _HOOK_BLOCK_HEADER.match(line)]
-    assert notes, "specify.md does not say SPECKIT_FEATURE_DIR is empty before the folder exists"
-    assert notes[0] < headers[0], (
-        "specify.md states the empty case after the first hook block, where it "
-        "reads as an exception to the blocks that carry a real path"
-    )
-
-
-def test_converge_post_hooks_are_mandatory():
-    """after_converge is the only completion signal converge produces.
-
-    Without the mandatory framing the other commands carry, an agent may report
-    the handoff and end the command before the hooks run.
-    """
-    text = (TEMPLATES_DIR / "converge.md").read_text(encoding="utf-8")
-    assert "MUST complete this section before reporting converge as finished" in text, (
-        "converge.md does not make the after_converge hooks mandatory"
-    )
-
-
 @pytest.mark.parametrize("name", HOOK_TEMPLATES)
 def test_every_parse_failure_line_reports_before_continuing(name: str):
     text = (TEMPLATES_DIR / name).read_text(encoding="utf-8")

@@ -32,16 +32,12 @@ You **MUST** consider the user input before proceeding (if not empty).
 - For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
   - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
   - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
-- For this event `SPECKIT_FEATURE_DIR` resolves to nothing: the feature directory does not exist
-  yet when the pre-hooks run, so leave the value empty rather than deriving one from the branch
-  or `.specify/feature.json`
 - For each executable hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
     ```
     ## Extension Hooks
 
     **Optional Pre-Hook**: {extension}
-    SPECKIT_FEATURE_DIR: {FEATURE_DIR}
     Command: `/{command}`
     Description: {description}
 
@@ -53,7 +49,6 @@ You **MUST** consider the user input before proceeding (if not empty).
     ## Extension Hooks
 
     **Automatic Pre-Hook**: {extension}
-    SPECKIT_FEATURE_DIR: {FEATURE_DIR}
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
 
@@ -260,7 +255,6 @@ Check if `.specify/extensions.yml` exists in the project root.
     ## Extension Hooks
 
     **Automatic Hook**: {extension}
-    SPECKIT_FEATURE_DIR: {FEATURE_DIR}
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
     ```
@@ -270,7 +264,6 @@ Check if `.specify/extensions.yml` exists in the project root.
     ## Extension Hooks
 
     **Optional Hook**: {extension}
-    SPECKIT_FEATURE_DIR: {FEATURE_DIR}
     Command: `/{command}`
     Description: {description}
 

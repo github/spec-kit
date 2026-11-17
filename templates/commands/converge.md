@@ -32,7 +32,6 @@ You **MUST** consider the user input before proceeding (if not empty).
     ## Extension Hooks
 
     **Optional Pre-Hook**: {extension}
-    SPECKIT_FEATURE_DIR: {FEATURE_DIR}
     Command: `/{command}`
     Description: {description}
 
@@ -46,7 +45,6 @@ You **MUST** consider the user input before proceeding (if not empty).
     ## Extension Hooks
 
     **Automatic Pre-Hook**: {extension}
-    SPECKIT_FEATURE_DIR: {FEATURE_DIR}
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
 
@@ -264,7 +262,6 @@ After producing the result, check if `.specify/extensions.yml` exists in the pro
     ## Extension Hooks
 
     **Optional Hook**: {extension}
-    SPECKIT_FEATURE_DIR: {FEATURE_DIR}
     Command: `/{command}`
     Description: {description}
 
@@ -278,7 +275,6 @@ After producing the result, check if `.specify/extensions.yml` exists in the pro
     ## Extension Hooks
 
     **Automatic Hook**: {extension}
-    SPECKIT_FEATURE_DIR: {FEATURE_DIR}
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
     ```
