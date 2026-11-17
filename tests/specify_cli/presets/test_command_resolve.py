@@ -6,7 +6,6 @@ from urllib.parse import unquote
 
 import pytest
 import yaml
-import pytest
 
 from specify_cli.presets import (
     PresetManager,
