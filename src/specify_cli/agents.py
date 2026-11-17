@@ -883,12 +883,10 @@ class CommandRegistrar:
 
             # -- Post-process for non-skills agents -----------------------
             _integration = None
-            if agent_config["extension"] != "/SKILL.md":
-                from specify_cli.integrations import (  # noqa: PLC0415
-                    get_integration,
-                )
+            from specify_cli.integrations import get_integration  # noqa: PLC0415
 
-                _integration = get_integration(agent_name)
+            _integration = get_integration(agent_name)
+            if agent_config["extension"] != "/SKILL.md":
                 if _integration is not None:
                     output = _integration.post_process_command_content(output)
 
@@ -976,6 +974,13 @@ class CommandRegistrar:
                             author=author,
                             version=version,
                         )
+
+                if (
+                    agent_config["extension"] == "/SKILL.md"
+                    and _integration is not None
+                    and hasattr(_integration, "post_process_skill_content")
+                ):
+                    alias_output = _integration.post_process_skill_content(alias_output)
 
                 alias_file = (
                     commands_dir / f"{alias_output_name}{agent_config['extension']}"

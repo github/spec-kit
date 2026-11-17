@@ -280,8 +280,14 @@ is_installed = registry.is_installed(extension_id: str)  # bool
 }
 ```
 
-`registered_commands` maps integration keys to registered command names;
-`registered_skills` records supplemental skill names. The installer stores
+`registered_commands` maps integration keys to registered command names,
+including aliases emitted by native command registration. For native
+`SKILL.md` integrations, registration creates separate primary and alias
+skill files and applies integration-specific skill post-processing to each.
+`registered_skills` records skills written by the shared extension-skill
+renderer (primary command names only); its refresh allowlist is limited to
+outputs owned by that registration, preserving unrelated user skills. The
+installer stores
 `"local"` as raw local provenance, or a catalog object as shown above.
 The CLI's normalized `--json` output uses a separate
 [public source shape](cli.md#list-installed-extensions).

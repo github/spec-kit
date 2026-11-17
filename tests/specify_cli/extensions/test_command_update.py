@@ -830,6 +830,10 @@ class TestExtensionUpdateCLI:
         assert hook["extension"] == "test-ext"
         assert hook["enabled"] is True
         assert alias_skill_file.is_file()
+        alias_content = alias_skill_file.read_text(encoding="utf-8")
+        assert "user-invocable: true" in alias_content
+        assert "disable-model-invocation: false" in alias_content
+        assert "When constructing command invocations" in alias_content
         assert "updated command" in skill_files[0].read_text(encoding="utf-8")
         updated_content = skill_files[0].read_text(encoding="utf-8")
         assert (
