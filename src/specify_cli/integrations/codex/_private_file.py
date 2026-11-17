@@ -19,6 +19,8 @@ from pathlib import Path
 from ...file_helper import FileHelper
 
 _GENERIC_WRITE = 0x40000000
+_DELETE = 0x00010000
+_FILE_DISPOSITION_INFO = 4
 _CREATE_NEW = 1
 _FILE_ATTRIBUTE_NORMAL = 0x80
 _FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
@@ -146,8 +148,9 @@ def _create_windows(path: Path) -> int:
     try:
         attributes = attributes_type(ctypes.sizeof(attributes_type), descriptor, False)
         # No sharing: nobody else can open the file until it is written and closed.
+        # DELETE lets a failure below remove the file through this handle.
         handle = kernel.CreateFileW(
-            str(path), _GENERIC_WRITE, 0, ctypes.byref(attributes), _CREATE_NEW,
+            str(path), _GENERIC_WRITE | _DELETE, 0, ctypes.byref(attributes), _CREATE_NEW,
             _FILE_ATTRIBUTE_NORMAL | _FILE_FLAG_OPEN_REPARSE_POINT, None,
         )
         if handle is None or handle == wintypes.HANDLE(-1).value:
@@ -157,6 +160,18 @@ def _create_windows(path: Path) -> int:
     try:
         return msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
     except BaseException:
+        # The caller gets no descriptor to remove the empty file by, and one
+        # left behind would be refused as an interrupted run's backup. Marked
+        # through the handle, only the file created here is deleted; with no
+        # sharing, nothing else could have opened, renamed or replaced it.
+        class FileDispositionInfo(ctypes.Structure):
+            _fields_ = [("DeleteFile", wintypes.BOOLEAN)]
+
+        disposition = FileDispositionInfo(True)
+        kernel.SetFileInformationByHandle(
+            handle, _FILE_DISPOSITION_INFO, ctypes.byref(disposition),
+            ctypes.sizeof(disposition),
+        )
         kernel.CloseHandle(handle)
         raise
 
@@ -224,6 +239,10 @@ def _windows_api():
         ctypes.POINTER(SecurityAttributes), wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
     ]
     kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.SetFileInformationByHandle.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD,
+    ]
+    kernel.SetFileInformationByHandle.restype = wintypes.BOOL
     advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
         wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p), wintypes.LPVOID,
     ]

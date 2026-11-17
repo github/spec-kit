@@ -1984,6 +1984,80 @@ class TestCodexFileHelperInternals:
             _private_file.create_private(helper, rel, b"content")
         assert not (tmp_path / rel).exists()
 
+    def test_windows_create_removes_its_file_through_the_handle_if_no_descriptor_is_made(
+        self, tmp_path, monkeypatch
+    ):
+        # Simulates the Windows calls, so this runs everywhere; the next test
+        # makes the real ones. Without a descriptor the caller cannot remove
+        # the empty backup, and a retry would refuse it as an interrupted run.
+        import ctypes
+        import types
+
+        from specify_cli.integrations.codex import _private_file
+
+        calls = []
+
+        class Attributes(ctypes.Structure):
+            _fields_ = [("nLength", ctypes.c_ulong), ("descriptor", ctypes.c_void_p),
+                        ("inherit", ctypes.c_int)]
+
+        class Kernel:
+            def CreateFileW(self, path, access, share, attributes, disposition, flags, template):
+                calls.append(("CreateFileW", access))
+                return 1234
+
+            def SetFileInformationByHandle(self, handle, kind, info, size):
+                calls.append(("SetFileInformationByHandle", handle, kind, bytes(info._obj)))
+                return 1
+
+            def CloseHandle(self, handle):
+                calls.append(("CloseHandle", handle))
+                return 1
+
+            def LocalFree(self, pointer):
+                return None
+
+        class Advapi:
+            def ConvertStringSecurityDescriptorToSecurityDescriptorW(self, *args):
+                return 1
+
+        def open_osfhandle(handle, flags):
+            raise OSError("too many open files")
+
+        monkeypatch.setattr(_private_file, "_windows_api", lambda: (Kernel(), Advapi(), Attributes))
+        monkeypatch.setattr(_private_file, "owner_only_sddl", lambda: "O:S-1-0D:P")
+        monkeypatch.setitem(sys.modules, "msvcrt", types.SimpleNamespace(open_osfhandle=open_osfhandle))
+        monkeypatch.setattr(os, "O_BINARY", 0x8000, raising=False)
+        with pytest.raises(OSError, match="too many open files"):
+            _private_file._create_windows(tmp_path / "openai.yaml.speckit-backup")
+        delete = 0x00010000
+        assert calls[0][0] == "CreateFileW" and calls[0][1] & delete
+        # FileDispositionInfo with DeleteFile set, before the handle closes.
+        assert calls[1:] == [("SetFileInformationByHandle", 1234, 4, b"\x01"), ("CloseHandle", 1234)]
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows creation path")
+    def test_windows_create_private_leaves_no_file_if_no_descriptor_is_made(
+        self, tmp_path, monkeypatch
+    ):
+        import msvcrt
+
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex._private_file import create_private
+
+        def fail(handle, flags):
+            raise OSError("too many open files")
+
+        rel = f"{self.REL}.speckit-backup"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        monkeypatch.setattr(msvcrt, "open_osfhandle", fail)
+        with FileHelper(tmp_path) as helper, pytest.raises(OSError, match="too many open files"):
+            create_private(helper, rel, b"content")
+        assert not (tmp_path / rel).exists()
+        monkeypatch.undo()
+        with FileHelper(tmp_path) as helper:
+            create_private(helper, rel, b"content")
+        assert (tmp_path / rel).read_bytes() == b"content"
+
     @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
     @pytest.mark.parametrize("step", ["write", "fsync", "close"])
     def test_posix_create_private_uses_one_descriptor_and_removes_a_partial_file(
