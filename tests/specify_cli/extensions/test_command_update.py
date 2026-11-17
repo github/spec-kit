@@ -767,7 +767,22 @@ class TestExtensionUpdateCLI:
         manifest["provides"]["commands"][0]["aliases"] = [
             "speckit.test-ext.alternate"
         ]
+        manifest["provides"]["commands"].append(
+            {
+                "name": "speckit.test-ext.new",
+                "file": "commands/new.md",
+                "description": "New command",
+            }
+        )
+        manifest["hooks"]["after_tasks"]["command"] = "speckit.test-ext.new"
         manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        (v2_dir / "commands" / "new.md").write_text(
+            "---\ndescription: New command\n---\n\nNew command body.\n"
+            "- For each executable hook, output the following command name.\n",
+            encoding="utf-8",
+        )
+        updated_skill_names = skill_names + ["speckit-test-ext-new"]
+        updated_command_names = command_names + ["speckit.test-ext.new"]
         command_path = v2_dir / "commands" / "hello.md"
         command_path.write_text(
             command_path.read_text(encoding="utf-8")
@@ -807,11 +822,11 @@ class TestExtensionUpdateCLI:
 
         assert result.exit_code == 0, result.output
         updated = ExtensionManager(project_dir).registry.get("test-ext")
-        assert updated["registered_skills"] == skill_names
-        assert updated["registered_commands"] == {"claude": command_names}
+        assert updated["registered_skills"] == updated_skill_names
+        assert updated["registered_commands"] == {"claude": updated_command_names}
         hook_config = HookExecutor(project_dir).get_project_config()
         hook = hook_config["hooks"]["after_tasks"][0]
-        assert hook["command"] == "speckit.test-ext.hello"
+        assert hook["command"] == "speckit.test-ext.new"
         assert hook["extension"] == "test-ext"
         assert hook["enabled"] is True
         assert alias_skill_file.is_file()
@@ -827,6 +842,14 @@ class TestExtensionUpdateCLI:
         )
         assert "user-invocable: true" in updated_content
         assert "disable-model-invocation: false" in updated_content
+        new_skill_file = (
+            project_dir / ".claude" / "skills" / "speckit-test-ext-new" / "SKILL.md"
+        )
+        assert new_skill_file.is_file()
+        assert "New command body." in new_skill_file.read_text(encoding="utf-8")
+        assert "When constructing command invocations" in new_skill_file.read_text(
+            encoding="utf-8"
+        )
         fresh_project = tmp_path / "fresh-project"
         (fresh_project / ".specify").mkdir(parents=True)
         (fresh_project / ".claude" / "skills").mkdir(parents=True)
@@ -840,7 +863,7 @@ class TestExtensionUpdateCLI:
         fresh_entry = fresh_manager.registry.get("test-ext")
         assert updated["registered_skills"] == fresh_entry["registered_skills"]
         assert updated["registered_commands"] == fresh_entry["registered_commands"]
-        for name in skill_names:
+        for name in updated_skill_names:
             fresh_path = fresh_project / ".claude" / "skills" / name / "SKILL.md"
             updated_path = project_dir / ".claude" / "skills" / name / "SKILL.md"
             assert updated_path.read_text(encoding="utf-8") == fresh_path.read_text(
