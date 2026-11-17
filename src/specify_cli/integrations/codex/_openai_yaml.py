@@ -154,13 +154,15 @@ def schema_errors(data: dict[str, Any]) -> list[str]:
     expect(data.get("interface"), dict, "interface")
     dependencies = data.get("dependencies")
     if expect(dependencies, dict, "dependencies"):
-        tools = dependencies.get("tools")
-        if expect(tools, list, "dependencies.tools"):
+        # ``tools`` and ``products`` may be missing, but Codex reads an
+        # explicit null as a list of the wrong type.
+        tools = dependencies.get("tools", [])
+        if expect(tools, list, "dependencies.tools", optional=False):
             for index, tool in enumerate(tools):
                 # A list item is required, so ``null`` is not an absent field.
                 if expect(tool, dict, f"dependencies.tools[{index}]", optional=False):
                     expect(tool.get("oauth"), dict, f"dependencies.tools[{index}].oauth")
     policy = data.get("policy")
     if expect(policy, dict, "policy"):
-        expect(policy.get("products"), list, "policy.products")
+        expect(policy.get("products", []), list, "policy.products", optional=False)
     return errors

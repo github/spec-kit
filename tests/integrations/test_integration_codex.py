@@ -947,6 +947,33 @@ class TestCodexNoModelInvocationOwnership:
         with pytest.raises(ValueError, match="'interface' must be a mapping, got int$"):
             self._setup(tmp_path)
 
+    @pytest.mark.parametrize(
+        ("content", "field"),
+        [
+            (b"dependencies:\n  tools: null\n", "dependencies.tools"),
+            (b"dependencies:\n  tools:\n", "dependencies.tools"),
+            (b"policy:\n  products: null\n", "policy.products"),
+        ],
+        ids=["tools-null", "tools-empty", "products-null"],
+    )
+    def test_explicit_null_list_aborts_without_overwriting(self, tmp_path, content, field):
+        # Codex reads both as lists that may be missing but not null, and
+        # ignores the whole file, opt-out policy included, if one is null.
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match=f"'{field}' must be a list, got null$"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+        assert self._other_policies(tmp_path) == []
+
+    @pytest.mark.parametrize(
+        "content", [b"dependencies: {}\n", b"policy:\n  allow_implicit_invocation: true\n"],
+        ids=["no-tools", "no-products"],
+    )
+    def test_missing_list_is_accepted(self, tmp_path, content):
+        path = self._seed(tmp_path, content)
+        self._setup(tmp_path)
+        assert self._yaml(path)["policy"]["allow_implicit_invocation"] is False
+
     def test_tracked_file_already_holding_the_policy_is_not_rewritten(self, tmp_path):
         path = self._seed(tmp_path)
         self._setup(tmp_path).save()
@@ -1640,6 +1667,30 @@ class TestCodexNoModelInvocationOwnership:
         self._setup(tmp_path)
         assert self._yaml(path)["custom"] == {"a": 2}
 
+    @pytest.mark.parametrize(
+        "content",
+        [
+            b"base: &b {true: first}\ncustom: {!!merge <<: *b, 1: second}\n",
+            b"a: &a {true: first}\nb: &b {1: second}\ncustom: {!!merge <<: [*a, *b]}\n",
+            b"custom: {!!merge <<: {true: first, 1: second}}\n",
+        ],
+        ids=["merged-and-own", "two-merged", "inline-merged"],
+    )
+    def test_keys_a_merge_brings_in_that_collide_abort_without_overwriting(
+        self, tmp_path, content
+    ):
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*keys that collide"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+        assert self._other_policies(tmp_path) == []
+
+    def test_same_key_from_two_merges_is_not_a_collision(self, tmp_path):
+        content = b"a: &a {k: 1}\nb: &b {k: 2}\ncustom: {!!merge <<: [*a, *b]}\n"
+        path = self._seed(tmp_path, content)
+        self._setup(tmp_path)
+        assert self._yaml(path)["custom"] == {"k": 1}
+
     def test_aliased_policy_is_changed_without_touching_its_anchor(self, tmp_path):
         path = self._seed(tmp_path, b"shared: &p\n  products: [codex]\npolicy: *p\n")
         manifest = self._setup(tmp_path)
@@ -1667,30 +1718,6 @@ class TestCodexNoModelInvocationOwnership:
 
         real_create_bytes = FileHelper.create_bytes
         plan = project / TestCodexNoModelInvocationOwnership.PLAN_REL
-    @pytest.mark.parametrize(
-        "content",
-        [
-            b"base: &b {true: first}\ncustom: {!!merge <<: *b, 1: second}\n",
-            b"a: &a {true: first}\nb: &b {1: second}\ncustom: {!!merge <<: [*a, *b]}\n",
-            b"custom: {!!merge <<: {true: first, 1: second}}\n",
-        ],
-        ids=["merged-and-own", "two-merged", "inline-merged"],
-    )
-    def test_keys_a_merge_brings_in_that_collide_abort_without_overwriting(
-        self, tmp_path, content
-    ):
-        path = self._seed(tmp_path, content)
-        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*keys that collide"):
-            self._setup(tmp_path)
-        assert path.read_bytes() == content
-        assert self._other_policies(tmp_path) == []
-
-    def test_same_key_from_two_merges_is_not_a_collision(self, tmp_path):
-        content = b"a: &a {k: 1}\nb: &b {k: 2}\ncustom: {!!merge <<: [*a, *b]}\n"
-        path = self._seed(tmp_path, content)
-        self._setup(tmp_path)
-        assert self._yaml(path)["custom"] == {"k": 1}
-
 
         def create_bytes(self, rel, *args, **kwargs):
             if Path(rel).as_posix().endswith(f"{failing_skill}/agents/openai.yaml"):

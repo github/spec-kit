@@ -70,8 +70,9 @@ description in Codex's context.
   policy from your own file, it logs a warning naming the file so you can
   remove it by hand. If an existing file cannot be read, is not valid YAML, is
   not a mapping, repeats a key or has keys that would merge into one (such as
-  `true` and `1`), or has a field Codex would reject (for example
-  `interface` or `dependencies.tools` of the wrong type, which makes Codex
+  `true` and `1`, including keys a `!!merge` brings in), or has a field Codex would reject (for example
+  `interface` or `dependencies.tools` of the wrong type, or a
+  `dependencies.tools` or `policy.products` set to null, which makes Codex
   ignore the whole file), setup stops with an error naming the file and leaves
   it unchanged; `specify integration install`, `switch` and `upgrade` check this before
   changing anything, so a refused switch keeps the current integration. Setup
