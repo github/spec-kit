@@ -293,6 +293,11 @@ class TestPresetResolve:
         scripts_dir.mkdir(parents=True)
         nested_library_dir = scripts_dir / "lib"
         nested_library_dir.mkdir(parents=True)
+        # A root-level library must not shadow the dependency relative to this script.
+        (extension_dir / "lib").mkdir()
+        (extension_dir / "lib" / "helper.mjs").write_text(
+            "export const helper = 'extension-root';\n"
+        )
         (scripts_dir / "adapter.mjs").write_text(
             "import './lib/helper.mjs';\nexport default 'extension';\n"
         )

@@ -168,6 +168,60 @@ class TestPresetResolver:
 
         assert f"{(extension_dir / 'lib').as_uri()}/helper.mjs" in result
 
+    def test_extension_script_rewrite_keeps_command_adjacent_references(self, tmp_path):
+        extension_dir = tmp_path / "extension"
+        command_lib = extension_dir / "commands" / "lib"
+        command_lib.mkdir(parents=True)
+        source_path = extension_dir / "commands" / "demo.md"
+
+        result = CommandRegistrar.rewrite_extension_paths(
+            "Read ./lib/reference.md\n",
+            "example",
+            extension_dir,
+            source_path=source_path,
+        )
+
+        assert result == "Read ./lib/reference.md\n"
+
+    def test_extension_script_rewrite_keeps_shell_paths_unencoded(self, tmp_path):
+        project = tmp_path / "project#1"
+        extension_dir = project / ".specify" / "extensions" / "example"
+        script_dir = extension_dir / "scripts"
+        (script_dir / "lib").mkdir(parents=True)
+        source_path = script_dir / "run.sh"
+        output_dir = tmp_path / "generated"
+
+        result = CommandRegistrar.rewrite_extension_paths(
+            ". './lib/helper.sh'\n",
+            "example",
+            extension_dir,
+            source_path=source_path,
+            relative_to=output_dir,
+        )
+
+        assert "%23" not in result
+        assert (
+            "../project#1/.specify/extensions/example/scripts/lib/helper.sh" in result
+        )
+
+    def test_extension_script_rewrite_prefixes_dot_leading_output_paths(self, tmp_path):
+        extension_dir = tmp_path / ".specify" / "extensions" / "example"
+        script_dir = extension_dir / "scripts"
+        (script_dir / "lib").mkdir(parents=True)
+        source_path = script_dir / "run.mjs"
+
+        result = CommandRegistrar.rewrite_extension_paths(
+            "import './lib/helper.mjs';\n",
+            "example",
+            extension_dir,
+            source_path=source_path,
+            relative_to=tmp_path,
+        )
+
+        assert (
+            "import './.specify/extensions/example/scripts/lib/helper.mjs';" in result
+        )
+
     def test_script_composition_uses_runtime_selected_core_base(
         self, project_dir, tmp_path, valid_pack_data, monkeypatch
     ):

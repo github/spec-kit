@@ -270,7 +270,10 @@ class CommandRegistrar:
             }
         except OSError:
             subdirs = set()
-        if source_path is not None:
+        # Script dependencies are relative to the script file, not the extension
+        # root. Only materialization relocates those references; command and
+        # template bodies keep their existing extension-root rewrite rules.
+        if source_path is not None and relative_to is not None:
             try:
                 subdirs.update(
                     entry.name
@@ -299,21 +302,38 @@ class CommandRegistrar:
                 if (
                     match.group("dot")
                     and source_path is not None
+                    and relative_to is not None
                     and (source_path.parent / subdir).is_dir()
                 ):
                     target_dir = (source_path.parent / subdir).resolve()
                 if relative_to is None:
                     replacement = f".specify/extensions/{extension_id}/{subdir}/"
                 else:
+                    module_specifier = (
+                        source_path is None
+                        or source_path.suffix.lower()
+                        in {
+                            ".cjs",
+                            ".js",
+                            ".mjs",
+                        }
+                    )
                     try:
                         replacement = os.path.relpath(
                             target_dir, start=relative_to.resolve()
                         ).replace(os.sep, "/")
                     except ValueError:
-                        replacement = target_dir.as_uri()
-                    if not replacement.startswith(("./", "../", "/", "file:")):
+                        replacement = (
+                            target_dir.as_uri() if module_specifier else str(target_dir)
+                        )
+                    if module_specifier:
+                        if not replacement.startswith(("./", "../", "/", "file:")):
+                            replacement = f"./{replacement}"
+                    elif not os.path.isabs(replacement) and not replacement.startswith(
+                        ("./", "../")
+                    ):
                         replacement = f"./{replacement}"
-                    if not replacement.startswith("file:"):
+                    if module_specifier and not replacement.startswith("file:"):
                         replacement = quote(replacement, safe="/-._~")
                     replacement = f"{replacement}/"
                 return match.group(1) + replacement
