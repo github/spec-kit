@@ -41,14 +41,40 @@ class Yaml12Loader(yaml.SafeLoader):
         # keys must be distinct, and once merged keys are added, keys that
         # are equal must also have the same type.
         if isinstance(node, yaml.MappingNode):
-            own = [key for key, _ in node.value if key.tag != _MERGE_TAG]
-            self._check_keys(own, lambda previous, key_node: True)
+            self._check_own_keys(node)
             self.flatten_mapping(node)  # merged keys first, then the mapping's own
             self._check_keys(
                 [key for key, _ in node.value],
                 lambda previous, key_node: previous.tag != key_node.tag,
             )
         return super().construct_mapping(node, deep=deep)
+
+    def _check_own_keys(self, node: yaml.MappingNode) -> None:
+        """Raise if ``node``, or a mapping merged into it, repeats a key.
+
+        Runs before ``node`` is flattened, which adds the keys merged into it
+        to its own, and only once per node, since an anchored node merged
+        again later has been flattened by then.
+        """
+        checked: set[int] = self.__dict__.setdefault("_own_keys_checked", set())
+        if id(node) in checked:
+            return
+        checked.add(id(node))
+        merge_keys = [key for key, _ in node.value if key.tag == _MERGE_TAG]
+        if len(merge_keys) > 1:
+            raise _collision(merge_keys[1])
+        self._check_keys(
+            [key for key, _ in node.value if key.tag != _MERGE_TAG],
+            lambda previous, key_node: True,
+        )
+        # A mapping written inline as a merge value is never constructed on
+        # its own, so nothing else checks its keys.
+        for key, value in node.value:
+            if key.tag != _MERGE_TAG:
+                continue
+            for merged in value.value if isinstance(value, yaml.SequenceNode) else [value]:
+                if isinstance(merged, yaml.MappingNode):
+                    self._check_own_keys(merged)
 
     def _check_keys(
         self,
@@ -64,12 +90,16 @@ class Yaml12Loader(yaml.SafeLoader):
             except TypeError:  # unhashable; the base constructor reports it
                 continue
             if previous is not None and collide(previous, key_node):
-                raise yaml.constructor.ConstructorError(
-                    None, None,
-                    "found keys that collide, such as a repeated key or both true and 1",
-                    key_node.start_mark,
-                )
+                raise _collision(key_node)
             seen.setdefault(key, key_node)
+
+
+def _collision(key_node: yaml.Node) -> yaml.constructor.ConstructorError:
+    return yaml.constructor.ConstructorError(
+        None, None,
+        "found keys that collide, such as a repeated key or both true and 1",
+        key_node.start_mark,
+    )
 
 
 Yaml12Loader.yaml_implicit_resolvers = {

@@ -1721,7 +1721,8 @@ class TestCodexNoModelInvocationOwnership:
             b"a: &a {true: first}\nb: &b {1: second}\ncustom: {!!merge <<: [*a, *b]}\n",
             b"custom: {!!merge <<: {true: first, 1: second}}\n",
         ],
-        ids=["merged-and-own", "two-merged", "inline-merged"],
+        ids=["merged-and-own", "two-merged", "inline-merged", "inline-repeated",
+             "inline-repeated-in-list", "repeated-merge-key"],
     )
     def test_keys_a_merge_brings_in_that_collide_abort_without_overwriting(
         self, tmp_path, content
@@ -1738,6 +1739,9 @@ class TestCodexNoModelInvocationOwnership:
         self._setup(tmp_path)
         assert self._yaml(path)["custom"] == {"k": 1}
 
+            b"custom: {!!merge <<: {x: first, x: second}}\n",
+            b"custom: {!!merge <<: [{x: first, x: second}]}\n",
+            b"custom: {!!merge <<: {x: first}, !!merge <<: {x: second}}\n",
     def test_aliased_policy_is_changed_without_touching_its_anchor(self, tmp_path):
         path = self._seed(tmp_path, b"shared: &p\n  products: [codex]\npolicy: *p\n")
         manifest = self._setup(tmp_path)
@@ -1750,6 +1754,21 @@ class TestCodexNoModelInvocationOwnership:
             "shared": {"products": ["codex"]},
             "policy": {"products": ["codex"]},
         }
+    @pytest.mark.parametrize(
+        "content",
+        [
+            b"c: &c {k: 1}\nb: &b {!!merge <<: *c, k: 2}\ncustom: {!!merge <<: *b}\n",
+            b"custom: {!!merge <<: &b {!!merge <<: {k: 1}, k: 2}}\nother: {!!merge <<: *b}\n",
+        ],
+        ids=["anchored", "inline-anchored"],
+    )
+    def test_merging_a_mapping_that_overrides_its_own_merge_is_not_a_collision(
+        self, tmp_path, content
+    ):
+        path = self._seed(tmp_path, content)
+        self._setup(tmp_path)
+        assert self._yaml(path)["custom"] == {"k": 2}
+
 
     def test_removing_an_aliased_policy_keeps_its_anchor(self, tmp_path):
         path = self._seed(tmp_path)
