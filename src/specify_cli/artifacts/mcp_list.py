@@ -72,7 +72,7 @@ class ArtifactListStackEntryResult(BaseModel):
     sourceId: str | None
     presetId: str | None
     presetName: str | None
-    strategy: Literal["replace", "wrap", "prepend", "append"]
+    strategy: Literal["replace", "wrap", "prepend", "append", "replace-section"]
     active: bool
     hidden: bool
     manifestPath: str | None

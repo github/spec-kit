@@ -58,6 +58,7 @@ provides:
 | `file` | Yes | Relative path within the preset, with no parent traversal |
 | `description` | No | Contribution description |
 | `strategy` | No | Defaults to `replace`; accepted strings are normalized to lowercase |
+| `selector` | For `replace-section` only | Non-empty lowercase section anchor; no leading `#` |
 
 Template and script names use lowercase letters, digits, and hyphens.
 Command names additionally permit dots; use names such as `speckit.specify`
@@ -138,11 +139,11 @@ against core commands even when a project does not have a
 
 ### Composition strategies
 
-| Type | `replace` | `prepend` | `append` | `wrap` |
-| --- | --- | --- | --- | --- |
-| Template | Default | Supported | Supported | `{CORE_TEMPLATE}` |
-| Command | Default | Supported | Supported | `{CORE_TEMPLATE}` |
-| Script | Default | Not supported | Not supported | `$CORE_SCRIPT` |
+| Type | `replace` | `prepend` | `append` | `wrap` | `replace-section` |
+| --- | --- | --- | --- | --- | --- |
+| Template | Default | Supported | Supported | `{CORE_TEMPLATE}` | Supported |
+| Command | Default | Supported | Supported | `{CORE_TEMPLATE}` | Supported |
+| Script | Default | Not supported | Not supported | `$CORE_SCRIPT` | Not supported |
 
 A highest-precedence `replace` layer wins entirely. Otherwise, resolution
 finds the nearest lower `replace` base and applies only the layers above it,
@@ -161,6 +162,81 @@ Resolution uses the highest-priority available frontmatter and inherits
 The internal `strategy` key is removed from composed output. The active
 integration then renders the result in its supported command or skill
 format.
+
+### Section replacement
+
+Use `replace-section` to customize one Markdown section without copying the
+entire underlying document:
+
+```yaml
+provides:
+  templates:
+    - type: template
+      name: spec-template
+      file: templates/team-requirements.md
+      strategy: replace-section
+      selector: requirements
+```
+
+The file contains the entire replacement **body**, not the selected heading.
+An empty file deletes the body. The body extends from after the heading line
+to the next heading at the same or a higher level, or to the end of the
+document. Subordinate sections are part of that body. The original heading
+and all text outside the body remain unchanged, including line endings.
+Supply the blank lines and trailing newline needed before a following heading;
+the strategy does not insert separators automatically.
+
+Declare both strategy and selector in `preset.yml`, not command frontmatter.
+`selector` is rejected on other strategies. This is additive under manifest
+schema `"1.0"`; set `requires.speckit_version` to a version supporting this
+strategy when distributing the preset.
+
+Selectors use a bounded GitHub-style anchor contract:
+
+- ATX headings have one to six leading `#` characters, up to three leading
+  spaces, and whitespace or end of line after the heading markers. Optional
+  closing hash markers are excluded from the heading text.
+- Inline emphasis/code formatting is removed while retaining its text; inline
+  links contribute their label, not their destination.
+- Lowercase the text, remove punctuation/symbols except hyphens and
+  underscores, retain Unicode letters/numbers, and replace each space with
+  one hyphen. Repeated spaces are not collapsed.
+- `## Review & Approval!` becomes `review--approval`;
+  `## API_v2 - Notes` becomes `api_v2---notes`;
+  `## **Café** Guide` becomes `café-guide`.
+- Selectors match exactly, with no leading `#`, fuzzy matching, parent path,
+  or duplicate numbering. Two headings with the same normalized anchor are
+  ambiguous even at different heading levels.
+
+Backtick and tilde fenced code is ignored for both matching and section
+boundaries. Fences allow up to three leading spaces; closing fences use the
+same marker with at least the opening length. Backtick fence info cannot
+contain a backtick. An unclosed fence protects the remainder of the document.
+Initial YAML metadata is excluded from heading recognition. Setext headings,
+HTML headings, and explicit HTML anchor targeting are not supported.
+
+Replacement applies to the document composed so far, in existing precedence
+order. Later higher-precedence section replacements can replace an earlier
+replacement of the same body. Section-only command edits preserve the
+underlying command frontmatter exactly; section body files do not supply
+replacement command metadata. Mixing with other command strategies retains
+their established metadata merging behavior.
+
+Exactly one match is required. Zero matches fail with `SECTION_NOT_FOUND`;
+multiple matches fail with `SECTION_AMBIGUOUS`. Diagnostics identify the
+preset, contribution file, target artifact, selector, match count, and
+remediation. Ambiguous diagnostics include candidate heading text and one-based
+line numbers in the document composed at that point. These fields and error
+identifiers are stable; prose wording may change. Check selectors/current
+headings for missing matches, and make normalized heading anchors unique for
+ambiguous matches. No first-match fallback or successful unchanged result is
+returned.
+
+Executable scripts cannot use this strategy. It is not a general Markdown
+editor. Runtime template helpers use the same section semantics as the CLI;
+command materialization remains the CLI's responsibility. Keep the managed
+companion Python helper installed alongside each script variant. Manifest-based
+shell composition already requires Python 3 and PyYAML.
 
 ## Command and skill lifecycle
 

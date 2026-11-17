@@ -10,6 +10,41 @@ from tests.specify_cli.presets._helpers import (
     PresetArtifactTestHelpers,
     install_self_test_preset,
 )
+from tests.parity_helpers import install_section_stack
+
+
+@pytest.mark.parametrize("skills_mode", [False, True])
+def test_section_command_is_composed_before_delivery(tmp_path, skills_mode):
+    import json
+
+    project = tmp_path / "project"
+    templates = project / ".specify/templates/commands"
+    templates.mkdir(parents=True)
+    name, body = install_section_stack(
+        tmp_path / "source",
+        "---\ndescription: Original command\n---\n\n## Target\nold\n## Next\nkeep\n",
+        "team-specific body\n",
+        kind="command",
+    )
+    (templates / f"{name}.md").write_bytes(
+        (tmp_path / "source/.specify/templates/commands" / f"{name}.md").read_bytes()
+    )
+    (project / ".specify/init-options.json").write_text(
+        json.dumps({"ai": "copilot", "ai_skills": skills_mode}), encoding="utf-8",
+    )
+    delivery = project / ".github" / ("skills" if skills_mode else "agents")
+    delivery.mkdir(parents=True)
+    manager = PresetManager(project)
+    manager.install_from_directory(body.parent, "9.9.9")
+    output = (
+        delivery / "speckit-section-test/SKILL.md" if skills_mode
+        else delivery / f"{name}.agent.md"
+    )
+    text = output.read_text(encoding="utf-8")
+    assert "## Target\nteam-specific body\n## Next\nkeep" in text
+    assert "Original command" in text
+    assert "\nold\n" not in text
+
 
 
 class TestSelfTestPreset:
