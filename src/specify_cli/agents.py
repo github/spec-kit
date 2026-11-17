@@ -443,7 +443,21 @@ class CommandRegistrar:
             author=author,
             version=version,
         )
-        return self.render_frontmatter(skill_frontmatter) + "\n" + body
+        integration = None
+        try:
+            from specify_cli.integrations import get_integration
+
+            integration = get_integration(agent_name)
+        except (ImportError, ValueError, KeyError):
+            pass
+
+        self.apply_argument_hint(frontmatter, skill_frontmatter, integration)
+        skill_content = self.render_frontmatter(skill_frontmatter) + "\n" + body
+        if integration is not None and hasattr(
+            integration, "post_process_skill_content"
+        ):
+            skill_content = integration.post_process_skill_content(skill_content)
+        return skill_content
 
     @staticmethod
     def build_skill_frontmatter(
