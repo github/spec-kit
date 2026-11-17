@@ -78,7 +78,7 @@ description in Codex's context.
   changing anything, so a refused switch keeps the current integration. Setup
   with the option also stops before writing anything if
   `.agents`, `.agents/skills` or a core `speckit-<command>` skill directory is a
-  symlink, or if a path where a policy goes is a file rather than a directory.
+  symlink, a Windows junction or another reparse point, or if a path where a policy goes is a file rather than a directory.
   Once the policy has been removed from a file Spec Kit no longer tracks it, so
   a policy you set there yourself afterwards is never removed. If writing or
   removing policies fails part-way through setup, the policies it had already

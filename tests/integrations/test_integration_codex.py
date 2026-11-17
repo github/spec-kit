@@ -5,6 +5,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -809,6 +810,52 @@ class TestCodexNoModelInvocationOwnership:
         manifest = self._setup(tmp_path, enabled=False)
         assert list(shared.glob("*/SKILL.md"))
         assert not [k for k in manifest.files if k.endswith("openai.yaml")]
+
+    @pytest.mark.parametrize(
+        "junctioned", [".agents/skills", ".agents/skills/speckit-plan/agents"],
+    )
+    def test_reparse_point_inside_project_is_rejected_before_writing(
+        self, tmp_path, monkeypatch, junctioned
+    ):
+        # A junction is not a symlink to ``is_symlink`` and is followed when
+        # the skills directory is resolved, so the policies' lexical paths
+        # would never match the files setup wrote. On other platforms the
+        # attribute Windows sets on one is simulated.
+        import types
+
+        linked = tmp_path / junctioned
+        linked.mkdir(parents=True)
+        real_lstat = os.lstat
+
+        def lstat(path, *args, **kwargs):
+            info = real_lstat(path, *args, **kwargs)
+            if not args and not kwargs and Path(path) == linked:
+                return types.SimpleNamespace(
+                    st_mode=info.st_mode, st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
+                )
+            return info
+
+        monkeypatch.setattr(os, "lstat", lstat)
+        integration = get_integration("codex")
+        options = {"no_model_invocation": True}
+        with pytest.raises(ValueError, match=f"--no-model-invocation.*reparse point at {junctioned}$"):
+            integration.preflight_setup(tmp_path, options, script_type="sh")
+        with pytest.raises(ValueError, match="--no-model-invocation.*reparse point"):
+            self._setup(tmp_path)
+        assert not [p for p in tmp_path.rglob("*") if p.is_file()]
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="needs Windows junctions")
+    def test_junctioned_skills_dir_inside_project_is_rejected_before_writing(self, tmp_path):
+        shared = tmp_path / "shared-skills"
+        shared.mkdir()
+        (tmp_path / ".agents").mkdir()
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(tmp_path / ".agents" / "skills"), str(shared)],
+            check=True, capture_output=True,
+        )
+        with pytest.raises(ValueError, match="--no-model-invocation.*reparse point"):
+            self._setup(tmp_path)
+        assert not list(shared.rglob("*"))
 
     @pytest.mark.skipif(
         os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),

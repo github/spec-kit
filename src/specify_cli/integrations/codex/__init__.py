@@ -205,6 +205,27 @@ def _require_rewritable(path: Path) -> None:
         raise PermissionError(errno.EPERM, "File has other hard links", str(path))
 
 
+def _reparse_point_on(root: Path, rel: str) -> str | None:
+    """The first existing entry of ``rel`` that is a non-symlink reparse point.
+
+    Mirrors ``FileHelper``'s check, which rejects the same entries but only
+    when a file is written through them.
+    """
+    current = root
+    for part in PurePosixPath(rel).parts:
+        current = current / part
+        try:
+            info = os.lstat(current)
+        except OSError:
+            return None
+        if (
+            getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+            and not stat.S_ISLNK(info.st_mode)
+        ):
+            return current.relative_to(root).as_posix()
+    return None
+
+
 class CodexIntegration(SkillsIntegration):
     """Integration for OpenAI Codex CLI."""
 
@@ -567,6 +588,14 @@ class CodexIntegration(SkillsIntegration):
                 _validate_record_path(Path(rel), root)
             except ValueError as exc:
                 raise ValueError(f"Cannot use --no-model-invocation: {exc}") from exc
+            # ``is_symlink`` misses a Windows junction, which resolving the
+            # skills directory would follow just the same.
+            reparse = _reparse_point_on(root, rel)
+            if reparse is not None:
+                raise ValueError(
+                    f"Cannot use --no-model-invocation: {rel} goes through a Windows "
+                    f"junction or other reparse point at {reparse}"
+                )
             plans[name] = self._plan_policy(root, rel, prior)
         return plans
 
