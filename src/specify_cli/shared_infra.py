@@ -321,12 +321,18 @@ def _shared_script_mode(src_path: Path, content: bytes) -> int:
     """Return the mode a shared script is written with.
 
     Packaged scripts are 0644. A POSIX shell script that starts with a shebang
-    gets an execute bit for each class that can read it (always for the owner),
-    the rule ``ensure_executable_scripts`` applies, so a refresh that rewrites
-    it leaves it runnable without a separate chmod pass.
+    and no execute bit yet gets one for each class that can read it (always for
+    the owner), the rule ``ensure_executable_scripts`` applies, so a refresh that
+    rewrites it leaves it runnable without a separate chmod pass. A script that
+    already has an execute bit keeps its mode.
     """
     mode = src_path.stat().st_mode & 0o777
-    if os.name != "nt" and src_path.suffix == ".sh" and content.startswith(b"#!"):
+    if (
+        os.name != "nt"
+        and src_path.suffix == ".sh"
+        and content.startswith(b"#!")
+        and not mode & 0o111
+    ):
         mode |= ((mode & 0o444) >> 2) | 0o100
     return mode
 

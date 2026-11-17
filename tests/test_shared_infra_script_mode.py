@@ -22,11 +22,18 @@ def _source(tmp_path, name, mode):
 @pytest.mark.skipif(os.name == "nt", reason="POSIX execute bits are not meaningful on Windows")
 @pytest.mark.parametrize(
     ("source_mode", "expected"),
-    [(0o644, 0o755), (0o640, 0o750), (0o600, 0o700), (0o755, 0o755), (0o200, 0o300)],
+    [(0o644, 0o755), (0o640, 0o750), (0o600, 0o700), (0o200, 0o300)],
 )
 def test_shell_script_gets_execute_bit_for_each_class_that_reads(tmp_path, source_mode, expected):
     source = _source(tmp_path, "setup-plan.sh", source_mode)
     assert _shared_script_mode(source, SHEBANG) == expected
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX execute bits are not meaningful on Windows")
+@pytest.mark.parametrize("source_mode", [0o755, 0o744, 0o754, 0o700, 0o710])
+def test_already_executable_script_keeps_its_mode(tmp_path, source_mode):
+    source = _source(tmp_path, "setup-plan.sh", source_mode)
+    assert _shared_script_mode(source, SHEBANG) == source_mode
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX execute bits are not meaningful on Windows")
