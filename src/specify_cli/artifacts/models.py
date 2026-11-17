@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 ArtifactKind = Literal["command", "template", "script", "hook"]
 LayerName = Literal["project", "preset", "extension"]
-Strategy = Literal["replace", "wrap", "prepend", "append"]
+Strategy = Literal["replace", "wrap", "prepend", "append", "replace-section"]
 HookLayerName = Literal["preset", "extension"]
 
 

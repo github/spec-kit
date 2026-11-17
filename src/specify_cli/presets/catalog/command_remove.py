@@ -72,5 +72,6 @@ def preset_catalog_remove(
     console.print(f"[green]✓[/green] Removed catalog '{safe_name}'")
     if not catalogs:
         console.print(
-            "\n[dim]No catalogs remain in config. Built-in defaults will be used.[/dim]"
+            "\n[dim]No project catalogs remain. The CLI will check the environment "
+            "override, user configuration, then built-in defaults.[/dim]"
         )

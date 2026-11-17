@@ -6,11 +6,8 @@ import hashlib
 import json
 import logging
 import os
-import stat
-import tempfile
 import time
 from dataclasses import dataclass
-from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +17,7 @@ from ...._download_security import (
     read_response_limited,
 )
 from ..._catalog_cache import read_cache_json, write_cache_json
+from ..._package_registry import PackageRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -78,170 +76,24 @@ class StepCatalogEntry:
 # ---------------------------------------------------------------------------
 
 
-class StepRegistry:
+class StepRegistry(PackageRegistry):
     """Manages the registry of installed custom step types.
 
     Tracks installed step types and their metadata in
-    ``.specify/workflows/steps/step-registry.json``.
+    ``.specify/workflows/steps/step-registry.json``. Persistence and record
+    mutation are shared with function packages in
+    :class:`~specify_cli.workflows._package_registry.PackageRegistry`.
     """
 
     REGISTRY_FILE = "step-registry.json"
-    SCHEMA_VERSION = "1.0"
+    RECORDS_KEY = "steps"
+    DIRECTORY = "steps"
+    LABEL = "step"
+    ERROR = StepValidationError
 
-    def __init__(self, project_root: Path) -> None:
-        self.project_root = project_root
-        self.steps_dir = project_root / ".specify" / "workflows" / "steps"
-        self.registry_path = self.steps_dir / self.REGISTRY_FILE
-        self.data = self._load()
-
-    def _has_symlinked_parent(self) -> bool:
-        """Return True if any directory under .specify/workflows/steps is a symlink."""
-        current = self.project_root
-        for part in (".specify", "workflows", "steps"):
-            current = current / part
-            if current.is_symlink():
-                return True
-        return False
-
-    def _load(self) -> dict[str, Any]:
-        """Load registry from disk or create default."""
-        default_registry: dict[str, Any] = {"schema_version": self.SCHEMA_VERSION, "steps": {}}
-        # Defense-in-depth: refuse to read the registry if any parent directory
-        # under .specify/workflows/steps is a symlink, which could redirect the
-        # read outside the project root.
-        if self._has_symlinked_parent():
-            return default_registry
-        # Defense-in-depth: also refuse to read a symlinked registry file,
-        # which could redirect the read outside the project root.
-        if self.registry_path.is_symlink():
-            return default_registry
-        if self.registry_path.exists():
-            try:
-                with open(self.registry_path, encoding="utf-8") as f:
-                    data = json.load(f)
-                # Validate shape: must be a dict with a dict "steps" field
-                if not isinstance(data, dict):
-                    return default_registry
-                if not isinstance(data.get("steps"), dict):
-                    data["steps"] = {}
-                return data
-            except (json.JSONDecodeError, ValueError, OSError, UnicodeError):
-                return default_registry
-        return default_registry
-
-    def save(self) -> None:
-        """Persist registry atomically without truncating an existing file."""
-        if self._has_symlinked_parent() or self.registry_path.is_symlink():
-            raise StepValidationError(
-                "Refusing to write step registry through a symlinked path."
-            )
-        fd = -1
-        tmp: str | None = None
-        try:
-            self.steps_dir.mkdir(parents=True, exist_ok=True)
-            fd, tmp = tempfile.mkstemp(
-                dir=str(self.registry_path.parent),
-                prefix=f".{self.registry_path.name}.",
-                suffix=".tmp",
-            )
-            # Keep the exclusive descriptor open while writing and checking the
-            # path so a replaced temporary file can never be committed.
-            with os.fdopen(os.dup(fd), "w", encoding="utf-8") as f:
-                json.dump(self.data, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            try:
-                if self.registry_path.exists():
-                    existing = self.registry_path.stat(follow_symlinks=False)
-                    if stat.S_ISREG(existing.st_mode) and hasattr(os, "fchmod"):
-                        os.fchmod(fd, stat.S_IMODE(existing.st_mode))
-                    if stat.S_ISREG(existing.st_mode) and hasattr(os, "fchown"):
-                        try:
-                            os.fchown(fd, existing.st_uid, existing.st_gid)
-                        except PermissionError:
-                            pass
-            except OSError:
-                # Persisting valid data is more important than preserving mode
-                # or ownership metadata when that best-effort operation fails.
-                pass
-            staged = os.stat(tmp, follow_symlinks=False)
-            opened = os.fstat(fd)
-            if (
-                not stat.S_ISREG(staged.st_mode)
-                or staged.st_dev != opened.st_dev
-                or staged.st_ino != opened.st_ino
-            ):
-                raise OSError("Staged step registry changed before commit")
-            os.close(fd)
-            fd = -1
-            os.replace(tmp, self.registry_path)
-            tmp = None
-        except (OSError, TypeError, ValueError) as exc:
-            raise StepValidationError(
-                f"Failed to write step registry at {self.registry_path}: {exc}"
-            ) from exc
-        finally:
-            if fd >= 0:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
-            if tmp is not None:
-                try:
-                    os.unlink(tmp)
-                except OSError:
-                    pass
-
-    def add(self, step_id: str, metadata: dict[str, Any]) -> None:
-        """Add or update an installed step entry."""
-        import copy
-        from datetime import datetime
-
-        raw_existing = self.data["steps"].get(step_id)
-        had_entry = step_id in self.data["steps"]
-        # Corrupted-but-parseable registries may hold non-dict entries; treat
-        # them as absent rather than crashing on existing.get() (mirrors
-        # WorkflowRegistry.add).
-        existing = raw_existing if isinstance(raw_existing, dict) else {}
-        metadata_to_store = copy.deepcopy(metadata)
-        metadata_to_store["installed_at"] = existing.get(
-            "installed_at", datetime.now(UTC).isoformat()
-        )
-        metadata_to_store["updated_at"] = datetime.now(UTC).isoformat()
-        self.data["steps"][step_id] = metadata_to_store
-        try:
-            self.save()
-        except (StepValidationError, TypeError, ValueError):
-            if had_entry:
-                self.data["steps"][step_id] = raw_existing
-            else:
-                del self.data["steps"][step_id]
-            raise
-
-    def remove(self, step_id: str) -> bool:
-        """Remove an installed step entry. Returns True if found."""
-        if step_id in self.data["steps"]:
-            removed_entry = self.data["steps"][step_id]
-            del self.data["steps"][step_id]
-            try:
-                self.save()
-            except (StepValidationError, TypeError, ValueError):
-                self.data["steps"][step_id] = removed_entry
-                raise
-            return True
-        return False
-
-    def get(self, step_id: str) -> dict[str, Any] | None:
-        """Get metadata for an installed step."""
-        return self.data["steps"].get(step_id)
-
-    def list(self) -> dict[str, dict[str, Any]]:
-        """Return all installed steps."""
-        return dict(self.data["steps"])
-
-    def is_installed(self, step_id: str) -> bool:
-        """Check if a step is installed."""
-        return step_id in self.data["steps"]
+    @property
+    def steps_dir(self) -> Path:
+        return self.base_dir
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +129,7 @@ class StepCatalog:
     # -- Catalog resolution -----------------------------------------------
 
     def _validate_catalog_url(self, url: str) -> None:
-        """Validate that a catalog URL uses HTTPS (localhost HTTP allowed)."""
+        """Validate that a catalog URL uses HTTPS, including local hosts."""
         from urllib.parse import urlparse
 
         # A malformed authority (e.g. an unterminated IPv6 bracket
@@ -294,16 +146,12 @@ class StepCatalog:
             raise StepValidationError(
                 f"Catalog URL is malformed: {url}"
             ) from None
-        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (
-            parsed.scheme == "http" and is_localhost
-        ):
+        if parsed.scheme != "https":
             # A scheme-less value (``example.com/catalog.json``) would otherwise read
             # "got ://". The value itself is not echoed: callers render errors as Rich markup.
             got = f"{parsed.scheme}://" if parsed.scheme else "a URL with no scheme"
             raise StepValidationError(
-                f"Catalog URL must use HTTPS (got {got}). "
-                "HTTP is only allowed for localhost."
+                f"Catalog URL must use HTTPS (got {got})."
             )
         if not hostname:
             raise StepValidationError(
@@ -328,7 +176,7 @@ class StepCatalog:
         return [entry for _, entry in indexed_entries]
 
     def _parse_catalog_config(
-        self, data: Any, config_path: Path
+        self, data: Any, config_path: Path, *, validate_urls: bool = True
     ) -> list[tuple[int, StepCatalogEntry]] | None:
         """Validate and order sources, retaining their original YAML positions."""
         # Same two guards as WorkflowCatalog._load_catalog_config above, kept in
@@ -364,7 +212,8 @@ class StepCatalog:
             url = str(item.get("url", "")).strip()
             if not url:
                 continue
-            self._validate_catalog_url(url)
+            if validate_urls:
+                self._validate_catalog_url(url)
             raw_priority = item.get("priority", idx + 1)
             # bool is an int subclass: reject ``priority: true`` explicitly rather
             # than silently coercing it to 1 (mirrors CatalogStackBase).
@@ -501,7 +350,7 @@ class StepCatalog:
 
         from urllib.parse import urlparse
 
-        from specify_cli.authentication.http import open_url as _open_url
+        from specify_cli.authentication.http import URLPolicyError, open_url as _open_url
 
         def _validate_url(url: str) -> None:
             # A malformed authority (e.g. "https://[::1") makes urlparse /
@@ -514,22 +363,17 @@ class StepCatalog:
                 hostname = parsed.hostname
                 _ = parsed.port
             except (TypeError, ValueError):
-                raise StepCatalogError(
+                raise URLPolicyError(
                     f"Refusing to fetch catalog from malformed URL: {url}"
                 ) from None
-            is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-            if parsed.scheme != "https" and not (
-                parsed.scheme == "http" and is_localhost
-            ):
-                raise StepCatalogError(
+            if parsed.scheme != "https":
+                raise URLPolicyError(
                     f"Refusing to fetch catalog from non-HTTPS URL: {url}"
                 )
             if not hostname:
-                raise StepCatalogError(
+                raise URLPolicyError(
                     f"Refusing to fetch catalog from URL with no hostname: {url}"
                 )
-
-        _validate_url(entry.url)
 
         # Validate EVERY redirect hop, not just the final URL: _open_url follows
         # redirects, so an https:// entry that 30x-redirects through http:// (or
@@ -542,6 +386,7 @@ class StepCatalog:
             _validate_url(new_url)
 
         try:
+            _validate_url(entry.url)
             with _open_url(
                 entry.url, timeout=30, redirect_validator=_validate_redirect
             ) as resp:
@@ -557,6 +402,10 @@ class StepCatalog:
                 )
         except _DuplicateCatalogField:
             raise
+        except URLPolicyError as exc:
+            raise StepCatalogError(
+                f"Failed to fetch catalog from {entry.url}: {exc.reason}"
+            ) from exc
         except Exception as exc:
             try:
                 cached = read_cache_json(
@@ -792,7 +641,9 @@ class StepCatalog:
             raise StepValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        entries = self._parse_catalog_config(data, config_path) or []
+        entries = self._parse_catalog_config(
+            data, config_path, validate_urls=False
+        ) or []
 
         if index < 0 or index >= len(entries):
             raise StepValidationError(

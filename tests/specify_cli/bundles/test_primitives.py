@@ -16,6 +16,7 @@ from specify_cli.bundles import component_catalog
 from specify_cli.bundles.adapters import DefaultPrimitiveInstaller
 from specify_cli.bundles.manifest import ComponentRef
 from specify_cli.bundles.primitives import (
+    DEFAULT_PRIORITY,
     _ExtensionKindManager,
     _PresetKindManager,
     _StepKindManager,
@@ -498,6 +499,8 @@ def test_preset_install_preserves_explicit_zero_priority(tmp_path: Path, monkeyp
     calls = {}
 
     class _FakeManager:
+        registry = SimpleNamespace(get=lambda _id: None)
+
         def install_from_directory(self, directory, speckit_version, priority):
             calls["priority"] = priority
 
@@ -511,6 +514,151 @@ def test_preset_install_preserves_explicit_zero_priority(tmp_path: Path, monkeyp
     assert calls["priority"] == 0
 
 
+@pytest.mark.parametrize("op", ["install", "refresh"])
+def test_preset_install_and_refresh_preserve_registry_priority(
+    tmp_path: Path, monkeypatch, op: str,
+):
+    """A user-set priority in the registry must survive install/refresh,
+    even when the bundle declares a different priority."""
+    import specify_cli._assets as assets
+    from specify_cli.presets import PresetManager
+
+    bundled = _write_manifest(tmp_path / "preset", "preset", "1.0.0")
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda cid: bundled)
+    seen: list = []
+    monkeypatch.setattr(
+        PresetManager, "install_from_directory",
+        lambda self, directory, speckit_version, priority, **k: seen.append(priority),
+    )
+
+    manager = primitive_manager("presets", tmp_path, allow_network=False)
+    manager._manager.registry.add("my-preset", {"version": "1.0.0", "priority": 37})
+    getattr(manager, op)(ComponentRef(kind="presets", id="my-preset", priority=10))
+    assert seen == [37]
+
+
+@pytest.mark.parametrize("declared, expected", [(5, 5), (None, DEFAULT_PRIORITY)])
+def test_preset_install_falls_back_without_registry_priority(
+    tmp_path: Path, monkeypatch, declared, expected,
+):
+    import specify_cli._assets as assets
+    from specify_cli.presets import PresetManager
+
+    bundled = _write_manifest(tmp_path / "preset", "preset", "1.0.0")
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda cid: bundled)
+    seen: list = []
+    monkeypatch.setattr(
+        PresetManager, "install_from_directory",
+        lambda self, directory, speckit_version, priority, **k: seen.append(priority),
+    )
+
+    manager = primitive_manager("presets", tmp_path, allow_network=False)
+    manager.install(ComponentRef(kind="presets", id="my-preset", priority=declared))
+    assert seen == [expected]
+
+
+@pytest.mark.parametrize("op", ["install", "refresh"])
+def test_extension_install_and_refresh_preserve_registry_priority(
+    tmp_path: Path, monkeypatch, op: str,
+):
+    """A user-set priority in the registry must survive install/refresh,
+    even when the bundle declares a different priority."""
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionManager
+
+    bundled = _write_manifest(tmp_path / "ext", "extension", "1.0.0")
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
+    seen: list = []
+
+    def _fake_install(self, directory, speckit_version, priority=None, **k):
+        seen.append(priority)
+        return SimpleNamespace(id="my-ext")
+
+    monkeypatch.setattr(ExtensionManager, "install_from_directory", _fake_install)
+    monkeypatch.setattr(ExtensionManager, "scaffold_config", lambda self, eid: None)
+
+    manager = primitive_manager("extensions", tmp_path, allow_network=False)
+    manager._manager.registry.add("my-ext", {"version": "1.0.0", "priority": 37})
+    getattr(manager, op)(ComponentRef(kind="extensions", id="my-ext", priority=10))
+    assert seen == [37]
+
+
+@pytest.mark.parametrize("declared, expected", [(5, 5), (None, DEFAULT_PRIORITY)])
+def test_extension_install_falls_back_without_registry_priority(
+    tmp_path: Path, monkeypatch, declared, expected,
+):
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionManager
+
+    bundled = _write_manifest(tmp_path / "ext", "extension", "1.0.0")
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
+    seen: list = []
+
+    def _fake_install(self, directory, speckit_version, priority=None, **k):
+        seen.append(priority)
+        return SimpleNamespace(id="my-ext")
+
+    monkeypatch.setattr(ExtensionManager, "install_from_directory", _fake_install)
+    monkeypatch.setattr(ExtensionManager, "scaffold_config", lambda self, eid: None)
+
+    manager = primitive_manager("extensions", tmp_path, allow_network=False)
+    manager.install(ComponentRef(kind="extensions", id="my-ext", priority=declared))
+    assert seen == [expected]
+
+
+@pytest.mark.parametrize(
+    "stored, expected", [("37", 37), ("high", 10), (0, 10), (True, 10)],
+)
+def test_preset_refresh_normalizes_stored_registry_priority(
+    tmp_path: Path, monkeypatch, stored, expected,
+):
+    """Corrupted registry priorities are normalized, falling back to the
+    declared priority instead of failing during refresh."""
+    import specify_cli._assets as assets
+    from specify_cli.presets import PresetManager
+
+    bundled = _write_manifest(tmp_path / "preset", "preset", "1.0.0")
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda cid: bundled)
+    seen: list = []
+    monkeypatch.setattr(
+        PresetManager, "install_from_directory",
+        lambda self, directory, speckit_version, priority, **k: seen.append(priority),
+    )
+
+    manager = primitive_manager("presets", tmp_path, allow_network=False)
+    manager._manager.registry.add("my-preset", {"version": "1.0.0", "priority": stored})
+    manager.refresh(ComponentRef(kind="presets", id="my-preset", priority=10))
+    assert seen == [expected]
+
+
+@pytest.mark.parametrize(
+    "stored, expected", [("37", 37), ("high", 10), (0, 10), (True, 10)],
+)
+def test_extension_refresh_normalizes_stored_registry_priority(
+    tmp_path: Path, monkeypatch, stored, expected,
+):
+    """Corrupted registry priorities are normalized, falling back to the
+    declared priority instead of failing during refresh."""
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionManager
+
+    bundled = _write_manifest(tmp_path / "ext", "extension", "1.0.0")
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
+    seen: list = []
+
+    def _fake_install(self, directory, speckit_version, priority=None, **k):
+        seen.append(priority)
+        return SimpleNamespace(id="my-ext")
+
+    monkeypatch.setattr(ExtensionManager, "install_from_directory", _fake_install)
+    monkeypatch.setattr(ExtensionManager, "scaffold_config", lambda self, eid: None)
+
+    manager = primitive_manager("extensions", tmp_path, allow_network=False)
+    manager._manager.registry.add("my-ext", {"version": "1.0.0", "priority": stored})
+    manager.refresh(ComponentRef(kind="extensions", id="my-ext", priority=10))
+    assert seen == [expected]
+
+
 def test_catalog_preset_install_and_refresh_forward_catalog_name(
     tmp_path: Path, monkeypatch
 ):
@@ -522,6 +670,8 @@ def test_catalog_preset_install_and_refresh_forward_catalog_name(
     calls = []
 
     class _FakeManager:
+        registry = SimpleNamespace(get=lambda _id: None)
+
         def install_from_zip(self, *args, **kwargs):
             calls.append(kwargs)
 
@@ -561,6 +711,8 @@ def test_catalog_extension_install_and_refresh_forward_catalog_and_scaffolding(
     scaffolded = []
 
     class _FakeManager:
+        registry = SimpleNamespace(get=lambda _id: None)
+
         def install_from_zip(self, *args, **kwargs):
             installs.append(kwargs)
             return SimpleNamespace(id="catalog-extension")
@@ -2157,6 +2309,8 @@ def test_extension_pin_selects_historical_catalog_release(tmp_path: Path, monkey
     )
 
     class _FakeManager:
+        registry = SimpleNamespace(get=lambda _id: None)
+
         def install_from_zip(self, *args, **kwargs):
             installs.append(kwargs)
             return SimpleNamespace(id="pinned-ext")
@@ -2186,6 +2340,8 @@ def test_preset_pin_selects_historical_catalog_release(tmp_path: Path, monkeypat
     )
 
     class _FakeManager:
+        registry = SimpleNamespace(get=lambda _id: None)
+
         def install_from_zip(self, *args, **kwargs):
             installs.append(kwargs)
 
@@ -2233,6 +2389,8 @@ def test_unpinned_component_installs_advertised_release_unverified(
     patch(monkeypatch, _versioned_entry("c"), archive, downloads)
 
     class _FakeManager:
+        registry = SimpleNamespace(get=lambda _id: None)
+
         def install_from_zip(self, *args, **kwargs):
             installs.append(kwargs)
             return SimpleNamespace(id="c")

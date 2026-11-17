@@ -1,8 +1,58 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-07T00:00:00Z",
+  "updated_at": "2026-11-16T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
+    "ado": {
+      "name": "Spec Kit for Azure DevOps — human-gated lifecycle",
+      "id": "ado",
+      "description": "Azure DevOps story to Done through Spec Kit, with a human sign-off before every board change.",
+      "author": "praveenlavu",
+      "version": "0.4.0",
+      "download_url": "https://github.com/praveenlavu/spec-kit-ado/archive/refs/tags/v0.4.0.zip",
+      "sha256": "f869ea60786c8687e37172428fc327b3ca08e54b7111f7db915351fd490bb6e9",
+      "repository": "https://github.com/praveenlavu/spec-kit-ado",
+      "homepage": "https://github.com/praveenlavu/spec-kit-ado",
+      "documentation": "https://github.com/praveenlavu/spec-kit-ado/blob/v0.4.0/README.md",
+      "changelog": "https://github.com/praveenlavu/spec-kit-ado/blob/v0.4.0/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.2.1",
+        "tools": [
+          {
+            "name": "ado",
+            "version": ">=0.4.0",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "gh",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 14,
+        "hooks": 2
+      },
+      "tags": [
+        "azure-devops",
+        "issue-tracking",
+        "hitl",
+        "workflow",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-09T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z"
+    },
     "adrkit": {
       "name": "adrkit — decision memory for spec-driven development",
       "id": "adrkit",
@@ -147,6 +197,56 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "aididit": {
+      "name": "A·I·DID·IT — Agile Expansion Pack",
+      "id": "aididit",
+      "description": "Runs every work item through Assemble, Ideate, Draft, Iterate, Deliver, Investigate and Tidy, with a simulated agile team and a web-cited practitioner panel in place of human gates.",
+      "author": "Rubber Duck Engineering",
+      "version": "0.2.4",
+      "download_url": "https://github.com/RubberDuckEngineering/ai-did-it/releases/download/v0.2.4/aididit-v0.2.4.zip",
+      "sha256": "f52b17a2b53d0dd3a0d1f9cd4810811a48b716ecb8247f86e4a389a37aef7d4f",
+      "repository": "https://github.com/RubberDuckEngineering/ai-did-it",
+      "homepage": "https://github.com/RubberDuckEngineering/ai-did-it",
+      "documentation": "https://github.com/RubberDuckEngineering/ai-did-it/blob/v0.2.4/README.md",
+      "changelog": "https://github.com/RubberDuckEngineering/ai-did-it/blob/v0.2.4/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.3.0,<2.0.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "gh",
+            "required": true
+          },
+          {
+            "name": "claude",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 14,
+        "hooks": 0
+      },
+      "tags": [
+        "agile",
+        "xp",
+        "workflow",
+        "orchestration",
+        "tdd",
+        "review"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-10T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z"
     },
     "agent-assign": {
       "name": "Agent Assign",
@@ -1482,9 +1582,9 @@
       "id": "companion",
       "description": "Records your spec-kit runs live: status, resume, and a health check for what actually happened.",
       "author": "alfredoperez",
-      "version": "0.24.0",
-      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.24.0/companion-0.24.0.zip",
-      "sha256": "8bfbe27dbe2d67e525820f83340c053341836f108d2ff087c10fdc8295b07da9",
+      "version": "0.27.0",
+      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.27.0/companion-0.27.0.zip",
+      "sha256": "e8e2a62a55e030ec261ee5e3d475effb1b869a4f7abba5b4cd7e155f2133615b",
       "repository": "https://github.com/alfredoperez/speckit-companion",
       "homepage": "https://github.com/alfredoperez/speckit-companion/tree/main/apps/speckit-extension",
       "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/apps/speckit-extension/README.md",
@@ -1493,7 +1593,7 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.9.5",
+        "speckit_version": ">=1.2.5.dev0",
         "tools": [
           {
             "name": "python3",
@@ -1502,21 +1602,19 @@
         ]
       },
       "provides": {
-        "commands": 23,
-        "hooks": 6
+        "commands": 19,
+        "hooks": 10
       },
       "tags": [
         "vscode",
         "progress",
-        "living-specs",
-        "drift",
         "hooks"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-11T00:00:00Z",
-      "updated_at": "2026-10-06T00:00:00Z"
+      "updated_at": "2026-11-16T00:00:00Z"
     },
     "conduct": {
       "name": "Conduct Extension",
@@ -1966,9 +2064,9 @@
       "id": "docguard",
       "description": "Documentation integrity for AI-assisted repositories: lifecycle registry, drift validation, traceability, safe archival, SARIF/JUnit, MCP, GitHub Actions, and Spec Kit hooks.",
       "author": "raccioly",
-      "version": "0.46.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.46.0/spec-kit-docguard-v0.46.0.zip",
-      "sha256": "c8d67b15c13d956b118a464bf8c5c362b432daa8bd499a4aa39dc25a9ffff012",
+      "version": "0.48.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.48.0/spec-kit-docguard-v0.48.0.zip",
+      "sha256": "3c5b12b03e60b78a21dbe1d0cab218ae8f51bcc52f124855cbe1fe75ee6a979f",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -2009,7 +2107,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-11-04T00:00:00Z"
+      "updated_at": "2026-11-16T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -2249,6 +2347,41 @@
       "stars": 0,
       "created_at": "2026-07-08T00:00:00Z",
       "updated_at": "2026-07-08T00:00:00Z"
+    },
+    "egm": {
+      "name": "Elephant-Goldfish Model",
+      "id": "egm",
+      "description": "Design with an elephant. Review with a goldfish.",
+      "author": "Kapil Sachdeva",
+      "version": "0.9.1",
+      "download_url": "https://github.com/ksachdeva/spec-kit-extensions/releases/download/egm-v0.9.1/egm-0.9.1.zip",
+      "sha256": "920f2570be2d40f2a5abe359dd7f58658e90aea317b38438bb8444f8a01d4deb",
+      "repository": "https://github.com/ksachdeva/spec-kit-extensions",
+      "homepage": "https://github.com/ksachdeva/spec-kit-extensions",
+      "documentation": "https://github.com/ksachdeva/spec-kit-extensions/blob/main/extensions/egm/README.md",
+      "changelog": "https://github.com/ksachdeva/spec-kit-extensions/blob/main/extensions/egm/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 0
+      },
+      "tags": [
+        "assessment",
+        "discovery",
+        "triage",
+        "product",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-16T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z"
     },
     "epic": {
       "name": "Epic",
@@ -3201,6 +3334,56 @@
       "created_at": "2026-03-05T00:00:00Z",
       "updated_at": "2026-03-05T00:00:00Z"
     },
+    "jira-lifecycle": {
+      "name": "Spec Kit lifecycle for Jira",
+      "id": "jira-lifecycle",
+      "description": "A Jira story to Done through Spec Kit, with a human sign-off before every Jira or PR write.",
+      "author": "praveenlavu",
+      "version": "0.1.0",
+      "download_url": "https://github.com/praveenlavu/spec-kit-jira/archive/refs/tags/v0.1.0.zip",
+      "sha256": "2ef9ca5ea40b3cc05b1043fc39dd01019615ad9d5766e46e5d7389d2e1159902",
+      "repository": "https://github.com/praveenlavu/spec-kit-jira",
+      "homepage": "https://github.com/praveenlavu/spec-kit-jira",
+      "documentation": "https://github.com/praveenlavu/spec-kit-jira/blob/v0.1.0/README.md",
+      "changelog": "https://github.com/praveenlavu/spec-kit-jira/blob/v0.1.0/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.2.1",
+        "tools": [
+          {
+            "name": "skj",
+            "version": ">=0.1.0",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "gh",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 13,
+        "hooks": 2
+      },
+      "tags": [
+        "jira",
+        "issue-tracking",
+        "hitl",
+        "workflow",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-16T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z"
+    },
     "jira-mirror": {
       "name": "Jira Mirror",
       "id": "jira-mirror",
@@ -4128,6 +4311,42 @@
       "created_at": "2026-05-04T02:51:52Z",
       "updated_at": "2026-06-18T00:00:00Z"
     },
+    "multi-repo": {
+      "name": "Multi-Repo Workspace Orchestration",
+      "id": "multi-repo",
+      "description": "Orchestrate spec-driven implementation across a workspace: a central specs repository dispatches implementation to member repositories",
+      "author": "Joao Victor",
+      "version": "0.7.1",
+      "download_url": "https://github.com/joaopaschuino/speckit-multirepo/archive/refs/tags/v0.7.1.zip",
+      "sha256": "d2206a8285491886f9b548cfca4db5b752d19667239d7d403d7b7ecc075271b9",
+      "repository": "https://github.com/joaopaschuino/speckit-multirepo",
+      "homepage": "https://github.com/joaopaschuino/speckit-multirepo",
+      "documentation": "https://github.com/joaopaschuino/speckit-multirepo/blob/main/README.md",
+      "changelog": "https://github.com/joaopaschuino/speckit-multirepo/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.1.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 1
+      },
+      "tags": [
+        "multi-repo",
+        "orchestration",
+        "workspace",
+        "specs",
+        "spec-driven-development",
+        "dependency-graph"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-16T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z"
+    },
     "multi-repo-sync": {
       "name": "Multi-Repo Branch Sync",
       "id": "multi-repo-sync",
@@ -4252,6 +4471,41 @@
       "stars": 0,
       "created_at": "2026-07-17T00:00:00Z",
       "updated_at": "2026-09-23T00:00:00Z"
+    },
+    "okr": {
+      "name": "OKR Bets",
+      "id": "okr",
+      "description": "Treat each spec as a Key Result bet: define a hypothesis and verification contract before /speckit.specify, plan measurement, assess results after launch before scaling. Company OKRs stay read-only.",
+      "author": "juanl",
+      "version": "0.2.1",
+      "download_url": "https://github.com/juanl/spec-kit-okr/releases/download/v0.2.1/spec-kit-okr-0.2.1.zip",
+      "sha256": "56b17e6dce43b6fd28e0b33778dc13d11695f57a46d755c4d714c716a373292f",
+      "repository": "https://github.com/juanl/spec-kit-okr",
+      "homepage": "https://github.com/juanl/spec-kit-okr",
+      "documentation": "https://github.com/juanl/spec-kit-okr/blob/v0.2.1/README.md",
+      "changelog": "https://github.com/juanl/spec-kit-okr/blob/v0.2.1/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 3
+      },
+      "tags": [
+        "okr",
+        "hypothesis",
+        "metrics",
+        "experimentation",
+        "product"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-12T00:00:00Z",
+      "updated_at": "2026-11-12T00:00:00Z"
     },
     "onboard": {
       "name": "Onboard",
@@ -5822,6 +6076,46 @@
       "created_at": "2026-04-01T00:00:00Z",
       "updated_at": "2026-04-01T00:00:00Z"
     },
+    "sizing": {
+      "name": "T-Shirt Sizing Gate",
+      "id": "sizing",
+      "description": "Preliminary XS–XL estimates from change descriptions, plus planned-feature sizing and explicit approval within the Spec Kit workflow, with SHA-256 checks for planning changes.",
+      "author": "Maurizio Pinotti",
+      "version": "0.2.0",
+      "download_url": "https://github.com/mauriziopinotti/spec-kit-sizing/archive/refs/tags/v0.2.0.zip",
+      "sha256": "86171fe7f654f8ba664a045d473fea994d816b20b23753aabc7b17e9cc5be567",
+      "repository": "https://github.com/mauriziopinotti/spec-kit-sizing",
+      "homepage": "https://github.com/mauriziopinotti/spec-kit-sizing",
+      "documentation": "https://github.com/mauriziopinotti/spec-kit-sizing/blob/v0.2.0/README.md",
+      "changelog": "https://github.com/mauriziopinotti/spec-kit-sizing/blob/v0.2.0/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.3.1",
+        "tools": [
+          {
+            "name": "python3",
+            "version": ">=3.11",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 2
+      },
+      "tags": [
+        "sizing",
+        "quality-gate",
+        "process"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-09T00:00:00Z",
+      "updated_at": "2026-11-12T00:00:00Z"
+    },
     "spec-reference-loader": {
       "name": "Spec Reference Loader",
       "id": "spec-reference-loader",
@@ -6009,6 +6303,48 @@
       "stars": 0,
       "created_at": "2026-08-12T00:00:00Z",
       "updated_at": "2026-08-12T00:00:00Z"
+    },
+    "spec-status": {
+      "name": "Spec Status",
+      "id": "spec-status",
+      "description": "Agent skills that turn spec status output into next actions: review a roadmap (with pm, developer, qa and architect views), explain findings, reconcile recorded statuses with tasks and evidence, unblock dependencies, and check readiness before marking work verified. Proposes changes; applies them only through Spec Kit commands after the user approves each one.",
+      "author": "tosin2013",
+      "version": "0.2.0",
+      "download_url": "https://github.com/tosin2013/spec-status/releases/download/v0.2.0/spec-status-extension_0.2.0.zip",
+      "sha256": "0578ac60a88560bb3e95403e50683883014b44785264ca4c43dbeafb2c4187d9",
+      "repository": "https://github.com/tosin2013/spec-status",
+      "homepage": "https://github.com/tosin2013/spec-status/tree/main/extensions/spec-status",
+      "documentation": "https://github.com/tosin2013/spec-status/blob/main/extensions/spec-status/README.md",
+      "changelog": "https://github.com/tosin2013/spec-status/releases/tag/v0.2.0",
+      "license": "Apache-2.0",
+      "category": "visibility",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.2.0",
+        "tools": [
+          {
+            "name": "spec",
+            "version": ">=0.1.2",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 1
+      },
+      "tags": [
+        "roadmap",
+        "status",
+        "review",
+        "verification",
+        "spec-alignment"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-12T00:00:00Z",
+      "updated_at": "2026-11-12T00:00:00Z"
     },
     "speckit-inventory": {
       "name": "Spec Inventory",

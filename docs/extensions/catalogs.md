@@ -179,9 +179,10 @@ Create a `catalog.json` file containing the releases your team has vetted:
 | GitHub Pages | `https://your-org.github.io/spec-kit-catalog/catalog.json` | Public or org-visible |
 | Internal web server | `https://internal.company.com/spec-kit/catalog.json` | Corporate network |
 | S3/cloud storage | `https://s3.amazonaws.com/your-bucket/catalog.json` | Cloud-hosted teams |
-| Local file server | `http://localhost:8000/catalog.json` | Development/testing |
+| Local HTTPS server | `https://localhost:8443/catalog.json` | Development/testing with a certificate trusted by Python |
 
-URLs must use HTTPS, except localhost for testing.
+Catalog URLs must use HTTPS, including localhost. Plain HTTP catalogs are
+rejected before network access.
 Add your catalog with `specify extension catalog add`, or use:
 
 ```yaml
@@ -236,14 +237,14 @@ inside the network. For example, an entry can use
 
 ### Development and testing
 
-```bash
-python -m http.server 8000 --directory ./my-catalog/
-```
+Serve `./my-catalog/` through an HTTPS server with a certificate trusted by
+Python's TLS client, not just your browser or operating system. For a development
+CA, point `SSL_CERT_FILE` at a PEM CA bundle containing that CA before running
+the CLI (see [TLS certificates](../reference/authentication.md#tls-certificates)):
 
-In another terminal:
-
 ```bash
-export SPECKIT_CATALOG_URL="http://localhost:8000/catalog.json"
+export SSL_CERT_FILE="/absolute/path/to/ca-bundle.pem"
+export SPECKIT_CATALOG_URL="https://localhost:8443/catalog.json"
 specify extension add my-new-extension
 ```
 

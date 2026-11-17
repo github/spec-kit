@@ -67,8 +67,8 @@ function Get-HighestNumberFromSpecs {
     param([string]$SpecsDir)
 
     [long]$highest = 0
-    if (Test-Path $SpecsDir) {
-        Get-ChildItem -Path $SpecsDir -Directory | ForEach-Object {
+    if (Test-Path -LiteralPath $SpecsDir) {
+        Get-ChildItem -LiteralPath $SpecsDir -Directory | ForEach-Object {
             if ($_.Name -match '^(\d{3,})-' -and $_.Name -notmatch '^\d{8}-\d{6}-') {
                 [long]$num = 0
                 if ([long]::TryParse($matches[1], [ref]$num) -and $num -gt $highest) {
@@ -192,10 +192,10 @@ function ConvertTo-CleanBranchName {
 # ---------------------------------------------------------------------------
 function Find-ProjectRoot {
     param([string]$StartDir)
-    $current = Resolve-Path $StartDir
+    $current = Resolve-Path -LiteralPath $StartDir
     while ($true) {
         foreach ($marker in @('.specify', '.git')) {
-            if (Test-Path (Join-Path $current $marker)) {
+            if (Test-Path -LiteralPath (Join-Path $current $marker)) {
                 return $current
             }
         }
@@ -214,7 +214,7 @@ if ($projectRoot) {
         (Join-Path $projectRoot "scripts/powershell/common.ps1")
     )
     foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) {
+        if (Test-Path -LiteralPath $candidate) {
             . $candidate
             $commonLoaded = $true
             break
@@ -222,7 +222,7 @@ if ($projectRoot) {
     }
 }
 
-if (-not $commonLoaded -and (Test-Path "$PSScriptRoot/git-common.ps1")) {
+if (-not $commonLoaded -and (Test-Path -LiteralPath "$PSScriptRoot/git-common.ps1")) {
     . "$PSScriptRoot/git-common.ps1"
     $commonLoaded = $true
 }
@@ -263,7 +263,7 @@ if (Get-Command Test-HasGit -ErrorAction SilentlyContinue) {
     }
 }
 
-Set-Location $repoRoot
+Set-Location -LiteralPath $repoRoot
 
 $specsDir = Join-Path $repoRoot 'specs'
 $configFile = Join-Path $repoRoot ".specify/extensions/git/git-config.yml"

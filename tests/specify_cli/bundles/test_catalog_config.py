@@ -402,7 +402,10 @@ def test_derive_id_ignores_credentials_and_port():
 def test_add_source_rejects_unsupported_scheme(tmp_path: Path):
     project = tmp_path / "proj"
     (project / ".specify").mkdir(parents=True)
-    with pytest.raises(BundlerError, match="Unsupported catalog url scheme"):
+    with pytest.raises(
+        BundlerError,
+        match=r"Use https://, file://, builtin://, or a local path\.",
+    ):
         cc.add_source(project, "ssh://host/catalog.json", policy="install-allowed", priority=50)
 
 
@@ -425,17 +428,18 @@ def test_add_source_rejects_plain_http_for_non_localhost(tmp_path: Path):
         cc.add_source(project, "http://example.com/catalog.json", policy="install-allowed", priority=50)
 
 
-def test_add_source_allows_http_for_localhost(tmp_path: Path):
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+def test_add_source_rejects_http_for_localhost(tmp_path: Path, host: str):
     project = tmp_path / "proj"
     (project / ".specify").mkdir(parents=True)
-    source, status = cc.add_source(
-        project,
-        "http://localhost:8080/c.json",
-        policy="install-allowed",
-        priority=50,
-    )
-    assert status == "added"
-    assert source.url == "http://localhost:8080/c.json"
+    with pytest.raises(BundlerError, match="HTTPS"):
+        cc.add_source(
+            project,
+            f"http://{host}:8080/c.json",
+            policy="install-allowed",
+            priority=50,
+        )
+    assert not cc._config_path(project).exists()
 
 
 def test_add_source_rejects_host_less_remote_urls(tmp_path: Path):

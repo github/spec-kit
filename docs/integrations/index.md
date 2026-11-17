@@ -21,6 +21,19 @@ The documentation commonly uses `/speckit.*` notation, but your agent may use
 hyphenated skills, `$` skills, or another native form. See your integration's
 page and the [command invocation comparison](cli.md#command-invocation).
 
+## Generated Skill Versions
+
+Generated `SKILL.md` frontmatter includes `metadata.version` when the supplying
+component's version is known. Core skills record the generating Specify CLI
+version; extension and preset skills record their respective component versions.
+The value is a string, and the key is omitted when the version is unknown.
+
+Existing metadata, including `metadata.author` and `metadata.source`, keeps its
+meaning. Skills regenerated through an existing operation, including restoration
+after a preset is removed, record the resulting component's version. Skills
+already on disk are not rewritten automatically, and this metadata does not
+perform stale-skill detection or upgrades.
+
 ## Adding Another Agent
 
 In an initialized project, use

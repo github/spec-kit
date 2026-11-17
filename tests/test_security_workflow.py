@@ -7,11 +7,12 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SECURITY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "security.yml"
+SECURITY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "lint.yml"
 CONTRIBUTING = REPO_ROOT / "CONTRIBUTING.md"
 SECURITY_REQUIREMENTS = REPO_ROOT / ".github" / "security-audit-requirements.txt"
 SECURITY_REQUIREMENTS_SYNC_SCRIPT = (
@@ -82,15 +83,110 @@ def _load_sync_script():
     return module
 
 
+CHECK_STEPS = (
+    "Check committed audit requirements are current",
+    "Run pip-audit (committed requirements)",
+    "Run ruff check",
+    "Run git diff --check",
+    "Verify the documentation globs match files",
+    "Run markdownlint-cli2",
+    "Run shellcheck on shell scripts",
+    "Reject bash 4+ case-modification expansions",
+)
+PYTHON_CHECK_STEPS = (
+    "Run ruff check",
+    "Check committed audit requirements are current",
+    "Run pip-audit (committed requirements)",
+)
+
+
+def _check_runs(step_name, outcomes, cancelled=False):
+    condition = _step("checks", step_name)["if"]
+    assert condition.startswith("${{ ") and condition.endswith(" }}")
+    terms = condition[4:-3].split(" && ")
+    assert terms[0] == "!cancelled()"
+    allowed = not cancelled
+    for term in terms[1:]:
+        match = re.fullmatch(r"steps\.([\w-]+)\.outcome == 'success'", term)
+        assert match is not None, f"Unexpected prerequisite: {term}"
+        allowed = allowed and outcomes.get(match[1]) == "success"
+    return allowed
+
+
+class TestCombinedChecks:
+    def test_dependency_audits_precede_executable_markdown_configuration(self):
+        steps = _load_security_workflow()["jobs"]["checks"]["steps"]
+        names = [step["name"] for step in steps]
+        sync_index = names.index("Check committed audit requirements are current")
+        audit_index = names.index("Run pip-audit (committed requirements)")
+        markdown_index = names.index("Run markdownlint-cli2")
+        assert sync_index < audit_index < markdown_index
+
+    def test_checks_share_one_job_and_tool_setup(self):
+        workflow = _load_security_workflow()
+        assert set(workflow["jobs"]) == {"checks", "dependency-audit-scheduled"}
+        job = workflow["jobs"]["checks"]
+        assert job["name"] == "Lint & dependency audit"
+        assert job.get("continue-on-error", False) is False
+        assert workflow["permissions"] == {"contents": "read"}
+        steps = job["steps"]
+        for action in ("actions/checkout@", "actions/setup-python@", "astral-sh/setup-uv@"):
+            assert sum(step.get("uses", "").startswith(action) for step in steps) == 1
+        assert _step("checks", "Run ruff check")["run"] == (
+            "uvx ruff@0.15.0 check src tests"
+        )
+        test_workflow = yaml.safe_load(
+            (REPO_ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
+        )
+        assert set(test_workflow["jobs"]) == {"pytest"}
+        assert not (REPO_ROOT / ".github/workflows/security.yml").exists()
+        for step in steps:
+            assert step.get("continue-on-error", False) is False
+        assert "--depth" not in _step("checks", "Run git diff --check")["run"]
+
+    @pytest.mark.parametrize("failed_step", [None, *CHECK_STEPS])
+    def test_independent_checks_run_even_after_a_check_fails(self, failed_step):
+        outcomes = dict.fromkeys(
+            ("checkout", "uv", "python", "documentation-globs"), "success"
+        )
+        if failed_step == "Verify the documentation globs match files":
+            outcomes["documentation-globs"] = "failure"
+        elif failed_step is not None:
+            step_id = _step("checks", failed_step).get("id", failed_step)
+            outcomes[step_id] = "failure"
+        for step_name in CHECK_STEPS:
+            expected = not (
+                step_name == "Run markdownlint-cli2"
+                and failed_step == "Verify the documentation globs match files"
+            )
+            assert _check_runs(step_name, outcomes) is expected
+        # A failed check is not a prerequisite of another independent check.
+        assert all(
+            not _check_runs(step_name, outcomes, cancelled=True)
+            for step_name in CHECK_STEPS
+        )
+
+    @pytest.mark.parametrize("prerequisite", ["checkout", "uv", "python"])
+    @pytest.mark.parametrize("outcome", ["failure", "skipped", "cancelled"])
+    def test_failed_setup_only_blocks_checks_that_require_it(self, prerequisite, outcome):
+        outcomes = dict.fromkeys(
+            ("checkout", "uv", "python", "documentation-globs"), "success"
+        )
+        outcomes[prerequisite] = outcome
+        for step_name in CHECK_STEPS:
+            expected = prerequisite != "checkout" and step_name not in PYTHON_CHECK_STEPS
+            assert _check_runs(step_name, outcomes) is expected
+
+
 class TestDependencyAuditWorkflow:
     """Guard the dependency-audit security workflow."""
 
     def test_dependency_audit_uses_committed_requirements_for_prs_and_pushes(self):
         workflow = _load_security_workflow()
-        job = workflow["jobs"]["dependency-audit"]
-        committed_audit = _step("dependency-audit", "Run pip-audit (committed requirements)")
-        sync_check = _step("dependency-audit", "Check committed audit requirements are current")
-        setup_python = _step("dependency-audit", "Set up Python")
+        job = workflow["jobs"]["checks"]
+        committed_audit = _step("checks", "Run pip-audit (committed requirements)")
+        sync_check = _step("checks", "Check committed audit requirements are current")
+        setup_python = _step("checks", "Set up Python")
 
         assert job["if"] == "${{ github.event_name != 'schedule' }}"
         assert job["runs-on"] == "ubuntu-latest"
@@ -106,7 +202,7 @@ class TestDependencyAuditWorkflow:
         assert committed_audit["run"] == LOCAL_PIP_AUDIT
 
         dependency_job_text = _job_run_text(
-            "dependency-audit",
+            "checks",
             "dependency-audit-scheduled",
         )
         protection_text = (
@@ -127,7 +223,7 @@ class TestDependencyAuditWorkflow:
         assert "/tmp/" not in protection_text
 
     def test_dependency_audit_checkout_fetches_full_history_for_diff_base(self):
-        checkout = _step("dependency-audit", "Checkout")
+        checkout = _step("checks", "Checkout")
 
         assert checkout["with"]["fetch-depth"] == 0
 
@@ -135,11 +231,7 @@ class TestDependencyAuditWorkflow:
         triggers = _workflow_triggers()
 
         assert triggers["push"]["branches"] == ["main"]
-        # Asserted by inclusion so later PRs (e.g. baseline-growth gates) can add
-        # labeled/unlabeled without rewriting this test.
-        assert {"opened", "synchronize", "reopened"} <= set(
-            triggers["pull_request"]["types"]
-        )
+        assert triggers["pull_request"] is None
         assert "workflow_dispatch" in triggers
         assert triggers["schedule"] == [{"cron": "17 4 * * 1"}]
 

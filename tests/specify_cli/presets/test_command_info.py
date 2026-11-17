@@ -124,6 +124,29 @@ class TestPresetInfoCatalogMarkup:
         # Tags are joined into a single line, so assert on the rendered join.
         assert ", ".join(self.MARKUP_PRESET["tags"]) in output
 
+    def test_info_renders_missing_preset_id_literally(self, project_dir):
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        catalog = seed_catalog(project_dir, [])
+        preset_id = "[/bold]missing"
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch.object(
+                PresetCatalog,
+                "get_active_catalogs",
+                return_value=default_catalog_entries(catalog),
+            ),
+        ):
+            result = CliRunner().invoke(app, ["preset", "info", preset_id])
+
+        assert isinstance(result.exception, SystemExit), result.exception
+        assert result.exit_code == 1
+        assert f"Preset '{preset_id}' not found" in strip_ansi(result.output)
+
 
 class TestPresetInfoInstalledMarkup:
     """Locally installed preset metadata must render as literal text.

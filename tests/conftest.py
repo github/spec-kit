@@ -62,8 +62,10 @@ def _has_working_bash() -> bool:
     return True
 
 
+HAS_BASH = _has_working_bash()
+
 requires_bash = pytest.mark.skipif(
-    not _has_working_bash(), reason="working bash not available"
+    not HAS_BASH, reason="working bash not available"
 )
 
 

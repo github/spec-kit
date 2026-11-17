@@ -13,7 +13,8 @@ This reference describes workflow YAML and execution/state semantics. The CLI's 
 | `workflow.version` | String in `X.Y.Z` form; omitted defaults to `0.0.0` |
 | `workflow.author`, `workflow.description` | Descriptive metadata |
 | `workflow.integration`, `workflow.model` | Optional string/null dispatch defaults |
-| `workflow.options` | Optional mapping/null of dispatch options |
+| `workflow.reasoning_effort`, `workflow.context_size` | Optional string/null dispatch defaults for `command` and `prompt` steps; literals must follow the [value rules](../workflow-steps/types.md#reasoning-effort-and-context-size) |
+| `workflow.options` | Optional mapping/null of default command-step `options`; recorded in step output, not passed to the integration CLI |
 | `requires` | Optional mapping accepting `speckit_version` and `integrations` only |
 | `inputs` | Mapping of input definitions |
 | `outputs` | Mapping of declared workflow-call outputs |

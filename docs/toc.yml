@@ -137,6 +137,8 @@
       href: workflows/api.md
     - name: Expressions
       href: workflows/expressions.md
+    - name: Workflow Functions
+      href: workflows/functions.md
     - name: Overlays
       href: workflows/overlays.md
     - name: Catalogs

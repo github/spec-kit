@@ -85,6 +85,16 @@ resolved lower-priority content, not necessarily unmodified core content.
 An append, prepend, or wrap contribution needs a lower `replace` base;
 a new self-contained command normally uses `replace`.
 
+To change only an existing section's body, use `strategy: replace-section`
+with `selector: requirements` (for a heading such as `## Requirements`).
+Point `file` to a Markdown fragment containing only the new body, including
+any desired blank lines; do not copy the heading or the whole template.
+The same strategy supports Markdown commands but not executable scripts.
+Exactly one heading must match: missing or duplicate normalized anchors fail
+explicitly. See [section replacement](api.md#section-replacement) for anchor
+normalization, nested-section boundaries, fenced-code safeguards, diagnostics,
+and composition order.
+
 Declare extension dependencies in `preset.yml` when the preset relies on
 extension capabilities. A namespace alone does not establish a dependency
 or suppress registration. See the API reference for warning behavior and
@@ -171,6 +181,11 @@ composition bases. If you ship executable scripts, test their intended
 behavior and failures; PowerShell scripts must target Windows PowerShell
 5.1. Do not expect enable, disable, or priority changes alone to rewrite
 already delivered command or skill files.
+
+For section replacement, test that an unrelated upstream section update flows
+through unchanged. Also test a renamed target and duplicate normalized headings:
+both must fail instead of silently publishing an unchanged or partial document.
+Check the installed runtime helper as well as CLI composition.
 
 After editing the development source, install a fresh copy. `--dev` does not
 watch or link it:

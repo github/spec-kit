@@ -52,6 +52,47 @@ def test_missing_registry_is_empty_without_creating_storage(tmp_path):
     assert list((tmp_path / ".specify").iterdir()) == []
 
 
+@pytest.mark.parametrize("outcome", ["success", "missing-marker", "storage-error", "registry-error"])
+def test_list_workflows_closes_owner_on_every_exit(tmp_path, monkeypatch, outcome):
+    if outcome != "missing-marker":
+        _registry(tmp_path, {})
+    captured = []
+    original = operation.project_files
+
+    def owner(root):
+        files = original(root)
+        captured.append(files)
+        return files
+
+    def storage_error(*args):
+        raise operation.WorkflowStorageError("storage unavailable")
+
+    def registry_error(*args):
+        raise OSError("registry unavailable")
+
+    monkeypatch.setattr(operation, "project_files", owner)
+    if outcome == "storage-error":
+        monkeypatch.setattr(operation, "validate_workflow_storage", storage_error)
+    elif outcome == "registry-error":
+        monkeypatch.setattr(operation.WorkflowRegistry, "list", registry_error)
+    error = None
+    if outcome == "success":
+        assert operation.list_workflows(operation.WorkflowListRequest(tmp_path)).items == ()
+    else:
+        with pytest.raises(operation.WorkflowListError) as raised:
+            operation.list_workflows(operation.WorkflowListRequest(tmp_path))
+        error = raised.value
+        assert error.code == {
+            "missing-marker": "not_a_spec_kit_project",
+            "storage-error": "unsafe_workflow_storage",
+            "registry-error": "workflow_registry_read_failed",
+        }[outcome]
+    assert len(captured) == 1
+    assert not captured[0]._root_cleanup.alive
+    if outcome != "success":
+        assert error is not None
+
+
 @pytest.mark.parametrize("contents", ["{", "[]", '{"workflows": []}', "\udcff"])
 def test_corrupt_registry_fails_closed(tmp_path, contents):
     path = _registry(tmp_path, {})

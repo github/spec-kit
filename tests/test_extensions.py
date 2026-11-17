@@ -1797,11 +1797,13 @@ class TestExtensionManager:
             extension_id=None,
             only_agent=None,
             author="github-spec-kit",
+            version=None,
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
             )
             captured["extension_id"] = extension_id
+            captured["version"] = version
             return {}
 
         monkeypatch.setattr(
@@ -1816,6 +1818,7 @@ class TestExtensionManager:
 
         assert captured["create_missing_active_skills_dir"] is False
         assert captured["extension_id"] == manifest.id
+        assert captured["version"] == manifest.version
 
     def test_install_duplicate(self, extension_dir, project_dir):
         """Test installing already installed extension."""
@@ -6946,8 +6949,8 @@ class TestCatalogStack:
         result = catalog._load_catalog_config(project_dir / ".specify" / "nonexistent.yml")
         assert result is None
 
-    def test_load_catalog_config_localhost_allowed(self, temp_dir):
-        """Localhost HTTP URLs are allowed in config."""
+    def test_load_catalog_config_localhost_rejected(self, temp_dir):
+        """Localhost HTTP URLs are rejected before fetching."""
         project_dir = self._make_project(temp_dir)
         self._write_catalog_config(
             project_dir,
@@ -6962,10 +6965,8 @@ class TestCatalogStack:
         )
 
         catalog = ExtensionCatalog(project_dir)
-        entries = catalog.get_active_catalogs()
-
-        assert len(entries) == 1
-        assert entries[0].url == "http://localhost:8000/catalog.json"
+        with pytest.raises(ValidationError, match="HTTPS"):
+            catalog.get_active_catalogs()
 
     @pytest.mark.parametrize(
         "config_content", ["[]\n", "false\n", "0\n", "''\n", "- item\n"]

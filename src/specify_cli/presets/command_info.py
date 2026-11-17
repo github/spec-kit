@@ -113,7 +113,7 @@ def preset_info(
 
     if not pack_info:
         console.print(
-            f"[red]Error:[/red] Preset '{preset_id}' not found (not installed and not in catalog)"
+            f"[red]Error:[/red] Preset '{safe_preset_id}' not found (not installed and not in catalog)"
         )
         raise typer.Exit(1)
 

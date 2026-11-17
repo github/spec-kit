@@ -313,8 +313,13 @@ uv pip compile pyproject.toml --extra test --universal --upgrade --generate-hash
 The scheduled CI audit resolves the runtime and `test` extra dependency set
 across the supported Python and OS matrix to catch newly published advisories.
 Upstream package releases drift over time, so even an unrelated PR touching
-`pyproject.toml` can fail the `dependency-audit` check until the committed file
+`pyproject.toml` can fail the `Lint & dependency audit` check until the committed file
 is regenerated with the command above and re-committed.
+
+The `lint.yml` workflow runs Ruff, documentation lint, shell checks, and the
+committed dependency audit in one job with shared checkout and tool setup.
+Independent checks still run after another check fails, and any failure fails
+the job. The scheduled dependency-audit matrix runs separately.
 
 #### Shell scripts
 
@@ -322,9 +327,9 @@ is regenerated with the command above and re-committed.
 git ls-files -z -- '*.sh' | xargs -0 shellcheck --severity=error
 ```
 
-The CI `lint.yml` `shellcheck` job currently reports and blocks only
+The CI `lint.yml` ShellCheck step currently reports and blocks only
 error-severity findings. Warnings such as SC2155 are intentionally outside this
-job until a follow-up cleanup tightens the threshold.
+check until a follow-up cleanup tightens the threshold.
 
 ### Manual testing
 

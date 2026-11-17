@@ -87,18 +87,47 @@ BUILTIN_STEP_TYPES: frozenset[str] = frozenset(STEP_REGISTRY)
 _CUSTOM_STEP_MODULES: set[str] = set()
 
 
-def _unload_custom_steps() -> None:
-    """Clear custom registrations and synthetic imports from a prior project."""
+def _import_package(module_name: str, package_dir: Path):
+    """Import an installed package under an isolated synthetic module name."""
+    import importlib.util
     import sys
 
-    for type_key in tuple(STEP_REGISTRY):
-        if type_key not in BUILTIN_STEP_TYPES:
-            del STEP_REGISTRY[type_key]
-    for module_name in _CUSTOM_STEP_MODULES:
+    init_py = Path(package_dir) / "__init__.py"
+    spec = importlib.util.spec_from_file_location(
+        module_name,
+        init_py,
+        submodule_search_locations=[str(package_dir)],
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not create an import specification for '{package_dir}'")
+    module = importlib.util.module_from_spec(spec)
+    module.__package__ = module_name
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
+    except BaseException:
+        _drop_modules({module_name})
+        raise
+    return module
+
+
+def _drop_modules(module_names: set[str] | list[str] | tuple[str, ...]) -> None:
+    """Remove synthetic modules and their relative-import children."""
+    import sys
+
+    for module_name in module_names:
         sys.modules.pop(module_name, None)
         prefix = module_name + "."
         for loaded_name in [name for name in sys.modules if name.startswith(prefix)]:
             sys.modules.pop(loaded_name, None)
+
+
+def _unload_custom_steps() -> None:
+    """Clear custom registrations and synthetic imports from a prior project."""
+    for type_key in tuple(STEP_REGISTRY):
+        if type_key not in BUILTIN_STEP_TYPES:
+            del STEP_REGISTRY[type_key]
+    _drop_modules(_CUSTOM_STEP_MODULES)
     _CUSTOM_STEP_MODULES.clear()
 
 
@@ -113,9 +142,7 @@ def load_custom_steps(project_root: Path) -> list[str]:
     Silently skips packages that fail to import or validate.
     """
     import hashlib as _hashlib
-    import importlib.util as _importlib_util
     import re as _re
-    import sys as _sys
 
     _unload_custom_steps()
     steps_dir = Path(project_root) / ".specify" / "workflows" / "steps"
@@ -174,21 +201,9 @@ def load_custom_steps(project_root: Path) -> list[str]:
 
             # Treat the step directory as a proper package so that relative
             # imports inside the step (e.g. ``from .helpers import …``) work.
-            spec = _importlib_util.spec_from_file_location(
-                module_name,
-                init_py,
-                submodule_search_locations=[str(step_dir)],
-            )
-            if spec is None or spec.loader is None:
-                continue
-            module = _importlib_util.module_from_spec(spec)
-            module.__package__ = module_name
-            # Register before exec so relative imports resolve correctly.
-            _sys.modules[module_name] = module
+            module = _import_package(module_name, step_dir)
             registered = False
             try:
-                spec.loader.exec_module(module)  # type: ignore[union-attr]
-
                 # Find the StepBase subclass in the module
                 from .base import StepBase as _StepBase
 
@@ -222,14 +237,16 @@ def load_custom_steps(project_root: Path) -> list[str]:
                 # a broken/skipped step package leaves no lingering import state
                 # behind.
                 if not registered:
-                    _sys.modules.pop(module_name, None)
-                    submodule_prefix = module_name + "."
-                    for _mod_key in [
-                        k for k in _sys.modules if k.startswith(submodule_prefix)
-                    ]:
-                        _sys.modules.pop(_mod_key, None)
+                    _drop_modules({module_name})
         except Exception:  # noqa: BLE001, S112
             # Silently skip broken step packages at load time
             continue
 
     return loaded
+
+
+def load_workflow_functions(project_root: Path) -> list[str]:
+    """Load project-installed workflow expression functions."""
+    from .function.loader import load_workflow_functions as loader
+
+    return loader(project_root)

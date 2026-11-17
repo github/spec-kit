@@ -19,6 +19,30 @@ def _coerce_number(value: Any) -> Any:
     return value
 
 
+def _coerce_numeric_pair(left: Any, right: Any) -> tuple[Any, Any]:
+    """Return both operands as numbers if both look numeric, else unchanged.
+
+    Coercing only when *both* convert keeps a numeric string paired with a
+    plain string as two strings, rather than an int-vs-str mismatch.
+    """
+    cl, cr = _coerce_number(left), _coerce_number(right)
+    if isinstance(cl, (int, float)) and isinstance(cr, (int, float)):
+        return cl, cr
+    return left, right
+
+
+def _safe_equals(left: Any, right: Any, *, negate: bool) -> bool:
+    """Evaluate ``left == right`` (or ``!=``) with the same numeric coercion
+    as the ordering operators.
+
+    Without it, a numeric string such as captured stdout ``"10"`` was both
+    ``>= 10`` and ``<= 10`` but not ``== 10``.
+    """
+    left, right = _coerce_numeric_pair(left, right)
+    equal = left == right
+    return not equal if negate else equal
+
+
 def _safe_membership(left: Any, right: Any, *, negate: bool) -> bool:
     """Safely evaluate ``left in right`` (or ``not in``) without crashing.
 
@@ -51,12 +75,7 @@ def _safe_compare(left: Any, right: Any, op: str) -> bool:
     coercion. A genuinely incomparable pair (e.g. number vs non-numeric string)
     raises ``TypeError`` and yields ``False``.
     """
-    cl, cr = _coerce_number(left), _coerce_number(right)
-    # Only use the coerced numbers when both converted; otherwise a numeric
-    # string paired with a plain string would become an int-vs-str mismatch
-    # (always False) rather than a lexicographic string comparison.
-    if isinstance(cl, (int, float)) and isinstance(cr, (int, float)):
-        left, right = cl, cr
+    left, right = _coerce_numeric_pair(left, right)
     try:
         if op == ">":
             return left > right  # type: ignore[operator]

@@ -16,6 +16,10 @@ from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepSt
 from specify_cli.workflows.expressions import evaluate_expression
 
 
+def _reject_json_constant(value: str) -> Any:
+    raise ValueError(f"Invalid JSON constant: {value}")
+
+
 def _read_text(data: bytes, encoding: str) -> str:
     # TextIOWrapper applies the same universal-newline translation as text=True.
     with io.TextIOWrapper(io.BytesIO(data), encoding=encoding) as stream:
@@ -150,8 +154,8 @@ class ShellStep(StepBase):
                 # (e.g. a fan-out's ``items:``). A parse failure fails the
                 # step — declaring ``output_format: json`` is a contract.
                 try:
-                    output["data"] = json.loads(output["stdout"])
-                except json.JSONDecodeError as exc:
+                    output["data"] = json.loads(output["stdout"], parse_constant=_reject_json_constant)
+                except ValueError as exc:
                     return StepResult(
                         status=StepStatus.FAILED,
                         error=(
