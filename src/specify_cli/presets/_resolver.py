@@ -346,6 +346,14 @@ class PresetResolver:
             if core.exists():
                 return core
 
+            # Match artifact inventory and composition resolution: built-in
+            # command scripts depend on the project's selected runtime.
+            from ..artifacts.catalog import _selected_core_script_paths
+
+            selected = _selected_core_script_paths(self.project_root)
+            if template_name in selected:
+                return selected[template_name]
+
         # Priority 5: Bundled core_pack (wheel install) or repo-root templates
         # (source-checkout / editable install).  This is the canonical home for
         # speckit's built-in command/template files and must always be checked

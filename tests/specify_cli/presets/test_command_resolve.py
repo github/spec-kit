@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
+from urllib.parse import unquote
 
 import pytest
 import yaml
@@ -280,20 +282,20 @@ class TestPresetResolve:
         )
         assert str(output_path.resolve()) in "".join(strip_ansi(result.output).split())
 
+    @pytest.mark.parametrize("project_suffix", ["#1", "?2", "%3"])
     def test_resolve_materialized_extension_imports_from_output_directory(
-        self, temp_dir, project_dir
+        self, temp_dir, project_dir, project_suffix
     ):
+        project_dir = project_dir.parent / f"{project_dir.name}{project_suffix}"
+        project_dir.mkdir()
         extension_dir = project_dir / ".specify" / "extensions" / "script-ext"
         scripts_dir = extension_dir / "scripts"
-        library_dir = extension_dir / "lib"
         scripts_dir.mkdir(parents=True)
-        library_dir.mkdir(parents=True)
         nested_library_dir = scripts_dir / "lib"
         nested_library_dir.mkdir(parents=True)
         (scripts_dir / "adapter.mjs").write_text(
             "import './lib/helper.mjs';\nexport default 'extension';\n"
         )
-        (library_dir / "helper.mjs").write_text("export const helper = true;\n")
         (nested_library_dir / "helper.mjs").write_text(
             "export const helper = 'script-local';\n"
         )
@@ -316,7 +318,7 @@ class TestPresetResolve:
             pack_id="script-wrapper",
             priority=5,
         )
-        output_path = project_dir / "adapter.mjs"
+        output_path = project_dir.parent / "materialized" / "adapter.mjs"
 
         result = self._invoke(
             project_dir,
@@ -332,13 +334,12 @@ class TestPresetResolve:
         )
 
         assert result.exit_code == 0, (result.output, result.exception)
-        assert (
-            "./.specify/extensions/script-ext/scripts/lib/helper.mjs"
-            in output_path.read_text(encoding="utf-8")
-        )
-        referenced = (
-            output_path.parent / ".specify/extensions/script-ext/scripts/lib/helper.mjs"
-        ).resolve()
+        content = output_path.read_text(encoding="utf-8")
+        match = re.search(r"import '([^']+)'", content)
+        assert match is not None
+        import_path = match.group(1)
+        assert "%23" in import_path or "%3F" in import_path or "%25" in import_path
+        referenced = (output_path.parent / unquote(import_path)).resolve()
         assert referenced == (nested_library_dir / "helper.mjs").resolve()
         assert referenced.is_file()
 

@@ -12,6 +12,7 @@ import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
+from urllib.parse import quote
 
 import yaml
 
@@ -260,17 +261,28 @@ class CommandRegistrar:
 
         skip = {"commands", ".git", "specs"}
         try:
-            subdirs = [
+            subdirs = {
                 entry.name
                 for entry in extension_dir.iterdir()
                 if entry.is_dir()
                 and entry.name not in skip
                 and not entry.name.startswith(".")
-            ]
+            }
         except OSError:
-            return text
+            subdirs = set()
+        if source_path is not None:
+            try:
+                subdirs.update(
+                    entry.name
+                    for entry in source_path.parent.iterdir()
+                    if entry.is_dir()
+                    and entry.name not in skip
+                    and not entry.name.startswith(".")
+                )
+            except OSError:
+                pass
 
-        for subdir in subdirs:
+        for subdir in sorted(subdirs):
             # Only rewrite relative references (subdir/... or ./subdir/...);
             # absolute paths like /subdir/... keep their meaning. Use a
             # callable replacement: subdir/extension_id come from the
@@ -301,6 +313,8 @@ class CommandRegistrar:
                         replacement = target_dir.as_uri()
                     if not replacement.startswith(("./", "../", "/", "file:")):
                         replacement = f"./{replacement}"
+                    if not replacement.startswith("file:"):
+                        replacement = quote(replacement, safe="/-._~")
                     replacement = f"{replacement}/"
                 return match.group(1) + replacement
 

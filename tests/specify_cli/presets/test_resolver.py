@@ -1277,6 +1277,22 @@ class TestWrapStrategy:
         assert with_source["path"] == str(script_dir / "collect.sh")
         assert with_source["source"] == "extension:collectext2 (unregistered)"
 
+    def test_runtime_selected_core_script_resolve_and_source_parity(self, project_dir):
+        options = project_dir / ".specify" / "init-options.json"
+        options.parent.mkdir(parents=True, exist_ok=True)
+        options.write_text('{"script": "py"}', encoding="utf-8")
+
+        resolver = PresetResolver(project_dir)
+
+        resolved = resolver.resolve("setup-plan", "script")
+        assert resolved is not None
+        assert resolved.name == "setup_plan.py"
+
+        with_source = resolver.resolve_with_source("setup-plan", "script")
+        assert with_source is not None
+        assert with_source["path"] == str(resolved)
+        assert with_source["source"] == "core"
+
 
 class TestResolveContent:
     """Test PresetResolver.resolve_content() composition."""
