@@ -85,9 +85,13 @@ description in Codex's context.
   written are undone. If Spec Kit is stopped while rewriting a file, the
   previous content is left beside it as `openai.yaml.speckit-backup`. While
   that backup exists, setup stops with an error and policy cleanup, including
-  uninstall, leaves both files alone, so neither is lost: compare the two, keep
-  the right content in `openai.yaml`, delete the backup and run the command
-  again. A file is never written through a symlinked directory, even one
+  uninstall, leaves both files alone, so neither is lost. Compare the two, keep
+  the right content in `openai.yaml` and delete the backup. After a failed
+  setup or upgrade, run the command again. Uninstall, or a switch that removes
+  Codex, still completes and removes Codex's manifest, so running it again
+  reports that Codex is not installed rather than cleaning up: remove
+  `allow_implicit_invocation: false` from that `openai.yaml` yourself, or
+  delete the file if Spec Kit created it and you have not changed it. A file is never written through a symlinked directory, even one
   swapped in while the rewrite runs.
 - Core command skills registered without running Codex's `setup()` get no
   `agents/openai.yaml`: those registered by commands that install, remove or
