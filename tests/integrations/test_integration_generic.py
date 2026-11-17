@@ -16,7 +16,8 @@ from specify_cli.integrations.base import MarkdownIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
 from specify_cli.integration_state import INTEGRATION_STATE_SCHEMA, write_integration_json
 from specify_cli.extensions import ExtensionCatalog, ExtensionError, ExtensionManager, HookExecutor
-from specify_cli import save_init_options
+from specify_cli import app, save_init_options
+from typer.testing import CliRunner
 
 
 @pytest.fixture
@@ -62,6 +63,59 @@ def generic_project(tmp_path, *, skills=False, commands_dir=".custom/commands"):
     )
     save_init_options(project, {"ai": "generic", "ai_skills": skills, "script": "sh"})
     return project
+
+
+def test_generic_skills_update_rolls_back_when_command_source_is_missing(
+    tmp_path, generic_extension, monkeypatch,
+):
+    """Skills-mode updates retain source validation and restore old artifacts."""
+    project = generic_project(tmp_path, skills=True)
+    monkeypatch.chdir(project)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    artifact = project / ".custom/commands/speckit-sample-run/SKILL.md"
+    original_artifact = artifact.read_bytes()
+    original_registry = manager.registry.get("sample")
+
+    updated_source = tmp_path / "updated-source"
+    shutil.copytree(generic_extension, updated_source)
+    manifest_path = updated_source / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["extension"]["version"] = "2.0.0"
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    (updated_source / "commands" / "run.md").unlink()
+    archive_path = tmp_path / "sample-update.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for path in updated_source.rglob("*"):
+            if path.is_file():
+                archive.write(path, path.relative_to(updated_source))
+
+    with (
+        patch.object(
+            ExtensionCatalog,
+            "get_extension_info",
+            return_value={
+                "id": "sample",
+                "name": "Sample",
+                "version": "2.0.0",
+                "_install_allowed": True,
+            },
+        ),
+        patch.object(
+            ExtensionCatalog, "download_extension", return_value=archive_path
+        ),
+    ):
+        result = CliRunner().invoke(
+            app,
+            ["extension", "update", "sample"],
+            input="y\n",
+            catch_exceptions=True,
+        )
+
+    assert result.exit_code == 1, result.output
+    assert "missing source" in result.output.lower()
+    assert ExtensionManager(project).registry.get("sample") == original_registry
+    assert artifact.read_bytes() == original_artifact
 
 
 @pytest.mark.parametrize("skills", [False, True])
