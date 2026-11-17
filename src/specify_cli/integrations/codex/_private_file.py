@@ -13,10 +13,13 @@ from __future__ import annotations
 
 import errno
 import functools
+import logging
 import os
 from pathlib import Path
 
 from ...file_helper import FileHelper
+
+_logger = logging.getLogger(__name__)
 
 _GENERIC_WRITE = 0x40000000
 _DELETE = 0x00010000
@@ -168,10 +171,14 @@ def _create_windows(path: Path) -> int:
             _fields_ = [("DeleteFile", wintypes.BOOLEAN)]
 
         disposition = FileDispositionInfo(True)
-        kernel.SetFileInformationByHandle(
+        if not kernel.SetFileInformationByHandle(
             handle, _FILE_DISPOSITION_INFO, ctypes.byref(disposition),
             ctypes.sizeof(disposition),
-        )
+        ):
+            _logger.warning(
+                "Could not remove %s, which is empty since nothing was written "
+                "to it; delete it before retrying", path,
+            )
         kernel.CloseHandle(handle)
         raise
 

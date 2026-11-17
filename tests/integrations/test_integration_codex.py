@@ -1738,6 +1738,9 @@ class TestCodexNoModelInvocationOwnership:
             b"base: &b {true: first}\ncustom: {!!merge <<: *b, 1: second}\n",
             b"a: &a {true: first}\nb: &b {1: second}\ncustom: {!!merge <<: [*a, *b]}\n",
             b"custom: {!!merge <<: {true: first, 1: second}}\n",
+            b"custom: {!!merge <<: {x: first, x: second}}\n",
+            b"custom: {!!merge <<: [{x: first, x: second}]}\n",
+            b"custom: {!!merge <<: {x: first}, !!merge <<: {x: second}}\n",
         ],
         ids=["merged-and-own", "two-merged", "inline-merged", "inline-repeated",
              "inline-repeated-in-list", "repeated-merge-key"],
@@ -1751,27 +1754,6 @@ class TestCodexNoModelInvocationOwnership:
         assert path.read_bytes() == content
         assert self._other_policies(tmp_path) == []
 
-    def test_same_key_from_two_merges_is_not_a_collision(self, tmp_path):
-        content = b"a: &a {k: 1}\nb: &b {k: 2}\ncustom: {!!merge <<: [*a, *b]}\n"
-        path = self._seed(tmp_path, content)
-        self._setup(tmp_path)
-        assert self._yaml(path)["custom"] == {"k": 1}
-
-            b"custom: {!!merge <<: {x: first, x: second}}\n",
-            b"custom: {!!merge <<: [{x: first, x: second}]}\n",
-            b"custom: {!!merge <<: {x: first}, !!merge <<: {x: second}}\n",
-    def test_aliased_policy_is_changed_without_touching_its_anchor(self, tmp_path):
-        path = self._seed(tmp_path, b"shared: &p\n  products: [codex]\npolicy: *p\n")
-        manifest = self._setup(tmp_path)
-        assert self._yaml(path) == {
-            "shared": {"products": ["codex"]},
-            "policy": {"products": ["codex"], **self.POLICY},
-        }
-        get_integration("codex").teardown(tmp_path, manifest)
-        assert self._yaml(path) == {
-            "shared": {"products": ["codex"]},
-            "policy": {"products": ["codex"]},
-        }
     @pytest.mark.parametrize(
         "content",
         [
@@ -1787,6 +1769,24 @@ class TestCodexNoModelInvocationOwnership:
         self._setup(tmp_path)
         assert self._yaml(path)["custom"] == {"k": 2}
 
+    def test_same_key_from_two_merges_is_not_a_collision(self, tmp_path):
+        content = b"a: &a {k: 1}\nb: &b {k: 2}\ncustom: {!!merge <<: [*a, *b]}\n"
+        path = self._seed(tmp_path, content)
+        self._setup(tmp_path)
+        assert self._yaml(path)["custom"] == {"k": 1}
+
+    def test_aliased_policy_is_changed_without_touching_its_anchor(self, tmp_path):
+        path = self._seed(tmp_path, b"shared: &p\n  products: [codex]\npolicy: *p\n")
+        manifest = self._setup(tmp_path)
+        assert self._yaml(path) == {
+            "shared": {"products": ["codex"]},
+            "policy": {"products": ["codex"], **self.POLICY},
+        }
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert self._yaml(path) == {
+            "shared": {"products": ["codex"]},
+            "policy": {"products": ["codex"]},
+        }
 
     def test_removing_an_aliased_policy_keeps_its_anchor(self, tmp_path):
         path = self._seed(tmp_path)
@@ -2021,8 +2021,9 @@ class TestCodexFileHelperInternals:
             _private_file.create_private(helper, rel, b"content")
         assert not (tmp_path / rel).exists()
 
+    @pytest.mark.parametrize("marked", [True, False])
     def test_windows_create_removes_its_file_through_the_handle_if_no_descriptor_is_made(
-        self, tmp_path, monkeypatch
+        self, tmp_path, monkeypatch, caplog, marked
     ):
         # Simulates the Windows calls, so this runs everywhere; the next test
         # makes the real ones. Without a descriptor the caller cannot remove
@@ -2045,7 +2046,7 @@ class TestCodexFileHelperInternals:
 
             def SetFileInformationByHandle(self, handle, kind, info, size):
                 calls.append(("SetFileInformationByHandle", handle, kind, bytes(info._obj)))
-                return 1
+                return int(marked)
 
             def CloseHandle(self, handle):
                 calls.append(("CloseHandle", handle))
@@ -2071,6 +2072,9 @@ class TestCodexFileHelperInternals:
         assert calls[0][0] == "CreateFileW" and calls[0][1] & delete
         # FileDispositionInfo with DeleteFile set, before the handle closes.
         assert calls[1:] == [("SetFileInformationByHandle", 1234, 4, b"\x01"), ("CloseHandle", 1234)]
+        # If it cannot be marked, the empty file is named so it can be deleted.
+        warned = "openai.yaml.speckit-backup" in caplog.text
+        assert warned is not marked
 
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows creation path")
     def test_windows_create_private_leaves_no_file_if_no_descriptor_is_made(
