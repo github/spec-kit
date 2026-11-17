@@ -163,7 +163,7 @@ def test_section_layers_respect_composition_order(tmp_path, duplicate):
         if duplicate and preset_id == "prep":
             text = "## Target\nextra"
         (directory / "preset.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
-        (directory / "body.md").write_text(text, encoding="utf-8")
+        (directory / "body.md").write_bytes(text.encode("utf-8"))
         registry[preset_id] = {"priority": priority}
     (presets / ".registry").write_text(json.dumps({"presets": registry}), encoding="utf-8")
     expected = "before\n## Added\nkeep\n\n## Target\nfinal\n## Next\nupstream\n\nafter\n\nappendix"
