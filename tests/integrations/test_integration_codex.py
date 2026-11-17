@@ -2033,7 +2033,7 @@ class TestCodexFileHelperInternals:
             _private_file.create_private(helper, rel, b"content")
         assert not (tmp_path / rel).exists()
 
-    @pytest.mark.parametrize("marked", [True, False])
+    @pytest.mark.parametrize("marked", [True, False, None])
     def test_windows_create_removes_its_file_through_the_handle_if_no_descriptor_is_made(
         self, tmp_path, monkeypatch, caplog, marked
     ):
@@ -2058,6 +2058,8 @@ class TestCodexFileHelperInternals:
 
             def SetFileInformationByHandle(self, handle, kind, info, size):
                 calls.append(("SetFileInformationByHandle", handle, kind, bytes(info._obj)))
+                if marked is None:
+                    raise ctypes.ArgumentError("bad argument")
                 return int(marked)
 
             def CloseHandle(self, handle):
@@ -2086,7 +2088,7 @@ class TestCodexFileHelperInternals:
         assert calls[1:] == [("SetFileInformationByHandle", 1234, 4, b"\x01"), ("CloseHandle", 1234)]
         # If it cannot be marked, the empty file is named so it can be deleted.
         warned = "openai.yaml.speckit-backup" in caplog.text
-        assert warned is not marked
+        assert warned is not bool(marked)
 
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows creation path")
     def test_windows_create_private_leaves_no_file_if_no_descriptor_is_made(

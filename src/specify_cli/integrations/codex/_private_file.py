@@ -167,19 +167,25 @@ def _create_windows(path: Path) -> int:
         # left behind would be refused as an interrupted run's backup. Marked
         # through the handle, only the file created here is deleted; with no
         # sharing, nothing else could have opened, renamed or replaced it.
+        # The handle is closed and the original error kept whatever happens.
         class FileDispositionInfo(ctypes.Structure):
             _fields_ = [("DeleteFile", wintypes.BOOLEAN)]
 
-        disposition = FileDispositionInfo(True)
-        if not kernel.SetFileInformationByHandle(
-            handle, _FILE_DISPOSITION_INFO, ctypes.byref(disposition),
-            ctypes.sizeof(disposition),
-        ):
+        try:
+            disposition = FileDispositionInfo(True)
+            if not kernel.SetFileInformationByHandle(
+                handle, _FILE_DISPOSITION_INFO, ctypes.byref(disposition),
+                ctypes.sizeof(disposition),
+            ):
+                code = ctypes.get_last_error() if hasattr(ctypes, "get_last_error") else 0
+                raise OSError(f"Windows error {code}")
+        except Exception as exc:
             _logger.warning(
-                "Could not remove %s, which is empty since nothing was written "
-                "to it; delete it before retrying", path,
+                "Could not remove %s (%s), which is empty since nothing was "
+                "written to it; delete it before retrying", path, exc,
             )
-        kernel.CloseHandle(handle)
+        finally:
+            kernel.CloseHandle(handle)
         raise
 
 
