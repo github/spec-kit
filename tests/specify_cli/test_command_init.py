@@ -524,12 +524,15 @@ def test_init_here_rolls_back_a_failed_setup_for_every_builtin(
 
 # Bob's and Copilot's default layouts never call list_command_templates().
 @pytest.mark.parametrize("key", [key for key in _builtin_keys() if key not in {"bob", "copilot"}])
-def test_init_here_rollback_removes_a_commands_dir_created_before_the_first_write(tmp_path, monkeypatch, key):
+def test_init_here_rollback_removes_a_commands_dir_created_before_the_first_write(
+    tmp_path, monkeypatch, key, _isolate_home,
+):
     """A setup() that fails after creating its commands directory leaves none of it behind."""
     from specify_cli.integrations import get_integration
 
     project = _existing_target(tmp_path, monkeypatch, "plain", key)
     before = _tree(project)
+    before_home = _tree(_isolate_home)
     # Reading the first template fails after setup() has created the directory.
     missing = tmp_path / "templates" / "plan.md"
     monkeypatch.setattr(type(get_integration(key)), "list_command_templates", lambda self: [missing])
@@ -539,6 +542,8 @@ def test_init_here_rollback_removes_a_commands_dir_created_before_the_first_writ
 
     assert result.exit_code != 0
     assert _tree(project) == before
+    # Hermes creates its skills directory, and its parents, under the home directory.
+    assert _tree(_isolate_home) == before_home
 
 
 @pytest.mark.parametrize("key", ["generic", "gemini", "forge", "rovodev"])

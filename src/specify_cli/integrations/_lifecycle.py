@@ -143,7 +143,7 @@ class _FileJournal:
         self.backup_bytes = 0
         self.backup_entries = 0
         self.directory_states: dict[Path, bool] = {}
-        self.created_directories: list[Path] = []
+        self.created_directories: list[tuple[Path, tuple[int, int]]] = []
         for path in paths:
             self._remember_parents(path)
 
@@ -188,7 +188,8 @@ class _FileJournal:
             raise installer.IntegrationInstallError(f"Unsupported integration output: {source}")
 
     def directory_created(self, path: Path) -> None:
-        self.created_directories.append(path.absolute())
+        entry = path.lstat()
+        self.created_directories.append((Path(os.path.abspath(path)), (entry.st_dev, entry.st_ino)))
 
     def safe_path(self, path: Path, *, allow_leaf_symlink: bool = True) -> Path:
         path = path.absolute()
@@ -324,11 +325,19 @@ def _prune_new_directories(journal: _FileJournal) -> None:
     a directory that appeared from elsewhere is left alone, and files are
     never touched here.
     """
-    for path in reversed(journal.created_directories):
+    home = Path.home().absolute()
+    for path, identity in reversed(journal.created_directories):
         try:
-            if path.is_symlink() or not path.is_dir():
+            entry = path.lstat()
+            if not stat.S_ISDIR(entry.st_mode) or (entry.st_dev, entry.st_ino) != identity:
                 continue
-            journal.safe_path(path)
+            # A new parent of a home scope, such as ~/.hermes, lies outside
+            # every scope safe_path() accepts.
+            home_parent = path != home and path.is_relative_to(home) and any(
+                path in scope.parents for scope in journal.home_scopes
+            )
+            if not home_parent:
+                journal.safe_path(path)
             path.rmdir()
         except (OSError, installer.IntegrationInstallError):
             continue
