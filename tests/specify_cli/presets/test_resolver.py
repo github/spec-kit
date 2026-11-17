@@ -126,6 +126,29 @@ def test_hidden_invalid_section_presets_do_not_block_replace(tmp_path, kind, win
 class TestPresetResolver:
     """Test PresetResolver priority stack."""
 
+    @pytest.mark.parametrize(
+        "reference", ["require('./lib/helper.cjs')", "require.resolve('./lib/helper.cjs')"]
+    )
+    def test_extension_script_rewrite_keeps_commonjs_paths_unencoded(
+        self, tmp_path, reference
+    ):
+        project = tmp_path / "project#1"
+        extension_dir = project / ".specify" / "extensions" / "example"
+        script_dir = extension_dir / "scripts"
+        (script_dir / "lib").mkdir(parents=True)
+        source_path = script_dir / "adapter.cjs"
+
+        result = CommandRegistrar.rewrite_extension_paths(
+            f"{reference};\n",
+            "example",
+            extension_dir,
+            source_path=source_path,
+            relative_to=tmp_path / "output",
+        )
+
+        assert "%23" not in result
+        assert "../project#1/.specify/extensions/example/scripts/lib/helper.cjs" in result
+
     def test_extension_script_rewrite_skips_unreferenced_directories(
         self, tmp_path, monkeypatch
     ):

@@ -126,7 +126,7 @@ class TestPresetResolve:
     def test_resolve_materialized_script_preserves_executable_mode(
         self, temp_dir, project_dir, executable
     ):
-        self._install_script(
+        manager = self._install_script(
             temp_dir,
             project_dir,
             "#!/bin/sh\necho ready\n",
@@ -150,7 +150,13 @@ class TestPresetResolve:
 
         assert result.exit_code == 0, (result.output, result.exception)
         assert output_path.read_text(encoding="utf-8") == "#!/bin/sh\necho ready\n"
-        expected_execute_bits = 0o111 if executable else 0
+        source_path = (
+            manager.presets_dir
+            / "script-pack"
+            / "adapters"
+            / "page-adapter.sh"
+        )
+        expected_execute_bits = stat.S_IMODE(source_path.stat().st_mode) & 0o111
         assert stat.S_IMODE(output_path.stat().st_mode) & 0o111 == expected_execute_bits
 
     def _invoke(self, project_dir, args):

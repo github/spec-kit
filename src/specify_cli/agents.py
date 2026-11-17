@@ -310,7 +310,10 @@ class CommandRegistrar:
                     replacement = f".specify/extensions/{extension_id}/{subdir}/"
                 else:
                     require_reference = bool(
-                        re.search(r"\brequire\s*\(\s*$", text[: match.start()])
+                        re.search(
+                            r"\brequire(?:\.resolve)?\s*\(\s*$",
+                            text[: match.start()],
+                        )
                     )
                     module_specifier = (
                         not require_reference
