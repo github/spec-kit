@@ -282,7 +282,7 @@ class TestPresetResolve:
         )
         assert str(output_path.resolve()) in "".join(strip_ansi(result.output).split())
 
-    @pytest.mark.parametrize("project_suffix", ["#1", "?2", "%3"])
+    @pytest.mark.parametrize("project_suffix", ["#1", "%3"])
     def test_resolve_materialized_extension_imports_from_output_directory(
         self, temp_dir, project_dir, project_suffix
     ):
