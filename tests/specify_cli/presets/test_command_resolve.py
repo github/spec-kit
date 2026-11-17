@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 import pytest
 
@@ -287,10 +288,15 @@ class TestPresetResolve:
         library_dir = extension_dir / "lib"
         scripts_dir.mkdir(parents=True)
         library_dir.mkdir(parents=True)
+        nested_library_dir = scripts_dir / "lib"
+        nested_library_dir.mkdir(parents=True)
         (scripts_dir / "adapter.mjs").write_text(
             "import './lib/helper.mjs';\nexport default 'extension';\n"
         )
         (library_dir / "helper.mjs").write_text("export const helper = true;\n")
+        (nested_library_dir / "helper.mjs").write_text(
+            "export const helper = 'script-local';\n"
+        )
         (extension_dir / "extension.yml").write_text(
             "schema_version: '1.0'\n"
             "extension:\n  id: script-ext\n  name: Script Ext\n  version: 1.0.0\n"
@@ -310,7 +316,7 @@ class TestPresetResolve:
             pack_id="script-wrapper",
             priority=5,
         )
-        output_path = project_dir / "generated" / "adapter.mjs"
+        output_path = project_dir / "adapter.mjs"
 
         result = self._invoke(
             project_dir,
@@ -327,13 +333,13 @@ class TestPresetResolve:
 
         assert result.exit_code == 0, (result.output, result.exception)
         assert (
-            "../.specify/extensions/script-ext/lib/helper.mjs"
+            "./.specify/extensions/script-ext/scripts/lib/helper.mjs"
             in output_path.read_text(encoding="utf-8")
         )
         referenced = (
-            output_path.parent / "../.specify/extensions/script-ext/lib/helper.mjs"
+            output_path.parent / ".specify/extensions/script-ext/scripts/lib/helper.mjs"
         ).resolve()
-        assert referenced == (library_dir / "helper.mjs").resolve()
+        assert referenced == (nested_library_dir / "helper.mjs").resolve()
         assert referenced.is_file()
 
     def test_resolve_script_composition_without_output_explains_materialization(
@@ -496,6 +502,40 @@ class TestPresetResolve:
 
         assert result.exit_code == 1
         assert "Could not write script to" in strip_ansi(result.output)
+
+    @pytest.mark.parametrize("alias_kind", ["same-path", "symlink", "hardlink"])
+    def test_resolve_refuses_to_overwrite_contributing_script(
+        self, temp_dir, project_dir, alias_kind
+    ):
+        self._install_script(temp_dir, project_dir, "export default 'source';\n")
+        source_path = (
+            project_dir / ".specify/presets/script-pack/adapters/page-adapter.mjs"
+        )
+        original = source_path.read_text(encoding="utf-8")
+        output_path = source_path
+        if alias_kind == "symlink":
+            output_path = project_dir / "generated-link.mjs"
+            output_path.symlink_to(source_path)
+        elif alias_kind == "hardlink":
+            output_path = project_dir / "generated-hardlink.mjs"
+            output_path.hardlink_to(source_path)
+
+        result = self._invoke(
+            project_dir,
+            [
+                "preset",
+                "resolve",
+                "designer-page-adapter",
+                "--kind",
+                "script",
+                "--output",
+                str(output_path),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "must not overwrite" in strip_ansi(result.output)
+        assert source_path.read_text(encoding="utf-8") == original
 
     def test_resolve_rejects_empty_command_segments(self, project_dir):
         """Dotted command identifiers cannot contain empty path-like segments."""

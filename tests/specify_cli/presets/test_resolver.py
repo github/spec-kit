@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from specify_cli.agents import CommandRegistrar
 from specify_cli.extensions import ExtensionRegistry
 from specify_cli.presets import (
     PresetManager,
@@ -124,6 +125,91 @@ def test_hidden_invalid_section_presets_do_not_block_replace(tmp_path, kind, win
 
 class TestPresetResolver:
     """Test PresetResolver priority stack."""
+
+    def test_extension_script_rewrite_skips_unreferenced_directories(
+        self, tmp_path, monkeypatch
+    ):
+        extension_dir = tmp_path / "extension"
+        (extension_dir / "lib").mkdir(parents=True)
+        monkeypatch.setattr(
+            "specify_cli.agents.os.path.relpath",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                AssertionError("no relative path is needed for an unreferenced dir")
+            ),
+        )
+
+        result = CommandRegistrar.rewrite_extension_paths(
+            "export default true;\n",
+            "example",
+            extension_dir,
+            relative_to=tmp_path / "other-drive-output",
+        )
+
+        assert result == "export default true;\n"
+
+    def test_extension_script_rewrite_handles_cross_drive_reference(
+        self, tmp_path, monkeypatch
+    ):
+        extension_dir = tmp_path / "extension"
+        (extension_dir / "lib").mkdir(parents=True)
+        monkeypatch.setattr(
+            "specify_cli.agents.os.path.relpath",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                ValueError("different drives")
+            ),
+        )
+
+        result = CommandRegistrar.rewrite_extension_paths(
+            "import 'lib/helper.mjs';\n",
+            "example",
+            extension_dir,
+            relative_to=tmp_path / "output",
+        )
+
+        assert f"{(extension_dir / 'lib').as_uri()}/helper.mjs" in result
+
+    def test_script_composition_uses_runtime_selected_core_base(
+        self, project_dir, tmp_path, valid_pack_data, monkeypatch
+    ):
+        base = tmp_path / "selected" / "bash" / "setup-plan.sh"
+        base.parent.mkdir(parents=True)
+        base.write_text("echo selected runtime\n", encoding="utf-8")
+        monkeypatch.setattr(
+            "specify_cli.artifacts.catalog._selected_core_script_paths",
+            lambda _project_root: {"setup-plan": base},
+        )
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {
+            **valid_pack_data["preset"],
+            "id": "setup-plan-wrapper",
+            "name": "Setup Plan Wrapper",
+        }
+        pack_data["provides"] = {
+            "templates": [
+                {
+                    "type": "script",
+                    "name": "setup-plan",
+                    "file": "scripts/setup-plan.sh",
+                    "strategy": "wrap",
+                }
+            ]
+        }
+        pack_dir = tmp_path / "setup-plan-wrapper"
+        (pack_dir / "scripts").mkdir(parents=True)
+        (pack_dir / "preset.yml").write_text(yaml.safe_dump(pack_data))
+        (pack_dir / "scripts/setup-plan.sh").write_text(
+            "echo wrapper\n$CORE_SCRIPT\n", encoding="utf-8"
+        )
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.0")
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("setup-plan", "script")
+        content = resolver.resolve_content("setup-plan", "script")
+
+        assert layers[1]["path"] == base
+        assert content is not None
+        assert "echo wrapper" in content
+        assert "echo selected runtime" in content
 
     def test_resolve_core_template(self, project_dir):
         """Test resolving a core template."""

@@ -239,6 +239,7 @@ class CommandRegistrar:
         extension_id: str,
         extension_dir: Path,
         *,
+        source_path: Path | None = None,
         relative_to: Path | None = None,
     ) -> str:
         """Rewrite extension-relative paths to their installed locations.
@@ -275,20 +276,35 @@ class CommandRegistrar:
             # callable replacement: subdir/extension_id come from the
             # filesystem and could contain backslashes or "\1"-like
             # sequences, which would corrupt a string replacement template.
-            if relative_to is None:
-                replacement = f".specify/extensions/{extension_id}/{subdir}/"
-            else:
-                replacement_path = os.path.relpath(
-                    (extension_dir / subdir).resolve(), start=relative_to.resolve()
-                ).replace(os.sep, "/")
-                if not replacement_path.startswith((".", "/")):
-                    replacement_path = f"./{replacement_path}"
-                replacement = f"{replacement_path}/"
-            text = re.sub(
-                r'(^|[\s`"\'(])(?:\./)?' + re.escape(subdir) + "/",
-                lambda m: m.group(1) + replacement,
-                text,
+            pattern = re.compile(
+                r'(^|[\s`"\'(])(?P<dot>\./)?' + re.escape(subdir) + "/"
             )
+            if not pattern.search(text):
+                continue
+
+            def _replacement(match: re.Match) -> str:
+                target_dir = (extension_dir / subdir).resolve()
+                if (
+                    match.group("dot")
+                    and source_path is not None
+                    and (source_path.parent / subdir).is_dir()
+                ):
+                    target_dir = (source_path.parent / subdir).resolve()
+                if relative_to is None:
+                    replacement = f".specify/extensions/{extension_id}/{subdir}/"
+                else:
+                    try:
+                        replacement = os.path.relpath(
+                            target_dir, start=relative_to.resolve()
+                        ).replace(os.sep, "/")
+                    except ValueError:
+                        replacement = target_dir.as_uri()
+                    if not replacement.startswith(("./", "../", "/", "file:")):
+                        replacement = f"./{replacement}"
+                    replacement = f"{replacement}/"
+                return match.group(1) + replacement
+
+            text = pattern.sub(_replacement, text)
         return text
 
     def render_markdown_command(

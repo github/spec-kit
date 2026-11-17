@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Literal
@@ -65,6 +66,31 @@ def preset_resolve(
         if not output_path.is_absolute():
             output_path = Path.cwd() / output_path
         output_path = output_path.resolve()
+        layers = resolver.collect_all_layers(template_name, "script")
+        base_index = next(
+            (
+                index
+                for index, layer in enumerate(layers)
+                if layer["strategy"] == "replace"
+            ),
+            None,
+        )
+        contributing_layers = (
+            layers[: base_index + 1] if base_index is not None else layers
+        )
+        for layer in contributing_layers:
+            source_path = Path(layer["path"])
+            try:
+                aliases_source = output_path == source_path.resolve() or (
+                    output_path.exists() and os.path.samefile(output_path, source_path)
+                )
+            except OSError:
+                aliases_source = output_path == source_path.resolve()
+            if aliases_source:
+                console.print(
+                    "[red]Error:[/red] --output must not overwrite a contributing script"
+                )
+                raise typer.Exit(1)
         try:
             content = resolver.resolve_content(
                 template_name,

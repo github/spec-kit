@@ -728,6 +728,14 @@ class PresetResolver:
         if stem and stem != template_name:
             names.append(stem)
 
+        if template_type == "script":
+            from ..artifacts.catalog import _selected_core_script_paths
+
+            selected = _selected_core_script_paths(self.project_root)
+            for name in names:
+                if name in selected:
+                    return selected[name]
+
         core_pack = _locate_core_pack()
         if core_pack is not None:
             for name in names:
@@ -829,6 +837,7 @@ class PresetResolver:
                     text,
                     extension_id,
                     extension_dir,
+                    source_path=layer["path"],
                     relative_to=(
                         relative_import_base
                         if template_type == "script"
