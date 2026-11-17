@@ -1031,13 +1031,14 @@ class ExtensionRegistry:
 class ExtensionManager:
     """Manages extension lifecycle: installation, removal, updates."""
 
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Path, *, defer_registration: bool = False):
         """Initialize extension manager.
 
         Args:
             project_root: Path to project root directory
         """
         self.project_root = project_root
+        self.defer_registration = defer_registration
         self.extensions_dir = project_root / ".specify" / "extensions"
         self.registry = ExtensionRegistry(self.extensions_dir)
 
@@ -1711,6 +1712,11 @@ class ExtensionManager:
             ):
                 skill_content = integration.post_process_skill_content(skill_content)
 
+            from ..integration_runtime import should_write_file
+
+            if not should_write_file(skill_file, skill_content.replace("\n", os.linesep).encode("utf-8")):
+                written.append(skill_name)
+                continue
             if use_dev_symlink:
                 try:
                     cache_file.parent.mkdir(parents=True, exist_ok=True)
@@ -2422,7 +2428,7 @@ class ExtensionManager:
 
         active_options = load_init_options(self.project_root)
         generic_active = isinstance(active_options, dict) and active_options.get("ai") == "generic"
-        if register_commands and manifest.commands:
+        if register_commands and not self.defer_registration and manifest.commands:
             state, state_error = try_read_integration_json(self.project_root)
             if state_error is not None and generic_active:
                 detail = (
@@ -3053,17 +3059,19 @@ class ExtensionManager:
         try:
             # Register commands with AI agents (active integration only, #2948)
             registered_commands = {}
-            if register_commands:
+            if register_commands and not self.defer_registration:
                 registered_commands = self._register_commands_for_active_agent(
                     manifest, dest_dir, link_outputs=link_commands
                 )
 
             # Auto-register extension commands as agent skills when skills mode
             # was used during project initialisation (feature parity).
-            registered_skills = self._register_extension_skills(
-                manifest, dest_dir, link_outputs=link_commands
+            registered_skills = (
+                self._register_extension_skills(
+                    manifest, dest_dir, link_outputs=link_commands
+                ) if not self.defer_registration else []
             )
-            if register_commands and generic_active and manifest.commands:
+            if register_commands and not self.defer_registration and generic_active and manifest.commands:
                 expected = set(names)
                 actual = set(
                     registered_skills if skills else registered_commands.get("generic", [])
@@ -3499,7 +3507,7 @@ class ExtensionManager:
         extension_dir = self.extensions_dir / extension_id
 
         # Unregister commands from all AI agents
-        if registered_commands:
+        if registered_commands and not self.defer_registration:
             safe_commands = dict(registered_commands)
             if "generic" in safe_commands:
                 safe_commands.pop("generic")
@@ -3507,15 +3515,16 @@ class ExtensionManager:
                 CommandRegistrar(self.project_root, include_generic=False).unregister_commands(
                     safe_commands, self.project_root
                 )
-        if metadata:
+        if metadata and not self.defer_registration:
             self._remove_generic_artifact_paths(extension_id, metadata)
 
         # Unregister agent skills
-        self._unregister_extension_skills(
-            registered_skills,
-            extension_id,
-            generic_hashes=metadata.get("generic_artifact_hashes") if metadata else None,
-        )
+        if not self.defer_registration:
+            self._unregister_extension_skills(
+                registered_skills,
+                extension_id,
+                generic_hashes=metadata.get("generic_artifact_hashes") if metadata else None,
+            )
 
         if keep_config:
             # Preserve config files, only remove non-config files
@@ -3865,7 +3874,10 @@ class ExtensionManager:
 
         return removed
 
-    def register_enabled_extensions_for_agent(self, agent_name: str, *, force: bool = False) -> None:
+    def register_enabled_extensions_for_agent(
+        self, agent_name: str, *, force: bool = False, strict: bool = False,
+        development_extension: str | None = None,
+    ) -> None:
         """Register installed, enabled extensions for ``agent_name``.
 
         Command-file registration is scoped to the explicit ``agent_name``
@@ -3916,6 +3928,8 @@ class ExtensionManager:
 
             manifest = self.get_extension(ext_id)
             if manifest is None:
+                if strict:
+                    raise ExtensionError(f"Enabled extension '{ext_id}' has no readable manifest")
                 continue
 
             ext_dir = self.extensions_dir / ext_id
@@ -3941,7 +3955,8 @@ class ExtensionManager:
 
                 if agent_config and not skills_mode_active:
                     registered = registrar.register_commands_for_agent(
-                        agent_name, manifest, ext_dir, self.project_root
+                        agent_name, manifest, ext_dir, self.project_root,
+                        **({"link_outputs": True} if ext_id == development_extension else {}),
                     )
                     if agent_name == "generic":
                         registered = self._complete_generic_refresh(
@@ -4000,7 +4015,8 @@ class ExtensionManager:
                 if agent_name == active_agent:
                     try:
                         registered_skills = self._register_extension_skills(
-                            manifest, ext_dir, force=force
+                            manifest, ext_dir, force=force,
+                            **({"link_outputs": True} if ext_id == development_extension else {}),
                         )
                         if agent_name == "generic" and skills_mode_active:
                             registered_skills = self._complete_generic_refresh(
@@ -4014,6 +4030,8 @@ class ExtensionManager:
                                 skills=True,
                             )
                     except Exception as skills_err:
+                        if strict:
+                            raise
                         # Skills are a companion artifact.  If command registration
                         # already succeeded, still persist it so later cleanup can
                         # find those command files.
@@ -4188,6 +4206,20 @@ class ExtensionManager:
                                     if new_registered != registered_commands:
                                         updates["registered_commands"] = new_registered
 
+                if strict and manifest.commands:
+                    expected_commands = set(self._collect_manifest_command_names(manifest))
+                    if skills_mode_active:
+                        expected_skills = {
+                            self._skill_name_for_command(command["name"])
+                            for command in manifest.commands
+                        }
+                        missing = expected_skills - set(registered_skills)
+                    else:
+                        missing = expected_commands - set(registered)
+                    if missing:
+                        raise ExtensionError(
+                            f"Missing invocation artifacts for {agent_name}: {', '.join(sorted(missing))}"
+                        )
                 if registered:
                     self._retire_legacy_flat_extension_commands(
                         agent_name,
@@ -4206,6 +4238,10 @@ class ExtensionManager:
                     registry_update_started = True
                     self.registry.update(ext_id, updates)
             except Exception as ext_err:
+                if strict:
+                    raise ExtensionError(
+                        f"Cannot register extension '{ext_id}' for '{agent_name}': {ext_err}"
+                    ) from ext_err
                 # Best-effort per extension: warn and move on so a single bad
                 # extension cannot silently drop the others. See #2950.
                 from .. import _print_cli_warning

@@ -189,7 +189,8 @@ archive extraction when applicable. The manager:
 3. preserves eligible configuration before any destructive force reinstall;
 4. copies the extension under `.specify/extensions/<id>/`, honoring
    `.extensionignore`;
-5. renders commands or skills for the active integration;
+5. renders commands or skills for the active integration unless the caller
+   explicitly defers registration to a complete post-install refresh;
 6. registers hooks and the installed projection in `extensions.yml`;
 7. commits lifecycle and ownership metadata to `.registry`;
 8. restores executable bits for project scripts.
@@ -199,6 +200,18 @@ manager step. `extension add`, `extension enable`, and bundle installation call
 `scaffold_config()` without overwriting existing targets. Extension
 installation during `init` and extension update paths do not scaffold declared
 configuration templates.
+
+`extension add` defers artifact registration, commits installation, and calls the
+integration domain refresh before reporting success. It refreshes shared assets
+for the unchanged default and every recorded installed integration's managed
+setup, including effective enabled extensions/presets, saved modes, settings,
+and native events. Missing state or unavailable/untrusted adapters cannot be
+replaced by directory detection or implicit consent. The add force flag authorizes
+extension replacement, not overwriting unrelated customized integration files.
+Failures retain the extension and completed refreshes and report explicit
+completed/failed/unattempted state and recovery guidance, rather than success
+after a warning. Shared manager callers such as init, update, and bundles do not
+acquire this add-only policy.
 
 Development installs may use symlinks to rendered caches where the selected
 integration and platform support them. Integrations that prohibit such
@@ -215,7 +228,8 @@ and skill files until an integration switch, uninstall, or other reconciliation
 removes them, so those stale files may remain invocable while the extension is
 disabled.
 
-An extension install targets the active integration recorded in project state.
+Outside the explicit `extension add` post-install refresh, extension registration
+targets the active integration recorded in project state.
 Projects predating that state may fall back to detected agent directories;
 present but invalid active-integration state fails closed and registers no
 agent outputs. Selecting, switching, upgrading, or removing integrations

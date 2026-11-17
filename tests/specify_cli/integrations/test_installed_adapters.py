@@ -248,6 +248,39 @@ def install(project):
     return result
 
 
+@pytest.mark.parametrize("damage", [False, True], ids=["trusted", "damaged"])
+def test_extension_add_refreshes_trusted_secondary_adapter_without_new_consent(
+    tmp_path, server, damage,
+):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    builtin = run(project, ["integration", "install", "claude", "--script", "py"])
+    assert builtin.exit_code == 0, builtin.output
+    install(project)
+    before = (project / ".specify/integration.json").read_bytes()
+    trust_file = Path.home() / ".specify/integration-trust.json"
+    before_trust = json.loads(trust_file.read_text())["grants"]
+    if damage:
+        source = project / f".specify/integrations/packages/{KEY}/__init__.py"
+        source.write_text(source.read_text() + "\n# locally changed adapter\n")
+    result = run(project, ["extension", "add", "assess"])
+    if damage:
+        assert result.exit_code == 1, result.output
+        assert "readiness failed" in result.output
+        assert (project / ".specify/extensions/assess/extension.yml").is_file()
+    else:
+        assert result.exit_code == 0, result.output
+        assert len(list((project / ".sample-agent/skills").glob("speckit-assess-*/SKILL.md"))) == 5
+        # A second refresh also verifies that generated-ownership metadata
+        # did not invalidate the trusted adapter's recovery binding.
+        from specify_cli.integrations.refresh import refresh_installed_integrations
+
+        refreshed = refresh_installed_integrations(project)
+        assert refreshed.success, refreshed.failed
+    assert (project / ".specify/integration.json").read_bytes() == before
+    assert json.loads(trust_file.read_text())["grants"] == before_trust
+
+
 def snapshot(project):
     return {
         path.relative_to(project).as_posix(): path.read_bytes()
@@ -1668,7 +1701,7 @@ def test_extension_and_preset_contributions_follow_active_external_adapter(
     install(project)
     extension = run(project, ["extension", "add", "git"])
     assert extension.exit_code == 0, extension.output
-    assert not (project / ".sample-agent/skills/speckit-git-commit/SKILL.md").exists()
+    assert (project / ".sample-agent/skills/speckit-git-commit/SKILL.md").is_file()
 
     preset = tmp_path / "sample-preset"
     (preset / "commands").mkdir(parents=True)
@@ -4250,8 +4283,14 @@ def event_recovery_project(
         "events": {"session_start": {"command": "speckit.sample.boot"}},
     }))
     if events_before:
-        added = run(project, ["extension", "add", "--dev", str(extension)])
-        assert added.exit_code == 0, added.output
+        from specify_cli import get_speckit_version
+        from specify_cli.extensions import ExtensionManager
+
+        # Model an existing contribution predating adapter installation. New
+        # extension-add invocations now require recorded integration readiness.
+        ExtensionManager(project).install_from_directory(
+            extension, get_speckit_version(),
+        )
     install(project)
     if not events_before:
         added = run(project, ["extension", "add", "--dev", str(extension)])

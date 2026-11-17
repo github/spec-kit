@@ -14,7 +14,7 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 from ._file_changes import after_file_change, before_file_change
 
@@ -199,6 +199,13 @@ class IntegrationManifest:
         _validate_ownership_mode(ownership)
         rel = Path(rel_path)
         abs_path = _validate_record_path(rel, self.project_root)
+        from ._file_changes import should_write_file
+
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        if not should_write_file(abs_path, content):
+            self.record_existing(rel, recovered=True, ownership=ownership)
+            return abs_path
         before_file_change(abs_path)
         abs_path.parent.mkdir(parents=True, exist_ok=True)
         _ensure_safe_manifest_destination(self.project_root, abs_path)
@@ -523,7 +530,7 @@ class IntegrationManifest:
         project_root: Path,
         *,
         resolve_project_root: bool = True,
-    ) -> IntegrationManifest:
+    ) -> Self:
         """Load an existing manifest from disk.
 
         Raises ``FileNotFoundError`` if the manifest does not exist.

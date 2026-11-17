@@ -555,4 +555,22 @@ Use `upgrade` when you've upgraded Spec Kit and want to refresh an installed int
 
 ### Do extensions and presets I install apply to every installed integration?
 
-No. Extensions (`specify extension add`) and presets (`specify preset add`) register their command overrides for the currently active (default) integration only, even if other integrations are installed. A non-default integration does not receive those artifacts until it becomes the default: `specify integration use <key>` (or `switch <key>`) rescaffolds every enabled extension and preset for the newly active integration. `specify integration upgrade` follows the same rule — it only re-registers extensions and presets when upgrading the active integration.
+Successful `specify extension add` refreshes every integration recorded as installed,
+using each integration's saved options and output mode. It regenerates core
+commands/skills, enabled extension and preset contributions, managed settings and
+native events, and shared templates/scripts aligned with the unchanged default.
+Agent directories alone do not make an integration eligible. Regeneration is
+local; it does not install agent CLIs, upgrade components, or grant adapter trust.
+
+Customized or unsafe outputs and unavailable/untrusted adapters cause a nonzero
+result rather than a readiness claim. The extension and completed refreshes remain
+installed; the command identifies completed, failed, and unattempted integrations.
+Back up and reconcile reported conflicts, restore any required reviewed adapter,
+then retry addition with the same source and `--force` to replace the retained
+extension. That flag does not authorize overwriting customized integration files.
+
+Preset addition alone still targets the current default. `specify integration use
+<key>` (or `switch <key>`) refreshes enabled contributions for the newly active
+integration; `specify integration upgrade` re-registers contributions only when
+upgrading the active integration. Update, remove, enable/disable, and bundle
+operations are not given the extension-add full-refresh guarantee.

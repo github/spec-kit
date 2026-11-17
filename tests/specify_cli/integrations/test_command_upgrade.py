@@ -470,8 +470,15 @@ class TestIntegrationUpgradeDetailed:
         project = _init_project(tmp_path, "kilocode")
         canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
 
-        result = _run_in_project(project, ["extension", "add", "git"])
-        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        from specify_cli import get_speckit_version
+        from specify_cli.extensions import ExtensionManager
+
+        # Model a historical install: today's extension add already refreshes
+        # core outputs and therefore migrates this legacy directory.
+        ExtensionManager(project).install_from_directory(
+            Path(__file__).resolve().parents[3] / "extensions/git",
+            get_speckit_version(),
+        )
         assert sorted(legacy.glob("speckit.git.*.md")), (
             "legacy Kilo should render the git extension under .kilocode/workflows"
         )
@@ -504,8 +511,13 @@ class TestIntegrationUpgradeDetailed:
         project = _init_project(tmp_path, "kilocode")
         canonical, legacy = _move_kilocode_install_to_legacy_layout(project)
 
-        result = _run_in_project(project, ["extension", "add", "git"])
-        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        from specify_cli import get_speckit_version
+        from specify_cli.extensions import ExtensionManager
+
+        ExtensionManager(project).install_from_directory(
+            Path(__file__).resolve().parents[3] / "extensions/git",
+            get_speckit_version(),
+        )
         result = _run_in_project(project, ["extension", "disable", "git"])
         assert result.exit_code == 0, f"extension disable failed: {result.output}"
 

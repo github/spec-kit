@@ -63,7 +63,7 @@ def extension_add(
         console.print("[red]Error:[/red] --version requires a catalog install (without --dev or --from).")
         raise typer.Exit(1)
 
-    manager = ExtensionManager(project_root)
+    manager = ExtensionManager(project_root, defer_registration=True)
     speckit_version = _commands.get_speckit_version()
 
     if force:
@@ -307,13 +307,28 @@ def extension_add(
                         finally:
                             archive_path.unlink(missing_ok=True)
 
+        from ..integrations.refresh import refresh_installed_integrations
+
+        refreshed = refresh_installed_integrations(
+            project_root, development_extension=manifest.id if dev else None,
+        )
+        if not refreshed.success:
+            console.print("\n[red]Extension installed, but integration readiness failed.[/red]")
+            console.print(f"Completed: {_escape_markup(', '.join(refreshed.completed) or 'none')}")
+            for key, reason in refreshed.failed.items():
+                console.print(f"Failed {_escape_markup(key)}: {_escape_markup(reason)}")
+            console.print(f"Unattempted: {_escape_markup(', '.join(refreshed.unattempted) or 'none')}")
+            console.print(
+                f"Shared infrastructure: {'refreshed' if refreshed.shared_ready else 'incomplete; partial writes may remain'}. "
+                "The installed extension and completed refreshes are retained. "
+                "Resolve the reported conflict or adapter problem, then retry extension add "
+                f"{_escape_markup(str(manifest.id))} --force using the same source. "
+                "Back up customized files before reconciling; --force does not override integration conflicts."
+            )
+            raise typer.Exit(1)
         console.print("\n[green]✓[/green] Extension installed successfully!")
         console.print(f"\n[bold]{_escape_markup(str(manifest.name))}[/bold] (v{_escape_markup(str(manifest.version))})")
         console.print(f"  {_escape_markup(str(manifest.description))}")
-
-        # #1: regenerate native event config for installed event-capable
-        # integrations so the new extension's events take effect immediately.
-        _commands._refresh_events_and_warn(project_root)
 
         for warning in manifest.warnings:
             console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {_escape_markup(str(warning))}")

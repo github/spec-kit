@@ -232,7 +232,7 @@ class _PresetCommandMethods:
             only_agent=active_agent,
         )
 
-    def register_enabled_presets_for_agent(self, agent_name: str) -> None:
+    def register_enabled_presets_for_agent(self, agent_name: str, *, strict: bool = False) -> None:
         """Re-register enabled presets' command overrides and skills for ``agent_name``.
 
         Mirrors ``ExtensionManager.register_enabled_extensions_for_agent`` for
@@ -409,6 +409,17 @@ class _PresetCommandMethods:
                             (pack_id, primary_name)
                         )
                 raw_existing_skills = metadata.get("registered_skills")
+                if strict:
+                    missing = [
+                        template["name"] for template in manifest.templates
+                        if template.get("type") == "command"
+                        and (pack_id, template["name"]) not in successful_command_replacements
+                        and (pack_id, template["name"]) not in successful_skill_replacements
+                    ]
+                    if missing:
+                        raise ValueError(
+                            f"Missing preset invocation artifacts for '{agent_name}': {', '.join(missing)}"
+                        )
                 if isinstance(raw_existing_skills, list) and raw_existing_skills:
                     # Legacy flat-list value: don't assume agent_name wrote
                     # every name (the first post-upgrade operation may be a
@@ -528,6 +539,8 @@ class _PresetCommandMethods:
                         )
                     )
             except Exception as pack_err:
+                if strict:
+                    raise
                 from .. import _print_cli_warning
 
                 _print_cli_warning(
@@ -554,6 +567,8 @@ class _PresetCommandMethods:
                     list(affected_cmd_names), target_agent=agent_name
                 )
             except Exception as exc:
+                if strict:
+                    raise
                 import warnings
 
                 warnings.warn(
