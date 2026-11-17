@@ -266,7 +266,7 @@ specify integration upgrade [<key>]
 
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
-| `--force`                | Overwrite files even if they have been modified                          |
+| `--force`                | Overwrite files even if they have been modified; when upgrading the active integration, also overwrite modified or unowned extension [skill resource](../extensions/developing.md#skill-resources) copies |
 | `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)        |
 | `--integration-options`  | Options for the integration                                              |
 | `--trust-integration`    | Authorize downloading/importing the reviewed replacement external adapter |

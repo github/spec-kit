@@ -175,7 +175,7 @@ def test_sync_skill_resources_ownership_and_force(tmp_path):
     assert hashes[modified.relative_to(root).as_posix()] == previous[modified.relative_to(root).as_posix()]
     assert unowned.relative_to(root).as_posix() not in hashes
     assert hashes[owned.relative_to(root).as_posix()] == _sha256(owned)
-    assert any("specify integration upgrade --force" in warning for warning in warnings)
+    assert any("back up or remove" in warning and "--force" not in warning for warning in warnings)
     assert any("unowned" in warning for warning in warnings)
 
     again, written, warnings = sync_skill_resources(

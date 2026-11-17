@@ -353,7 +353,7 @@ def sync_skill_resources(
                     updated[rel] = expected
                     warnings.append(
                         f"Preserved modified resource {rel}; "
-                        "run 'specify integration upgrade --force' to overwrite"
+                        "back up or remove it and re-render the skill to restore the extension copy"
                     )
                 else:
                     warnings.append(f"Skipped unowned resource {rel}")
