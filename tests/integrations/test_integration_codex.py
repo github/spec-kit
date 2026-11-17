@@ -857,7 +857,7 @@ class TestCodexNoModelInvocationOwnership:
             return real_lstat(path, *args, **kwargs)
 
         monkeypatch.setattr(os, "lstat", lstat)
-        with pytest.raises(PermissionError):
+        with pytest.raises(ValueError, match="--no-model-invocation: could not check .agents/skills"):
             get_integration("codex").preflight_setup(
                 tmp_path, {"no_model_invocation": True}, script_type="sh",
             )

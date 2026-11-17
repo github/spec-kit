@@ -218,6 +218,11 @@ def _reparse_point_on(root: Path, rel: str) -> str | None:
             info = os.lstat(current)
         except (FileNotFoundError, NotADirectoryError):
             return None
+        except OSError as exc:
+            raise ValueError(
+                f"Cannot use --no-model-invocation: could not check "
+                f"{current.relative_to(root).as_posix()} for a junction: {exc}"
+            ) from exc
         if (
             getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
             and not stat.S_ISLNK(info.st_mode)
