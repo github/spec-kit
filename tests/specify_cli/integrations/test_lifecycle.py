@@ -258,3 +258,28 @@ def test_builtin_journal_recreates_a_file_the_operation_replaced(tmp_path):
     assert not os.path.samefile(target, other)
     assert other.read_text(encoding="utf-8") == "generated\n"
     assert witness.read_text(encoding="utf-8") == "original\n"
+
+
+def test_builtin_journal_recreates_a_file_it_cannot_open_in_place(tmp_path, monkeypatch):
+    """A file rollback cannot open for writing is recreated from its snapshot instead."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    real_open = os.open
+
+    def refuse_target(path, flags, *args, **kwargs):
+        if Path(path) == target and flags & os.O_WRONLY:
+            raise PermissionError("read-only")
+        return real_open(path, flags, *args, **kwargs)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            monkeypatch.setattr(_lifecycle.os, "open", refuse_target)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "original\n"

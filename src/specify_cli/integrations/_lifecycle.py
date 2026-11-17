@@ -242,7 +242,7 @@ class _FileJournal:
                     saved.parent.mkdir(parents=True, exist_ok=True)
                     entry = path.lstat()
                     self._snapshot(path, saved)
-                    if stat.S_ISREG(entry.st_mode):
+                    if stat.S_ISREG(entry.st_mode) and os.path.samestat(entry, path.lstat()):
                         self.snapshotted_files[path] = (entry.st_dev, entry.st_ino)
             else:
                 if not any(path == scope or scope in path.parents for scope in self.paths):
@@ -291,7 +291,7 @@ def _restore_file_in_place(path: Path, saved: Path, identity: tuple[int, int] | 
     (removed, or replaced by another file, a symlink or a directory) or
     cannot be opened for writing; the caller then recreates it.
     """
-    if identity is None or saved.is_symlink() or not saved.is_file():
+    if identity is None:
         return False
     try:
         entry = path.lstat()
@@ -302,7 +302,11 @@ def _restore_file_in_place(path: Path, saved: Path, identity: tuple[int, int] | 
     # No O_TRUNC: nothing is written until the opened file is known to be the
     # snapshotted one. Windows has no O_NOFOLLOW, so the identity check after
     # opening is what stops a symlink swapped in after lstat() being written.
-    flags = os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    # O_NONBLOCK keeps a FIFO swapped in from blocking the open.
+    flags = (
+        os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_BINARY", 0)
+    )
     try:
         descriptor = os.open(path, flags)
     except OSError:
@@ -314,6 +318,14 @@ def _restore_file_in_place(path: Path, saved: Path, identity: tuple[int, int] | 
         outgoing.truncate(0)
         with saved.open("rb") as incoming:
             shutil.copyfileobj(incoming, outgoing)
+        outgoing.flush()
+        original = saved.stat()
+        # Through the descriptor, so a path swapped for a symlink since the
+        # write cannot redirect the mode or times to its target.
+        if hasattr(os, "fchmod") and os.utime in os.supports_fd:
+            os.fchmod(outgoing.fileno(), stat.S_IMODE(original.st_mode))
+            os.utime(outgoing.fileno(), ns=(original.st_atime_ns, original.st_mtime_ns))
+            return True
     shutil.copystat(saved, path, follow_symlinks=False)
     return True
 

@@ -2022,12 +2022,24 @@ def test_builtin_upgrade_rollback_restores_a_rewritten_file_in_place(tmp_path, m
     mode = skill.stat().st_mode
     witness = tmp_path / "witness"
     os.link(skill, witness)
-    _fail_claude_setup(monkeypatch)
+    from specify_cli.integrations.claude import ClaudeIntegration
+
+    real_setup = ClaudeIntegration.setup
+    written = []
+
+    def setup(self, *args, **kwargs):
+        real_setup(self, *args, **kwargs)
+        written.append(witness.read_text(encoding="utf-8"))
+        raise OSError("disk full")
+
+    monkeypatch.setattr(ClaudeIntegration, "setup", setup)
 
     result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
 
     assert result.exit_code != 0
     assert "disk full" in result.output
+    # The upgrade rewrote the file through the same inode before failing.
+    assert written and written[0] != "# user customization\n"
     assert skill.read_text(encoding="utf-8") == "# user customization\n"
     assert os.path.samefile(skill, witness)
     assert witness.read_text(encoding="utf-8") == "# user customization\n"
