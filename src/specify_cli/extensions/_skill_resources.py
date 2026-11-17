@@ -386,6 +386,8 @@ def remove_skill_resources(
     ext_id: str,
     trusted_root: Path,
     previous: dict[str, str],
+    *,
+    stop_dirs: Iterable[Path] = (),
 ) -> tuple[list[Path], list[Path]]:
     """Remove recorded paths the caller already authorized; reject malformed keys.
 
@@ -405,15 +407,19 @@ def remove_skill_resources(
             dropped.append(trusted_root / key)
             continue
         manifest._files[key] = digest
-    removed, skipped = manifest.uninstall(force=True, remove_manifest=False)
+    removed, skipped = manifest.uninstall(
+        force=True, remove_manifest=False, stop_dirs=stop_dirs,
+    )
     root = trusted_root.resolve()
+    stop_set = {Path(d).resolve(strict=False) for d in stop_dirs}
+    stop_set.add(root)
     skipped_set = set(skipped)
     for key in manifest._files:
         path = root / key
         if path in skipped_set or path.exists() or path.is_symlink():
             continue
         parent = path.parent
-        while parent != root:
+        while parent not in stop_set:
             try:
                 _ensure_safe_manifest_removal(root, parent)
                 if parent.is_symlink():
@@ -538,7 +544,10 @@ def retire_skill_resources(
         }
         if not selected:
             continue
-        _, skipped = remove_skill_resources(ext_id, trusted, selected)
+        skill_dirs = [trusted / Path(*prefix) for prefix in prefixes]
+        _, skipped = remove_skill_resources(
+            ext_id, trusted, selected, stop_dirs=skill_dirs,
+        )
         for path in skipped:
             warnings.warn(f"Skipped unsafe skill resource {path}", stacklevel=2)
         for key in selected:

@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import tempfile
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -381,6 +382,7 @@ class IntegrationManifest:
         *,
         force: bool = False,
         remove_manifest: bool = True,
+        stop_dirs: Iterable[Path] = (),
     ) -> tuple[list[Path], list[Path]]:
         """Remove tracked files whose hash still matches.
 
@@ -392,11 +394,16 @@ class IntegrationManifest:
                 *partial* cleanups (e.g. the upgrade stale-file pass, which
                 builds a throwaway manifest over a subset of files) so the
                 real, freshly-saved manifest for the same key is not destroyed.
+            stop_dirs:       Directories at which empty-parent pruning stops
+                (in addition to ``project_root``), so callers can keep
+                configured root directories such as ``.claude/skills`` intact.
 
         Returns:
             ``(removed, skipped)`` — absolute paths.
         """
         root = (project_root or self.project_root).resolve()
+        stop_set = {Path(d).resolve(strict=False) for d in stop_dirs}
+        stop_set.add(root)
         removed: list[Path] = []
         skipped: list[Path] = []
 
@@ -445,9 +452,9 @@ class IntegrationManifest:
                 continue
             removed.append(path)
             after_file_change(path)
-            # Clean up empty parent directories up to project root
+            # Clean up empty parent directories up to project root or stop_dirs
             parent = path.parent
-            while parent != root:
+            while parent not in stop_set:
                 try:
                     _ensure_safe_manifest_removal(root, parent)
                     parent.rmdir()  # only succeeds if empty

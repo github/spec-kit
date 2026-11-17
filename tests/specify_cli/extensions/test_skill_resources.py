@@ -697,3 +697,29 @@ def test_retire_skill_resources_skips_root_discovery_when_buckets_are_empty(
 
     retire_skill_resources(tmp_path, "ext", {}, {"speckit-ext-run"})
     retire_skill_resources(tmp_path, "ext", {"project": {}, "home": {}}, {"speckit-ext-run"})
+
+
+def test_retire_skill_resources_preserves_skills_root_and_parent_directories(
+    monkeypatch, tmp_path,
+):
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    # Existing recorded resource under .claude/skills and missing recorded
+    # resource with empty nested directory under ~/.hermes/skills.
+    existing = put(project / ".claude/skills/speckit-ext-run/references/r.md", "ref")
+    (home / ".hermes/skills/speckit-ext-run/references/nested").mkdir(parents=True)
+    hashes = {
+        "project": {".claude/skills/speckit-ext-run/references/r.md": _sha256(existing)},
+        "home": {".hermes/skills/speckit-ext-run/references/nested/missing.md": "old"},
+    }
+
+    retire_skill_resources(project, "ext", hashes, {"speckit-ext-run"})
+
+    assert hashes == {}
+    assert not (project / ".claude/skills/speckit-ext-run/references").exists()
+    assert (project / ".claude/skills/speckit-ext-run").is_dir()
+    assert not (home / ".hermes/skills/speckit-ext-run/references").exists()
+    assert (home / ".hermes/skills/speckit-ext-run").is_dir()
