@@ -722,7 +722,7 @@ class TestExtensionUpdateCLI:
         command_path = v1_dir / "commands" / "hello.md"
         command_path.write_text(
             command_path.read_text(encoding="utf-8")
-            + "\nHook guidance: run `speckit.test-ext.hello` after tasks.\n",
+            + "\n- For each executable hook, output the following command name.\n",
             encoding="utf-8",
         )
         manager.install_from_directory(v1_dir, "0.1.0")
@@ -749,7 +749,7 @@ class TestExtensionUpdateCLI:
         old_entry = manager.registry.get("test-ext")
         assert old_entry["registered_skills"] == skill_names
         assert old_entry["registered_commands"] == {"claude": command_names}
-        assert "Hook guidance: run `speckit.test-ext.hello` after tasks." in (
+        assert "- For each executable hook, output the following command name." in (
             skill_files[0].read_text(encoding="utf-8")
         )
 
@@ -764,7 +764,7 @@ class TestExtensionUpdateCLI:
         command_path.write_text(
             command_path.read_text(encoding="utf-8")
             + "\nupdated command\n"
-            + "Hook guidance: run `speckit.test-ext.hello` after tasks.\n",
+            + "- For each executable hook, output the following command name.\n",
             encoding="utf-8",
         )
         zip_path = tmp_path / "test-ext-2.0.0.zip"
@@ -799,7 +799,7 @@ class TestExtensionUpdateCLI:
 
         assert result.exit_code == 0, result.output
         updated = ExtensionManager(project_dir).registry.get("test-ext")
-        assert updated["registered_skills"] == []
+        assert updated["registered_skills"] == skill_names
         assert updated["registered_commands"] == {"claude": command_names}
         hook_config = HookExecutor(project_dir).get_project_config()
         hook = hook_config["hooks"]["after_tasks"][0]
@@ -808,9 +808,17 @@ class TestExtensionUpdateCLI:
         assert hook["enabled"] is True
         assert alias_skill_file.is_file()
         assert "updated command" in skill_files[0].read_text(encoding="utf-8")
-        assert "Hook guidance: run `speckit.test-ext.hello` after tasks." in (
-            skill_files[0].read_text(encoding="utf-8")
+        updated_content = skill_files[0].read_text(encoding="utf-8")
+        assert (
+            "- For each executable hook, output the following command name."
+            in updated_content
         )
+        assert (
+            "- When constructing command invocations from hook command names"
+            in updated_content
+        )
+        assert "user-invocable: true" in updated_content
+        assert "disable-model-invocation: false" in updated_content
         fresh_project = tmp_path / "fresh-project"
         (fresh_project / ".specify").mkdir(parents=True)
         (fresh_project / ".claude" / "skills").mkdir(parents=True)
@@ -818,11 +826,25 @@ class TestExtensionUpdateCLI:
             json.dumps({"ai": "claude", "ai_skills": True, "script": "sh"}),
             encoding="utf-8",
         )
-        ExtensionManager(fresh_project).install_from_directory(v2_dir, "0.1.0")
+        fresh_manager = ExtensionManager(fresh_project)
+        fresh_manager.install_from_directory(v2_dir, "0.1.0")
+        fresh_manager.register_enabled_extensions_for_agent("claude", force=True)
+        fresh_entry = fresh_manager.registry.get("test-ext")
+        assert updated["registered_skills"] == fresh_entry["registered_skills"]
+        assert updated["registered_commands"] == fresh_entry["registered_commands"]
         for name in skill_names:
             fresh_path = fresh_project / ".claude" / "skills" / name / "SKILL.md"
-            fresh_content = fresh_path.read_text(encoding="utf-8")
-            assert "Hook guidance: run `speckit.test-ext.hello` after tasks." in fresh_content
+            updated_path = project_dir / ".claude" / "skills" / name / "SKILL.md"
+            assert updated_path.read_text(encoding="utf-8") == fresh_path.read_text(
+                encoding="utf-8"
+            )
+        assert alias_skill_file.read_text(encoding="utf-8") == (
+            fresh_project
+            / ".claude"
+            / "skills"
+            / alias_skill_file.parent.name
+            / "SKILL.md"
+        ).read_text(encoding="utf-8")
 
     def test_consecutive_hermes_updates_refresh_global_skill(self, tmp_path, monkeypatch):
         """Each update replaces the marker-owned skill in Hermes' home directory."""

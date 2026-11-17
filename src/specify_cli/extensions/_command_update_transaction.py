@@ -551,11 +551,58 @@ def run_update_command(extension: str | None) -> None:
                     manager.remove(extension_id, keep_config=True)
 
                     # 8. Install new version
-                    _ = manager.install_from_zip(
+                    installed_manifest = manager.install_from_zip(
                         archive_path,
                         speckit_version,
                         catalog_name=update.catalog_name,
                     )
+
+                    # The install path may write native skill files through
+                    # CommandRegistrar, which records them as commands. Refresh
+                    # the extension-owned primary skills through the shared
+                    # skill renderer as well, so hook guidance and integration
+                    # frontmatter survive updates and remain removable.
+                    if installed_manifest is not None:
+                        skills_dir = manager._get_skills_dir(create=False)
+                        current_entry = manager.registry.get(extension_id)
+                        previously_registered_skills = (
+                            backup_registry_entry.get("registered_skills", [])
+                            if isinstance(backup_registry_entry, dict)
+                            else []
+                        )
+                        force_names = {
+                            skill_name
+                            for skill_name in previously_registered_skills
+                            if isinstance(skill_name, str)
+                        }
+                        if skills_dir is not None:
+                            refreshed_skills = manager._register_extension_skills(
+                                installed_manifest,
+                                manager.extensions_dir / extension_id,
+                                force=True,
+                                force_names=force_names,
+                            )
+                            if refreshed_skills and current_entry is not None:
+                                existing_skills = current_entry.get(
+                                    "registered_skills", []
+                                )
+                                if not isinstance(existing_skills, list):
+                                    existing_skills = []
+                                manager.registry.update(
+                                    extension_id,
+                                    {
+                                        "registered_skills": list(
+                                            dict.fromkeys(
+                                                [
+                                                    name
+                                                    for name in existing_skills
+                                                    if isinstance(name, str)
+                                                ]
+                                                + refreshed_skills
+                                            )
+                                        )
+                                    },
+                                )
 
                     # Restore user config files from backup after successful install.
                     new_extension_dir = manager.extensions_dir / extension_id

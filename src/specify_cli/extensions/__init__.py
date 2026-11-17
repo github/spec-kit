@@ -1524,6 +1524,7 @@ class ExtensionManager:
         extension_dir: Path,
         link_outputs: bool = False,
         force: bool = False,
+        force_names: Set[str] | None = None,
     ) -> List[str]:
         """Generate SKILL.md files for extension commands as agent skills.
 
@@ -1538,10 +1539,11 @@ class ExtensionManager:
             link_outputs: If True, create dev-mode symlinks for rendered
                 skill files when supported by the OS.
             force: If True, overwrite existing SKILL.md files even when they
-                are not dev-mode symlinks.  Use in the upgrade path, where
-                ``setup()`` has just freshly regenerated core-template skill
-                files and the skip guard would otherwise prevent extension
-                content from being layered on top.
+                are not dev-mode symlinks. Use only when the caller has
+                established ownership of the existing outputs or has freshly
+                regenerated them as part of an upgrade.
+            force_names: Optional allowlist of skill names for ``force``.
+                Other existing skills remain protected from overwrites.
 
         Returns:
             List of skill names that were created (for registry storage).
@@ -1615,6 +1617,7 @@ class ExtensionManager:
             # Derive skill name from command name using the same hyphenated
             # convention as hook rendering and preset skill registration.
             skill_name = self._skill_name_for_command(cmd_name)
+            force_skill = force and (force_names is None or skill_name in force_names)
 
             # Check if skill already exists before creating the directory
             skill_subdir = skills_dir / skill_name
@@ -1641,9 +1644,9 @@ class ExtensionManager:
                 # to be refreshed on a subsequent dev install.  In the upgrade
                 # path (force=True) the file was just written by setup(), so
                 # overwriting it with the composed extension content is correct.
-                if not is_expected_dev_symlink and not force:
+                if not is_expected_dev_symlink and not force_skill:
                     continue
-            elif skill_dir_preexists and not force:
+            elif skill_dir_preexists and not force_skill:
                 # Never add files to a pre-existing user directory. Without a
                 # verifiable SKILL.md ownership marker, rollback/removal cannot
                 # distinguish our output from unrelated user artifacts.
