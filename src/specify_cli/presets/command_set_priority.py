@@ -59,9 +59,8 @@ def preset_set_priority(
     # Update priority
     manager.registry.update(preset_id, {"priority": priority})
 
-    # A priority change can change the winning command or skill layer just as
-    # install and removal do, so rematerialize artifacts provided by this
-    # preset from the full priority stack.
+    # A priority change can change the winning command or skill layer, so
+    # refresh the active integration's artifacts from the full priority stack.
     try:
         from ._manifest import PresetManifest
 
