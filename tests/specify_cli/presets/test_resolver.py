@@ -86,6 +86,42 @@ def test_invalid_section_manifest_never_uses_convention_fallback(tmp_path, field
         PresetResolver(tmp_path).resolve_content(name)
 
 
+@pytest.mark.parametrize("kind", ["template", "command"])
+@pytest.mark.parametrize("winner", ["override", "preset", "wrapped-preset"])
+def test_hidden_invalid_section_presets_do_not_block_replace(tmp_path, kind, winner):
+    name, body = install_section_stack(
+        tmp_path, "## Target\nold\n", "invalid lower contribution\n", selector=None, kind=kind,
+    )
+    expected = "# Winning replacement\n"
+    presets = body.parent.parent
+    data = yaml.safe_load((body.parent / "preset.yml").read_text(encoding="utf-8"))
+    registry = PresetRegistry(presets)
+    registry.add("team", {"priority": 20, "enabled": True})
+    if winner == "override":
+        override = tmp_path / ".specify/templates/overrides" / f"{name}.md"
+        override.parent.mkdir()
+        override.write_bytes(expected.encode("utf-8"))
+    else:
+        for preset_id, priority, strategy, content in [
+            ("winner", 10, "replace", expected),
+            *([("outer", 5, "wrap", "before\n{CORE_TEMPLATE}\nafter")] if winner == "wrapped-preset" else []),
+        ]:
+            directory = presets / preset_id
+            directory.mkdir()
+            manifest = json.loads(json.dumps(data))
+            manifest["preset"]["id"] = preset_id
+            entry = manifest["provides"]["templates"][0]
+            entry["strategy"] = strategy
+            del entry["selector"]
+            (directory / "preset.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+            (directory / "body.md").write_bytes(content.encode("utf-8"))
+            registry.add(preset_id, {"priority": priority, "enabled": True})
+        if winner == "wrapped-preset":
+            expected = f"before\n{expected}\nafter"
+    resolver = PresetResolver(tmp_path)
+    assert resolver.resolve_content(name, kind) == expected
+
+
 class TestPresetResolver:
     """Test PresetResolver priority stack."""
 

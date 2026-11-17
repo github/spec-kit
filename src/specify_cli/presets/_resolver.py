@@ -573,9 +573,14 @@ class PresetResolver:
                 # Read strategy and manifest file path from preset manifest
                 strategy = "replace"
                 manifest_has_strategy = False
-                entry, manifest_candidate = self._manifest_declared_template(
-                    pack_dir, template_name, template_type
-                )
+                try:
+                    entry, manifest_candidate = self._manifest_declared_template(
+                        pack_dir, template_name, template_type
+                    )
+                except PresetSectionValidationError:
+                    if any(layer["strategy"] == "replace" for layer in layers):
+                        continue
+                    raise
                 if entry is not None:
                     strategy = entry.get("strategy", "replace")
                     manifest_has_strategy = "strategy" in entry
@@ -616,6 +621,10 @@ class PresetResolver:
                                             )
                                         if isinstance(fm_strategy, str) and fm_strategy.lower() in VALID_PRESET_STRATEGIES:
                                             strategy = fm_strategy.lower()
+                        except PresetSectionValidationError:
+                            if any(layer["strategy"] == "replace" for layer in layers):
+                                continue
+                            raise
                         except (UnicodeDecodeError, yaml.YAMLError, OSError):
                             # Best-effort legacy frontmatter parsing: keep default
                             # strategy ("replace") when content is unreadable/invalid.

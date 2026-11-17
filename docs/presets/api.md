@@ -151,6 +151,10 @@ bottom-up. Prepend and append separate the two contents with a blank line.
 The wrapper placeholder is replaced with the effective lower content,
 which may already contain other preset customizations.
 
+Invalid section declarations below that winning `replace` base do not block
+resolution. Section declarations in the contributing stack remain strictly
+validated.
+
 Without a `replace` base, composition cannot produce output. Command
 registration warns and skips an uncomposable command rather than requiring
 an extension based solely on its namespace. A wrapper missing its required
@@ -197,7 +201,9 @@ Selectors use a bounded GitHub-style anchor contract:
   spaces, and whitespace or end of line after the heading markers. Optional
   closing hash markers are excluded from the heading text.
 - Inline emphasis/code formatting is removed while retaining its text; inline
-  links contribute their label, not their destination.
+  links contribute their label, not their destination, including destinations
+  with balanced parentheses. Code-span contents remain literal during emphasis
+  processing, so `` `__init__` `` retains its underscores.
 - Lowercase the text, remove punctuation/symbols except hyphens and
   underscores, retain Unicode letters/numbers, and replace each space with
   one hyphen. Repeated spaces are not collapsed.

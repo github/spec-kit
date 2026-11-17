@@ -100,6 +100,16 @@ class TestPresetResolve:
         assert result.exit_code == 1
         assert "no replace base" in result.output
 
+    def test_hidden_invalid_section_does_not_block_inspection(self, project_dir):
+        name, _ = install_section_stack(project_dir, "## Target\nold\n", "invalid\n", selector=None)
+        override = project_dir / ".specify/templates/overrides" / f"{name}.md"
+        override.parent.mkdir(parents=True, exist_ok=True)
+        override.write_bytes(b"# Winning override\n")
+        result = self._invoke(project_dir, ["preset", "resolve", name])
+        assert result.exit_code == 0, result.output
+        assert "project override" in result.output
+        assert "Error:" not in result.output
+
     def test_resolve_rejects_invalid_template_name(self, project_dir):
         """``preset resolve`` rejects names before joining them into paths."""
         result = self._invoke(project_dir, ["preset", "resolve", "no[/red]such"])

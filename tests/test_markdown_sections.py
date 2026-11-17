@@ -14,6 +14,15 @@ from specify_cli.markdown_sections import SectionReplacementError, replace_secti
         ("API_v2 - Notes", "api_v2---notes"),
         ("**Café** Guide", "café-guide"),
         ("[Review](https://example.test/other) `Guide`", "review-guide"),
+        ("[API](https://example.test/a_(b)/guide)", "api"),
+        ("[API](https://example.test/a_(b_(c))/guide) Next", "api-next"),
+        (r"[API](https://example.test/a_\)/guide) Next", "api-next"),
+        ("`__init__`", "__init__"),
+        ("``__init__``", "__init__"),
+        ("__Review `__init__`__", "review-__init__"),
+        ("[`__init__`](https://example.test/a_(b)/guide)", "__init__"),
+        ("`[API](url)`", "apiurl"),
+        ("_Guide_`__init__`", "guide__init__"),
         ("__Review__ _Guide_", "review-guide"),
         ("日本語 123", "日本語-123"),
         ("Keep__these_words", "keep__these_words"),
@@ -93,3 +102,19 @@ def test_unclosed_fence_cannot_end_selected_body() -> None:
         "## Target\nold\n```\n# Fake end\n", "", "target",
         preset="team", contribution="body.md", artifact="spec-template",
     ) == "## Target\n"
+
+
+def test_code_underscores_do_not_match_emphasis_anchor() -> None:
+    with pytest.raises(SectionReplacementError, match="SECTION_NOT_FOUND"):
+        replace_section(
+            "## `__init__`\nold\n", "new\n", "init",
+            preset="team", contribution="body.md", artifact="spec-template",
+        )
+
+
+def test_unclosed_link_destination_does_not_match_label_only() -> None:
+    with pytest.raises(SectionReplacementError, match="SECTION_NOT_FOUND"):
+        replace_section(
+            "## [API](https://example.test/a_(b)\nold\n", "new\n", "api",
+            preset="team", contribution="body.md", artifact="spec-template",
+        )

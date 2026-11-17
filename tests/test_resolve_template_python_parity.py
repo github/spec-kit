@@ -75,6 +75,8 @@ def test_powershell_section_legacy_native_argument_passing(tmp_path):
         ("## **Café** & `Guide`!\nold\n", "café--guide", "new\n", "## **Café** & `Guide`!\nnew\n", None),
         ("## [API_v2](https://example.test) - Notes\nold", "api_v2---notes", "", "## [API_v2](https://example.test) - Notes\n", None),
         ("## 日本語\nold", "日本語", "new", "## 日本語\nnew", None),
+        ("## [API](https://example.test/a_(b)/guide)\nold", "api", "new", "## [API](https://example.test/a_(b)/guide)\nnew", None),
+        ("## `__init__`\nold", "__init__", "new", "## `__init__`\nnew", None),
         ("```md\n## Target\n```\n## Target\nold\n~~~\n# Not end\n~~~\n## Next\nkeep", "target", "new\n", "```md\n## Target\n```\n## Target\nnew\n## Next\nkeep", None),
         ("## Target\nold\n```\n# Fake end", "target", "", "## Target\n", None),
         ("---\ndescription: |\n  ## Target\n---\n## Target\nold", "target", "new", "---\ndescription: |\n  ## Target\n---\n## Target\nnew", None),
@@ -130,6 +132,55 @@ def test_section_replacement_shared_matrix(
         assert result.returncode == 0, result.stderr
         assert json_stdout(result)["TEMPLATE_CONTENT"] == expected
     assert body.read_bytes() == replacement.encode("utf-8")
+
+
+@pytest.mark.parametrize("winner", ["override", "preset"])
+def test_hidden_invalid_section_does_not_block_runtime_override(tmp_path, winner):
+    import yaml
+
+    from specify_cli.presets import PresetResolver
+
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    name, body = install_section_stack(repo, "## Target\nold\n", "invalid\n", selector=None)
+    expected = "# Winning replacement\n"
+    if winner == "override":
+        override = repo / ".specify/templates/overrides" / f"{name}.md"
+        override.parent.mkdir()
+        override.write_bytes(expected.encode("utf-8"))
+    else:
+        presets = body.parent.parent
+        directory = presets / "winner"
+        directory.mkdir()
+        manifest = yaml.safe_load((body.parent / "preset.yml").read_text(encoding="utf-8"))
+        manifest["preset"]["id"] = "winner"
+        entry = manifest["provides"]["templates"][0]
+        entry["strategy"] = "replace"
+        del entry["selector"]
+        (directory / "preset.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        (directory / "body.md").write_bytes(expected.encode("utf-8"))
+        (presets / ".registry").write_text(
+            json.dumps({"presets": {"winner": {"priority": 1}, "team": {"priority": 20}}}),
+            encoding="utf-8",
+        )
+    assert PresetResolver(repo).resolve_content(name) == expected
+    env = dict(clean_env(), SPECKIT_PYTHON_EXECUTABLE=sys.executable)
+    commands = [(py_cmd(repo, SCRIPT, name, "--json"), env)]
+    if HAS_BASH:
+        commands.append((
+            bash_cmd(repo, SCRIPT, name, "--json"),
+            dict(env, SPECKIT_PYTHON_EXECUTABLE=_bash_posix_path(Path(sys.executable))),
+        ))
+    if HAS_POWERSHELL:
+        commands.append((ps_cmd(repo, SCRIPT, name, "-Json"), env))
+        if WINDOWS_POWERSHELL:
+            native = ps_cmd(repo, SCRIPT, name, "-Json")
+            native[0] = WINDOWS_POWERSHELL
+            commands.append((native, env))
+    for command, command_env in commands:
+        result = run(command, repo, command_env, timeout=30)
+        assert result.returncode == 0, result.stderr
+        assert json_stdout(result)["TEMPLATE_CONTENT"] == expected
 
 
 @pytest.mark.parametrize("duplicate", [False, True])

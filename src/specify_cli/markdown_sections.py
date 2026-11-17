@@ -55,11 +55,59 @@ def validate_section_selector(strategy: str, selector: object, *, present: bool)
         )
 
 
+_CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)(.*?)(?<!`)\1(?!`)")
+_INLINE_LINK = re.compile(r"\[([^\]]*)\]\(")
+
+
+def _link_labels(text: str) -> str:
+    parts: list[str] = []
+    cursor = 0
+    while cursor < len(text):
+        code = _CODE_SPAN.match(text, cursor)
+        if code:
+            parts.append(code[0])
+            cursor = code.end()
+            continue
+        link = _INLINE_LINK.match(text, cursor)
+        if link:
+            depth = 1
+            end = link.end()
+            while end < len(text) and depth:
+                if text[end] == "\\":
+                    end += 2
+                    continue
+                if text[end] == "(":
+                    depth += 1
+                elif text[end] == ")":
+                    depth -= 1
+                end += 1
+            if depth == 0:
+                parts.append(link[1])
+                cursor = end
+                continue
+        parts.append(text[cursor])
+        cursor += 1
+    return "".join(parts)
+
+
 def _anchor(text: str) -> str:
-    text = re.sub(r"!?\[([^\]]*)\]\([^)\r\n]*\)", r"\1", text)
-    text = re.sub(r"(`+)(.*?)\1", r"\2", text)
+    text = _link_labels(text)
+    # Stripping markup cannot create a token with more NULs than the input contains.
+    prefix = "\0" * (text.count("\0") + 1)
+    code_contents: list[str] = []
+
+    def protect_code(match: re.Match[str]) -> str:
+        code_contents.append(match[2])
+        return f"{prefix}{len(code_contents) - 1}Z"
+
+    text = _CODE_SPAN.sub(protect_code, text)
     text = re.sub(r"(\*{1,2}|~~)(.*?)\1", r"\2", text)
     text = re.sub(r"(?<!\w)(__?)(.*?)\1(?!\w)", r"\2", text)
+    text = re.sub(
+        re.escape(prefix) + r"(\d+)Z",
+        lambda match: code_contents[int(match[1])],
+        text,
+    )
     return "".join(
         "-" if char == " " else char
         for char in text.lower()
