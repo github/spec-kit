@@ -115,7 +115,9 @@ class RovodevIntegration(SkillsIntegration):
         dicts suitable for inclusion in ``prompts.yml``.
         """
         prompts_dir = project_root / ".rovodev" / "prompts"
-        prompts_dir.mkdir(parents=True, exist_ok=True)
+        from .._file_changes import make_directories
+
+        make_directories(prompts_dir)
 
         created: list[Path] = []
         prompt_entries: list[dict[str, str]] = []

@@ -359,9 +359,12 @@ symlinked or unsafe scope, an unreadable directory), it runs unjournalled as
 before rather than failing. Extension and preset re-registration runs after that
 commit, as best effort. A failed `init` into a new directory still removes the
 directory instead.
-Rollback also removes directories under its scopes that the census did not
-record and that are still empty, such as an output directory `setup()` created
-before failing; it never removes a file that way.
+Rollback also removes directories the operation created through
+`make_directories()` and that are still empty, such as an output directory
+`setup()` created before failing. It never removes a file that way, and it
+leaves alone an empty directory that appeared from elsewhere during the
+operation. A third-party `setup()` that calls `mkdir()` directly can leave an
+empty directory behind after a failure.
 While the lifecycle journal is active, install/switch failure handlers defer
 cleanup to it rather than forcing teardown or rewriting fallback state first.
 This preserves pending-file conflicts and the original directory inventory.

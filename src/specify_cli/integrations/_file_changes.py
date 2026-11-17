@@ -13,6 +13,36 @@ from pathlib import Path
 file_change_observer: ContextVar[Callable[[Path, bool, bool], None] | None] = ContextVar(
     "integration_file_change_observer", default=None
 )
+directory_creation_observer: ContextVar[Callable[[Path], None] | None] = ContextVar(
+    "integration_directory_creation_observer", default=None
+)
+
+
+def make_directories(path: Path) -> None:
+    """``path.mkdir(parents=True, exist_ok=True)`` that reports each directory it creates.
+
+    Only directories this call's own ``mkdir()`` created are reported, so a
+    failed operation's rollback can remove them without touching one that
+    appeared from elsewhere in the meantime.
+    """
+    observer = directory_creation_observer.get()
+    if observer is None:
+        path.mkdir(parents=True, exist_ok=True)
+        return
+    path = path.absolute()
+    missing = []
+    for candidate in (path, *path.parents):
+        if candidate.is_dir():
+            break
+        missing.append(candidate)
+    for candidate in reversed(missing):
+        try:
+            candidate.mkdir()
+        except FileExistsError:
+            if not candidate.is_dir():
+                raise
+            continue
+        observer(candidate)
 
 
 def before_file_change(path: Path, *, removal: bool = False) -> None:

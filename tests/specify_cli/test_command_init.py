@@ -522,7 +522,8 @@ def test_init_here_rolls_back_a_failed_setup_for_every_builtin(
         assert customized.read_text(encoding="utf-8") == "# user customization\n"
 
 
-@pytest.mark.parametrize("key", ["generic", "amp", "gemini", "goose", "forge", "rovodev"])
+# Bob's and Copilot's default layouts never call list_command_templates().
+@pytest.mark.parametrize("key", [key for key in _builtin_keys() if key not in {"bob", "copilot"}])
 def test_init_here_rollback_removes_a_commands_dir_created_before_the_first_write(tmp_path, monkeypatch, key):
     """A setup() that fails after creating its commands directory leaves none of it behind."""
     from specify_cli.integrations import get_integration
@@ -538,6 +539,37 @@ def test_init_here_rollback_removes_a_commands_dir_created_before_the_first_writ
 
     assert result.exit_code != 0
     assert _tree(project) == before
+
+
+@pytest.mark.parametrize("key", ["generic", "gemini", "forge", "rovodev"])
+def test_init_here_rollback_keeps_an_empty_directory_it_did_not_create(tmp_path, monkeypatch, key):
+    """Rollback removes only the directories its own operation created, not every new empty one."""
+    from specify_cli.integrations import get_integration
+
+    project = _existing_target(tmp_path, monkeypatch, "plain", key)
+    before_files, before_directories = _tree(project)
+    folder = ".myagent/commands" if key == "generic" else get_integration(key).config["folder"]
+    unrelated = project / folder / "user-notes"
+    missing = tmp_path / "templates" / "plan.md"
+
+    def templates(self):
+        # Another process creates an empty directory under a journal scope
+        # after the census, then setup() fails before its first write.
+        unrelated.mkdir(parents=True, exist_ok=True)
+        return [missing]
+
+    monkeypatch.setattr(type(get_integration(key)), "list_command_templates", templates)
+
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, ["init", "--here", "--force", *_init_args(key)])
+
+    assert result.exit_code != 0
+    assert unrelated.is_dir()
+    kept = {
+        path.relative_to(project).as_posix()
+        for path in (unrelated, *unrelated.parents) if project in path.parents
+    }
+    assert _tree(project) == (before_files, before_directories | kept)
 
 
 def test_init_here_runs_unjournalled_when_an_existing_generic_output_is_a_symlink(tmp_path, monkeypatch):

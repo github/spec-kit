@@ -1531,7 +1531,9 @@ class MarkdownIntegration(IntegrationBase):
                 f"Integration destination {dest} escapes "
                 f"project root {project_root_resolved}"
             ) from exc
-        dest.mkdir(parents=True, exist_ok=True)
+        from ._file_changes import make_directories
+
+        make_directories(dest)
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = (
@@ -1751,7 +1753,9 @@ class TomlIntegration(IntegrationBase):
                 f"Integration destination {dest} escapes "
                 f"project root {project_root_resolved}"
             ) from exc
-        dest.mkdir(parents=True, exist_ok=True)
+        from ._file_changes import make_directories
+
+        make_directories(dest)
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = (
@@ -1983,7 +1987,9 @@ class YamlIntegration(IntegrationBase):
                 f"Integration destination {dest} escapes "
                 f"project root {project_root_resolved}"
             ) from exc
-        dest.mkdir(parents=True, exist_ok=True)
+        from ._file_changes import make_directories
+
+        make_directories(dest)
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = (

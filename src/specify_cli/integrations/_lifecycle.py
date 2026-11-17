@@ -25,7 +25,7 @@ from ..integration_state import (
     try_read_integration_json,
 )
 from . import BUILTIN_INTEGRATION_KEYS, INTEGRATION_REGISTRY, installer
-from ._file_changes import file_change_observer
+from ._file_changes import directory_creation_observer, file_change_observer
 
 _init_directory: ContextVar[tuple[Path, bool, list[Path]] | None] = ContextVar(
     "external_integration_init_directory", default=None
@@ -143,6 +143,7 @@ class _FileJournal:
         self.backup_bytes = 0
         self.backup_entries = 0
         self.directory_states: dict[Path, bool] = {}
+        self.created_directories: list[Path] = []
         for path in paths:
             self._remember_parents(path)
 
@@ -185,6 +186,9 @@ class _FileJournal:
             shutil.copystat(source, destination, follow_symlinks=False)
         else:
             raise installer.IntegrationInstallError(f"Unsupported integration output: {source}")
+
+    def directory_created(self, path: Path) -> None:
+        self.created_directories.append(path.absolute())
 
     def safe_path(self, path: Path, *, allow_leaf_symlink: bool = True) -> Path:
         path = path.absolute()
@@ -306,31 +310,28 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
                 shutil.copy2(saved, path)
         else:
             _prune_new_parents(root, journal, path)
-    _prune_new_directories(root, journal)
+    _prune_new_directories(journal)
     return conflicts
 
 
-def _prune_new_directories(root: Path, journal: _FileJournal) -> None:
+def _prune_new_directories(journal: _FileJournal) -> None:
     """Remove empty directories the operation created without writing into them.
 
     ``setup()`` can create its output directory before its first observed
     write, so a failure in between leaves directories no journal entry
-    covers. Only directories absent from the census and still empty are
-    removed; files are never touched here.
+    covers. Only directories the operation reported creating, through
+    ``make_directories()``, are removed, newest first and only while empty;
+    a directory that appeared from elsewhere is left alone, and files are
+    never touched here.
     """
-    for scope in journal.paths:
-        if scope.is_dir() and not scope.is_symlink():
-            for directory, _folders, _files in os.walk(scope, topdown=False, followlinks=False):
-                path = Path(directory)
-                if path in journal.initial:
-                    continue
-                try:
-                    journal.safe_path(path)
-                    path.rmdir()
-                except (OSError, installer.IntegrationInstallError):
-                    continue
-        if scope not in journal.initial and not os.path.lexists(scope):
-            _prune_new_parents(root, journal, scope)
+    for path in reversed(journal.created_directories):
+        try:
+            if path.is_symlink() or not path.is_dir():
+                continue
+            journal.safe_path(path)
+            path.rmdir()
+        except (OSError, installer.IntegrationInstallError):
+            continue
 
 
 _SPECIFY_SCOPE = (
@@ -437,6 +438,7 @@ def _journalled(
     try:
         journal = _FileJournal(root, paths, backup, initial, tuple(home_scopes))
         token = file_change_observer.set(journal.observe)
+        directory_token = directory_creation_observer.set(journal.directory_created)
         try:
             yield
         except BaseException as operation_error:
@@ -446,6 +448,8 @@ def _journalled(
                 # Restoration itself must not add writes to the journal.
                 file_change_observer.reset(token)
                 token = None
+                directory_creation_observer.reset(directory_token)
+                directory_token = None
                 conflicts = _restore_snapshots(root, journal)
                 outcome["retained"] = bool(conflicts)
                 if conflicts:
@@ -467,6 +471,8 @@ def _journalled(
         finally:
             if token is not None:
                 file_change_observer.reset(token)
+            if directory_token is not None:
+                directory_creation_observer.reset(directory_token)
     finally:
         if not outcome["retained"]:
             # Snapshots keep their source's modes, so make a read-only one
