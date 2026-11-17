@@ -229,3 +229,32 @@ def test_builtin_journal_removes_a_new_directory_whose_pending_write_never_lande
             raise OSError("disk full")
 
     assert sorted(path.name for path in project.iterdir()) == ["README.md"]
+
+
+def test_builtin_journal_recreates_a_file_the_operation_replaced(tmp_path):
+    """A file swapped for a new one is restored as a file, never written through the new one."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import after_file_change, before_file_change
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    witness = tmp_path / "witness"
+    os.link(target, witness)
+    replacement = tmp_path / "replacement"
+    replacement.write_text("generated\n", encoding="utf-8")
+    other = tmp_path / "other-link"
+    os.link(replacement, other)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            before_file_change(target)
+            os.replace(replacement, target)
+            after_file_change(target)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert not os.path.samefile(target, other)
+    assert other.read_text(encoding="utf-8") == "generated\n"
+    assert witness.read_text(encoding="utf-8") == "original\n"

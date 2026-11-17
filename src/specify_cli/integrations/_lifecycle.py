@@ -144,6 +144,9 @@ class _FileJournal:
         self.backup_entries = 0
         self.directory_states: dict[Path, bool] = {}
         self.created_directories: list[tuple[Path, tuple[int, int]]] = []
+        # The (st_dev, st_ino) of each snapshotted regular file, so rollback
+        # can tell the same file, rewritten in place, from a replacement.
+        self.snapshotted_files: dict[Path, tuple[int, int]] = {}
         for path in paths:
             self._remember_parents(path)
 
@@ -237,7 +240,10 @@ class _FileJournal:
                 if path.exists() or path.is_symlink():
                     saved = self.backup / "writes" / str(len(self.changes))
                     saved.parent.mkdir(parents=True, exist_ok=True)
+                    entry = path.lstat()
                     self._snapshot(path, saved)
+                    if stat.S_ISREG(entry.st_mode):
+                        self.snapshotted_files[path] = (entry.st_dev, entry.st_ino)
             else:
                 if not any(path == scope or scope in path.parents for scope in self.paths):
                     raise installer.IntegrationInstallError(
@@ -274,6 +280,44 @@ def _prune_new_parents(root: Path, journal: _FileJournal, path: Path) -> None:
         parent = parent.parent
 
 
+def _restore_file_in_place(path: Path, saved: Path, identity: tuple[int, int] | None) -> bool:
+    """Write a snapshot back into the file it was taken from.
+
+    Unlinking and recreating the file would give it the restoring user as
+    owner and the directory's default permissions (on Windows, its inherited
+    access-control list), so a file the operation rewrote in place gets its
+    bytes, mode and times back through the same file. Returns ``False``,
+    having changed nothing, when ``path`` is no longer that regular file
+    (removed, or replaced by another file, a symlink or a directory) or
+    cannot be opened for writing; the caller then recreates it.
+    """
+    if identity is None or saved.is_symlink() or not saved.is_file():
+        return False
+    try:
+        entry = path.lstat()
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISREG(entry.st_mode) or (entry.st_dev, entry.st_ino) != identity:
+        return False
+    # No O_TRUNC: nothing is written until the opened file is known to be the
+    # snapshotted one. Windows has no O_NOFOLLOW, so the identity check after
+    # opening is what stops a symlink swapped in after lstat() being written.
+    flags = os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return False
+    with os.fdopen(descriptor, "wb") as outgoing:
+        opened = os.fstat(outgoing.fileno())
+        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != identity:
+            return False
+        outgoing.truncate(0)
+        with saved.open("rb") as incoming:
+            shutil.copyfileobj(incoming, outgoing)
+    shutil.copystat(saved, path, follow_symlinks=False)
+    return True
+
+
 def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
     conflicts = []
     for path, (saved, written_identity) in reversed(tuple(journal.changes.items())):
@@ -296,6 +340,8 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
                 continue
         if path not in journal.pending and current_identity != written_identity:
             conflicts.append(path)
+            continue
+        if saved is not None and _restore_file_in_place(path, saved, journal.snapshotted_files.get(path)):
             continue
         if path.is_dir() and not path.is_symlink():
             shutil.rmtree(path)
