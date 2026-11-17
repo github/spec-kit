@@ -51,6 +51,50 @@ def install_scripts(repo: Path, script: str) -> None:
     py_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy(PY_DIR / "common.py", py_dir / "common.py")
     shutil.copy(PY_DIR / f"{py_name}.py", py_dir / f"{py_name}.py")
+    for directory in (bash_dir, ps_dir, py_dir):
+        shutil.copy(
+            PROJECT_ROOT / "src/specify_cli/markdown_sections.py",
+            directory / "markdown_sections.py",
+        )
+
+
+def install_section_stack(
+    repo: Path,
+    content: str,
+    replacement: str,
+    selector: object = "target",
+    *,
+    kind: str = "template",
+) -> tuple[str, Path]:
+    import yaml
+
+    name = "speckit.section-test" if kind == "command" else "section-template"
+    templates = repo / ".specify/templates"
+    core = templates / ("commands" if kind == "command" else "") / f"{name}.md"
+    core.parent.mkdir(parents=True, exist_ok=True)
+    core.write_bytes(content.encode("utf-8"))
+    presets = repo / ".specify/presets"
+    preset = presets / "team"
+    preset.mkdir(parents=True)
+    body = preset / "body.md"
+    body.write_bytes(replacement.encode("utf-8"))
+    (preset / "preset.yml").write_text(
+        yaml.safe_dump({
+            "schema_version": "1.0",
+            "preset": {"id": "team", "name": "Team", "version": "1.0.0", "description": "Sections"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{
+                "type": kind, "name": name, "file": "body.md",
+                "strategy": "replace-section", "selector": selector,
+            }]},
+        }, allow_unicode=True),
+        encoding="utf-8",
+    )
+    (presets / ".registry").write_text(
+        json.dumps({"schema_version": "1.0", "presets": {"team": {"priority": 1, "enabled": True}}}),
+        encoding="utf-8",
+    )
+    return name, body
 
 
 def bash_cmd(repo: Path, script: str, *args: str) -> list[str]:

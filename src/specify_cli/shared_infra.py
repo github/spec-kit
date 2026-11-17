@@ -584,7 +584,11 @@ def install_shared_infra(
                 dest_variant = dest_scripts / variant_dir
                 if not _ensure_or_bucket_dir(dest_variant):
                     continue
-                for src_path in variant_src.rglob("*"):
+                section_engine = Path(__file__).with_name("markdown_sections.py")
+                sources = list(variant_src.rglob("*"))
+                if any(path.name in ("common.sh", "common.ps1", "common.py") for path in sources):
+                    sources.append(section_engine)
+                for src_path in sources:
                     if not src_path.is_file():
                         continue
                     # Python bytecode caches are local artifacts, not
@@ -596,7 +600,10 @@ def install_shared_infra(
                     # stale-cleanup cannot treat its managed scripts as obsolete.
                     scanned_variant_dirs.add(variant_dir)
 
-                    rel_path = src_path.relative_to(variant_src)
+                    rel_path = (
+                        Path(src_path.name) if src_path == section_engine
+                        else src_path.relative_to(variant_src)
+                    )
                     dst_path = dest_variant / rel_path
                     rel = dst_path.relative_to(project_path).as_posix()
                     seen_rels.add(rel)

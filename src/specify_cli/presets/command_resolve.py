@@ -9,6 +9,7 @@ from rich.markup import escape as _escape_markup
 
 from .._console import console
 from ._commands import preset_app
+from ._manifest import PresetSectionValidationError
 
 
 @preset_app.command("resolve")
@@ -40,7 +41,11 @@ def preset_resolve(
     resolver = PresetResolver(project_root)
     template_type = "command" if is_command else "template"
 
-    layers = resolver.collect_all_layers(template_name, template_type)
+    try:
+        layers = resolver.collect_all_layers(template_name, template_type)
+    except PresetSectionValidationError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
     safe_template_name = _escape_markup(str(template_name))
 
     if layers:
@@ -63,6 +68,9 @@ def preset_resolve(
             # Verify composition is actually possible
             try:
                 composed = resolver.resolve_content(template_name, template_type)
+            except PresetSectionValidationError as exc:
+                typer.echo(f"Error: {exc}", err=True)
+                raise typer.Exit(1) from exc
             except Exception as exc:  # noqa: BLE001 - render composition failures
                 composed = None
                 console.print(

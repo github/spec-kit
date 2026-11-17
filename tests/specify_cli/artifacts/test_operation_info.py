@@ -35,6 +35,21 @@ from specify_cli.extensions import ExtensionRegistry
 from specify_cli.presets import PresetError
 from tests.conftest import install_preset
 from tests.specify_cli.artifacts.helpers import install_extension_with_hooks
+from tests.parity_helpers import install_section_stack
+
+
+def test_section_strategy_survives_operation_and_mcp_contracts(spec_kit_project):
+    from specify_cli.artifacts.mcp_info import ArtifactInfoNamedResult
+    from specify_cli.artifacts.mcp_list import ArtifactListRowResult
+
+    name, _ = install_section_stack(spec_kit_project, "## Target\nold\n", "new\n")
+    result = get_artifact_info(ArtifactInfoRequest(spec_kit_project, f"template:{name}"))
+    payload = result.to_json_dict()
+    assert payload["stack"][0]["strategy"] == "replace-section"
+    assert not payload["stack"][1]["hidden"]
+    assert ArtifactInfoNamedResult.model_validate(payload).stack[0].strategy == "replace-section"
+    assert ArtifactListRowResult.model_validate(payload).stack[0].strategy == "replace-section"
+
 
 
 def test_artifact_info_operation_descriptor_is_stable():

@@ -21,6 +21,7 @@ from tests.parity_helpers import (
     clean_env,
     install_composition_stack,
     install_scripts,
+    install_section_stack,
     json_stdout,
     make_python3_path_shim,
     make_repo,
@@ -29,10 +30,281 @@ from tests.parity_helpers import (
     ps_legacy_stdout_cmd,
     py_cmd,
     run,
+    WINDOWS_POWERSHELL,
 )
 
 SCRIPT = "resolve-template"
 TEMPLATE = "constitution-template"
+
+
+@pytest.mark.skipif(not WINDOWS_POWERSHELL, reason="Native Windows PowerShell requires Windows")
+def test_native_section_runtime_is_windows_powershell_51():
+    result = subprocess.run(
+        [WINDOWS_POWERSHELL, "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"],
+        capture_output=True, text=True, check=True, timeout=30,
+    )
+    assert result.stdout.strip().startswith("5.1.")
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="PowerShell unavailable")
+def test_powershell_section_legacy_native_argument_passing(tmp_path):
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    name, _ = install_section_stack(repo, "## Café\nold", "new", "café")
+    command = ps_cmd(repo, SCRIPT, name, "-Json")
+    script = str(repo / ".specify/scripts/powershell/resolve-template.ps1").replace("'", "''")
+    command = [
+        command[0], "-NoProfile", "-Command",
+        f"$PSNativeCommandArgumentPassing = 'Legacy'; & '{script}' '{name}' -Json",
+    ]
+    env = dict(clean_env(), SPECKIT_PYTHON_EXECUTABLE=sys.executable)
+    result = run(command, repo, env, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result)["TEMPLATE_CONTENT"] == "## Café\nnew"
+
+
+@pytest.mark.parametrize("route", ["domain", "python", "bash", "powershell", "windows-powershell"])
+@pytest.mark.parametrize(
+    "base,selector,replacement,expected,error",
+    [
+        ("## Target\nold\n## Next\nkeep", "target", "new\n", "## Target\nnew\n## Next\nkeep", None),
+        ("## Target\nold\n### Child\nnested\n# Next\nkeep", "target", "", "## Target\n# Next\nkeep", None),
+        ("## Target", "target", "", "## Target", None),
+        ("## Target", "target", "new body\n", "## Target\nnew body\n", None),
+        ("# Doc\r\n## Target", "target", "new body\r\n", "# Doc\r\n## Target\r\nnew body\r\n", None),
+        ("## Target", "target", "\nnew body\n", "## Target\nnew body\n", None),
+        ("## Target\n", "target", "body", "## Target\nbody", None),
+        ("# First\nkeep\n## Target\nold", "target", "new", "# First\nkeep\n## Target\nnew", None),
+        ("## Target\r\nold\r\n## Next\r\nkeep\r\n", "target", "café\n", "## Target\r\ncafé\n## Next\r\nkeep\r\n", None),
+        ("## **Café** & `Guide`!\nold\n", "café--guide", "new\n", "## **Café** & `Guide`!\nnew\n", None),
+        ("## [API_v2](https://example.test) - Notes\nold", "api_v2---notes", "", "## [API_v2](https://example.test) - Notes\n", None),
+        ("## 日本語\nold", "日本語", "new", "## 日本語\nnew", None),
+        ("## [API](https://example.test/a_(b)/guide)\nold", "api", "new", "## [API](https://example.test/a_(b)/guide)\nnew", None),
+        ("## `__init__`\nold", "__init__", "new", "## `__init__`\nnew", None),
+        ("```md\n## Target\n```\n## Target\nold\n~~~\n# Not end\n~~~\n## Next\nkeep", "target", "new\n", "```md\n## Target\n```\n## Target\nnew\n## Next\nkeep", None),
+        ("## Target\nold\n```\n# Fake end", "target", "", "## Target\n", None),
+        ("---\ndescription: |\n  ## Target\n---\n## Target\nold", "target", "new", "---\ndescription: |\n  ## Target\n---\n## Target\nnew", None),
+        ("# Missing\n", "target", "", None, "SECTION_NOT_FOUND"),
+        ("## Target\n### TARGET!\n", "target", "", None, "SECTION_AMBIGUOUS"),
+        ("## Target\n## ___Target___\n", "target", "", None, "SECTION_AMBIGUOUS"),
+        ("~~~\n## Target\n", "target", "", None, "SECTION_NOT_FOUND"),
+        ("## Target\nold", None, "", None, "selector"),
+        ("## Target\nold", "", "", None, "selector"),
+    ],
+)
+def test_section_replacement_shared_matrix(
+    tmp_path, route, base, selector, replacement, expected, error,
+):
+    repo = make_repo(tmp_path, "project [section]")
+    install_scripts(repo, SCRIPT)
+    name, body = install_section_stack(repo, base, replacement, selector)
+    if route == "domain":
+        from specify_cli.presets import PresetResolver, PresetValidationError
+
+        if error:
+            with pytest.raises(PresetValidationError, match=error):
+                PresetResolver(repo).resolve_content(name)
+        else:
+            assert PresetResolver(repo).resolve_content(name) == expected
+        return
+    env = clean_env()
+    env["SPECKIT_PYTHON_EXECUTABLE"] = sys.executable
+    if route == "bash":
+        if not HAS_BASH:
+            pytest.skip("Bash unavailable")
+        env["SPECKIT_PYTHON_EXECUTABLE"] = _bash_posix_path(Path(sys.executable))
+        command = bash_cmd(repo, SCRIPT, name, "--json")
+    elif route in ("powershell", "windows-powershell"):
+        if not HAS_POWERSHELL:
+            pytest.skip("PowerShell unavailable")
+        if route == "windows-powershell" and not WINDOWS_POWERSHELL:
+            pytest.skip("Native Windows PowerShell 5.1 evidence requires Windows")
+        command = ps_cmd(repo, SCRIPT, name, "-Json")
+        if route == "windows-powershell":
+            command[0] = WINDOWS_POWERSHELL
+    else:
+        command = py_cmd(repo, SCRIPT, name, "--json")
+    result = run(command, repo, env, timeout=30)
+    if error:
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert error in result.stderr
+        if error.startswith("SECTION_"):
+            assert "match_count" in result.stderr
+            assert "remediation" in result.stderr
+            assert "team" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
+        assert json_stdout(result)["TEMPLATE_CONTENT"] == expected
+    assert body.read_bytes() == replacement.encode("utf-8")
+
+
+@pytest.mark.parametrize("winner", ["override", "preset"])
+def test_hidden_invalid_section_does_not_block_runtime_override(tmp_path, winner):
+    import yaml
+
+    from specify_cli.presets import PresetResolver
+
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    name, body = install_section_stack(repo, "## Target\nold\n", "invalid\n", selector=None)
+    expected = "# Winning replacement\n"
+    if winner == "override":
+        override = repo / ".specify/templates/overrides" / f"{name}.md"
+        override.parent.mkdir()
+        override.write_bytes(expected.encode("utf-8"))
+    else:
+        presets = body.parent.parent
+        directory = presets / "winner"
+        directory.mkdir()
+        manifest = yaml.safe_load((body.parent / "preset.yml").read_text(encoding="utf-8"))
+        manifest["preset"]["id"] = "winner"
+        entry = manifest["provides"]["templates"][0]
+        entry["strategy"] = "replace"
+        del entry["selector"]
+        (directory / "preset.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        (directory / "body.md").write_bytes(expected.encode("utf-8"))
+        (presets / ".registry").write_text(
+            json.dumps({"presets": {"winner": {"priority": 1}, "team": {"priority": 20}}}),
+            encoding="utf-8",
+        )
+    assert PresetResolver(repo).resolve_content(name) == expected
+    env = dict(clean_env(), SPECKIT_PYTHON_EXECUTABLE=sys.executable)
+    commands = [(py_cmd(repo, SCRIPT, name, "--json"), env)]
+    if HAS_BASH:
+        commands.append((
+            bash_cmd(repo, SCRIPT, name, "--json"),
+            dict(env, SPECKIT_PYTHON_EXECUTABLE=_bash_posix_path(Path(sys.executable))),
+        ))
+    if HAS_POWERSHELL:
+        commands.append((ps_cmd(repo, SCRIPT, name, "-Json"), env))
+        if WINDOWS_POWERSHELL:
+            native = ps_cmd(repo, SCRIPT, name, "-Json")
+            native[0] = WINDOWS_POWERSHELL
+            commands.append((native, env))
+    for command, command_env in commands:
+        result = run(command, repo, command_env, timeout=30)
+        assert result.returncode == 0, result.stderr
+        assert json_stdout(result)["TEMPLATE_CONTENT"] == expected
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_section_layers_respect_composition_order(tmp_path, duplicate):
+    import yaml
+
+    from specify_cli.presets import PresetResolver, PresetValidationError
+
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    name, body = install_section_stack(
+        repo, "## Target\nold\n## Next\nupstream\n", "middle\n",
+    )
+    presets = body.parent.parent
+    manifest = yaml.safe_load((body.parent / "preset.yml").read_text(encoding="utf-8"))
+    registry = {"team": {"priority": 10}}
+    for preset_id, priority, strategy, text in [
+        ("prep", 30, "prepend", "## Added\nkeep"),
+        ("wrapper", 20, "wrap", "before\n{CORE_TEMPLATE}\nafter"),
+        ("final", 5, "replace-section", "final\n"),
+        ("appendix", 1, "append", "appendix"),
+    ]:
+        directory = presets / preset_id
+        directory.mkdir()
+        data = json.loads(json.dumps(manifest))
+        data["preset"]["id"] = preset_id
+        entry = data["provides"]["templates"][0]
+        entry["strategy"] = strategy
+        if strategy != "replace-section":
+            del entry["selector"]
+        if duplicate and preset_id == "prep":
+            text = "## Target\nextra"
+        (directory / "preset.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+        (directory / "body.md").write_bytes(text.encode("utf-8"))
+        registry[preset_id] = {"priority": priority}
+    (presets / ".registry").write_text(json.dumps({"presets": registry}), encoding="utf-8")
+    expected = "before\n## Added\nkeep\n\n## Target\nfinal\n## Next\nupstream\n\nafter\n\nappendix"
+    if duplicate:
+        with pytest.raises(PresetValidationError, match="SECTION_AMBIGUOUS"):
+            PresetResolver(repo).resolve_content(name)
+    else:
+        assert PresetResolver(repo).resolve_content(name) == expected
+
+    env = dict(clean_env(), SPECKIT_PYTHON_EXECUTABLE=sys.executable)
+    commands = [(py_cmd(repo, SCRIPT, name, "--json"), env)]
+    if HAS_BASH:
+        commands.append((
+            bash_cmd(repo, SCRIPT, name, "--json"),
+            dict(env, SPECKIT_PYTHON_EXECUTABLE=_bash_posix_path(Path(sys.executable))),
+        ))
+    if HAS_POWERSHELL:
+        commands.append((ps_cmd(repo, SCRIPT, name, "-Json"), env))
+        if WINDOWS_POWERSHELL:
+            native = ps_cmd(repo, SCRIPT, name, "-Json")
+            native[0] = WINDOWS_POWERSHELL
+            commands.append((native, env))
+    for command, command_env in commands:
+        result = run(command, repo, command_env, timeout=30)
+        if duplicate:
+            assert result.returncode != 0
+            assert "SECTION_AMBIGUOUS" in result.stderr
+            assert result.stdout == ""
+        else:
+            assert result.returncode == 0, result.stderr
+            assert json_stdout(result)["TEMPLATE_CONTENT"] == expected
+
+
+def test_section_selector_survives_delegated_yaml(tmp_path):
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    name, _ = install_section_stack(repo, "## Café\nold", "new", "café")
+    no_yaml = make_yaml_less_venv(tmp_path / "no-yaml")
+    env = dict(clean_env(), SPECKIT_PYTHON_EXECUTABLE=sys.executable)
+    command = py_cmd(repo, SCRIPT, name, "--json")
+    command[0] = str(no_yaml)
+    result = run(command, repo, env, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result)["TEMPLATE_CONTENT"] == "## Café\nnew"
+
+
+@pytest.mark.parametrize("invalid", ["script", "omitted-selector"])
+def test_all_routes_reject_invalid_section_declarations(tmp_path, invalid):
+    import yaml
+
+    from specify_cli.presets import PresetResolver, PresetValidationError
+
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    name, body = install_section_stack(repo, "## Target\nold", "")
+    path = body.parent / "preset.yml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    entry = data["provides"]["templates"][0]
+    if invalid == "script":
+        entry["type"] = "script"
+        message = "script"
+    else:
+        del entry["selector"]
+        message = "selector"
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    with pytest.raises(PresetValidationError, match=message):
+        PresetResolver(repo).resolve_content(name)
+    env = dict(clean_env(), SPECKIT_PYTHON_EXECUTABLE=sys.executable)
+    commands = [(py_cmd(repo, SCRIPT, name, "--json"), env)]
+    if HAS_BASH:
+        commands.append((
+            bash_cmd(repo, SCRIPT, name, "--json"),
+            dict(env, SPECKIT_PYTHON_EXECUTABLE=_bash_posix_path(Path(sys.executable))),
+        ))
+    if HAS_POWERSHELL:
+        commands.append((ps_cmd(repo, SCRIPT, name, "-Json"), env))
+        if WINDOWS_POWERSHELL:
+            native = ps_cmd(repo, SCRIPT, name, "-Json")
+            native[0] = WINDOWS_POWERSHELL
+            commands.append((native, env))
+    for command, command_env in commands:
+        result = run(command, repo, command_env, timeout=30)
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert message in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -1451,6 +1723,8 @@ def test_python_variant_skips_yaml_probe_for_manifest_less_preset(
     assert python_common._preset_template_layer(preset_dir, TEMPLATE) == (
         conventional,
         "replace",
+        None,
+        preset_dir.name,
     )
 
 
