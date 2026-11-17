@@ -50,3 +50,9 @@ function Test-FeatureBranch {
     }
     return $true
 }
+
+function ConvertTo-AsciiJson {
+    param([Parameter(Mandatory = $true, ValueFromPipeline = $true)]$InputObject)
+    $json = $InputObject | ConvertTo-Json -Compress
+    return [regex]::Replace($json, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
+}
