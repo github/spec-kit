@@ -3150,6 +3150,36 @@ class TestRegisterExtensionSkillsForceFlag:
             "must contain the extension body, not just the core-template stub."
         )
 
+    def test_registered_skills_are_refreshed_after_integration_registration(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """Native integration writes are refreshed with extension hook output."""
+        from specify_cli.integrations import get_integration
+
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        ext_dir = _create_extension_dir(temp_dir)
+
+        def hook(self, frontmatter, body, *, source_id):
+            updated = dict(frontmatter)
+            updated["description"] = f"[{source_id}] {frontmatter['description']}"
+            return updated, body + "\nHOOKED\n"
+
+        monkeypatch.setattr(
+            get_integration("claude").__class__, "process_registered_command", hook
+        )
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0")
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        skill_file.write_text("native integration registration", encoding="utf-8")
+        manager.register_enabled_extensions_for_agent("claude")
+
+        content = skill_file.read_text(encoding="utf-8")
+        assert "[test-ext] Test hello command" in content
+        assert "HOOKED" in content
+        assert "native integration registration" not in content
+
     def test_force_true_with_preexisting_dir_but_no_skill_file(
         self, project_dir, temp_dir
     ):
@@ -3194,10 +3224,14 @@ class TestRegisterExtensionSkillsForceFlag:
         manager = ExtensionManager(project_dir)
         manifest = ExtensionManifest(ext_dir / "extension.yml")
         written = manager._register_extension_skills(
-            manifest, ext_dir, force=True, force_names=set()
+            manifest,
+            ext_dir,
+            force=True,
+            force_names={"speckit-test-ext-world"},
         )
 
         assert "speckit-test-ext-hello" not in written
+        assert "speckit-test-ext-world" in written
         assert skill_subdir.is_dir()
         if existing_artifact == "skill_file":
             assert skill_file.read_text(encoding="utf-8") == "user-authored content"

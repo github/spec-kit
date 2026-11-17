@@ -1672,6 +1672,10 @@ class ExtensionManager:
             frontmatter = registrar._adjust_script_paths(
                 frontmatter, extension_id=manifest.id
             )
+            if integration is not None:
+                frontmatter, body = integration.process_registered_command(
+                    frontmatter, body, source_id=manifest.id
+                )
             # Mirror the register_commands() rewrite (#2101): resolve
             # extension-relative subdir references (agents/, knowledge-base/,
             # etc.) to their installed .specify/extensions/<id>/ location
@@ -4022,8 +4026,16 @@ class ExtensionManager:
                 # #2948 callers only pass the active agent anyway).
                 if agent_name == active_agent:
                     try:
+                        owned_skill_names = self._valid_name_list(
+                            metadata.get("registered_skills", [])
+                        )
                         registered_skills = self._register_extension_skills(
-                            manifest, ext_dir, force=force
+                            manifest,
+                            ext_dir,
+                            force=force or bool(owned_skill_names),
+                            force_names=(
+                                None if force else set(owned_skill_names)
+                            ),
                         )
                         if agent_name == "generic" and skills_mode_active:
                             registered_skills = self._complete_generic_refresh(

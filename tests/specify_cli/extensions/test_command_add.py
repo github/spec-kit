@@ -202,7 +202,7 @@ class TestExtensionAddCLI:
         content = skill_file.read_text(encoding="utf-8")
         assert "name: speckit-test-ext-hello" in content
         assert "metadata:" in content
-        assert "source: test-ext:commands/hello.md" in content
+        assert "source: extension:test-ext" in content
 
     def test_add_dev_replaces_existing_codex_skill_symlink(
         self, extension_dir, project_dir, temp_dir
@@ -250,7 +250,7 @@ class TestExtensionAddCLI:
         assert not skill_file.is_symlink()
         content = skill_file.read_text(encoding="utf-8")
         assert "name: speckit-test-ext-hello" in content
-        assert "source: test-ext:commands/hello.md" in content
+        assert "source: extension:test-ext" in content
         assert cache_file.read_text(encoding="utf-8") == "old linked content"
 
     def test_add_dev_falls_back_to_copy_when_windows_symlinks_unavailable(
