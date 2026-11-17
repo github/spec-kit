@@ -565,16 +565,19 @@ def run_update_command(extension: str | None) -> None:
                     if installed_manifest is not None:
                         skills_dir = manager._get_skills_dir(create=False)
                         current_entry = manager.registry.get(extension_id)
-                        previously_registered_skills = (
-                            backup_registry_entry.get("registered_skills", [])
-                            if isinstance(backup_registry_entry, dict)
-                            else []
-                        )
-                        force_names = {
-                            skill_name
-                            for skill_name in previously_registered_skills
-                            if isinstance(skill_name, str)
-                        }
+                        force_names = set(registered_skills)
+                        if isinstance(current_entry, dict):
+                            registered_commands = current_entry.get(
+                                "registered_commands", {}
+                            )
+                            if isinstance(registered_commands, dict):
+                                force_names.update(
+                                    manager._skill_name_for_command(command_name)
+                                    for command_names in registered_commands.values()
+                                    for command_name in manager._valid_name_list(
+                                        command_names
+                                    )
+                                )
                         if skills_dir is not None:
                             refreshed_skills = manager._register_extension_skills(
                                 installed_manifest,

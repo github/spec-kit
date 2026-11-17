@@ -3165,6 +3165,33 @@ class TestRegisterExtensionSkillsForceFlag:
         assert skill_file.exists()
         assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
 
+    @pytest.mark.parametrize("existing_artifact", ["skill_file", "directory"])
+    def test_force_names_preserves_unlisted_existing_artifacts(
+        self, project_dir, temp_dir, existing_artifact
+    ):
+        """Force-refresh leaves pre-existing skills outside the verified allowlist alone."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        ext_dir = _create_extension_dir(temp_dir)
+        skill_subdir = skills_dir / "speckit-test-ext-hello"
+        skill_subdir.mkdir(parents=True)
+        skill_file = skill_subdir / "SKILL.md"
+        if existing_artifact == "skill_file":
+            skill_file.write_text("user-authored content", encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        written = manager._register_extension_skills(
+            manifest, ext_dir, force=True, force_names=set()
+        )
+
+        assert "speckit-test-ext-hello" not in written
+        assert skill_subdir.is_dir()
+        if existing_artifact == "skill_file":
+            assert skill_file.read_text(encoding="utf-8") == "user-authored content"
+        else:
+            assert not skill_file.exists()
+
 
 # ===== Extension Skill Unregistration Tests =====
 

@@ -697,7 +697,10 @@ class TestExtensionUpdateCLI:
         assert "test-ext: Missing catalog version (skipping)" in flat
         assert ExtensionManager(project_dir).registry.get("test-ext")["version"] == "1.0.0"
 
-    def test_update_preserves_skills_mode_registration(self, tmp_path, monkeypatch):
+    @pytest.mark.parametrize("previous_registered_skills", [[], None, 17])
+    def test_update_preserves_skills_mode_registration(
+        self, tmp_path, monkeypatch, previous_registered_skills
+    ):
         """Updating an extension must keep Claude skills in skills mode."""
         fake_home = tmp_path / "home"
         fake_home.mkdir()
@@ -751,6 +754,11 @@ class TestExtensionUpdateCLI:
         assert old_entry["registered_commands"] == {"claude": command_names}
         assert "- For each executable hook, output the following command name." in (
             skill_files[0].read_text(encoding="utf-8")
+        )
+        # Updates must normalize malformed legacy ownership metadata and still
+        # refresh skills that the current install wrote through native setup.
+        manager.registry.update(
+            "test-ext", {"registered_skills": previous_registered_skills}
         )
 
         v2_dir = self._create_extension_source(tmp_path, "2.0.0")
