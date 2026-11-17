@@ -90,6 +90,7 @@ def _selected_core_script_paths(project_root: Path) -> dict[str, Path]:
     script_dirs = tuple(
         directory
         for directory in (
+            project_root / ".specify" / "scripts",
             _project_core_asset_root(project_root, "scripts"),
             _locate_shared_asset_dir("scripts"),
         )

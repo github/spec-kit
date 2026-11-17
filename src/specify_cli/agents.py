@@ -309,14 +309,16 @@ class CommandRegistrar:
                 if relative_to is None:
                     replacement = f".specify/extensions/{extension_id}/{subdir}/"
                 else:
+                    require_reference = bool(
+                        re.search(r"\brequire\s*\(\s*$", text[: match.start()])
+                    )
                     module_specifier = (
-                        source_path is None
-                        or source_path.suffix.lower()
-                        in {
-                            ".cjs",
-                            ".js",
-                            ".mjs",
-                        }
+                        not require_reference
+                        and (
+                            source_path is None
+                            or source_path.suffix.lower()
+                            in {".cjs", ".js", ".mjs"}
+                        )
                     )
                     try:
                         replacement = os.path.relpath(

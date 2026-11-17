@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import stat
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -83,11 +84,16 @@ class TestPresetResolve:
         strategy="replace",
         pack_id="script-pack",
         priority=10,
+        extension=".mjs",
+        executable=False,
     ):
-        """Install a manifest-declared JavaScript script artifact."""
+        """Install a manifest-declared script artifact."""
         src = temp_dir / f"src-{pack_id}"
         (src / "adapters").mkdir(parents=True)
-        (src / "adapters" / "page-adapter.mjs").write_text(content)
+        source_script = src / "adapters" / f"page-adapter{extension}"
+        source_script.write_text(content)
+        if executable:
+            source_script.chmod(0o755)
         (src / "preset.yml").write_text(
             yaml.dump(
                 {
@@ -104,7 +110,7 @@ class TestPresetResolve:
                             {
                                 "type": "script",
                                 "name": "designer-page-adapter",
-                                "file": "adapters/page-adapter.mjs",
+                                "file": f"adapters/page-adapter{extension}",
                                 "strategy": strategy,
                             }
                         ]
@@ -115,6 +121,37 @@ class TestPresetResolve:
         manager = PresetManager(project_dir)
         manager.install_from_directory(src, "9.9.9", priority)
         return manager
+
+    @pytest.mark.parametrize("executable", [False, True])
+    def test_resolve_materialized_script_preserves_executable_mode(
+        self, temp_dir, project_dir, executable
+    ):
+        self._install_script(
+            temp_dir,
+            project_dir,
+            "#!/bin/sh\necho ready\n",
+            extension=".sh",
+            executable=executable,
+        )
+        output_path = project_dir / "generated" / "setup.sh"
+
+        result = self._invoke(
+            project_dir,
+            [
+                "preset",
+                "resolve",
+                "designer-page-adapter",
+                "--kind",
+                "script",
+                "--output",
+                str(output_path),
+            ],
+        )
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        assert output_path.read_text(encoding="utf-8") == "#!/bin/sh\necho ready\n"
+        expected_execute_bits = 0o111 if executable else 0
+        assert stat.S_IMODE(output_path.stat().st_mode) & 0o111 == expected_execute_bits
 
     def _invoke(self, project_dir, args):
         from unittest.mock import patch

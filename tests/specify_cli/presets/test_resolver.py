@@ -1347,6 +1347,21 @@ class TestWrapStrategy:
         assert with_source["path"] == str(resolved)
         assert with_source["source"] == "core"
 
+    def test_installed_core_script_overrides_bundled_runtime_script(self, project_dir):
+        options = project_dir / ".specify" / "init-options.json"
+        options.parent.mkdir(parents=True, exist_ok=True)
+        options.write_text('{"script": "py"}', encoding="utf-8")
+        installed_scripts = project_dir / ".specify" / "scripts" / "python"
+        installed_scripts.mkdir(parents=True, exist_ok=True)
+        custom_script = installed_scripts / "setup_plan.py"
+        custom_script.write_text('print("custom setup")\n', encoding="utf-8")
+
+        resolved = PresetResolver(project_dir).resolve("setup-plan", "script")
+
+        assert resolved is not None
+        assert resolved.resolve() == custom_script.resolve()
+        assert resolved.read_text(encoding="utf-8") == 'print("custom setup")\n'
+
 
 class TestResolveContent:
     """Test PresetResolver.resolve_content() composition."""

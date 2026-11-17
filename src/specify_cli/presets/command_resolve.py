@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 from pathlib import Path
 from typing import Literal
 
@@ -113,6 +114,14 @@ def preset_resolve(
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(content, encoding="utf-8")
+            execute_bits = 0
+            for layer in contributing_layers:
+                source_mode = Path(layer["path"]).stat().st_mode
+                execute_bits |= stat.S_IMODE(source_mode) & 0o111
+            if execute_bits:
+                output_path.chmod(
+                    stat.S_IMODE(output_path.stat().st_mode) | execute_bits
+                )
         except OSError as exc:
             console.print(
                 f"[red]Error:[/red] Could not write script to "
