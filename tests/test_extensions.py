@@ -1797,11 +1797,13 @@ class TestExtensionManager:
             extension_id=None,
             only_agent=None,
             author="github-spec-kit",
+            version=None,
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
             )
             captured["extension_id"] = extension_id
+            captured["version"] = version
             return {}
 
         monkeypatch.setattr(
@@ -1816,6 +1818,7 @@ class TestExtensionManager:
 
         assert captured["create_missing_active_skills_dir"] is False
         assert captured["extension_id"] == manifest.id
+        assert captured["version"] == manifest.version
 
     def test_install_duplicate(self, extension_dir, project_dir):
         """Test installing already installed extension."""
