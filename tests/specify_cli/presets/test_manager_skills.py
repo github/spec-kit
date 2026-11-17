@@ -3225,6 +3225,135 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             manager.register_enabled_presets_for_agent("codex")
             assert skill.read_text(encoding="utf-8") == removed
 
+    @pytest.mark.parametrize(
+        "broken", ["claude-skill", "codex-skill", "claude-alias", "codex-alias"]
+    )
+    def test_failed_write_in_one_destination_does_not_skip_the_others(
+        self, project_dir, temp_dir, monkeypatch, broken
+    ):
+        """One output that cannot be written on removal is reported, but the
+        other directories and the alias pass still run, so the removed
+        preset's text is left in that one file only."""
+        import specify_cli.shared_infra as shared_infra
+        from specify_cli.agents import CommandRegistrar
+
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        manager.register_enabled_presets_for_agent("codex")
+        # Only Codex gets the top preset, so Claude's directory is refreshed
+        # from its own owner while Codex's takes the winner.
+        install("top-preset", "Top body", "append", 5)
+        outputs = {
+            f"{agent}-{kind}": project_dir / root / "skills" / name / "SKILL.md"
+            for agent, root in (("claude", ".claude"), ("codex", ".agents"))
+            for kind, name in (
+                ("skill", "speckit-custom"),
+                ("alias", "speckit-custom-short"),
+            )
+        }
+        for output in outputs.values():
+            assert "Base preset body" in output.read_text(encoding="utf-8")
+        target = outputs[broken]
+        write_skill = shared_infra._write_shared_text
+        write_alias = CommandRegistrar._write_registered_output
+
+        def failing_skill(project_path, dest, content, **kwargs):
+            if dest == target:
+                raise OSError("simulated write failure")
+            return write_skill(project_path, dest, content, **kwargs)
+
+        def failing_alias(dest_file, *args, **kwargs):
+            if dest_file == target:
+                raise OSError("simulated write failure")
+            return write_alias(dest_file, *args, **kwargs)
+
+        monkeypatch.setattr(shared_infra, "_write_shared_text", failing_skill)
+        monkeypatch.setattr(
+            CommandRegistrar, "_write_registered_output", staticmethod(failing_alias)
+        )
+
+        with pytest.warns(UserWarning, match="simulated write failure"):
+            assert manager.remove("base-preset") is True
+
+        for key, output in outputs.items():
+            content = output.read_text(encoding="utf-8")
+            if key == broken:
+                assert "Base preset body" in content
+                continue
+            assert "Base preset body" not in content, key
+            assert "Core custom body" in content, key
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_skill_rewritten_for_next_winner_honors_umask(
+        self, project_dir, temp_dir
+    ):
+        """Removing the winner deletes its skill; the next winner's skill is a
+        new file there and must get its mode from the process umask, like the
+        one it replaces, not a fixed 0644."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        manager = PresetManager(project_dir)
+        install = functools.partial(
+            self._install_alias_layer, manager, temp_dir, alias=False
+        )
+        skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        old_umask = os.umask(0o077)
+        try:
+            install("low-preset", "Low body", "replace", 10)
+            install("top-preset", "Top body", "replace", 5)
+            assert stat.S_IMODE(skill.stat().st_mode) == 0o600
+            assert manager.remove("top-preset") is True
+        finally:
+            os.umask(old_umask)
+
+        assert "Low body" in skill.read_text(encoding="utf-8")
+        assert stat.S_IMODE(skill.stat().st_mode) == 0o600
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    @pytest.mark.parametrize(
+        ("umask", "preserve_mode", "expected"),
+        [(0o077, True, 0o600), (0o022, True, 0o644), (0o077, False, 0o644)],
+        ids=["umask-077", "umask-022", "without-preserve-mode"],
+    )
+    def test_shared_writer_creates_new_file_under_umask_with_preserve_mode(
+        self, project_dir, umask, preserve_mode, expected
+    ):
+        """``preserve_mode`` leaves a new file's mode to the umask; without it
+        the writer keeps its fixed 0644. An existing file keeps its bits."""
+        from specify_cli.shared_infra import _write_shared_text
+
+        new_file = project_dir / "new.md"
+        existing = project_dir / "existing.md"
+        existing.write_text("old\n", encoding="utf-8")
+        existing.chmod(0o640)
+        old_umask = os.umask(umask)
+        try:
+            for dest in (new_file, existing):
+                _write_shared_text(
+                    project_dir, dest, "new\n", preserve_mode=preserve_mode
+                )
+        finally:
+            os.umask(old_umask)
+
+        assert new_file.read_text(encoding="utf-8") == "new\n"
+        assert stat.S_IMODE(new_file.stat().st_mode) == expected
+        assert existing.read_text(encoding="utf-8") == "new\n"
+        assert stat.S_IMODE(existing.stat().st_mode) == (
+            0o640 if preserve_mode else 0o644
+        )
+        assert sorted(p.name for p in project_dir.glob("*.md")) == [
+            "existing.md",
+            "new.md",
+        ]
+        assert not list(project_dir.glob(".*.md.*"))
+
     def test_alias_refresh_rewrites_the_same_file(self, project_dir, temp_dir):
         """The alias is refreshed in place, as command registration always
         wrote it: the same inode keeps its owner, ACL and mode."""

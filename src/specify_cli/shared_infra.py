@@ -325,18 +325,20 @@ def _write_shared_text(
 
     With ``preserve_mode``, an existing regular file keeps its permission
     bits instead of being reset to 0644, so refreshing a private output
-    does not widen it; a new file still gets 0644. The content is written
-    into a 0600 temp file, so it is never readable more widely than that
-    before the final mode is applied.
+    does not widen it, and a new file gets the default creation mode under
+    the process umask, as an ordinary write would. The content of an
+    existing file is written into a 0600 temp file, so it is never readable
+    more widely than that before the final mode is applied.
     """
-    mode = 0o644
+    mode: int | None = 0o644
     if preserve_mode:
         try:
             dest_stat = os.lstat(dest)
         except FileNotFoundError:
-            dest_stat = None
-        if dest_stat is not None and stat.S_ISREG(dest_stat.st_mode):
-            mode = stat.S_IMODE(dest_stat.st_mode)
+            mode = None
+        else:
+            if stat.S_ISREG(dest_stat.st_mode):
+                mode = stat.S_IMODE(dest_stat.st_mode)
     _write_shared_bytes(project_path, dest, content.encode("utf-8"), mode=mode)
 
 
@@ -345,8 +347,14 @@ def _write_shared_bytes(
     dest: Path,
     content: bytes,
     *,
-    mode: int = 0o644,
+    mode: int | None = 0o644,
 ) -> None:
+    """Atomically replace ``dest`` with ``content``.
+
+    ``mode`` is the permission bits of the result. ``None`` leaves them to
+    the process umask: the temp file is then created exclusively with 0666,
+    so the kernel applies the umask and no mode is set afterwards.
+    """
     _ensure_safe_shared_destination(project_path, dest)
     from .integrations._file_changes import after_file_change, before_file_change
 
@@ -354,9 +362,16 @@ def _write_shared_bytes(
     fd, temp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
     temp_path = Path(temp_name)
     try:
+        if mode is None:
+            os.close(fd)
+            temp_path.unlink()
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+            fd = os.open(temp_path, flags, 0o666)
         with os.fdopen(fd, "wb") as fh:
             fh.write(content)
-        temp_path.chmod(mode)
+        if mode is not None:
+            temp_path.chmod(mode)
         _ensure_safe_shared_destination(project_path, dest)
         os.replace(temp_path, dest)
         after_file_change(dest)

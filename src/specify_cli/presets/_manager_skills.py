@@ -3,7 +3,7 @@
 import copy
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Union
 
 if TYPE_CHECKING:
     from ..agents import CommandRegistrar
@@ -469,10 +469,22 @@ class _PresetSkillMethods:
                 owner_refreshes.setdefault(
                     (skills_dir, agent, owner_id), {}
                 ).setdefault(cmd_name, []).append(name)
+        # A destination that cannot be written must not leave the others
+        # stale: finish the remaining directories and the alias pass, then
+        # raise the first failure so the caller still warns about it.
+        failures: List[Exception] = []
+
+        def attempt(step: Callable[..., None], *args: Any, **kwargs: Any) -> None:
+            try:
+                step(*args, **kwargs)
+            except Exception as exc:
+                failures.append(exc)
+
         if active_skills_dir:
             active_provenance = extra_dirs.get(active_skills_dir)
             if extra_skills_dirs is None or active_provenance:
-                apply_to_dir(
+                attempt(
+                    apply_to_dir,
                     active_skills_dir,
                     active_ai,
                     is_active=True,
@@ -486,19 +498,25 @@ class _PresetSkillMethods:
         for extra_dir, (extra_agent, extra_names) in extra_dirs.items():
             if extra_dir == active_skills_dir:
                 continue  # already reconciled above as the active directory
-            apply_to_dir(
+            attempt(
+                apply_to_dir,
                 extra_dir,
                 extra_agent,
                 is_active=False,
                 managed_names=set(extra_names),
             )
 
-        for (skills_dir, agent, owner_id), owned in owner_refreshes.items():
+        def refresh_owner(
+            skills_dir: Path,
+            agent: Optional[str],
+            owner_id: str,
+            owned: Dict[str, List[str]],
+        ) -> None:
             owner_dir = self.presets_dir / owner_id
             try:
                 manifest = PresetManifest(owner_dir / "preset.yml")
             except PresetValidationError:
-                continue
+                return
             overrides: Dict[str, str] = {}
             for cmd_name, names in owned.items():
                 layers = cmd_layers[cmd_name]
@@ -522,7 +540,7 @@ class _PresetSkillMethods:
                 # Otherwise a surviving layer is unreadable: keep the
                 # existing output rather than deleting it.
             if not overrides:
-                continue
+                return
             written = self._register_skills(
                 self._FilteredManifest(manifest, set(overrides)),
                 owner_dir,
@@ -543,7 +561,11 @@ class _PresetSkillMethods:
                     if written_names.intersection(names)
                 )
 
-        self._reconcile_preset_aliases(
+        for (skills_dir, agent, owner_id), owned in owner_refreshes.items():
+            attempt(refresh_owner, skills_dir, agent, owner_id, owned)
+
+        attempt(
+            self._reconcile_preset_aliases,
             command_names,
             presets_by_priority,
             active_ai,
@@ -552,6 +574,8 @@ class _PresetSkillMethods:
             removal_pass=extra_skills_dirs is not None,
         )
 
+        if failures:
+            raise failures[0]
         return reconciled_skill_commands
 
     def _reconcile_preset_aliases(
@@ -597,6 +621,9 @@ class _PresetSkillMethods:
         registrar._ensure_configs()
         resolver = PresetResolver(self.project_root)
         wanted = set(command_names)
+        # An alias that cannot be written or removed must not keep the
+        # others stale: go on, and raise the first failure at the end.
+        failures: List[Exception] = []
 
         for pack_id, meta in presets_by_priority:
             if not isinstance(meta, dict):
@@ -753,10 +780,13 @@ class _PresetSkillMethods:
                             # primary-skill path keeps its output.
                             continue
                         alias_file = skill_dir / "SKILL.md"
-                        unlink_in_directory(
-                            alias_file,
-                            root=self.project_root if alias_file.is_relative_to(self.project_root) else skills_dir,
-                        )
+                        try:
+                            unlink_in_directory(
+                                alias_file,
+                                root=self.project_root if alias_file.is_relative_to(self.project_root) else skills_dir,
+                            )
+                        except (ValueError, OSError) as exc:
+                            failures.append(exc)
                         continue
                     if shadowed or not may_render:
                         continue
@@ -775,14 +805,20 @@ class _PresetSkillMethods:
                         self._write_alias_composed_cache(composed_file, composed)
                     except (ValueError, OSError):
                         continue
-                    registrar.register_commands(
-                        agent,
-                        [{"name": alias, "file": f".composed/{primary}.md"}],
-                        pack_id,
-                        pack_dir,
-                        self.project_root,
-                        _resolved_dir=skills_dir,
-                    )
+                    try:
+                        registrar.register_commands(
+                            agent,
+                            [{"name": alias, "file": f".composed/{primary}.md"}],
+                            pack_id,
+                            pack_dir,
+                            self.project_root,
+                            _resolved_dir=skills_dir,
+                        )
+                    except (ValueError, OSError) as exc:
+                        failures.append(exc)
+
+        if failures:
+            raise failures[0]
 
     def _write_alias_composed_cache(self, composed_file: Path, composed: str) -> None:
         """Write a preset's ``.composed`` cache entry for an alias refresh.
