@@ -2205,3 +2205,18 @@ def test_builtin_upgrade_runs_unjournalled_when_a_new_generic_output_is_a_symlin
 
     assert result.exit_code == 0, result.output
     assert (commands / "speckit.plan.md").is_symlink()
+
+
+def test_builtin_upgrade_rollback_removes_shared_dirs_created_before_a_planning_failure(tmp_path):
+    """A shared-infrastructure directory created before the first file write is removed on rollback."""
+    project = _init_project(tmp_path, "claude")
+    templates = project / ".specify" / "templates"
+    shutil.rmtree(templates)
+    templates.write_text("not a directory\n", encoding="utf-8")
+    before = _tree(project)
+
+    result = _run_in_project(project, ["integration", "upgrade", "claude", "--force", "--script", "py"])
+
+    assert result.exit_code != 0
+    assert not (project / ".specify" / "scripts" / "python").exists()
+    assert _tree(project) == before

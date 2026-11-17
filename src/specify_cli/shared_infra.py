@@ -190,6 +190,8 @@ def _ensure_safe_shared_directory(
     context: str = "shared infrastructure directory",
 ) -> None:
     """Create a shared infra directory without following symlinked parents."""
+    from .integrations._file_changes import directory_created
+
     root = project_path.resolve()
     rel = _shared_relative_path(project_path, directory)
     current = project_path
@@ -210,6 +212,7 @@ def _ensure_safe_shared_directory(
         if not create:
             raise ValueError(f"{context.capitalize()} does not exist: {label}")
         current.mkdir()
+        directory_created(current)
         if current.is_symlink():
             raise SymlinkedSharedPathError(f"Refusing to use symlinked {context}: {label}")
         try:

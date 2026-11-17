@@ -45,6 +45,13 @@ def make_directories(path: Path) -> None:
         observer(candidate)
 
 
+def directory_created(path: Path) -> None:
+    """Report a directory the caller's own ``mkdir()`` just created, so rollback can remove it."""
+    observer = directory_creation_observer.get()
+    if observer is not None:
+        observer(path)
+
+
 def before_file_change(path: Path, *, removal: bool = False) -> None:
     observer = file_change_observer.get()
     if observer is not None:
