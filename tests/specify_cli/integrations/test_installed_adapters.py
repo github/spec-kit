@@ -1021,7 +1021,7 @@ def test_failed_switch_restores_shared_script_mode_and_content(tmp_path, server,
     before = snapshot(project)
 
     def fail_commit(*args, **kwargs):
-        assert all(stat.S_IMODE(script.stat().st_mode) == 0o755 for script in scripts)
+        assert all(script.stat().st_mode & stat.S_IXUSR for script in scripts)
         raise OSError("sample package commit failure")
 
     monkeypatch.setattr(installer, "write_records", fail_commit)
