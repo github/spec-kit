@@ -30,6 +30,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
+from specify_cli.symlink_warning import path_is_symlink
 from .._assets import _locate_core_pack, _repo_root
 from .._download_security import (
     archive_format_from_name,
@@ -1065,7 +1066,7 @@ class ExtensionManager:
         The symlink guard prevents a crafted symlink from fooling the check.
         """
         marker = directory / ".keep-config"
-        return marker.is_file() and not marker.is_symlink()
+        return marker.is_file() and not path_is_symlink(marker)
 
     @staticmethod
     def _is_legacy_keep_config_leftover(directory: Path) -> bool:
@@ -1077,13 +1078,13 @@ class ExtensionManager:
         excluding partially-failed installs that still contain copied payload such
         as ``extension.yml`` or command directories.
         """
-        if not directory.is_dir() or directory.is_symlink():
+        if not directory.is_dir() or path_is_symlink(directory):
             return False
 
         has_config = False
         for entry in directory.iterdir():
             if entry.name.endswith(("-config.yml", "-config.local.yml")) and (
-                entry.is_file() or entry.is_symlink()
+                entry.is_file() or path_is_symlink(entry)
             ):
                 has_config = True
                 continue
@@ -1623,7 +1624,7 @@ class ExtensionManager:
             cache_file = cache_root / skill_name / "SKILL.md"
             use_dev_symlink = link_outputs and not agent_config.get("dev_no_symlink")
             skill_dir_preexists = (
-                skill_subdir.exists() or skill_subdir.is_symlink()
+                skill_subdir.exists() or path_is_symlink(skill_subdir)
             )
             CommandRegistrar._ensure_inside(cache_file, cache_root)
             if selected_ai == "generic" and skill_dir_preexists:
@@ -1632,7 +1633,7 @@ class ExtensionManager:
                     metadata, [skill_name], skills=True, extension_id=manifest.id
                 ):
                     continue
-            if skill_file.exists() or skill_file.is_symlink():
+            if skill_file.exists() or path_is_symlink(skill_file):
                 is_expected_dev_symlink = self._is_expected_dev_symlink(
                     skill_file, cache_file
                 )
@@ -1716,17 +1717,17 @@ class ExtensionManager:
                 try:
                     cache_file.parent.mkdir(parents=True, exist_ok=True)
                     write_text(cache_file, skill_content, encoding="utf-8")
-                    if skill_file.exists() or skill_file.is_symlink():
+                    if skill_file.exists() or path_is_symlink(skill_file):
                         unlink(skill_file)
                     target = os.path.relpath(cache_file, skill_file.parent)
                     with changing_file(skill_file):
                         os.symlink(target, skill_file)
                 except (OSError, ValueError):
-                    if skill_file.is_symlink():
+                    if path_is_symlink(skill_file):
                         unlink(skill_file)
                     write_text(skill_file, skill_content, encoding="utf-8")
             else:
-                if skill_file.is_symlink():
+                if path_is_symlink(skill_file):
                     unlink(skill_file)
                 write_text(skill_file, skill_content, encoding="utf-8")
             written.append(skill_name)
@@ -1736,7 +1737,7 @@ class ExtensionManager:
     @staticmethod
     def _is_expected_dev_symlink(skill_file: Path, cache_file: Path) -> bool:
         """Return True when an existing skill file links to its dev cache."""
-        if not skill_file.is_symlink():
+        if not path_is_symlink(skill_file):
             return False
 
         try:
@@ -1978,18 +1979,18 @@ class ExtensionManager:
             except (OSError, ValueError):
                 # An unsafe candidate is not owned; do not block the other layout.
                 continue
-            if not path.exists() and not path.is_symlink():
+            if not path.exists() and not path_is_symlink(path):
                 snapshot[path] = (None, None, path.parent.is_dir())
                 continue
             if not path.is_file():
                 continue
-            if path.is_symlink() and not path.resolve().is_relative_to(source):
+            if path_is_symlink(path) and not path.resolve().is_relative_to(source):
                 continue
             content = path.read_bytes()
             relative = path.relative_to(root).as_posix()
             if hashes.get(relative) == hashlib.sha256(content).hexdigest():
                 snapshot[path] = (
-                    content, os.readlink(path) if path.is_symlink() else None, True
+                    content, os.readlink(path) if path_is_symlink(path) else None, True
                 )
         return snapshot
 
@@ -2010,7 +2011,7 @@ class ExtensionManager:
         for path, (content, link, parent_existed) in snapshot.items():
             try:
                 _validate_safe_shared_directory(root, path.parent)
-                if path.is_symlink():
+                if path_is_symlink(path):
                     if content is None or not path.resolve().is_relative_to(source):
                         raise ValueError("unexpected symlink at output path")
                     if os.readlink(path) == link:
@@ -2067,7 +2068,7 @@ class ExtensionManager:
                 continue
             if path.stat().st_nlink > 1:
                 continue
-            if path.is_symlink() and not path.resolve().is_relative_to(
+            if path_is_symlink(path) and not path.resolve().is_relative_to(
                 (self.extensions_dir / extension_id).resolve()
             ):
                 continue
@@ -2150,11 +2151,11 @@ class ExtensionManager:
                 continue
             if not path.is_file():
                 continue
-            if path.is_symlink() and not path.resolve().is_relative_to(source):
+            if path_is_symlink(path) and not path.resolve().is_relative_to(source):
                 continue
             content = path.read_bytes()
             if hashlib.sha256(content).hexdigest() != expected:
-                if path.is_symlink():
+                if path_is_symlink(path):
                     unlink(path)
                     write_bytes(path, content)
                 continue
@@ -2206,7 +2207,7 @@ class ExtensionManager:
             skill_file = skill_subdir / "SKILL.md"
             if (
                 generic_hashes is not None
-                and skill_file.is_symlink()
+                and path_is_symlink(skill_file)
                 and not skill_file.resolve().is_relative_to(
                     (self.extensions_dir / extension_id).resolve()
                 )
@@ -2494,7 +2495,7 @@ class ExtensionManager:
             )
             for name in sorted(names):
                 target = output_dir / name if skills else output_dir / f"{name}.md"
-                if not (target.exists() or target.is_symlink()):
+                if not (target.exists() or path_is_symlink(target)):
                     continue
                 if name in owned and (
                     not skills or not any(child.name != "SKILL.md" for child in target.iterdir())
@@ -2541,7 +2542,7 @@ class ExtensionManager:
             # Check is_symlink first: is_dir() follows symlinks so a
             # symlink-to-directory would pass, but rmtree() raises on them.
             try:
-                if backup_config_dir.is_symlink():
+                if path_is_symlink(backup_config_dir):
                     backup_config_dir.unlink()
                 elif backup_config_dir.is_dir():
                     shutil.rmtree(backup_config_dir)
@@ -2582,9 +2583,9 @@ class ExtensionManager:
         rescue_complete_marker = rescue_staging_dir / ".rescue-complete"
         staging_is_complete = (
             rescue_staging_dir.is_dir()
-            and not rescue_staging_dir.is_symlink()
+            and not path_is_symlink(rescue_staging_dir)
             and rescue_complete_marker.is_file()
-            and not rescue_complete_marker.is_symlink()
+            and not path_is_symlink(rescue_complete_marker)
         )
 
         if staging_is_complete and not self.registry.is_installed(manifest.id):
@@ -2619,13 +2620,13 @@ class ExtensionManager:
                     ):
                         continue
                     if follow_symlinks:
-                        if entry.is_file() and not entry.is_symlink():
+                        if entry.is_file() and not path_is_symlink(entry):
                             names.add(entry.name)
                     else:
                         # Include symlinks without following them so that
                         # live-only symlinked configs are detected and
                         # preserved rather than silently deleted.
-                        if entry.is_file() or entry.is_symlink():
+                        if entry.is_file() or path_is_symlink(entry):
                             names.add(entry.name)
                 return names
 
@@ -2638,7 +2639,7 @@ class ExtensionManager:
             def _matches_source_config_baseline(config_name: str) -> bool:
                 source_file = source_dir / config_name
                 live_file = dest_dir / config_name
-                if source_file.is_symlink() or live_file.is_symlink():
+                if path_is_symlink(source_file) or path_is_symlink(live_file):
                     return False
                 if not source_file.is_file() or not live_file.is_file():
                     return False
@@ -2672,7 +2673,7 @@ class ExtensionManager:
             # restoration; the sidecar records the true original mode.
             rescue_modes_file = rescue_staging_dir / ".rescue-modes.json"
             _staged_modes: dict[str, int] = {}
-            if rescue_modes_file.is_file() and not rescue_modes_file.is_symlink():
+            if rescue_modes_file.is_file() and not path_is_symlink(rescue_modes_file):
                 try:
                     _loaded_modes = json.loads(rescue_modes_file.read_bytes())
                 except (OSError, ValueError):
@@ -2715,7 +2716,7 @@ class ExtensionManager:
                     staged_name, stat.S_IMODE(staged_stat.st_mode)
                 )
                 live_file = dest_dir / staged_name
-                if live_file.is_symlink():
+                if path_is_symlink(live_file):
                     # A user may have replaced the live config with a symlink
                     # after the interrupted attempt. It cannot be compared by
                     # bytes/mode against the staged copy, and the rmtree below
@@ -2783,7 +2784,7 @@ class ExtensionManager:
                 list(dest_dir.glob("*-config.yml"))
                 + list(dest_dir.glob("*-config.local.yml"))
             ):
-                if cfg_file.is_symlink():
+                if path_is_symlink(cfg_file):
                     # `remove --keep-config` preserves a symlinked config
                     # because Path.is_file() follows symlinks. Its bytes cannot
                     # be safely rescued (the target may live outside dest_dir),
@@ -2827,7 +2828,7 @@ class ExtensionManager:
             # Any pre-existing staging dir here lacks the completion marker
             # (staging_is_complete is False), so it is a stale partial from an
             # interrupted attempt — remove it first for a clean write.
-            if rescue_staging_dir.is_symlink():
+            if path_is_symlink(rescue_staging_dir):
                 rescue_staging_dir.unlink()
             elif rescue_staging_dir.is_dir():
                 shutil.rmtree(rescue_staging_dir)
@@ -3008,7 +3009,7 @@ class ExtensionManager:
                     _validate_safe_shared_directory(root, path.parent)
                 except (OSError, ValueError):
                     continue
-                if path.is_symlink():
+                if path_is_symlink(path):
                     if not path.resolve().is_relative_to(installed_root):
                         continue
                 elif not path.is_file():
@@ -3028,11 +3029,11 @@ class ExtensionManager:
             preserved = set(stranded_configs)
             if did_remove:
                 backup_dir = self.extensions_dir / ".backup" / manifest.id
-                if backup_dir.is_dir() and not backup_dir.is_symlink():
+                if backup_dir.is_dir() and not path_is_symlink(backup_dir):
                     for config_file in backup_dir.iterdir():
                         if (
                             config_file.is_file()
-                            and not config_file.is_symlink()
+                            and not path_is_symlink(config_file)
                             and config_file.name.endswith(("-config.yml", "-config.local.yml"))
                         ):
                             shutil.copy2(config_file, dest_dir / config_file.name)
@@ -3041,7 +3042,7 @@ class ExtensionManager:
                 for child in dest_dir.iterdir():
                     if child.name in preserved:
                         continue
-                    if child.is_dir() and not child.is_symlink():
+                    if child.is_dir() and not path_is_symlink(child):
                         shutil.rmtree(child)
                     else:
                         child.unlink()
@@ -3090,13 +3091,13 @@ class ExtensionManager:
             # so unexpected artifacts in .backup/ are not resurrected.
             if did_remove:
                 backup_config_dir = self.extensions_dir / ".backup" / manifest.id
-                if backup_config_dir.is_symlink():
+                if path_is_symlink(backup_config_dir):
                     backup_config_dir.unlink()
                 elif backup_config_dir.is_dir():
                     for cfg_file in backup_config_dir.iterdir():
                         if (
                             cfg_file.is_file()
-                            and not cfg_file.is_symlink()
+                            and not path_is_symlink(cfg_file)
                             and (
                                 cfg_file.name.endswith("-config.yml")
                                 or cfg_file.name.endswith("-config.local.yml")
@@ -3157,7 +3158,7 @@ class ExtensionManager:
 
         if did_remove:
             backup_config_dir = self.extensions_dir / ".backup" / manifest.id
-            if backup_config_dir.is_dir() and not backup_config_dir.is_symlink():
+            if backup_config_dir.is_dir() and not path_is_symlink(backup_config_dir):
                 # Retain the backup until registry commit so failed force
                 # reinstalls can still restore the user's configuration.
                 try:
@@ -3177,7 +3178,7 @@ class ExtensionManager:
         # durable backup has therefore served its purpose and can be removed
         # best-effort — a cleanup failure must not fail an install that has
         # already committed successfully.
-        if rescue_staging_dir.is_dir() and not rescue_staging_dir.is_symlink():
+        if rescue_staging_dir.is_dir() and not path_is_symlink(rescue_staging_dir):
             # Remove the completion marker before the non-atomic rmtree so a
             # crash mid-cleanup cannot leave a staging dir that a retry would
             # wrongly trust as a complete durable backup.
@@ -3315,7 +3316,7 @@ class ExtensionManager:
         current = self.project_root
         for part in specify_dir.relative_to(self.project_root).parts:
             current = current / part
-            if current.is_symlink():
+            if path_is_symlink(current):
                 return False
             if not current.exists():
                 return True
@@ -3422,7 +3423,7 @@ class ExtensionManager:
                 failed.append(failure_name)
                 continue
 
-            if template_candidate.is_symlink() or not template_path.is_file():
+            if path_is_symlink(template_candidate) or not template_path.is_file():
                 failed.append(failure_name)
                 continue
 
@@ -3593,7 +3594,7 @@ class ExtensionManager:
                         continue
                     path = self.project_root.resolve() / name
                     if path.parent.resolve().is_relative_to(self.project_root.resolve()) and path.is_file():
-                        if path.is_symlink() and not path.resolve().is_relative_to(
+                        if path_is_symlink(path) and not path.resolve().is_relative_to(
                             (self.extensions_dir / extension_id).resolve()
                         ):
                             raise ExtensionError(
@@ -3609,7 +3610,7 @@ class ExtensionManager:
                 for names, is_skill in ((commands, False), (skills, True)):
                     for name in names:
                         path = directory / name / "SKILL.md" if is_skill else directory / f"{name}.md"
-                        if path.exists() or path.is_symlink():
+                        if path.exists() or path_is_symlink(path):
                             raise ExtensionError(
                                 f"Cannot disable '{extension_id}': generic artifact {path} "
                                 "was modified or is not owned; preserve it and remove it manually"
@@ -3830,7 +3831,7 @@ class ExtensionManager:
             current = self.project_root
             for part in rel.parts:
                 current /= part
-                if current.is_symlink():
+                if path_is_symlink(current):
                     return None
             try:
                 current.resolve().relative_to(self.project_root.resolve())
@@ -3856,11 +3857,11 @@ class ExtensionManager:
                 agent_name, command_name, agent_config
             )
             replacement = skills_root / skill_name / "SKILL.md"
-            if replacement.is_symlink() or not replacement.is_file():
+            if path_is_symlink(replacement) or not replacement.is_file():
                 continue
 
             legacy_file = legacy_root / f"{command_name}{legacy_extension}"
-            if legacy_file.is_symlink() or legacy_file.is_file():
+            if path_is_symlink(legacy_file) or legacy_file.is_file():
                 legacy_file.unlink()
                 removed.append(legacy_file)
 

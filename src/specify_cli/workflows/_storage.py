@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from specify_cli.symlink_warning import path_is_symlink
+
 
 class WorkflowStorageError(ValueError):
     """A workflow storage directory is symlinked or has the wrong type."""
@@ -16,7 +18,7 @@ def validate_workflow_storage(project_root: Path) -> None:
         ".specify/workflows/overlays",
     ):
         path = project_root / suffix
-        if path.is_symlink():
+        if path_is_symlink(path):
             raise WorkflowStorageError(f"Refusing to use symlinked {suffix} path")
         if path.exists() and not path.is_dir():
             raise WorkflowStorageError(f"{suffix} path exists but is not a directory")

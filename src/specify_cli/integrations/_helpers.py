@@ -8,6 +8,7 @@ from typing import Any, Callable
 import typer
 from rich.markup import escape
 
+from specify_cli.symlink_warning import path_is_symlink
 from .._agent_config import SCRIPT_TYPE_CHOICES
 from .._console import console
 from ..integration_runtime import (
@@ -588,7 +589,7 @@ def _resync_manifest_after_registration(
                 continue
             abs_path = new_manifest.project_root / rel
             try:
-                if abs_path.is_symlink() or not abs_path.is_file():
+                if path_is_symlink(abs_path) or not abs_path.is_file():
                     continue
                 # Only re-hash bytes registration changed: record_existing()
                 # also clears a file's recovered marker. Check the path the

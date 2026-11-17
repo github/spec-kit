@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
+from specify_cli.symlink_warning import mode_is_symlink, path_is_symlink
 from .._download_security import (
     archive_format_from_name,
     is_https_or_localhost_http,
@@ -219,7 +220,7 @@ def safe_project_path(root: Path, relative: str, *, allow_leaf_symlink: bool = F
     current = root
     for part in path.parts:
         current /= part
-        if current.is_symlink():
+        if path_is_symlink(current):
             if allow_leaf_symlink and current == root / path:
                 continue
             if current == root / ".specify":
@@ -230,7 +231,7 @@ def safe_project_path(root: Path, relative: str, *, allow_leaf_symlink: bool = F
 
 def package_hashes(package: Path) -> dict[str, str]:
     """Bound package traversal and reject links or non-regular retained files."""
-    if package.is_symlink() or not package.is_dir():
+    if path_is_symlink(package) or not package.is_dir():
         raise IntegrationInstallError(f"Invalid integration package directory: {package}")
     hashes: dict[str, str] = {}
     count = total = 0
@@ -244,7 +245,7 @@ def package_hashes(package: Path) -> dict[str, str]:
                 relative = Path(entry.path).relative_to(package).as_posix()
                 safe_project_path(package, relative)
                 mode = entry.stat(follow_symlinks=False).st_mode
-                if stat.S_ISLNK(mode):
+                if mode_is_symlink(mode):
                     raise IntegrationInstallError(f"Integration package contains symlink: {entry.path}")
                 if entry.name == "__pycache__" and stat.S_ISDIR(mode):
                     continue
@@ -325,7 +326,7 @@ def write_records(root: Path, records: dict[str, dict[str, Any]]) -> None:
 
 def _trust_store(root: Path) -> Path:
     home = Path.home().absolute()
-    if any(path.is_symlink() for path in (home, *home.parents)):
+    if any(path_is_symlink(path) for path in (home, *home.parents)):
         raise IntegrationInstallError("Refusing symlinked integration trust directory")
     home = home.resolve()
     project = root.resolve()
@@ -982,7 +983,7 @@ def persist_package(root: Path, key: str, package: Path, record: dict[str, Any])
         if package_hashes(staged) != record["files"]:
             raise IntegrationInstallError("Integration package changed while staging")
         before_file_change(destination, removal=True)
-        if destination.is_symlink() or destination.is_file():
+        if path_is_symlink(destination) or destination.is_file():
             destination.unlink()
         elif destination.exists():
             shutil.rmtree(destination)
@@ -1003,7 +1004,7 @@ def remove_package(root: Path, key: str) -> None:
     directory = safe_project_path(root, f"{_PACKAGES}/{key}", allow_leaf_symlink=True)
     before_file_change(directory, removal=True)
     try:
-        if directory.is_symlink() or directory.is_file():
+        if path_is_symlink(directory) or directory.is_file():
             directory.unlink()
         else:
             shutil.rmtree(directory)

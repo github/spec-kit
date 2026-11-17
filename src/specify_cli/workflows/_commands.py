@@ -18,6 +18,7 @@ import typer
 import yaml
 from rich.markup import escape as _escape_markup
 
+from specify_cli.symlink_warning import mode_is_symlink, path_is_symlink
 from .._console import console, err_console
 from .._download_security import (
     archive_format_from_content_type,
@@ -204,7 +205,7 @@ def _reject_unsafe_dir(path: Path, label: str) -> None:
     writes files beneath it must bail first. Absence is tolerated — the caller
     creates the directory — only an existing-but-wrong target is rejected.
     """
-    if path.is_symlink():
+    if path_is_symlink(path):
         err_console.print(f"[red]Error:[/red] Refusing to use symlinked {label} path")
         raise typer.Exit(1)
     if path.exists() and not path.is_dir():
@@ -385,7 +386,7 @@ def _safe_workflow_id_dir(workflows_dir: Path, workflow_id: str) -> Path:
         )
         raise typer.Exit(1)
     workflow_yml = dest_dir / "workflow.yml"
-    if workflow_yml.is_symlink():
+    if path_is_symlink(workflow_yml):
         console.print(
             "[red]Error:[/red] Refusing to write through symlinked "
             f".specify/workflows/{safe_id}/workflow.yml"
@@ -731,7 +732,7 @@ def _workflow_package_root(extracted_root: Path) -> Path:
     if (
         len(entries) == 1
         and entries[0].is_dir()
-        and not entries[0].is_symlink()
+        and not path_is_symlink(entries[0])
         and (entries[0] / "workflow.yml").is_file()
     ):
         return entries[0]
@@ -750,7 +751,7 @@ def _validate_local_workflow_package(package_dir: Path) -> None:
         for name in [*dirnames, *filenames]:
             path = root_path / name
             mode = path.lstat().st_mode
-            if stat.S_ISLNK(mode):
+            if mode_is_symlink(mode):
                 raise ValueError(f"Workflow package contains symlink: {path}")
             if not stat.S_ISDIR(mode) and not stat.S_ISREG(mode):
                 raise ValueError(f"Workflow package contains unsupported file: {path}")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from specify_cli.symlink_warning import path_is_symlink
 from . import _commands as cli
 
 
@@ -16,7 +17,7 @@ def _remove_workflow_locked(
         raise cli.typer.Exit(1)
 
     workflow_dir_unresolved = workflows_dir / workflow_id
-    if workflow_dir_unresolved.is_symlink():
+    if path_is_symlink(workflow_dir_unresolved):
         cli.console.print(
             f"[red]Error:[/red] Refusing to remove symlinked "
             f".specify/workflows/{safe_id}"

@@ -13,6 +13,7 @@ import contextlib
 from pathlib import Path
 from typing import Any
 
+from specify_cli.symlink_warning import path_is_symlink
 from .. import _package_install as _pi
 from .._package_install import (
     InstallRequest,
@@ -129,10 +130,10 @@ def _claimed_names(registry: FunctionRegistry, own_id: str) -> dict[str, tuple[s
         manifest_path = package_dir / "function.yml"
         init_path = package_dir / "__init__.py"
         if (
-            package_dir.is_symlink()
+            path_is_symlink(package_dir)
             or not package_dir.is_dir()
-            or manifest_path.is_symlink()
-            or init_path.is_symlink()
+            or path_is_symlink(manifest_path)
+            or path_is_symlink(init_path)
             or not manifest_path.is_file()
             or not init_path.is_file()
         ):

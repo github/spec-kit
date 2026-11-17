@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 import typer
 
+from specify_cli.symlink_warning import path_is_symlink
 from ..integrations._file_changes import unlink as _unlink_file, write_text as _write_text
 
 if TYPE_CHECKING:
@@ -2545,7 +2546,7 @@ def _ensure_safe_destination(dst: Path) -> None:
     walked = dst.anchor and Path(dst.anchor) or Path("/")
     for part in dst.relative_to(dst.anchor).parts if dst.anchor else dst.parts:
         walked = walked / part
-        if walked.is_symlink():
+        if path_is_symlink(walked):
             raise ValueError(
                 f"Refusing to write event config through a symlink: {walked}"
             )

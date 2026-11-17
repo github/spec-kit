@@ -8,6 +8,7 @@ import stat
 from pathlib import Path
 from typing import Any
 
+from specify_cli.symlink_warning import mode_is_symlink, path_is_symlink
 from .file_helper import _strip_extended_length_prefix
 from .integration_state import (
     INTEGRATION_JSON,
@@ -128,7 +129,7 @@ def _safe_manifest_file(
         for part in rel_path.parts[:-1]:
             walk = walk / part
             try:
-                if walk.is_symlink():
+                if path_is_symlink(walk):
                     return None
             except OSError:
                 return None
@@ -247,10 +248,10 @@ def _manifest_file_status(
             valid.append(rel)
             modified.append(rel)
             continue
-        is_symlink = stat.S_ISLNK(path_stat.st_mode)
+        is_symlink = mode_is_symlink(path_stat.st_mode)
         if not is_symlink:
             try:
-                is_symlink = path.is_symlink()
+                is_symlink = path_is_symlink(path)
             except OSError:
                 is_symlink = False
         if is_symlink:

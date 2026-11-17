@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from specify_cli.symlink_warning import path_is_symlink
 from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest
 
@@ -199,7 +200,7 @@ def _ensure_safe_shared_directory(
     for part in rel.parts:
         current = current / part
         label = _shared_destination_label(project_path, current)
-        if current.is_symlink():
+        if path_is_symlink(current):
             raise SymlinkedSharedPathError(f"Refusing to use symlinked {context}: {label}")
         if current.exists():
             if not current.is_dir():
@@ -213,7 +214,7 @@ def _ensure_safe_shared_directory(
             raise ValueError(f"{context.capitalize()} does not exist: {label}")
         current.mkdir()
         directory_created(current)
-        if current.is_symlink():
+        if path_is_symlink(current):
             raise SymlinkedSharedPathError(f"Refusing to use symlinked {context}: {label}")
         try:
             current.resolve().relative_to(root)
@@ -230,7 +231,7 @@ def _validate_safe_shared_directory(project_path: Path, directory: Path) -> None
     for part in rel.parts:
         current = current / part
         label = _shared_destination_label(project_path, current)
-        if current.is_symlink():
+        if path_is_symlink(current):
             raise SymlinkedSharedPathError(f"Refusing to use symlinked shared infrastructure directory: {label}")
         if not current.exists():
             continue
@@ -259,7 +260,7 @@ def _exclusive_project_lock(project_root: Path, lock_name: str, *, context: str)
     except ValueError as exc:
         raise OSError(str(exc)) from exc
     lock_file = lock_dir / lock_name
-    if lock_file.is_symlink():
+    if path_is_symlink(lock_file):
         raise OSError(f"Refusing to use symlinked {context} lock: {lock_file}")
 
     flags = os.O_RDWR | os.O_CREAT
@@ -267,7 +268,7 @@ def _exclusive_project_lock(project_root: Path, lock_name: str, *, context: str)
     flags |= getattr(os, "O_CLOEXEC", 0)
     fd = os.open(lock_file, flags, 0o600)
     try:
-        if lock_file.is_symlink():
+        if path_is_symlink(lock_file):
             raise OSError(f"Refusing to use symlinked {context} lock: {lock_file}")
         # Call the lock primitives through their modules so tests can observe
         # contention by patching ``msvcrt.locking`` / ``fcntl.flock``.
@@ -310,7 +311,7 @@ def _ensure_safe_shared_destination(
     else:
         _validate_safe_shared_directory(project_path, dest.parent)
     label = _shared_destination_label(project_path, dest)
-    if dest.is_symlink():
+    if path_is_symlink(dest):
         raise SymlinkedSharedPathError(f"Refusing to overwrite symlinked shared infrastructure path: {label}")
 
     if dest.exists():
@@ -507,7 +508,7 @@ def install_shared_infra(
 
     def _is_managed(rel: str, dst: Path) -> bool:
         expected = prior_hashes.get(rel)
-        if not expected or not dst.is_file() or dst.is_symlink():
+        if not expected or not dst.is_file() or path_is_symlink(dst):
             return False
         if manifest.is_recovered(rel):
             return False
@@ -811,7 +812,7 @@ def install_shared_infra(
             dst = project_path / rel_path
             # Already gone from disk but still tracked: drop the orphaned manifest
             # entry so the manifest stays consistent (nothing to unlink).
-            if not dst.exists() and not dst.is_symlink():
+            if not dst.exists() and not path_is_symlink(dst):
                 manifest.remove(rel)
                 continue
             if not _is_managed(rel, dst):

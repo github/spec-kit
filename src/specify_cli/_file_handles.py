@@ -11,6 +11,8 @@ import tempfile
 from pathlib import Path, PureWindowsPath
 from typing import Literal, NamedTuple
 
+from specify_cli.symlink_warning import warn_symlink
+
 
 _IdentityKind = Literal["fileid128", "legacy64"]
 
@@ -101,6 +103,7 @@ def _windows_mode(handle: int) -> int:
     if info.attributes & 0x400:
         if info.tag != 0xA000000C:
             raise OSError(errno.ELOOP, "Unsupported Windows reparse point")
+        warn_symlink()
         return stat.S_IFLNK
     return stat.S_IFDIR if info.attributes & 0x10 else stat.S_IFREG
 
@@ -135,6 +138,7 @@ def _windows_readlink(handle: int) -> str:
     target = data[20 + offset:end].decode("utf-16-le", errors="surrogatepass")
     if "\0" in target:
         raise OSError(errno.EIO, "Invalid Windows symlink target")
+    warn_symlink()
     if not flags & 1 and target.startswith("\\??\\"):
         target = "\\\\?\\" + target[4:]
     return target
@@ -253,6 +257,8 @@ def _open_windows_handle(
         ):
             raise ctypes.WinError(ctypes.get_last_error())
         if attributes.attributes & 0x400:
+            if attributes.tag == 0xA000000C:
+                warn_symlink()
             raise OSError(errno.ELOOP, "Refusing a reparse-point filesystem path", str(path))
         if bool(attributes.attributes & 0x10) != directory:
             raise OSError(errno.EINVAL, "Unexpected filesystem object type", str(path))

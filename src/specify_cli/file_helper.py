@@ -15,6 +15,7 @@ from pathlib import Path, PurePath, PureWindowsPath
 from typing import TypeVar
 from weakref import finalize
 
+from specify_cli.symlink_warning import mode_is_symlink
 from specify_cli._file_handles import (
     _WindowsFileIdentity, _windows_delete, _windows_directory_names, _windows_entry,
     _windows_file_id, _windows_handle, _windows_mode, _windows_overwrite_fd,
@@ -278,7 +279,7 @@ class FileHelper:
         )
         if (
             getattr(entry, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
-            and not stat.S_ISLNK(entry.st_mode)
+            and not mode_is_symlink(entry.st_mode)
         ):
             raise UnsupportedPathError(
                 f"Unsupported Windows reparse point (including directory junctions): {path}"
@@ -316,7 +317,7 @@ class FileHelper:
                     raise
                 current = candidate
                 continue
-            if stat.S_ISLNK(mode):
+            if mode_is_symlink(mode):
                 if not self.allow_symlinks:
                     raise SymlinkDeniedError(
                         f"Refusing symlink {candidate}; explicitly allow symlinks "
@@ -662,7 +663,7 @@ class FileHelper:
         return self._entry_mode(path, dir_fd=parent)
 
     def _deletion_kind(self, path: Path, mode: int) -> bool:
-        if stat.S_ISLNK(mode):
+        if mode_is_symlink(mode):
             if not self.allow_symlinks:
                 raise SymlinkDeniedError(f"Refusing to delete symlink: {path}")
             return False

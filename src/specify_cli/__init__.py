@@ -34,6 +34,7 @@ from pathlib import Path
 import typer
 from rich.align import Align
 from rich.markup import escape as _escape_markup
+from specify_cli.symlink_warning import defer_symlink_warnings, path_is_symlink
 from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
@@ -106,6 +107,9 @@ def callback(
     version: bool = typer.Option(False, "--version", "-V", callback=_version_callback, is_eager=True, help="Show version and exit."),
 ):
     """Show banner when no subcommand is provided."""
+    from ._project import is_json_output_context
+
+    ctx.with_resource(defer_symlink_warnings(is_json_output_context))
     if ctx.invoked_subcommand is None and "--help" not in sys.argv and "-h" not in sys.argv:
         show_banner()
         console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
@@ -231,7 +235,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             continue
         for script in scripts_root.rglob("*.sh"):
             try:
-                if script.is_symlink() or not script.is_file():
+                if path_is_symlink(script) or not script.is_file():
                     continue
                 try:
                     with script.open("rb") as f:

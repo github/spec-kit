@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from specify_cli.symlink_warning import path_is_symlink
 from ._file_changes import after_file_change, before_file_change
 
 OWNERSHIP_MODES = frozenset({"whole", "partial", "shared"})
@@ -68,7 +69,7 @@ def _validate_record_path(rel: Path, root: Path) -> Path:
     current = root
     for part in rel.parts:
         current = current / part
-        if current.is_symlink():
+        if path_is_symlink(current):
             raise ValueError(
                 f"Refusing to record symlinked manifest path: {rel} "
                 f"(symlinked at {current.relative_to(root).as_posix()})"
@@ -93,7 +94,7 @@ def _ensure_safe_manifest_removal(root: Path, path: Path) -> None:
     current = root
     for part in relative.parts[:-1]:
         current /= part
-        if current.is_symlink():
+        if path_is_symlink(current):
             raise ValueError(f"Refusing deletion through symlinked manifest directory: {current}")
 
 
@@ -110,7 +111,7 @@ def _ensure_safe_manifest_directory(root: Path, directory: Path) -> None:
     for part in rel.parts:
         current = current / part
         label = _manifest_path_label(root, current)
-        if current.is_symlink():
+        if path_is_symlink(current):
             raise ValueError(f"Refusing to use symlinked integration manifest directory: {label}")
         if current.exists():
             if not current.is_dir():
@@ -132,7 +133,7 @@ def _ensure_safe_manifest_destination(root: Path, path: Path) -> None:
     root_resolved = root.resolve()
     _ensure_safe_manifest_directory(root, path.parent)
     label = _manifest_path_label(root, path)
-    if path.is_symlink():
+    if path_is_symlink(path):
         raise ValueError(f"Refusing to overwrite symlinked integration manifest path: {label}")
     if path.exists():
         if not path.is_file():
@@ -346,10 +347,10 @@ class IntegrationManifest:
             if rel_path.is_absolute() or ".." in rel_path.parts:
                 continue
             abs_path = self.project_root / rel_path
-            if not abs_path.exists() and not abs_path.is_symlink():
+            if not abs_path.exists() and not path_is_symlink(abs_path):
                 continue
             # Treat symlinks and non-regular-files as modified
-            if abs_path.is_symlink() or not abs_path.is_file():
+            if path_is_symlink(abs_path) or not abs_path.is_file():
                 modified.append(rel)
                 continue
             try:
@@ -399,18 +400,18 @@ class IntegrationManifest:
             except (ValueError, OSError):
                 skipped.append(path)
                 continue
-            if not path.exists() and not path.is_symlink():
+            if not path.exists() and not path_is_symlink(path):
                 continue
             if self._ownership_modes.get(rel, "whole") != "whole":
                 skipped.append(path)
                 continue
             # Skip directories — manifest only tracks files
-            if not path.is_file() and not path.is_symlink():
+            if not path.is_file() and not path_is_symlink(path):
                 skipped.append(path)
                 continue
             # Never follow symlinks when comparing hashes. Only remove
             # symlinks when forced, to avoid acting on tampered entries.
-            if path.is_symlink():
+            if path_is_symlink(path):
                 if not force:
                     skipped.append(path)
                     continue
@@ -451,7 +452,7 @@ class IntegrationManifest:
             manifest_present = False
             try:
                 _ensure_safe_manifest_removal(root, manifest)
-                manifest_present = manifest.exists() or manifest.is_symlink()
+                manifest_present = manifest.exists() or path_is_symlink(manifest)
                 if manifest_present:
                     before_file_change(manifest, removal=True)
                     _ensure_safe_manifest_removal(root, manifest)

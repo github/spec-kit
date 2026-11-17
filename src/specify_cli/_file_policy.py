@@ -7,6 +7,7 @@ import stat
 from pathlib import Path
 from typing import Any, NoReturn
 
+from specify_cli.symlink_warning import path_is_symlink
 from ._init_options import INIT_OPTIONS_FILE
 from .file_helper import FileHelper, FileHelperError
 
@@ -97,7 +98,7 @@ def save_project_options(project_root: Path, options: dict[str, Any]) -> None:
 
 def _existing_init_parent(target: Path) -> Path:
     ancestor = target.parent
-    while not ancestor.exists() and not ancestor.is_symlink():
+    while not ancestor.exists() and not path_is_symlink(ancestor):
         ancestor = ancestor.parent
     return ancestor
 
@@ -125,7 +126,7 @@ def preflight_init_root(target: Path) -> Path:
     target = target.absolute()
     try:
         _validate_init_traversal(target)
-        if target.exists() or target.is_symlink():
+        if target.exists() or path_is_symlink(target):
             read_project_options(target)
         else:
             with FileHelper(_existing_init_parent(target)) as files:
@@ -148,7 +149,7 @@ def prepare_init_root(target: Path) -> Path:
     """
     target = target.absolute()
     _validate_init_traversal(target)
-    if target.exists() or target.is_symlink():
+    if target.exists() or path_is_symlink(target):
         with FileHelper(target):
             pass
         return target

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 
+from specify_cli.symlink_warning import path_is_symlink
 from .schema import Overlay, _RESERVED_WORKFLOW_IDS, _SAFE_ID_PATTERN, validate_overlay_yaml
 
 
@@ -57,7 +58,7 @@ def _ensure_contained_dir(path: Path, root: Path) -> None:
     The caller is responsible for ensuring *root* itself is already validated
     (e.g. via ``_resolve_project_overlay_root``).
     """
-    if path.is_symlink():
+    if path_is_symlink(path):
         raise OverlayLoadError(path, ["Symlinked overlay directories are not allowed"])
     if path.exists() and not path.is_dir():
         raise OverlayLoadError(path, ["Overlay directory path is not a directory"])
@@ -77,7 +78,7 @@ def _resolve_workflows_root(project_root: Path) -> Path:
     current = project_root
     for part in (".specify", "workflows"):
         current = current / part
-        if current.is_symlink():
+        if path_is_symlink(current):
             raise OverlayLoadError(
                 current,
                 [f"Symlinked workflow directories are not allowed ({current})"],
@@ -102,7 +103,7 @@ def _resolve_project_overlay_root(project_root: Path) -> Path:
     """Return the unresolved overlay root after rejecting unsafe ancestors."""
     workflows_root = _resolve_workflows_root(project_root)
     overlays_root = workflows_root / "overlays"
-    if overlays_root.is_symlink():
+    if path_is_symlink(overlays_root):
         raise OverlayLoadError(
             overlays_root,
             [f"Symlinked overlay directories are not allowed ({overlays_root})"],
@@ -149,7 +150,7 @@ class ProjectOverlaySource:
         for path in entries:
             if not path.is_file() or path.suffix not in (".yml", ".yaml"):
                 continue
-            if path.is_symlink():
+            if path_is_symlink(path):
                 raise OverlayLoadError(path, ["Symlinked overlay files are not allowed"])
             try:
                 text = path.read_text(encoding="utf-8")
@@ -228,7 +229,7 @@ class BaseWorkflowSource:
         workflow_dir = self.workflows_dir / workflow_id
         _ensure_contained_dir(workflow_dir, self.workflows_dir)
         path = workflow_dir / "workflow.yml"
-        if path.is_symlink():
+        if path_is_symlink(path):
             raise OverlayLoadError(path, ["Symlinked workflow files are not allowed"])
         if not path.is_file():
             return []

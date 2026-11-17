@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from ..agents import CommandRegistrar
 
 
+from specify_cli.symlink_warning import path_is_symlink
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import get_invocation_prefix
 from .._utils import dump_frontmatter
@@ -1066,7 +1067,7 @@ class _PresetSkillMethods:
         )
 
         validation_root = skills_root or self.project_root
-        if validation_root.is_symlink():
+        if path_is_symlink(validation_root):
             return False
         try:
             if create:

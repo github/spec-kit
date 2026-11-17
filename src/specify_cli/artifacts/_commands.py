@@ -14,6 +14,7 @@ from pathlib import Path
 
 import typer
 
+from ..symlink_warning import symlink_error_message
 from . import (
     ArtifactError,
     ArtifactResolutionError,
@@ -75,7 +76,7 @@ def _emit_error_and_exit(exc: ArtifactError) -> None:
     machine consumers can rely on an empty stdout when the exit code is
     non-zero, so no partial JSON payload leaks even on a late-stage failure.
     """
-    payload = json.dumps({"error": exc.message}, ensure_ascii=False)
+    payload = json.dumps({"error": symlink_error_message(exc.message)}, ensure_ascii=False)
     print(payload, file=sys.stderr)
     raise typer.Exit(code=1)
 

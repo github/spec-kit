@@ -28,7 +28,31 @@ Use `<project_name>` to create a new directory, or `--here` (or `.`) to initiali
 
 When `--integration` is omitted, interactive terminals prompt you to choose an integration. Non-interactive sessions, such as CI or piped runs, default to GitHub Copilot; pass `--integration <key>` to choose a different integration explicitly, or set `SPECKIT_INTEGRATION_DEFAULT` to change the fallback (see [Environment Variables](#environment-variables)).
 
-### Persisted filesystem policy
+### Symlinks are not specifically supported
+
+Spec Kit does not specifically support symlinks. Special symlink handling is
+deprecated: future versions will assume Spec Kit can perform the operations it
+needs on project paths without taking special care of symlinks or their targets.
+If you create or use symlinks, you are responsible for the outcome, including
+changes to or deletion of their targets, whether inside or outside the project.
+
+When FileHelper or other Python code with explicit symlink handling encounters
+a symlink, it emits a `SymlinkDeprecationWarning`. This includes dangling links,
+links pointing outside the project, and symlinks found during package/archive
+validation. There is no project-wide symlink scan. The notice uses Python's
+standard warning channel on stderr, leaving stdout unchanged; default warning
+filters show the same notice once per process. JSON commands defer the notice
+until their result is known: on failure it is included in the existing JSON
+error message, keeping stderr a single JSON document rather than mixing it
+with plain warning text.
+
+This first deprecation step adds notice, not removal of existing checks.
+The warning adds no confirmation or block of its own: operations retain their
+current allow or reject behavior. Existing containment checks and
+`--allow-symlinks` remain for now; neither is a promise of future symlink
+support or protection.
+
+### Persisted filesystem policy (transition behavior)
 
 Only `init` accepts `--allow-symlinks`. It records `allow_symlinks: true` in
 `.specify/init-options.json`; omitting it records `false`, including on re-init.

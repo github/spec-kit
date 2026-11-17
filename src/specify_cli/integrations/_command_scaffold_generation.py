@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from specify_cli.symlink_warning import path_is_symlink
+
 
 @dataclass(frozen=True)
 class IntegrationScaffoldResult:
@@ -187,7 +189,7 @@ def _assert_safe_scaffold_target(project_root: Path, target: Path) -> None:
     current = project_root
     for part in rel.parts:
         current = current / part
-        if current.is_symlink():
+        if path_is_symlink(current):
             label = current.relative_to(project_root).as_posix()
             raise ValueError(f"Refusing to scaffold through symlinked path: {label}")
 
@@ -255,7 +257,7 @@ def scaffold_integration(
     except OSError:
         for path in (test_file, integration_file):
             try:
-                if path.is_file() or path.is_symlink():
+                if path.is_file() or path_is_symlink(path):
                     path.unlink()
             except OSError:
                 pass

@@ -15,6 +15,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from specify_cli.symlink_warning import path_is_symlink
+
 if TYPE_CHECKING:
     from .base import StepBase
 
@@ -155,7 +157,7 @@ def load_custom_steps(project_root: Path) -> list[str]:
     _current = Path(project_root)
     for _part in (".specify", "workflows", "steps"):
         _current = _current / _part
-        if _current.is_symlink():
+        if path_is_symlink(_current):
             return []
 
     if not steps_dir.is_dir():
@@ -165,13 +167,13 @@ def load_custom_steps(project_root: Path) -> list[str]:
     for step_dir in steps_dir.iterdir():
         # Check symlinks before is_dir() since the latter follows symlinks
         # and would stat an external target through a symlinked directory.
-        if step_dir.is_symlink():
+        if path_is_symlink(step_dir):
             continue
         if not step_dir.is_dir():
             continue
         step_yml = step_dir / "step.yml"
         init_py = step_dir / "__init__.py"
-        if step_yml.is_symlink() or init_py.is_symlink():
+        if path_is_symlink(step_yml) or path_is_symlink(init_py):
             continue
         if not step_yml.is_file() or not init_py.is_file():
             continue

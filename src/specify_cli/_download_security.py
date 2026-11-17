@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import re
 import socket
-import stat
 import struct
 import tarfile
 import unicodedata
@@ -18,6 +17,8 @@ from itertools import pairwise
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import BinaryIO, Literal, NoReturn, TypeVar
 from urllib.parse import ParseResult, urlparse
+
+from specify_cli.symlink_warning import mode_is_symlink, warn_symlink
 
 
 ErrorT = TypeVar("ErrorT", bound=Exception)
@@ -957,7 +958,7 @@ def safe_extract_zip(
             validated_paths[path_key] = (member.filename, is_dir)
 
             mode = member.external_attr >> 16
-            if stat.S_ISLNK(mode):
+            if mode_is_symlink(mode):
                 _raise(error_type, f"Unsafe symlink in ZIP archive: {member.filename}")
 
             member_path = (target_dir / normalized_name).resolve()
@@ -1117,6 +1118,7 @@ def safe_extract_tar(
                 )
                 is_dir = member.isdir()
                 if member.issym():
+                    warn_symlink()
                     _raise(
                         error_type,
                         f"Unsafe symlink in tar.gz archive: {member.name}",

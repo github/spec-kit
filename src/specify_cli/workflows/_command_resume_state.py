@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from specify_cli.symlink_warning import path_is_symlink
+
 
 def _path_has_symlink_component(path: Path) -> bool:
     """Return whether any component of an absolute path is a symlink."""
@@ -12,7 +14,7 @@ def _path_has_symlink_component(path: Path) -> bool:
     current = Path(absolute.anchor)
     for part in absolute.parts[1:]:
         current /= part
-        if current.is_symlink():
+        if path_is_symlink(current):
             return True
     return False
 

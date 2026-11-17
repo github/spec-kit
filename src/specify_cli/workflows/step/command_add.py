@@ -12,6 +12,7 @@ import hashlib
 import sys
 from typing import Annotated
 
+from specify_cli.symlink_warning import path_is_symlink
 from .. import _commands as cli
 from . import _helpers as step_helpers
 from . import step_app
@@ -38,7 +39,7 @@ def _install_from_dev(
     from . import installer
 
     dev_path = cli.Path(dev).expanduser()
-    if dev_path.is_symlink():
+    if path_is_symlink(dev_path):
         raise installer.StepInstallError(
             f"Refusing to install from a symlinked source directory: '{dev_path}'"
         )

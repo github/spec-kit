@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
 
+from specify_cli.symlink_warning import path_is_symlink
 from . import BundlerError
 from .manifest import ComponentRef
 from .versioning import same_version
@@ -790,7 +791,7 @@ class _StepKindManager:
                             )
                             if (
                                 current._has_symlinked_parent()
-                                or current.registry_path.is_symlink()
+                                or path_is_symlink(current.registry_path)
                             ):
                                 raise step_installer.StepInstallError(
                                     "Refusing to restore step "
