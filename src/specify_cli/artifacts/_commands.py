@@ -6,8 +6,6 @@ Typer-free modules in this package, following ``design/cli.md``.
 
 from __future__ import annotations
 
-import contextlib
-import io
 import json
 import sys
 from pathlib import Path
@@ -29,34 +27,18 @@ artifact_app = typer.Typer(
 
 
 def _resolve_project_root() -> Path:
-    """Return the project root without emitting Rich output on failure.
-
-    Delegates to :func:`specify_cli._require_specify_project` — the same
-    resolution chokepoint every other project-scoped subcommand (``preset``,
-    ``extension``, ``workflow``, ...) uses, including its ``SPECIFY_INIT_DIR``
-    override handling. That helper prints Rich error output and raises
-    ``typer.Exit`` on failure, which would corrupt the strict JSON envelope
-    ``specify artifact list --json`` and ``specify artifact info --json``
-    emit on stdout/stderr. The Rich output is suppressed here and the
-    Missing-project failures become :class:`NotASpecKitProjectError`; policy
-    failures retain their actionable message for the shared JSON error handler.
-    """
-    from .. import _require_specify_project  # lazy: avoids circular import
+    """Resolve the project without rendering or consuming pending diagnostics."""
     from .._file_policy import ProjectPolicyError
-    from .._project import ProjectResolutionError
+    from .._project import ProjectResolutionError, resolve_specify_project_root
 
-    with contextlib.redirect_stderr(io.StringIO()):
-        try:
-            root = _require_specify_project()
-        except typer.Exit as exc:
-            cause = exc.__cause__
-            if isinstance(cause, ProjectResolutionError) and isinstance(
-                cause.__cause__, ProjectPolicyError
-            ):
-                error = ArtifactError(str(cause))
-                error.message = str(cause)
-                raise error from exc
-            raise NotASpecKitProjectError() from None
+    try:
+        root = resolve_specify_project_root()
+    except ProjectResolutionError as exc:
+        if isinstance(exc.__cause__, ProjectPolicyError):
+            error = ArtifactError(str(exc))
+            error.message = str(exc)
+            raise error from exc
+        raise NotASpecKitProjectError() from None
     from ..integrations.installer import (
         IntegrationInstallError,
         load_installed_integrations,

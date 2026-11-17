@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import io
 import json
 import os
@@ -15,6 +16,7 @@ import warnings
 import zipfile
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from specify_cli import _file_handles, app
@@ -24,6 +26,7 @@ from specify_cli.integrations import opencode
 from specify_cli.integrations.manifest import IntegrationManifest
 from specify_cli.symlink_warning import (
     SymlinkDeprecationWarning,
+    defer_symlink_warnings,
     mode_is_symlink,
     path_is_symlink,
 )
@@ -310,21 +313,28 @@ def test_real_cli_status_keeps_json_and_symlink_handling(tmp_path, symlink):
 
 
 @pytest.mark.parametrize(
-    "arguments",
+    "arguments,linked_entry",
     [
-        ["artifact", "list", "--json"],
-        ["extension", "list", "--json"],
-        ["bundle", "list", "--json"],
-        ["integration", "status", "--json"],
-        ["workflow", "run", "missing.yml", "--json"],
+        (["artifact", "list", "--json"], "marker"),
+        (["extension", "list", "--json"], "marker"),
+        (["bundle", "list", "--json"], "marker"),
+        (["integration", "status", "--json"], "marker"),
+        (["workflow", "run", "missing.yml", "--json"], "marker"),
+        (["artifact", "lookup", "missing", "--json"], "marker"),
+        (["artifact", "lookup", "missing", "--json"], "config"),
     ],
 )
-def test_real_cli_symlink_error_stays_one_json_document(tmp_path, arguments):
+def test_real_cli_symlink_error_stays_one_json_document(tmp_path, arguments, linked_entry):
     project = tmp_path / "project"
     project.mkdir()
     target = tmp_path / "target"
-    target.mkdir()
-    _link(project / ".specify", target)
+    if linked_entry == "marker":
+        target.mkdir()
+        _link(project / ".specify", target)
+    else:
+        target.write_text("{}", encoding="utf-8")
+        (project / ".specify").mkdir()
+        _link(project / ".specify" / "init-options.json", target)
     env = os.environ.copy()
     for key in ("SPECIFY_INIT_DIR", "PYTHONWARNINGS"):
         env.pop(key, None)
@@ -366,3 +376,144 @@ def test_json_warning_state_does_not_leak_between_invocations(tmp_path, monkeypa
     assert "init-options.json" in json.loads(second.stderr)["error"]
     with pytest.warns(SymlinkDeprecationWarning):
         assert mode_is_symlink(stat.S_IFLNK)
+
+
+@pytest.mark.parametrize("command", ["run", "resume"])
+def test_real_cli_workflow_plugin_failure_keeps_notice_in_json(tmp_path, command):
+    workflows = tmp_path / ".specify" / "workflows"
+    workflows.mkdir(parents=True)
+    target = tmp_path / "outside-functions"
+    target.mkdir()
+    _link(workflows / "functions", target)
+    source = tmp_path / "example.yml"
+    source.write_text("id: example\nsteps: []\n", encoding="utf-8")
+    env = os.environ.copy()
+    for key in ("SPECIFY_INIT_DIR", "PYTHONWARNINGS"):
+        env.pop(key, None)
+    result = subprocess.run(
+        [
+            sys.executable, "-c", "from specify_cli import main; main()",
+            "workflow", command, str(source) if command == "run" else "missing", "--json",
+        ],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 1
+    error = json.loads(result.stdout)
+    assert error["status"] == "failed"
+    assert "functions" in error["error"]
+    assert "responsible for the outcome" in error["error"]
+    assert result.stderr == ""
+    assert list(target.iterdir()) == []
+
+
+def test_workflow_execution_failure_consumes_deferred_notice(capsys):
+    from specify_cli.workflows import _commands
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with defer_symlink_warnings(lambda: True), pytest.raises(typer.Exit):
+            mode_is_symlink(stat.S_IFLNK)
+            _commands._fail_workflow_execution(
+                OSError("workflow path refused"), json_output=True, state=None,
+            )
+    assert not caught
+    output = capsys.readouterr()
+    error = json.loads(output.out)
+    assert error["status"] == "failed"
+    assert "responsible for the outcome" in error["error"]
+    assert output.err == ""
+
+
+@pytest.mark.parametrize("operation", ["list", "info"])
+def test_mcp_keeps_policy_notice_on_server_stderr(tmp_path, operation):
+    target = tmp_path / "target"
+    target.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    _link(project / ".specify", target)
+    program = """
+import json
+import sys
+from pathlib import Path
+from specify_cli.artifacts.mcp_list import create_artifact_list_tool
+from specify_cli.artifacts.mcp_info import create_artifact_info_tool
+root = Path(sys.argv[1])
+if sys.argv[2] == "list":
+    result = create_artifact_list_tool(launch_directory=root)()
+else:
+    result = create_artifact_info_tool(launch_directory=root)("template:spec")
+payload = result.model_dump(by_alias=True)
+assert payload["isError"]
+print(json.dumps(payload["structuredContent"]))
+"""
+    env = os.environ.copy()
+    env.pop("PYTHONWARNINGS", None)
+    result = subprocess.run(
+        [sys.executable, "-c", program, str(project), operation],
+        capture_output=True, text=True, env=env, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    error = json.loads(result.stdout)["error"]
+    assert set(error) == {"code", "message", "details", "retryable"}
+    assert "symlink" in error["message"].lower()
+    assert "not specifically supported" not in error["message"]
+    assert result.stderr.count("SymlinkDeprecationWarning:") == 1
+    assert "responsible for the outcome" in result.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor-relative cache checks")
+@pytest.mark.parametrize("cache", ["extension", "workflow"])
+@pytest.mark.parametrize("entry", ["symlink", "uninspectable-symlink", "file", "directory"])
+def test_posix_cache_warns_only_on_confirmed_symlink_refusal(tmp_path, monkeypatch, cache, entry):
+    from specify_cli.extensions import _commands as extensions
+    from specify_cli.workflows import _catalog_cache
+
+    if not extensions._has_secure_dir_fd():
+        pytest.skip("Descriptor-relative no-follow cache I/O unavailable")
+    root = tmp_path / "project"
+    root.mkdir()
+    directory = (
+        root.joinpath(*extensions._CACHE_REL_PARTS)
+        if cache == "extension"
+        else root / ".specify" / "workflows" / ".cache"
+    )
+    directory.parent.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    if "symlink" in entry:
+        _link(directory, outside)
+    elif entry == "file":
+        directory.write_text("ordinary", encoding="utf-8")
+    else:
+        directory.mkdir()
+
+    original_stat = os.stat
+
+    def checked_stat(path, *args, **kwargs):
+        if kwargs.get("dir_fd") is not None and kwargs.get("follow_symlinks") is False:
+            if entry == "uninspectable-symlink":
+                raise PermissionError(errno.EACCES, "diagnostic metadata unavailable")
+            if entry == "directory":
+                pytest.fail("Successful cache walks must not add metadata probes")
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", checked_stat)
+
+    def validate():
+        if cache == "extension":
+            extensions._validate_cache_dir_via_dir_fd(root, directory)
+        else:
+            with _catalog_cache._cache_directory(root, directory, create=False):
+                pass
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        if entry == "directory":
+            validate()
+        else:
+            with pytest.raises(OSError) as error:
+                validate()
+            assert error.value.errno in (errno.ELOOP, errno.ENOTDIR)
+    assert bool(caught) is (entry == "symlink")
+    assert all(item.category is SymlinkDeprecationWarning for item in caught)
+    assert list(outside.iterdir()) == []

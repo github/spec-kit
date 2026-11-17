@@ -558,7 +558,8 @@ steps:
     def _write_wf(self, project_dir, text, name):
         path = project_dir / f"{name}.yml"
         path.write_text(text, encoding="utf-8")
-        return path
+        # Keep OS temporary-directory aliases out of the plain-error cases.
+        return path.resolve()
 
     def _invoke(self, project_dir, args):
         from typer.testing import CliRunner

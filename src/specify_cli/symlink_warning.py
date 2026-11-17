@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import errno
+import os
 import stat
 import warnings
 from collections.abc import Callable, Iterator
@@ -79,3 +81,15 @@ def mode_is_symlink(mode: int) -> bool:
     if result:
         warn_symlink()
     return result
+
+
+def warn_symlink_refusal(error: OSError, name: str, *, dir_fd: int) -> None:
+    """Confirm a failed no-follow open without changing the caller's refusal."""
+    if error.errno not in (errno.ELOOP, errno.ENOTDIR):
+        return
+    try:
+        metadata = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    except OSError:
+        # The caller still raises the original refusal if diagnostics fail.
+        return
+    mode_is_symlink(metadata.st_mode)

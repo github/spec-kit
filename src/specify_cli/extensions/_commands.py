@@ -19,7 +19,7 @@ import yaml as yaml
 from rich.markup import escape as _escape_markup
 from rich.table import Table
 
-from specify_cli.symlink_warning import path_is_symlink
+from specify_cli.symlink_warning import path_is_symlink, warn_symlink_refusal
 from .._console import console
 from .._assets import get_speckit_version as get_speckit_version
 from .._download_security import (
@@ -516,13 +516,17 @@ def _validate_cache_dir_via_dir_fd(project_root: Path, download_dir: Path) -> No
             current_path = current_path / part
 
             try:
-                child_fd = os.open(part, walk_flags, dir_fd=parent_fd)
-            except FileNotFoundError:
                 try:
-                    os.mkdir(part, dir_fd=parent_fd)
-                except FileExistsError:
-                    pass
-                child_fd = os.open(part, walk_flags, dir_fd=parent_fd)
+                    child_fd = os.open(part, walk_flags, dir_fd=parent_fd)
+                except FileNotFoundError:
+                    try:
+                        os.mkdir(part, dir_fd=parent_fd)
+                    except FileExistsError:
+                        pass
+                    child_fd = os.open(part, walk_flags, dir_fd=parent_fd)
+            except OSError as exc:
+                warn_symlink_refusal(exc, part, dir_fd=parent_fd)
+                raise
 
             try:
                 current_path.resolve().relative_to(project_root_resolved)
