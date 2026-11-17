@@ -23,6 +23,10 @@ Skills are installed as `.claude/skills/speckit-<command>/SKILL.md`.
 Invoke them in Claude's chat, for example `/speckit-specify` or
 `/speckit-bug-assess` for the installed bug extension.
 
+Supported core skills receive inline `argument-hint` frontmatter, and extension
+commands and preset command aliases retain any `argument-hint` declared in their
+source command frontmatter.
+
 ## User-Invocable-Only Skills
 
 By default every Spec Kit skill installed for Claude Code is model-invocable, so
