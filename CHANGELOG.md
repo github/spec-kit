@@ -2,6 +2,56 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.4.2] - 2026-11-17
+
+### Changed
+
+- fix(extensions): omit config hint when no scaffolding fails (#5459)
+- fix(powershell): write -Json output of the PowerShell helpers as ASCII (#5417)
+- Add ghp community bundle entry (#5457)
+- fix(bundles): honor bundle integration during init (#5111)
+- Update ado community bundle to v0.4.0 (#5454)
+- Update A·I·DID·IT — Agile Expansion Pack to v0.2.4 (#5451)
+- Update Autonomous Run Governance preset to v0.4.12 (#5446)
+- feat(tasks): cite canonical field constraints and analyze drift (#5458)
+- Update Spec Kit for Azure DevOps — human-gated lifecycle extension to v0.4.0 (#5453)
+- Update DocGuard — CDD Enforcement extension to v0.48.0 (#5450)
+- Update SpecKit Companion extension to v0.27.0 (#5447)
+- feat: add version provenance to generated skills (#5456)
+- fix(5076): escape Rich markup in workflow output (#5112)
+- Update ado-lifecycle to 0.4.0 (#5427)
+- chore: shorten stale lifecycle to 30/30 days (#5440)
+- Add Spec Status extension to community catalog (#5414)
+- fix: opt-in OpenCode discovery of hidden Spec Kit files (#5032)
+- test: pin the suite interpreter on PATH for parity script subprocesses (#5361)
+- chore(deps): bump the codeql-action group with 2 updates (#5420)
+- chore: release 1.4.1, begin 1.4.2.dev0 development (#5445)
+
+## [1.4.1] - 2026-11-16
+
+### Changed
+
+- Add Elephant-Goldfish Model extension to community catalog (#5444)
+- Add Spec Kit lifecycle for Jira extension to community catalog (#5438)
+- [preset] Add OKR Bet Spec Section preset to community catalog (#5439)
+- Add Multi-Repo Workspace Orchestration extension to community catalog (#5436)
+- fix(powershell): treat bracketed project paths literally in the git extension (#5404)
+- fix(powershell): treat bracketed project paths literally in create-new-feature (#5399)
+- fix(powershell): treat project and preset template paths literally (#5396)
+- docs(extensions): list the converge hook events (#5328)
+- [extension] Add OKR Bets extension to community catalog (#5412)
+- Update T-Shirt Sizing Gate extension to v0.2.0 (#5407)
+- Update Intake Sequencing Governance preset to v0.2.13 (#5406)
+- fix(workflows): expose bundled review verdict inputs (#5392)
+- Update Intake Review Governance preset to v0.2.8 (#5388)
+- fix(integrations): honor shared refresh for installed targets (#5377)
+- Update ado-lifecycle to 0.3.2 (#5345)
+- Use handle-based deletion in FileHelper (#5352)
+- [extension] Add A·I·DID·IT — Agile Expansion Pack extension to community catalog (#5375)
+- Update DocGuard — CDD Enforcement to v0.47.0 (#5374)
+- Update Intake Authoring Governance preset to v0.3.12 (#5372)
+- chore: release 1.4.0, begin 1.4.1.dev0 development (#5371)
+
 ## [1.4.0] - 2026-11-10
 
 ### Changed

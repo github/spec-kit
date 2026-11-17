@@ -28,7 +28,11 @@ agent and its installed mode:
 | Codex, Command Code, ZCode skills | `$speckit-specify` | `$speckit-bug-assess` |
 | Kimi skills | `/skill:speckit-specify` | `/skill:speckit-bug-assess` |
 
-Use the form exposed by your agent. See the
+Use the form exposed by your agent. In skills-backed integrations, generated
+core, extension, and preset skills include hook-command guidance translating
+dotted hook command names (such as `speckit.git.commit`) into the active
+integration's hyphenated skill invocation (such as `/speckit-git-commit` or
+`$speckit-git-commit`). See the
 [GitHub Copilot guide](copilot.md) for its skills and commands
 layouts, or choose another agent from the [integration directory](index.md).
 
@@ -420,6 +424,7 @@ semantics, examples, and migration caveats live in the relevant agent guide:
 | GitHub Copilot | [Skills and commands layouts](copilot.md#commands-layout) |
 | IBM Bob | [Legacy commands and migration](bob.md#legacy-commands-and-migration) |
 | Kimi Code | [Legacy migration](kimi.md#legacy-migration) |
+| opencode | [Hidden Spec Kit files](opencode.md#hidden-spec-kit-files) |
 
 Other agent-specific details are listed in the
 [integration directory](index.md).

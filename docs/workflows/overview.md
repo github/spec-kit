@@ -33,6 +33,32 @@ specify workflow status <run_id>
 specify workflow resume <run_id>
 ```
 
+To approve a paused review without an interactive terminal, supply the
+corresponding verdict input after reviewing the output:
+
+| Workflow | Review gate | Verdict input |
+| --- | --- | --- |
+| `speckit` | `review-spec` | `speckit_review_spec_verdict` |
+| `speckit` | `review-plan` | `speckit_review_plan_verdict` |
+| `bugfix` | `review-assessment` | `bug_review_assessment_verdict` |
+
+```bash
+specify workflow resume <sdd_run_id> --input speckit_review_spec_verdict=approve
+specify workflow resume <sdd_run_id> --input speckit_review_plan_verdict=approve
+specify workflow resume <bugfix_run_id> --input bug_review_assessment_verdict=approve
+```
+
+Use the command matching the active review. These string inputs are optional
+and default to `""`: omitting an input or supplying an empty value keeps the
+existing prompt on an interactive terminal or pause otherwise. Approving the
+specification does not approve the plan review.
+
+The inputs are available in `speckit` workflow version 1.0.2 and `bugfix` version
+1.0.1, with Specify CLI 0.15.1 or later. Update the installed workflow and start
+a new run to use its new input declarations. Existing runs keep the workflow
+definition saved when they started; updating the installed workflow does not
+add inputs to those runs.
+
 Each run gets its own ID and state directory. Completed occurrences are replayed
 into the expression context without re-executing their implementations.
 Unfinished work continues from its persisted state; a side effect interrupted
@@ -53,8 +79,9 @@ specify workflow run ./workflow.yml --input spec="Build a kanban board"
 | `assess` | Idea intake, research, definition, shaping, and decision | `idea` |
 
 Use `specify workflow info <id>` for metadata, inputs, and the step graph.
-The `speckit` workflow declares `spec` and optional `integration`, not a `scope`
-input. Workflows using extension commands also need those commands installed;
+The `speckit` workflow declares `spec`, optional `integration`, and the two
+optional verdict inputs above, not a `scope` input. Workflows using extension
+commands also need those commands installed;
 consult each bundled definition's requirements.
 
 ## Customize a workflow

@@ -61,7 +61,7 @@ ARCHIVE_SUBMISSION_WORKFLOWS = (
         "preset",
         "preset-submission",
         "presets/catalog.community.json",
-        "docs/community/presets.md",
+        None,
         "Do not modify any other files",
     ),
 )
@@ -788,15 +788,14 @@ def test_community_submission_automation_is_wired_to_allowed_files():
 
         assert f"names: [{label}]" in source_text
         assert catalog_file in source_text
-        assert docs_file in source_text
+        if docs_file is not None:
+            assert docs_file in source_text
         assert instruction in source_text
-        assert _create_pull_request_allowed_files(source_text) == [
-            catalog_file,
-            docs_file,
-        ]
+        allowed_files = [catalog_file] + ([docs_file] if docs_file is not None else [])
+        assert _create_pull_request_allowed_files(source_text) == allowed_files
         assert _safe_output_config(yaml.safe_load(compiled_text))[
             "create_pull_request"
-        ]["allowed_files"] == [catalog_file, docs_file]
+        ]["allowed_files"] == allowed_files
         assert label in assignment_text
 
 
@@ -1117,7 +1116,10 @@ def test_community_upgrade_preserves_scoped_draft_pr_contract(
         f"add-community-{kind}"
     )
     assert instruction in source_text
-    assert REPOSITORY_OWNED_DRAFT_PR_EXEMPTION in " ".join(source_text.split())
+    exemption = REPOSITORY_OWNED_DRAFT_PR_EXEMPTION
+    if docs_file is None:
+        exemption = exemption.replace("catalog/docs file updates", "catalog updates")
+    assert exemption in " ".join(source_text.split())
     assert (
         f"{{{{#runtime-import .github/workflows/add-community-{kind}.md}}}}"
         in compiled_text
@@ -1156,18 +1158,19 @@ def test_community_upgrade_preserves_scoped_draft_pr_contract(
     }
     assert source["safe-outputs"]["noop"] == {"report-as-issue": False}
     assert outputs["noop"] == {"max": 1, "report-as-issue": "false"}
+    allowed_files = [catalog_file] + ([docs_file] if docs_file is not None else [])
     assert source["safe-outputs"]["create-pull-request"] == {
         "title-prefix": f"[{kind}] ",
         "labels": [label, "automated"],
         "draft": True,
         "max": 1,
-        "allowed-files": [catalog_file, docs_file],
+        "allowed-files": allowed_files,
         "protected-files": {
             "policy": "blocked", "exclude": ["README.md", "CHANGELOG.md"]
         },
     }
     create_pr = outputs["create_pull_request"]
-    assert create_pr["allowed_files"] == [catalog_file, docs_file]
+    assert create_pr["allowed_files"] == allowed_files
     assert create_pr["draft"] is True
     assert create_pr["title_prefix"] == f"[{kind}] "
     assert create_pr["labels"] == [label, "automated"]
@@ -1380,7 +1383,7 @@ def test_community_archive_permission_failures_are_not_submission_failures(kind)
     if kind == "preset":
         assert "Remove any stale `validation-passed` and `validation-failed`" in passed
         assert "Do not add `validation-passed` yet" in passed
-        generated = source_text.split("### Verify the generated files", 1)[1].split(
+        generated = source_text.split("## Step 5", 1)[1].split(
             "\n## Step 6", 1
         )[0]
         assert "validate_community_preset.py generated" in generated

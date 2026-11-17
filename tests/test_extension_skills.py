@@ -474,6 +474,7 @@ class TestExtensionSkillRegistration:
         data = yaml.safe_load(manifest_path.read_text())
         if author is not None:
             data["extension"]["author"] = author
+        data["extension"]["version"] = "2.3.4"
         data["provides"]["commands"][0]["aliases"] = ["speckit.test-ext.greet"]
         manifest_path.write_text(yaml.safe_dump(data))
 
@@ -490,6 +491,7 @@ class TestExtensionSkillRegistration:
             frontmatter = yaml.safe_load(content.split("---", 2)[1])
             assert frontmatter["metadata"]["author"] == expected_author
             assert "test-ext" in frontmatter["metadata"]["source"]
+            assert frontmatter["metadata"]["version"] == "2.3.4"
 
     def test_skill_md_has_parseable_yaml(self, skills_project, extension_dir):
         """Generated SKILL.md should contain valid, parseable YAML frontmatter."""

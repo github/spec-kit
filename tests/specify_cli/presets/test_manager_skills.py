@@ -41,6 +41,12 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         content = skill_file.read_text()
         assert "preset:self-test" in content, "Skill should reference preset source"
         assert "disable-model-invocation: false" in content
+        from specify_cli.presets import PresetManifest
+
+        preset_manifest = PresetManifest(
+            project_dir / ".specify" / "presets" / "self-test" / "preset.yml"
+        )
+        assert yaml.safe_load(content.split("---", 2)[1])["metadata"]["version"] == preset_manifest.version
 
         # Verify it was recorded in registry, keyed by the active agent
         metadata = manager.registry.get("self-test")
@@ -402,6 +408,7 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "override:speckit.specify" in content, "skill should be restored from the project override"
         assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked on reconcile"
         assert "/speckit-plan" in content
+        assert "version" not in yaml.safe_load(content.split("---", 2)[1])["metadata"]
 
     def test_extension_restore_resolves_command_refs(self, project_dir, temp_dir):
         """Extension-backed skill restore must resolve command tokens (issue #2717).
@@ -617,8 +624,10 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         file_content = skill_file.read_text()
         assert "untouched" in file_content
 
-    def test_skill_restored_on_preset_remove(self, project_dir, temp_dir):
+    @pytest.mark.parametrize("version", ["9.8.7", "unknown"])
+    def test_skill_restored_on_preset_remove(self, project_dir, temp_dir, monkeypatch, version):
         """When a preset is removed, skills should be restored from core templates."""
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: version)
         self._write_init_options(project_dir, ai="claude")
         skills_dir = project_dir / ".claude" / "skills"
         self._create_skill(skills_dir, "speckit-specify")
@@ -646,6 +655,11 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "preset:self-test" not in content, "Preset content should be gone"
         assert "templates/commands/specify.md" in content, "Should reference core template"
         assert "disable-model-invocation: false" in content
+        metadata = yaml.safe_load(content.split("---", 2)[1])["metadata"]
+        if version == "unknown":
+            assert "version" not in metadata
+        else:
+            assert metadata["version"] == version
 
     def test_skill_restored_on_preset_remove_without_project_core_templates(self, project_dir):
         """Removing a preset must restore core skills even when the project
@@ -678,6 +692,9 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "preset:self-test" not in content
         assert "templates/commands/specify.md" in content
         assert "Create or update the feature specification" in content
+        from specify_cli import get_speckit_version
+
+        assert yaml.safe_load(content.split("---", 2)[1])["metadata"]["version"] == get_speckit_version()
 
     def test_extension_wins_over_bundled_core_on_preset_remove(
         self, project_dir, monkeypatch
@@ -743,6 +760,7 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "source: extension:fakeext" in content
         assert "extension:fakeext specify body" in content
         assert "templates/commands/specify.md" not in content
+        assert "version" not in yaml.safe_load(content.split("---", 2)[1])["metadata"]
 
     def test_skill_restored_on_remove_resolves_script_placeholders(self, project_dir):
         """Core restore should resolve {SCRIPT}/{ARGS} placeholders like other skill paths."""
@@ -870,7 +888,7 @@ class TestPresetSkills(PresetArtifactTestHelpers):
                 "id": "fakeext",
                 "name": "Fake Extension",
                 "author": "acme-corp",
-                "version": "1.0.0",
+                "version": "2.3.4",
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
@@ -937,6 +955,7 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "# Fakeext Cmd Skill" in content
 
         assert yaml.safe_load(content.split("---", 2)[1])["metadata"]["author"] == "acme-corp"
+        assert yaml.safe_load(content.split("---", 2)[1])["metadata"]["version"] == "2.3.4"
 
     def test_skill_composed_over_extension_base_rewrites_subdir_paths(
         self, project_dir, temp_dir
@@ -2004,6 +2023,10 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             temp_dir, "skills-preset-b", "speckit.specify",
             "Preset B", "preset B body",
         )
+        manifest_path = preset_b_dir / "preset.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        manifest["preset"]["version"] = "3.2.1"
+        manifest_path.write_text(yaml.safe_dump(manifest))
 
         manager = PresetManager(project_dir)
         # Lower priority number = higher precedence.
@@ -2025,6 +2048,7 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             "not fall back to core/extension content (#2948)"
         )
         assert "preset:skills-preset-a" not in content
+        assert yaml.safe_load(content.split("---", 2)[1])["metadata"]["version"] == "3.2.1"
 
     def test_remove_reconciles_skill_for_every_historical_agent(
         self, project_dir, temp_dir
