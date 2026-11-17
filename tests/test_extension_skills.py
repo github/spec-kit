@@ -3072,6 +3072,32 @@ class TestRegisterExtensionSkillsForceFlag:
         assert "speckit-test-ext-hello" not in written
         assert skill_file.read_text(encoding="utf-8") == "core-template content only"
 
+    @pytest.mark.parametrize("force", [False, True])
+    def test_skill_directory_symlink_preserves_external_files(
+        self, project_dir, temp_dir, force,
+    ):
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        ext_dir = _create_extension_dir(temp_dir)
+        external = temp_dir / "external-skills"
+        external.mkdir()
+        external_file = external / "SKILL.md"
+        external_file.write_bytes(b"External user content\r\n")
+        link = skills_dir / "speckit-test-ext-hello"
+        try:
+            link.symlink_to(external, target_is_directory=True)
+        except OSError:
+            pytest.skip("Current platform/user cannot create directory symlinks")
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        written = manager._register_extension_skills(manifest, ext_dir, force=force)
+
+        assert external_file.read_bytes() == b"External user content\r\n"
+        assert link.is_symlink()
+        assert "speckit-test-ext-hello" not in written
+        assert "speckit-test-ext-world" in written
+
     def test_force_true_overwrites_existing_skill(self, project_dir, temp_dir):
         """With force=True the function must overwrite the existing SKILL.md.
 
