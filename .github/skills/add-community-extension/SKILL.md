@@ -36,7 +36,7 @@ Check **all** of the following (per `docs/extensions/publishing.md`):
 | README.md present | Confirm in repo file listing |
 | LICENSE file present | Confirm in repo file listing |
 | GitHub release exists matching version | Check releases on the repo page |
-| Download URL is accessible | Verify it follows `archive/refs/tags/<tag>.zip` or `releases/download/<tag>/<asset>.zip` pattern and release exists, then fetch the archive and require HTTP 200 |
+| Download URL is accessible | Verify it follows `archive/refs/tags/<tag>.zip` or `releases/download/<tag>/<asset>.zip` pattern and release exists, then fetch the archive following redirects and require the final response to be HTTP 200 |
 | Extension ID is lowercase-with-hyphens only | Regex: `^[a-z][a-z0-9-]*$` |
 | Version follows semver | Format: `X.Y.Z` |
 | Submission checklists are all checked | Confirm in issue body |
