@@ -1413,7 +1413,10 @@ class TestExtensionSkillRegistration:
                 "speckit.early-ext.world",
             ]
         }
-        assert metadata["registered_skills"] == []
+        assert metadata["registered_skills"] == [
+            "speckit-early-ext-hello",
+            "speckit-early-ext-world",
+        ]
 
         skill_file = skills_dir / "speckit-early-ext-hello" / "SKILL.md"
         assert skill_file.exists()
@@ -1443,7 +1446,10 @@ class TestExtensionSkillRegistration:
                 "speckit.early-ext.world",
             ]
         }
-        assert metadata["registered_skills"] == []
+        assert metadata["registered_skills"] == [
+            "speckit-early-ext-hello",
+            "speckit-early-ext-world",
+        ]
 
         global_skills_dir = home / ".hermes" / "skills"
         assert (
@@ -2877,7 +2883,10 @@ class TestExtensionSkillRegistration:
                 "speckit.early-ext.world",
             ]
         }
-        assert metadata["registered_skills"] == []
+        assert metadata["registered_skills"] == [
+            "speckit-early-ext-hello",
+            "speckit-early-ext-world",
+        ]
 
     def test_missing_shared_skills_dir_uses_normalized_guard_for_later_agents(
         self, project_dir, temp_dir, monkeypatch
@@ -2921,7 +2930,10 @@ class TestExtensionSkillRegistration:
                 "speckit.early-ext.world",
             ]
         }
-        assert metadata["registered_skills"] == []
+        assert metadata["registered_skills"] == [
+            "speckit-early-ext-hello",
+            "speckit-early-ext-world",
+        ]
 
     def test_missing_shared_skills_dir_write_oserror_does_not_register_other_agents(
         self, project_dir, temp_dir, monkeypatch

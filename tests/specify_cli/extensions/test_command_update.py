@@ -822,10 +822,7 @@ class TestExtensionUpdateCLI:
 
         assert result.exit_code == 0, result.output
         updated = ExtensionManager(project_dir).registry.get("test-ext")
-        # Native skill files remain owned through registered_commands; the
-        # shared renderer refreshes their content without duplicating them in
-        # the extension-skills ownership list.
-        assert updated["registered_skills"] == []
+        assert updated["registered_skills"] == updated_skill_names
         assert updated["registered_commands"] == {"claude": updated_command_names}
         hook_config = HookExecutor(project_dir).get_project_config()
         hook = hook_config["hooks"]["after_tasks"][0]

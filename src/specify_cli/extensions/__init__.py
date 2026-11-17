@@ -3082,13 +3082,10 @@ class ExtensionManager:
                 force=bool(native_skill_names),
                 force_names=native_skill_names,
             )
-            # A native primary skill is already owned through
-            # ``registered_commands``. Keep the extension-skills registry for
-            # files created only by this shared renderer, avoiding duplicate
-            # ownership and cleanup.
-            registered_skills = [
-                name for name in rendered_skills if name not in native_skill_names
-            ]
+            # Record every file rendered here as extension-owned. Native
+            # command registration also tracks primary skills, while this
+            # ownership marker lets removal safely verify the rendered content.
+            registered_skills = list(dict.fromkeys(rendered_skills))
             if register_commands and generic_active and manifest.commands:
                 expected = set(names)
                 actual = set(
