@@ -127,9 +127,9 @@ dedicated checksum field in the form. If supplied, it must match the fetched
 archive; a mismatch is a validation failure, not a value the automation
 silently replaces.
 
-Do not edit `presets/catalog.community.json` or
-`docs/community/presets.md` yourself as a substitute for submission.
-Automation prepares those changes after validation.
+Do not edit `presets/catalog.community.json` yourself as a substitute for
+submission. Automation prepares catalog changes after validation; the
+documentation site generates its preset directory from that catalog.
 
 ## What happens after submission
 
@@ -144,10 +144,11 @@ Automation prepares those changes after validation.
    The verifier parses the published manifest without executing archive
    content, comparing its ID, version, Spec Kit requirement, and required
    extensions to the issue.
-4. On success, automation proposes a draft pull request updating the catalog
-   and community table. It records the actual archive digest, preserves
-   `created_at` on updates, sorts catalog IDs and display names appropriately,
-   and verifies the generated files before marking validation passed.
+4. On success, automation proposes a draft pull request updating the catalog.
+   It records the actual archive digest, preserves `created_at` on updates,
+   sorts catalog IDs, and verifies the generated catalog before marking
+   validation passed. The docs build generates the alphabetical directory
+   and individual preset pages; there is no separate table to maintain.
 5. A maintainer reviews the generated catalog changes and merges them when
    approved. The preset becomes discoverable; the community catalog remains
    discovery-only.
