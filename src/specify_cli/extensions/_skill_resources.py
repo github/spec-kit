@@ -11,7 +11,12 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import pathspec
 
 from . import ValidationError
-from ..integrations.manifest import IntegrationManifest, _sha256, _validate_record_path
+from ..integrations.manifest import (
+    IntegrationManifest,
+    _ensure_safe_manifest_removal,
+    _sha256,
+    _validate_record_path,
+)
 from ..shared_infra import _validate_safe_shared_directory
 
 
@@ -346,7 +351,10 @@ def sync_skill_resources(
             if not managed:
                 if expected is not None:
                     updated[rel] = expected
-                    warnings.append(f"Preserved modified resource {rel}; use --force to overwrite")
+                    warnings.append(
+                        f"Preserved modified resource {rel}; "
+                        "run 'specify integration upgrade --force' to overwrite"
+                    )
                 else:
                     warnings.append(f"Skipped unowned resource {rel}")
                 continue
@@ -398,6 +406,23 @@ def remove_skill_resources(
             continue
         manifest._files[key] = digest
     removed, skipped = manifest.uninstall(force=True, remove_manifest=False)
+    root = trusted_root.resolve()
+    skipped_set = set(skipped)
+    for key in manifest._files:
+        path = root / key
+        if path in skipped_set or path.exists() or path.is_symlink():
+            continue
+        parent = path.parent
+        while parent != root:
+            try:
+                _ensure_safe_manifest_removal(root, parent)
+                if parent.is_symlink():
+                    break
+                if parent.exists():
+                    parent.rmdir()
+            except (ValueError, OSError):
+                break
+            parent = parent.parent
     return removed, dropped + skipped
 
 

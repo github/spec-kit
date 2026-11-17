@@ -2125,7 +2125,11 @@ class ExtensionManager:
                 if path.is_absolute() or ".." in path.parts or path.as_posix() != key:
                     continue
                 candidate = root / path
-                if candidate.is_relative_to(target) and candidate != target:
+                if (
+                    candidate.is_relative_to(target)
+                    and candidate != target
+                    and (candidate.is_symlink() or candidate.is_file())
+                ):
                     allowed.add(candidate)
             for child in target.rglob("*"):
                 if child == target / "SKILL.md":

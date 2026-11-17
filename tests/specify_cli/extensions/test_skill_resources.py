@@ -175,7 +175,7 @@ def test_sync_skill_resources_ownership_and_force(tmp_path):
     assert hashes[modified.relative_to(root).as_posix()] == previous[modified.relative_to(root).as_posix()]
     assert unowned.relative_to(root).as_posix() not in hashes
     assert hashes[owned.relative_to(root).as_posix()] == _sha256(owned)
-    assert any("--force" in warning for warning in warnings)
+    assert any("specify integration upgrade --force" in warning for warning in warnings)
     assert any("unowned" in warning for warning in warnings)
 
     again, written, warnings = sync_skill_resources(
@@ -256,6 +256,31 @@ def test_remove_skill_resources_skips_symlinked_skills_directory(tmp_path):
     removed, skipped = remove_skill_resources("ext", root, {"skills/skill/a": "old-hash"})
     assert not removed and skipped == [root / "skills/skill/a"]
     assert target.read_text() == "outside"
+
+
+def test_remove_skill_resources_prunes_empty_parents_of_missing_recorded_files(tmp_path):
+    root = tmp_path / "project"
+    empty_dir = root / "skills/skill/references/nested"
+    empty_dir.mkdir(parents=True)
+    kept = put(root / "skills/skill/kept/user.txt", "keep")
+    outside = tmp_path / "outside/sub"
+    outside.mkdir(parents=True)
+    link(root / "linked", outside.parent, directory=True)
+
+    removed, skipped = remove_skill_resources(
+        "ext",
+        root,
+        {
+            "skills/skill/references/nested/guide.md": "old-hash",
+            "skills/skill/kept/gone.md": "old-hash",
+            "linked/sub/gone.md": "old-hash",
+        },
+    )
+    assert removed == []
+    assert skipped == [root / "linked/sub/gone.md"]
+    assert not (root / "skills/skill/references").exists()
+    assert kept.read_text() == "keep"
+    assert outside.is_dir()
 
 
 def test_home_resource_root_and_manifest(monkeypatch, tmp_path):

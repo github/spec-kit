@@ -2798,6 +2798,56 @@ def test_generic_force_reinstall_with_owned_skill_resources(tmp_path, generic_ex
     assert (skill / "unrelated").read_text() == "keep"
 
 
+def test_generic_force_reinstall_rejects_orphaned_resource_dir_and_remove_prunes_it(
+    tmp_path, generic_extension,
+):
+    project = generic_project(tmp_path, skills=True, commands_dir=".custom/skills")
+    path = generic_extension / "extension.yml"
+    data = yaml.safe_load(path.read_text())
+    data["provides"]["commands"][0]["resources"] = ["scripts/run.sh"]
+    path.write_text(yaml.safe_dump(data))
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    skill = project / ".custom/skills/speckit-sample-run"
+    resource = skill / "scripts/run.sh"
+    resource.unlink()
+    assert resource.parent.is_dir()
+
+    with pytest.raises(ExtensionError, match="cannot be replaced safely"):
+        manager.install_from_directory(generic_extension, "1.0.0", force=True)
+    assert manager.registry.is_installed("sample")
+    assert (skill / "SKILL.md").is_file()
+    assert (manager.extensions_dir / "sample/extension.yml").is_file()
+
+    assert manager.remove("sample")
+    assert not skill.exists()
+    manager.install_from_directory(generic_extension, "1.0.0")
+    assert resource.is_file()
+
+
+def test_generic_force_reinstall_rejects_unowned_file_at_newly_declared_resource_path(
+    tmp_path, generic_extension,
+):
+    project = generic_project(tmp_path, skills=True, commands_dir=".custom/skills")
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    skill = project / ".custom/skills/speckit-sample-run"
+    unowned = skill / "scripts/run.sh"
+    unowned.parent.mkdir(parents=True)
+    unowned.write_text("user file", encoding="utf-8")
+
+    path = generic_extension / "extension.yml"
+    data = yaml.safe_load(path.read_text())
+    data["provides"]["commands"][0]["resources"] = ["scripts/run.sh"]
+    path.write_text(yaml.safe_dump(data))
+
+    with pytest.raises(ExtensionError, match="cannot be replaced safely"):
+        manager.install_from_directory(generic_extension, "1.0.0", force=True)
+    assert unowned.read_text(encoding="utf-8") == "user file"
+    assert (skill / "SKILL.md").is_file()
+    assert manager.registry.is_installed("sample")
+
+
 def test_generic_extension_add_force_overwrites_skill_resource(tmp_path, generic_extension, monkeypatch):
     from typer.testing import CliRunner
     from specify_cli import app

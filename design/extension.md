@@ -203,7 +203,8 @@ archive extraction when applicable. The manager:
    install conflicts;
 2. when the generic integration is active, validates its registration
    settings, command sources, and unsafe existing output collisions;
-3. preserves eligible configuration before any destructive force reinstall;
+3. loads `.extensionignore` and validates declared skill resources, then
+   preserves eligible configuration before any destructive force reinstall;
 4. copies the extension under `.specify/extensions/<id>/`, honoring
    `.extensionignore`;
 5. renders commands or skills for the active integration;
@@ -317,7 +318,9 @@ symlink is judged the same way.
 Resource cleanup itself does not remove unrecorded paths. Native and generic
 skill cleanup leaves unrelated files in place, but existing non-generic
 supplemental cleanup removes the entire skill directory, including unrecorded
-files. A forced render can overwrite an unowned destination.
+files. A forced render can overwrite an unowned destination, except during
+generic `extension add --force`, whose custom-directory preflight admits only
+unchanged owned invocations and previously recorded resource paths.
 
 Hooks are declarative AI-agent follow-up instructions, not direct subprocess
 execution. `HookExecutor` is a helper API that filters enabled bindings,
@@ -423,10 +426,9 @@ them to user-facing messages and non-zero exits.
 The implementation provides targeted transactional guarantees rather than one
 global filesystem transaction:
 
-- manifest, compatibility, priority, namespace, conflict, and generic
-  active-output checks precede destructive force removal. `.extensionignore`
-  is loaded afterward, so an unreadable or invalid ignore file can still fail
-  after the prior package has been removed;
+- manifest, compatibility, priority, namespace, conflict, generic
+  active-output, `.extensionignore` loading, and declared skill-resource
+  checks precede destructive force removal;
 - kept configuration is durably staged and restored across copy failures and
   interrupted retries;
 - generic integration registration rolls back generated outputs, hooks, and
