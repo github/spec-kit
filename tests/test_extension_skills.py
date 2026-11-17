@@ -3178,7 +3178,38 @@ class TestRegisterExtensionSkillsForceFlag:
         content = skill_file.read_text(encoding="utf-8")
         assert "[test-ext] Test hello command" in content
         assert "HOOKED" in content
+        assert "source: extension:test-ext" in content
+        assert "user-invocable: true" in content
         assert "native integration registration" not in content
+
+    def test_other_agents_registered_skills_do_not_overwrite_user_skill(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """Only command skills written for this agent may be force-refreshed."""
+        from specify_cli.agents import CommandRegistrar
+
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        ext_dir = _create_extension_dir(temp_dir)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0")
+        metadata = manager.registry.get("test-ext")
+        assert "speckit-test-ext-hello" in metadata["registered_skills"]
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="copilot")
+        user_skill = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        user_skill.parent.mkdir(parents=True)
+        user_skill.write_text("user-owned skill", encoding="utf-8")
+
+        def skip_existing_commands(self, *args, **kwargs):
+            return []
+
+        monkeypatch.setattr(
+            CommandRegistrar, "register_commands", skip_existing_commands
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert user_skill.read_text(encoding="utf-8") == "user-owned skill"
 
     def test_force_true_with_preexisting_dir_but_no_skill_file(
         self, project_dir, temp_dir

@@ -4026,15 +4026,16 @@ class ExtensionManager:
                 # #2948 callers only pass the active agent anyway).
                 if agent_name == active_agent:
                     try:
-                        owned_skill_names = self._valid_name_list(
-                            metadata.get("registered_skills", [])
-                        )
+                        registered_skill_names = {
+                            self._skill_name_for_command(command_name)
+                            for command_name in self._valid_name_list(registered)
+                        }
                         registered_skills = self._register_extension_skills(
                             manifest,
                             ext_dir,
-                            force=force or bool(owned_skill_names),
+                            force=force or bool(registered_skill_names),
                             force_names=(
-                                None if force else set(owned_skill_names)
+                                None if force else registered_skill_names
                             ),
                         )
                         if agent_name == "generic" and skills_mode_active:
