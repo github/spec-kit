@@ -7,13 +7,16 @@ from specify_cli.presets import (
 )
 from tests.conftest import strip_ansi
 from tests.specify_cli.presets._helpers import (
+    PresetArtifactTestHelpers,
     install_constitution_sync_preset,
     install_self_test_preset,
+)
+from tests.specify_cli.presets._helpers import (
     make_convention_constitution_preset as _make_convention_constitution_preset,
 )
 
 
-class TestPresetSetPriority:
+class TestPresetSetPriority(PresetArtifactTestHelpers):
     """Test preset set-priority CLI command."""
 
     def test_set_priority_changes_priority(self, project_dir, pack_dir):
@@ -71,6 +74,40 @@ class TestPresetSetPriority:
 
         assert result.exit_code == 0, result.output
         assert memory.read_text() == "# Convention Constitution\n"
+
+    def test_set_priority_reconciles_generated_commands(self, project_dir, temp_dir):
+        """Changing priority rematerializes the winning preset command."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        commands_dir = project_dir / ".gemini" / "commands"
+        commands_dir.mkdir(parents=True)
+
+        manager = PresetManager(project_dir)
+        first = self._create_command_preset(
+            temp_dir, "priority-first", "speckit.demo", "First", "BODY-A"
+        )
+        second = self._create_command_preset(
+            temp_dir, "priority-second", "speckit.demo", "Second", "BODY-B"
+        )
+        manager.install_from_directory(first, "0.1.5", priority=10)
+        manager.install_from_directory(second, "0.1.5", priority=20)
+
+        command_file = commands_dir / "speckit.demo.toml"
+        assert "BODY-A" in command_file.read_text()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "set-priority", "priority-second", "1"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "BODY-B" in command_file.read_text()
+        assert "BODY-A" not in command_file.read_text()
 
     def test_set_priority_same_value_no_change(self, project_dir, pack_dir):
         """Test set-priority with same value shows already set message."""
