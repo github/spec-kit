@@ -1123,6 +1123,43 @@ def test_python_json_output_matches_powershell(
     assert json_stdout(py) == json_stdout(ps)
 
 
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_handles_bracketed_repo_path(tmp_path: Path) -> None:
+    ps_repo = _setup_repo(tmp_path, "ps [v2]")
+    py_repo = _setup_repo(tmp_path, "py [v2]")
+    existing_spec = b"# My spec\r\n\r\nKeep this.\r\n"
+    for repo in (ps_repo, py_repo):
+        existing = repo / "specs" / "001-login-page"
+        existing.mkdir(parents=True)
+        (existing / "spec.md").write_bytes(existing_spec)
+
+    ps = run(ps_cmd(ps_repo, SCRIPT, "-Json", "Add payment export"), ps_repo)
+    py = run(py_cmd(py_repo, SCRIPT, "--json", "Add payment export"), py_repo)
+
+    assert py.returncode == 0, py.stderr
+    assert ps.returncode == 0, ps.stderr
+    assert json_stdout(ps)["BRANCH_NAME"] == json_stdout(py)["BRANCH_NAME"] == "002-payment-export"
+
+    reuse = run(
+        ps_cmd(
+            ps_repo,
+            SCRIPT,
+            "-Json",
+            "-AllowExistingBranch",
+            "-Number",
+            "1",
+            "-ShortName",
+            "login-page",
+            "x",
+        ),
+        ps_repo,
+    )
+
+    assert reuse.returncode == 0, reuse.stderr
+    assert json_stdout(reuse)["BRANCH_NAME"] == "001-login-page"
+    assert (ps_repo / "specs" / "001-login-page" / "spec.md").read_bytes() == existing_spec
+
+
 @requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
 @pytest.mark.parametrize("number", ["-1", "+1"], ids=["negative", "positive_sign"])

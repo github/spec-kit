@@ -607,6 +607,7 @@ class _PresetSkillMethods:
                     "source_file": source_file,
                     "source": f"extension:{manifest.id}",
                     "author": manifest.data["extension"].get("author"),
+                    "version": manifest.version,
                     "extension_id": manifest.id,
                     "extension_dir": ext_root,
                     "resources": cmd_info.get("resources", []),
@@ -803,6 +804,7 @@ class _PresetSkillMethods:
                     target_skill_name,
                     enhanced_desc,
                     f"preset:{manifest.id}",
+                    version=manifest.version,
                 )
                 registrar.apply_argument_hint(frontmatter, frontmatter_data, integration)
                 frontmatter_text = dump_frontmatter(frontmatter_data)
@@ -1354,7 +1356,7 @@ class _PresetSkillMethods:
         Returns:
             Skill names whose files were restored or removed.
         """
-        from .. import SKILL_DESCRIPTIONS
+        from .. import SKILL_DESCRIPTIONS, get_speckit_version
         from ..integrations import get_integration
         from ..shared_infra import _write_shared_text
 
@@ -1489,6 +1491,7 @@ class _PresetSkillMethods:
                     skill_name,
                     enhanced_desc,
                     f"templates/commands/{short_name}.md",
+                    version=get_speckit_version(),
                 )
                 registrar.apply_argument_hint(frontmatter, frontmatter_data, integration)
                 frontmatter_text = dump_frontmatter(frontmatter_data)
@@ -1558,6 +1561,7 @@ class _PresetSkillMethods:
                     frontmatter.get("description", f"Extension command: {command_name}"),
                     extension_restore["source"],
                     author=extension_restore.get("author", "github-spec-kit"),
+                    version=extension_restore.get("version"),
                 )
                 registrar.apply_argument_hint(frontmatter, frontmatter_data, integration)
                 frontmatter_text = dump_frontmatter(frontmatter_data)

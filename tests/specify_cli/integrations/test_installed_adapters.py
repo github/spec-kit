@@ -3689,7 +3689,7 @@ def test_registration_keeps_requested_project_hooks(tmp_path, server, monkeypatc
             return scoped_registrar
 
         monkeypatch.setattr(manager, "_command_registrar", snapshot_then_interleave)
-        manifest = SimpleNamespace(id="sample", templates=[{
+        manifest = SimpleNamespace(id="sample", version="1.0.0", templates=[{
             "type": "command", "name": "speckit.sample", "file": "command.md",
         }])
         manager._register_commands(manifest, source)
@@ -3773,7 +3773,7 @@ def test_registration_pins_hooks_and_lazy_imports_during_another_thread_load(tmp
         )
     else:
         manager = PresetManager(first)
-        manifest = SimpleNamespace(id="sample", templates=[{
+        manifest = SimpleNamespace(id="sample", version="1.0.0", templates=[{
             "type": "command", "name": "speckit.sample", "file": "command.md",
         }])
         manager._register_commands(manifest, source)
