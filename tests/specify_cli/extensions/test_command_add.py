@@ -204,6 +204,59 @@ class TestExtensionAddCLI:
         assert "metadata:" in content
         assert "source: extension:test-ext" in content
 
+    def test_add_dev_renders_claude_extension_skill_with_hook_output(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """The actual add path records rendered Claude skills and hook output."""
+        from specify_cli.integrations import get_integration
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.write_text(
+            json.dumps({"ai": "claude", "ai_skills": True, "script": "sh"}),
+            encoding="utf-8",
+        )
+        command_file = extension_dir / "commands" / "hello.md"
+        command_file.write_text(
+            command_file.read_text(encoding="utf-8")
+            + "\n- For each executable hook, output the following command name.\n",
+            encoding="utf-8",
+        )
+
+        def process_registered_command(self, frontmatter, body, *, source_id):
+            updated = dict(frontmatter)
+            updated["description"] = f"[{source_id}] {frontmatter['description']}"
+            return updated, body + "\nHOOK-TRANSFORMED\n"
+
+        monkeypatch.setattr(
+            get_integration("claude").__class__,
+            "process_registered_command",
+            process_registered_command,
+        )
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        skill_file = (
+            project_dir
+            / ".claude"
+            / "skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        content = skill_file.read_text(encoding="utf-8")
+        assert "source: extension:test-ext" in content
+        assert "user-invocable: true" in content
+        assert "disable-model-invocation: false" in content
+        assert "HOOK-TRANSFORMED" in content
+        assert "- For each executable hook, output the following command name." in content
+        assert "- When constructing command invocations from hook command names" in content
+        registry = ExtensionRegistry(project_dir / ".specify" / "extensions")
+        assert "speckit-test-ext-hello" in registry.get("test-ext")["registered_skills"]
+
     def test_add_dev_replaces_existing_codex_skill_symlink(
         self, extension_dir, project_dir, temp_dir
     ):
