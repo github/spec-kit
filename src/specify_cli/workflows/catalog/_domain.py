@@ -22,6 +22,7 @@ from typing import Any
 
 import yaml
 
+from specify_cli.symlink_warning import path_is_symlink
 from ..._download_security import (
     MAX_JSON_CATALOG_BYTES as MAX_JSON_CATALOG_BYTES,
     read_response_limited,
@@ -99,7 +100,7 @@ class WorkflowRegistry:
         current = self.project_root
         for part in (".specify", "workflows"):
             current = current / part
-            if current.is_symlink():
+            if path_is_symlink(current):
                 return True
         return False
 
@@ -117,7 +118,7 @@ class WorkflowRegistry:
         # workflow is absent, skip removing it, then delete the bundle
         # record -- leaving the workflow untracked but still on disk. Fail
         # closed here just like the unreadable-file case below.
-        if self._has_symlinked_parent() or self.registry_path.is_symlink():
+        if self._has_symlinked_parent() or path_is_symlink(self.registry_path):
             raise OSError(
                 f"Refusing to read workflow registry at {self.registry_path}: "
                 "a parent directory or the registry file itself is a symlink"
@@ -171,7 +172,7 @@ class WorkflowRegistry:
         before_file_change(self.registry_path)
         # Refuse to write through symlinked parents (mirrors StepRegistry.save
         # and the CLI-level _reject_unsafe_dir guard).
-        if self._has_symlinked_parent() or self.registry_path.is_symlink():
+        if self._has_symlinked_parent() or path_is_symlink(self.registry_path):
             raise OSError(
                 "Refusing to write workflow registry through a symlinked path."
             )

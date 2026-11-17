@@ -18,6 +18,7 @@ from typing import Any
 import typer
 from rich.markup import escape
 
+from specify_cli.symlink_warning import mode_is_symlink, path_is_symlink
 from .._console import console
 from ..integration_state import (
     default_integration_key,
@@ -60,7 +61,7 @@ def initial_directory_state(path: Path) -> tuple[bool, list[Path]] | None:
 
 
 def _file_identity(path: Path):
-    if path.is_symlink():
+    if path_is_symlink(path):
         return ("link", os.readlink(path))
     try:
         mode = path.stat().st_mode
@@ -167,7 +168,7 @@ class _FileJournal:
         if self.backup_entries > _MAX_BACKUP_ENTRIES:
             raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (entries)")
         mode = source.lstat().st_mode
-        if stat.S_ISLNK(mode):
+        if mode_is_symlink(mode):
             destination.symlink_to(os.readlink(source))
         elif stat.S_ISDIR(mode):
             destination.mkdir()
@@ -234,7 +235,7 @@ class _FileJournal:
         if path not in self.changes:
             saved = None
             if before:
-                if path.exists() or path.is_symlink():
+                if path.exists() or path_is_symlink(path):
                     saved = self.backup / "writes" / str(len(self.changes))
                     saved.parent.mkdir(parents=True, exist_ok=True)
                     self._snapshot(path, saved)
@@ -297,13 +298,13 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
         if path not in journal.pending and current_identity != written_identity:
             conflicts.append(path)
             continue
-        if path.is_dir() and not path.is_symlink():
+        if path.is_dir() and not path_is_symlink(path):
             shutil.rmtree(path)
-        elif path.exists() or path.is_symlink():
+        elif path.exists() or path_is_symlink(path):
             path.unlink()
         if saved is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
-            if saved.is_symlink():
+            if path_is_symlink(saved):
                 path.symlink_to(os.readlink(saved))
             elif saved.is_dir():
                 shutil.copytree(saved, path, symlinks=True)

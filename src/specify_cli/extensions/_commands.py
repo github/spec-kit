@@ -19,6 +19,7 @@ import yaml as yaml
 from rich.markup import escape as _escape_markup
 from rich.table import Table
 
+from specify_cli.symlink_warning import path_is_symlink, warn_symlink_refusal
 from .._console import console
 from .._assets import get_speckit_version as get_speckit_version
 from .._download_security import (
@@ -515,13 +516,17 @@ def _validate_cache_dir_via_dir_fd(project_root: Path, download_dir: Path) -> No
             current_path = current_path / part
 
             try:
-                child_fd = os.open(part, walk_flags, dir_fd=parent_fd)
-            except FileNotFoundError:
                 try:
-                    os.mkdir(part, dir_fd=parent_fd)
-                except FileExistsError:
-                    pass
-                child_fd = os.open(part, walk_flags, dir_fd=parent_fd)
+                    child_fd = os.open(part, walk_flags, dir_fd=parent_fd)
+                except FileNotFoundError:
+                    try:
+                        os.mkdir(part, dir_fd=parent_fd)
+                    except FileExistsError:
+                        pass
+                    child_fd = os.open(part, walk_flags, dir_fd=parent_fd)
+            except OSError as exc:
+                warn_symlink_refusal(exc, part, dir_fd=parent_fd)
+                raise
 
             try:
                 current_path.resolve().relative_to(project_root_resolved)
@@ -558,7 +563,7 @@ def _validate_cache_dir_via_paths(project_root: Path, download_dir: Path) -> Non
     for part in _CACHE_REL_PARTS:
         current_path = current_path / part
 
-        if current_path.is_symlink():
+        if path_is_symlink(current_path):
             console.print(
                 "[red]Error:[/red] Refusing to use symlinked download cache directory"
             )
@@ -572,7 +577,7 @@ def _validate_cache_dir_via_paths(project_root: Path, download_dir: Path) -> Non
         # Re-check after creation: a component swapped for a symlink/junction
         # (or an existing non-directory) between the check and mkdir is caught
         # here before the walk descends into it.
-        if current_path.is_symlink() or not current_path.is_dir():
+        if path_is_symlink(current_path) or not current_path.is_dir():
             console.print(
                 "[red]Error:[/red] Refusing to use symlinked download cache directory"
             )
@@ -654,7 +659,7 @@ def _open_download_zip_via_paths(
     zip_path = download_dir / zip_filename
     project_root_resolved = project_root.resolve()
 
-    if download_dir.is_symlink() or not download_dir.is_dir():
+    if path_is_symlink(download_dir) or not download_dir.is_dir():
         raise OSError(
             errno.ENOTDIR, "Download cache directory is not a real directory"
         )
@@ -662,7 +667,7 @@ def _open_download_zip_via_paths(
         download_dir.resolve().relative_to(project_root_resolved)
     except (OSError, ValueError):
         raise OSError(errno.ENOTDIR, "Download cache directory escapes project root")
-    if zip_path.is_symlink():
+    if path_is_symlink(zip_path):
         raise OSError(errno.ELOOP, "Refusing to write through a symlinked download file")
 
     flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
@@ -681,7 +686,7 @@ def _open_download_zip_via_paths(
         # we just exclusively created (best effort, never through a symlink).
         if not o_temporary:
             try:
-                if not zip_path.is_symlink():
+                if not path_is_symlink(zip_path):
                     zip_path.unlink()
             except OSError:
                 pass

@@ -36,6 +36,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ContextManager
 
+from specify_cli.symlink_warning import mode_is_symlink, path_is_symlink
+
 # Files/dirs never inspected, copied into, or counted as part of an installed
 # package; excluded directories are pruned without being entered. Mirrors
 # ``bundles/packager.py`` ``EXCLUDE_NAMES``.
@@ -207,7 +209,7 @@ def resolve_base_dir(project_root: Path, spec: PackageSpec) -> Path:
     current = project_root
     for part in (".specify", "workflows", spec.directory):
         current = current / part
-        if current.is_symlink():
+        if path_is_symlink(current):
             raise spec.error(
                 f"Refusing to use symlinked {spec.lower} directory '{current}'"
             )
@@ -240,7 +242,7 @@ def resolve_destination(base_dir: Path, package_id: str, spec: PackageSpec) -> P
 
 def reject_unsafe_destination(destination: Path, spec: PackageSpec) -> None:
     """Refuse a symlink (including dangling) or non-directory destination."""
-    if destination.is_symlink():
+    if path_is_symlink(destination):
         raise spec.error(
             f"Refusing to install {spec.lower} through a symlinked path: "
             f"'{destination}'"
@@ -345,7 +347,7 @@ def walk_package_tree(package_dir: Path, spec: PackageSpec):
                 f"Failed to inspect {spec.lower} package entry '{entry.path}': {exc}"
             ) from exc
         path = Path(entry.path)
-        if stat.S_ISLNK(mode):
+        if mode_is_symlink(mode):
             raise spec.error(f"{spec.noun} package contains symlink: {path}")
         if stat.S_ISDIR(mode):
             if depth > limits.max_depth:
@@ -371,7 +373,7 @@ def check_package_shape(
     """
     package_dir = Path(package_dir)
 
-    if package_dir.is_symlink():
+    if path_is_symlink(package_dir):
         raise spec.error(
             f"Refusing to install from a symlinked package directory: '{package_dir}'"
         )
@@ -380,7 +382,7 @@ def check_package_shape(
 
     for required in required_files:
         required_path = package_dir / required
-        if required_path.is_symlink():
+        if path_is_symlink(required_path):
             raise spec.error(
                 f"{spec.noun} package '{required}' must be a regular file, not a symlink"
             )
@@ -413,7 +415,7 @@ def resolve_package_root(
     """Resolve a root-level or single-nested package directory."""
     extracted_root = Path(extracted_root)
     root_manifest = extracted_root / manifest_name
-    if root_manifest.is_file() and not root_manifest.is_symlink():
+    if root_manifest.is_file() and not path_is_symlink(root_manifest):
         return extracted_root
     try:
         entries = list(extracted_root.iterdir())
@@ -424,9 +426,9 @@ def resolve_package_root(
         candidate_manifest = candidate / manifest_name
         if (
             candidate.is_dir()
-            and not candidate.is_symlink()
+            and not path_is_symlink(candidate)
             and candidate_manifest.is_file()
-            and not candidate_manifest.is_symlink()
+            and not path_is_symlink(candidate_manifest)
         ):
             return candidate
     raise spec.error(
@@ -560,7 +562,7 @@ def copy_package_tree(
                     f"Failed to stage {spec.lower} package: {exc}"
                 ) from exc
             target = destination / entry.name
-            if stat.S_ISLNK(mode):
+            if mode_is_symlink(mode):
                 raise spec.error(f"{spec.noun} package contains symlink: {entry.path}")
             if not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
                 raise spec.error(
@@ -712,7 +714,7 @@ def install_package(
     root, package_id, force = request.project_root, request.package_id, request.force
 
     package_dir = Path(request.package_dir)
-    if package_dir.is_symlink():
+    if path_is_symlink(package_dir):
         raise spec.error(
             f"Refusing to install from a symlinked package directory: '{package_dir}'"
         )

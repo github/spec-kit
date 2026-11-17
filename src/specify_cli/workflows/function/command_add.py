@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated
 
+from specify_cli.symlink_warning import path_is_symlink
 from .. import _archive_install as archive
 from .. import _commands as cli
 from . import function_app
@@ -43,7 +44,7 @@ def workflow_function_add(
     try:
         if dev is not None:
             source = Path(dev).expanduser()
-            if source.is_symlink() or not source.is_dir():
+            if path_is_symlink(source) or not source.is_dir():
                 raise installer.WorkflowFunctionError(
                     f"--dev source must be a directory: '{source}'"
                 )

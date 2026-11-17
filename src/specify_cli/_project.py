@@ -10,6 +10,7 @@ from typing import NoReturn
 import typer
 from rich.markup import escape
 
+from specify_cli.symlink_warning import path_is_symlink, symlink_error_message
 from ._console import err_console
 from ._file_policy import ProjectPolicyError, project_files
 from .file_helper import FileHelper
@@ -56,7 +57,7 @@ def preflight_project_policy(project_root: Path) -> None:
         project_files(project_root)
     except ProjectPolicyError as exc:
         marker = project_root / ".specify"
-        if marker.is_symlink():
+        if path_is_symlink(marker):
             raise ProjectResolutionError(
                 f"Refusing to use symlinked .specify path: {marker}. {exc}"
             ) from exc
@@ -113,13 +114,19 @@ def resolve_specify_project_root() -> Path:
     return project_root
 
 
+def is_json_output_context() -> bool:
+    """Identify parsed JSON mode without inspecting user-supplied command text."""
+    context = get_current_context(silent=True)
+    return context is not None and any(
+        context.params.get(name) is True for name in ("json_output", "as_json", "json_flag")
+    )
+
+
 def render_project_error(error: ProjectResolutionError) -> NoReturn:
     """Render a project failure on the current command's error surface."""
-    context = get_current_context(silent=True)
-    if context is not None and (
-        context.params.get("json_output") is True or context.params.get("as_json") is True
-    ):
-        typer.echo(json.dumps({"error": str(error)}, ensure_ascii=False), err=True)
+    if is_json_output_context():
+        message = symlink_error_message(str(error))
+        typer.echo(json.dumps({"error": message}, ensure_ascii=False), err=True)
     else:
         err_console.print(f"[red]Error:[/red] {escape(str(error))}")
     raise typer.Exit(1) from error

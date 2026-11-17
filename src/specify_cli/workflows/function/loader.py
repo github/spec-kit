@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from specify_cli.symlink_warning import path_is_symlink
 from .. import _drop_modules, _import_package
 from ..expressions.filters import (
     BUILTIN_FILTERS,
@@ -30,7 +31,7 @@ def _function_paths(project_root: Path) -> tuple[Path, Path]:
     current = root
     for part in (".specify", "workflows", "functions"):
         current /= part
-        if current.is_symlink():
+        if path_is_symlink(current):
             raise WorkflowFunctionError(f"Refusing to load symlinked function directory '{current}'")
     return current, root
 
@@ -71,13 +72,13 @@ def load_workflow_functions(project_root: Path) -> list[str]:
     for package_dir in sorted(functions_dir.iterdir(), key=lambda p: p.name):
         if package_dir.name in {"function-registry.json", ".cache"}:
             continue
-        if package_dir.is_symlink():
+        if path_is_symlink(package_dir):
             continue
         if not package_dir.is_dir():
             continue
         manifest_path = package_dir / "function.yml"
         init_path = package_dir / "__init__.py"
-        if manifest_path.is_symlink() or init_path.is_symlink():
+        if path_is_symlink(manifest_path) or path_is_symlink(init_path):
             continue
         if not manifest_path.is_file() or not init_path.is_file():
             continue

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from specify_cli.symlink_warning import path_is_symlink
 from . import _commands as cli
 
 
@@ -45,7 +46,7 @@ def _expand_first_symlink_target(path: Path) -> Path | None:
     start = 1 if path.is_absolute() else 0
     for index in range(start, len(parts)):
         current = current / parts[index]
-        if not current.is_symlink():
+        if not path_is_symlink(current):
             continue
         try:
             target = Path(os.readlink(current))
@@ -145,7 +146,7 @@ def _resolve_installed_workflow_ownership(
         # below would not be the file this ownership match is based on, so
         # refuse rather than silently mismatch.
         for k in range(i + 2, len(parts) + 1):
-            if Path(*parts[:k]).is_symlink():
+            if path_is_symlink(Path(*parts[:k])):
                 err.print(
                     "[red]Error:[/red] Refusing to run: "
                     f".specify/workflows/{cli._escape_markup(registered_id)} "

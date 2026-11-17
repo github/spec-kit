@@ -33,7 +33,9 @@ def _fail(message: str, *, as_json: bool = False) -> None:
     if as_json:
         import json
 
-        typer.echo(json.dumps({"error": message}, ensure_ascii=False), err=True)
+        from ..symlink_warning import symlink_error_message
+
+        typer.echo(json.dumps({"error": symlink_error_message(message)}, ensure_ascii=False), err=True)
         raise typer.Exit(code=1)
     # Use the stderr console so the error never lands on stdout, which under
     # ``--json`` carries the machine-readable payload and must stay parseable.

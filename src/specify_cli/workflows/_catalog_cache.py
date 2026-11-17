@@ -13,6 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 from specify_cli._file_handles import _windows_handle
+from specify_cli.symlink_warning import warn_symlink_refusal
 
 
 @contextmanager
@@ -55,15 +56,19 @@ def _cache_directory(
     try:
         for part in relative.parts:
             try:
-                child = os.open(part, flags, dir_fd=parent)
-            except FileNotFoundError:
-                if not create:
-                    raise
                 try:
-                    os.mkdir(part, dir_fd=parent)
-                except FileExistsError:
-                    pass
-                child = os.open(part, flags, dir_fd=parent)
+                    child = os.open(part, flags, dir_fd=parent)
+                except FileNotFoundError:
+                    if not create:
+                        raise
+                    try:
+                        os.mkdir(part, dir_fd=parent)
+                    except FileExistsError:
+                        pass
+                    child = os.open(part, flags, dir_fd=parent)
+            except OSError as exc:
+                warn_symlink_refusal(exc, part, dir_fd=parent)
+                raise
             os.close(parent)
             parent = child
         yield parent

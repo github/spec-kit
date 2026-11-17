@@ -10,6 +10,7 @@ import typer
 import yaml
 from rich.markup import escape as _escape_markup
 
+from specify_cli.symlink_warning import path_is_symlink
 from ..._console import console, err_console
 from ...extensions import normalize_priority
 from .. import _commands as cli
@@ -66,7 +67,7 @@ def _ensure_contained_dir(path: Path, root: Path) -> Path:
     Returns *path* if safe. Raises typer.Exit on traversal or symlink.
     """
     cli._reject_unsafe_dir(root, ".specify/workflows/overlays")
-    if path.is_symlink():
+    if path_is_symlink(path):
         err_console.print(
             f"[red]Error:[/red] Refusing to use symlinked path {path}."
         )
@@ -108,7 +109,7 @@ def _find_overlay_file(project_root: Path, workflow_id: str, overlay_id: str) ->
     for path in entries:
         if not path.is_file() or path.suffix not in (".yml", ".yaml"):
             continue
-        if path.is_symlink():
+        if path_is_symlink(path):
             continue
         data, _ = _read_overlay(path)
         if data is None:
@@ -128,7 +129,7 @@ def _find_overlay_file(project_root: Path, workflow_id: str, overlay_id: str) ->
 def _ensure_contained_path(path: Path, root: Path) -> Path:
     """Return *path* only if it resolves inside *root*; otherwise raise typer.Exit."""
     cli._reject_unsafe_dir(root, ".specify/workflows/overlays")
-    if path.is_symlink():
+    if path_is_symlink(path):
         err_console.print(
             f"[red]Error:[/red] Refusing to use symlinked path {path}."
         )
@@ -214,7 +215,7 @@ def workflow_overlay_add(
         # success -- it survived only because unlinking a directory happens to
         # fail. A FIFO or socket has no such accident and is simply gone.
         if os.path.lexists(target_path):
-            if target_path.is_symlink() or not target_path.is_file():
+            if path_is_symlink(target_path) or not target_path.is_file():
                 err_console.print(
                     f"[red]Error:[/red] {_escape_markup(str(target_path))} exists "
                     f"and is not a regular file. Rename or remove it before "

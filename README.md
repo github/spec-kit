@@ -87,6 +87,12 @@ cd my-project
 After installing the Specify CLI and creating your project, launch your coding
 agent in the project directory, then choose a process below.
 
+Spec Kit does not specifically support symlinks. Special symlink handling is
+deprecated; future versions will operate on project paths without taking special
+care of symlinks or their targets. If you use symlinks, you are responsible for
+the outcome. See the [symlink policy](https://github.github.io/spec-kit/overview/core.html#symlinks-are-not-specifically-supported)
+for encounter warnings and current transition behavior.
+
 For other setups:
 
 - [Installation](https://github.github.io/spec-kit/installation.html) for pinned releases, other installers, CI, and troubleshooting.

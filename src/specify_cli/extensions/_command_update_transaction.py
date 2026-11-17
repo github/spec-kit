@@ -14,6 +14,7 @@ from uuid import uuid4
 import typer
 from rich.markup import escape as _escape_markup
 
+from specify_cli.symlink_warning import path_is_symlink
 from .._console import console
 from .._init_options import is_ai_skills_enabled
 from . import _commands
@@ -130,7 +131,7 @@ def run_update_command(extension: str | None) -> None:
                 original_key = str(original_file)
                 if original_key in backed_up_command_files:
                     return
-                if original_file.is_symlink():
+                if path_is_symlink(original_file):
                     backed_up_command_symlinks[original_key] = os.readlink(
                         original_file
                     )
@@ -155,7 +156,7 @@ def run_update_command(extension: str | None) -> None:
                 )
 
                 if symlink_state is not None:
-                    if original_file.is_symlink() or original_file.is_file():
+                    if path_is_symlink(original_file) or original_file.is_file():
                         original_file.unlink()
                     elif original_file.exists():
                         raise RuntimeError(
@@ -166,12 +167,12 @@ def run_update_command(extension: str | None) -> None:
                     os.symlink(symlink_state, original_file)
                     return
 
-                if not backup_file.is_file() or backup_file.is_symlink():
+                if not backup_file.is_file() or path_is_symlink(backup_file):
                     raise RuntimeError(
                         "Command rollback backup is missing for "
                         f"'{original_file}'"
                     )
-                if original_file.is_symlink() or original_file.is_file():
+                if path_is_symlink(original_file) or original_file.is_file():
                     original_file.unlink()
                 elif original_file.exists():
                     raise RuntimeError(
@@ -188,7 +189,7 @@ def run_update_command(extension: str | None) -> None:
                     boundary = project_root
                 parent = artifact_path.parent
                 while parent != boundary:
-                    if parent.exists() or parent.is_symlink():
+                    if parent.exists() or path_is_symlink(parent):
                         break
                     new_command_dirs_absent_before_update.append(parent)
                     parent = parent.parent
@@ -214,12 +215,12 @@ def run_update_command(extension: str | None) -> None:
                     backed_up_skill_dirs[original_key] = str(backup_skill_dir)
 
             try:
-                if backup_root.is_symlink():
+                if path_is_symlink(backup_root):
                     raise RuntimeError(
                         "Cannot safely create update backup under symlinked "
                         f"directory '{backup_root}'"
                     )
-                if backup_base.exists() or backup_base.is_symlink():
+                if backup_base.exists() or path_is_symlink(backup_base):
                     raise RuntimeError(
                         "Cannot safely reuse an existing update backup "
                         f"directory '{backup_base}'"
@@ -314,7 +315,7 @@ def run_update_command(extension: str | None) -> None:
                                     continue
                                 if (
                                     cmd_file.exists()
-                                    or cmd_file.is_symlink()
+                                    or path_is_symlink(cmd_file)
                                 ):
                                     # Keep both the directory location and
                                     # relative path unique. unregister_commands()
@@ -345,7 +346,7 @@ def run_update_command(extension: str | None) -> None:
                                 )
                             except ValueError:
                                 continue
-                            if prompt_file.exists() or prompt_file.is_symlink():
+                            if prompt_file.exists() or path_is_symlink(prompt_file):
                                 backup_prompt_path = (
                                     backup_commands_dir
                                     / "copilot-prompts"
@@ -426,7 +427,7 @@ def run_update_command(extension: str | None) -> None:
                                 / agent_name
                                 / command_file.relative_to(commands_dir)
                             )
-                            if command_file.exists() or command_file.is_symlink():
+                            if command_file.exists() or path_is_symlink(command_file):
                                 backup_command_artifact(
                                     command_file, backup_command_path
                                 )
@@ -448,7 +449,7 @@ def run_update_command(extension: str | None) -> None:
                                 _AgentReg._ensure_inside(
                                     prompt_file, prompts_dir
                                 )
-                                if prompt_file.is_symlink():
+                                if path_is_symlink(prompt_file):
                                     raise RuntimeError(
                                         "Cannot safely update symlinked Copilot "
                                         f"prompt artifact '{prompt_file}'"
@@ -460,7 +461,7 @@ def run_update_command(extension: str | None) -> None:
                                 )
                                 if (
                                     prompt_file.exists()
-                                    or prompt_file.is_symlink()
+                                    or path_is_symlink(prompt_file)
                                 ):
                                     backup_command_artifact(
                                         prompt_file, backup_prompt_path
@@ -530,7 +531,7 @@ def run_update_command(extension: str | None) -> None:
                             resolved_skill_path = skill_path.resolve(strict=False)
                             resolved_skill_path.relative_to(new_skills_root)
                             if not (
-                                skill_path.exists() or skill_path.is_symlink()
+                                skill_path.exists() or path_is_symlink(skill_path)
                             ):
                                 new_skill_paths_absent_before_update.append(
                                     skill_path
@@ -707,7 +708,7 @@ def run_update_command(extension: str | None) -> None:
                     # were absent at the destructive boundary instead of relying
                     # only on a possibly missing new registry entry.
                     for command_path in new_command_paths_absent_before_update:
-                        if command_path.is_symlink() or command_path.is_file():
+                        if path_is_symlink(command_path) or command_path.is_file():
                             command_path.unlink()
                         elif command_path.exists():
                             raise RuntimeError(
@@ -771,7 +772,7 @@ def run_update_command(extension: str | None) -> None:
                     # were absent at the destructive boundary are safe to
                     # remove directly during rollback.
                     for skill_path in new_skill_paths_absent_before_update:
-                        if skill_path.is_symlink() or skill_path.is_file():
+                        if path_is_symlink(skill_path) or skill_path.is_file():
                             skill_path.unlink()
                         elif skill_path.exists():
                             shutil.rmtree(skill_path)
@@ -790,7 +791,7 @@ def run_update_command(extension: str | None) -> None:
                             )
                         original_skill_dir = Path(original_path)
                         if (
-                            original_skill_dir.is_symlink()
+                            path_is_symlink(original_skill_dir)
                             or original_skill_dir.is_file()
                         ):
                             original_skill_dir.unlink()
@@ -817,7 +818,7 @@ def run_update_command(extension: str | None) -> None:
                         key=lambda path: len(path.parts),
                         reverse=True,
                     ):
-                        if command_dir.is_dir() and not command_dir.is_symlink():
+                        if command_dir.is_dir() and not path_is_symlink(command_dir):
                             try:
                                 command_dir.rmdir()
                             except OSError:

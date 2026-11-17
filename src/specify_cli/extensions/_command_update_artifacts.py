@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 from packaging import version as pkg_version
 
+from specify_cli.symlink_warning import path_is_symlink
 from .._download_security import safe_extract_archive
 
 
@@ -30,7 +31,7 @@ def _archive_extension_directory(source_dir: Path) -> Path:
         with os.fdopen(fd, "wb") as archive_file:
             with zipfile.ZipFile(archive_file, "w", zipfile.ZIP_DEFLATED) as archive:
                 for path in sorted(source_dir.rglob("*")):
-                    if path.is_symlink():
+                    if path_is_symlink(path):
                         continue
                     if path.is_file():
                         archive.write(path, path.relative_to(source_dir).as_posix())

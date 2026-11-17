@@ -11,6 +11,7 @@ from typing import Any
 import pathspec
 
 from ...file_helper import FileHelper, SymlinkDeniedError, UnsupportedPathError
+from ...symlink_warning import path_is_symlink
 from ..base import IntegrationOption, MarkdownIntegration
 from ..manifest import IntegrationManifest
 
@@ -251,15 +252,15 @@ def _ignore_layers(
     """
     layers = [(".ignore", "", project_root / ".ignore", _ignore_spec(root_ignore))]
     root_rg = project_root / ".rgignore"
-    if root_rg.is_file() and not root_rg.is_symlink():
+    if root_rg.is_file() and not path_is_symlink(root_rg):
         layers.append(
             (".rgignore", "", root_rg, _ignore_spec(FileHelper(project_root).read_bytes(".rgignore")))
         )
     specify = project_root / ".specify"
-    if specify.is_dir() and not specify.is_symlink():
+    if specify.is_dir() and not path_is_symlink(specify):
         for name in _RG_IGNORE_NAMES:
             for nested in sorted(specify.rglob(name)):
-                if not nested.is_file() or nested.is_symlink():
+                if not nested.is_file() or path_is_symlink(nested):
                     continue
                 base = nested.parent.relative_to(project_root).as_posix()
                 raw = FileHelper(nested.parent).read_bytes(name)
@@ -351,7 +352,7 @@ def _reject_hidden_specify_paths(
             and not item.name.startswith(".") and item.name != "vscode-settings.json"
         )
     specify = path.parent / ".specify"
-    if specify.is_dir() and not specify.is_symlink():
+    if specify.is_dir() and not path_is_symlink(specify):
         probes.update(f.relative_to(path.parent).as_posix() for f in specify.rglob("*") if f.is_file())
     private = pathspec.GitIgnoreSpec.from_lines(_SPECIFY_PRIVATE_RULES)
     visible = sorted(

@@ -13,6 +13,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from specify_cli.symlink_warning import path_is_symlink
 from . import BundlerError
 from .yamlio import ensure_within
 from .manifest import BundleManifest
@@ -52,7 +53,7 @@ def build_bundle(
     # README would pass the checks above yet be left out of the artifact,
     # producing a zip that 'specify bundle install' rejects. Fail the build.
     for required in (manifest_path, bundle_dir / "README.md"):
-        if required.is_symlink():
+        if path_is_symlink(required):
             raise BundlerError(
                 f"'{required.name}' in '{bundle_dir}' is a symlink. The manifest "
                 "and README.md must be regular files so they are included in "
@@ -137,7 +138,7 @@ def _collect_files(
         dirnames[:] = [
             d
             for d in dirnames
-            if d not in EXCLUDE_NAMES and not (root_path / d).is_symlink()
+            if d not in EXCLUDE_NAMES and not path_is_symlink(root_path / d)
         ]
         if skip_dir is not None and _is_within(skip_dir, root_path):
             dirnames[:] = []
@@ -151,7 +152,7 @@ def _collect_files(
             if artifact_re is not None and artifact_re.match(name):
                 # A prior build artifact for this bundle — never re-package it.
                 continue
-            if path.is_symlink():
+            if path_is_symlink(path):
                 # Skip symlinked files to avoid escaping the bundle directory.
                 continue
             collected.append(path)

@@ -12,6 +12,8 @@ from typing import Any, NoReturn
 import typer
 from typer.core import TyperCommand
 
+from .symlink_warning import symlink_error_message
+
 try:
     from typer._click.exceptions import UsageError as _UsageError
 except ModuleNotFoundError as error:
@@ -79,6 +81,6 @@ def emit_json(value: Any) -> None:
 
 def emit_json_error(error: Exception, exit_code: int = 1) -> NoReturn:
     """Write the strict JSON error contract and terminate unsuccessfully."""
-    message = str(error).strip() or error.__class__.__name__
+    message = symlink_error_message(str(error).strip() or error.__class__.__name__)
     typer.echo(json.dumps({"error": message}, ensure_ascii=False), err=True)
     raise typer.Exit(code=exit_code)

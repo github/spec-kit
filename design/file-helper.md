@@ -1,5 +1,33 @@
 # Scoped FileHelper and project policy
 
+## Symlink deprecation notice
+
+Symlinks are not specifically supported. Special symlink handling is deprecated;
+future versions will assume Spec Kit can operate on project paths without taking
+special care of symlinks or their targets. Users who create or use symlinks own
+the outcome.
+
+This phase adds encounter warnings and documentation only. The FileHelper
+contract and the other existing checks described below remain unchanged.
+FileHelper and other Python symlink-specific recognition use the shared
+`symlink_warning` predicates or notice emitter. They reuse existing metadata
+and checks rather than scanning project content. A dedicated FutureWarning
+subclass is visible by default; Python's default warning filters limit the
+identical notice to once per process. The warning itself changes neither
+allow/deny decisions nor mutation behavior. Native Windows and archive
+recognition also emit the notice.
+
+The CLI scopes deferred notices to JSON operations so an error renderer can
+include the policy text in its existing JSON error message. Successful JSON
+operations emit the standard notice on stderr at completion. Context-local
+state is reset on command exit; domain code does not depend on Typer or parse
+command arguments.
+
+For the user-facing policy, see
+[Core Commands](https://github.github.io/spec-kit/overview/core.html#symlinks-are-not-specifically-supported).
+
+## Current transition behavior
+
 `specify_cli.file_helper.FileHelper` owns filesystem operations under one
 explicitly established root. Project-command boundaries now validate persisted
 policy, and init-options bootstrap I/O uses the helper. Other existing command

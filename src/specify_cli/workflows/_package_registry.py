@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
+from specify_cli.symlink_warning import path_is_symlink
+
 
 class PackageRegistry:
     """Registry of installed packages under ``.specify/workflows/<DIRECTORY>``."""
@@ -44,7 +46,7 @@ class PackageRegistry:
         current = self.project_root
         for part in (".specify", "workflows", self.DIRECTORY):
             current = current / part
-            if current.is_symlink():
+            if path_is_symlink(current):
                 return True
         return False
 
@@ -60,7 +62,7 @@ class PackageRegistry:
             return default_registry
         # Defense-in-depth: also refuse to read a symlinked registry file,
         # which could redirect the read outside the project root.
-        if self.registry_path.is_symlink():
+        if path_is_symlink(self.registry_path):
             return default_registry
         if self.registry_path.exists():
             try:
@@ -78,7 +80,7 @@ class PackageRegistry:
 
     def save(self) -> None:
         """Persist registry atomically without truncating an existing file."""
-        if self._has_symlinked_parent() or self.registry_path.is_symlink():
+        if self._has_symlinked_parent() or path_is_symlink(self.registry_path):
             raise self.ERROR(
                 f"Refusing to write {self.LABEL} registry through a symlinked path."
             )

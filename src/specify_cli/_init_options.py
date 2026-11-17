@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Union
 
+from specify_cli.symlink_warning import path_is_symlink
+
 
 INIT_OPTIONS_FILE = ".specify/init-options.json"
 
@@ -71,7 +73,7 @@ def resolve_active_agent_for_registration(
     # present as a broken/corrupted entry. Treat any symlink as "present"
     # so a dangling one fails closed via the invalid-file branch below
     # instead of being mistaken for "no file at all" (legacy fallback).
-    if not path.is_symlink() and not path.exists():
+    if not path_is_symlink(path) and not path.exists():
         return MISSING_INIT_OPTIONS_FILE
 
     active_agent = load_init_options(project_path).get("ai")

@@ -15,6 +15,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import yaml
 
+from specify_cli.symlink_warning import path_is_symlink
 from ._init_options import is_ai_skills_enabled, load_init_options
 from ._invocation_style import get_invocation_prefix
 from ._toml_string import escape_toml_basic as _escape_toml_basic
@@ -628,7 +629,7 @@ class CommandRegistrar:
             return False
         if path.stat().st_nlink > 1:
             return False
-        if path.is_symlink() and not path.resolve().is_relative_to(
+        if path_is_symlink(path) and not path.resolve().is_relative_to(
             (project_root / ".specify/extensions" / source_id).resolve()
         ):
             return False
@@ -908,7 +909,7 @@ class CommandRegistrar:
 
             dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
             self._ensure_inside(dest_file, commands_dir)
-            if agent_name == "generic" and (dest_file.exists() or dest_file.is_symlink()):
+            if agent_name == "generic" and (dest_file.exists() or path_is_symlink(dest_file)):
                 if not self._generic_owned_output(dest_file, source_id, project_root):
                     continue
             dest_file.parent.mkdir(parents=True, exist_ok=True)
@@ -995,7 +996,7 @@ class CommandRegistrar:
                     commands_dir / f"{alias_output_name}{agent_config['extension']}"
                 )
                 self._ensure_inside(alias_file, commands_dir)
-                if agent_name == "generic" and (alias_file.exists() or alias_file.is_symlink()):
+                if agent_name == "generic" and (alias_file.exists() or path_is_symlink(alias_file)):
                     if not self._generic_owned_output(alias_file, source_id, project_root):
                         continue
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1029,13 +1030,13 @@ class CommandRegistrar:
         """Write a rendered agent artifact, optionally as a dev-mode symlink."""
         from .integrations._file_changes import after_file_change, before_file_change
 
-        if dest_file.is_symlink():
+        if path_is_symlink(dest_file):
             before_file_change(dest_file, removal=True)
             dest_file.unlink()
             after_file_change(dest_file)
         before_file_change(dest_file)
         if not link_outputs or (agent_config or {}).get("dev_no_symlink"):
-            if dest_file.is_symlink():
+            if path_is_symlink(dest_file):
                 dest_file.unlink()
             dest_file.write_text(content, encoding="utf-8")
             after_file_change(dest_file)
@@ -1051,7 +1052,7 @@ class CommandRegistrar:
             cache_file.parent.mkdir(parents=True, exist_ok=True)
             cache_file.write_text(content, encoding="utf-8")
             after_file_change(cache_file)
-            if dest_file.exists() or dest_file.is_symlink():
+            if dest_file.exists() or path_is_symlink(dest_file):
                 dest_file.unlink()
             target = os.path.relpath(cache_file, dest_file.parent)
             os.symlink(target, dest_file)
@@ -1059,7 +1060,7 @@ class CommandRegistrar:
             # Windows often requires Developer Mode or admin privileges for
             # symlinks, and relpath can fail across drives. Keep dev installs
             # functional by falling back to a copy.
-            if dest_file.is_symlink():
+            if path_is_symlink(dest_file):
                 dest_file.unlink()
             dest_file.write_text(content, encoding="utf-8")
         after_file_change(dest_file)
@@ -1422,7 +1423,7 @@ class CommandRegistrar:
                             self._ensure_inside(cmd_file, target_dir)
                         except ValueError:
                             continue
-                        if cmd_file.exists() or cmd_file.is_symlink():
+                        if cmd_file.exists() or path_is_symlink(cmd_file):
                             from .integrations._file_changes import after_file_change, before_file_change
 
                             before_file_change(cmd_file, removal=True)
