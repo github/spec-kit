@@ -7019,6 +7019,115 @@ steps:
 class TestWorkflowEngine:
     """Test WorkflowEngine execution."""
 
+    @pytest.mark.parametrize("run_id", [None, "invalid-start"])
+    @pytest.mark.parametrize(
+        ("input_definition", "provided", "error"),
+        [
+            ({"type": "string", "required": True}, {}, "Required input"),
+            ({"type": "number"}, {"value": "invalid"}, "expected a number"),
+            ({"type": "string", "enum": ["yes"]}, {"value": "no"}, "not in allowed"),
+            ({"type": "number"}, {"value": True}, "expected a number"),
+            ({"type": "string"}, {"value": 5}, "expected a string"),
+            ({"type": "number", "default": True}, {}, "expected a number"),
+            ({"type": "string", "default": 5}, {}, "expected a string"),
+            ({"type": "string", "default": "no", "enum": ["yes"]}, {}, "not in allowed"),
+        ],
+        ids=["missing", "numeric", "enum", "bool-number", "typed", "number-default",
+             "string-default", "enum-default"],
+    )
+    def test_invalid_startup_inputs_create_no_artifacts(
+        self, project_dir, monkeypatch, run_id, input_definition, provided, error
+    ):
+        from copy import deepcopy
+
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        monkeypatch.delenv("SPECKIT_WORKFLOW_RUN_ID", raising=False)
+        definition = WorkflowDefinition({
+            "workflow": {"id": "invalid-start", "name": "Invalid start", "version": "1.0.0"},
+            "inputs": {"value": input_definition},
+            "steps": [{"id": "unexpected", "type": "shell", "run": "echo ran > unexpected.txt"}],
+        })
+        original_data = deepcopy(definition.data)
+        original_inputs = deepcopy(provided)
+        started = []
+        engine = WorkflowEngine(project_dir)
+        engine.on_step_start = lambda *args: started.append(args)
+
+        with pytest.raises(ValueError, match=error):
+            engine.execute(definition, provided, run_id=run_id)
+
+        assert started == []
+        assert not (project_dir / "unexpected.txt").exists()
+        assert definition.data == original_data
+        assert provided == original_inputs
+        assert not (project_dir / ".specify" / "workflows" / "runs").exists()
+
+    @pytest.mark.parametrize("env_id", [None, "   ", "  trimmed-id  "])
+    def test_startup_run_id_environment_selection(self, project_dir, monkeypatch, env_id):
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        if env_id is None:
+            monkeypatch.delenv("SPECKIT_WORKFLOW_RUN_ID", raising=False)
+        else:
+            monkeypatch.setenv("SPECKIT_WORKFLOW_RUN_ID", env_id)
+        definition = WorkflowDefinition({"workflow": {"id": "identity"}, "steps": []})
+
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        if env_id and env_id.strip():
+            assert state.run_id == "trimmed-id"
+        else:
+            assert len(state.run_id) == 8
+            assert all(char in "0123456789abcdef" for char in state.run_id)
+        assert state.definition_path.is_file()
+
+    def test_startup_preserves_coercion_defaults_and_caller_mappings(self, project_dir):
+        from copy import deepcopy
+
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        number = 1792234567890123456
+        definition = WorkflowDefinition({
+            "workflow": {"id": "defaults"},
+            "inputs": {
+                "value": {"type": "number", "enum": [number], "default": str(number)},
+                "enabled": {"type": "boolean", "default": "true"},
+                "scope": {"type": "string", "enum": ["full"], "default": "full"},
+            },
+            "steps": [],
+        })
+        provided = {"value": str(number)}
+        original_data = deepcopy(definition.data)
+        original_inputs = provided.copy()
+
+        state = WorkflowEngine(project_dir).execute(definition)
+        assert state.inputs == {"value": number, "enabled": True, "scope": "full"}
+        state = WorkflowEngine(project_dir).execute(definition, provided)
+
+        assert state.inputs == {"value": number, "enabled": True, "scope": "full"}
+        assert isinstance(state.inputs["value"], int)
+        assert definition.data == original_data
+        assert provided == original_inputs
+
+    @pytest.mark.parametrize("run_id", ["", "../unsafe"])
+    def test_startup_run_id_validation_precedes_input_resolution(
+        self, project_dir, monkeypatch, run_id
+    ):
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        monkeypatch.setenv("SPECKIT_WORKFLOW_RUN_ID", "valid-env-id")
+        definition = WorkflowDefinition({
+            "workflow": {"id": "identity"},
+            "inputs": {"value": {"type": "string", "required": True}},
+            "steps": [],
+        })
+
+        with pytest.raises(ValueError, match="[Rr]un.*ID|run_id"):
+            WorkflowEngine(project_dir).execute(definition, run_id=run_id)
+
+        assert not (project_dir / ".specify" / "workflows" / "runs").exists()
+
     @pytest.mark.parametrize(
         ("field", "value"),
         [
