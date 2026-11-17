@@ -3231,6 +3231,120 @@ class TestExtensionSkillUnregistration:
             "generic branch's rmdir does"
         )
 
+    def test_force_reinstall_recreates_skill_beside_user_notes(
+        self, project_dir, temp_dir
+    ):
+        """A replacement install recreates the skill the user's files kept alive.
+
+        After the per-file removal (#5381), a skill directory holding user
+        notes survives without its SKILL.md. The force-reinstall (update)
+        path must still recreate the skill there: removal verified the
+        directory's ownership moments earlier, so registration receives
+        those directories as recreatable instead of skipping them as
+        unverifiable pre-existing user directories — and the notes survive.
+        """
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        ext_dir = _create_extension_dir(temp_dir)
+        manager.install_from_directory(ext_dir, "1.0.0", register_commands=False)
+        manager.register_enabled_extensions_for_agent("auggie")
+
+        skill_dir = project_dir / ".augment" / "skills" / "speckit-test-ext-hello"
+        assert (skill_dir / "SKILL.md").is_file()
+        (skill_dir / "my-notes.md").write_text("personal notes", encoding="utf-8")
+
+        manager.install_from_directory(
+            ext_dir, "2.0.0", register_commands=False, force=True
+        )
+
+        assert (skill_dir / "SKILL.md").is_file(), (
+            "the replacement install must recreate the skill in the "
+            "directory the user's files kept alive"
+        )
+        assert (skill_dir / "my-notes.md").read_text(
+            encoding="utf-8"
+        ) == "personal notes"
+
+    def test_fallback_preserves_user_retargeted_skill_symlink(
+        self, project_dir, temp_dir
+    ):
+        """A SKILL.md symlink re-pointed outside the extension survives.
+
+        Supplemental route (no generic hashes): a marker-matching link the
+        user retargeted at another extension's file is not this extension's
+        rendered output, so the fallback leaves both the link and its
+        directory alone.
+        """
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        skill_dir = project_dir / ".augment" / "skills" / "speckit-test-ext-hello"
+        skill_dir.mkdir(parents=True)
+        target = manager.extensions_dir / "other" / "file.md"
+        target.parent.mkdir(parents=True)
+        target.write_text(
+            "---\nname: speckit-test-ext-hello\nmetadata:\n"
+            "  source: extension:test-ext\n---\n",
+            encoding="utf-8",
+        )
+        link = skill_dir / "SKILL.md"
+        os.symlink(os.path.relpath(target, skill_dir), link)
+
+        removed = manager._unregister_extension_skills(
+            ["speckit-test-ext-hello"], "test-ext"
+        )
+
+        assert removed == []
+        assert link.is_symlink(), (
+            "a user-retargeted skill symlink must survive the fallback "
+            "removal, as it does on the generic branch"
+        )
+        assert link.resolve() == target.resolve()
+
+    def test_fallback_removes_dev_cache_symlink_outside_installed_dir(
+        self, project_dir, temp_dir
+    ):
+        """An expected dev-cache link is still removed, wherever the cache is.
+
+        Supplemental route (no generic hashes): a link into a
+        ``.specify-dev/extension-skills`` cache is spec-kit's own dev-mode
+        output even when that source tree lives outside the installed
+        extension directory, so removal retires it and cleans the emptied
+        directory.
+        """
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        skill_dir = project_dir / ".augment" / "skills" / "speckit-test-ext-hello"
+        skill_dir.mkdir(parents=True)
+        cache_file = (
+            project_dir
+            / "dev-src"
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        cache_file.parent.mkdir(parents=True)
+        cache_file.write_text(
+            "---\nname: speckit-test-ext-hello\nmetadata:\n"
+            "  source: extension:test-ext\n---\n",
+            encoding="utf-8",
+        )
+        link = skill_dir / "SKILL.md"
+        os.symlink(os.path.relpath(cache_file, skill_dir), link)
+
+        removed = manager._unregister_extension_skills(
+            ["speckit-test-ext-hello"], "test-ext"
+        )
+
+        assert removed and not link.exists() and not link.is_symlink(), (
+            "a dev-cache link is this machinery's output and must be removed"
+        )
+        assert not skill_dir.exists(), "the emptied directory is cleaned up"
+
     def test_read_only_discovery_includes_fallback_when_target_is_missing(
         self, project_dir
     ):
