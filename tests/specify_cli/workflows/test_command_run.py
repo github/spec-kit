@@ -61,7 +61,7 @@ class TestWorkflowStartupArtifacts:
             assert executable is not None, "checkout's specify executable is required"
             result = subprocess.run(
                 [str(Path(executable).absolute()), "workflow", *arguments],
-                cwd=project_dir, stdin=subprocess.DEVNULL,
+                cwd=project_dir, input="",
                 capture_output=True, text=True, timeout=30,
             )
             return result.returncode, result.stdout, result.stderr
