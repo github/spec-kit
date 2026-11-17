@@ -822,7 +822,10 @@ class TestExtensionUpdateCLI:
 
         assert result.exit_code == 0, result.output
         updated = ExtensionManager(project_dir).registry.get("test-ext")
-        assert updated["registered_skills"] == updated_skill_names
+        # Native skill files remain owned through registered_commands; the
+        # shared renderer refreshes their content without duplicating them in
+        # the extension-skills ownership list.
+        assert updated["registered_skills"] == []
         assert updated["registered_commands"] == {"claude": updated_command_names}
         hook_config = HookExecutor(project_dir).get_project_config()
         hook = hook_config["hooks"]["after_tasks"][0]
@@ -857,9 +860,14 @@ class TestExtensionUpdateCLI:
             json.dumps({"ai": "claude", "ai_skills": True, "script": "sh"}),
             encoding="utf-8",
         )
+        with patch.object(Path, "cwd", return_value=fresh_project):
+            fresh_result = runner.invoke(
+                app,
+                ["extension", "add", str(v2_dir), "--dev"],
+                catch_exceptions=True,
+            )
+        assert fresh_result.exit_code == 0, fresh_result.output
         fresh_manager = ExtensionManager(fresh_project)
-        fresh_manager.install_from_directory(v2_dir, "0.1.0")
-        fresh_manager.register_enabled_extensions_for_agent("claude", force=True)
         fresh_entry = fresh_manager.registry.get("test-ext")
         assert updated["registered_skills"] == fresh_entry["registered_skills"]
         assert updated["registered_commands"] == fresh_entry["registered_commands"]

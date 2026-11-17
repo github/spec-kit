@@ -1418,7 +1418,7 @@ class TestExtensionSkillRegistration:
         skill_file = skills_dir / "speckit-early-ext-hello" / "SKILL.md"
         assert skill_file.exists()
         content = skill_file.read_text(encoding="utf-8")
-        assert "source: early-ext:commands/hello.md" in content
+        assert "source: extension:early-ext" in content
 
     def test_hermes_global_skills_dir_used_when_marker_is_recovered(
         self, project_dir, temp_dir, monkeypatch

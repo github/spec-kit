@@ -3064,9 +3064,31 @@ class ExtensionManager:
 
             # Auto-register extension commands as agent skills when skills mode
             # was used during project initialisation (feature parity).
-            registered_skills = self._register_extension_skills(
-                manifest, dest_dir, link_outputs=link_commands
+            # Native integration registration can write the primary SKILL.md
+            # before the shared renderer runs. Refresh only names whose command
+            # artifacts this install actually registered, so fresh installs and
+            # updates produce the same content without overwriting unrelated
+            # user skills. Keep this in the shared install path so every source
+            # (local, catalog, or update archive) gets identical bookkeeping.
+            native_skill_names = {
+                self._skill_name_for_command(command_name)
+                for command_names in registered_commands.values()
+                for command_name in self._valid_name_list(command_names)
+            }
+            rendered_skills = self._register_extension_skills(
+                manifest,
+                dest_dir,
+                link_outputs=link_commands,
+                force=bool(native_skill_names),
+                force_names=native_skill_names,
             )
+            # A native primary skill is already owned through
+            # ``registered_commands``. Keep the extension-skills registry for
+            # files created only by this shared renderer, avoiding duplicate
+            # ownership and cleanup.
+            registered_skills = [
+                name for name in rendered_skills if name not in native_skill_names
+            ]
             if register_commands and generic_active and manifest.commands:
                 expected = set(names)
                 actual = set(
