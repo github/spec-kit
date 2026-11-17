@@ -1,17 +1,13 @@
 ---
-description: Execute the implementation planning workflow using the plan template to generate design artifacts.
+description: Design feature implementation from specification, architecture and environment without coding or test planning.
 handoffs:
-  - label: Create Tasks
-    agent: speckit.tasks
-    prompt: Break the plan into tasks
-    send: true
-  - label: Create Checklist
-    agent: speckit.checklist
-    prompt: Create a checklist for the following domain...
+  - label: Generate Coding Tasks
+    agent: speckit.taskscode
+    prompt: Break this implementation design into coding-only tasks.
 scripts:
-  sh: scripts/bash/setup-plan.sh --json
-  ps: scripts/powershell/setup-plan.ps1 -Json
-  py: scripts/python/setup_plan.py --json
+  sh: scripts/bash/workflow.sh context plan --json
+  ps: scripts/powershell/workflow.ps1 context plan --json
+  py: scripts/python/workflow_context.py plan --json
 ---
 
 ## User Input
@@ -20,151 +16,47 @@ scripts:
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+## Contract
 
-## Pre-Execution Checks
+The project constitution is `.specify/memory/constitution.md` (CONSTITUTION in helper output).
 
-**Check for extension hooks (before planning)**:
-- Check if `.specify/extensions.yml` exists in the project root.
-- If it exists, read it and look for entries under the `hooks.before_plan` key
-- If the YAML cannot be parsed or is invalid, do not skip silently: tell the user that `.specify/extensions.yml` could not be read (include the parser error) and that no hooks were checked, including any mandatory (`optional: false`) hooks registered there, then continue normally
-- Filter out hooks where `enabled` is explicitly `false`. Treat hooks without an `enabled` field as enabled by default.
-- For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
-  - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
-  - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
-- For each executable hook, output the following based on its `optional` flag:
-  - **Optional hook** (`optional: true`):
-    ```
-    ## Extension Hooks
+Read constitution, spec, shared architecture/environment and existing feature design.
+Own `FEATURE_DIR/plan.md` and only necessary `research.md`, `data-model.md`, `contracts/`.
+No source code, complete function logic, tests, test plans, test tasks, validation
+experiments, quickstart test/run guides, deployment operations or task generation.
+Do not change product requirements, architecture technologies or environment assets.
 
-    **Optional Pre-Hook**: {extension}
-    Command: `/{command}`
-    Description: {description}
+## Procedure
 
-    Prompt: {prompt}
-    To execute: `/{command}`
-    ```
-  - **Mandatory hook** (`optional: false`):
-    ```
-    ## Extension Hooks
+1. Run `{SCRIPT}` and read all required inputs before writing; use TEMPLATE_CONTENT
+   for a new plan. Merge updates into existing design; do not reset approved artifacts.
+2. Map requirements to components and logical deployment targets. Inherit technologies,
+   protocols, OS and resource constraints. A conflict goes to the owning command,
+   not an invented workaround or reduced requirement.
+3. Investigate existing standard solutions and compatible libraries before selecting
+   implementation dependencies. Justify complexity. Make routine engineering choices
+   within approved bounds without asking for approval of each minor choice.
+4. Specify source structure, module boundaries, schemas, migrations, state transitions,
+   validation/error handling, concurrency, security and important communication behavior.
+   Define APIs with request/response types, errors, authentication and versioning.
+   Do not leave essential design choices for coding or write complete function bodies.
+5. Define technical dependencies and contracts that allow independent components to
+   proceed. No requirement that coding await deployment, experiments, successful
+   future tests or final acceptance. Acceptance criteria in the spec remain unchanged.
+6. Write compact design artifacts, each with a distinct purpose. No testing section
+   or testing workflow. Record input revisions, changed decisions and downstream impact.
+7. Check completeness and constitution alignment by reading the artifacts. Report
+   output paths and recommend __SPECKIT_COMMAND_TASKSCODE__.
 
-    **Automatic Pre-Hook**: {extension}
-    Executing: `/{command}`
-    EXECUTE_COMMAND: {command}
+## Extension boundary
 
-    Wait for the result of the hook command before proceeding to the Outline.
-    ```
-    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
-- If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
+Read `.specify/extensions.yml` if present. Skip `enabled: false` hooks. Offer
+`optional: true` hooks without automatically executing them; invoke mandatory hooks
+only within this stage's boundaries and wait for their result. Nonempty conditions
+belong to HookExecutor, not ad hoc expression evaluation. Use the integration's native
+command spelling when invoking a logical `speckit.*` name. Report malformed hook
+configuration and any mandatory hook that cannot safely run; never claim it succeeded.
 
-## Outline
-
-1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, FEATURE_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
-
-2. **Load context**: Read FEATURE_SPEC and `/memory/constitution.md`. Load IMPL_PLAN template (already copied).
-
-3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
-   - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
-   - Fill Constitution Check section from constitution
-   - Evaluate gates (ERROR if violations unjustified)
-   - Phase 0: Generate research.md (resolve all NEEDS CLARIFICATION)
-   - Phase 1: Generate data-model.md, contracts/, quickstart.md
-   - Re-evaluate Constitution Check post-design
-
-## Mandatory Post-Execution Hooks
-
-**You MUST complete this section before reporting completion to the user.**
-
-Check if `.specify/extensions.yml` exists in the project root.
-- If it does not exist, or no hooks are registered under `hooks.after_plan`, skip to the Completion Report.
-- If it exists, read it and look for entries under the `hooks.after_plan` key.
-- If the YAML cannot be parsed or is invalid, do not skip silently: tell the user that `.specify/extensions.yml` could not be read (include the parser error) and that no hooks were checked, including any mandatory (`optional: false`) hooks registered there, then continue to the Completion Report.
-- Filter out hooks where `enabled` is explicitly `false`. Treat hooks without an `enabled` field as enabled by default.
-- For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
-  - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
-  - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
-- For each executable hook, output the following based on its `optional` flag:
-  - **Mandatory hook** (`optional: false`) — **You MUST emit `EXECUTE_COMMAND:` for each mandatory hook**:
-    ```
-    ## Extension Hooks
-
-    **Automatic Hook**: {extension}
-    Executing: `/{command}`
-    EXECUTE_COMMAND: {command}
-    ```
-    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
-  - **Optional hook** (`optional: true`):
-    ```
-    ## Extension Hooks
-
-    **Optional Hook**: {extension}
-    Command: `/{command}`
-    Description: {description}
-
-    Prompt: {prompt}
-    To execute: `/{command}`
-    ```
-
-## Completion Report
-
-Command ends after Phase 1 design. Report branch, IMPL_PLAN path, and generated artifacts.
-
-## Phases
-
-### Phase 0: Outline & Research
-
-1. **Extract unknowns from Technical Context** above:
-   - For each NEEDS CLARIFICATION → research task
-   - For each dependency → best practices task
-   - For each integration → patterns task
-
-2. **Generate and dispatch research agents**:
-
-   ```text
-   For each unknown in Technical Context:
-     Task: "Research {unknown} for {feature context}"
-   For each technology choice:
-     Task: "Find best practices for {tech} in {domain}"
-   ```
-
-3. **Consolidate findings** in `research.md` using format:
-   - Decision: [what was chosen]
-   - Rationale: [why chosen]
-   - Alternatives considered: [what else evaluated]
-
-**Output**: research.md with all NEEDS CLARIFICATION resolved
-
-### Phase 1: Design & Contracts
-
-**Prerequisites:** `research.md` complete
-
-1. **Extract entities from feature spec** → `data-model.md`:
-   - Entity name, fields, relationships
-   - Validation rules from requirements
-   - State transitions if applicable
-
-2. **Define interface contracts** (if project has external interfaces) → `/contracts/`:
-   - Identify what interfaces the project exposes to users or other systems
-   - Document the contract format appropriate for the project type
-   - Examples: public APIs for libraries, command schemas for CLI tools, endpoints for web services, grammars for parsers, UI contracts for applications
-   - Skip if project is purely internal (build scripts, one-off tools, etc.)
-
-3. **Create quickstart validation guide** → `quickstart.md`:
-   - Document runnable validation scenarios that prove the feature works end-to-end
-   - Include prerequisites, setup commands, test/run commands, and expected outcomes
-   - Use links or references to contracts and data model details instead of duplicating them
-   - Do not include full implementation code, model/service/controller bodies, migrations, or complete test suites
-   - Keep this artifact as a validation/run guide; implementation details belong in `tasks.md` and the implementation phase
-
-**Output**: data-model.md, /contracts/*, quickstart.md
-
-## Key rules
-
-- Use absolute paths for filesystem operations; use project-relative paths for references in documentation
-- ERROR on gate failures or unresolved clarifications
-
-## Done When
-
-- [ ] Plan workflow executed and design artifacts generated
-- [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
-- [ ] Completion reported to user with branch, plan path, and generated artifacts
+Inspect before_plan/after_plan hooks. Run only hooks respecting this command's
+owned files and no-execution scope. Offer agent-context updates or commits separately;
+do not silently run tests, edit source or change infrastructure via a hook.

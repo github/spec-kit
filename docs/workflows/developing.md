@@ -17,83 +17,180 @@ A bare YAML file is enough for a simple workflow. Directory and archive installa
 
 Resolve companion files with `context.workflow_dir` or the shell's `SPECKIT_WORKFLOW_DIR`, not the caller's working directory.
 
+## Verifying command completion
+
+Command steps can opt into `verify_completion: true` with `capture: true`. The runner
+appends an invocation-specific completion contract to the command arguments. The agent
+must finish with one `SPECKIT_RESULT` line followed by a space and a JSON object with `nonce`,
+`status: "completed"`, and a nonempty `artifacts` mapping from project-relative paths
+to SHA-256 hashes. The runner validates that receipt and hashes the actual files before
+returning `COMPLETED`; the parsed receipt is available as `output.completion`.
+
+Paths must use forward slashes and remain inside the project; symlink paths are rejected.
+Missing or duplicate receipts, blocked status, stale nonces, missing or empty files,
+changed hashes, timeouts and truncated output fail the step even if the CLI exits zero.
+Other command steps retain their existing exit-code behavior unless explicitly opted in.
+Choose `timeout` and `capture_max_bytes` for the expected work. A blocked clarification
+needs its missing answer supplied before resuming. Receipts verify reported completion
+and output identity, not semantic correctness or file-ownership enforcement.
+
 ## Bundled SDD example
 
 Workflows are defined in YAML files. Here is the built-in **Full SDD Cycle** workflow that ships with Spec Kit:
 
 ```yaml
-schema_version: "1.0"
+schema_version: '1.0'
 workflow:
-  id: "speckit"
-  name: "Full SDD Cycle"
-  version: "1.0.2"
-  author: "GitHub"
-  description: "Runs specify → plan → tasks → implement with review gates"
-
+  id: speckit
+  name: Full SDD Cycle
+  version: 2.0.0
+  author: GitHub
+  description: Eleven-stage design, coding, optional deployment and testing workflow
 requires:
-  speckit_version: ">=0.15.1"
+  speckit_version: '>=2.0.0.dev0'
   integrations:
     any:
-      - "alquimia"
-      - "claude"
-      - "copilot"
-      - "gemini"
-      - "opencode"
-
+    - alquimia
+    - claude
+    - codex
+    - copilot
+    - gemini
+    - opencode
 inputs:
   spec:
     type: string
     required: true
-    prompt: "Describe what you want to build"
+    prompt: Describe what you want to build
   integration:
     type: string
-    default: "auto"
-    prompt: "Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's initialized integration)"
+    default: auto
+    prompt: Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's
+      initialized integration)
   speckit_review_spec_verdict:
     type: string
-    default: ""
+    default: ''
   speckit_review_plan_verdict:
     type: string
-    default: ""
-
+    default: ''
+  deploy:
+    type: boolean
+    default: false
+    prompt: Deploy after coding? Requires compatible authorized destinations.
+  deployment_target:
+    type: string
+    default: ''
+    prompt: Destination references and authorized deployment scope; no secrets
 steps:
-  - id: specify
-    command: speckit.specify
-    integration: "{{ inputs.integration }}"
+- id: constitution
+  command: speckit.constitution
+  capture: true
+  verify_completion: true
+  timeout: 1800
+  integration: '{{ inputs.integration }}'
+  input:
+    args: 'Preserve the existing constitution. If absent, establish project principles
+      from: {{ inputs.spec }}'
+- id: specify
+  command: speckit.specify
+  capture: true
+  verify_completion: true
+  timeout: 1800
+  integration: '{{ inputs.integration }}'
+  input:
+    args: '{{ inputs.spec }}'
+- id: review-spec
+  type: gate
+  verdict_input: speckit_review_spec_verdict
+  message: Review product requirements before clarification and technical design.
+  options:
+  - approve
+  - reject
+  on_reject: abort
+- id: clarify
+  command: speckit.clarify
+  capture: true
+  verify_completion: true
+  timeout: 1800
+  integration: '{{ inputs.integration }}'
+  input:
+    args: '{{ inputs.spec }}'
+- id: architecture
+  command: speckit.architecture
+  capture: true
+  verify_completion: true
+  timeout: 1800
+  integration: '{{ inputs.integration }}'
+  input:
+    args: '{{ inputs.spec }}'
+- id: environment
+  command: speckit.environment
+  capture: true
+  verify_completion: true
+  timeout: 1800
+  integration: '{{ inputs.integration }}'
+  input:
+    args: '{{ inputs.spec }}'
+- id: plan
+  command: speckit.plan
+  capture: true
+  verify_completion: true
+  timeout: 1800
+  integration: '{{ inputs.integration }}'
+  input:
+    args: '{{ inputs.spec }}'
+- id: review-plan
+  type: gate
+  verdict_input: speckit_review_plan_verdict
+  message: Review implementation design before coding task generation.
+  options:
+  - approve
+  - reject
+  on_reject: abort
+- id: taskscode
+  command: speckit.taskscode
+  capture: true
+  verify_completion: true
+  timeout: 1800
+  integration: '{{ inputs.integration }}'
+  input:
+    args: '{{ inputs.spec }}'
+- id: analyze
+  command: speckit.analyze
+  capture: true
+  verify_completion: true
+  timeout: 1800
+  integration: '{{ inputs.integration }}'
+  input:
+    args: '{{ inputs.spec }}'
+- id: impcode
+  command: speckit.impcode
+  capture: true
+  verify_completion: true
+  timeout: 1800
+  integration: '{{ inputs.integration }}'
+  input:
+    args: '{{ inputs.spec }}'
+- id: deploy-if-requested
+  type: if
+  condition: '{{ inputs.deploy }}'
+  then:
+  - id: deployment
+    command: speckit.deployment
+    capture: true
+    verify_completion: true
+    timeout: 1800
+    integration: '{{ inputs.integration }}'
     input:
-      args: "{{ inputs.spec }}"
-
-  - id: review-spec
-    type: gate
-    verdict_input: speckit_review_spec_verdict
-    message: "Review the generated spec before planning."
-    options: [approve, reject]
-    on_reject: abort
-
-  - id: plan
-    command: speckit.plan
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "{{ inputs.spec }}"
-
-  - id: review-plan
-    type: gate
-    verdict_input: speckit_review_plan_verdict
-    message: "Review the plan before generating tasks."
-    options: [approve, reject]
-    on_reject: abort
-
-  - id: tasks
-    command: speckit.tasks
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "{{ inputs.spec }}"
-
-  - id: implement
-    command: speckit.implement
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "{{ inputs.spec }}"
+      args: '{{ inputs.deployment_target }}'
+- id: test
+  command: speckit.test
+  capture: true
+  verify_completion: true
+  timeout: 1800
+  integration: '{{ inputs.integration }}'
+  input:
+    args: Run local unit and isolated integration tests. Use deployment.md for target-dependent
+      end-to-end tests if deployed; record unavailable targets as blocked.
 ```
 
 This produces the following execution flow:

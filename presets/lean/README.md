@@ -1,3 +1,7 @@
+> In this fork, lean overrides only constitution and specify. Architecture, environment,
+> plan, taskscode, analyze, impcode, deployment and test retain their core contracts.
+> The older three-stage overrides below are upstream reference material and are not installed.
+
 # Lean Workflow
 
 A minimal preset that strips the Spec Kit workflow down to its essentials — just the prompt, just the artifact.

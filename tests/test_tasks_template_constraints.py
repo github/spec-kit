@@ -11,15 +11,13 @@ recorded in data-model.md.
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
-TASKS_TEMPLATE = REPO_ROOT / "templates" / "commands" / "tasks.md"
+TASKS_TEMPLATE = REPO_ROOT / "templates" / "commands" / "taskscode.md"
 
 
 def test_data_model_section_requires_verbatim_field_constraints():
     content = TASKS_TEMPLATE.read_text(encoding="utf-8")
 
-    from_data_model_start = content.index("**From Data Model**")
-    next_section_start = content.index("**From Setup/Infrastructure**")
-    section = content[from_data_model_start:next_section_start]
+    section = content
 
     assert "quote the constraint verbatim in the task description" in section.lower(), (
         "The 'From Data Model' task-organization rules must instruct the "

@@ -23,7 +23,7 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationUse:
-    @pytest.mark.parametrize("edited_command", [None, "plan", "tasks"])
+    @pytest.mark.parametrize("edited_command", [None, "plan", "taskscode"])
     def test_use_syncs_manifest_without_blessing_user_edits(
         self, tmp_path, tasks_preset_src, edited_command
     ):
@@ -47,7 +47,7 @@ class TestIntegrationUse:
             assert manifest.files[edited_rel] == before, "pre-existing edits must not be recorded as pristine"
             assert edited_rel in manifest.check_modified()
         else:
-            rel = ".agents/skills/speckit-tasks/SKILL.md"
+            rel = ".agents/skills/speckit-taskscode/SKILL.md"
             content = (project / rel).read_bytes()
             assert b"Preset tasks body" in content
             assert manifest.files[rel] == hashlib.sha256(content).hexdigest(), (
@@ -81,7 +81,7 @@ class TestIntegrationUse:
         assert result.exit_code == 0, result.output
         data = json.loads((project / ".specify/integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "codex"
-        skill = project / ".agents/skills/speckit-tasks/SKILL.md"
+        skill = project / ".agents/skills/speckit-taskscode/SKILL.md"
         assert b"Preset tasks body" in skill.read_bytes(), "registration must still run"
         output = strip_ansi(result.output)
         if state == "missing":

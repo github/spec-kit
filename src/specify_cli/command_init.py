@@ -1206,16 +1206,28 @@ def register(app: typer.Typer) -> None:
             f"   {step_num}.2 [cyan]{_display_cmd('specify')}[/] - Create baseline specification"
         )
         steps_lines.append(
-            f"   {step_num}.3 [cyan]{_display_cmd('plan')}[/] - Create implementation plan"
+            f"   {step_num}.3 [cyan]{_display_cmd('architecture')}[/] - Design system components and technologies"
         )
         steps_lines.append(
-            f"   {step_num}.4 [cyan]{_display_cmd('tasks')}[/] - Generate actionable tasks"
+            f"   {step_num}.4 [cyan]{_display_cmd('environment')}[/] - Recommend runtime assets and resources"
         )
         steps_lines.append(
-            f"   {step_num}.5 [cyan]{_display_cmd('implement')}[/] - Execute implementation"
+            f"   {step_num}.5 [cyan]{_display_cmd('plan')}[/] - Design feature implementation"
         )
         steps_lines.append(
-            f"   {step_num}.6 [cyan]{_display_cmd('converge')}[/] - Assess the codebase and append remaining work as tasks"
+            f"   {step_num}.6 [cyan]{_display_cmd('taskscode')}[/] - Generate coding-only tasks"
+        )
+        steps_lines.append(
+            f"   {step_num}.7 [cyan]{_display_cmd('analyze')}[/] - Review design and task consistency"
+        )
+        steps_lines.append(
+            f"   {step_num}.8 [cyan]{_display_cmd('impcode')}[/] - Write code with resumable progress; no tests"
+        )
+        steps_lines.append(
+            f"   {step_num}.9 [cyan]{_display_cmd('deployment')}[/] - Deploy to authorized destinations"
+        )
+        steps_lines.append(
+            f"   {step_num}.10 [cyan]{_display_cmd('test')}[/] - Run tests and record bugs"
         )
 
         steps_panel = Panel(
@@ -1235,9 +1247,7 @@ def register(app: typer.Typer) -> None:
         enhancement_lines = [
             enhancement_intro,
             "",
-            f"○ [cyan]{_display_cmd('clarify')}[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]{_display_cmd('plan')}[/] if used)",
-            f"○ [cyan]{_display_cmd('analyze')}[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]{_display_cmd('tasks')}[/], before [cyan]{_display_cmd('implement')}[/])",
-            f"○ [cyan]{_display_cmd('checklist')}[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]{_display_cmd('plan')}[/])",
+            f"○ [cyan]{_display_cmd('clarify')}[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]{_display_cmd('architecture')}[/] if used)",
         ]
         enhancements_title = (
             "Enhancement Skills" if native_skill_mode else "Enhancement Commands"

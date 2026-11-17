@@ -117,7 +117,7 @@ export SPECKIT_MY_EXTENSION_CONNECTION_API_KEY="custom-key"
 > /speckit.spec
 
 # Step 2: Generate tasks
-> /speckit.tasks
+> /speckit.taskscode
 
 # Step 3: Use extension
 > /speckit.my-extension.example

@@ -8,6 +8,8 @@ Mirrors ``TomlIntegrationTests`` closely — same test structure,
 adapted for YAML recipe output format.
 """
 
+from .fork_inventory import expanded_inventory
+
 import os
 
 import yaml
@@ -375,15 +377,8 @@ class YamlIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     COMMAND_STEMS = [
-        "analyze",
-        "clarify",
-        "constitution",
-        "converge",
-        "implement",
-        "plan",
-        "checklist",
-        "specify",
-        "tasks",
+        "constitution", "specify", "clarify", "architecture", "environment", "plan",
+        "taskscode", "analyze", "impcode", "deployment", "test",
     ]
 
     def _expected_files(self, script_variant: str) -> list[str]:
@@ -441,7 +436,7 @@ class YamlIntegrationTests:
 
 
 
-        return sorted(files)
+        return expanded_inventory(files)
 
     def test_complete_file_inventory_sh(self, tmp_path):
         """Every file produced by specify init --integration <key> --script sh."""
@@ -473,6 +468,7 @@ class YamlIntegrationTests:
             p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts
         )
         expected = self._expected_files("sh")
+        expected = expanded_inventory(expected)
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
@@ -508,6 +504,7 @@ class YamlIntegrationTests:
             p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts
         )
         expected = self._expected_files("ps")
+        expected = expanded_inventory(expected)
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"

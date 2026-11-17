@@ -229,7 +229,7 @@ class TestPresetAdd:
         entry = {
             "id": "lean",
             "name": "Lean Workflow",
-            "version": "1.0.0",
+            "version": "2.0.0",
             "bundled": True,
             "_install_allowed": True,
         }
@@ -241,12 +241,12 @@ class TestPresetAdd:
             patch.object(PresetManager, "install_from_zip") as install_zip,
         ):
             result = CliRunner().invoke(
-                app, ["preset", "add", "lean", "--version", "1.0"]
+                app, ["preset", "add", "lean", "--version", "2.0"]
             )
 
         assert result.exit_code == 0, result.output
         assert "Lean Workflow" in result.output
-        assert PresetManager(project_dir).get_pack("lean").version == "1.0.0"
+        assert PresetManager(project_dir).get_pack("lean").version == "2.0.0"
         download.assert_not_called()
         install_zip.assert_not_called()
 

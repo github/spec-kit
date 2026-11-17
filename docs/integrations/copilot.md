@@ -10,6 +10,12 @@ This integration is not declared multi-install safe. See the
 
 ## Setup
 
+This fork delivers the [eleven-command workflow](../fork-workflow.md) in both
+skills and commands mode. Architecture/environment precede plan; taskscode/impcode
+replace tasks/implement, and deployment/testing have separate commands. Obsolete
+unchanged managed outputs are removed during integration upgrade; customized files
+are preserved and require migration review.
+
 ```bash
 specify init my-project --integration copilot
 ```

@@ -245,8 +245,8 @@ class TestBobDefaultSkillsMode:
         created = bob.setup(tmp_path, m)
 
         expected_commands = {
-            "analyze", "clarify", "constitution", "converge", "implement",
-            "plan", "checklist", "specify", "tasks",
+            "constitution", "specify", "clarify", "architecture", "environment", "plan",
+            "taskscode", "analyze", "impcode", "deployment", "test",
         }
         actual_commands = {f.parent.name.removeprefix("speckit-") for f in created}
         assert actual_commands == expected_commands
@@ -410,8 +410,8 @@ class TestBobInitFlowDefault:
         assert result.exit_code == 0, f"init failed: {result.output}"
 
         commands = [
-            "analyze", "clarify", "constitution", "converge", "implement",
-            "plan", "checklist", "specify", "tasks",
+            "constitution", "specify", "clarify", "architecture", "environment", "plan",
+            "taskscode", "analyze", "impcode", "deployment", "test",
         ]
         for cmd in commands:
             assert (project / ".bob" / "skills" / f"speckit-{cmd}" / "SKILL.md").exists(), (

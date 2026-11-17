@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: git
   name: "Git Branching Workflow"
-  version: "1.0.4"
+  version: "2.0.0"
   description: "Feature branch creation, numbering (sequential/timestamp), templating, validation, and Git remote detection"
   author: spec-kit-core
   repository: https://github.com/github/spec-kit
@@ -58,26 +58,16 @@ hooks:
     optional: true
     prompt: "Commit outstanding changes before planning?"
     description: "Auto-commit before implementation planning"
-  before_tasks:
+  before_taskscode:
     command: speckit.git.commit
     optional: true
     prompt: "Commit outstanding changes before task generation?"
     description: "Auto-commit before task generation"
-  before_implement:
+  before_impcode:
     command: speckit.git.commit
     optional: true
     prompt: "Commit outstanding changes before implementation?"
     description: "Auto-commit before implementation"
-  before_checklist:
-    command: speckit.git.commit
-    optional: true
-    prompt: "Commit outstanding changes before checklist?"
-    description: "Auto-commit before checklist generation"
-  before_analyze:
-    command: speckit.git.commit
-    optional: true
-    prompt: "Commit outstanding changes before analysis?"
-    description: "Auto-commit before analysis"
   before_taskstoissues:
     command: speckit.git.commit
     optional: true
@@ -103,26 +93,16 @@ hooks:
     optional: true
     prompt: "Commit plan changes?"
     description: "Auto-commit after implementation planning"
-  after_tasks:
+  after_taskscode:
     command: speckit.git.commit
     optional: true
     prompt: "Commit task changes?"
     description: "Auto-commit after task generation"
-  after_implement:
+  after_impcode:
     command: speckit.git.commit
     optional: true
     prompt: "Commit implementation changes?"
     description: "Auto-commit after implementation"
-  after_checklist:
-    command: speckit.git.commit
-    optional: true
-    prompt: "Commit checklist changes?"
-    description: "Auto-commit after checklist generation"
-  after_analyze:
-    command: speckit.git.commit
-    optional: true
-    prompt: "Commit analysis results?"
-    description: "Auto-commit after analysis"
   after_taskstoissues:
     command: speckit.git.commit
     optional: true

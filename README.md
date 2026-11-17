@@ -1,3 +1,7 @@
+> This fork uses an eleven-command workflow with separate coding, deployment and testing.
+> See [the fork workflow guide](docs/fork-workflow.md) for current commands, artifact ownership,
+> installation and migration. The upstream methodology/reference below describes the original workflow.
+
 <div align="center">
     <img src="https://raw.githubusercontent.com/github/spec-kit/main/media/logo_large.webp" alt="Spec Kit Logo" width="200" height="200"/>
     <h1>🌱 Spec Kit</h1>

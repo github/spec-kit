@@ -1,5 +1,7 @@
 """Tests for GenericIntegration."""
 
+from .fork_inventory import expanded_inventory
+
 import json
 import os
 import shutil
@@ -42,7 +44,7 @@ def generic_extension(tmp_path):
     (source / "commands" / "run.md").write_text(
         "---\ndescription: Run sample\nscripts:\n  sh: scripts/run.sh\n---\n"
         "Execute {SCRIPT} with {ARGS}; see scripts/run.sh. "
-        "Then __SPECKIT_COMMAND_TASKS__.\n",
+        "Then __SPECKIT_COMMAND_TASKSCODE__.\n",
         encoding="utf-8",
     )
     return source
@@ -71,7 +73,7 @@ def test_generic_extension_lifecycle(tmp_path, generic_extension, skills):
         commands_dir=".custom/skills" if skills else ".custom/commands",
     )
     output_dir = project / ".custom" / ("skills" if skills else "commands")
-    core = output_dir / ("speckit-tasks/SKILL.md" if skills else "speckit.tasks.md")
+    core = output_dir / ("speckit-taskscode/SKILL.md" if skills else "speckit.taskscode.md")
     core_content = core.read_bytes()
     unrelated = output_dir / ("user-skill/SKILL.md" if skills else "user.md")
     unrelated.parent.mkdir(parents=True, exist_ok=True)
@@ -86,7 +88,7 @@ def test_generic_extension_lifecycle(tmp_path, generic_extension, skills):
     assert ".specify/extensions/sample/scripts/run.sh" in content
     assert "{SCRIPT}" not in content
     assert "$ARGUMENTS" in content
-    assert ("/speckit-tasks" if skills else "/speckit.tasks") in content
+    assert ("/speckit-taskscode" if skills else "/speckit.taskscode") in content
     manager.register_enabled_extensions_for_agent("generic")
     assert artifact.read_text(encoding="utf-8") == content
     if skills:
@@ -2500,7 +2502,7 @@ class TestGenericIntegration:
         content = plan_file.read_text(encoding="utf-8")
         assert "__CONTEXT_FILE__" not in content
 
-    def test_plan_defines_quickstart_as_validation_guide(self, tmp_path):
+    def test_plan_excludes_test_planning_and_validation_guides(self, tmp_path):
         """The generated plan command should keep quickstart.md out of implementation scope."""
         i = get_integration("generic")
         m = IntegrationManifest("generic", tmp_path)
@@ -2509,33 +2511,24 @@ class TestGenericIntegration:
         assert plan_file.exists()
         content = plan_file.read_text(encoding="utf-8")
 
-        assert "Create quickstart validation guide" in content
-        assert "runnable validation scenarios" in content
-        assert "Do not include full implementation code" in content
-        assert "implementation details belong in `tasks.md` and the implementation phase" in content
+        assert "No source code" in content
+        assert "test plans" in content
+        assert "quickstart test/run guides" in content
+        assert "__SPECKIT_COMMAND_" not in content
 
-    def test_implement_loads_constitution_context(self, tmp_path):
+    def test_impcode_loads_constitution_context(self, tmp_path):
         """The generated implement command should load constitution governance context."""
         i = get_integration("generic")
         m = IntegrationManifest("generic", tmp_path)
         i.setup(tmp_path, m, parsed_options={"commands_dir": ".custom/cmds"})
-        implement_file = tmp_path / ".custom" / "cmds" / "speckit.implement.md"
+        implement_file = tmp_path / ".custom" / "cmds" / "speckit.impcode.md"
         assert implement_file.exists()
         content = implement_file.read_text(encoding="utf-8")
         assert ".specify/memory/constitution.md" in content
 
     @pytest.mark.parametrize(
         "command_stem",
-        [
-            "analyze",
-            "clarify",
-            "converge",
-            "implement",
-            "plan",
-            "checklist",
-            "specify",
-            "tasks",
-        ],
+        ["specify", "clarify", "architecture", "environment", "plan", "taskscode", "analyze", "impcode", "deployment", "test"],
     )
     def test_command_loads_constitution_context(self, tmp_path, command_stem):
         """Every command except constitution must reference constitution.md."""
@@ -2599,10 +2592,10 @@ class TestGenericIntegration:
             ".myagent/commands/speckit.clarify.md",
             ".myagent/commands/speckit.constitution.md",
             ".myagent/commands/speckit.converge.md",
-            ".myagent/commands/speckit.implement.md",
+            ".myagent/commands/speckit.impcode.md",
             ".myagent/commands/speckit.plan.md",
             ".myagent/commands/speckit.specify.md",
-            ".myagent/commands/speckit.tasks.md",
+            ".myagent/commands/speckit.taskscode.md",
             ".specify/init-options.json",
             ".specify/integration.json",
             ".specify/integrations/generic.manifest.json",
@@ -2624,6 +2617,7 @@ class TestGenericIntegration:
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
         ])
+        expected = expanded_inventory(expected)
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
@@ -2746,10 +2740,10 @@ class TestGenericIntegration:
             ".myagent/commands/speckit.clarify.md",
             ".myagent/commands/speckit.constitution.md",
             ".myagent/commands/speckit.converge.md",
-            ".myagent/commands/speckit.implement.md",
+            ".myagent/commands/speckit.impcode.md",
             ".myagent/commands/speckit.plan.md",
             ".myagent/commands/speckit.specify.md",
-            ".myagent/commands/speckit.tasks.md",
+            ".myagent/commands/speckit.taskscode.md",
             ".specify/init-options.json",
             ".specify/integration.json",
             ".specify/integrations/generic.manifest.json",
@@ -2771,6 +2765,7 @@ class TestGenericIntegration:
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
         ])
+        expected = expanded_inventory(expected)
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"

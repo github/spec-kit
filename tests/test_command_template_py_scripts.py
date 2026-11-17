@@ -61,7 +61,7 @@ def _pin_interpreter(monkeypatch):
 def test_py_templates_discovered():
     # Guard: the glob must find the known py-scripted templates, otherwise
     # the parametrized tests below would silently pass on an empty set.
-    assert "implement.md" in PY_TEMPLATES
+    assert "impcode.md" in PY_TEMPLATES
     assert "clarify.md" in PY_TEMPLATES
 
 

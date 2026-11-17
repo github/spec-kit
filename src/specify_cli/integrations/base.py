@@ -44,15 +44,17 @@ _HOOK_COMMAND_NOTE = (
 )
 
 _CORE_COMMAND_TEMPLATE_ORDER = (
-    "analyze",
-    "clarify",
-    "constitution",
-    "implement",
-    "converge",
-    "plan",
-    "checklist",
-    "specify",
-    "tasks",
+    'constitution',
+    'specify',
+    'clarify',
+    'architecture',
+    'environment',
+    'plan',
+    'taskscode',
+    'analyze',
+    'impcode',
+    'deployment',
+    'test',
 )
 _CORE_COMMAND_TEMPLATE_RANK = {
     command: index for index, command in enumerate(_CORE_COMMAND_TEMPLATE_ORDER)

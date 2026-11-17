@@ -449,13 +449,7 @@ CORE_CONSTITUTION_COMMAND = (
 )
 
 
-LEAN_COMMAND_NAMES = [
-    "speckit.specify",
-    "speckit.plan",
-    "speckit.tasks",
-    "speckit.implement",
-    "speckit.constitution",
-]
+LEAN_COMMAND_NAMES = ["speckit.constitution", "speckit.specify"]
 
 
 @pytest.mark.parametrize(
@@ -495,15 +489,13 @@ def test_core_constitution_command_resolves_template_at_runtime():
     assert "Do not write back to any versioned template layer" in content
 
 
-def test_core_checklist_command_resolves_template_at_runtime():
-    """The checklist command must consume the composed scaffold."""
-    content = (CORE_CONSTITUTION_COMMAND.parent / "checklist.md").read_text(
-        encoding="utf-8"
-    )
-
-    assert "--template checklist-template" in content
+def test_core_environment_command_resolves_template_at_runtime():
+    """The environment command obtains the composed scaffold from its helper."""
+    content = (CORE_CONSTITUTION_COMMAND.parent / "environment.md").read_text(encoding="utf-8")
+    assert "workflow.sh context environment --json" in content
+    assert "workflow.ps1 context environment --json" in content
+    assert "workflow_context.py environment --json" in content
     assert "TEMPLATE_CONTENT" in content
-    assert "Use TEMPLATE_CONTENT as the structural template" in content
 
 
 def test_core_specify_command_writes_composed_spec_template():
@@ -534,8 +526,8 @@ class TestLeanPreset:
         manifest = PresetManifest(LEAN_PRESET_DIR / "preset.yml")
         assert manifest.id == "lean"
         assert manifest.name == "Lean Workflow"
-        assert manifest.version == "1.0.0"
-        assert len(manifest.templates) == 5  # 5 commands
+        assert manifest.version == "2.0.0"
+        assert len(manifest.templates) == 2  # Governance and specification only
 
     def test_lean_provides_core_workflow_commands(self):
         """Verify the lean preset provides overrides for core workflow commands."""

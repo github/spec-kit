@@ -58,15 +58,17 @@ from ..shared_infra import verify_archive_sha256
 
 _FALLBACK_CORE_COMMAND_NAMES = frozenset(
     {
-        "analyze",
-        "checklist",
-        "clarify",
-        "constitution",
-        "converge",
-        "implement",
-        "plan",
-        "specify",
-        "tasks",
+        'constitution',
+        'specify',
+        'clarify',
+        'architecture',
+        'environment',
+        'plan',
+        'taskscode',
+        'analyze',
+        'impcode',
+        'deployment',
+        'test',
     }
 )
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")

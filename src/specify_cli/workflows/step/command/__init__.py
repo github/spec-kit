@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,8 @@ from specify_cli.workflows.step._dispatch_settings import (
     dispatch_settings_failure,
     resolve_dispatch_settings,
 )
+
+from ._completion import completion_errors, completion_prompt, verify_completion
 
 _DEFAULT_CAPTURE_TIMEOUT = 600
 
@@ -54,6 +57,9 @@ class CommandStep(StepBase):
     type_key = "command"
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
+        errors = completion_errors(config)
+        if errors:
+            return StepResult(status=StepStatus.FAILED, error=errors[0])
         command = config.get("command", "")
         # validate() rejects a non-string 'command', but the engine does not
         # auto-validate before execute(); an unvalidated run would pass the value
@@ -186,6 +192,9 @@ class CommandStep(StepBase):
         # for a missing 'args' key and as interpolation renders None in text.
         raw_args = resolved_input.get("args", "")
         args_str = "" if raw_args is None else str(raw_args)
+        nonce = uuid.uuid4().hex if config.get("verify_completion") else None
+        if nonce:
+            args_str += completion_prompt(nonce)
         output: dict[str, Any] = {
             "command": command,
             "integration": integration,
@@ -254,6 +263,11 @@ class CommandStep(StepBase):
                     output=output,
                     error=error,
                 )
+            if nonce:
+                try:
+                    output["completion"] = verify_completion(dispatch_result, nonce, context.project_root)
+                except ValueError as exc:
+                    return StepResult(status=StepStatus.FAILED, output=output, error=str(exc))
             return StepResult(
                 status=StepStatus.COMPLETED,
                 output=output,
@@ -431,6 +445,7 @@ class CommandStep(StepBase):
 
     def validate(self, config: dict[str, Any]) -> list[str]:
         errors = super().validate(config)
+        errors.extend(completion_errors(config))
         if "command" not in config:
             errors.append(
                 f"Command step {config.get('id', '?')!r} is missing 'command' field."

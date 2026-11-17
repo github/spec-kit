@@ -26,7 +26,7 @@ def claude_project(tmp_path, status_claude_template):
 def tasks_preset_src(tmp_path):
     preset = tmp_path / "tasks-preset"
     (preset / "commands").mkdir(parents=True)
-    (preset / "commands/speckit.tasks.md").write_bytes(
+    (preset / "commands/speckit.taskscode.md").write_bytes(
         b"---\ndescription: Tasks override\n---\nPreset tasks body\n"
     )
     (preset / "preset.yml").write_bytes(b"""schema_version: '1.0'
@@ -34,6 +34,6 @@ preset: {id: tasks-preset, name: Tasks Preset, version: 1.0.0, description: x}
 requires: {speckit_version: '>=0.1.0'}
 provides:
   templates:
-  - {type: command, name: speckit.tasks, file: commands/speckit.tasks.md}
+  - {type: command, name: speckit.taskscode, file: commands/speckit.taskscode.md}
 """)
     return preset

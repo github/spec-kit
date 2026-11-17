@@ -1,6 +1,6 @@
 [project]
 name = "specify-cli"
-version = "1.4.1.dev0"
+version = "2.0.0.dev0"
 description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -37,6 +37,12 @@ packages = ["src/specify_cli"]
 "templates/spec-template.md" = "specify_cli/core_pack/templates/spec-template.md"
 "templates/tasks-template.md" = "specify_cli/core_pack/templates/tasks-template.md"
 "templates/vscode-settings.json" = "specify_cli/core_pack/templates/vscode-settings.json"
+"templates/architecture-template.md" = "specify_cli/core_pack/templates/architecture-template.md"
+"templates/environment-template.md" = "specify_cli/core_pack/templates/environment-template.md"
+"templates/tasks-code-template.md" = "specify_cli/core_pack/templates/tasks-code-template.md"
+"templates/analysis-template.md" = "specify_cli/core_pack/templates/analysis-template.md"
+"templates/deployment-template.md" = "specify_cli/core_pack/templates/deployment-template.md"
+"templates/test-report-template.md" = "specify_cli/core_pack/templates/test-report-template.md"
 # Command templates
 "templates/commands" = "specify_cli/core_pack/commands"
 "scripts/bash" = "specify_cli/core_pack/scripts/bash"

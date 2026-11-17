@@ -167,7 +167,7 @@ class TestIntegrationSwitch:
         ])
         assert result.exit_code == 0, result.output
 
-        rel = ".agents/skills/speckit-tasks/SKILL.md"
+        rel = ".agents/skills/speckit-taskscode/SKILL.md"
         content = (project / rel).read_bytes()
         assert b"Preset tasks body" in content
         manifest = json.loads((project / ".specify/integrations/codex.manifest.json").read_bytes())
@@ -222,7 +222,7 @@ class TestIntegrationSwitch:
         assert result.exit_code == 0, result.output
         data = json.loads((project / ".specify/integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "codex"
-        skill = project / ".agents/skills/speckit-tasks/SKILL.md"
+        skill = project / ".agents/skills/speckit-taskscode/SKILL.md"
         assert b"Preset tasks body" in skill.read_bytes(), "registration must still run"
         output = strip_ansi(result.output)
         if state == "missing":
@@ -232,7 +232,7 @@ class TestIntegrationSwitch:
             assert manifest_path.read_text(encoding="utf-8") == "{invalid"
             assert "snapshot manifest hashes for integration 'codex'" in output
 
-    @pytest.mark.parametrize("command", ["plan", "tasks"])
+    @pytest.mark.parametrize("command", ["plan", "taskscode"])
     @pytest.mark.parametrize("flags", [[], ["--refresh-shared-infra"]], ids=["normal", "refresh"])
     def test_switch_installed_target_preserves_modified_manifest_hash(
         self, tmp_path, tasks_preset_src, command, flags
@@ -1128,7 +1128,7 @@ class TestIntegrationSwitch:
         template = project / ".specify" / "templates" / "plan-template.md"
         assert "$speckit-plan" in template.read_text(encoding="utf-8")
 
-    @pytest.mark.parametrize("edited_command", [None, "plan", "tasks"])
+    @pytest.mark.parametrize("edited_command", [None, "plan", "taskscode"])
     def test_failed_switch_syncs_fallback_manifest_without_blessing_user_edits(
         self, tmp_path, tasks_preset_src, monkeypatch, edited_command
     ):
@@ -1160,7 +1160,7 @@ class TestIntegrationSwitch:
             assert manifest.files[edited_rel] == before, "pre-existing edits must not be recorded as pristine"
             assert edited_rel in manifest.check_modified()
         else:
-            rel = ".agents/skills/speckit-tasks/SKILL.md"
+            rel = ".agents/skills/speckit-taskscode/SKILL.md"
             content = (project / rel).read_bytes()
             assert b"Preset tasks body" in content
             assert manifest.files[rel] == hashlib.sha256(content).hexdigest(), (
@@ -1212,7 +1212,7 @@ class TestIntegrationSwitch:
         assert result.exit_code == 1, result.output
         output = " ".join(strip_ansi(result.output).split())
         assert "Error: Failed to install integration 'gemini' during switch: injected setup failure" in output
-        assert b"Preset tasks body" in (project / ".agents/skills/speckit-tasks/SKILL.md").read_bytes()
+        assert b"Preset tasks body" in (project / ".agents/skills/speckit-taskscode/SKILL.md").read_bytes()
         if state == "missing":
             assert not manifest_path.exists(), "no manifest may be created"
             assert "Warning:" not in output

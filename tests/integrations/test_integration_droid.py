@@ -471,7 +471,7 @@ class TestDroidNoModelInvocationOption:
         from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
 
         project = _init_project(tmp_path, "droid", "--no-model-invocation")
-        skill_file = project / ".factory" / "skills" / "speckit-plan" / "SKILL.md"
+        skill_file = project / ".factory" / "skills" / "speckit-specify" / "SKILL.md"
         assert _skill_frontmatter(skill_file)["disable-model-invocation"] is True
 
         get_integration("droid")._disable_model_invocation = False

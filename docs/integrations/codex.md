@@ -19,6 +19,13 @@ See [integration management](cli.md) for activation, upgrades, and removal.
 
 ## Installed Skills
 
+This fork installs eleven core skills. The new design stages are
+`$speckit-architecture` and `$speckit-environment`; coding uses `$speckit-taskscode`
+and `$speckit-impcode`, followed by `$speckit-deployment` and `$speckit-test`.
+See the [fork workflow guide](../fork-workflow.md) for ownership and migration.
+Upgrade generated skills using this fork's CLI; template edits do not refresh
+existing project copies automatically.
+
 Skills are installed as `.agents/skills/speckit-<command>/SKILL.md`.
 Invoke them in Codex's chat with a dollar prefix, for example `$speckit-specify`
 or `$speckit-bug-assess` for the installed bug extension.

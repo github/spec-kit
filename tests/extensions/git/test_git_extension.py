@@ -186,7 +186,7 @@ class TestGitExtensionManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "git"
-        assert m.version == "1.0.4"
+        assert m.version == "2.0.0"
 
     def test_manifest_commands(self):
         """Manifest declares expected commands."""
@@ -208,7 +208,7 @@ class TestGitExtensionManifest:
         assert "before_constitution" in m.hooks
         assert "before_specify" in m.hooks
         assert "after_specify" in m.hooks
-        assert "after_implement" in m.hooks
+        assert "after_impcode" in m.hooks
         assert m.hooks["before_constitution"]["command"] == "speckit.git.initialize"
         assert m.hooks["before_specify"]["command"] == "speckit.git.feature"
 
@@ -1278,7 +1278,7 @@ class TestAutoCommitBash:
         _write_config(project, "auto_commit:\n  default: true\n")
         (project / "new-file.txt").write_text("content")
 
-        result = _run_bash("auto-commit.sh", project, "after_tasks")
+        result = _run_bash("auto-commit.sh", project, "after_taskscode")
         assert result.returncode == 0
 
         log = subprocess.run(

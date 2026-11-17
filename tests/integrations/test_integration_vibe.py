@@ -1051,9 +1051,9 @@ class TestVibeNoModelInvocationOption:
             parsed_options={"no_model_invocation": True},
             script_type="sh",
         )
-        result = i.post_process_skill_content("---\nname: tasks\n---\n\nBody\n")
+        result = i.post_process_skill_content("---\nname: taskscode\n---\n\nBody\n")
         assert "disable-model-invocation: false" in result
-        result = i.post_process_skill_content("---\nname: speckit-tasks\n---\n\nBody\n")
+        result = i.post_process_skill_content("---\nname: speckit-taskscode\n---\n\nBody\n")
         assert "disable-model-invocation: true" in result
 
     def test_failed_setup_does_not_leave_option_set(self, tmp_path):
@@ -1161,7 +1161,7 @@ class TestVibeNoModelInvocationOption:
         from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
 
         project = _init_project(tmp_path, "vibe", "--no-model-invocation")
-        skill_file = project / ".vibe" / "skills" / "speckit-plan" / "SKILL.md"
+        skill_file = project / ".vibe" / "skills" / "speckit-specify" / "SKILL.md"
         assert _skill_frontmatter(skill_file)["disable-model-invocation"] is True
 
         get_integration("vibe")._disable_model_invocation = False

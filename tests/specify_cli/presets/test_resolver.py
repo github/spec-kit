@@ -549,18 +549,18 @@ class TestPresetResolver:
         """
         # project_dir's commands dir is empty, so tier-4 cannot satisfy this.
         resolver = PresetResolver(project_dir)
-        layers = resolver.collect_all_layers("speckit.implement", "command")
+        layers = resolver.collect_all_layers("speckit.impcode", "command")
         assert layers, "expected a bundled core base layer to be found"
         assert layers[-1]["source"] == "core (bundled)"
-        assert layers[-1]["path"].parts[-2:] == ("commands", "implement.md")
+        assert layers[-1]["path"].parts[-2:] == ("commands", "impcode.md")
 
     def test_resolve_command_falls_back_to_bundled_core(self, project_dir):
         """resolve() tier-5 returns the bundled core command when
         .specify/templates/commands/ lacks it (regression for #3086)."""
         resolver = PresetResolver(project_dir)
-        result = resolver.resolve("speckit.implement", "command")
+        result = resolver.resolve("speckit.impcode", "command")
         assert result is not None
-        assert result.parts[-2:] == ("commands", "implement.md")
+        assert result.parts[-2:] == ("commands", "impcode.md")
 
 
 class TestResolveCore:

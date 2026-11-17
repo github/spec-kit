@@ -250,7 +250,7 @@ def test_validate_accepts_bundled_reference(project: Path):
 
 
 @pytest.mark.parametrize("kind,id,version", [
-    ("presets", "lean", "1.0.0"),
+    ("presets", "lean", "2.0.0"),
     ("extensions", "agent-context", bundled_extension_version("agent-context")),
 ])
 @pytest.mark.parametrize("offline", [False, True])

@@ -157,7 +157,7 @@ class TestManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "github"
-        assert m.version == "1.0.5"
+        assert m.version == "2.0.0"
         assert [c["name"] for c in m.commands] == [COMMAND_NAME]
 
     def test_manifest_does_not_restore_legacy_alias(self):
@@ -590,7 +590,7 @@ class TestCommandBody:
     def test_uses_the_portable_command_reference_token(self):
         """A literal invocation would be correct for exactly one agent."""
         body = COMMAND_FILE.read_text(encoding="utf-8")
-        assert "__SPECKIT_COMMAND_CONVERGE__" in body
+        assert "__SPECKIT_COMMAND_TASKSCODE__" in body
 
 
 # -- resolve-tasks script twins -----------------------------------------------

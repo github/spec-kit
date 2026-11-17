@@ -1350,7 +1350,7 @@ def test_catalog_install_renders_host_templates_and_fresh_process(tmp_path, serv
     skill = project / ".sample-agent/skills/speckit-plan/SKILL.md"
     assert skill.is_file()
     rendered = skill.read_text(encoding="utf-8")
-    assert ".specify/scripts/python/setup_plan.py" in rendered
+    assert ".specify/scripts/python/workflow_context.py plan" in rendered
     assert "{SCRIPT}" not in rendered and "__AGENT__" not in rendered
     assert "speckit-plan" in rendered
     manifest = json.loads((project / f".specify/integrations/{KEY}.manifest.json").read_text())

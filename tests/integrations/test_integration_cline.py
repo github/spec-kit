@@ -1,5 +1,7 @@
 """Tests for ClineIntegration."""
 
+from .fork_inventory import expanded_inventory
+
 import os
 import pytest
 
@@ -463,4 +465,4 @@ class TestClineIntegration(MarkdownIntegrationTests):
         files.append(".specify/workflows/speckit/workflow.yml")
         files.append(".specify/workflows/workflow-registry.json")
 
-        return sorted(files)
+        return expanded_inventory(files)

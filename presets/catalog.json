@@ -6,7 +6,7 @@
     "lean": {
       "name": "Lean Workflow",
       "id": "lean",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "description": "Minimal core workflow commands - just the prompt, just the artifact",
       "author": "github",
       "repository": "https://github.com/github/spec-kit",

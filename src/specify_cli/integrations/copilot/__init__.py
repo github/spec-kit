@@ -40,15 +40,17 @@ from ..base import (
 from ..manifest import IntegrationManifest
 
 _COPILOT_CORE_COMMANDS = {
-    "analyze",
-    "checklist",
-    "clarify",
-    "constitution",
-    "converge",
-    "implement",
-    "plan",
-    "specify",
-    "tasks",
+    'constitution',
+    'specify',
+    'clarify',
+    'architecture',
+    'environment',
+    'plan',
+    'taskscode',
+    'analyze',
+    'impcode',
+    'deployment',
+    'test',
 }
 
 # ``--reasoning-effort`` levels and ``--context`` tiers accepted by GitHub

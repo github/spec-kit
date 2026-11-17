@@ -1353,7 +1353,7 @@ class TestIntegrationUpgradeDetailed:
         """Regression for #4696.
 
         A preset overriding a core command that renders as a skill
-        (e.g. ``speckit.tasks`` for ``codex``/``claude``) is rewritten by
+        (e.g. ``speckit.taskscode`` for ``codex``/``claude``) is rewritten by
         ``_register_presets_for_agent`` *after* ``new_manifest.save()`` during
         ``integration upgrade --force``. Without a post-registration resync,
         the manifest keeps the base template's hash for that skill file, so
@@ -1366,7 +1366,7 @@ class TestIntegrationUpgradeDetailed:
 
         preset_src = tmp_path / "tasks-preset"
         (preset_src / "commands").mkdir(parents=True)
-        (preset_src / "commands" / "speckit.tasks.md").write_text(
+        (preset_src / "commands" / "speckit.taskscode.md").write_text(
             "---\ndescription: Tasks override\n---\nPreset tasks body\n",
             encoding="utf-8",
         )
@@ -1376,15 +1376,15 @@ class TestIntegrationUpgradeDetailed:
                 "id": "tasks-preset",
                 "name": "Tasks Preset",
                 "version": "1.0.0",
-                "description": "Preset overriding speckit.tasks",
+                "description": "Preset overriding speckit.taskscode",
             },
             "requires": {"speckit_version": ">=0.1.0"},
             "provides": {
                 "templates": [
                     {
                         "type": "command",
-                        "name": "speckit.tasks",
-                        "file": "commands/speckit.tasks.md",
+                        "name": "speckit.taskscode",
+                        "file": "commands/speckit.taskscode.md",
                     }
                 ]
             },
@@ -1396,7 +1396,7 @@ class TestIntegrationUpgradeDetailed:
         result = _run_in_project(project, ["preset", "add", "--dev", str(preset_src)])
         assert result.exit_code == 0, result.output
 
-        skill_rel = ".claude/skills/speckit-tasks/SKILL.md"
+        skill_rel = ".claude/skills/speckit-taskscode/SKILL.md"
         skill_file = project / skill_rel
         assert "Preset tasks body" in skill_file.read_text(encoding="utf-8")
 

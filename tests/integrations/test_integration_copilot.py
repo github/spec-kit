@@ -1,5 +1,7 @@
 """Tests for CopilotIntegration."""
 
+from .fork_inventory import expanded_inventory
+
 import json
 import os
 import shutil
@@ -213,10 +215,10 @@ class TestCopilotCommandsMode:
         agents_dir = tmp_path / ".github" / "agents"
         assert agents_dir.is_dir()
         agent_files = sorted(agents_dir.glob("speckit.*.agent.md"))
-        assert len(agent_files) == 9
+        assert len(agent_files) == 11
         expected_commands = {
-            "analyze", "clarify", "constitution", "converge", "implement",
-            "plan", "checklist", "specify", "tasks",
+            "constitution", "specify", "clarify", "architecture", "environment", "plan",
+            "taskscode", "analyze", "impcode", "deployment", "test",
         }
         actual_commands = {f.name.removeprefix("speckit.").removesuffix(".agent.md") for f in agent_files}
         assert actual_commands == expected_commands
@@ -360,6 +362,7 @@ class TestCopilotCommandsMode:
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
         ])
+        expected = expanded_inventory(expected)
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
@@ -423,6 +426,7 @@ class TestCopilotCommandsMode:
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
         ])
+        expected = expanded_inventory(expected)
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
@@ -432,8 +436,8 @@ class TestCopilotSkillsMode:
     """Tests for Copilot's default skills mode."""
 
     _SKILL_COMMANDS = [
-        "analyze", "clarify", "constitution", "converge", "implement",
-        "plan", "checklist", "specify", "tasks",
+        "constitution", "specify", "clarify", "architecture", "environment", "plan",
+        "taskscode", "analyze", "impcode", "deployment", "test",
     ]
 
     def _make_copilot(self):
@@ -938,6 +942,7 @@ class TestCopilotSkillsMode:
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
         ])
+        expected = expanded_inventory(expected)
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
@@ -1223,7 +1228,7 @@ class TestCopilotNoModelInvocationOption:
         from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
 
         project = _init_project(tmp_path, "copilot", "--no-model-invocation")
-        skill_file = project / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+        skill_file = project / ".github" / "skills" / "speckit-specify" / "SKILL.md"
         assert _skill_frontmatter(skill_file)["disable-model-invocation"] is True
 
         get_integration("copilot")._disable_model_invocation = False

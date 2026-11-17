@@ -468,7 +468,9 @@ def script_variant_dirs(script_type: str) -> tuple[str, ...]:
     """Return the ``scripts/`` variant directories installed for *script_type*."""
     if script_type == "py":
         return ("python", "powershell" if os.name == "nt" else "bash")
-    return ("bash" if script_type == "sh" else "powershell",)
+    # The fork's shell launchers share the deterministic artifact/progress
+    # implementation. Install its Python runtime alongside the selected shell.
+    return ("bash" if script_type == "sh" else "powershell", "python")
 
 
 def install_shared_infra(

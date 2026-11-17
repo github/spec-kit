@@ -110,7 +110,7 @@ def test_bare_name_and_public_id_are_identical(spec_kit_project: Path):
     [
         ("speckit.constitution", "command"),
         ("spec-template", "template"),
-        ("setup-plan", "script"),
+        ("workflow", "script"),
     ],
 )
 def test_explicit_kind_selects_each_named_family(

@@ -218,7 +218,9 @@ def main(argv: list[str]) -> int:
             "create the implementation plan.",
         )
 
-    tasks = feature_dir / "tasks.md"
+    tasks = feature_dir / "tasks-code.md"
+    if not tasks.is_file():
+        tasks = feature_dir / "tasks.md"  # Read-only compatibility for upstream projects.
     if not tasks.is_file():
         _die(
             f"ERROR: tasks.md not found in {feature_dir}",
@@ -235,7 +237,7 @@ def main(argv: list[str]) -> int:
         docs.append("contracts/")
     if (feature_dir / "quickstart.md").is_file():
         docs.append("quickstart.md")
-    docs.append("tasks.md")
+    docs.append(tasks.name)
 
     if json_mode:
         payload = {

@@ -1,0 +1,908 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-17",
+  "sample": "../spec-kit-sample-notes",
+  "execution_mode": "Primary agent applying installed Codex skills sequentially; real subprocesses, service and tests",
+  "cli_probe": {
+    "version": "0.161.0",
+    "exit_code": 0,
+    "files_changed": 0,
+    "outcome": "blocked before work: registered Core launch requires an installed app"
+  },
+  "sample_tests": {
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0,
+    "exit_code": 0
+  },
+  "toolkit_regressions": {
+    "passed": 55,
+    "failed": 0
+  },
+  "final_release": "378bcb5920b851a7062ce501f31b0335ca7895561b9b837784edc53dbbca9137",
+  "service_left_running": false,
+  "scope": "Sample project content hashes and recorded subprocesses; not an OS sandbox or proof of all future agent behavior",
+  "stages": [
+    {
+      "stage": "01-constitution",
+      "created": [],
+      "deleted": [],
+      "modified": [
+        ".specify/memory/constitution.md"
+      ],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/resolve-template.ps1",
+            "constitution-template",
+            "-Json"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "02-specify",
+      "created": [
+        ".specify/feature.json",
+        "specs/001-tiny-notes/checklists/requirements.md",
+        "specs/001-tiny-notes/spec.md"
+      ],
+      "deleted": [],
+      "modified": [],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/resolve-template.ps1",
+            "spec-template",
+            "-Json"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "03-clarify",
+      "created": [],
+      "deleted": [],
+      "modified": [
+        "specs/001-tiny-notes/checklists/requirements.md",
+        "specs/001-tiny-notes/spec.md"
+      ],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/check-prerequisites.ps1",
+            "-Json",
+            "-PathsOnly"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "04-architecture",
+      "created": [
+        ".specify/memory/architecture.md"
+      ],
+      "deleted": [],
+      "modified": [],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "architecture",
+            "--json"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "05-environment",
+      "created": [
+        ".specify/memory/environment.md"
+      ],
+      "deleted": [],
+      "modified": [],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "environment",
+            "--json"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "plan",
+            "--json"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "06-plan",
+      "created": [
+        "specs/001-tiny-notes/plan.md"
+      ],
+      "deleted": [],
+      "modified": [],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "plan",
+            "--json"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "07-taskscode",
+      "created": [
+        "specs/001-tiny-notes/code-progress.json",
+        "specs/001-tiny-notes/tasks-code.md"
+      ],
+      "deleted": [],
+      "modified": [],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "taskscode",
+            "--json"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "validate"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "sync"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "08-analyze",
+      "created": [
+        "specs/001-tiny-notes/analysis.md"
+      ],
+      "deleted": [],
+      "modified": [],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "analyze",
+            "--json"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "validate"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "09-impcode",
+      "created": [
+        "src/domain.py",
+        "src/server.py",
+        "src/store.py"
+      ],
+      "deleted": [],
+      "modified": [
+        "specs/001-tiny-notes/code-progress.json"
+      ],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "impcode",
+            "--json"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "status"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "start",
+            "--task",
+            "T001"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "start",
+            "--task",
+            "T001"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "complete",
+            "--task",
+            "T001",
+            "--note",
+            "Domain validation implemented and statically reviewed; resumed attempt 1; no tests executed"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "start",
+            "--task",
+            "T002"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "complete",
+            "--task",
+            "T002",
+            "--note",
+            "SQLite schema and CRUD implemented with commit and connection cleanup; static review only"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "start",
+            "--task",
+            "T003"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "complete",
+            "--task",
+            "T003",
+            "--note",
+            "HTTP JSON framing routes and entry point integrated with domain and storage; static contract review only; no application execution"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "10-deployment",
+      "created": [
+        "deploy/data/notes.sqlite3",
+        "deploy/inspect.ps1",
+        "deploy/launch.py",
+        "deploy/operations.jsonl",
+        "deploy/releases/1c48a00ac7fc86ba/domain.py",
+        "deploy/releases/1c48a00ac7fc86ba/manifest.json",
+        "deploy/releases/1c48a00ac7fc86ba/server.py",
+        "deploy/releases/1c48a00ac7fc86ba/store.py",
+        "deploy/service.json",
+        "deploy/status.ps1",
+        "deploy/stderr.log",
+        "deploy/stdout.log",
+        "specs/001-tiny-notes/deployment.md"
+      ],
+      "deleted": [],
+      "modified": [],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "deployment",
+            "--json"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "status"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            "deploy/inspect.ps1"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "python.exe",
+          "arguments": [
+            "-c",
+            "import json,platform,sqlite3,sys; print(json.dumps(dict(python=platform.python_version(),sqlite=sqlite3.sqlite_version,executable=sys._base_executable,architecture=platform.machine())))"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "python.exe",
+          "arguments": [
+            "-B",
+            "deploy/launch.py"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            "deploy/status.ps1"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "11-test",
+      "created": [
+        "specs/001-tiny-notes/bugs.md",
+        "specs/001-tiny-notes/test-report.md",
+        "tests/evidence/run-01.log",
+        "tests/evidence/run-02-http.log",
+        "tests/test_deployed.py",
+        "tests/test_domain.py",
+        "tests/test_http.py",
+        "tests/test_store.py"
+      ],
+      "deleted": [],
+      "modified": [
+        "deploy/data/notes.sqlite3"
+      ],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "test",
+            "--json"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "status"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "python.exe",
+          "arguments": [
+            "-B",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests",
+            "-v"
+          ],
+          "exit_code": 1
+        },
+        {
+          "program": "python.exe",
+          "arguments": [
+            "-B",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests",
+            "-p",
+            "test_http.py",
+            "-v"
+          ],
+          "exit_code": 1
+        }
+      ]
+    },
+    {
+      "stage": "12-taskscode-repair",
+      "created": [],
+      "deleted": [],
+      "modified": [
+        "specs/001-tiny-notes/code-progress.json",
+        "specs/001-tiny-notes/tasks-code.md"
+      ],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "taskscode",
+            "--json"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "validate"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "sync"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "13-impcode-repair",
+      "created": [],
+      "deleted": [],
+      "modified": [
+        "specs/001-tiny-notes/code-progress.json",
+        "src/server.py"
+      ],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "impcode",
+            "--json"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "start",
+            "--task",
+            "T004"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "complete",
+            "--task",
+            "T004",
+            "--note",
+            "BUG-001 parser recursion and BUG-002 bounded body consumption repaired; preserved T003 contracts; static inspection only"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "14-test-repair",
+      "created": [
+        "tests/evidence/run-03-stale-deployment.log"
+      ],
+      "deleted": [],
+      "modified": [
+        "deploy/data/notes.sqlite3",
+        "specs/001-tiny-notes/bugs.md",
+        "specs/001-tiny-notes/test-report.md",
+        "tests/test_http.py"
+      ],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "test",
+            "--json"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "python.exe",
+          "arguments": [
+            "-B",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests",
+            "-v"
+          ],
+          "exit_code": 1
+        }
+      ]
+    },
+    {
+      "stage": "15-deployment-repair",
+      "created": [
+        "deploy/archive-stopped.ps1",
+        "deploy/history/service-1c48a00ac7fc86ba.json",
+        "deploy/releases/378bcb5920b851a7/domain.py",
+        "deploy/releases/378bcb5920b851a7/manifest.json",
+        "deploy/releases/378bcb5920b851a7/server.py",
+        "deploy/releases/378bcb5920b851a7/store.py"
+      ],
+      "deleted": [],
+      "modified": [
+        "deploy/operations.jsonl",
+        "deploy/service.json",
+        "deploy/stdout.log",
+        "specs/001-tiny-notes/deployment.md"
+      ],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "deployment",
+            "--json"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "progress",
+            "status"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            "deploy/status.ps1",
+            "-Stop"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            "deploy/archive-stopped.ps1"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "python.exe",
+          "arguments": [
+            "-B",
+            "deploy/launch.py"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            "deploy/status.ps1"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "16-test-final",
+      "created": [
+        "tests/evidence/run-04-final.log"
+      ],
+      "deleted": [],
+      "modified": [
+        "deploy/data/notes.sqlite3",
+        "specs/001-tiny-notes/bugs.md",
+        "specs/001-tiny-notes/test-report.md",
+        "tests/test_deployed.py"
+      ],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ".specify/scripts/powershell/workflow.ps1",
+            "context",
+            "test",
+            "--json"
+          ],
+          "exit_code": 0
+        },
+        {
+          "program": "python.exe",
+          "arguments": [
+            "-B",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests",
+            "-v"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "17-deployment-cleanup",
+      "created": [],
+      "deleted": [],
+      "modified": [
+        "deploy/service.json",
+        "deploy/status.ps1",
+        "specs/001-tiny-notes/deployment.md"
+      ],
+      "boundary_violations": [],
+      "executions": [
+        {
+          "program": "powershell.exe",
+          "arguments": [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            "deploy/status.ps1",
+            "-Stop"
+          ],
+          "exit_code": 0
+        }
+      ]
+    }
+  ]
+}

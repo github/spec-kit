@@ -280,8 +280,8 @@ def test_rendering_init_preserves_command_guidance(tmp_path):
     assert result.exit_code == 0, result.output
     output = _strip(result.output)
     assert "Start using slash commands" in output
-    for command in ("constitution", "specify", "plan", "tasks", "implement", "converge",
-                    "clarify", "analyze", "checklist"):
+    for command in ("constitution", "specify", "plan", "taskscode", "impcode", "deployment", "test",
+                    "clarify", "analyze", "architecture", "environment"):
         assert f"/speckit.{command}" in output
         assert (tmp_path / "proj" / ".agent" / "commands" / f"speckit.{command}.md").is_file()
     assert "Enhancement Commands" in output
@@ -298,8 +298,8 @@ def test_rendering_init_preserves_skill_guidance(tmp_path, monkeypatch):
     assert "Start using skills" in output
     assert "Enhancement Skills" in output
     assert "specify integration switch <key>" not in output
-    for command in ("constitution", "specify", "plan", "tasks", "implement", "converge",
-                    "clarify", "analyze", "checklist"):
+    for command in ("constitution", "specify", "plan", "taskscode", "impcode", "deployment", "test",
+                    "clarify", "analyze", "architecture", "environment"):
         assert f"/speckit-{command}" in output
         assert (tmp_path / "proj" / ".github" / "skills" / f"speckit-{command}" / "SKILL.md").is_file()
 
@@ -315,7 +315,7 @@ def test_init_force_syncs_manifest_hash_for_preset_override(tmp_path, monkeypatc
     project = tmp_path / "proj"
     preset = tmp_path / "tasks-preset"
     (preset / "commands").mkdir(parents=True)
-    (preset / "commands/speckit.tasks.md").write_bytes(
+    (preset / "commands/speckit.taskscode.md").write_bytes(
         b"---\ndescription: Tasks override\n---\nPreset tasks body\n"
     )
     (preset / "preset.yml").write_bytes(b"""schema_version: '1.0'
@@ -323,7 +323,7 @@ preset: {id: tasks-preset, name: Tasks Preset, version: 1.0.0, description: x}
 requires: {speckit_version: '>=0.1.0'}
 provides:
   templates:
-  - {type: command, name: speckit.tasks, file: commands/speckit.tasks.md}
+  - {type: command, name: speckit.taskscode, file: commands/speckit.taskscode.md}
 """)
     monkeypatch.chdir(project)
     result = CliRunner().invoke(app, ["preset", "add", "--dev", str(preset)])
@@ -336,7 +336,7 @@ provides:
     assert result.exit_code == 0, result.output
 
     manifest = IntegrationManifest.load("codex", project)
-    rel = ".agents/skills/speckit-tasks/SKILL.md"
+    rel = ".agents/skills/speckit-taskscode/SKILL.md"
     content = (project / rel).read_bytes()
     assert b"Preset tasks body" in content
     assert manifest.files[rel] == hashlib.sha256(content).hexdigest(), (

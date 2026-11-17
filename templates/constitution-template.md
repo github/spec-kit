@@ -14,9 +14,9 @@
 <!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
 
 ### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
+<!-- Example: III. Separate Coding and Verification -->
 [PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+<!-- Example: impcode writes application code without tests; test owns test creation and execution; CODE_COMPLETE never implies tested, deployed or accepted -->
 
 ### [PRINCIPLE_4_NAME]
 <!-- Example: IV. Integration Testing -->

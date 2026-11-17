@@ -125,7 +125,7 @@ layouts under its configured `--commands-dir`.
 | ------------------------- | --------------------------------- |
 | `/speckit.taskstoissues`  | `/speckit.github.taskstoissues`   |
 
-Conversion behavior is unchanged: the same feature resolution, the same `plan.md` and `tasks.md` prerequisites, the same remote validation, the same deduplication across open and closed issues, the same issue titles, and the same hook contract. This extension does **not** register `speckit.taskstoissues` as an alias.
+In this fork, the resolver prefers `tasks-code.md` and falls back to legacy `tasks.md`; `plan.md` remains required. Coding task JSON records produce feature-qualified issue titles and preserve component, target and dependency metadata. Legacy checkbox tasks retain their original title format. Remote validation and the before/after taskstoissues hook contract remain in effect. This extension does **not** register `speckit.taskstoissues` as an alias.
 
 ### Presets and dependent extensions
 

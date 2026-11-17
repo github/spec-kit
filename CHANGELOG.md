@@ -2,6 +2,27 @@
 
 <!-- insert new changelog below this comment -->
 
+## [2.0.0.dev0] - 2026-11-17
+
+### Changed
+
+- Fork the core workflow into eleven commands with separate architecture, environment,
+  design, coding, deployment and testing responsibilities. Replace tasks/implement
+  with taskscode/impcode; remove checklist/converge from the core command inventory.
+- Add durable, dependency-aware coding progress with bounded retries, source and
+  input change detection, and resumable shared-file work.
+- Require invocation-specific completion reports and verified output hashes in the
+  bundled workflow; a successful agent process exit alone no longer advances it.
+- Update agent integrations, optional extension hooks, lean preset and migration guide.
+
+### Validation
+
+- Exercise all eleven installed procedures on Tiny Notes, including real local
+  deployment, defect repair and redeployment; its final suite passes 22 tests.
+- Validate helpers with Windows PowerShell 5.1 and Git Bash. Full Linux/macOS
+  validation is deferred. The unattended Codex CLI run remains blocked by a local
+  launcher error; see the [audit](docs/fork-design/02-end-to-end-audit.md).
+
 ## [1.4.0] - 2026-11-10
 
 ### Changed

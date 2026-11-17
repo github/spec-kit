@@ -229,6 +229,7 @@ if [[ ! -f "$IMPL_PLAN" ]]; then
 fi
 
 TASKS="$FEATURE_DIR/tasks.md"
+if [[ -f "$FEATURE_DIR/tasks-code.md" ]]; then TASKS="$FEATURE_DIR/tasks-code.md"; fi
 if [[ ! -f "$TASKS" ]]; then
     echo "ERROR: tasks.md not found in $FEATURE_DIR" >&2
     echo "Run the Spec Kit tasks command first to create the task list." >&2
@@ -247,7 +248,7 @@ if [[ -d "$CONTRACTS_DIR" ]] && [[ -n "$(ls -A "$CONTRACTS_DIR" 2>/dev/null)" ]]
     docs+=("contracts/")
 fi
 [[ -f "$QUICKSTART" ]] && docs+=("quickstart.md")
-docs+=("tasks.md")
+docs+=("${TASKS##*/}")
 
 if $JSON_MODE; then
     json_docs=$(for d in "${docs[@]}"; do printf '"%s",' "$(json_escape "$d")"; done)

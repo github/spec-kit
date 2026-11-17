@@ -326,7 +326,7 @@ class TestIntegrationUninstall:
 
 class TestUninstallFallbackManifest:
     @pytest.mark.parametrize("missing_manifest", [False, True])
-    @pytest.mark.parametrize("edited_command", [None, "plan", "tasks"])
+    @pytest.mark.parametrize("edited_command", [None, "plan", "taskscode"])
     def test_uninstall_syncs_fallback_manifest_without_blessing_user_edits(
         self, tmp_path, tasks_preset_src, missing_manifest, edited_command,
     ):
@@ -350,7 +350,7 @@ class TestUninstallFallbackManifest:
         data = json.loads((project / ".specify/integration.json").read_bytes())
         assert data["integration"] == "codex"
         manifest = IntegrationManifest.load("codex", project)
-        rel = ".agents/skills/speckit-tasks/SKILL.md"
+        rel = ".agents/skills/speckit-taskscode/SKILL.md"
         content = (project / rel).read_bytes()
         assert b"Preset tasks body" in content
         if edited_command:
@@ -398,7 +398,7 @@ class TestUninstallFallbackManifest:
         result = _run_in_project(project, ["integration", "uninstall", "claude"])
 
         assert result.exit_code == 0, result.output
-        assert b"Preset tasks body" in (project / ".agents/skills/speckit-tasks/SKILL.md").read_bytes()
+        assert b"Preset tasks body" in (project / ".agents/skills/speckit-taskscode/SKILL.md").read_bytes()
         output = " ".join(strip_ansi(result.output).split())
         if state == "missing":
             assert not manifest_path.exists(), "no manifest may be created"

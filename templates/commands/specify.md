@@ -1,9 +1,9 @@
 ---
 description: Create or update the feature specification from a natural language feature description.
 handoffs:
-  - label: Build Technical Plan
-    agent: speckit.plan
-    prompt: Create a plan for the spec. I am building with...
+  - label: Design Architecture
+    agent: speckit.architecture
+    prompt: Design the system architecture from this specification.
   - label: Clarify Spec Requirements
     agent: speckit.clarify
     prompt: Clarify specification requirements
@@ -15,6 +15,10 @@ scripts:
 ---
 
 ## User Input
+
+After specification and clarification, technical work proceeds through
+__SPECKIT_COMMAND_ARCHITECTURE__, __SPECKIT_COMMAND_ENVIRONMENT__ and
+__SPECKIT_COMMAND_PLAN__.
 
 ```text
 $ARGUMENTS
@@ -107,7 +111,7 @@ Given that feature description, do this:
      }
      ```
      Write the actual resolved directory path value (for example, `specs/003-user-auth`), not the literal string `SPECIFY_FEATURE_DIRECTORY`.
-     This allows downstream commands (`__SPECKIT_COMMAND_PLAN__`, `__SPECKIT_COMMAND_TASKS__`, etc.) to locate the feature directory without relying on git branch name conventions.
+     This allows downstream commands (`__SPECKIT_COMMAND_ARCHITECTURE__`, `__SPECKIT_COMMAND_TASKSCODE__`, etc.) to locate the feature directory without relying on git branch name conventions.
 
    **IMPORTANT**:
    - You must only create one feature per `__SPECKIT_COMMAND_SPECIFY__` invocation
@@ -183,7 +187,7 @@ Given that feature description, do this:
 
       ## Notes
 
-      - Items marked incomplete require spec updates before `__SPECKIT_COMMAND_CLARIFY__` or `__SPECKIT_COMMAND_PLAN__`
+      - Items marked incomplete require spec updates before `__SPECKIT_COMMAND_CLARIFY__` or `__SPECKIT_COMMAND_ARCHITECTURE__`
       ```
 
    b. **Run Validation Check**: Review the spec against each checklist item:
@@ -277,7 +281,7 @@ Report completion to the user with:
 - `SPECIFY_FEATURE_DIRECTORY` — the feature directory path
 - `SPEC_FILE` — the spec file path
 - Checklist results summary
-- Readiness for the next phase (`__SPECKIT_COMMAND_CLARIFY__` or `__SPECKIT_COMMAND_PLAN__`)
+- Readiness for the next phase (`__SPECKIT_COMMAND_CLARIFY__` or `__SPECKIT_COMMAND_ARCHITECTURE__`)
 
 **NOTE:** Branch creation is handled by the `before_specify` hook (git extension). Spec directory and file creation are always handled by this core command.
 

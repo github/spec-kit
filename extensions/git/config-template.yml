@@ -35,18 +35,12 @@ auto_commit:
   before_plan:
     enabled: false
     message: "[Spec Kit] Save progress before planning"
-  before_tasks:
+  before_taskscode:
     enabled: false
     message: "[Spec Kit] Save progress before task generation"
-  before_implement:
+  before_impcode:
     enabled: false
     message: "[Spec Kit] Save progress before implementation"
-  before_checklist:
-    enabled: false
-    message: "[Spec Kit] Save progress before checklist"
-  before_analyze:
-    enabled: false
-    message: "[Spec Kit] Save progress before analysis"
   before_taskstoissues:
     enabled: false
     message: "[Spec Kit] Save progress before issue sync"
@@ -62,18 +56,12 @@ auto_commit:
   after_plan:
     enabled: false
     message: "[Spec Kit] Add implementation plan"
-  after_tasks:
+  after_taskscode:
     enabled: false
     message: "[Spec Kit] Add tasks"
-  after_implement:
+  after_impcode:
     enabled: false
     message: "[Spec Kit] Implementation progress"
-  after_checklist:
-    enabled: false
-    message: "[Spec Kit] Add checklist"
-  after_analyze:
-    enabled: false
-    message: "[Spec Kit] Add analysis report"
   after_taskstoissues:
     enabled: false
     message: "[Spec Kit] Sync tasks to issues"

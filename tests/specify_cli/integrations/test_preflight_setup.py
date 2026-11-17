@@ -93,8 +93,8 @@ def test_hook_receives_options_and_script_type(tmp_path, monkeypatch, command):
 @pytest.mark.parametrize(
     ("script_type", "expected"),
     [
-        ("sh", ("bash",)),
-        ("ps", ("powershell",)),
+        ("sh", ("bash", "python")),
+        ("ps", ("powershell", "python")),
         ("py", ("python", "powershell" if os.name == "nt" else "bash")),
     ],
 )

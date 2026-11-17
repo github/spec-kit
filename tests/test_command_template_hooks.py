@@ -49,7 +49,7 @@ HOOK_TEMPLATES = sorted(
 def test_hook_templates_discovered():
     # Guard: the glob must find the templates that read extensions.yml,
     # otherwise the parametrized tests below would pass by vacuity.
-    assert {"specify.md", "plan.md", "tasks.md", "implement.md"} <= set(
+    assert {"specify.md", "clarify.md", "constitution.md"} <= set(
         HOOK_TEMPLATES
     )
 

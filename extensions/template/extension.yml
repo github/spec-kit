@@ -73,7 +73,7 @@ provides:
 # CUSTOMIZE: Define hooks (optional)
 # Remove if no hooks needed
 hooks:
-  # Hook that runs after /speckit.tasks
+  # Hook that runs after /speckit.taskscode
   after_tasks:
     command: "speckit.my-extension.example"
     optional: true # User will be prompted

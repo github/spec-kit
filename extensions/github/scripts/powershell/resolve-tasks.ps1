@@ -201,6 +201,8 @@ if (-not (Test-Path -LiteralPath $implPlan -PathType Leaf)) {
 }
 
 $tasks = Join-Path $featureDir 'tasks.md'
+$codingTasks = Join-Path $featureDir 'tasks-code.md'
+if (Test-Path -LiteralPath $codingTasks -PathType Leaf) { $tasks = $codingTasks }
 if (-not (Test-Path -LiteralPath $tasks -PathType Leaf)) {
     [Console]::Error.WriteLine("ERROR: tasks.md not found in $featureDir")
     [Console]::Error.WriteLine("Run the Spec Kit tasks command first to create the task list.")
@@ -216,7 +218,7 @@ if ((Test-Path -LiteralPath $contractsDir -PathType Container) -and
     $docs += 'contracts/'
 }
 if (Test-Path -LiteralPath (Join-Path $featureDir 'quickstart.md') -PathType Leaf) { $docs += 'quickstart.md' }
-$docs += 'tasks.md'
+$docs += [System.IO.Path]::GetFileName($tasks)
 
 if ($Json) {
     # -Compress keeps the payload on a single line, matching the bash twin.

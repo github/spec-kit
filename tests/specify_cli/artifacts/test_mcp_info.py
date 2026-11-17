@@ -292,7 +292,7 @@ def test_artifact_info_bare_and_public_identifiers_are_semantically_equal(
     [
         ("speckit.constitution", "command"),
         ("spec-template", "template"),
-        ("setup-plan", "script"),
+        ("workflow", "script"),
     ],
 )
 def test_artifact_info_accepts_each_explicit_named_kind(

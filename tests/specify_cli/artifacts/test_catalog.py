@@ -103,8 +103,7 @@ class TestListArtifactsContract:
         assert {row.name for row in scripts} == {
             "check-prerequisites",
             "resolve-template",
-            "setup-plan",
-            "setup-tasks",
+            "workflow-context" if requested == "py" else "workflow",
         }
         selected_paths = catalog._selected_core_script_paths()
         assert set(selected_paths) == {row.name for row in scripts}

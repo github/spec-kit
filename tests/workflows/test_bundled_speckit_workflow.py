@@ -62,11 +62,30 @@ def test_reference_doc_matches_the_shipped_workflow() -> None:
     assert _documented_workflow() == yaml.safe_load(BUNDLED.read_text(encoding="utf-8"))
 
 
+@pytest.mark.parametrize("deploy", [False, True])
+def test_full_fork_stage_order_and_optional_deployment(bundled_review, deploy):
+    engine, state, commands = bundled_review("speckit", "review-plan")
+    resumed = engine.resume(state.run_id, {
+        "speckit_review_plan_verdict": "approve",
+        "deploy": deploy,
+        "deployment_target": "APP01 authorized staging",
+    })
+    assert resumed.status is RunStatus.COMPLETED
+    expected = [
+        "constitution", "specify", "clarify", "architecture", "environment",
+        "plan", "taskscode", "analyze", "impcode",
+    ]
+    if deploy:
+        expected.append("deployment")
+    expected.append("test")
+    assert commands == [f"speckit.{name}" for name in expected]
+
+
 @pytest.mark.parametrize(
     ("gate_id", "input_name", "next_command"),
     [
-        ("review-spec", "speckit_review_spec_verdict", "speckit.plan"),
-        ("review-plan", "speckit_review_plan_verdict", "speckit.tasks"),
+        ("review-spec", "speckit_review_spec_verdict", "speckit.clarify"),
+        ("review-plan", "speckit_review_plan_verdict", "speckit.taskscode"),
     ],
 )
 def test_verdict_resume(

@@ -8,6 +8,8 @@ Mirrors ``MarkdownIntegrationTests`` / ``TomlIntegrationTests`` closely,
 adapted for the ``speckit-<name>/SKILL.md`` skills layout.
 """
 
+from .fork_inventory import expanded_inventory
+
 import os
 
 import yaml
@@ -94,8 +96,8 @@ class SkillsIntegrationTests:
         skill_files = [f for f in created if "scripts" not in f.parts]
 
         expected_commands = {
-            "analyze", "clarify", "constitution", "converge", "implement",
-            "plan", "checklist", "specify", "tasks",
+            "constitution", "specify", "clarify", "architecture", "environment", "plan",
+            "taskscode", "analyze", "impcode", "deployment", "test",
         }
 
         # Derive command names from the skill directory names
@@ -465,8 +467,8 @@ class SkillsIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     _SKILL_COMMANDS = [
-        "analyze", "clarify", "constitution", "converge", "implement",
-        "plan", "checklist", "specify", "tasks",
+        "constitution", "specify", "clarify", "architecture", "environment", "plan",
+        "taskscode", "analyze", "impcode", "deployment", "test",
     ]
 
     def _expected_files(self, script_variant: str) -> list[str]:
@@ -520,7 +522,7 @@ class SkillsIntegrationTests:
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
         ]
-        return sorted(files)
+        return expanded_inventory(files)
 
     def test_complete_file_inventory_sh(self, tmp_path):
         """Every file produced by specify init --integration <key> --script sh."""
@@ -544,6 +546,7 @@ class SkillsIntegrationTests:
             for p in project.rglob("*") if p.is_file() and ".git" not in p.parts
         )
         expected = self._expected_files("sh")
+        expected = expanded_inventory(expected)
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
@@ -571,6 +574,7 @@ class SkillsIntegrationTests:
             for p in project.rglob("*") if p.is_file() and ".git" not in p.parts
         )
         expected = self._expected_files("ps")
+        expected = expanded_inventory(expected)
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"

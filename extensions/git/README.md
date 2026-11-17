@@ -30,19 +30,15 @@ This extension provides Git operations as an optional, self-contained module. It
 | `before_specify` | `speckit.git.feature` | No | Create feature branch before specification |
 | `before_clarify` | `speckit.git.commit` | Yes | Commit outstanding changes before clarification |
 | `before_plan` | `speckit.git.commit` | Yes | Commit outstanding changes before planning |
-| `before_tasks` | `speckit.git.commit` | Yes | Commit outstanding changes before task generation |
-| `before_implement` | `speckit.git.commit` | Yes | Commit outstanding changes before implementation |
-| `before_checklist` | `speckit.git.commit` | Yes | Commit outstanding changes before checklist |
-| `before_analyze` | `speckit.git.commit` | Yes | Commit outstanding changes before analysis |
+| `before_taskscode` | `speckit.git.commit` | Yes | Commit outstanding changes before task generation |
+| `before_impcode` | `speckit.git.commit` | Yes | Commit outstanding changes before implementation |
 | `before_taskstoissues` | `speckit.git.commit` | Yes | Commit outstanding changes before issue sync |
 | `after_constitution` | `speckit.git.commit` | Yes | Auto-commit after constitution update |
 | `after_specify` | `speckit.git.commit` | Yes | Auto-commit after specification |
 | `after_clarify` | `speckit.git.commit` | Yes | Auto-commit after clarification |
 | `after_plan` | `speckit.git.commit` | Yes | Auto-commit after planning |
-| `after_tasks` | `speckit.git.commit` | Yes | Auto-commit after task generation |
-| `after_implement` | `speckit.git.commit` | Yes | Auto-commit after implementation |
-| `after_checklist` | `speckit.git.commit` | Yes | Auto-commit after checklist |
-| `after_analyze` | `speckit.git.commit` | Yes | Auto-commit after analysis |
+| `after_taskscode` | `speckit.git.commit` | Yes | Auto-commit after task generation |
+| `after_impcode` | `speckit.git.commit` | Yes | Auto-commit after implementation |
 | `after_taskstoissues` | `speckit.git.commit` | Yes | Auto-commit after issue sync |
 
 ## Configuration
@@ -104,6 +100,7 @@ specify extension enable git
 ## Graceful Degradation
 
 When Git is not installed or the directory is not a Git repository:
+
 - Spec directories are still created under `specs/`
 - Branch creation is skipped with a warning
 - Branch validation is skipped with a warning

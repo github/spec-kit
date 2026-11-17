@@ -1,37 +1,16 @@
-"""Scaffold checks for the converge command's task-assessment guidance.
-
-These tests verify that the generated prompt includes the instructions needed
-to scaffold assessment of every task, including tasks marked complete or added
-during an earlier Convergence phase. They do not execute an LLM or assert how
-an LLM will respond.
-"""
-
+"""The fork retires converge; fixes flow through test findings and taskscode."""
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent
-CONVERGE_TEMPLATE = REPO_ROOT / "templates" / "commands" / "converge.md"
+ROOT = Path(__file__).resolve().parents[1]
 
 
-def _normalized_template() -> str:
-    return " ".join(CONVERGE_TEMPLATE.read_text(encoding="utf-8").split())
+def test_retired_commands_are_not_delivered():
+    for name in ("tasks", "implement", "converge", "checklist"):
+        assert not (ROOT / "templates/commands" / (name + ".md")).exists()
 
 
-def test_converge_scaffold_includes_complete_assessment_guidance():
-    text = _normalized_template()
-    required_clauses = (
-        "Include every existing task in the intent inventory",
-        "regardless of checkbox state or Convergence phase",
-        "completion claims are not evidence",
-        "Verify current behavior against the spec, plan, tasks, and constitution",
-        "for corrective task chains, assess the resulting behavior, "
-        "not superseded implementation details",
-        "Check both unmet obligations and implementation that contradicts, exceeds, "
-        "or falls outside the stated intent",
-    )
-
-    for clause in required_clauses:
-        assert clause in text, f"converge.md is missing scaffold guidance: {clause!r}"
-
-
-def test_converge_scaffold_uses_the_defined_intent_inventory():
-    assert "assessment inventory" not in _normalized_template()
+def test_fix_loop_has_explicit_ownership():
+    text = (ROOT / "templates/commands/test.md").read_text(encoding="utf-8")
+    assert "__SPECKIT_COMMAND_TASKSCODE__" in text
+    assert "__SPECKIT_COMMAND_IMPCODE__" in text
+    assert "Do not modify production source" in text
