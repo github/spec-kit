@@ -760,6 +760,8 @@ class PresetResolver:
         self,
         template_name: str,
         template_type: str = "template",
+        *,
+        relative_import_base: Path | None = None,
     ) -> Optional[str]:
         """Resolve a template name and return composed content.
 
@@ -824,7 +826,14 @@ class PresetResolver:
                 from ..agents import CommandRegistrar
 
                 text = CommandRegistrar.rewrite_extension_paths(
-                    text, extension_id, extension_dir
+                    text,
+                    extension_id,
+                    extension_dir,
+                    relative_to=(
+                        relative_import_base
+                        if template_type == "script"
+                        else None
+                    ),
                 )
             return text
 

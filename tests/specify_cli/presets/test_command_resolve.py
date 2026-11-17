@@ -178,6 +178,45 @@ class TestPresetResolve:
         assert result.exit_code == 0, (result.output, result.exception)
         assert "constitution.md" in "".join(strip_ansi(result.output).split())
 
+    def test_resolve_accepts_undotted_command_name_when_kind_is_explicit(
+        self, temp_dir, project_dir
+    ):
+        src = temp_dir / "undotted-command"
+        (src / "commands").mkdir(parents=True)
+        (src / "commands" / "standalone.md").write_text("# Standalone\n")
+        (src / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "undotted-command",
+                        "name": "Undotted Command",
+                        "version": "1.0.0",
+                        "description": "Fixture",
+                    },
+                    "requires": {"speckit_version": ">=0.0.1"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "command",
+                                "name": "standalone",
+                                "file": "commands/standalone.md",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        PresetManager(project_dir).install_from_directory(src, "9.9.9")
+
+        result = self._invoke(
+            project_dir,
+            ["preset", "resolve", "standalone", "--kind", "command"],
+        )
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        assert "standalone.md" in "".join(strip_ansi(result.output).split())
+
     def test_resolve_script_kind_finds_manifest_declared_module(
         self, temp_dir, project_dir
     ):
@@ -239,6 +278,63 @@ class TestPresetResolve:
             "import './helper.mjs';\nexport default 'base';\n\n"
         )
         assert str(output_path.resolve()) in "".join(strip_ansi(result.output).split())
+
+    def test_resolve_materialized_extension_imports_from_output_directory(
+        self, temp_dir, project_dir
+    ):
+        extension_dir = project_dir / ".specify" / "extensions" / "script-ext"
+        scripts_dir = extension_dir / "scripts"
+        library_dir = extension_dir / "lib"
+        scripts_dir.mkdir(parents=True)
+        library_dir.mkdir(parents=True)
+        (scripts_dir / "adapter.mjs").write_text(
+            "import './lib/helper.mjs';\nexport default 'extension';\n"
+        )
+        (library_dir / "helper.mjs").write_text("export const helper = true;\n")
+        (extension_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: script-ext\n  name: Script Ext\n  version: 1.0.0\n"
+            "  description: Fixture\n  author: test\n"
+            "  repository: https://example.com\n  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n  scripts:\n"
+            "    - name: designer-page-adapter\n"
+            "      file: scripts/adapter.mjs\n"
+            "      description: Adapter\n      runtimes: [bash]\n"
+        )
+        self._install_script(
+            temp_dir,
+            project_dir,
+            "$CORE_SCRIPT\n",
+            strategy="wrap",
+            pack_id="script-wrapper",
+            priority=5,
+        )
+        output_path = project_dir / "generated" / "adapter.mjs"
+
+        result = self._invoke(
+            project_dir,
+            [
+                "preset",
+                "resolve",
+                "designer-page-adapter",
+                "--kind",
+                "script",
+                "--output",
+                str(output_path),
+            ],
+        )
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        assert (
+            "../.specify/extensions/script-ext/lib/helper.mjs"
+            in output_path.read_text(encoding="utf-8")
+        )
+        referenced = (
+            output_path.parent / "../.specify/extensions/script-ext/lib/helper.mjs"
+        ).resolve()
+        assert referenced == (library_dir / "helper.mjs").resolve()
+        assert referenced.is_file()
 
     def test_resolve_script_composition_without_output_explains_materialization(
         self, temp_dir, project_dir

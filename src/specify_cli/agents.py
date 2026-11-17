@@ -235,7 +235,11 @@ class CommandRegistrar:
 
     @staticmethod
     def rewrite_extension_paths(
-        text: str, extension_id: str, extension_dir: Path
+        text: str,
+        extension_id: str,
+        extension_dir: Path,
+        *,
+        relative_to: Path | None = None,
     ) -> str:
         """Rewrite extension-relative paths to their installed locations.
 
@@ -271,7 +275,15 @@ class CommandRegistrar:
             # callable replacement: subdir/extension_id come from the
             # filesystem and could contain backslashes or "\1"-like
             # sequences, which would corrupt a string replacement template.
-            replacement = f".specify/extensions/{extension_id}/{subdir}/"
+            if relative_to is None:
+                replacement = f".specify/extensions/{extension_id}/{subdir}/"
+            else:
+                replacement_path = os.path.relpath(
+                    (extension_dir / subdir).resolve(), start=relative_to.resolve()
+                ).replace(os.sep, "/")
+                if not replacement_path.startswith((".", "/")):
+                    replacement_path = f"./{replacement_path}"
+                replacement = f"{replacement_path}/"
             text = re.sub(
                 r'(^|[\s`"\'(])(?:\./)?' + re.escape(subdir) + "/",
                 lambda m: m.group(1) + replacement,

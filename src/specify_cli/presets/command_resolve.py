@@ -40,7 +40,7 @@ def preset_resolve(
     template_type = kind or ("command" if "." in template_name else "template")
     is_command = template_type == "command"
     valid_name = (
-        re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+", template_name)
+        re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)*", template_name)
         if is_command
         else re.fullmatch(r"[a-z0-9-]+", template_name)
     )
@@ -61,8 +61,16 @@ def preset_resolve(
     resolver = PresetResolver(project_root)
 
     if output is not None:
+        output_path = output.expanduser()
+        if not output_path.is_absolute():
+            output_path = Path.cwd() / output_path
+        output_path = output_path.resolve()
         try:
-            content = resolver.resolve_content(template_name, "script")
+            content = resolver.resolve_content(
+                template_name,
+                "script",
+                relative_import_base=output_path.parent,
+            )
         except Exception as exc:
             console.print(
                 f"[red]Error:[/red] Could not resolve script: "
@@ -76,10 +84,6 @@ def preset_resolve(
             )
             raise typer.Exit(1)
 
-        output_path = output.expanduser()
-        if not output_path.is_absolute():
-            output_path = Path.cwd() / output_path
-        output_path = output_path.resolve()
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(content, encoding="utf-8")
