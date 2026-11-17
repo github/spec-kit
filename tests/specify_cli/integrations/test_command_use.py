@@ -26,7 +26,7 @@ class TestIntegrationUse:
     @pytest.mark.skipif(
         os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
     )
-    def test_use_keeps_shared_scripts_executable(self, tmp_path):
+    def test_use_keeps_shared_scripts_executable(self, tmp_path, packaged_scripts_0644):
         """Making an installed integration the default must keep shared scripts runnable."""
         project = _init_project(tmp_path, "claude")
         result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
@@ -44,7 +44,9 @@ class TestIntegrationUse:
         os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
     )
     @pytest.mark.parametrize("linked_scripts_root", [False, True])
-    def test_use_changes_modes_only_on_scripts_it_writes(self, tmp_path, linked_scripts_root):
+    def test_use_changes_modes_only_on_scripts_it_writes(
+        self, tmp_path, linked_scripts_root, packaged_scripts_0644
+    ):
         """Execute bits come from the refresh's own writes, never from a scan.
 
         A user's script next to the shared ones keeps its mode, and nothing

@@ -51,7 +51,9 @@ class TestIntegrationUninstall:
     @pytest.mark.skipif(
         os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
     )
-    def test_uninstall_default_keeps_fallback_scripts_executable(self, tmp_path):
+    def test_uninstall_default_keeps_fallback_scripts_executable(
+        self, tmp_path, packaged_scripts_0644
+    ):
         """Falling back to another installed integration must keep shared scripts runnable."""
         project = _init_project(tmp_path, "claude")
         result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])

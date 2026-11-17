@@ -67,7 +67,9 @@ class TestIntegrationSwitch:
         ("target_state", "flags"),
         [("new", []), ("installed", []), ("default", ["--force"]), ("default", ["--refresh-shared-infra"])],
     )
-    def test_switch_keeps_shared_scripts_executable(self, tmp_path, target_state, flags):
+    def test_switch_keeps_shared_scripts_executable(
+        self, tmp_path, target_state, flags, packaged_scripts_0644
+    ):
         """Every switch path refreshes shared scripts; they must stay runnable."""
         if target_state == "default":
             project = _init_project(tmp_path, "codex")

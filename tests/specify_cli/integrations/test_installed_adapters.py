@@ -1007,7 +1007,9 @@ def test_round4_failed_switch_restores_builtin_settings(tmp_path, server, monkey
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX execute bits are not meaningful on Windows")
-def test_failed_switch_restores_shared_script_mode_and_content(tmp_path, server, monkeypatch):
+def test_failed_switch_restores_shared_script_mode_and_content(
+    tmp_path, server, monkeypatch, packaged_scripts_0644
+):
     """A refresh that makes a managed script executable is undone with the rest of the switch."""
     from specify_cli.integrations import installer
 
