@@ -853,7 +853,9 @@ class TestVibeTomlNoOpRemoval:
         )
 
         self._assert_untouched(path, original, original_mtime_ns)
-        manifest.record_existing.assert_not_called()
+        assert ".vibe/hooks.toml" not in [
+            call.args[0] for call in manifest.record_existing.call_args_list
+        ]
 
     def test_malformed_header_with_triple_quotes_leaves_removal_and_merge_untouched(
         self, tmp_path

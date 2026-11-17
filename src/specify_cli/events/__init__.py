@@ -1401,9 +1401,8 @@ def install_integration_events(
     dispatcher_dir.mkdir(parents=True, exist_ok=True)
     _write_text(dispatcher_path, _EVENTS_DISPATCHER_TEMPLATE, encoding="utf-8")
     dispatcher_path.chmod(0o755)
-    manifest.record_file(
+    manifest.record_existing(
         str(dispatcher_path.relative_to(project_root)),
-        dispatcher_path.read_bytes(),
         ownership="shared",
     )
     created.append(dispatcher_path)
@@ -1428,9 +1427,8 @@ def install_integration_events(
             _build_opencode_plugin(filtered, canonical_to_native),
             encoding="utf-8",
         )
-        manifest.record_file(
+        manifest.record_existing(
             plugin_rel,
-            plugin_path.read_bytes(),
         )
         created.append(plugin_path)
 

@@ -910,6 +910,11 @@ class IntegrationBase(ABC):
             exclusions.update(events_stale_exclusions(self.key))
         return exclusions
 
+    def mergeable_settings_paths(self) -> set[str]:
+        """Return settings with integration-owned, content-preserving mergers."""
+        config_file = getattr(self, "events_config_file", None)
+        return {config_file} if config_file and self.supports_events() else set()
+
     def commands_dest(self, project_root: Path) -> Path:
         """Return the absolute path to the commands output directory.
 

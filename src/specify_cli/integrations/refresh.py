@@ -123,6 +123,10 @@ class _PreserveOutputs:
         if merged:
             return True
         if path.exists() and (path in self.pending or not self._managed(path, relative)):
+            if path not in self.pending and path.is_file() and path.read_bytes() == content:
+                self.current[path] = _digest(path)
+                self.owners.setdefault(path, set()).add(self.key)
+                return False
             self.pending[path] = content
             return False
         self.approved.add(path)
@@ -323,14 +327,20 @@ def _refresh_loaded(
                     raise ValueError("Installed adapter is missing, damaged, or untrusted; restore its reviewed installation")
                 prior = _load_manifest(IntegrationManifest, key, root)
                 contributions = _load_manifest(_ContributionManifest, key, root, optional=True)
+                extensions = ExtensionManager(root)
+                registration_hashes = extensions.registration_hashes(key)
                 home_output = None
                 directory = (integration.registrar_config or {}).get("dir")
                 if isinstance(directory, str) and directory.startswith("~/"):
                     home_output = Path(directory).expanduser().absolute()
                 guard.begin(
-                    key, prior, integration.stale_cleanup_exclusions(),
+                    key, prior, integration.mergeable_settings_paths(),
                     contributions=contributions, home_output=home_output,
                 )
+                for relative, digest in registration_hashes.items():
+                    guard._label(root / relative)
+                    guard.hashes.setdefault(relative, digest)
+                    guard.modes.setdefault(relative, "whole")
                 raw, parsed = resolve_integration_options(
                     integration, state, key, None, parse_options=parse_integration_options,
                 )
@@ -345,8 +355,18 @@ def _refresh_loaded(
                     events = resolve_events(key, integration.config, root, parsed)
                     core_outputs = integration.setup(
                         root, refreshed, parsed_options=parsed,
-                        script_type=script, raw_options=raw, events=events, force=False,
+                        script_type=script, raw_options=raw, events=events, force=False, strict=True,
                     )
+                    config_file = getattr(integration, "events_config_file", None)
+                    supported_events = getattr(integration, "CANONICAL_TO_NATIVE", {})
+                    if (
+                        config_file and any(events.get(event) for event in supported_events)
+                        and config_file not in refreshed.files
+                    ):
+                        raise ValueError(
+                            f"Required native event settings were not merged: {config_file}; "
+                            "reconcile the existing file before retry"
+                        )
                     if integration.list_command_templates() and not core_outputs:
                         raise ValueError("No core invocation artifacts were generated")
                     for output in core_outputs or []:
@@ -354,10 +374,18 @@ def _refresh_loaded(
                             raise ValueError(f"Missing generated core output: {output}")
                     core_paths = set(refreshed.files)
                     warnings.simplefilter("error")
-                    ExtensionManager(root).register_enabled_extensions_for_agent(
-                        key, force=True, strict=True, development_extension=development_extension,
-                    )
-                    PresetManager(root).register_enabled_presets_for_agent(key, strict=True)
+                    if integration.registrar_config is not None:
+                        for path in extensions.obsolete_registration_paths(key):
+                            relative = guard._label(path)
+                            if path.exists() and relative not in guard.hashes:
+                                raise ValueError(
+                                    f"Unverified obsolete extension output: {relative}; "
+                                    "back up and reconcile it before retry"
+                                )
+                        extensions.register_enabled_extensions_for_agent(
+                            key, force=True, strict=True, development_extension=development_extension,
+                        )
+                        PresetManager(root).register_enabled_presets_for_agent(key, strict=True)
                     guard.finish()
                     fresh_contributions = _ContributionManifest(key, root, prior.version)
                     for path in list(guard.current):
@@ -373,9 +401,10 @@ def _refresh_loaded(
                     from ._file_changes import unlink
 
                     desired = refreshed.files.keys() | fresh_contributions.files.keys() | guard.merged_paths
-                    for rel in (prior.files.keys() | contributions.files.keys()) - desired:
-                        if guard.modes.get(rel) == "whole":
+                    for rel in (prior.files.keys() | contributions.files.keys() | registration_hashes.keys()) - desired:
+                        if guard.modes.get(rel) == "whole" and rel not in integration.stale_cleanup_exclusions():
                             unlink(root / rel, missing_ok=True)
+                    extensions.forget_removed_registration_hashes(key)
                     refreshed.save()
                     fresh_contributions.save()
                     from .installer import update_generated_recovery_ownership

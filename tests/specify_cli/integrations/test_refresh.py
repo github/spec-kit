@@ -409,3 +409,196 @@ def test_invalid_manifest_cannot_authorize_output_changes(tmp_path, monkeypatch,
     assert added.exit_code == 1, added.output
     assert "Failed codex:" in added.output
     assert outside.read_bytes() == b"untouched\n"
+
+
+def local_extension(root, monkeypatch, commands=("boot",), *, events=False):
+    import yaml
+
+    from specify_cli.extensions import _commands
+
+    source = root / "review-source"
+    source.mkdir(exist_ok=True)
+    for command in commands:
+        (source / f"{command}.md").write_text(f"---\ndescription: {command}\n---\n# {command}\n")
+    data = {
+        "schema_version": "1.0",
+        "extension": {"id": "review-ready", "name": "Review", "version": "1.0.0", "description": "Test"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"commands": [
+            {"name": f"speckit.review-ready.{command}", "file": f"{command}.md"} for command in commands
+        ]},
+    }
+    if events:
+        data["events"] = {"session_start": {"command": "speckit.review-ready.boot"}}
+    (source / "extension.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    original = _commands._locate_bundled_extension
+    monkeypatch.setattr(
+        _commands, "_locate_bundled_extension",
+        lambda name: source if name == "review-ready" else original(name),
+    )
+    return source
+
+
+def add_local(root, monkeypatch, *args):
+    with monkeypatch.context() as scoped:
+        scoped.chdir(root)
+        return CliRunner().invoke(app, ["extension", "add", "review-ready", *args])
+
+
+@pytest.mark.parametrize(("key", "relative"), [
+    ("claude", ".specify/events.py"),
+    ("opencode", ".opencode/plugin/speckit-events.ts"),
+])
+def test_stale_protection_does_not_authorize_overwriting_event_outputs(
+    tmp_path, monkeypatch, key, relative,
+):
+    prepare_project(tmp_path, (key,))
+    local_extension(tmp_path, monkeypatch, events=True)
+    first = add_local(tmp_path, monkeypatch)
+    assert first.exit_code == 0, first.output
+    output = tmp_path / relative
+    output.write_bytes(b"customized generated event output\n")
+    added = add_assess(tmp_path, monkeypatch)
+    assert added.exit_code == 1, added.output
+    assert output.read_bytes() == b"customized generated event output\n"
+    assert relative in added.output
+
+
+@pytest.mark.parametrize("content", ['{broken', '{// JSONC\n"user": true\n}', '[]'])
+@pytest.mark.parametrize(("key", "relative"), [
+    ("claude", ".claude/settings.json"),
+    ("copilot", ".vscode/settings.json"),
+])
+def test_skipped_required_settings_merge_cannot_claim_readiness(
+    tmp_path, monkeypatch, key, relative, content,
+):
+    prepare_project(tmp_path, (key,), {"copilot": {"commands": True}})
+    local_extension(tmp_path, monkeypatch, events=True)
+    settings = tmp_path / relative
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(content, encoding="utf-8")
+    before = settings.read_bytes()
+    added = add_local(tmp_path, monkeypatch)
+    assert added.exit_code == 1, added.output
+    assert settings.read_bytes() == before
+    assert relative in added.output
+    assert "Extension installed successfully" not in added.output
+
+
+@pytest.mark.parametrize("keys", [("none",), ("none", "claude"), ("claude", "none")])
+def test_artifact_free_integration_needs_no_extension_or_preset_invocations(tmp_path, monkeypatch, keys):
+    import yaml
+
+    from specify_cli.presets import PresetManager
+
+    prepare_project(tmp_path, keys)
+    source = tmp_path / "preset-source"
+    source.mkdir()
+    (source / "plan.md").write_text("---\ndescription: Plan\n---\n# Effective plan\n")
+    (source / "preset.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "preset": {"id": "review-plan", "name": "Plan", "version": "1.0.0", "description": "Test"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"templates": [{"type": "command", "name": "speckit.plan", "file": "plan.md"}]},
+    }), encoding="utf-8")
+    PresetManager(tmp_path).install_from_directory(source, get_speckit_version())
+    added = add_assess(tmp_path, monkeypatch)
+    assert added.exit_code == 0, added.output
+    assert IntegrationManifest.load("none", tmp_path).files == {}
+    if "claude" in keys:
+        assert len(list((tmp_path / ".claude/skills").glob("speckit-assess-*/SKILL.md"))) == 5
+        assert "# Effective plan" in (tmp_path / ".claude/skills/speckit-plan/SKILL.md").read_text()
+
+
+@pytest.mark.parametrize("customized", [False, True])
+def test_legacy_generated_skills_are_verified_before_refresh(tmp_path, monkeypatch, customized):
+    from specify_cli.extensions import ExtensionManager, _commands
+
+    prepare_project(tmp_path)
+    ExtensionManager(tmp_path).install_from_directory(_commands._locate_bundled_extension("assess"), get_speckit_version())
+    output = tmp_path / ".claude/skills/speckit-assess-intake/SKILL.md"
+    if customized:
+        output.write_bytes(b"customized legacy skill\n")
+    before = output.read_bytes()
+    local_extension(tmp_path, monkeypatch)
+    added = add_local(tmp_path, monkeypatch)
+    assert added.exit_code == (1 if customized else 0), added.output
+    if customized:
+        assert output.read_bytes() == before
+    else:
+        contributions = json.loads((tmp_path / ".specify/integrations/.contributions/claude.manifest.json").read_text())
+        assert ".claude/skills/speckit-assess-intake/SKILL.md" in contributions["files"]
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("drop_command", [False, True])
+def test_generic_replacement_preserves_and_reconciles_verified_registration(
+    tmp_path, monkeypatch, legacy, drop_command,
+):
+    from specify_cli.extensions import ExtensionManager
+
+    prepare_project(tmp_path, ("generic",), {"generic": {"commands_dir": ".custom/prompts"}})
+    source = local_extension(tmp_path, monkeypatch, ("boot", "retired"))
+    if legacy:
+        ExtensionManager(tmp_path).install_from_directory(source, get_speckit_version())
+    else:
+        first = add_local(tmp_path, monkeypatch)
+        assert first.exit_code == 0, first.output
+    if drop_command:
+        local_extension(tmp_path, monkeypatch)
+    (source / "boot.md").write_text("---\ndescription: Updated boot\n---\n# Updated boot\n")
+    added = add_local(tmp_path, monkeypatch, "--force")
+    assert added.exit_code == 0, added.output
+    assert (tmp_path / ".custom/prompts/speckit.review-ready.boot.md").is_file()
+    assert "# Updated boot" in (tmp_path / ".custom/prompts/speckit.review-ready.boot.md").read_text()
+    assert (tmp_path / ".custom/prompts/speckit.review-ready.retired.md").exists() is not drop_command
+    metadata = ExtensionManager(tmp_path).registry.get("review-ready")
+    assert metadata["generic_artifact_hashes"]
+    if drop_command:
+        assert ".custom/prompts/speckit.review-ready.retired.md" not in metadata["generic_artifact_hashes"]
+
+
+def test_generic_replacement_preserves_modified_obsolete_output_until_reconciled(tmp_path, monkeypatch):
+    from specify_cli.extensions import ExtensionManager
+
+    prepare_project(tmp_path, ("generic",), {"generic": {"commands_dir": ".custom/prompts"}})
+    source = local_extension(tmp_path, monkeypatch, ("boot", "retired"))
+    ExtensionManager(tmp_path).install_from_directory(source, get_speckit_version())
+    obsolete = tmp_path / ".custom/prompts/speckit.review-ready.retired.md"
+    original = obsolete.read_bytes()
+    obsolete.write_bytes(b"customized obsolete command\n")
+    local_extension(tmp_path, monkeypatch)
+    added = add_local(tmp_path, monkeypatch, "--force")
+    assert added.exit_code == 1, added.output
+    assert obsolete.read_bytes() == b"customized obsolete command\n"
+    obsolete.write_bytes(original)
+    retried = add_local(tmp_path, monkeypatch, "--force")
+    assert retried.exit_code == 0, retried.output
+    assert not obsolete.exists()
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_replacement_does_not_orphan_unverified_legacy_commands(tmp_path, monkeypatch, legacy):
+    from specify_cli.extensions import ExtensionManager
+
+    prepare_project(tmp_path, ("claude",))
+    source = local_extension(tmp_path, monkeypatch, ("boot", "retired"))
+    if legacy:
+        ExtensionManager(tmp_path).install_from_directory(source, get_speckit_version())
+    else:
+        first = add_local(tmp_path, monkeypatch)
+        assert first.exit_code == 0, first.output
+    obsolete = tmp_path / ".claude/skills/speckit-review-ready-retired/SKILL.md"
+    before = obsolete.read_bytes()
+    local_extension(tmp_path, monkeypatch)
+    added = add_local(tmp_path, monkeypatch, "--force")
+    assert added.exit_code == (1 if legacy else 0), added.output
+    if legacy:
+        assert obsolete.read_bytes() == before
+        assert "Unverified obsolete extension output" in added.output
+        metadata = ExtensionManager(tmp_path).registry.get("review-ready")
+        assert "speckit.review-ready.retired" in metadata["registered_commands"]["claude"]
+        obsolete.unlink()
+        retried = add_local(tmp_path, monkeypatch, "--force")
+        assert retried.exit_code == 0, retried.output
+    assert not obsolete.exists()

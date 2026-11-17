@@ -582,6 +582,9 @@ class CopilotIntegration(IntegrationBase):
         exclusions.add(".vscode/settings.json")
         return exclusions
 
+    def mergeable_settings_paths(self) -> set[str]:
+        return super().mergeable_settings_paths() | {".vscode/settings.json"}
+
     @staticmethod
     def _inject_frontmatter_flag(content: str, key: str, value: str = "true") -> str:
         """Insert ``key: value`` before the closing ``---`` if not already present."""
@@ -766,7 +769,7 @@ class CopilotIntegration(IntegrationBase):
             if dst_settings.exists():
                 # Merge into existing — don't track since we can't safely
                 # remove the user's settings file on uninstall.
-                self._merge_vscode_settings(settings_src, dst_settings)
+                self._merge_vscode_settings(settings_src, dst_settings, strict=opts.get("strict", False))
             else:
                 from .._file_changes import changing_file
 
@@ -822,7 +825,7 @@ class CopilotIntegration(IntegrationBase):
         return None
 
     @staticmethod
-    def _merge_vscode_settings(src: Path, dst: Path) -> None:
+    def _merge_vscode_settings(src: Path, dst: Path, *, strict: bool = False) -> None:
         """Merge settings from *src* into existing *dst* JSON file.
 
         Top-level keys from *src* are added only if missing in *dst*.
@@ -833,7 +836,9 @@ class CopilotIntegration(IntegrationBase):
         """
         try:
             existing = json.loads(dst.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+            if strict:
+                raise ValueError(f"Cannot merge required settings: {dst}; reconcile the existing file before retry") from exc
             # Cannot parse existing file (likely JSONC with comments).
             # Skip merge to preserve the user's settings, but show
             # what they should add manually.
@@ -850,6 +855,8 @@ class CopilotIntegration(IntegrationBase):
         new_settings = json.loads(src.read_text(encoding="utf-8"))
 
         if not isinstance(existing, dict) or not isinstance(new_settings, dict):
+            if strict:
+                raise ValueError(f"Cannot merge required settings: {dst}; expected a JSON object")
             import logging
             logging.getLogger(__name__).warning(
                 "Skipping settings merge: %s or template is not a JSON object.", dst

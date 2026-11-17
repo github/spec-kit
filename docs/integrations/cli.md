@@ -565,6 +565,8 @@ local; it does not install agent CLIs, upgrade components, or grant adapter trus
 Customized or unsafe outputs and unavailable/untrusted adapters cause a nonzero
 result rather than a readiness claim. The extension and completed refreshes remain
 installed; the command identifies completed, failed, and unattempted integrations.
+Obsolete legacy invocation files without verifiable ownership require manual
+reconciliation; registry names alone do not authorize deleting them.
 Back up and reconcile reported conflicts, restore any required reviewed adapter,
 then retry addition with the same source and `--force` to replace the retained
 extension. That flag does not authorize overwriting customized integration files.

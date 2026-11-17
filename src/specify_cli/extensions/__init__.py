@@ -1936,6 +1936,74 @@ class ExtensionManager:
             hashes[relative] = digest
         return hashes
 
+    def registration_hashes(self, agent_name: str) -> Dict[str, str]:
+        """Read hash ownership retained by the generic extension registrar."""
+        if agent_name != "generic":
+            return {}
+        result: Dict[str, str] = {}
+        for extension_id, metadata in self.registry.list().items():
+            hashes = metadata.get("generic_artifact_hashes", {})
+            if not isinstance(hashes, dict):
+                raise ExtensionError(f"Invalid registration hashes for '{extension_id}'")
+            for relative, digest in hashes.items():
+                if (
+                    not isinstance(relative, str) or not relative
+                    or Path(relative).is_absolute() or ".." in Path(relative).parts
+                    or Path(relative).as_posix() != relative
+                    or not isinstance(digest, str) or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+                ):
+                    raise ExtensionError(f"Invalid registration ownership for '{extension_id}'")
+                if relative in result and result[relative] != digest:
+                    raise ExtensionError(f"Conflicting registration ownership: {relative}")
+                result[relative] = digest
+        return result
+
+    def forget_removed_registration_hashes(self, agent_name: str) -> None:
+        """Retire old generic hashes only after successful output reconciliation."""
+        if agent_name != "generic":
+            return
+        for extension_id, metadata in self.registry.list().items():
+            hashes = metadata.get("generic_artifact_hashes", {})
+            retained = {
+                relative: digest for relative, digest in hashes.items()
+                if (self.project_root / relative).exists()
+            }
+            if retained != hashes:
+                self.registry.update(extension_id, {"generic_artifact_hashes": retained})
+
+    def obsolete_registration_paths(self, agent_name: str) -> set[Path]:
+        """Find retired invocation paths without treating registry names as ownership."""
+        from ..agents import CommandRegistrar
+
+        registrar = CommandRegistrar(self.project_root)
+        config = registrar.AGENT_CONFIGS.get(agent_name)
+        if not config:
+            return set()
+        directory = registrar._resolve_agent_dir(agent_name, config, self.project_root)
+        skills_dir = self._get_skills_dir(create=False)
+        obsolete: set[Path] = set()
+        for extension_id, metadata in self.registry.list().items():
+            if not metadata.get("enabled", True):
+                continue
+            manifest = self.get_extension(extension_id)
+            if manifest is None:
+                continue
+            expected_commands = set(self._collect_manifest_command_names(manifest))
+            registered = metadata.get("registered_commands", {})
+            commands = registered.get(agent_name, []) if isinstance(registered, dict) else []
+            for name in set(self._valid_name_list(commands)) - expected_commands:
+                output_name = registrar._compute_output_name(agent_name, name, config)
+                path = directory / f"{output_name}{config['extension']}"
+                registrar._ensure_inside(path, directory)
+                obsolete.add(path)
+            if skills_dir is not None:
+                expected_skills = {self._skill_name_for_command(command["name"]) for command in manifest.commands}
+                for name in set(self._valid_name_list(metadata.get("registered_skills"))) - expected_skills:
+                    path = skills_dir / name / "SKILL.md"
+                    registrar._ensure_inside(path, skills_dir)
+                    obsolete.add(path)
+        return obsolete
+
     def _snapshot_generic_refresh_artifacts(
         self, extension_id: str, manifest: Optional[ExtensionManifest],
         metadata: Dict[str, Any],
@@ -2413,6 +2481,7 @@ class ExtensionManager:
         self.check_compatibility(manifest, speckit_version)
 
         # Check if already installed
+        prior_registration = self.registry.get(manifest.id) if self.defer_registration else None
         if self.registry.is_installed(manifest.id):
             if not force:
                 raise ExtensionError(
@@ -3132,8 +3201,12 @@ class ExtensionManager:
                 "registered_commands": registered_commands,
                 "registered_skills": registered_skills,
             }
+            if prior_registration:
+                for field in ("registered_commands", "registered_skills", "generic_artifact_hashes"):
+                    if field in prior_registration:
+                        registry_entry[field] = copy.deepcopy(prior_registration[field])
             if generic_active:
-                registry_entry["generic_artifact_hashes"] = generic_hashes
+                registry_entry.setdefault("generic_artifact_hashes", generic_hashes)
             self.registry.add(manifest.id, registry_entry)
         except Exception as exc:
             # Any failed commit must retire outputs before the original error

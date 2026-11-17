@@ -1078,7 +1078,9 @@ class TestTomlUnreadableConfig:
 
         # User bytes preserved and the skipped file is not tracked (S5).
         assert config_path.read_bytes() == user_bytes
-        manifest.record_existing.assert_not_called()
+        assert ".codex/config.toml" not in [
+            call.args[0] for call in manifest.record_existing.call_args_list
+        ]
 
     def test_teardown_skips_unreadable_config_and_preserves_bytes(self, tmp_path):
         from specify_cli.integrations.codex import CodexIntegration
@@ -2408,7 +2410,7 @@ class TestNativeIntegrationDelegation:
         assert {"build_dispatcher_command", "native_timeout", "ensure_safe_destination"} == set(
             merge.call_args.kwargs
         )
-        manifest.record_existing.assert_called_once_with(".vibe/hooks.toml")
+        manifest.record_existing.assert_any_call(".vibe/hooks.toml")
 
     def test_vibe_cleanup_is_delegated_and_manifest_claim_is_removed(
         self, tmp_path, monkeypatch
