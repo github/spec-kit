@@ -49,6 +49,29 @@
       "tags": ["architecture", "governance", "multi-vendor", "codex"],
       "verified": false
     },
+    "ghp": {
+      "name": "Spec Kit for GitHub Projects",
+      "id": "ghp",
+      "version": "0.1.2",
+      "role": "developer",
+      "description": "The ghp extension and the ghp-lifecycle workflow together: GitHub issue to Done through Spec Kit, with a human sign-off before every write.",
+      "author": "praveenlavu",
+      "license": "MIT",
+      "download_url": "https://github.com/praveenlavu/spec-kit-ghp/releases/download/v0.1.2/ghp-0.1.2.zip",
+      "sha256": "5c210249d649ceeebfbae1d10f1a693f4b7ba73a45a77635b6113fd2a7b33b61",
+      "repository": "https://github.com/praveenlavu/spec-kit-ghp",
+      "requires": {
+        "speckit_version": ">=1.2.1"
+      },
+      "provides": {
+        "extensions": 1,
+        "presets": 0,
+        "steps": 0,
+        "workflows": 1
+      },
+      "tags": ["github-projects", "workflow", "governance"],
+      "verified": false
+    },
     "sicario-spec": {
       "name": "SicarioSpec Security & Governance Bundle",
       "id": "sicario-spec",
