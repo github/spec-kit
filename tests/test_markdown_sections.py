@@ -24,6 +24,11 @@ from specify_cli.markdown_sections import SectionReplacementError, replace_secti
         ("`[API](url)`", "apiurl"),
         ("_Guide_`__init__`", "guide__init__"),
         ("__Review__ _Guide_", "review-guide"),
+        ("___Target___", "target"),
+        ("____Target____", "target"),
+        ("__Outer _Target_ end__", "outer-target-end"),
+        ("Keep___Target___words", "keep___target___words"),
+        ("`___Target___`", "___target___"),
         ("日本語 123", "日本語-123"),
         ("Keep__these_words", "keep__these_words"),
         ("Review ###", "review"),
@@ -54,6 +59,34 @@ def test_preserves_everything_outside_body(
 
 
 @pytest.mark.parametrize(
+    "content,replacement,expected",
+    [
+        ("## Target", "new body\n", "## Target\nnew body\n"),
+        ("# Doc\r\n## Target", "new body\r\n", "# Doc\r\n## Target\r\nnew body\r\n"),
+        ("## Target", "\nnew body\n", "## Target\nnew body\n"),
+        ("## Target", "\r\nnew body\r\n", "## Target\r\nnew body\r\n"),
+        ("## Target", "", "## Target"),
+    ],
+)
+def test_unterminated_heading_keeps_body_on_a_separate_line(content, replacement, expected):
+    assert replace_section(
+        content, replacement, "target",
+        preset="team", contribution="body.md", artifact="spec-template",
+    ) == expected
+
+
+def test_unterminated_heading_remains_selectable_for_later_replacements():
+    first = replace_section(
+        "## Target", "first\n", "target",
+        preset="first", contribution="first.md", artifact="spec-template",
+    )
+    assert replace_section(
+        first, "second\n", "target",
+        preset="second", contribution="second.md", artifact="spec-template",
+    ) == "## Target\nsecond\n"
+
+
+@pytest.mark.parametrize(
     "fence,close",
     [("```md", "```"), ("~~~~ text", "~~~~~"), ("   ```", "   ````")],
 )
@@ -73,6 +106,7 @@ def test_fenced_headings_neither_match_nor_end_section(fence: str, close: str) -
         ("~~~\n## Target\n```\n## Target\n", "SECTION_NOT_FOUND", 0, []),
         ("````\n```\n## Target\n", "SECTION_NOT_FOUND", 0, []),
         ("## Target\nold\n### TARGET!\n", "SECTION_AMBIGUOUS", 2, [1, 3]),
+        ("## Target\nold\n## ___Target___\n", "SECTION_AMBIGUOUS", 2, [1, 3]),
         ("    ## Target\nnot ATX\n", "SECTION_NOT_FOUND", 0, []),
         ("##Target\nnot ATX\n", "SECTION_NOT_FOUND", 0, []),
         ("Target\n------\n", "SECTION_NOT_FOUND", 0, []),

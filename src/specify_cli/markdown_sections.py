@@ -102,7 +102,11 @@ def _anchor(text: str) -> str:
 
     text = _CODE_SPAN.sub(protect_code, text)
     text = re.sub(r"(\*{1,2}|~~)(.*?)\1", r"\2", text)
-    text = re.sub(r"(?<!\w)(__?)(.*?)\1(?!\w)", r"\2", text)
+    while True:
+        normalized = re.sub(r"(?<!\w)(_+)(?!_)(.*?)(?<!_)\1(?!\w)", r"\2", text)
+        if normalized == text:
+            break
+        text = normalized
     text = re.sub(
         re.escape(prefix) + r"(\d+)Z",
         lambda match: code_contents[int(match[1])],
@@ -178,6 +182,15 @@ def replace_section(
         (heading[3] for heading in headings[index + 1:] if heading[0] <= level),
         len(content),
     )
+    if (
+        replacement
+        and body_start == len(content)
+        and not content.endswith(("\n", "\r"))
+        and not replacement.startswith(("\n", "\r"))
+    ):
+        last_newline = content.rfind("\n")
+        separator = "\r\n" if last_newline > 0 and content[last_newline - 1] == "\r" else "\n"
+        replacement = separator + replacement
     return content[:body_start] + replacement + content[body_end:]
 
 

@@ -188,7 +188,11 @@ to the next heading at the same or a higher level, or to the end of the
 document. Subordinate sections are part of that body. The original heading
 and all text outside the body remain unchanged, including line endings.
 Supply the blank lines and trailing newline needed before a following heading;
-the strategy does not insert separators automatically.
+the strategy does not insert blank-line separators automatically. If the heading
+is at EOF without a line terminator, a nonempty replacement gets a separating
+line terminator unless the fragment already starts with one. This uses the
+document's last line-ending style, defaulting to LF when there is none. Empty
+replacements leave an unterminated heading unchanged.
 
 Declare both strategy and selector in `preset.yml`, not command frontmatter.
 `selector` is rejected on other strategies. This is additive under manifest
@@ -203,7 +207,9 @@ Selectors use a bounded GitHub-style anchor contract:
 - Inline emphasis/code formatting is removed while retaining its text; inline
   links contribute their label, not their destination, including destinations
   with balanced parentheses. Code-span contents remain literal during emphasis
-  processing, so `` `__init__` `` retains its underscores.
+  processing, so `` `__init__` `` retains its underscores. Complete matching
+  underscore emphasis runs, including `___Target___`, are stripped; formatting
+  alone cannot distinguish otherwise duplicate heading anchors.
 - Lowercase the text, remove punctuation/symbols except hyphens and
   underscores, retain Unicode letters/numbers, and replace each space with
   one hyphen. Repeated spaces are not collapsed.
