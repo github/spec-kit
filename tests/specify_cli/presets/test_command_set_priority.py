@@ -109,6 +109,37 @@ class TestPresetSetPriority(PresetArtifactTestHelpers):
         assert "BODY-B" in command_file.read_text()
         assert "BODY-A" not in command_file.read_text()
 
+    def test_set_priority_reconciles_active_skills(self, project_dir, temp_dir):
+        """Changing priority refreshes the active integration's generated skill."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        manager = PresetManager(project_dir)
+        first = self._create_command_preset(
+            temp_dir, "priority-first", "speckit.demo", "First", "BODY-A"
+        )
+        second = self._create_command_preset(
+            temp_dir, "priority-second", "speckit.demo", "Second", "BODY-B"
+        )
+        manager.install_from_directory(first, "0.1.5", priority=10)
+        manager.install_from_directory(second, "0.1.5", priority=20)
+
+        skill_file = project_dir / ".claude" / "skills" / "speckit-demo" / "SKILL.md"
+        assert "BODY-A" in skill_file.read_text()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "set-priority", "priority-second", "1"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "BODY-B" in skill_file.read_text()
+        assert "BODY-A" not in skill_file.read_text()
+
     def test_set_priority_same_value_no_change(self, project_dir, pack_dir):
         """Test set-priority with same value shows already set message."""
         from unittest.mock import patch
