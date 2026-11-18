@@ -860,13 +860,32 @@ class ExtensionRegistry:
         return False
 
     def _save(self):
-        """Save registry to disk."""
+        """Save registry to disk.
+
+        The JSON goes to a temporary file that then replaces the registry, so
+        a write that fails part-way (disk full, interrupted process) leaves
+        the previous registry intact. Truncating the registry in place would
+        leave a partial file that ``_load()`` treats as corrupt and empty.
+        """
         from ..integrations._file_changes import after_file_change, before_file_change
 
         before_file_change(self.registry_path)
         self.extensions_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.registry_path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+        fd, temp_name = tempfile.mkstemp(
+            prefix=f"{self.REGISTRY_FILE}.", suffix=".tmp", dir=self.extensions_dir
+        )
+        temp_path = Path(temp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=2)
+            try:
+                mode = stat.S_IMODE(self.registry_path.stat().st_mode)
+            except OSError:
+                mode = 0o644
+            temp_path.chmod(mode)
+            os.replace(temp_path, self.registry_path)
+        finally:
+            temp_path.unlink(missing_ok=True)
         after_file_change(self.registry_path)
 
     def add(self, extension_id: str, metadata: dict):
