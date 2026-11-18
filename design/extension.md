@@ -91,13 +91,12 @@ always have `replace` semantics when they participate in artifact resolution;
 extensions cannot author preset composition strategies.
 
 Primary command names must use the extension's namespace. Installation rejects
-names and aliases that exactly match a name from another installed extension,
-and rejects names whose normalized agent output form conflicts with a core
-command. Installed-extension comparisons are not normalized, so differently
-spelled names can still converge on the same output path for a particular
-renderer. A small set of legacy two-segment command names is normalized to the
-canonical form with a warning; hook and event command references are rewritten
-consistently.
+names and aliases whose normalized agent output form matches a name or alias
+from another installed extension or a core command. For example, `shared.sync`
+and `shared-sync` cannot both be installed because they produce the same skill
+output name. A small set of legacy two-segment command names is normalized to
+the canonical form with a warning; hook and event command references are
+rewritten consistently.
 
 ## Project state and filesystem layout
 
