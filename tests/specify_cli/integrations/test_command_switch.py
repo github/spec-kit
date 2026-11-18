@@ -59,7 +59,7 @@ def _project_file_state(project):
     }
 
 
-class TestIntegrationSwitch:
+class TestIntegrationSwitch(IntegrationCatalogCliTestBase):
     @pytest.mark.skipif(
         os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
     )
@@ -357,7 +357,8 @@ class TestIntegrationSwitch:
         assert result.exit_code != 0
         assert "Not a Spec Kit project" in result.output
 
-    def test_switch_unknown_target(self, tmp_path):
+    def test_switch_unknown_target(self, tmp_path, monkeypatch):
+        self._patch_catalog(monkeypatch, integrations=[])
         project = _init_project(tmp_path)
         old_cwd = os.getcwd()
         try:
