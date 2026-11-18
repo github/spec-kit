@@ -271,8 +271,8 @@ trigger that all-agent fallback.
 Removal cleans up recorded outputs and reconciles surviving preset,
 extension, override, or core contributions. It can restore affected command
 or skill outputs in previously active integration directories recorded by
-the removed preset as well as the current integration. Enable, disable, and
-priority changes update resolution state but do not themselves rescaffold
+the removed preset as well as the current integration. Enable and disable operations alone do not rewrite files. An enabled preset priority change refreshes affected command and skill files; disabled priority changes
+update only stored priority and do not rewrite
 already delivered commands or skills.
 
 The constitution lifecycle is distinct from agent command delivery. By
