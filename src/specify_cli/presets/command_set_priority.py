@@ -1,4 +1,4 @@
-"""Implementation of the ``specify preset set-priority`` command."""
+"""Implementation of the specify preset set-priority command."""
 
 from __future__ import annotations
 
@@ -55,36 +55,38 @@ def preset_set_priority(
         raise typer.Exit(0)
 
     old_priority = normalize_priority(raw_priority)
+    is_enabled = metadata.get("enabled", True)
 
     # Update priority
     manager.registry.update(preset_id, {"priority": priority})
 
-    # A priority change can change the winning command or skill layer, so
-    # refresh the active integration's artifacts from the full priority stack.
-    try:
-        from ._manifest import PresetManifest
+    if is_enabled:
+        # A priority change can change the winning command or skill layer, so
+        # refresh the active integration's artifacts from the full priority stack.
+        try:
+            from ._manifest import PresetManifest
 
-        manifest = PresetManifest(manager.presets_dir / preset_id / "preset.yml")
-        command_names = [
-            template["name"]
-            for template in manifest.templates
-            if template.get("type") == "command"
-        ]
-        if command_names:
-            manager._reconcile_composed_commands(command_names)
-            manager._reconcile_skills(command_names)
-    except Exception as exc:  # noqa: BLE001 - lifecycle reconciliation is best-effort
-        import warnings
+            manifest = PresetManifest(manager.presets_dir / preset_id / "preset.yml")
+            command_names = [
+                template["name"]
+                for template in manifest.templates
+                if template.get("type") == "command"
+            ]
+            if command_names:
+                manager._reconcile_composed_commands(command_names)
+                manager._reconcile_skills(command_names)
+        except Exception as exc:  # noqa: BLE001 - lifecycle reconciliation is best-effort
+            import warnings
 
-        warnings.warn(
-            f"Post-priority reconciliation failed for {preset_id}: {exc}. "
-            "Agent command files may not reflect the current priority stack.",
-            stacklevel=2,
+            warnings.warn(
+                f"Post-priority reconciliation failed for {preset_id}: {exc}. "
+                "Agent command files may not reflect the current priority stack.",
+                stacklevel=2,
+            )
+
+        manager.reconcile_constitution(
+            f"Failed to reconcile constitution after changing priority for preset {preset_id}"
         )
-
-    manager.reconcile_constitution(
-        f"Failed to reconcile constitution after changing priority for preset {preset_id}"
-    )
 
     console.print(
         f"[green]✓[/green] Preset '{preset_id}' priority changed: {old_priority} → {priority}"
