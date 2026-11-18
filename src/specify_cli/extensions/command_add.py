@@ -22,7 +22,7 @@ def extension_add(
     extension: Optional[str] = typer.Argument(None, help="Extension name or path (optional when --from is given)"),
     dev: bool = typer.Option(False, "--dev", help="Install from local directory"),
     from_url: Optional[str] = typer.Option(None, "--from", help="Install from custom URL"),
-    force: bool = typer.Option(False, "--force", help="Overwrite if already installed"),
+    force: bool = typer.Option(False, "--force", help="Overwrite if already installed, and overwrite modified or unowned skill resource copies (generic replaces only recorded resources)"),
     priority: int = typer.Option(10, "--priority", help="Resolution priority (lower = higher precedence, default 10)"),
     version: Optional[str] = typer.Option(None, "--version", help="Install an exact version from a catalog"),
 ):
@@ -67,7 +67,7 @@ def extension_add(
     speckit_version = _commands.get_speckit_version()
 
     if force:
-        console.print("[yellow]--force:[/yellow] Will overwrite if already installed")
+        console.print("[yellow]--force:[/yellow] Will overwrite if already installed and overwrite modified or unowned skill resource copies (generic replaces only recorded resources)")
 
     # Prompt for URL-based installs BEFORE the spinner so the user can
     # actually see and respond to the confirmation (the Rich status
@@ -137,7 +137,7 @@ def extension_add(
                     raise typer.Exit(1)
 
                 if force:
-                    console.print(f"[yellow]--force:[/yellow] Installing from [cyan]{safe_source_path}[/cyan] (will overwrite if already installed)...")
+                    console.print(f"[yellow]--force:[/yellow] Installing from [cyan]{safe_source_path}[/cyan] (will overwrite if already installed and overwrite modified or unowned skill resource copies; generic replaces only recorded resources)...")
 
                 manifest = manager.install_from_directory(
                     source_path,

@@ -47,6 +47,7 @@ class HermesIntegration(SkillsIntegration):
     registrar_config = {
         "dir": "~/.hermes/skills",
         "detect_dir": ".hermes/skills",
+        "home_scoped": True,
         "format": "markdown",
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",

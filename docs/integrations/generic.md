@@ -46,9 +46,13 @@ does not add native command discovery to the agent.
 
 Once `generic` is the active integration, `specify extension add` registers
 extension commands in its configured `--commands-dir`, as command files or
-skills according to `--skills`. `specify extension remove` removes unchanged
-extension-owned artifacts while leaving core commands, user files, and edited
-extension files intact.
+skills according to `--skills`. `specify extension add --force` replaces
+unchanged owned invocations and previously recorded
+[skill resources](../extensions/developing.md#skill-resources) (including
+edits), while refusing to overwrite edited invocations or unowned files in
+`--commands-dir`. `specify extension remove` removes unchanged extension-owned
+invocations and recorded skill resources while leaving core commands, user
+files, and edited extension invocations intact.
 
 ## Workflow Limitation
 
