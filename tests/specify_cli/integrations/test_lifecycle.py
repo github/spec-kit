@@ -368,6 +368,9 @@ def test_builtin_journal_keeps_restoring_after_a_metadata_refusal(tmp_path, monk
             # Restored first, as rollback runs newest first.
             write_text(refused, "refused generated\n")
             monkeypatch.setattr(_lifecycle.os, "utime", refuse_refused)
+            if real_utime in os.supports_fd:
+                # So rollback takes the descriptor call and meets the refusal.
+                monkeypatch.setattr(_lifecycle.os, "supports_fd", os.supports_fd | {refuse_refused})
             raise OSError("disk full")
 
     assert refused.read_text(encoding="utf-8") == "refused original\n"
@@ -544,3 +547,188 @@ def test_builtin_journal_restores_other_attributes_after_one_is_refused(tmp_path
     assert _INCOMPLETE_WARNING in " ".join(capsys.readouterr().out.split())
     assert len(backups) == 1 and backups[0].is_dir()
     shutil.rmtree(backups[0])
+
+
+def test_builtin_journal_never_writes_through_a_replacement_that_reuses_the_inode(tmp_path):
+    """An unlinked original cannot lend its inode to a replacement while rollback relies on it."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import after_file_change, before_file_change
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    other = tmp_path / "other-link"
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            before_file_change(target)
+            # No other link keeps the original alive, so without a pin its
+            # inode is free for the replacement created straight after.
+            target.unlink()
+            target.write_text("generated\n", encoding="utf-8")
+            os.link(target, other)
+            after_file_change(target)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert not os.path.samefile(target, other)
+    assert other.read_text(encoding="utf-8") == "generated\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows files are never pinned")
+def test_builtin_journal_recreates_a_file_it_could_not_pin(tmp_path, monkeypatch):
+    """A file without a pin is recreated from its snapshot, not written in place."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    monkeypatch.setattr(_lifecycle, "_MAX_PINNED_FILES", 0)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    witness = tmp_path / "witness"
+    os.link(target, witness)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert not os.path.samefile(target, witness)
+    assert witness.read_text(encoding="utf-8") == "generated\n"
+
+
+@pytest.mark.skipif(not os.path.isdir("/dev/fd"), reason="no /dev/fd to count descriptors")
+@pytest.mark.parametrize("fails", [True, False])
+def test_builtin_journal_releases_its_pins(tmp_path, fails):
+    """The descriptors pinning snapshotted files close whether the operation fails or commits."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    project = tmp_path / "plain"
+    targets = [project / ".specify" / "templates" / f"{name}.md" for name in ("plan", "spec")]
+    targets[0].parent.mkdir(parents=True)
+    for target in targets:
+        target.write_text("original\n", encoding="utf-8")
+    before = len(os.listdir("/dev/fd"))
+
+    try:
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            for target in targets:
+                write_text(target, "generated\n")
+            assert len(os.listdir("/dev/fd")) >= before + len(targets)
+            if fails:
+                raise OSError("disk full")
+    except OSError:
+        assert fails
+
+    assert len(os.listdir("/dev/fd")) == before
+    expected = "original\n" if fails else "generated\n"
+    assert all(target.read_text(encoding="utf-8") == expected for target in targets)
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "chflags") or not hasattr(stat, "UF_NODUMP"), reason="no BSD file flags",
+)
+@pytest.mark.parametrize(
+    "source_flags", [0, stat.UF_NODUMP if hasattr(stat, "UF_NODUMP") else 0], ids=["cleared", "kept"],
+)
+def test_builtin_journal_reports_file_flags_it_cannot_restore(tmp_path, monkeypatch, capsys, source_flags):
+    """BSD flags a journalled copy2() cleared are reported, with the snapshots kept."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import after_file_change, before_file_change
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    try:
+        os.chflags(target, stat.UF_NODUMP)
+    except OSError:
+        pytest.skip("filesystem refuses UF_NODUMP")
+    witness = tmp_path / "witness"
+    os.link(target, witness)
+    source = tmp_path / "source"
+    source.write_text("generated\n", encoding="utf-8")
+    os.chflags(source, source_flags)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            before_file_change(target)
+            shutil.copy2(source, target)
+            after_file_change(target)
+            assert target.stat().st_flags & stat.UF_NODUMP == source_flags
+            raise OSError("disk full")
+
+    assert os.path.samefile(target, witness)
+    assert target.read_text(encoding="utf-8") == "original\n"
+    warned = _INCOMPLETE_WARNING in " ".join(capsys.readouterr().out.split())
+    if source_flags:
+        assert not warned
+        assert backups and not backups[0].exists()
+    else:
+        assert warned
+        assert len(backups) == 1 and backups[0].is_dir()
+        shutil.rmtree(backups[0])
+
+
+_ACCESS_ACL = "system.posix_acl_access"
+
+
+def _access_acl(uid: int) -> bytes:
+    """A POSIX access ACL granting ``uid`` read access, with mask and mode bits rw-r--r--."""
+    import struct
+
+    undefined = 0xFFFFFFFF
+    entries = [(0x01, 6, undefined), (0x02, 4, uid), (0x04, 4, undefined), (0x10, 4, undefined),
+               (0x20, 4, undefined)]
+    return struct.pack("<I", 2) + b"".join(struct.pack("<HHI", *entry) for entry in entries)
+
+
+@pytest.mark.skipif(not hasattr(os, "setxattr"), reason="no extended-attribute API in the os module")
+@pytest.mark.parametrize("original_acl", [None, _access_acl(1001)], ids=["no-acl", "acl"])
+def test_builtin_journal_restores_the_access_acl_in_place(tmp_path, original_acl):
+    """A POSIX access ACL a journalled copy2() brought in is removed or set back."""
+    import errno
+
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import after_file_change, before_file_change
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    target.chmod(0o644)
+    source = tmp_path / "source"
+    source.write_text("generated\n", encoding="utf-8")
+    source.chmod(0o644)
+    try:
+        os.setxattr(source, _ACCESS_ACL, _access_acl(1002))
+    except OSError as exc:
+        if exc.errno in (errno.ENOTSUP, errno.EOPNOTSUPP):
+            pytest.skip("filesystem has no POSIX ACLs")
+        raise
+    if original_acl is not None:
+        os.setxattr(target, _ACCESS_ACL, original_acl)
+    before = os.getxattr(target, _ACCESS_ACL) if original_acl is not None else None
+    witness = tmp_path / "witness"
+    os.link(target, witness)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            before_file_change(target)
+            shutil.copy2(source, target)
+            after_file_change(target)
+            assert os.getxattr(target, _ACCESS_ACL) == os.getxattr(source, _ACCESS_ACL)
+            raise OSError("disk full")
+
+    assert os.path.samefile(target, witness)
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+    if before is None:
+        assert _ACCESS_ACL not in os.listxattr(target)
+    else:
+        assert os.getxattr(target, _ACCESS_ACL) == before
