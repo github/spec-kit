@@ -319,23 +319,29 @@ def _ensure_safe_shared_destination(
 
 
 def _write_shared_text(
-    project_path: Path, dest: Path, content: str, *, preserve_mode: bool = False
+    project_path: Path,
+    dest: Path,
+    content: str,
+    *,
+    preserve_mode: bool = False,
+    new_file_mode: int | None = None,
 ) -> None:
     """Atomically write ``content`` to ``dest`` (see ``_write_shared_bytes``).
 
     With ``preserve_mode``, an existing regular file keeps its permission
     bits instead of being reset to 0644, so refreshing a private output
-    does not widen it, and a new file gets the default creation mode under
-    the process umask, as an ordinary write would. The content of an
-    existing file is written into a 0600 temp file, so it is never readable
-    more widely than that before the final mode is applied.
+    does not widen it. A new file gets ``new_file_mode`` when the caller
+    knows the bits of the file it stands in for, otherwise the default
+    creation mode under the process umask, as an ordinary write would.
+    Content given explicit bits is written into a 0600 temp file, so it is
+    never readable more widely than that before the final mode is applied.
     """
     mode: int | None = 0o644
     if preserve_mode:
         try:
             dest_stat = os.lstat(dest)
         except FileNotFoundError:
-            mode = None
+            mode = new_file_mode
         else:
             if stat.S_ISREG(dest_stat.st_mode):
                 mode = stat.S_IMODE(dest_stat.st_mode)

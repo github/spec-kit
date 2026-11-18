@@ -2,6 +2,7 @@
 
 import copy
 import os
+import stat
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Union
 
@@ -105,6 +106,7 @@ class _PresetSkillMethods:
             Dict[Path, tuple[Optional[str], List[str]]]
         ] = None,
         target_agent: Optional[str] = None,
+        new_file_modes: Optional[Dict[Path, int]] = None,
     ) -> Set[str]:
         """Re-register skills for commands whose winning layer changed.
 
@@ -120,6 +122,9 @@ class _PresetSkillMethods:
                 is limited to the names actually managed in each directory.
             target_agent: If set, report only command names written for this
                 agent. Other callers receive the union of all written names.
+            new_file_modes: Permission bits of the ``SKILL.md`` files the
+                removed preset had, by path (:meth:`_skill_file_modes`). A
+                skill written where one of them was deleted takes its bits.
 
         Returns:
             Command names whose skill output was successfully written.
@@ -313,6 +318,9 @@ class _PresetSkillMethods:
                             skill_subdir / "SKILL.md",
                             skill_content,
                             preserve_mode=True,
+                            new_file_mode=(new_file_modes or {}).get(
+                                skill_subdir / "SKILL.md"
+                            ),
                         )
                         wrote_override = True
                     if (
@@ -388,12 +396,14 @@ class _PresetSkillMethods:
                     # brand-new skill subdirectories when ai_skills is on).
                     written = self._register_skills(
                         filtered_manifest, pack_dir, only_skill_names=managed_names,
+                        new_file_modes=new_file_modes,
                     )
                 else:
                     written = self._register_skills(
                         filtered_manifest, pack_dir,
                         target_dir=skills_dir, target_agent=dir_agent or "",
                         only_skill_names=managed_names,
+                        new_file_modes=new_file_modes,
                     )
                 if target_agent is None:
                     written_names = {
@@ -1449,6 +1459,7 @@ class _PresetSkillMethods:
         target_agent: Optional[str] = None,
         only_skill_names: Optional[Set[str]] = None,
         content_overrides: Optional[Dict[str, str]] = None,
+        new_file_modes: Optional[Dict[Path, int]] = None,
     ) -> Dict[str, List[str]]:
         """Generate SKILL.md files for preset command overrides.
 
@@ -1480,6 +1491,8 @@ class _PresetSkillMethods:
             content_overrides: ``{command_name: content}`` to render instead
                 of the preset's command file or ``.composed`` cache, for a
                 composition that has already been resolved by the caller.
+            new_file_modes: ``{skill_file: permission bits}`` for skills that
+                stand in for a file deleted earlier in the same removal.
 
         Returns:
             ``{agent_name: [skill_name, ...]}`` for the single active
@@ -1660,7 +1673,11 @@ class _PresetSkillMethods:
 
                 skill_file = skill_subdir / "SKILL.md"
                 _write_shared_text(
-                    skills_dir, skill_file, skill_content, preserve_mode=True
+                    skills_dir,
+                    skill_file,
+                    skill_content,
+                    preserve_mode=True,
+                    new_file_mode=(new_file_modes or {}).get(skill_file),
                 )
                 written.append(target_skill_name)
                 self._merge_pack_registered_skills(
@@ -1816,6 +1833,40 @@ class _PresetSkillMethods:
         if isinstance(value, list) and value and fallback_agent:
             return {fallback_agent: [n for n in value if isinstance(n, str)]}
         return {}
+
+    def _skill_file_modes(
+        self, registered_skills: Union[Dict[str, List[str]], List[str]]
+    ) -> Dict[Path, int]:
+        """Permission bits of the ``SKILL.md`` files a preset has registered.
+
+        Removal deletes a preset's skill when no core or extension command
+        backs it, and reconciliation then writes the next winner's skill as
+        a new file. Taken before the deletion, these bits let that file
+        stay as private as the one it stands in for.
+        """
+        if isinstance(registered_skills, dict):
+            entries = [
+                (self._safe_skills_dir_for_agent(agent), names)
+                for agent, names in registered_skills.items()
+                if isinstance(agent, str)
+            ]
+        else:
+            entries = [(self._get_skills_dir(), registered_skills)]
+        modes: Dict[Path, int] = {}
+        for skills_dir, names in entries:
+            if skills_dir is None or not isinstance(names, list):
+                continue
+            for name in names:
+                if not self._is_safe_registry_skill_name(name):
+                    continue
+                skill_file = skills_dir / name / "SKILL.md"
+                try:
+                    skill_stat = os.lstat(skill_file)
+                except OSError:
+                    continue
+                if stat.S_ISREG(skill_stat.st_mode):
+                    modes[skill_file] = stat.S_IMODE(skill_stat.st_mode)
+        return modes
 
     def _safe_skills_dir_for_agent(self, agent_name: str) -> Optional[Path]:
         """Resolve ``agent_name``'s skills directory, validated for safety.

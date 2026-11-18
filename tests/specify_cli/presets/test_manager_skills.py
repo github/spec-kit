@@ -3317,6 +3317,44 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert stat.S_IMODE(skill.stat().st_mode) == 0o600
 
     @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    @pytest.mark.parametrize("historical", [False, True], ids=["active", "historical"])
+    def test_private_skill_stays_private_when_next_winner_takes_over(
+        self, project_dir, temp_dir, historical
+    ):
+        """A preset-only skill made private (0600) is deleted with its preset
+        and rewritten for the next winner. The new file takes the old one's
+        bits instead of the umask default; a skill created later does not."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        manager = PresetManager(project_dir)
+        install = functools.partial(
+            self._install_alias_layer, manager, temp_dir, alias=False
+        )
+        skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        old_umask = os.umask(0o022)
+        try:
+            install("low-preset", "Low body", "replace", 10)
+            install("top-preset", "Top body", "replace", 5)
+            assert stat.S_IMODE(skill.stat().st_mode) == 0o644
+            skill.chmod(0o600)
+            if historical:
+                self._write_init_options(project_dir, ai="codex", ai_skills=True)
+
+            assert manager.remove("top-preset") is True
+
+            assert "Low body" in skill.read_text(encoding="utf-8")
+            assert stat.S_IMODE(skill.stat().st_mode) == 0o600
+
+            self._write_init_options(project_dir, ai="claude", ai_skills=True)
+            assert manager.remove("low-preset") is True
+            assert not skill.exists()
+            shutil.rmtree(temp_dir / "low-preset")
+            install("low-preset", "Low body", "replace", 10)
+            assert stat.S_IMODE(skill.stat().st_mode) == 0o644
+        finally:
+            os.umask(old_umask)
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
     @pytest.mark.parametrize(
         ("umask", "preserve_mode", "expected"),
         [(0o077, True, 0o600), (0o022, True, 0o644), (0o077, False, 0o644)],

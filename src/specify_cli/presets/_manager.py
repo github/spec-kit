@@ -789,7 +789,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         affected_skill_dirs: Dict[
             Path, tuple[Optional[str], List[str]]
         ] = {}
+        retired_skill_modes: Dict[Path, int] = {}
         if registered_skills:
+            retired_skill_modes = self._skill_file_modes(registered_skills)
             restorable_skills = registered_skills
             # A skill tracked for a command-backed agent whose ai_skills is
             # now off is a leftover from a partially failed skills→command
@@ -915,7 +917,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                     list(removed_cmd_names), extra_agents=affected_command_agents
                 )
                 self._reconcile_skills(
-                    list(removed_cmd_names), extra_skills_dirs=affected_skill_dirs
+                    list(removed_cmd_names),
+                    extra_skills_dirs=affected_skill_dirs,
+                    new_file_modes=retired_skill_modes,
                 )
             except Exception as exc:
                 import warnings
