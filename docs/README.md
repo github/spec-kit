@@ -12,14 +12,34 @@ To build the documentation locally:
    dotnet tool install -g docfx
    ```
 
-2. Build the documentation:
+2. Generate the community preset directory from the local catalog:
+
+   ```bash
+   python3 docs/generate_presets.py --fetch-stars
+   ```
+
+3. Build the documentation:
 
    ```bash
    cd docs
    docfx docfx.json --serve
    ```
 
-3. Open your browser to `http://localhost:8080` to view the documentation.
+4. Open your browser to `http://localhost:8080` to view the documentation.
+
+Run the generator again after editing `presets/catalog.community.json`.
+It creates the ignored `_generated/preset-directory.md` include and
+`community/presets/*.md` detail pages, removing pages for deleted entries.
+Do not edit these generated files. The directory uses only catalog metadata:
+building it does not fetch or execute third-party preset content. With
+`--fetch-stars`, it reads star counts from the GitHub API once per repository.
+Set `GH_TOKEN` or `GITHUB_TOKEN` for authenticated API limits; the deployment
+workflow uses its repository token. Counts reflect the last build,
+and shared repositories have the same count. Failed lookups produce warnings
+and show "Stars unavailable", never an invented zero. Omit `--fetch-stars`
+for an offline build with unavailable counts. Its search, tag,
+and sort controls enhance a complete static listing, which remains readable
+without JavaScript.
 
 ## Structure
 
@@ -31,7 +51,7 @@ workflow steps, bundles, and community resources retain their own sections.
 
 Overview's supporting pages live under `overview/`, while `index.md` remains
 the site homepage. Process command references and authentication remain under
-`reference/`, and local development remains at `local-development.md`.
+`reference/`, and the local development guide lives under `how-to/`.
 
 - `docfx.json` - DocFX configuration file
 - `index.md` - Main documentation homepage
@@ -41,7 +61,7 @@ the site homepage. Process command references and authentication remain under
 - `overview/mcp.md` - Experimental local stdio MCP server
 - `overview/artifacts.md` - Artifact inventory and composition reference
 - `reference/authentication.md` - Authentication configuration guide and reference
-- `local-development.md` - Developing and checking Spec Kit locally
+- `how-to/local-development.md` - Developing and checking Spec Kit locally
 - `installation.md` - Installation guide
 - `quickstart.md` - Spec-Driven Development walkthrough
 - `guides/agentic-sdlc.md` - How Spec Kit applies agentic and conventional SDLC practices to itself
@@ -54,8 +74,8 @@ the site homepage. Process command references and authentication remain under
 - `how-to/contract-driven-development.md` - Defining and evolving component contracts
 - `how-to/complex-features.md` - Implementing complex features in bounded runs
 - `how-to/spec-of-specs.md` - Breaking large features into smaller specifications
-- `how-to/spec-persistence.md` - Choosing a specification persistence model
-- `how-to/evolving-specs.md` - Maintaining specifications after delivery
+- `how-to/persisting-specs.md` - Persisting specifications after delivery
+- `how-to/evolving-specs.md` - Evolving specifications for subsequent changes
 - `how-to/customization.md` - Adapting Spec Kit to your process
 - `overview/catalogs.md` - Catalog discovery, trust, private sources, and precedence
 - `extensions/overview.md` - Extension user guide
@@ -97,6 +117,7 @@ the site homepage. Process command references and authentication remain under
 - `community/workflow-steps.md` - Community step listing and submission contract
 - `integrations/index.md` - Integration directory and shared setup guidance
 - `integrations/cli.md` - Shared integration management CLI reference
+- `integrations/api.md` - Public Python adapter and file ownership contracts
 - `integrations/<key>.md` - Agent-specific setup, invocation, options, and limitations
 - `integrations/catalog.md` - Catalog schema and external adapter metadata
 - `integrations/contributing.md` - Integration and catalog contribution guide
@@ -105,4 +126,9 @@ the site homepage. Process command references and authentication remain under
 
 ## Deployment
 
-Documentation is automatically built and deployed to GitHub Pages when changes are pushed to the `main` branch. The workflow is defined in `.github/workflows/docs.yml`.
+Documentation, community preset catalog, and docs workflow changes on the
+upstream `main` branch trigger the normal GitHub Pages deployment. Each build
+generates the preset directory and detail pages and refreshes repository star
+counts before running DocFX. Manual runs use the same path; there is no separate
+weekly schedule. The workflow is defined in `.github/workflows/docs.yml` and
+runs only in the upstream repository.

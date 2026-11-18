@@ -217,6 +217,9 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
     """Ensure POSIX .sh scripts under .specify/scripts and .specify/extensions (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
         return  # Windows: skip silently
+    from .integrations._file_changes import changing_file
+    from .integrations.installer import IntegrationInstallError
+
     scan_roots = [
         project_path / ".specify" / "scripts",
         project_path / ".specify" / "extensions",
@@ -249,8 +252,13 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                     new_mode |= 0o001
                 if not (new_mode & 0o100):
                     new_mode |= 0o100
-                os.chmod(script, new_mode)
+                # Journalled, so a rolled-back upgrade restores the old mode.
+                with changing_file(script):
+                    os.chmod(script, new_mode)
                 updated += 1
+            except IntegrationInstallError:
+                # The upgrade journal refused the change; fail the operation.
+                raise
             except Exception as e:
                 failures.append(f"{_display_project_path(project_path, script)}: {e}")
     if tracker:

@@ -640,6 +640,48 @@ class TestExpressions:
         with pytest.raises(ValueError, match="expected a JSON string"):
             evaluate_expression("{{ steps.emit.output.exit_code | from_json }}", ctx)
 
+    @pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+    @pytest.mark.parametrize("location", ["root", "array", "object"])
+    def test_filter_from_json_rejects_non_json_constants(self, constant, location):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        payload = {
+            "root": constant,
+            "array": f"[{constant}]",
+            "object": f'{{"value": {constant}}}',
+        }[location]
+        ctx = StepContext(steps={"emit": {"output": {"stdout": payload}}})
+        with pytest.raises(ValueError, match=f"from_json: invalid JSON.*{constant}"):
+            evaluate_expression("{{ steps.emit.output.stdout | from_json }}", ctx)
+
+    @pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+    def test_condition_from_json_rejects_non_json_constants(self, constant):
+        from specify_cli.workflows.expressions import evaluate_condition
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"payload": constant})
+        with pytest.raises(ValueError, match="from_json: invalid JSON"):
+            evaluate_condition("{{ inputs.payload | from_json }}", ctx)
+
+    @pytest.mark.parametrize(("payload", "expected"), [
+        ('"NaN"', "NaN"),
+        ('["Infinity", "-Infinity"]', ["Infinity", "-Infinity"]),
+        ('{"NaN": "Infinity"}', {"NaN": "Infinity"}),
+        ("0", 0),
+        ("-1.5", -1.5),
+        ("1e3", 1000.0),
+        ("null", None),
+        ("true", True),
+        ('{"values": [0, 1.5, null]}', {"values": [0, 1.5, None]}),
+    ])
+    def test_filter_from_json_preserves_valid_json(self, payload, expected):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"payload": payload})
+        assert evaluate_expression("{{ inputs.payload | from_json }}", ctx) == expected
+
     def test_filter_from_json_rejects_malformed_forms(self):
         # `from_json` is strict: no arguments and no trailing tokens. Every
         # mis-wired form must raise rather than silently fall through to the
@@ -1587,6 +1629,31 @@ class TestExpressions:
         # A number against a non-numeric string is incomparable -> False.
         assert evaluate_expression("{{ inputs.n >= 'abc' }}", ctx) is False
         assert evaluate_expression("{{ inputs.n <= 'abc' }}", ctx) is False
+
+    def test_equality_coerces_numeric_strings_like_ordering(self):
+        """``==``/``!=`` agree with ``>=``/``<=`` for numeric strings.
+
+        Captured stdout ``"10"`` was both ``>= 10`` and ``<= 10`` but not
+        ``== 10``, because only the ordering operators coerced numeric strings.
+        """
+        from specify_cli.workflows.expressions import evaluate_condition
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            steps={"count": {"output": {"stdout": "10"}}},
+            inputs={"s10": "10", "f10": "10.0", "name": "10x"},
+        )
+        assert evaluate_condition("{{ steps.count.output.stdout >= 10 }}", ctx) is True
+        assert evaluate_condition("{{ steps.count.output.stdout <= 10 }}", ctx) is True
+        assert evaluate_condition("{{ steps.count.output.stdout == 10 }}", ctx) is True
+        assert evaluate_condition("{{ steps.count.output.stdout != 10 }}", ctx) is False
+        assert evaluate_condition("{{ steps.count.output.stdout == 11 }}", ctx) is False
+        assert evaluate_condition("{{ steps.count.output.stdout != 11 }}", ctx) is True
+        # Two numeric strings compare as numbers, as they do for ordering.
+        assert evaluate_condition("{{ inputs.s10 == inputs.f10 }}", ctx) is True
+        # A non-numeric string is still compared as-is.
+        assert evaluate_condition("{{ inputs.name == 10 }}", ctx) is False
+        assert evaluate_condition("{{ inputs.name == '10x' }}", ctx) is True
 
     def test_boolean_literals_are_case_insensitive(self):
         """``{{ True }}``/``{{ TRUE }}`` resolve as booleans, as the ``.lower()``
@@ -6952,6 +7019,115 @@ steps:
 class TestWorkflowEngine:
     """Test WorkflowEngine execution."""
 
+    @pytest.mark.parametrize("run_id", [None, "invalid-start"])
+    @pytest.mark.parametrize(
+        ("input_definition", "provided", "error"),
+        [
+            ({"type": "string", "required": True}, {}, "Required input"),
+            ({"type": "number"}, {"value": "invalid"}, "expected a number"),
+            ({"type": "string", "enum": ["yes"]}, {"value": "no"}, "not in allowed"),
+            ({"type": "number"}, {"value": True}, "expected a number"),
+            ({"type": "string"}, {"value": 5}, "expected a string"),
+            ({"type": "number", "default": True}, {}, "expected a number"),
+            ({"type": "string", "default": 5}, {}, "expected a string"),
+            ({"type": "string", "default": "no", "enum": ["yes"]}, {}, "not in allowed"),
+        ],
+        ids=["missing", "numeric", "enum", "bool-number", "typed", "number-default",
+             "string-default", "enum-default"],
+    )
+    def test_invalid_startup_inputs_create_no_artifacts(
+        self, project_dir, monkeypatch, run_id, input_definition, provided, error
+    ):
+        from copy import deepcopy
+
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        monkeypatch.delenv("SPECKIT_WORKFLOW_RUN_ID", raising=False)
+        definition = WorkflowDefinition({
+            "workflow": {"id": "invalid-start", "name": "Invalid start", "version": "1.0.0"},
+            "inputs": {"value": input_definition},
+            "steps": [{"id": "unexpected", "type": "shell", "run": "echo ran > unexpected.txt"}],
+        })
+        original_data = deepcopy(definition.data)
+        original_inputs = deepcopy(provided)
+        started = []
+        engine = WorkflowEngine(project_dir)
+        engine.on_step_start = lambda *args: started.append(args)
+
+        with pytest.raises(ValueError, match=error):
+            engine.execute(definition, provided, run_id=run_id)
+
+        assert started == []
+        assert not (project_dir / "unexpected.txt").exists()
+        assert definition.data == original_data
+        assert provided == original_inputs
+        assert not (project_dir / ".specify" / "workflows" / "runs").exists()
+
+    @pytest.mark.parametrize("env_id", [None, "   ", "  trimmed-id  "])
+    def test_startup_run_id_environment_selection(self, project_dir, monkeypatch, env_id):
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        if env_id is None:
+            monkeypatch.delenv("SPECKIT_WORKFLOW_RUN_ID", raising=False)
+        else:
+            monkeypatch.setenv("SPECKIT_WORKFLOW_RUN_ID", env_id)
+        definition = WorkflowDefinition({"workflow": {"id": "identity"}, "steps": []})
+
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        if env_id and env_id.strip():
+            assert state.run_id == "trimmed-id"
+        else:
+            assert len(state.run_id) == 8
+            assert all(char in "0123456789abcdef" for char in state.run_id)
+        assert state.definition_path.is_file()
+
+    def test_startup_preserves_coercion_defaults_and_caller_mappings(self, project_dir):
+        from copy import deepcopy
+
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        number = 1792234567890123456
+        definition = WorkflowDefinition({
+            "workflow": {"id": "defaults"},
+            "inputs": {
+                "value": {"type": "number", "enum": [number], "default": str(number)},
+                "enabled": {"type": "boolean", "default": "true"},
+                "scope": {"type": "string", "enum": ["full"], "default": "full"},
+            },
+            "steps": [],
+        })
+        provided = {"value": str(number)}
+        original_data = deepcopy(definition.data)
+        original_inputs = provided.copy()
+
+        state = WorkflowEngine(project_dir).execute(definition)
+        assert state.inputs == {"value": number, "enabled": True, "scope": "full"}
+        state = WorkflowEngine(project_dir).execute(definition, provided)
+
+        assert state.inputs == {"value": number, "enabled": True, "scope": "full"}
+        assert isinstance(state.inputs["value"], int)
+        assert definition.data == original_data
+        assert provided == original_inputs
+
+    @pytest.mark.parametrize("run_id", ["", "../unsafe"])
+    def test_startup_run_id_validation_precedes_input_resolution(
+        self, project_dir, monkeypatch, run_id
+    ):
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        monkeypatch.setenv("SPECKIT_WORKFLOW_RUN_ID", "valid-env-id")
+        definition = WorkflowDefinition({
+            "workflow": {"id": "identity"},
+            "inputs": {"value": {"type": "string", "required": True}},
+            "steps": [],
+        })
+
+        with pytest.raises(ValueError, match="[Rr]un.*ID|run_id"):
+            WorkflowEngine(project_dir).execute(definition, run_id=run_id)
+
+        assert not (project_dir / ".specify" / "workflows" / "runs").exists()
+
     @pytest.mark.parametrize(
         ("field", "value"),
         [
@@ -10349,12 +10525,24 @@ class TestWorkflowCatalog:
         with pytest.raises(WorkflowValidationError, match="HTTPS"):
             catalog._validate_catalog_url("http://evil.com/catalog.json")
 
-    def test_validate_url_localhost_http_allowed(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog
+    def test_validate_url_schemeless_names_the_value(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
+
+        for catalog, error in (
+            (WorkflowCatalog(project_dir), WorkflowValidationError),
+            (StepCatalog(project_dir), StepValidationError),
+        ):
+            with pytest.raises(error, match=r"\(got a URL with no scheme\)"):
+                catalog._validate_catalog_url("example.com/catalog.json")
+
+    @pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+    def test_validate_url_localhost_http_rejected(self, project_dir, host):
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
 
         catalog = WorkflowCatalog(project_dir)
-        # Should not raise
-        catalog._validate_catalog_url("http://localhost:8080/catalog.json")
+        with pytest.raises(WorkflowValidationError, match="HTTPS"):
+            catalog._validate_catalog_url(f"http://{host}:8080/catalog.json")
 
     @pytest.mark.parametrize(
         "url",
@@ -11170,12 +11358,13 @@ class TestStepCatalog:
         with pytest.raises(StepValidationError, match="HTTPS"):
             catalog._validate_catalog_url("http://evil.com/step-catalog.json")
 
-    def test_validate_url_localhost_http_allowed(self, project_dir):
-        from specify_cli.workflows.step.catalog import StepCatalog
+    @pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+    def test_validate_url_localhost_http_rejected(self, project_dir, host):
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
 
         catalog = StepCatalog(project_dir)
-        # Should not raise
-        catalog._validate_catalog_url("http://localhost:8080/step-catalog.json")
+        with pytest.raises(StepValidationError, match="HTTPS"):
+            catalog._validate_catalog_url(f"http://{host}:8080/step-catalog.json")
 
     @pytest.mark.parametrize(
         "url",

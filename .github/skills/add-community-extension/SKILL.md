@@ -36,7 +36,7 @@ Check **all** of the following (per `docs/extensions/publishing.md`):
 | README.md present | Confirm in repo file listing |
 | LICENSE file present | Confirm in repo file listing |
 | GitHub release exists matching version | Check releases on the repo page |
-| Download URL is accessible | Verify it follows `archive/refs/tags/<tag>.zip` or `releases/download/<tag>/<asset>.zip` pattern and release exists |
+| Download URL is accessible | Validate the submitted URL first: scheme must be `https`, host must be exactly `github.com`, it must not include username/password, query string, or fragment, and its path must match `archive/refs/tags/<tag>.zip` or `releases/download/<tag>/<asset>.zip`; also verify the release exists. Only then fetch the archive with redirects enabled. Validate each redirect and the final URL against an explicit safe-host policy (`github.com`, `codeload.github.com`, or `release-assets.githubusercontent.com`) and require HTTPS; allow the signed query string used by `release-assets.githubusercontent.com`. Require the final response to be HTTP 200. |
 | Extension ID is lowercase-with-hyphens only | Regex: `^[a-z][a-z0-9-]*$` |
 | Version follows semver | Format: `X.Y.Z` |
 | Submission checklists are all checked | Confirm in issue body |

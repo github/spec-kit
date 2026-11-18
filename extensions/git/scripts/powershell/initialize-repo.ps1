@@ -8,10 +8,10 @@ $ErrorActionPreference = 'Stop'
 # Find project root
 function Find-ProjectRoot {
     param([string]$StartDir)
-    $current = Resolve-Path $StartDir
+    $current = Resolve-Path -LiteralPath $StartDir
     while ($true) {
         foreach ($marker in @('.specify', '.git')) {
-            if (Test-Path (Join-Path $current $marker)) {
+            if (Test-Path -LiteralPath (Join-Path $current $marker)) {
                 return $current
             }
         }
@@ -23,13 +23,13 @@ function Find-ProjectRoot {
 
 $repoRoot = Find-ProjectRoot -StartDir $PSScriptRoot
 if (-not $repoRoot) { $repoRoot = Get-Location }
-Set-Location $repoRoot
+Set-Location -LiteralPath $repoRoot
 
 # Read commit message from extension config, fall back to default
 $commitMsg = "[Spec Kit] Initial commit"
 $configFile = Join-Path $repoRoot ".specify/extensions/git/git-config.yml"
-if (Test-Path $configFile) {
-    foreach ($line in Get-Content $configFile) {
+if (Test-Path -LiteralPath $configFile) {
+    foreach ($line in Get-Content -LiteralPath $configFile -Encoding UTF8) {
         if ($line -match '^init_commit_message:\s*(.+)$') {
             $val = $matches[1].Trim() -replace '^["'']' -replace '["'']$'
             if ($val) { $commitMsg = $val }
@@ -54,6 +54,11 @@ try {
 } catch { }
 
 # Initialize
+# Relax ErrorActionPreference so git warnings on stderr (e.g. CRLF notices)
+# do not become terminating errors in Windows PowerShell 5.1; real failures
+# are still caught through $LASTEXITCODE.
+$savedEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 try {
     $out = git init -q 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) { throw "git init failed: $out" }
@@ -64,6 +69,8 @@ try {
 } catch {
     Write-Warning "[specify] Error: $_"
     exit 1
+} finally {
+    $ErrorActionPreference = $savedEAP
 }
 
 Write-Host "[OK] Git repository initialized"

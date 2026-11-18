@@ -633,6 +633,11 @@ resolve_template_content() {
     # Collect all layers (highest priority first)
     local -a layer_paths=()
     local -a layer_strategies=()
+    local -a layer_selectors=()
+    local -a layer_presets=()
+    local section_engine
+    section_engine="$(dirname "${BASH_SOURCE[0]}")/markdown_sections.py"
+    [ -f "$section_engine" ] || section_engine="$(dirname "${BASH_SOURCE[0]}")/../../src/specify_cli/markdown_sections.py"
 
     # Priority 1: Project overrides (always "replace")
     local override="$base/overrides/${template_name}.md"
@@ -694,6 +699,7 @@ except Exception:
         if [ -n "$sorted_presets" ]; then
             while IFS= read -r preset_id; do
                 local strategy="replace"
+                local selector=""
                 local manifest_file=""
                 local manifest="$presets_dir/$preset_id/preset.yml"
                 local manifest_declared=false
@@ -706,8 +712,8 @@ except Exception:
                     local py_stderr
                     local parse_status
                     py_stderr=$(mktemp)
-                    if result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" "${python_cmd[@]}" -c "
-import sys, os
+                    if result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" SPECKIT_SECTION_ENGINE="$section_engine" "${python_cmd[@]}" -c "
+import sys, os, base64
 try:
     import yaml
 except ImportError:
@@ -731,7 +737,7 @@ try:
     if not templates:
         raise ValueError('manifest must provide at least one template')
     valid_types = ('template', 'command', 'script')
-    valid_strategies = ('replace', 'prepend', 'append', 'wrap')
+    valid_strategies = ('replace', 'prepend', 'append', 'wrap', 'replace-section')
     for t in templates:
         if not isinstance(t, dict):
             raise ValueError('manifest template entries must be mappings')
@@ -750,11 +756,16 @@ try:
             raise ValueError('invalid manifest template strategy')
         if t['type'] == 'script' and strategy not in ('replace', 'wrap'):
             raise ValueError('invalid manifest script strategy')
+        if strategy == 'replace-section' or 'selector' in t:
+            import runpy
+            engine = runpy.run_path(os.environ['SPECKIT_SECTION_ENGINE'])
+            engine['validate_section_selector'](strategy, t.get('selector'), present='selector' in t)
     for t in templates:
         if t.get('name') == os.environ['SPECKIT_TMPL'] and t.get('type', 'template') == 'template':
             file_value = t.get('file', '')
             strategy = t.get('strategy', 'replace')
-            print('found\t' + strategy + '\t' + file_value)
+            selector = base64.b64encode(t.get('selector', '').encode('utf-8')).decode('ascii')
+            print('found\t' + strategy + '\t' + file_value + '\t' + selector)
             sys.exit(0)
     print('absent\treplace\t')
 except Exception as exc:
@@ -770,13 +781,14 @@ except Exception as exc:
                             echo "Error: PyYAML is required to resolve preset template composition" >&2
                         else
                             echo "Error: invalid preset manifest $manifest" >&2
+                            cat "$py_stderr" >&2
                         fi
                         rm -f "$py_stderr"
                         return 2
                     fi
                     if [ -n "$result" ]; then
                         local declaration
-                        IFS=$'\t' read -r declaration strategy manifest_file <<< "$result"
+                        IFS=$'\t' read -r declaration strategy manifest_file selector <<< "$result"
                         [ "$declaration" = "found" ] && manifest_declared=true
                         strategy=$(printf '%s' "$strategy" | tr '[:upper:]' '[:lower:]')
                     fi
@@ -804,6 +816,8 @@ except Exception as exc:
                 if [ -n "$candidate" ]; then
                     layer_paths+=("$candidate")
                     layer_strategies+=("$strategy")
+                    layer_selectors+=("$selector")
+                    layer_presets+=("$preset_id")
                     if [ "$strategy" = "replace" ]; then
                         effective_base_found=true
                         break
@@ -828,6 +842,8 @@ except Exception as exc:
             if [ -f "$candidate" ]; then
                 layer_paths+=("$candidate")
                 layer_strategies+=("replace")
+                layer_selectors+=("")
+                layer_presets+=("$extension_id")
                 effective_base_found=true
                 break
             fi
@@ -839,6 +855,8 @@ except Exception as exc:
     if [ "$effective_base_found" = false ] && [ -f "$core" ]; then
         layer_paths+=("$core")
         layer_strategies+=("replace")
+        layer_selectors+=("")
+        layer_presets+=("core")
     fi
 
     local count=${#layer_paths[@]}
@@ -904,6 +922,17 @@ except Exception as exc:
         layer_content="${layer_content%x}"
 
         case "$strat" in
+            replace-section)
+                if ! content=$(
+                    printf '%s' "$content" | "${python_cmd[@]}" "$section_engine" \
+                        --preset "${layer_presets[$i]}" --artifact "$template_name" \
+                        --selector-base64 -- "${layer_selectors[$i]}" "$path"
+                    status=$?; printf x; exit "$status"
+                ); then
+                    return 2
+                fi
+                content="${content%x}"
+                ;;
             replace) content="$layer_content" ;;
             prepend)
                 content=$(printf '%s\n\n%s' "$layer_content" "$content"; printf x)

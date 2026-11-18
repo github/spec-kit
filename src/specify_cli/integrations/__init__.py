@@ -357,7 +357,12 @@ class IntegrationCatalog(CatalogStackBase):
         try:
             from specify_cli.authentication.http import open_url
 
-            with open_url(entry.url, timeout=10) as resp:
+            def _validate_redirect(_old_url: str, new_url: str) -> None:
+                self._validate_catalog_url(new_url)
+
+            with open_url(
+                entry.url, timeout=10, redirect_validator=_validate_redirect
+            ) as resp:
                 # Validate final URL after redirects
                 final_url = resp.geturl()
                 if final_url != entry.url:

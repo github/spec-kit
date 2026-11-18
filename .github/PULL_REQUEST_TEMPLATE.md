@@ -6,8 +6,10 @@
 
 <!-- How did you test your changes? -->
 
-- [ ] Tested locally with `uv run specify --help`
-- [ ] Ran existing tests with `uv sync && uv run pytest`
+Set up this checkout's `.venv` and editable install using the [local development guide](https://github.github.io/spec-kit/how-to/local-development.html). Run commands from the checkout root.
+
+- [ ] Tested locally with `.venv/bin/specify --help` (Windows PowerShell: `.\.venv\Scripts\specify.exe --help`)
+- [ ] Ran relevant existing tests with `.venv/bin/python -m pytest tests -q` (Windows PowerShell: `.\.venv\Scripts\python.exe -m pytest tests -q`); use affected test paths for focused checks and `LC_ALL=en_US.UTF-8` on macOS
 - [ ] Tested with a sample project (if applicable)
 
 ## AI Disclosure

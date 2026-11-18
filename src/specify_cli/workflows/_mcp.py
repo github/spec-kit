@@ -7,8 +7,9 @@ Effect boundaries worth retaining when adapters are introduced:
 
 * Project resolution does not load integrations by default
   (``specify_cli._require_specify_project``).
-* Run/resume explicitly load integrations and custom steps before execution.
-  Add/update also import custom steps while validating workflow definitions.
+* Run/resume explicitly load integrations, custom steps and workflow functions
+  before execution. Add/update also import these workflow plugins while
+  validating workflow definitions.
 * Catalog search/info can write project caches. Authenticated HTTP can invoke
   ``az account get-access-token`` through the configured Azure CLI provider,
   so even discovery/download paths may require execution capability.
@@ -298,6 +299,39 @@ WORKFLOW_TOOLS = (
         disposition_reason=(
             "workflow_overlay_set_priority uses CLI-bound YAML mutation/error helpers; "
             "no shared typed priority-change outcome or MCP adapter."
+        ),
+        capabilities=_LOCAL_WRITE,
+        network_access="none",
+    ),
+    WorkflowToolInventory(
+        operation_id="workflow.function.add",
+        cli_path="specify workflow function add",
+        mcp_tool_name="specify_workflow_function_add",
+        disposition_reason=(
+            "Function package source/trust selection and executable-code installation remain "
+            "CLI-owned; no typed function-add operation or MCP adapter."
+        ),
+        capabilities=_WRITE_AND_EXECUTION,
+        network_access="optional",
+    ),
+    WorkflowToolInventory(
+        operation_id="workflow.function.list",
+        cli_path="specify workflow function list",
+        mcp_tool_name="specify_workflow_function_list",
+        disposition_reason=(
+            "Function metadata listing is currently CLI-rendered; no shared typed list "
+            "operation or MCP adapter."
+        ),
+        capabilities=_LOCAL_READ,
+        network_access="none",
+    ),
+    WorkflowToolInventory(
+        operation_id="workflow.function.remove",
+        cli_path="specify workflow function remove",
+        mcp_tool_name="specify_workflow_function_remove",
+        disposition_reason=(
+            "Function package removal and registry mutation remain CLI-owned; no typed "
+            "function-remove operation or MCP adapter."
         ),
         capabilities=_LOCAL_WRITE,
         network_access="none",

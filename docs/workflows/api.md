@@ -13,7 +13,8 @@ This reference describes workflow YAML and execution/state semantics. The CLI's 
 | `workflow.version` | String in `X.Y.Z` form; omitted defaults to `0.0.0` |
 | `workflow.author`, `workflow.description` | Descriptive metadata |
 | `workflow.integration`, `workflow.model` | Optional string/null dispatch defaults |
-| `workflow.options` | Optional mapping/null of dispatch options |
+| `workflow.reasoning_effort`, `workflow.context_size` | Optional string/null dispatch defaults for `command` and `prompt` steps; literals must follow the [value rules](../workflow-steps/types.md#reasoning-effort-and-context-size) |
+| `workflow.options` | Optional mapping/null of default command-step `options`; recorded in step output, not passed to the integration CLI |
 | `requires` | Optional mapping accepting `speckit_version` and `integrations` only |
 | `inputs` | Mapping of input definitions |
 | `outputs` | Mapping of declared workflow-call outputs |
@@ -94,7 +95,7 @@ defaults; their internal aliases do not enter the caller's context.
 
 ### State Persistence and Resume
 
-The engine saves `RunState` to disk after each step, enabling resume from the exact point of interruption:
+The engine checkpoints step progress to disk so interrupted work can resume:
 
 ```mermaid
 flowchart LR
@@ -107,85 +108,16 @@ flowchart LR
     E -- "resume()" --> B
 ```
 
-When a `gate` step pauses execution, the engine persists `current_step_index`
-and all accumulated `step_results`. On `specify workflow resume <run_id>`, the
-same executor replays completed occurrences into their contexts without
-executing them, then continues at the unfinished occurrence.
+When a `gate` pauses execution, the engine retains inputs and step results.
+On `specify workflow resume <run_id>`, completed occurrences are replayed into
+their contexts without executing them again, then unfinished work continues.
 
-New runs use a versioned execution tree. Each occurrence owns its result,
-selected child sequences, and optional workflow binding. A binding stores the
-target, frozen definition, private inputs, and `workflow_dir`; the called
-workflow remains a private scope in the same run. Fan-out items have separate
-contexts. Each occurrence, including a workflow call, is checkpointed as the
-active step before its start is logged and before it executes, so status
-reports it while it runs. Binding and selected expansions are
-checkpointed before child side effects, results before an occurrence is done,
-and logs after the checkpoint.
-Legacy runs enter through their top-level index once. Inputs and tree
-transitions share one atomic state checkpoint; the inputs file is a
-compatibility mirror. A checkpoint failure prevents further writes by that
-executor instance.
-
-### Occurrence lifecycle
-
-`Execution.step()` is the common runner for registered steps and workflow calls.
-`execute_step()` and `workflow()` return a `StepResult`, a subtree outcome, or an
-unknown-implementation failure. The runner alone performs `begin`, `finish`,
-`settle`, and best-effort `leave` on exception unwinding; the phase and field
-allow-lists in `transition()` reject invalid operations. The public, stateless
-`StepBase.execute()` extension contract is unchanged.
-
-All occurrence mutations pass through `Execution.transition()`. It checks the
-allowed source phase and fields, derives the destination phase, validates the
-candidate with the same node rules used on load, projects results, and saves
-under the run lock. Callers cannot supply a destination phase.
-
-| Operation | Meaning |
-|-----------|---------|
-| `begin` | Mark this occurrence active and checkpoint before `step_started` or its callback; a failed checkpoint leaves no start event. A blocked workflow call drops its previous attempt's result |
-| `expand` / `bind` | Freeze children and their source before child execution |
-| `rebind` / `iterate` | Persist updated binding or the next loop occurrence |
-| `outputs` | Children finished; declared workflow outputs remain to finalize |
-| `finish` / `settle` | Record an own-step result or subtree outcome; clear activity |
-| `leave` | Clear activity on exception unwinding; the run handler saves the failure/pause |
-
-`phase` identifies the continuation point, `active` identifies entered occurrences
-(several may be active in a fan-out), and `outcome` identifies a subtree halt or
-completion. A container's own result may be completed while its children are
-paused. `current_step_id` is a compatibility status view updated as
-occurrences are entered, rather than a resume cursor. Completion does not
-reconcile this scalar; during parallel fan-out it may name an item that has
-already finished, while the tree's per-occurrence `active` flags remain
-authoritative.
-Status reporting uses a bound call's recorded result when available. If an
-interruption or exception leaves the active call unfinished without a result,
-its scope inherits the run's paused or failed status; completed calls keep
-their own recorded status.
-A call's recorded result summarizes its previous attempt, so `begin` on a
-blocked call drops `result`, `outcome`, and `error`: a bound call continues at
-`children`, and a call whose binding failed returns to `ready` and binds again.
-A leaf step's record describes that same step, such as a pending gate's prompt,
-and remains until `finish` replaces it.
-
-`notify()` emits events and callbacks only after the corresponding checkpoint.
-Persistence is mandatory lifecycle behavior, not a listener. Existing container
-events describe completion of their own expansion; calls finish after their
-children and declared outputs. Completed replay emits neither events nor saves.
-Entering an unfinished container on resume checkpoints activity without repeating
-its expansion event.
-
-Execution schema version 2 stores fan-out templates as shared YAML sources on
-their parent occurrence. Raw `step_template` configuration is not published in
-persisted step outputs. Frozen expansion results and aggregated `fan_results`
-are separate: `result_view()` adds the aggregate for reporting and downstream
-steps, while items always receive the frozen expansion view. This also preserves
-YAML-native template scalars without putting them in JSON result records.
-
-Resume validates tree structure, root snapshot, and the legacy offset together,
-before any writes. The offset must be within the workflow and no later than the
-saved root index. Legacy checkpoints without a tree still adapt once;
-private, unreleased version-1 trees are rejected rather than silently interpreted
-as the new format.
+Selected expansions and workflow bindings are saved before their child side
+effects, and results are saved before work is marked complete. A failed
+checkpoint stops execution rather than continuing without durable progress.
+Steps return results or nested definitions through the
+[public step API](../workflow-steps/api.md); they do not manage checkpoint
+transitions or edit private execution state.
 
 ## Execution identity and resume
 
@@ -219,13 +151,12 @@ the prior binding, while values not mapped again retain their bound values.
 Completed calls retain their results. Failed output evaluation retries only
 finalization, without repeating completed child commands.
 
-Snapshots are stored as YAML strings inside the private JSON execution tree,
-preserving YAML scalar types. Inputs and results remain JSON values. The
-snapshot freezes workflow definitions and expansions, not files under
-`context.workflow_dir` or step implementations; missing resources can still
-cause ordinary step failures. Legacy runs without a tree enter through their
-saved root index, then use tree-backed resume. Resume is available only for
-runs in the `paused` or `failed` state.
+Snapshots preserve the workflow definition's YAML scalar types. Inputs and
+results remain JSON values. The snapshot freezes definitions and expansions,
+not files under `context.workflow_dir` or step implementations; missing
+resources can still cause ordinary step failures. Legacy runs resume from
+their saved progress. Resume is available only for runs in the `paused` or
+`failed` state.
 
 `current_step_index` is the root-sequence index; `current_step_id` is a
 compatibility occurrence-ID view updated as steps are entered. It is not an
@@ -235,10 +166,9 @@ and `loop:body:1` for a later loop iteration.
 Inside a workflow call, IDs are relative to the called workflow. Structured
 run/status output includes `workflow_scopes`
 summaries when calls exist and reports an active nested gate with its
-`scope_path`. Private log events add `workflow_id` and `execution_path` to the
-qualified `step_id`. A step emits completion after its checkpoint; containers
-emit before their children, while replayed completed occurrences emit no step
-events.
+`scope_path`. Use the [CLI's structured status and definition interfaces](cli.md#workflow-status)
+to inspect progress rather than depending on private log fields or execution
+tree internals.
 
 ## Error Handling
 
@@ -301,8 +231,7 @@ A few things worth knowing about that example:
   strings like `"true"` are rejected at validation time.
 - **Scope: returned failures only.** The flag applies to step results
   with `status=StepStatus.FAILED`. Unhandled exceptions raised out of a step's
-  `execute()` method are caught one level up by `WorkflowEngine.execute()`,
-  logged as `workflow_failed`, and abort the run regardless of
+  `execute()` method are reported by the engine and abort the run regardless of
   `continue_on_error`. If a step author wants the flag to cover an
   exceptional path, the step must catch the exception internally and
   return `StepResult(status=StepStatus.FAILED, ...)` with the failure encoded in
@@ -345,18 +274,6 @@ gate) or failed.
 | Project catalogs | `.specify/workflow-catalogs.yml` | YAML | Project-level catalog sources |
 | User catalogs | `~/.specify/workflow-catalogs.yml` | YAML | User-level catalog sources |
 
-## Implementation map
-
-| Source under `src/specify_cli/workflows/` | Responsibility |
-| --- | --- |
-| `__init__.py` | Workflow group registration |
-| `command_*.py`, `mcp_*.py` | Transport adapters for shared operations |
-| `engine.py`, `_execution.py`, `composition.py` | Definition validation, execution tree, workflow calls and resume |
-| `base.py` | Shared run contracts |
-| `expressions/` | Parsing, evaluation and filters |
-| `catalog/`, `_catalog_cache.py` | Workflow discovery, releases, registry and cached catalog I/O |
-| `overlay/` | Overlay validation, composition and resolution |
-
 ## See also
 
 - [Workflow CLI and JSON contracts](cli.md)
@@ -364,4 +281,4 @@ gate) or failed.
 - [Built-in step configuration](../workflow-steps/types.md)
 - [Expressions](expressions.md)
 - [Catalog schemas](catalogs.md)
-- [Step Python API and registry](../workflow-steps/api.md)
+- [Step Python API reference](../workflow-steps/api.md)

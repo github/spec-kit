@@ -63,16 +63,16 @@
       href: how-to/complex-features.md
     - name: Break down large features
       href: how-to/spec-of-specs.md
-    - name: Choose a persistence model
-      href: how-to/spec-persistence.md
-    - name: Maintain specifications after delivery
+    - name: Persist specifications
+      href: how-to/persisting-specs.md
+    - name: Evolve specifications
       href: how-to/evolving-specs.md
     - name: Adapt Spec Kit to your process
       href: how-to/customization.md
     - name: Configure authentication
       href: reference/authentication.md
     - name: Develop Spec Kit locally
-      href: local-development.md
+      href: how-to/local-development.md
 
 # Agent integrations
 - name: Integrations
@@ -82,6 +82,8 @@
       href: integrations/index.md
     - name: CLI Reference
       href: integrations/cli.md
+    - name: API Reference
+      href: integrations/api.md
     - name: Catalogs and External Adapters
       href: integrations/catalog.md
     - name: Contributing Integrations
@@ -135,6 +137,8 @@
       href: workflows/api.md
     - name: Expressions
       href: workflows/expressions.md
+    - name: Workflow Functions
+      href: workflows/functions.md
     - name: Overlays
       href: workflows/overlays.md
     - name: Catalogs

@@ -6,7 +6,7 @@
 function Test-HasGit {
     param([string]$RepoRoot = (Get-Location))
     try {
-        if (-not (Test-Path (Join-Path $RepoRoot '.git'))) { return $false }
+        if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot '.git'))) { return $false }
         if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return $false }
         git -C $RepoRoot rev-parse --is-inside-work-tree 2>$null | Out-Null
         return ($LASTEXITCODE -eq 0)
@@ -49,4 +49,10 @@ function Test-FeatureBranch {
         return $false
     }
     return $true
+}
+
+function ConvertTo-AsciiJson {
+    param([Parameter(Mandatory = $true, ValueFromPipeline = $true)]$InputObject)
+    $json = $InputObject | ConvertTo-Json -Compress
+    return [regex]::Replace($json, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
 }

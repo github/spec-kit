@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import ExitStack
 from itertools import islice
 from pathlib import Path
 import stat
@@ -95,33 +96,34 @@ def list_workflows(request: WorkflowListRequest) -> WorkflowListResult:
         raise WorkflowListError(
             "invalid_limit", f"limit must be between 1 and {WORKFLOW_LIST_MAX_LIMIT}"
         )
-    try:
-        # Unlike is_dir(), stat() preserves permission errors on Python 3.14.
+    with ExitStack() as owners:
         try:
-            root_is_directory = stat.S_ISDIR(root.stat().st_mode)
-        except (FileNotFoundError, NotADirectoryError, ValueError):
-            root_is_directory = False
-        if not root_is_directory:
-            raise WorkflowListError(
-                "not_a_spec_kit_project",
-                "Not a Spec Kit project (no .specify/ directory)",
-            )
-        files = project_files(root)
-        if not (root / ".specify").is_dir():
-            raise WorkflowListError(
-                "not_a_spec_kit_project",
-                "Not a Spec Kit project (no .specify/ directory)",
-            )
-        validate_workflow_storage(root)
-    except (ProjectPolicyError, WorkflowStorageError, OSError) as exc:
-        raise WorkflowListError("unsafe_workflow_storage", str(exc)) from exc
+            # Unlike is_dir(), stat() preserves permission errors on Python 3.14.
+            try:
+                root_is_directory = stat.S_ISDIR(root.stat().st_mode)
+            except (FileNotFoundError, NotADirectoryError, ValueError):
+                root_is_directory = False
+            if not root_is_directory:
+                raise WorkflowListError(
+                    "not_a_spec_kit_project",
+                    "Not a Spec Kit project (no .specify/ directory)",
+                )
+            files = owners.enter_context(project_files(root))
+            if not (root / ".specify").is_dir():
+                raise WorkflowListError(
+                    "not_a_spec_kit_project",
+                    "Not a Spec Kit project (no .specify/ directory)",
+                )
+            validate_workflow_storage(root)
+        except (ProjectPolicyError, WorkflowStorageError, OSError) as exc:
+            raise WorkflowListError("unsafe_workflow_storage", str(exc)) from exc
 
-    try:
-        installed = WorkflowRegistry(root, read_files=files).list()
-    except OSError as exc:
-        raise WorkflowListError(
-            "workflow_registry_read_failed", f"Failed to read workflow registry: {exc}"
-        ) from exc
+        try:
+            installed = WorkflowRegistry(root, read_files=files).list()
+        except OSError as exc:
+            raise WorkflowListError(
+                "workflow_registry_read_failed", f"Failed to read workflow registry: {exc}"
+            ) from exc
 
     items: list[WorkflowListEntry | WorkflowListWarning] = []
     selected = installed.items() if limit is None else islice(installed.items(), limit)

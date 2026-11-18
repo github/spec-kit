@@ -104,10 +104,10 @@ during PR review. A separate SDD plan is not required for every issue.
 Larger changes need prior discussion and agreement with maintainers, as the
 [contribution guide](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#submitting-a-pull-request)
 explains. When decisions should remain useful across changes, the repository
-keeps [CLI](https://github.com/github/spec-kit/blob/main/design/cli.md),
-[integration](https://github.com/github/spec-kit/blob/main/design/integration.md),
-and [workflow-step](https://github.com/github/spec-kit/blob/main/design/workflow-step.md)
-design documents.
+keeps internal design documents for contributors. Supported
+[integration](../integrations/api.md) and
+[workflow-step](../workflow-steps/api.md) authoring contracts are documented
+separately on this site.
 
 &#9733; The [bundler SDD snapshot](https://github.com/github/spec-kit/commit/3fd1e54d4b237af6124bb967e2eae24c93685a89)
 illustrates the deeper path: its plan, research, data model, contracts, and

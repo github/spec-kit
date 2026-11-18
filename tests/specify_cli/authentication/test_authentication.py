@@ -1481,6 +1481,107 @@ class TestAuthenticatedHttp:
 # ---------------------------------------------------------------------------
 
 
+class TestInitialUrlSafety:
+    @pytest.mark.parametrize("helper", ["build_request", "open_url"])
+    @pytest.mark.parametrize("provider_key,scheme", [
+        ("github", "bearer"),
+        ("github", "github-cli"),
+        ("azure-devops", "basic-pat"),
+        ("bitbucket", "basic"),
+    ])
+    @pytest.mark.parametrize("url", [
+        "http://example.com/archive.zip",
+        "ftp://example.com/archive.zip",
+    ])
+    def test_rejects_cleartext_before_resolving_credentials(
+        self, monkeypatch, helper, provider_key, scheme, url,
+    ):
+        from unittest.mock import patch
+        from specify_cli.authentication import http
+
+        entry = AuthConfigEntry(
+            hosts=("example.com",), provider=provider_key, auth=scheme,
+            token="test-token", username="test-user",
+        )
+        monkeypatch.setattr(http, "_config_override", [entry])
+        provider = get_provider(provider_key)
+        assert provider is not None
+        token = "test-user:test-token" if scheme == "basic" else "test-token"
+        with patch.object(
+            provider, "resolve_token", return_value=token,
+        ) as resolve, patch.object(http.urllib.request, "build_opener") as build_opener:
+            with pytest.raises(http.URLPolicyError, match="HTTPS"):
+                getattr(http, helper)(url)
+            resolve.assert_not_called()
+            build_opener.assert_not_called()
+
+    @pytest.mark.parametrize("helper", ["build_request", "open_url"])
+    @pytest.mark.parametrize("url", [
+        "http://example.com/archive.zip",
+        "http://0.0.0.0/archive.zip",
+        "http://127.1/archive.zip",
+        "https:///archive.zip",
+        "https://[::1",
+        "https://example.com:invalid/archive.zip",
+        "file:///tmp/archive.zip",
+    ])
+    def test_rejects_unsafe_urls_without_auth_config(self, monkeypatch, helper, url):
+        from unittest.mock import patch
+        from specify_cli.authentication import http
+
+        monkeypatch.setattr(http, "_config_override", [])
+        with patch.object(http.urllib.request, "build_opener") as build_opener:
+            with pytest.raises(http.URLPolicyError, match="HTTPS"):
+                getattr(http, helper)(url)
+            build_opener.assert_not_called()
+
+    @pytest.mark.parametrize("helper", ["build_request", "open_url"])
+    @pytest.mark.parametrize("provider_key,scheme", [
+        ("github", "bearer"),
+        ("azure-devops", "basic-pat"),
+        ("bitbucket", "basic"),
+    ])
+    @pytest.mark.parametrize("url", [
+        "https://example.com/archive.zip",
+        "http://localhost:8000/archive.zip",
+        "http://127.0.0.1:8000/archive.zip",
+        "http://[::1]:8000/archive.zip",
+    ])
+    def test_allows_https_and_loopback_http(
+        self, monkeypatch, helper, provider_key, scheme, url,
+    ):
+        from unittest.mock import patch
+        from urllib.parse import urlparse
+        from specify_cli.authentication import http
+
+        entry = AuthConfigEntry(
+            hosts=(urlparse(url).hostname,), provider=provider_key, auth=scheme,
+            token="test-token", username="test-user",
+        )
+        monkeypatch.setattr(http, "_config_override", [entry])
+        provider = get_provider(provider_key)
+        assert provider is not None
+        token = "test-user:test-token" if scheme == "basic" else "test-token"
+        with patch.object(
+            provider, "resolve_token", return_value=token,
+        ) as resolve, patch.object(http.urllib.request, "build_opener") as build_opener:
+            result = getattr(http, helper)(url, extra_headers={"Accept": "application/zip"})
+            if helper == "build_request":
+                request = result
+                build_opener.assert_not_called()
+            else:
+                opener = build_opener.return_value
+                assert result is opener.open.return_value
+                opener.open.assert_called_once()
+                request = opener.open.call_args.args[0]
+            resolve.assert_called_once_with(entry)
+            assert request.full_url == url
+            assert request.get_header("Accept") == "application/zip"
+            assert request.get_header("Authorization") == provider.auth_headers(
+                token, scheme,
+            )["Authorization"]
+
+
 class TestAuthenticatedHttpNegative:
     def _set_config(self, monkeypatch, entries):
         from specify_cli.authentication import http as _mod
@@ -2142,6 +2243,77 @@ class TestRedirectStripping:
                 {},
                 target,
             )
+
+    @pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
+    @pytest.mark.parametrize("header", ["Location", "URI"])
+    @pytest.mark.parametrize("target", [
+        "https://[::1",
+        "https://example.com:invalid/catalog.json",
+        "https:///catalog.json",
+        "https://:443/catalog.json",
+        "http:///catalog.json",
+        "file:///catalog.json",
+    ])
+    def test_redirect_response_rejects_malformed_location(self, code, header, target):
+        from email.message import Message
+        from unittest.mock import MagicMock
+        from urllib.request import Request
+
+        from specify_cli.authentication.http import RedirectPolicyError, _StripAuthOnRedirect
+
+        handler = _StripAuthOnRedirect(("example.com",))
+        parent = MagicMock()
+        handler.add_parent(parent)
+        request = Request("https://example.com/catalog.json")
+        request.timeout = 10
+        headers = Message()
+        headers[header] = target
+
+        with pytest.raises(RedirectPolicyError):
+            getattr(handler, f"http_error_{code}")(
+                request, io.BytesIO(b""), code, "Found", headers,
+            )
+        parent.open.assert_not_called()
+
+    @pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
+    @pytest.mark.parametrize("header", ["Location", "URI"])
+    @pytest.mark.parametrize("target,expected_url,expected_auth", [
+        ("/next.json", "https://example.com/next.json", "test-token"),
+        ("next.json", "https://example.com/next.json", "test-token"),
+        ("?page=2", "https://example.com/catalog.json?page=2", "test-token"),
+        ("//cdn.example.org/next.json", "https://cdn.example.org/next.json", None),
+        ("https://example.com/next file.json", "https://example.com/next%20file.json", "test-token"),
+    ])
+    def test_redirect_response_preserves_supported_locations(
+        self, code, header, target, expected_url, expected_auth,
+    ):
+        from email.message import Message
+        from unittest.mock import MagicMock
+        from urllib.request import Request
+
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+
+        handler = _StripAuthOnRedirect(("example.com",))
+        parent = MagicMock()
+        handler.add_parent(parent)
+        request = Request(
+            "https://example.com/catalog.json",
+            headers={"Authorization": "test-token"},
+        )
+        request.timeout = 10
+        headers = Message()
+        headers[header] = target
+        response = io.BytesIO(b"redirect body")
+
+        result = getattr(handler, f"http_error_{code}")(
+            request, response, code, "Found", headers,
+        )
+        assert result is parent.open.return_value
+        parent.open.assert_called_once()
+        redirected = parent.open.call_args.args[0]
+        assert redirected.full_url == expected_url
+        assert redirected.get_header("Authorization") == expected_auth
+        assert response.closed
 
     def test_strict_redirect_error_describes_target_and_allowed_localhost(self):
         from specify_cli.authentication.http import _StripAuthOnRedirect

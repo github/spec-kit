@@ -22,6 +22,18 @@ from specify_cli.extensions import (
 class TestExtensionSearchCLI:
     """CLI tests for ``specify extension search``."""
 
+    def test_search_shows_incomplete_catalog_entry(self, incomplete_catalog_entry):
+        result = CliRunner().invoke(app, ["extension", "search"])
+
+        assert result.exit_code == 0, result.output
+        assert incomplete_catalog_entry in result.output
+        assert "Healthy (v2.0.0)" in result.output
+
+        filtered = CliRunner().invoke(app, ["extension", "search", "Healthy"])
+        assert filtered.exit_code == 0, filtered.output
+        assert "Example" not in filtered.output
+        assert "Healthy (v2.0.0)" in filtered.output
+
     @pytest.mark.parametrize("install_allowed", [True, False])
     @pytest.mark.parametrize(
         ("extension_id", "command_id"),

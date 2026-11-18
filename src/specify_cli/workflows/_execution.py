@@ -382,6 +382,8 @@ def child_context_for_call(parent, binding, definition):
         default_integration=definition.default_integration,
         default_model=definition.default_model,
         default_options=definition.default_options,
+        default_reasoning_effort=definition.default_reasoning_effort,
+        default_context_size=definition.default_context_size,
     )
 
 

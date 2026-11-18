@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json  # noqa: F401
 import os  # noqa: F401
 import shutil  # noqa: F401
@@ -321,6 +322,94 @@ class TestIntegrationUninstall:
         # Shared infrastructure preserved
         assert shared_script.exists()
         assert (project / ".specify" / "templates").is_dir()
+
+
+class TestUninstallFallbackManifest:
+    @pytest.mark.parametrize("missing_manifest", [False, True])
+    @pytest.mark.parametrize("edited_command", [None, "plan", "tasks"])
+    def test_uninstall_syncs_fallback_manifest_without_blessing_user_edits(
+        self, tmp_path, tasks_preset_src, missing_manifest, edited_command,
+    ):
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+        if missing_manifest:
+            (project / ".specify/integrations/claude.manifest.json").unlink()
+        if edited_command:
+            edited_rel = f".agents/skills/speckit-{edited_command}/SKILL.md"
+            before = IntegrationManifest.load("codex", project).files[edited_rel]
+            (project / edited_rel).write_bytes(b"User-edited skill\n")
+
+        result = _run_in_project(project, ["integration", "uninstall", "claude"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads((project / ".specify/integration.json").read_bytes())
+        assert data["integration"] == "codex"
+        manifest = IntegrationManifest.load("codex", project)
+        rel = ".agents/skills/speckit-tasks/SKILL.md"
+        content = (project / rel).read_bytes()
+        assert b"Preset tasks body" in content
+        if edited_command:
+            assert manifest.files[edited_rel] == before, "pre-existing edits must not be recorded as pristine"
+            assert edited_rel in manifest.check_modified()
+        else:
+            assert manifest.files[rel] == hashlib.sha256(content).hexdigest()
+        result = _run_in_project(project, ["integration", "status", "--json"])
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output)["modified_managed_files"] == (1 if edited_command else 0)
+        result = _run_in_project(project, ["integration", "upgrade", "codex", "--script", "sh"])
+        assert result.exit_code == (1 if edited_command else 0), result.output
+        if edited_command:
+            assert "modified since installation" in result.output
+
+    @pytest.mark.parametrize("missing_manifest", [False, True])
+    @pytest.mark.parametrize("state", ["missing", "corrupt", "save-error"])
+    def test_uninstall_fallback_manifest_refresh_is_best_effort(
+        self, tmp_path, tasks_preset_src, monkeypatch, missing_manifest, state,
+    ):
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+        if missing_manifest:
+            (project / ".specify/integrations/claude.manifest.json").unlink()
+        manifest_path = project / ".specify/integrations/codex.manifest.json"
+        if state == "missing":
+            manifest_path.unlink()
+        elif state == "corrupt":
+            manifest_path.write_bytes(b"{invalid")
+        else:
+            original_save = IntegrationManifest.save
+
+            def fail_fallback_save(self):
+                if self.key == "codex":
+                    raise OSError("injected manifest save failure")
+                return original_save(self)
+
+            monkeypatch.setattr(IntegrationManifest, "save", fail_fallback_save)
+
+        result = _run_in_project(project, ["integration", "uninstall", "claude"])
+
+        assert result.exit_code == 0, result.output
+        assert b"Preset tasks body" in (project / ".agents/skills/speckit-tasks/SKILL.md").read_bytes()
+        output = " ".join(strip_ansi(result.output).split())
+        if state == "missing":
+            assert not manifest_path.exists(), "no manifest may be created"
+            assert "Warning:" not in output
+        elif state == "corrupt":
+            assert manifest_path.read_bytes() == b"{invalid"
+            assert "snapshot manifest hashes for integration 'codex'" in output
+            assert "resync manifest hashes" not in output
+        else:
+            assert "injected manifest save failure" in output
+            assert "The fallback integration was selected, but its manifest hashes may be stale." in output
 
 
 class TestUninstallNoManifestClearsInitOptions:

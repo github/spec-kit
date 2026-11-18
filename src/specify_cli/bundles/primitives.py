@@ -328,9 +328,26 @@ class _PresetKindManager:
     ) -> BundledPatchWarning | None:
         from .. import get_speckit_version
         from .._assets import _locate_bundled_preset
+        from ..extensions import normalize_priority
 
         speckit_version = get_speckit_version()
-        priority = DEFAULT_PRIORITY if component.priority is None else component.priority
+
+        # Preserve existing priority from registry if available
+        existing_priority = None
+        if component.kind == "presets":
+            existing = self._manager.registry.get(component.id)
+            if existing and isinstance(existing, dict):
+                existing_priority = existing.get("priority")
+
+        declared_priority = (
+            DEFAULT_PRIORITY if component.priority is None else component.priority
+        )
+        if existing_priority is not None:
+            # Registry data may be corrupted (strings, zero, booleans); fall
+            # back to the declared/default priority instead of failing later.
+            priority = normalize_priority(existing_priority, default=declared_priority)
+        else:
+            priority = declared_priority
 
         bundled = _locate_bundled_preset(component.id)
         if bundled is not None and component.source is None:
@@ -419,9 +436,26 @@ class _ExtensionKindManager:
     ) -> BundledPatchWarning | None:
         from .. import get_speckit_version
         from .._assets import _locate_bundled_extension
+        from ..extensions import normalize_priority
 
         speckit_version = get_speckit_version()
-        priority = DEFAULT_PRIORITY if component.priority is None else component.priority
+
+        # Preserve existing priority from registry if available
+        existing_priority = None
+        if component.kind == "extensions":
+            existing = self._manager.registry.get(component.id)
+            if existing and isinstance(existing, dict):
+                existing_priority = existing.get("priority")
+
+        declared_priority = (
+            DEFAULT_PRIORITY if component.priority is None else component.priority
+        )
+        if existing_priority is not None:
+            # Registry data may be corrupted (strings, zero, booleans); fall
+            # back to the declared/default priority instead of failing later.
+            priority = normalize_priority(existing_priority, default=declared_priority)
+        else:
+            priority = declared_priority
 
         bundled = _locate_bundled_extension(component.id)
         if bundled is not None and component.source is None:

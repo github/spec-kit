@@ -353,7 +353,7 @@ entry = CatalogEntry(
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `url` | `str` | Catalog URL (must use HTTPS, or HTTP for localhost) |
+| `url` | `str` | Catalog URL (must use HTTPS, including for localhost) |
 | `name` | `str` | Human-readable catalog name |
 | `priority` | `int` | Sort order (lower = higher priority, wins on conflicts) |
 | `install_allowed` | `bool` | Whether extensions from this catalog can be installed |
@@ -691,6 +691,8 @@ Standard events (defined by core):
 - `after_clarify` - After spec clarification
 - `before_constitution` - Before constitution update
 - `after_constitution` - After constitution update
+- `before_converge` - Before convergence assessment
+- `after_converge` - After convergence assessment
 
 #### Bundled `bug` extension events (available when the extension is installed)
 

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
+from types import ModuleType
 
 
 def _trim_trailing_separators(value: Path) -> str:
@@ -360,8 +363,24 @@ class TemplateResolutionError(RuntimeError):
 # Mirror the canonical PresetManifest contract (see src/specify_cli/presets)
 # so runtime resolution rejects the same structurally malformed manifests.
 _VALID_TEMPLATE_TYPES = ("template", "command", "script")
-_VALID_TEMPLATE_STRATEGIES = ("replace", "prepend", "append", "wrap")
+_VALID_TEMPLATE_STRATEGIES = ("replace", "prepend", "append", "wrap", "replace-section")
 _VALID_SCRIPT_STRATEGIES = ("replace", "wrap")
+
+
+@lru_cache(maxsize=1)
+def _section_engine() -> ModuleType:
+    path = Path(__file__).with_name("markdown_sections.py")
+    if not path.is_file():
+        path = Path(__file__).resolve().parents[2] / "src/specify_cli/markdown_sections.py"
+    spec = importlib.util.spec_from_file_location("speckit_markdown_sections", path)
+    if spec is None or spec.loader is None:
+        raise TemplateResolutionError(f"Could not load section engine: {path}")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except OSError as exc:
+        raise TemplateResolutionError(f"Could not load section engine: {path}: {exc}") from exc
+    return module
 
 
 def _validate_manifest_template_entry(entry: object) -> None:
@@ -384,6 +403,10 @@ def _validate_manifest_template_entry(entry: object) -> None:
     if entry["type"] == "script" and strategy not in _VALID_SCRIPT_STRATEGIES:
         raise ValueError(
             f"invalid manifest script strategy '{strategy}'"
+        )
+    if strategy == "replace-section" or "selector" in entry:
+        _section_engine().validate_section_selector(
+            strategy, entry.get("selector"), present="selector" in entry,
         )
 
 
@@ -422,7 +445,7 @@ class _DelegatedYAML:
     is launched with). See #4443.
 
     Only ``_preset_template_layer`` calls this, and only the ``type``,
-    ``name``, ``file``, and ``strategy`` fields of each ``provides.templates``
+    ``name``, ``file``, ``strategy``, and ``selector`` fields of each ``provides.templates``
     entry are ever inspected, so the child drops every other top-level
     manifest field (e.g. free-form ``metadata``) and every other per-entry
     field (e.g. ``description``) before serializing: a valid, ignored YAML
@@ -466,7 +489,7 @@ class _DelegatedYAML:
                     "    if not isinstance(entry, dict):\n"
                     "        return _default(entry)\n"
                     "    fields = {}\n"
-                    "    for k in ('type', 'name', 'file', 'strategy'):\n"
+                    "    for k in ('type', 'name', 'file', 'strategy', 'selector'):\n"
                     "        if k not in entry:\n"
                     "            continue\n"
                     "        v = entry[k]\n"
@@ -554,13 +577,13 @@ def _import_yaml() -> object | None:
 
 def _preset_template_layer(
     preset_dir: Path, template_name: str
-) -> tuple[Path, str] | None:
+) -> tuple[Path, str, str | None, str] | None:
     """Return the preset template path and composition strategy."""
     manifest_path = preset_dir / "preset.yml"
     conventional = _conventional_template(preset_dir, template_name)
 
     if not manifest_path.is_file():
-        return (conventional, "replace") if conventional is not None else None
+        return (conventional, "replace", None, preset_dir.name) if conventional is not None else None
 
     yaml = _import_yaml()
     if yaml is None:
@@ -600,13 +623,13 @@ def _preset_template_layer(
             candidate = preset_dir / relative
             if not candidate.is_file():
                 return None
-            return candidate, strategy.lower()
+            return candidate, strategy.lower(), entry.get("selector"), preset_dir.name
     except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
         raise TemplateResolutionError(
             f"Failed to parse preset manifest {manifest_path}: {exc}"
         ) from exc
 
-    return (conventional, "replace") if conventional is not None else None
+    return (conventional, "replace", None, preset_dir.name) if conventional is not None else None
 
 
 def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
@@ -614,12 +637,12 @@ def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
     if not _is_safe_component(template_name):
         return None
 
-    layers: list[tuple[Path, str]] = []
+    layers: list[tuple[Path, str, str | None, str]] = []
 
     def compose_from_base() -> str:
         try:
             content = layers[-1][0].read_bytes().decode("utf-8")
-            for path, strategy in reversed(layers[:-1]):
+            for path, strategy, selector, preset in reversed(layers[:-1]):
                 layer_content = path.read_bytes().decode("utf-8")
                 if strategy == "prepend":
                     content = f"{layer_content}\n\n{content}"
@@ -632,6 +655,14 @@ def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
                             f"Wrap layer {path} is missing {placeholder}"
                         )
                     content = layer_content.replace(placeholder, content)
+                elif strategy == "replace-section":
+                    try:
+                        content = _section_engine().replace_section(
+                            content, layer_content, selector, preset=preset,
+                            contribution=str(path), artifact=template_name,
+                        )
+                    except ValueError as exc:
+                        raise TemplateResolutionError(str(exc)) from exc
                 else:
                     raise TemplateResolutionError(
                         f"Unknown template composition strategy '{strategy}' in {path}"
@@ -650,7 +681,7 @@ def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
         / f"{template_name}.md"
     )
     if override.is_file():
-        layers.append((override, "replace"))
+        layers.append((override, "replace", None, "project override"))
         return compose_from_base()
 
     presets_dir = repo_root / ".specify" / "presets"
@@ -666,12 +697,12 @@ def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
         extension_dir = extensions_dir / extension_id
         candidate = _conventional_template(extension_dir, template_name)
         if candidate is not None:
-            layers.append((candidate, "replace"))
+            layers.append((candidate, "replace", None, extension_id))
             return compose_from_base()
 
     core = repo_root / ".specify" / "templates" / f"{template_name}.md"
     if core.is_file():
-        layers.append((core, "replace"))
+        layers.append((core, "replace", None, "core"))
         return compose_from_base()
 
     if not layers:

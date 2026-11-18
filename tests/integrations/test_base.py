@@ -8,10 +8,17 @@ from types import SimpleNamespace
 import pytest
 
 from specify_cli.integrations.base import (
+    DISPATCH_SETTINGS,
+    DispatchSettingsError,
     IntegrationBase,
     IntegrationOption,
     MarkdownIntegration,
     SkillsIntegration,
+    TomlIntegration,
+    check_dispatch_settings,
+    dispatch_setting_value_error,
+    effective_dispatch_settings,
+    requested_dispatch_settings,
 )
 from specify_cli.integrations.manifest import IntegrationManifest
 from .conftest import StubIntegration
@@ -773,3 +780,633 @@ class TestInstallScriptsPython:
         assert sh_file.stat().st_mode & 0o111
         # Negative: a non-script file is not made executable.
         assert not (txt_file.stat().st_mode & 0o111)
+
+
+# -- Per-step dispatch settings contract ---------------------------------------
+
+_CLI_CONFIG = {**StubIntegration.config, "requires_cli": True}
+
+
+class _TranslatingIntegration(StubIntegration):
+    """Declares both settings and translates them in its own builder."""
+
+    key = "translating-stub"
+    config = _CLI_CONFIG
+    supported_dispatch_settings = frozenset(DISPATCH_SETTINGS)
+
+    def build_exec_args(
+        self,
+        prompt,
+        *,
+        model=None,
+        output_json=True,
+        integration_args=None,
+        integration_options=None,
+        project_root=None,
+        reasoning_effort=None,
+        context_size=None,
+    ):
+        args = super().build_exec_args(
+            prompt,
+            model=model,
+            output_json=output_json,
+            integration_args=integration_args,
+            integration_options=integration_options,
+            project_root=project_root,
+        )
+        if reasoning_effort is not None:
+            args.extend(["--effort", reasoning_effort])
+        if context_size is not None:
+            args.extend(["--context", context_size])
+        return args
+
+
+class _InheritingIntegration(_TranslatingIntegration):
+    key = "inheriting-stub"
+
+
+class _LegacyKwargsOverride(_TranslatingIntegration):
+    """Replaces the capable builder without re-declaring support."""
+
+    key = "legacy-kwargs-stub"
+
+    def build_exec_args(self, prompt, **kwargs):
+        return ["legacy-kwargs-stub", "-p", prompt]
+
+
+class _DeclaringFormatBase(StubIntegration):
+    """Declares support but inherits a generic format-base builder."""
+
+    key = "declaring-format-stub"
+    config = _CLI_CONFIG
+    supported_dispatch_settings = frozenset({"reasoning_effort"})
+
+
+class _StringDeclaration(StubIntegration):
+    key = "string-declaration-stub"
+    config = _CLI_CONFIG
+    supported_dispatch_settings = "reasoning_effort"
+
+    def build_exec_args(self, prompt, **kwargs):
+        return ["string-declaration-stub", "-p", prompt]
+
+
+class _DeclaresWithoutKeyword(StubIntegration):
+    key = "no-keyword-stub"
+    config = _CLI_CONFIG
+    supported_dispatch_settings = frozenset({"reasoning_effort"})
+
+    def build_exec_args(
+        self,
+        prompt,
+        *,
+        model=None,
+        output_json=True,
+        integration_args=None,
+        integration_options=None,
+        project_root=None,
+    ):
+        return ["no-keyword-stub", "-p", prompt]
+
+
+class _ForwardsToSuper(StubIntegration):
+    """Declares support but hands the settings to the generic builder."""
+
+    key = "forwarding-stub"
+    config = _CLI_CONFIG
+    supported_dispatch_settings = frozenset({"reasoning_effort"})
+
+    def build_exec_args(self, prompt, **kwargs):
+        return super().build_exec_args(prompt, **kwargs)
+
+
+class _CommandOwner(StubIntegration):
+    """Translates settings only in an overridden dispatch_command."""
+
+    key = "command-owner-stub"
+    supported_dispatch_settings = frozenset({"reasoning_effort"})
+
+    def dispatch_command(self, command_name, args="", *, reasoning_effort=None, **kwargs):
+        return {"exit_code": 0, "stdout": reasoning_effort or "", "stderr": ""}
+
+
+class _ValidatingIntegration(_TranslatingIntegration):
+    key = "validating-stub"
+
+    def validate_dispatch_setting(self, name, value):
+        if value == "rejected":
+            raise ValueError(f"{name} value is not accepted by this CLI")
+        if value == "unlabeled":
+            raise DispatchSettingsError("unlabeled failure")
+
+
+class _HintingIntegration(StubIntegration):
+    key = "hinting-stub"
+
+    def dispatch_setting_hint(self, setting):
+        if setting == "context_size":
+            return "Choose a long-context model instead."
+        return None
+
+
+class _LegacyStrictBuilder(StubIntegration):
+    """A CLI builder whose signature predates dispatch settings."""
+
+    key = "legacy-strict-stub"
+    config = _CLI_CONFIG
+
+    def __init__(self):
+        self.calls = []
+
+    def build_exec_args(
+        self,
+        prompt,
+        *,
+        model=None,
+        output_json=True,
+        integration_args=None,
+        integration_options=None,
+        project_root=None,
+    ):
+        self.calls.append(
+            {
+                "model": model,
+                "output_json": output_json,
+                "integration_args": integration_args,
+                "integration_options": integration_options,
+                "project_root": project_root,
+            }
+        )
+        return ["legacy-strict-stub", "-p", prompt]
+
+
+class _PlainBase(IntegrationBase):
+    key = "plain-stub"
+    config = _CLI_CONFIG
+
+
+class _TomlStub(TomlIntegration):
+    key = "toml-stub"
+    config = _CLI_CONFIG
+
+
+class _SkillsStub(SkillsIntegration):
+    key = "skills-stub"
+    config = _CLI_CONFIG
+
+
+@pytest.fixture
+def scoped_registry():
+    """Pin the registry used to list supporting integrations."""
+    from specify_cli.integrations.installer import dispatch_registry
+
+    tokens = []
+
+    def pin(*integrations):
+        tokens.append(
+            dispatch_registry.set({item.key: item for item in integrations})
+        )
+
+    yield pin
+    for token in reversed(tokens):
+        dispatch_registry.reset(token)
+
+
+def _fake_run(calls):
+    def run(args, **kwargs):
+        calls.append(list(args))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    return run
+
+
+class TestDispatchSettingsValues:
+    def test_settings_are_ordered_and_named(self):
+        assert DISPATCH_SETTINGS == ("reasoning_effort", "context_size")
+
+    def test_requested_settings_use_is_not_none_semantics(self):
+        assert requested_dispatch_settings() == {}
+        assert requested_dispatch_settings(
+            context_size="long_context", reasoning_effort="high"
+        ) == {"reasoning_effort": "high", "context_size": "long_context"}
+        assert list(
+            requested_dispatch_settings(context_size="a", reasoning_effort="b")
+        ) == ["reasoning_effort", "context_size"]
+        assert requested_dispatch_settings(reasoning_effort="") == {
+            "reasoning_effort": ""
+        }
+
+    @pytest.mark.parametrize(
+        "value", ["low", "xhigh", "long_context", "200000", "a.b-c_d", "A" * 64]
+    )
+    def test_accepts_argv_safe_tokens(self, value):
+        assert dispatch_setting_value_error("reasoning_effort", value) is None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            "-x",
+            "--yolo",
+            "x y",
+            "high\n",
+            "high\r",
+            "a" * 65,
+            "a&b",
+            "a|b",
+            "a;b",
+            "a<b",
+            "a>b",
+            "a^b",
+            "a\x00b",
+            ".hidden",
+            "_x",
+        ],
+    )
+    def test_rejects_unsafe_tokens(self, value):
+        message = dispatch_setting_value_error("reasoning_effort", value)
+        assert message is not None
+        assert "'reasoning_effort' must be 1-64 letters" in message
+
+    @pytest.mark.parametrize("value", [200000, True, None, 1.5, ["high"]])
+    def test_non_strings_get_a_quoting_hint(self, value):
+        message = dispatch_setting_value_error("context_size", value)
+        assert message is not None
+        assert f"must be a string, got {type(value).__name__}" in message
+        assert "quote YAML values" in message
+
+    @pytest.mark.parametrize("value", [200000, True, 1.5, ["high"]])
+    def test_non_string_expression_results_get_expression_advice(self, value):
+        message = dispatch_setting_value_error(
+            "context_size", value, from_expression=True
+        )
+        assert message == (
+            "'context_size' must be a string, but its expression resolved to "
+            f"{type(value).__name__}; make it resolve to a string, for example "
+            "by reading an input declared with type: string."
+        )
+
+    def test_expression_flag_changes_only_the_non_string_advice(self):
+        assert (
+            dispatch_setting_value_error("context_size", "200000", from_expression=True)
+            is None
+        )
+        assert dispatch_setting_value_error(
+            "reasoning_effort", "-rf", from_expression=True
+        ) == dispatch_setting_value_error("reasoning_effort", "-rf")
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            pytest.param("SECRET-api-key-0123456789 tail", id="leading-secret"),
+            pytest.param("SECRET!", id="short-secret"),
+            pytest.param("-SECRET", id="leading-dash"),
+            pytest.param("\x1b[31m" + "x" * (1024 * 1024) + "\nSECRET", id="huge"),
+        ],
+    )
+    @pytest.mark.parametrize("from_expression", [False, True])
+    def test_malformed_values_report_only_type_and_length(
+        self, value, from_expression
+    ):
+        """A value can be captured output, which Spec Kit does not print or log."""
+        message = dispatch_setting_value_error(
+            "reasoning_effort", value, from_expression=from_expression
+        )
+
+        assert message == (
+            "'reasoning_effort' must be 1-64 letters, digits, '.', '_', or '-' "
+            f"starting with a letter or digit, got a string of length {len(value)}."
+        )
+        assert "SECRET" not in message
+
+
+class TestEffectiveDispatchSettings:
+    @pytest.mark.parametrize("via", ["dispatch_command", "build_exec_args"])
+    def test_declaring_builder_owns_its_settings(self, via):
+        assert effective_dispatch_settings(
+            _TranslatingIntegration(), via=via
+        ) == frozenset(DISPATCH_SETTINGS)
+
+    @pytest.mark.parametrize("via", ["dispatch_command", "build_exec_args"])
+    def test_subclass_without_override_inherits_support(self, via):
+        assert effective_dispatch_settings(
+            _InheritingIntegration(), via=via
+        ) == frozenset(DISPATCH_SETTINGS)
+
+    @pytest.mark.parametrize(
+        "integration",
+        [
+            _LegacyKwargsOverride(),
+            _DeclaringFormatBase(),
+            _StringDeclaration(),
+            StubIntegration(),
+        ],
+        ids=["legacy-kwargs-override", "format-base", "string", "undeclared"],
+    )
+    @pytest.mark.parametrize("via", ["dispatch_command", "build_exec_args"])
+    def test_untranslated_declarations_count_as_unsupported(self, integration, via):
+        assert effective_dispatch_settings(integration, via=via) == frozenset()
+
+    def test_dispatch_command_owner_supports_only_the_command_path(self):
+        integration = _CommandOwner()
+
+        assert effective_dispatch_settings(
+            integration, via="dispatch_command"
+        ) == frozenset({"reasoning_effort"})
+        assert effective_dispatch_settings(
+            integration, via="build_exec_args"
+        ) == frozenset()
+
+    def test_unknown_dispatch_path_is_a_programming_error(self):
+        with pytest.raises(ValueError, match="Unknown dispatch path"):
+            effective_dispatch_settings(_TranslatingIntegration(), via="prompt")
+
+    def test_builtin_declarations_are_owned_by_their_receivers(self):
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+
+        for key, integration in INTEGRATION_REGISTRY.items():
+            for via in ("dispatch_command", "build_exec_args"):
+                supported = effective_dispatch_settings(integration, via=via)
+                assert supported <= set(DISPATCH_SETTINGS), key
+                receiver = (
+                    "dispatch_command"
+                    if via == "dispatch_command"
+                    and "dispatch_command" in vars(type(integration))
+                    else "build_exec_args"
+                )
+                parameters = inspect.signature(
+                    getattr(integration, receiver)
+                ).parameters
+                for name in supported:
+                    assert name in parameters, (key, via, name)
+
+
+class TestCheckDispatchSettings:
+    def test_unsupported_setting_lists_no_supporters(self, scoped_registry):
+        integration = _LegacyStrictBuilder()
+        scoped_registry(integration)
+
+        with pytest.raises(DispatchSettingsError) as excinfo:
+            check_dispatch_settings(
+                integration, {"reasoning_effort": "high"}, via="dispatch_command"
+            )
+
+        assert excinfo.value.setting == "reasoning_effort"
+        message = str(excinfo.value)
+        assert "'legacy-strict-stub' does not support per-step 'reasoning_effort'" in message
+        assert "No available integration supports it." in message
+        assert "Remove the setting from this step" in message
+
+    def test_unsupported_setting_lists_pinned_supporters(self, scoped_registry):
+        scoped_registry(
+            _LegacyStrictBuilder(), _TranslatingIntegration(), _CommandOwner()
+        )
+
+        with pytest.raises(DispatchSettingsError) as excinfo:
+            check_dispatch_settings(
+                _LegacyStrictBuilder(),
+                {"reasoning_effort": "high"},
+                via="build_exec_args",
+            )
+
+        assert "Integrations that support it: translating-stub." in str(excinfo.value)
+
+    def test_hint_is_appended_to_unsupported_error(self, scoped_registry):
+        scoped_registry()
+
+        with pytest.raises(DispatchSettingsError, match="Choose a long-context model"):
+            check_dispatch_settings(
+                _HintingIntegration(),
+                {"context_size": "long_context"},
+                via="dispatch_command",
+            )
+
+    def test_settings_are_checked_in_declared_order(self, scoped_registry):
+        scoped_registry()
+
+        with pytest.raises(DispatchSettingsError) as excinfo:
+            check_dispatch_settings(
+                StubIntegration(),
+                {"context_size": "x y", "reasoning_effort": "x y"},
+                via="build_exec_args",
+            )
+
+        assert excinfo.value.setting == "reasoning_effort"
+
+    def test_value_errors_are_raised_before_support_errors(self):
+        with pytest.raises(DispatchSettingsError, match="must be 1-64") as excinfo:
+            check_dispatch_settings(
+                StubIntegration(), {"context_size": "-rf"}, via="build_exec_args"
+            )
+
+        assert excinfo.value.setting == "context_size"
+
+    @pytest.mark.parametrize(
+        "integration",
+        [_LegacyKwargsOverride(), _DeclaringFormatBase(), _StringDeclaration()],
+        ids=["legacy-kwargs-override", "format-base", "string"],
+    )
+    def test_untranslated_declarations_fail_instead_of_dropping(
+        self, scoped_registry, integration
+    ):
+        scoped_registry()
+
+        with pytest.raises(DispatchSettingsError, match="does not support") as excinfo:
+            check_dispatch_settings(
+                integration, {"reasoning_effort": "high"}, via="dispatch_command"
+            )
+
+        assert excinfo.value.setting == "reasoning_effort"
+
+    def test_declared_receiver_must_accept_the_keyword(self):
+        with pytest.raises(DispatchSettingsError, match="does not accept") as excinfo:
+            check_dispatch_settings(
+                _DeclaresWithoutKeyword(),
+                {"reasoning_effort": "high"},
+                via="dispatch_command",
+            )
+
+        assert excinfo.value.setting == "reasoning_effort"
+
+    def test_integration_value_errors_are_attributed_to_their_setting(self):
+        with pytest.raises(DispatchSettingsError) as excinfo:
+            check_dispatch_settings(
+                _ValidatingIntegration(),
+                {"reasoning_effort": "high", "context_size": "rejected"},
+                via="build_exec_args",
+            )
+
+        assert excinfo.value.setting == "context_size"
+        assert "context_size value is not accepted" in str(excinfo.value)
+        assert isinstance(excinfo.value.__cause__, ValueError)
+
+    def test_unlabeled_integration_errors_are_labeled(self):
+        with pytest.raises(DispatchSettingsError, match="unlabeled failure") as excinfo:
+            check_dispatch_settings(
+                _ValidatingIntegration(),
+                {"reasoning_effort": "unlabeled"},
+                via="build_exec_args",
+            )
+
+        assert excinfo.value.setting == "reasoning_effort"
+
+    def test_supported_settings_pass(self):
+        check_dispatch_settings(
+            _TranslatingIntegration(),
+            {"reasoning_effort": "high", "context_size": "long_context"},
+            via="build_exec_args",
+        )
+        check_dispatch_settings(
+            _CommandOwner(), {"reasoning_effort": "high"}, via="dispatch_command"
+        )
+
+    def test_none_values_are_skipped(self):
+        check_dispatch_settings(
+            StubIntegration(),
+            {"reasoning_effort": None, "context_size": None},
+            via="build_exec_args",
+        )
+
+    def test_unknown_setting_names_are_programming_errors(self):
+        with pytest.raises(ValueError, match="Unknown dispatch settings"):
+            check_dispatch_settings(
+                _TranslatingIntegration(), {"temperature": "1"}, via="build_exec_args"
+            )
+
+    def test_builtins_reject_settings_they_do_not_declare(self, scoped_registry):
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+
+        scoped_registry()
+        for key, integration in INTEGRATION_REGISTRY.items():
+            for via in ("dispatch_command", "build_exec_args"):
+                supported = effective_dispatch_settings(integration, via=via)
+                for name in DISPATCH_SETTINGS:
+                    if name in supported:
+                        continue
+                    with pytest.raises(DispatchSettingsError) as excinfo:
+                        check_dispatch_settings(
+                            integration, {name: "high"}, via=via
+                        )
+                    assert excinfo.value.setting == name, (key, via)
+
+
+class TestDispatchSettingsBuilders:
+    @pytest.mark.parametrize(
+        "integration",
+        [_PlainBase(), StubIntegration(), _TomlStub(), _SkillsStub()],
+        ids=["base", "markdown", "toml", "skills"],
+    )
+    @pytest.mark.parametrize(
+        ("settings", "expected"),
+        [
+            ({"reasoning_effort": "high"}, "reasoning_effort"),
+            ({"context_size": "long_context"}, "context_size"),
+            (
+                {"reasoning_effort": "high", "context_size": "long_context"},
+                "reasoning_effort",
+            ),
+        ],
+    )
+    def test_generic_builders_reject_untranslated_settings(
+        self, integration, settings, expected
+    ):
+        with pytest.raises(DispatchSettingsError, match="does not translate") as excinfo:
+            integration.build_exec_args("prompt", **settings)
+
+        assert excinfo.value.setting == expected
+
+    @pytest.mark.parametrize(
+        "integration",
+        [_PlainBase(), StubIntegration(), _TomlStub(), _SkillsStub()],
+        ids=["base", "markdown", "toml", "skills"],
+    )
+    def test_generic_builders_are_unchanged_without_settings(self, integration):
+        assert integration.build_exec_args(
+            "prompt", reasoning_effort=None, context_size=None
+        ) == integration.build_exec_args("prompt")
+
+    def test_forwarding_declared_settings_to_super_fails_loudly(self):
+        with pytest.raises(DispatchSettingsError, match="does not translate"):
+            _ForwardsToSuper().build_exec_args("prompt", reasoning_effort="high")
+
+    def test_command_check_probe_is_unchanged(self, tmp_path):
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+
+        for key, integration in INTEGRATION_REGISTRY.items():
+            try:
+                integration.build_exec_args("test", project_root=tmp_path)
+            except DispatchSettingsError:
+                pytest.fail(f"{key}: settings-free probe hit the dispatch-settings guard")
+            except ValueError:
+                # Pre-existing integration requirements (e.g. Docker Agent's
+                # agent reference) are unrelated to dispatch settings.
+                pass
+
+
+class TestDispatchCommandSettings:
+    def test_unset_settings_reach_legacy_builders_unchanged(
+        self, monkeypatch, tmp_path
+    ):
+        calls = []
+        monkeypatch.setattr("subprocess.run", _fake_run(calls))
+        integration = _LegacyStrictBuilder()
+
+        result = integration.dispatch_command(
+            "speckit.plan", "add auth", project_root=tmp_path
+        )
+
+        assert result["exit_code"] == 0
+        assert integration.calls == [
+            {
+                "model": None,
+                "output_json": False,
+                "integration_args": None,
+                "integration_options": None,
+                "project_root": tmp_path,
+            }
+        ]
+        assert calls[0][1:] == ["-p", "/speckit.plan add auth"]
+
+    def test_only_requested_settings_are_forwarded(self, monkeypatch, tmp_path):
+        calls = []
+        monkeypatch.setattr("subprocess.run", _fake_run(calls))
+
+        _TranslatingIntegration().dispatch_command(
+            "speckit.plan", project_root=tmp_path, reasoning_effort="high"
+        )
+
+        assert calls[0][-2:] == ["--effort", "high"]
+        assert "--context" not in calls[0]
+
+    def test_unsupported_settings_fail_before_building_or_running(
+        self, monkeypatch, scoped_registry, tmp_path
+    ):
+        calls = []
+        monkeypatch.setattr("subprocess.run", _fake_run(calls))
+        integration = _LegacyStrictBuilder()
+        scoped_registry(integration)
+
+        with pytest.raises(DispatchSettingsError, match="does not support"):
+            integration.dispatch_command(
+                "speckit.plan", project_root=tmp_path, context_size="long_context"
+            )
+
+        assert integration.calls == []
+        assert calls == []
+
+    def test_forwarding_to_super_fails_before_running(self, monkeypatch, tmp_path):
+        calls = []
+        monkeypatch.setattr("subprocess.run", _fake_run(calls))
+
+        with pytest.raises(DispatchSettingsError, match="does not translate"):
+            _ForwardsToSuper().dispatch_command(
+                "speckit.plan", project_root=tmp_path, reasoning_effort="high"
+            )
+
+        assert calls == []
+
+    def test_empty_string_is_validated_not_ignored(self, tmp_path):
+        with pytest.raises(DispatchSettingsError, match="must be 1-64"):
+            _TranslatingIntegration().dispatch_command(
+                "speckit.plan", project_root=tmp_path, reasoning_effort=""
+            )

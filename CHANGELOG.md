@@ -2,6 +2,156 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.4.2] - 2026-11-17
+
+### Changed
+
+- fix(extensions): omit config hint when no scaffolding fails (#5459)
+- fix(powershell): write -Json output of the PowerShell helpers as ASCII (#5417)
+- Add ghp community bundle entry (#5457)
+- fix(bundles): honor bundle integration during init (#5111)
+- Update ado community bundle to v0.4.0 (#5454)
+- Update A·I·DID·IT — Agile Expansion Pack to v0.2.4 (#5451)
+- Update Autonomous Run Governance preset to v0.4.12 (#5446)
+- feat(tasks): cite canonical field constraints and analyze drift (#5458)
+- Update Spec Kit for Azure DevOps — human-gated lifecycle extension to v0.4.0 (#5453)
+- Update DocGuard — CDD Enforcement extension to v0.48.0 (#5450)
+- Update SpecKit Companion extension to v0.27.0 (#5447)
+- feat: add version provenance to generated skills (#5456)
+- fix(5076): escape Rich markup in workflow output (#5112)
+- Update ado-lifecycle to 0.4.0 (#5427)
+- chore: shorten stale lifecycle to 30/30 days (#5440)
+- Add Spec Status extension to community catalog (#5414)
+- fix: opt-in OpenCode discovery of hidden Spec Kit files (#5032)
+- test: pin the suite interpreter on PATH for parity script subprocesses (#5361)
+- chore(deps): bump the codeql-action group with 2 updates (#5420)
+- chore: release 1.4.1, begin 1.4.2.dev0 development (#5445)
+
+## [1.4.1] - 2026-11-16
+
+### Changed
+
+- Add Elephant-Goldfish Model extension to community catalog (#5444)
+- Add Spec Kit lifecycle for Jira extension to community catalog (#5438)
+- [preset] Add OKR Bet Spec Section preset to community catalog (#5439)
+- Add Multi-Repo Workspace Orchestration extension to community catalog (#5436)
+- fix(powershell): treat bracketed project paths literally in the git extension (#5404)
+- fix(powershell): treat bracketed project paths literally in create-new-feature (#5399)
+- fix(powershell): treat project and preset template paths literally (#5396)
+- docs(extensions): list the converge hook events (#5328)
+- [extension] Add OKR Bets extension to community catalog (#5412)
+- Update T-Shirt Sizing Gate extension to v0.2.0 (#5407)
+- Update Intake Sequencing Governance preset to v0.2.13 (#5406)
+- fix(workflows): expose bundled review verdict inputs (#5392)
+- Update Intake Review Governance preset to v0.2.8 (#5388)
+- fix(integrations): honor shared refresh for installed targets (#5377)
+- Update ado-lifecycle to 0.3.2 (#5345)
+- Use handle-based deletion in FileHelper (#5352)
+- [extension] Add A·I·DID·IT — Agile Expansion Pack extension to community catalog (#5375)
+- Update DocGuard — CDD Enforcement to v0.47.0 (#5374)
+- Update Intake Authoring Governance preset to v0.3.12 (#5372)
+- chore: release 1.4.0, begin 1.4.1.dev0 development (#5371)
+
+## [1.4.0] - 2026-11-10
+
+### Changed
+
+- Use handle-based reads in FileHelper (#5351)
+- chore: limit automatic Python 3.11 tests to Linux (#5367)
+- Harden initial URL validation in HTTP helpers (#5350)
+- Update SpecKit Companion extension to v0.26.0 (#5365)
+- Use handle-based text overwrites in FileHelper (#5353)
+- Require HTTPS consistently for catalog sources (#5355)
+- feat(workflows): workflow functions - project-installed custom pipe filters (#5303)
+- feat(integrations): map reasoning effort and context size for Copilot, Codex, and Claude Code (#5249)
+- [bundle] Update Spec Kit for Azure DevOps bundle to v0.3.2 (#5346)
+- [extension] Add T-Shirt Sizing Gate extension to community catalog (#5332)
+- fix(scripts): treat option-like feature descriptions as text in create-new-feature.sh (#5245)
+- fix(self-upgrade): don't offer a .dev0/.post0 build's base tag as the rollback version (#5358)
+- fix: preserve existing priority from registry when installing/refreshing bundles (#5331)
+- test(workflows): pin numeric equality on captured shell stdout with trailing newline (#5357)
+- fix(extensions): show catalog entries missing name, version or description (#5308)
+- Use handle-based exclusive creation in FileHelper (#5354)
+- Validate release tags before running release steps (#5356)
+- feat(omp): support integration args and options in build_exec_args (#4876)
+- Add Spec Kit for Azure DevOps — human-gated lifecycle extension to community catalog (#5348)
+- chore: release 1.3.3, begin 1.3.4.dev0 development (#5349)
+
+## [1.3.3] - 2026-11-09
+
+### Changed
+
+- test: make script help assertion resilient to wrapping (#5347)
+- Add Spec Kit for Azure DevOps bundle to community catalog (#5335)
+- fix(workflows): reject non-standard JSON in shell output (#5330)
+- fix(presets): keep user files when removing preset skills (#5233)
+- Add ado-lifecycle to community workflow catalog (#5312)
+- fix(presets): render missing preset IDs as literal text (#5314)
+- fix(presets): report catalog fallback order after removal (#5313)
+- fix(workflows): coerce numeric strings for == and != like ordering operators (#5310)
+- Update Model Routing Governance preset to v0.2.8 (#5341)
+- ci: consolidate lint and dependency audit jobs (#5301)
+- feat(workflows): add per-step reasoning effort and context size settings (#5248)
+- [extension] Update Quality Gates (Enforcement Layer) extension to v0.6.1 (#5264)
+- ci: focus default Python matrix on minimum and maintained releases (#5302)
+- [extension] Add Sanduq Progress Report extension to community catalog (#5300)
+- docs: document shared integration and workflow-step APIs (#5296)
+- docs: add constitution-only persistence and separate evolution guidance (#5299)
+- fix: use printf instead of echo for feature description to avoid -n/-e/-E option interpretation (#5247)
+- Add User Manual extension to community catalog (#5295)
+- docs: add Project Room to community friends (#5298)
+- chore: release 1.3.2, begin 1.3.3.dev0 development (#5297)
+
+## [1.3.2] - 2026-11-06
+
+### Changed
+
+- [extension] Add Assure extension to community catalog (#5293)
+- Update Sanduq Workflow to v2.3.2 (#5292)
+- docs: clarify uvx environment caching (#5291)
+- ci: streamline routine Python test matrix (#5290)
+- docs: align existing-project examples with Copilot skills (#5288)
+- docs: link installation prerequisites to integration directory (#5287)
+- chore(deps): bump astral-sh/setup-uv from 10.0.1 to 10.3.3 (#5280)
+- community: update Model Routing Governance to v0.2.6 (#5279)
+- chore(deps): bump actions/setup-dotnet from 6.0.0 to 6.1.0 (#5281)
+- docs: correct offline Windows PowerShell prerequisite (#5277)
+- ci: add Python 3.15 to test and audit matrices (#5278)
+- docs: standardize local development on a checkout virtualenv (#5276)
+- fix(integrations): refresh the fallback's manifest hashes on uninstall (#5274)
+- Add deja-vu session recall extension to community catalog (#5255)
+- docs: align installation verification with Copilot skills (#5275)
+- Add Illustrate extension to community catalog (#5273)
+- Add Pull Request Workflow extension to community catalog (#5268)
+- Add Sanduq Workflow extension to community catalog (#5266)
+- Add GitHub Project Lifecycle Sync extension to community catalog (#5265)
+- chore: release 1.3.1, begin 1.3.2.dev0 development (#5271)
+
+## [1.3.1] - 2026-11-05
+
+### Changed
+
+- Update Quality Gates (Enforcement Layer) extension to v0.6.0 (#5253)
+- fix(catalogs): name a scheme-less catalog URL instead of reporting "got ://" (#5251)
+- fix(extensions): keep git warnings from failing initialize-repo.ps1 on Windows PowerShell 5.1 (#5252)
+- fix(workflows): reject non-JSON constants in from_json (#5250)
+- docs: give workflow steps a dedicated category (#5243)
+- docs: refresh homepage figures and community examples (#5242)
+- Update DocGuard — CDD Enforcement to v0.46.0 (#5238)
+- Update Agent Parity Governance preset to v0.4.5 (#5236)
+- docs: consolidate overview navigation and source pages (#5234)
+- fix(agent-context): skip non-file plan candidates (#5222)
+- docs: add October 2026 newsletter (#5235)
+- docs: organize usage guides under How to (#5230)
+- docs: extend project history through early November 2026 (#5231)
+- docs: simplify integrations navigation dropdown (#5229)
+- Update Quality Gates (Enforcement Layer) extension to v0.5.1 (#5228)
+- docs: consolidate bundle documentation and remove unusable examples (#5226)
+- Update Cross-Platform Governance preset to v0.2.5 (#5218)
+- docs: consolidate and correct workflow documentation (#5225)
+- fix(cli): don't self-upgrade uv tool installs on Windows (#5149)
+- chore: release 1.3.0, begin 1.3.1.dev0 development (#5224)
+
 ## [1.3.0] - 2026-11-03
 
 ### Changed

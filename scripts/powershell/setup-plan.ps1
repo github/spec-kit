@@ -81,7 +81,7 @@ if ($Json) {
         FEATURE_DIR = $paths.FEATURE_DIR
         BRANCH = $paths.CURRENT_BRANCH
     }
-    $result | ConvertTo-Json -Compress
+    $result | ConvertTo-AsciiJson
 } else {
     Write-Output "FEATURE_SPEC: $($paths.FEATURE_SPEC)"
     Write-Output "IMPL_PLAN: $($paths.IMPL_PLAN)"

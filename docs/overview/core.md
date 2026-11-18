@@ -51,8 +51,8 @@ init options. Help and version do not read project policy.
 including init-options bootstrap I/O. Loading policy does not yet route all
 other command filesystem operations through FileHelper. Shared infrastructure,
 registration, managed storage, scripts and runtime operations retain their
-existing behavior until migrated. See [FileHelper design](../../design/file-helper.md)
-for the boundary and handoff contract.
+existing behavior until migrated. The persisted setting does not imply that
+every filesystem operation already enforces it.
 
 ### Examples
 

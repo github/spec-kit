@@ -40,6 +40,35 @@ from tests.specify_cli.extensions._helpers import (
 class TestExtensionAddCLI:
     """CLI tests for ``specify extension add``."""
 
+    @pytest.mark.parametrize(
+        ("config", "warns"),
+        [
+            pytest.param({}, False, id="undeclared"),
+            pytest.param({"config": []}, False, id="empty"),
+            pytest.param(
+                {"config": [{"name": "test-ext-config.yml", "template": "missing.yml"}]},
+                True,
+                id="missing-template",
+            ),
+        ],
+    )
+    def test_add_dev_warns_only_when_config_scaffolding_fails(
+        self, extension_dir, project_dir, valid_manifest_data, config, warns
+    ):
+        valid_manifest_data["provides"].update(config)
+        (extension_dir / "extension.yml").write_text(
+            yaml.safe_dump(valid_manifest_data), encoding="utf-8"
+        )
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(app, ["extension", "add", "--dev", str(extension_dir)])
+
+        assert result.exit_code == 0, result.output
+        output = strip_ansi(result.output)
+        assert "Extension installed successfully" in output
+        assert ("Configuration may be required" in output) == warns, output
+        assert ("Config templates not scaffolded" in output) == warns, output
+
     @pytest.mark.parametrize("command", [
         pytest.param(["speckit.test-ext.hello"], id="list"),
         pytest.param({"name": "speckit.test-ext.hello"}, id="mapping"),
@@ -722,6 +751,7 @@ class TestExtensionAddCLI:
              patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(_MINIMAL_ZIP_BYTES)), \
              patch("specify_cli.extensions._commands._safe_open_download_zip", side_effect=_open_test_download_zip), \
              patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip), \
+             patch.object(ExtensionManager, "scaffold_config", return_value=([], [], ["test-ext-config.yml"])), \
              patch.object(ExtensionRegistry, "get", return_value={}):
             result = runner.invoke(
                 app,

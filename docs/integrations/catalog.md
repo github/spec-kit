@@ -77,7 +77,7 @@ Required descriptor fields:
 
 `requires.tools` is optional; omit it for adapters with no required executable.
 Optional legacy `provides` metadata remains valid but does not supply host
-commands. See [integration design](https://github.com/github/spec-kit/blob/main/design/integration.md#external-adapter-package-contract)
+commands. See the [integration API reference](api.md)
 for class metadata, runtime methods, tools, and storage requirements.
 
 ## Catalog Schema
@@ -162,4 +162,5 @@ are documented in the [integration management reference](cli.md).
 
 ## See also
 
+- [Integration API reference](api.md)
 - [Community integrations](../community/integrations.md)

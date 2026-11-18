@@ -11,13 +11,73 @@ import typer
 from typer.testing import CliRunner
 
 from specify_cli import app
-from specify_cli.file_helper import FileHelper
+from specify_cli.file_helper import FileHelper, FileHelperError
 
 
 def policy_module():
     from specify_cli import _file_policy
 
     return _file_policy
+
+
+@pytest.mark.parametrize("operation", ["read_project_options", "project_files"])
+def test_policy_translates_constructor_contract_failure(tmp_path, monkeypatch, operation):
+    policy = policy_module()
+    if operation == "project_files":
+        monkeypatch.setattr(policy, "read_project_options", lambda _: {})
+
+    def failed(*args, **kwargs):
+        raise FileHelperError("root binding failed")
+
+    monkeypatch.setattr(policy, "FileHelper", failed)
+    with pytest.raises(policy.ProjectPolicyError, match="root binding failed") as raised:
+        getattr(policy, operation)(tmp_path)
+    assert isinstance(raised.value.__cause__, FileHelperError)
+
+
+@pytest.mark.parametrize(
+    ("operation", "failing_method"),
+    [
+        ("read_project_options", "read_text"),
+        ("save_project_options", "overwrite_text"),
+        ("preflight_init_root", "read_bytes"),
+        ("prepare_init_root", "mkdir"),
+    ],
+)
+@pytest.mark.parametrize("failure", [False, True])
+def test_bootstrap_consumers_close_retained_helpers(
+    tmp_path, monkeypatch, operation, failing_method, failure
+):
+    policy = policy_module()
+    (tmp_path / ".specify").mkdir()
+    (tmp_path / ".specify/init-options.json").write_text("{}")
+    captured = []
+
+    def owner(*args, **kwargs):
+        files = FileHelper(*args, **kwargs)
+        captured.append(files)
+        return files
+
+    def denied(*args, **kwargs):
+        raise PermissionError("bootstrap access denied")
+
+    monkeypatch.setattr(policy, "FileHelper", owner)
+    if failure:
+        monkeypatch.setattr(FileHelper, failing_method, denied)
+    target = tmp_path / "missing/project" if operation.endswith("init_root") else tmp_path
+    args = (target, {}) if operation == "save_project_options" else (target,)
+    retained_error = None
+    if failure:
+        error_type = PermissionError if operation == "prepare_init_root" else policy.ProjectPolicyError
+        with pytest.raises(error_type, match="bootstrap access denied") as raised:
+            getattr(policy, operation)(*args)
+        retained_error = raised.value
+    else:
+        getattr(policy, operation)(*args)
+    assert len(captured) == 1
+    assert not captured[0]._root_cleanup.alive
+    if failure:
+        assert retained_error is not None
 
 
 @pytest.fixture

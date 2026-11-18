@@ -29,6 +29,19 @@ specify workflow run bugfix \
 
 Required inputs must be supplied with `--input`: `report` and `slug`. The slug is used as the working directory under `.specify/bugs/<slug>/` for all artifacts.
 
+Without an interactive terminal, the run pauses at `review-assessment`. Review
+the assessment, then approve it using the optional verdict input:
+
+```bash
+specify workflow resume <run_id> --input bug_review_assessment_verdict=approve
+```
+
+`bug_review_assessment_verdict` defaults to `""`. Omitting it or supplying an
+empty value preserves the existing interactive prompt or non-interactive pause.
+This input is available in `bugfix` workflow version 1.0.1 and requires Specify
+CLI 0.15.1 or later. Update the workflow and start a new run to use the input;
+existing runs retain the definition saved when they started.
+
 ## Remove
 
 ```bash

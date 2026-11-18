@@ -56,10 +56,11 @@ class AlquimiaAIIntegration(SkillsIntegration):
         return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
 
     def _build_skill_fm(self, name: str, description: str, source: str) -> dict:
+        from specify_cli import get_speckit_version
         from specify_cli.agents import CommandRegistrar
 
         return CommandRegistrar.build_skill_frontmatter(
-            self.key, name, description, source
+            self.key, name, description, source, version=get_speckit_version()
         )
 
     @staticmethod

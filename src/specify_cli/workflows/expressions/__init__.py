@@ -36,7 +36,15 @@ from .engine import (
     _evaluator_rejects,
     _has_incomplete_operand,
 )
-from .filters import _REGISTERED_FILTERS
+from .filters import (
+    BUILTIN_FILTERS,
+    FILTER_TABLE,
+    _REGISTERED_FILTERS,
+    format_filter_usage,
+    register_custom_filter,
+    unregister_custom_filter,
+    unregister_custom_filters,
+)
 from .template import _strip_stray_delimiters
 
 __all__ = [
@@ -49,6 +57,12 @@ __all__ = [
     "format_condition_remediation",
     "_COMPARISON_OPERATORS",
     "_REGISTERED_FILTERS",
+    "BUILTIN_FILTERS",
+    "FILTER_TABLE",
+    "format_filter_usage",
+    "register_custom_filter",
+    "unregister_custom_filter",
+    "unregister_custom_filters",
     "_WORD_OPERATORS",
     "_collect_leaves",
     "_evaluator_rejects",

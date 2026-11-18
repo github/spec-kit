@@ -668,7 +668,8 @@ MULTI_POSITION_UNFIXABLE = [
     ("inputs.count+1", "unexpected '+1' at column 13"),
     ("inputs.a === inputs.b", "unexpected character '=' at column 12"),
     ("bogus == 'x'", "is not one of the namespace roots"),
-    ("inputs.payload | from_json()", "the evaluator rejects it"),
+    ("inputs.payload | from_json()", "from_json: expected '| from_json' with no arguments or trailing tokens"),
+    ("inputs.payload | upper()", "upper: expected '| upper' with no arguments or trailing tokens"),
     # An operator after a filter chain has both operands: it is a filter
     # precedence mistake, not a missing operand. A doubled `|` or operator is
     # the missing operand.

@@ -448,6 +448,7 @@ settings:
 #                   before_tasks, after_tasks, before_implement, after_implement,
 #                   before_analyze, after_analyze, before_checklist, after_checklist,
 #                   before_clarify, after_clarify, before_constitution, after_constitution,
+#                   before_converge, after_converge,
 # Bundled bug extension events (when installed):
 #                   before_bug_assess, after_bug_assess, before_bug_fix, after_bug_fix,
 #                   before_bug_test, after_bug_test
@@ -755,4 +756,4 @@ artifact resolution priority.
 - [Developing extensions](developing.md)
 - [Extension API reference](api.md)
 - [Publishing extensions](publishing.md)
-- [Spec persistence models](../how-to/spec-persistence.md)
+- [Persisting specifications](../how-to/persisting-specs.md)

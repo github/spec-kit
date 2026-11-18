@@ -81,7 +81,7 @@ if ($PathsOnly) {
             FEATURE_SPEC = $paths.FEATURE_SPEC
             IMPL_PLAN    = $paths.IMPL_PLAN
             TASKS        = $paths.TASKS
-        } | ConvertTo-Json -Compress
+        } | ConvertTo-AsciiJson
     } else {
         Write-Output "REPO_ROOT: $($paths.REPO_ROOT)"
         Write-Output "BRANCH: $($paths.CURRENT_BRANCH)"
@@ -171,7 +171,7 @@ if ($Json) {
     if ($Template) {
         $result.TEMPLATE_CONTENT = $templateContent
     }
-    [PSCustomObject]$result | ConvertTo-Json -Compress
+    [PSCustomObject]$result | ConvertTo-AsciiJson
 } else {
     # Text output
     Write-Output "FEATURE_DIR:$($paths.FEATURE_DIR)"

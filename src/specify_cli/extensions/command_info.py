@@ -164,12 +164,12 @@ def _print_extension_info(ext_info: dict, manager):
 
     # Header
     verified_badge = " [green]✓ Verified[/green]" if ext_info.get("verified") else ""
-    _commands.console.print(f"\n[bold]{_escape_markup(str(ext_info['name']))}[/bold] (v{_escape_markup(str(ext_info['version']))}){verified_badge}")
+    _commands.console.print(f"\n[bold]{_escape_markup(str(ext_info.get('name', ext_info['id'])))}[/bold] (v{_escape_markup(str(ext_info.get('version', 'unknown')))}){verified_badge}")
     _commands.console.print(f"ID: {_escape_markup(str(ext_info['id']))}")
     _commands.console.print()
 
     # Description
-    _commands.console.print(f"{_escape_markup(str(ext_info['description']))}")
+    _commands.console.print(f"{_escape_markup(str(ext_info.get('description', '')))}")
     _commands.console.print()
 
     # Author and License
