@@ -5,6 +5,7 @@ from __future__ import annotations
 import json  # noqa: F401
 import os  # noqa: F401
 import shutil  # noqa: F401
+import stat
 from pathlib import Path  # noqa: F401
 
 import pytest  # noqa: F401
@@ -283,3 +284,263 @@ def test_builtin_journal_recreates_a_file_it_cannot_open_in_place(tmp_path, monk
             raise OSError("disk full")
 
     assert target.read_text(encoding="utf-8") == "original\n"
+
+
+_INCOMPLETE_WARNING = "but not all of their permissions, timestamps or extended attributes"
+
+
+def _record_rollback_backups(monkeypatch):
+    from specify_cli.integrations import _lifecycle
+
+    original_mkdtemp = _lifecycle.tempfile.mkdtemp
+    backups = []
+
+    def record_backup(*args, **kwargs):
+        path = original_mkdtemp(*args, **kwargs)
+        if kwargs.get("prefix") == "speckit-integration-rollback-":
+            backups.append(Path(path))
+        return path
+
+    monkeypatch.setattr(_lifecycle.tempfile, "mkdtemp", record_backup)
+    return backups
+
+
+def test_builtin_journal_never_writes_a_different_file_open_returned(tmp_path, monkeypatch):
+    """A descriptor that is not the snapshotted file is neither truncated nor written."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    decoy = tmp_path / "decoy"
+    decoy.write_text("decoy\n", encoding="utf-8")
+    real_open = os.open
+    opened = []
+
+    def open_decoy(path, flags, *args, **kwargs):
+        if Path(path) == target and flags & os.O_WRONLY:
+            opened.append(path)
+            return real_open(decoy, flags, *args, **kwargs)
+        return real_open(path, flags, *args, **kwargs)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            monkeypatch.setattr(_lifecycle.os, "open", open_decoy)
+            raise OSError("disk full")
+
+    assert opened
+    assert decoy.read_text(encoding="utf-8") == "decoy\n"
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert not os.path.samefile(target, decoy)
+
+
+def test_builtin_journal_keeps_restoring_after_a_metadata_refusal(tmp_path, monkeypatch, capsys):
+    """A file whose times cannot be set still gets its bytes, and later entries are restored."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import make_directories, write_text
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    first = project / ".specify" / "templates" / "spec.md"
+    first.parent.mkdir(parents=True)
+    first.write_text("first original\n", encoding="utf-8")
+    created = project / ".specify" / "templates" / "new"
+    refused = project / ".specify" / "templates" / "plan.md"
+    refused.write_text("refused original\n", encoding="utf-8")
+    refused_inode = refused.stat().st_ino
+    real_utime = os.utime
+
+    def refuse_refused(target, *args, **kwargs):
+        if isinstance(target, int) and os.fstat(target).st_ino == refused_inode:
+            raise PermissionError("not the owner")
+        if not isinstance(target, int) and Path(target) == refused:
+            raise PermissionError("not the owner")
+        return real_utime(target, *args, **kwargs)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(first, "first generated\n")
+            make_directories(created)
+            write_text(created / "file.md", "new\n")
+            # Restored first, as rollback runs newest first.
+            write_text(refused, "refused generated\n")
+            monkeypatch.setattr(_lifecycle.os, "utime", refuse_refused)
+            raise OSError("disk full")
+
+    assert refused.read_text(encoding="utf-8") == "refused original\n"
+    assert refused.stat().st_ino == refused_inode
+    assert first.read_text(encoding="utf-8") == "first original\n"
+    assert not created.exists()
+    assert _INCOMPLETE_WARNING in " ".join(capsys.readouterr().out.split())
+    assert len(backups) == 1 and backups[0].is_dir()
+    shutil.rmtree(backups[0])
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes and symlinks")
+def test_builtin_journal_never_restores_metadata_by_path_without_descriptor_support(
+    tmp_path, monkeypatch, capsys,
+):
+    """Without descriptor-based times, a path swapped for a symlink cannot redirect them."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    target.chmod(0o600)
+    os.utime(target, ns=(1_000_000_000, 1_000_000_000))
+    witness = tmp_path / "witness"
+    os.link(target, witness)
+    victim = tmp_path / "victim"
+    victim.write_text("victim\n", encoding="utf-8")
+    victim.chmod(0o644)
+    victim_before = victim.stat()
+    real_copyfileobj = shutil.copyfileobj
+
+    def copy_then_swap(source, destination, *args, **kwargs):
+        # Once the bytes are back, swap the path for a symlink, so any
+        # metadata restored by path from here on lands on the victim.
+        real_copyfileobj(source, destination, *args, **kwargs)
+        target.unlink()
+        target.symlink_to(victim)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            monkeypatch.setattr(_lifecycle.os, "supports_fd", os.supports_fd - {os.utime})
+            monkeypatch.setattr(_lifecycle.shutil, "copyfileobj", copy_then_swap)
+            raise OSError("disk full")
+
+    victim_after = victim.stat()
+    assert stat.S_IMODE(victim_after.st_mode) == 0o644
+    assert victim_after.st_mtime_ns == victim_before.st_mtime_ns
+    assert victim.read_text(encoding="utf-8") == "victim\n"
+    assert witness.read_text(encoding="utf-8") == "original\n"
+    # The times were not restored by path through the swapped-in symlink.
+    assert witness.stat().st_mtime_ns != 1_000_000_000
+    assert _INCOMPLETE_WARNING in " ".join(capsys.readouterr().out.split())
+    assert len(backups) == 1 and backups[0].is_dir()
+    shutil.rmtree(backups[0])
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows sharing semantics")
+def test_windows_open_file_cannot_be_replaced_while_rollback_holds_it(tmp_path):
+    """Rollback sets times by path on Windows only while its verified handle pins that path."""
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    target = parent / "plan.md"
+    target.write_text("original\n", encoding="utf-8")
+    replacement = tmp_path / "replacement"
+    replacement.write_text("replacement\n", encoding="utf-8")
+    descriptor = os.open(target, os.O_WRONLY | getattr(os, "O_BINARY", 0))
+    try:
+        with pytest.raises(PermissionError):
+            os.replace(replacement, target)
+        with pytest.raises(PermissionError):
+            os.remove(target)
+        with pytest.raises(PermissionError):
+            os.rename(parent, tmp_path / "moved")
+        os.utime(target, ns=(1_000_000_000, 2_000_000_000))
+        os.chmod(target, stat.S_IREAD | stat.S_IWRITE)
+    finally:
+        os.close(descriptor)
+    assert target.stat().st_mtime_ns == 2_000_000_000
+    assert target.read_text(encoding="utf-8") == "original\n"
+
+
+def _user_xattrs(path):
+    return {
+        name: os.getxattr(path, name)
+        for name in os.listxattr(path)
+        if name.startswith("user.")
+    }
+
+
+@pytest.mark.skipif(not hasattr(os, "setxattr"), reason="no extended-attribute API in the os module")
+def test_builtin_journal_restores_extended_attributes_in_place(tmp_path):
+    """Attributes a journalled copy2() put onto an existing file are put back."""
+    import errno
+
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import after_file_change, before_file_change
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    try:
+        os.setxattr(target, "user.origin", b"original")
+    except OSError as exc:
+        if exc.errno in (errno.ENOTSUP, errno.EOPNOTSUPP):
+            pytest.skip("filesystem has no user extended attributes")
+        raise
+    os.setxattr(target, "user.kept", b"kept")
+    witness = tmp_path / "witness"
+    os.link(target, witness)
+    source = tmp_path / "source"
+    source.write_text("generated\n", encoding="utf-8")
+    os.setxattr(source, "user.origin", b"generated")
+    os.setxattr(source, "user.added", b"added")
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            before_file_change(target)
+            shutil.copy2(source, target)
+            after_file_change(target)
+            assert _user_xattrs(target)["user.added"] == b"added"
+            raise OSError("disk full")
+
+    assert os.path.samefile(target, witness)
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert _user_xattrs(target) == {"user.origin": b"original", "user.kept": b"kept"}
+
+
+@pytest.mark.skipif(not hasattr(os, "setxattr"), reason="no extended-attribute API in the os module")
+def test_builtin_journal_restores_other_attributes_after_one_is_refused(tmp_path, monkeypatch, capsys):
+    """One refused attribute is reported without leaving the others changed."""
+    import errno
+
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import after_file_change, before_file_change
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    try:
+        os.setxattr(target, "user.a", b"original")
+    except OSError as exc:
+        if exc.errno in (errno.ENOTSUP, errno.EOPNOTSUPP):
+            pytest.skip("filesystem has no user extended attributes")
+        raise
+    os.setxattr(target, "user.z", b"original")
+    source = tmp_path / "source"
+    source.write_text("generated\n", encoding="utf-8")
+    for name in ("user.a", "user.z", "user.added"):
+        os.setxattr(source, name, b"generated")
+    real_setxattr = os.setxattr
+
+    def refuse_a(target, name, *args, **kwargs):
+        if name == "user.a":
+            raise PermissionError("refused")
+        return real_setxattr(target, name, *args, **kwargs)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            before_file_change(target)
+            shutil.copy2(source, target)
+            after_file_change(target)
+            monkeypatch.setattr(_lifecycle.os, "setxattr", refuse_a)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert _user_xattrs(target) == {"user.a": b"generated", "user.z": b"original"}
+    assert _INCOMPLETE_WARNING in " ".join(capsys.readouterr().out.split())
+    assert len(backups) == 1 and backups[0].is_dir()
+    shutil.rmtree(backups[0])

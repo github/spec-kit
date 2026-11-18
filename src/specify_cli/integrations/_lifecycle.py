@@ -35,6 +35,35 @@ _success_messages: ContextVar[list[str] | None] = ContextVar(
 )
 _MAX_BACKUP_BYTES = 128 * 1024 * 1024
 _MAX_BACKUP_ENTRIES = 4096
+_HAS_XATTRS = all(hasattr(os, name) for name in ("listxattr", "getxattr", "setxattr", "removexattr"))
+_XATTRS_UNSUPPORTED = {errno.ENOTSUP, getattr(errno, "EOPNOTSUPP", errno.ENOTSUP)}
+
+
+def _user_xattrs(target: Path | int, journal: Any = None) -> dict[str, bytes]:
+    """Read the ``user.*`` extended attributes of a path or descriptor.
+
+    Only the user namespace: the kernel and security modules manage the
+    others (``security.*``, ``system.*``), which a file write can change and
+    an unprivileged rollback cannot set back. An attribute removed between
+    listing and reading it is skipped. ``journal``, when given, is charged
+    for the bytes kept.
+    """
+    follow = {} if isinstance(target, int) else {"follow_symlinks": False}
+    attributes = {}
+    for name in os.listxattr(target, **follow):
+        if not name.startswith("user."):
+            continue
+        try:
+            attributes[name] = os.getxattr(target, name, **follow)
+        except OSError as exc:
+            if exc.errno != errno.ENODATA:
+                raise
+    if journal is not None:
+        size = sum(len(name) + len(value) for name, value in attributes.items())
+        if size > _MAX_BACKUP_BYTES - journal.backup_bytes:
+            raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
+        journal.backup_bytes += size
+    return attributes
 
 
 def lifecycle_owns_rollback() -> bool:
@@ -147,6 +176,12 @@ class _FileJournal:
         # The (st_dev, st_ino) of each snapshotted regular file, so rollback
         # can tell the same file, rewritten in place, from a replacement.
         self.snapshotted_files: dict[Path, tuple[int, int]] = {}
+        # Each such file's user (``user.*``) extended attributes, read when it
+        # was snapshotted; None when they could not be read or the os module
+        # has no extended-attribute API (CPython has one on Linux only).
+        self.snapshotted_xattrs: dict[Path, dict[str, bytes] | None] = {}
+        # Files whose bytes rollback restored without all of their metadata.
+        self.incomplete_restores: list[Path] = []
         for path in paths:
             self._remember_parents(path)
 
@@ -189,6 +224,22 @@ class _FileJournal:
             shutil.copystat(source, destination, follow_symlinks=False)
         else:
             raise installer.IntegrationInstallError(f"Unsupported integration output: {source}")
+
+    def _read_xattrs(self, path: Path) -> dict[str, bytes] | None:
+        """Read a file's user extended attributes, or None if they cannot be read.
+
+        Kept in memory rather than relying on the copy ``shutil.copystat()``
+        puts on the snapshot, which it silently skips where the temporary
+        filesystem has no user attributes.
+        """
+        if not _HAS_XATTRS:
+            return None
+        try:
+            return _user_xattrs(path, self)
+        except OSError as exc:
+            if exc.errno in _XATTRS_UNSUPPORTED:
+                return {}
+            return None
 
     def directory_created(self, path: Path) -> None:
         entry = path.lstat()
@@ -242,8 +293,11 @@ class _FileJournal:
                     saved.parent.mkdir(parents=True, exist_ok=True)
                     entry = path.lstat()
                     self._snapshot(path, saved)
-                    if stat.S_ISREG(entry.st_mode) and os.path.samestat(entry, path.lstat()):
-                        self.snapshotted_files[path] = (entry.st_dev, entry.st_ino)
+                    if stat.S_ISREG(entry.st_mode):
+                        attributes = self._read_xattrs(path)
+                        if os.path.samestat(entry, path.lstat()):
+                            self.snapshotted_files[path] = (entry.st_dev, entry.st_ino)
+                            self.snapshotted_xattrs[path] = attributes
             else:
                 if not any(path == scope or scope in path.parents for scope in self.paths):
                     raise installer.IntegrationInstallError(
@@ -280,25 +334,32 @@ def _prune_new_parents(root: Path, journal: _FileJournal, path: Path) -> None:
         parent = parent.parent
 
 
-def _restore_file_in_place(path: Path, saved: Path, identity: tuple[int, int] | None) -> bool:
+def _restore_file_in_place(
+    path: Path, saved: Path, identity: tuple[int, int] | None,
+    attributes: dict[str, bytes] | None,
+) -> str:
     """Write a snapshot back into the file it was taken from.
 
     Unlinking and recreating the file would give it the restoring user as
     owner and the directory's default permissions (on Windows, its inherited
     access-control list), so a file the operation rewrote in place gets its
-    bytes, mode and times back through the same file. Returns ``False``,
-    having changed nothing, when ``path`` is no longer that regular file
-    (removed, or replaced by another file, a symlink or a directory) or
-    cannot be opened for writing; the caller then recreates it.
+    bytes, extended attributes, times and mode back through the same file.
+
+    Returns ``"untouched"``, having changed nothing, when ``path`` is no
+    longer that regular file (removed, or replaced by another file, a symlink
+    or a directory) or cannot be opened for writing; the caller then
+    recreates it. Returns ``"incomplete"`` when the bytes were restored but
+    some metadata could not be, safely or at all (another user's file, say),
+    and ``"restored"`` otherwise. A failed byte write raises.
     """
     if identity is None:
-        return False
+        return "untouched"
     try:
         entry = path.lstat()
     except FileNotFoundError:
-        return False
+        return "untouched"
     if not stat.S_ISREG(entry.st_mode) or (entry.st_dev, entry.st_ino) != identity:
-        return False
+        return "untouched"
     # No O_TRUNC: nothing is written until the opened file is known to be the
     # snapshotted one. Windows has no O_NOFOLLOW, so the identity check after
     # opening is what stops a symlink swapped in after lstat() being written.
@@ -310,24 +371,87 @@ def _restore_file_in_place(path: Path, saved: Path, identity: tuple[int, int] | 
     try:
         descriptor = os.open(path, flags)
     except OSError:
-        return False
+        return "untouched"
     with os.fdopen(descriptor, "wb") as outgoing:
         opened = os.fstat(outgoing.fileno())
         if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != identity:
-            return False
+            return "untouched"
+        # Before reading the snapshot, which can move its access time.
+        original = saved.stat()
         outgoing.truncate(0)
         with saved.open("rb") as incoming:
             shutil.copyfileobj(incoming, outgoing)
         outgoing.flush()
-        original = saved.stat()
-        # Through the descriptor, so a path swapped for a symlink since the
-        # write cannot redirect the mode or times to its target.
-        if hasattr(os, "fchmod") and os.utime in os.supports_fd:
-            os.fchmod(outgoing.fileno(), stat.S_IMODE(original.st_mode))
-            os.utime(outgoing.fileno(), ns=(original.st_atime_ns, original.st_mtime_ns))
-            return True
-    shutil.copystat(saved, path, follow_symlinks=False)
-    return True
+        complete = _restore_metadata(outgoing.fileno(), path, original, attributes)
+        return "restored" if complete else "incomplete"
+
+
+def _restore_metadata(
+    descriptor: int, path: Path, original: os.stat_result, attributes: dict[str, bytes] | None,
+) -> bool:
+    """Restore a snapshot's user extended attributes, times and mode onto the open, verified file.
+
+    Every change goes through ``descriptor``, so a path swapped for a symlink
+    since the open cannot redirect it to another file. Windows offers no
+    descriptor form of ``os.utime`` (nor of ``os.chmod`` before Python
+    3.13), but a file Python opens there cannot be renamed, replaced or
+    deleted until it is closed, so ``path`` still names the verified file
+    while ``descriptor`` is open. Anywhere else without a descriptor form,
+    the metadata is left and the restore reported incomplete. Values that
+    already match are not set again, so a file the restoring user may write
+    but not otherwise modify is only refused what it actually needs.
+    """
+    complete = True
+    if _HAS_XATTRS:
+        # Before the mode: a read-only mode refuses user attributes.
+        if attributes is None:
+            complete = False
+        else:
+            complete = _restore_user_xattrs(descriptor, attributes)
+    current = os.fstat(descriptor)
+    times = (original.st_atime_ns, original.st_mtime_ns)
+    if (current.st_atime_ns, current.st_mtime_ns) != times:
+        try:
+            if os.utime in os.supports_fd:
+                os.utime(descriptor, ns=times)
+            elif os.name == "nt":
+                os.utime(path, ns=times)
+            else:
+                complete = False
+        except OSError:
+            complete = False
+    mode = stat.S_IMODE(original.st_mode)
+    if stat.S_IMODE(current.st_mode) != mode:
+        try:
+            if hasattr(os, "fchmod"):
+                os.fchmod(descriptor, mode)
+            elif os.name == "nt":
+                os.chmod(path, mode)
+            else:
+                complete = False
+        except OSError:
+            complete = False
+    return complete
+
+
+def _restore_user_xattrs(descriptor: int, attributes: dict[str, bytes]) -> bool:
+    """Set a file's ``user.*`` attributes back, each one independently."""
+    try:
+        live = _user_xattrs(descriptor)
+    except OSError as exc:
+        return exc.errno in _XATTRS_UNSUPPORTED and not attributes
+    complete = True
+    changes = [(name, None) for name in live.keys() - attributes.keys()]
+    changes += [(name, value) for name, value in attributes.items() if live.get(name) != value]
+    for name, value in changes:
+        try:
+            if value is None:
+                os.removexattr(descriptor, name)
+            else:
+                os.setxattr(descriptor, name, value)
+        except OSError:
+            complete = False
+    return complete
 
 
 def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
@@ -353,8 +477,14 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
         if path not in journal.pending and current_identity != written_identity:
             conflicts.append(path)
             continue
-        if saved is not None and _restore_file_in_place(path, saved, journal.snapshotted_files.get(path)):
-            continue
+        if saved is not None:
+            restored = _restore_file_in_place(
+                path, saved, journal.snapshotted_files.get(path), journal.snapshotted_xattrs.get(path),
+            )
+            if restored == "incomplete":
+                journal.incomplete_restores.append(path)
+            if restored != "untouched":
+                continue
         if path.is_dir() and not path.is_symlink():
             shutil.rmtree(path)
         elif path.exists() or path.is_symlink():
@@ -518,11 +648,18 @@ def _journalled(
                 directory_creation_observer.reset(directory_token)
                 directory_token = None
                 conflicts = _restore_snapshots(root, journal)
-                outcome["retained"] = bool(conflicts)
+                incomplete = journal.incomplete_restores
+                outcome["retained"] = bool(conflicts or incomplete)
                 if conflicts:
                     console.print(
                         "[yellow]Warning:[/yellow] Preserved concurrent edits or incomplete writes to "
                         f"{escape(str(conflicts))}. Recovery snapshots retained at {escape(str(backup))}"
+                    )
+                if incomplete:
+                    console.print(
+                        "[yellow]Warning:[/yellow] Restored the contents of "
+                        f"{escape(str(incomplete))} but not all of their permissions, timestamps or "
+                        f"extended attributes. Recovery snapshots retained at {escape(str(backup))}"
                     )
             except (OSError, installer.IntegrationInstallError) as restore_error:
                 outcome["retained"] = True
