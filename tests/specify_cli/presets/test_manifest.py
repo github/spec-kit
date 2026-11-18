@@ -337,13 +337,20 @@ class TestPresetManifest:
         with pytest.raises(PresetValidationError, match="missing 'type', 'name', or 'file'"):
             PresetManifest(manifest_path)
 
-    def test_invalid_template_name_format(self, temp_dir, valid_pack_data):
-        """Test template with invalid name format."""
-        valid_pack_data["provides"]["templates"][0]["name"] = "Invalid Name"
+    @pytest.mark.parametrize("template_type, name", [
+        ("template", "Invalid Name"),
+        ("template", "spec-template\n"),
+        ("command", "speckit.plan\n"),
+        ("script", "setup\n"),
+    ])
+    def test_invalid_template_name_format(self, temp_dir, valid_pack_data, template_type, name):
+        """Reject invalid names, including a newline after an otherwise valid name."""
+        valid_pack_data["provides"]["templates"][0]["type"] = template_type
+        valid_pack_data["provides"]["templates"][0]["name"] = name
         manifest_path = temp_dir / "preset.yml"
         with open(manifest_path, 'w') as f:
             yaml.dump(valid_pack_data, f)
-        with pytest.raises(PresetValidationError, match="Invalid template name"):
+        with pytest.raises(PresetValidationError, match="Invalid (template|command) name"):
             PresetManifest(manifest_path)
 
     def test_get_hash(self, pack_dir):

@@ -2228,3 +2228,25 @@ def test_extension_update_partial_skill_backup_preserves_live_skills(
     assert first_support.read_text(encoding="utf-8") == "FIRST SUPPORT"
     assert second_support.read_text(encoding="utf-8") == "SECOND SUPPORT"
     assert _update_backup_dirs(project_dir) == []
+
+
+
+def test_extension_update_aborts_when_removal_refused(project_dir, monkeypatch):
+    """A refused remove() (returns False) must abort the update before install."""
+    monkeypatch.chdir(project_dir)
+    monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [{"id": "test-ext", "name": "Test Ext", "version": "1.0.0"}])
+    monkeypatch.setattr(ExtensionRegistry, "get", lambda self, ext_id: {"version": "1.0.0", "enabled": True})
+    mock_zip = project_dir / "mock.zip"
+    _write_update_zip(mock_zip)
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: mock_zip)
+    monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda self, ext_id: {"id": "test-ext", "name": "Test Ext", "version": "1.1.0", "download_url": "https://example.com/ext.zip"})
+    monkeypatch.setattr(ExtensionManager, "remove", lambda self, ext_id, keep_config=False: False)
+    installs = []
+    monkeypatch.setattr(ExtensionManager, "install_from_zip", lambda *a, **k: installs.append(1))
+    monkeypatch.setattr("typer.confirm", lambda _: True)
+
+    result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
+
+    assert result.exit_code == 1
+    assert "Could not safely remove" in result.output
+    assert installs == []

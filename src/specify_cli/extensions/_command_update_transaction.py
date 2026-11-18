@@ -548,7 +548,11 @@ def run_update_command(extension: str | None) -> None:
 
                     # 7. Remove old extension (handles command file cleanup and registry removal)
                     installation_modified = True
-                    manager.remove(extension_id, keep_config=True)
+                    if manager.remove(extension_id, keep_config=True) is False:
+                        installation_modified = False
+                        raise RuntimeError(
+                            f"Could not safely remove existing '{extension_id}'"
+                        )
 
                     # 8. Install new version
                     _ = manager.install_from_zip(
