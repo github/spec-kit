@@ -8,10 +8,12 @@ import inspect
 import os
 import shutil
 import stat
+import sys
 import tempfile
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
-from functools import wraps
+from collections.abc import Callable
+from functools import partial, wraps
 from pathlib import Path
 from typing import Any
 
@@ -43,8 +45,15 @@ _ACCESS_ACL = "system.posix_acl_access"
 # Most read-only descriptors held on snapshotted files so rollback can trust
 # their identity; ``_pin_limit()`` lowers it to a quarter of the open-file limit.
 _MAX_PINNED_FILES = 1024
-# macOS sets and clears UF_COMPRESSED itself when a file's bytes are rewritten.
-_UNCOMPARED_FLAGS = getattr(stat, "UF_COMPRESSED", 0)
+# Flags the filesystem itself changes when a file's bytes are rewritten:
+# UF_COMPRESSED on macOS, and the UF_ARCHIVE bit FreeBSD and DragonFly set
+# on a write (ZFS, msdosfs).
+if sys.platform == "darwin":
+    _UNCOMPARED_FLAGS = getattr(stat, "UF_COMPRESSED", 0x20)
+elif sys.platform.startswith(("freebsd", "dragonfly")):
+    _UNCOMPARED_FLAGS = 0x800
+else:
+    _UNCOMPARED_FLAGS = 0
 
 
 def _restorable_xattrs(target: Path | int, journal: Any = None) -> dict[str, bytes]:
@@ -200,11 +209,15 @@ class _FileJournal:
         self.snapshotted_files: dict[Path, tuple[int, int]] = {}
         # Outside Windows, a read-only descriptor on each such file, held
         # until the transaction ends so its inode cannot be freed and reused
-        # by a replacement. A file without one is recreated, not restored in
-        # place. Windows gets none: an open file there cannot be replaced or
-        # removed, which would fail the operation itself.
+        # by a replacement. Windows gets none: an open file there cannot be
+        # replaced or removed, which would fail the operation itself, so it
+        # keeps the device and file-ID check alone.
         self.pinned_files: dict[Path, int] = {}
         self.pin_limit = 0 if os.name == "nt" else _pin_limit()
+        # The (st_dev, st_ino) of files that could not be pinned (past
+        # ``pin_limit``). Rollback recreates them, and reports one that still
+        # has that identity, as it was probably rewritten in place.
+        self.unverified_files: dict[Path, tuple[int, int]] = {}
         # Each such file's restorable extended attributes, read when it was
         # snapshotted; None when they could not be read or the os module has
         # no extended-attribute API (CPython has one on Linux only).
@@ -256,43 +269,58 @@ class _FileJournal:
         else:
             raise installer.IntegrationInstallError(f"Unsupported integration output: {source}")
 
-    def _pin(self, path: Path, entry: os.stat_result) -> None:
+    def _remember_original(self, path: Path, entry: os.stat_result, attributes: dict[str, bytes] | None) -> None:
+        """Record what rollback needs to restore ``path`` in place later."""
+        if os.name != "nt" and not self._pin(path, entry):
+            self.unverified_files[path] = (entry.st_dev, entry.st_ino)
+            return
+        self.snapshotted_files[path] = (entry.st_dev, entry.st_ino)
+        self.snapshotted_xattrs[path] = attributes
+        self.snapshotted_flags[path] = getattr(entry, "st_flags", None)
+
+    def _pin(self, path: Path, entry: os.stat_result) -> bool:
         """Hold a read-only descriptor on ``path`` if it is still ``entry``."""
         if len(self.pinned_files) >= self.pin_limit:
-            return
+            return False
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         try:
             descriptor = os.open(path, flags)
         except OSError:
-            return
-        if os.path.samestat(entry, os.fstat(descriptor)):
-            self.pinned_files[path] = descriptor
-        else:
+            return False
+        try:
+            same = os.path.samestat(entry, os.fstat(descriptor))
+        except OSError:
+            same = False
+        if not same:
             os.close(descriptor)
+            return False
+        self.pinned_files[path] = descriptor
+        return True
 
-    def restorable_identity(self, path: Path) -> tuple[int, int] | None:
-        """The identity a file must still have to be restored in place, or None.
+    def is_original(self, path: Path, current: os.stat_result) -> bool:
+        """Whether ``current``, found at ``path``, is the snapshotted file itself.
 
-        Outside Windows the file must be pinned and still have a name: a
-        pinned inode that has been unlinked everywhere is not the file now at
-        ``path``.
+        Same device and inode and, outside Windows, a pin that still has a
+        name: while pinned the inode cannot be reused, and a pinned inode
+        unlinked everywhere is not the file now at ``path``.
         """
         identity = self.snapshotted_files.get(path)
-        if identity is None or os.name == "nt":
-            return identity
+        if not stat.S_ISREG(current.st_mode) or (current.st_dev, current.st_ino) != identity:
+            return False
+        if os.name == "nt":
+            return True
         descriptor = self.pinned_files.get(path)
-        if descriptor is None:
-            return None
-        pinned = os.fstat(descriptor)
-        if pinned.st_nlink == 0:
-            return None
-        return (pinned.st_dev, pinned.st_ino)
+        return descriptor is not None and os.fstat(descriptor).st_nlink > 0
 
     def release(self) -> None:
         """Close the descriptors pinning snapshotted files."""
-        for descriptor in self.pinned_files.values():
-            os.close(descriptor)
+        descriptors = list(self.pinned_files.values())
         self.pinned_files.clear()
+        for descriptor in descriptors:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
 
     def _read_xattrs(self, path: Path) -> dict[str, bytes] | None:
         """Read a file's restorable extended attributes, or None if they cannot be read.
@@ -362,13 +390,12 @@ class _FileJournal:
                     saved.parent.mkdir(parents=True, exist_ok=True)
                     entry = path.lstat()
                     self._snapshot(path, saved)
-                    if stat.S_ISREG(entry.st_mode):
+                    # A file the operation is removing is recreated, never
+                    # restored in place, so it is not pinned either.
+                    if stat.S_ISREG(entry.st_mode) and not removal:
                         attributes = self._read_xattrs(path)
                         if os.path.samestat(entry, path.lstat()):
-                            self.snapshotted_files[path] = (entry.st_dev, entry.st_ino)
-                            self.snapshotted_xattrs[path] = attributes
-                            self.snapshotted_flags[path] = getattr(entry, "st_flags", None)
-                            self._pin(path, entry)
+                            self._remember_original(path, entry, attributes)
             else:
                 if not any(path == scope or scope in path.parents for scope in self.paths):
                     raise installer.IntegrationInstallError(
@@ -406,7 +433,7 @@ def _prune_new_parents(root: Path, journal: _FileJournal, path: Path) -> None:
 
 
 def _restore_file_in_place(
-    path: Path, saved: Path, identity: tuple[int, int] | None,
+    path: Path, saved: Path, is_original: Callable[[os.stat_result], bool] | None,
     attributes: dict[str, bytes] | None, file_flags: int | None = None,
 ) -> str:
     """Write a snapshot back into the file it was taken from.
@@ -416,8 +443,10 @@ def _restore_file_in_place(
     access-control list), so a file the operation rewrote in place gets its
     bytes, extended attributes, times and mode back through the same file.
 
-    Returns ``"untouched"``, having changed nothing, when ``path`` is no
-    longer that regular file (removed, or replaced by another file, a symlink
+    ``is_original`` tells whether a stat result is the snapshotted file;
+    None means the file cannot be restored in place. Returns
+    ``"untouched"``, having changed nothing, when ``path`` is no longer that
+    regular file (removed, or replaced by another file, a symlink
     or a directory) or cannot be opened for writing; the caller then
     recreates it. Returns ``"incomplete"`` when the bytes were restored but
     some metadata could not be, safely or at all (another user's file, say),
@@ -425,13 +454,13 @@ def _restore_file_in_place(
     snapshotted; Python has no descriptor form of ``chflags()``, so changed
     flags are reported, not set back. A failed byte write raises.
     """
-    if identity is None:
+    if is_original is None:
         return "untouched"
     try:
         entry = path.lstat()
     except FileNotFoundError:
         return "untouched"
-    if not stat.S_ISREG(entry.st_mode) or (entry.st_dev, entry.st_ino) != identity:
+    if not is_original(entry):
         return "untouched"
     # No O_TRUNC: nothing is written until the opened file is known to be the
     # snapshotted one. Windows has no O_NOFOLLOW, so the identity check after
@@ -447,7 +476,7 @@ def _restore_file_in_place(
         return "untouched"
     with os.fdopen(descriptor, "wb") as outgoing:
         opened = os.fstat(outgoing.fileno())
-        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != identity:
+        if not is_original(opened):
             return "untouched"
         # Before reading the snapshot, which can move its access time.
         original = saved.stat()
@@ -521,6 +550,9 @@ def _restore_xattrs(descriptor: int, attributes: dict[str, bytes]) -> bool:
     complete = True
     changes = [(name, None) for name in live.keys() - attributes.keys()]
     changes += [(name, value) for name, value in attributes.items() if live.get(name) != value]
+    # The access ACL last: it sets the mode bits, and a read-only one would
+    # refuse the user attributes still to come.
+    changes.sort(key=lambda change: change[0] == _ACCESS_ACL)
     for name, value in changes:
         try:
             if value is None:
@@ -530,6 +562,16 @@ def _restore_xattrs(descriptor: int, attributes: dict[str, bytes]) -> bool:
         except OSError:
             complete = False
     return complete
+
+
+def _still_has_identity(path: Path, identity: tuple[int, int] | None) -> bool:
+    if identity is None:
+        return False
+    try:
+        entry = path.lstat()
+    except OSError:
+        return False
+    return (entry.st_dev, entry.st_ino) == identity
 
 
 def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
@@ -556,11 +598,15 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
             conflicts.append(path)
             continue
         if saved is not None:
+            is_original = partial(journal.is_original, path) if path in journal.snapshotted_files else None
             restored = _restore_file_in_place(
-                path, saved, journal.restorable_identity(path), journal.snapshotted_xattrs.get(path),
+                path, saved, is_original, journal.snapshotted_xattrs.get(path),
                 journal.snapshotted_flags.get(path),
             )
-            if restored == "incomplete":
+            if restored == "incomplete" or _still_has_identity(path, journal.unverified_files.get(path)):
+                # An unverified file still at its old inode was probably
+                # rewritten in place; recreating it below loses its owner,
+                # links and any metadata its snapshot could not hold.
                 journal.incomplete_restores.append(path)
             if restored != "untouched":
                 continue
@@ -742,8 +788,8 @@ def _journalled(
                 if incomplete:
                     console.print(
                         "[yellow]Warning:[/yellow] Restored the contents of "
-                        f"{escape(str(incomplete))} but not all of their permissions, timestamps or "
-                        f"extended attributes. Recovery snapshots retained at {escape(str(backup))}"
+                        f"{escape(str(incomplete))} but not all of their ownership, links, permissions, "
+                        f"timestamps, extended attributes or file flags. Recovery snapshots retained at {escape(str(backup))}"
                     )
             except (OSError, installer.IntegrationInstallError) as restore_error:
                 outcome["retained"] = True
