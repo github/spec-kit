@@ -80,6 +80,12 @@ against symlinked write destinations before snapshotting and mutation.
 This guarantee does not cover unmigrated consumers such as
 `bundles.project.active_integration`, whose containment-checked reads can still
 follow contained state-file links.
+Persisted workflow runs under `.specify/workflows/runs` are likewise an
+always-deny managed-storage boundary: `RunState` shares `FileHelper`'s
+deny-mode entry classification (`FileHelper._entry_mode`) and Windows
+handle-backed reads (`FileHelper.read_bytes`) while retaining descriptor-backed
+directory creation, run enumeration, owner-only (`0600`) atomic JSON
+replacement, and append-only log writes.
 
 Existing Path-returning resolvers preflight policy without changing their return
 type or domain constructors. They do not implicitly equip unmigrated domain

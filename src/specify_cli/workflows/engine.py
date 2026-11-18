@@ -11,6 +11,7 @@ The engine is the orchestrator that:
 from __future__ import annotations
 
 import errno
+import io
 import json
 import os
 import re
@@ -25,6 +26,7 @@ from typing import Any
 
 import yaml
 
+from ..file_helper import FileHelper, SymlinkDeniedError, UnsupportedPathError
 from ..integration_state import (
     default_integration_key,
     try_read_integration_json,
@@ -685,30 +687,38 @@ class RunState:
         cls._validate_run_id(run_id)
         runs_root = project_root / ".specify" / "workflows" / "runs"
         cls._validate_runs_path(project_root)
+        run_dir = runs_root / run_id
+        cls._reject_symlink(run_dir, "workflow run")
         if create:
             with cls._open_runs_directory(project_root, create=True) as runs_fd:
-                if runs_fd is None:
-                    (runs_root / run_id).mkdir(exist_ok=True)
-                else:
-                    try:
+                try:
+                    if runs_fd is None:
+                        run_dir.mkdir(exist_ok=True)
+                    else:
                         os.mkdir(run_id, dir_fd=runs_fd)
-                    except FileExistsError:
-                        # Existing entries are validated before artifact access.
-                        pass
+                except FileExistsError:
+                    # Existing entries are validated before artifact access.
+                    pass
 
-        run_dir = runs_root / run_id
         cls._reject_symlink(run_dir, "workflow run")
         if run_dir.exists() and not run_dir.is_dir():
             raise OSError(f"Workflow run path is not a directory: {run_dir}")
         return run_dir
 
     @staticmethod
-    def _reject_symlink(path: Path, label: str) -> None:
-        """Reject an existing symlink or Windows reparse point without resolving its target."""
+    def _reject_symlink(
+        path: Path, label: str, *, dir_fd: int | None = None
+    ) -> None:
+        """Reject an existing symlink or Windows reparse point via FileHelper."""
         try:
-            entry = path.lstat()
+            mode = FileHelper._entry_mode(path, dir_fd=dir_fd)
         except (FileNotFoundError, NotADirectoryError):
             return
+        except UnsupportedPathError as exc:
+            raise UnsupportedPathError(
+                "Unsupported Windows reparse point (including directory junctions) "
+                f"for {label} path: {path}"
+            ) from exc
         except OSError as exc:
             if (
                 exc.errno in (errno.ENOENT, errno.ENOTDIR)
@@ -716,16 +726,20 @@ class RunState:
             ):
                 return
             raise
-        if stat.S_ISLNK(entry.st_mode):
-            raise ValueError(f"Refusing to use symlinked {label} path: {path}")
-        if getattr(entry, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
-            raise ValueError(
-                "Unsupported Windows reparse point (including directory junctions) "
-                f"for {label} path: {path}"
+        if stat.S_ISLNK(mode):
+            raise SymlinkDeniedError(
+                f"Refusing to use symlinked {label} path: {path}"
             )
 
     @staticmethod
     def _supports_descriptor_access() -> bool:
+        """Return whether POSIX dir_fd primitives needed beyond FileHelper exist.
+
+        FileHelper provides entry classification and Windows handle-backed
+        reads, while persisted runs use descriptor-anchored directory creation,
+        run enumeration, 0600 atomic JSON replacement, and log appends when the
+        platform supports those dir_fd operations.
+        """
         supports_dir_fd = getattr(os, "supports_dir_fd", ())
         return (
             hasattr(os, "O_DIRECTORY")
@@ -764,22 +778,11 @@ class RunState:
             }
             if exc.errno in symlink_errnos:
                 try:
-                    entry = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+                    RunState._reject_symlink(path, label, dir_fd=dir_fd)
+                except (SymlinkDeniedError, UnsupportedPathError) as policy_exc:
+                    raise policy_exc from exc
                 except (OSError, NotImplementedError):
-                    entry = None
-                if entry is not None:
-                    if stat.S_ISLNK(entry.st_mode):
-                        raise ValueError(
-                            f"Refusing to use symlinked {label} path: {path}"
-                        ) from exc
-                    if (
-                        getattr(entry, "st_file_attributes", 0)
-                        & stat.FILE_ATTRIBUTE_REPARSE_POINT
-                    ):
-                        raise ValueError(
-                            "Unsupported Windows reparse point (including directory "
-                            f"junctions) for {label} path: {path}"
-                        ) from exc
+                    pass
             raise
 
     @classmethod
@@ -870,12 +873,50 @@ class RunState:
             os.close(run_fd)
 
     @staticmethod
+    def _read_with_file_helper(path: Path, **kwargs):
+        """Read *path* through a deny-mode FileHelper for handle-backed reads."""
+        project_root = path.parents[4]
+        rel_path = path.relative_to(project_root)
+        try:
+            with FileHelper(project_root) as files:
+                raw = files.read_bytes(rel_path)
+        except (SymlinkDeniedError, UnsupportedPathError) as exc:
+            RunState._validate_fallback_path(path)
+            if path.is_dir():
+                raise IsADirectoryError(
+                    errno.EISDIR, os.strerror(errno.EISDIR), str(path)
+                ) from exc
+            if isinstance(exc, UnsupportedPathError):
+                raise UnsupportedPathError(
+                    "Unsupported Windows reparse point (including directory "
+                    f"junctions) for workflow run artifact {path.name!r} path: {path}"
+                ) from exc
+            raise SymlinkDeniedError(
+                f"Refusing to use symlinked workflow run artifact {path.name!r} path: {path}"
+            ) from exc
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                RunState._validate_fallback_path(path)
+                raise UnsupportedPathError(
+                    "Unsupported Windows reparse point (including directory "
+                    f"junctions) for workflow run artifact {path.name!r} path: {path}"
+                ) from exc
+            if exc.errno == errno.EINVAL and path.is_dir():
+                raise IsADirectoryError(
+                    errno.EISDIR, os.strerror(errno.EISDIR), str(path)
+                ) from exc
+            raise
+        return io.TextIOWrapper(io.BytesIO(raw), **kwargs)
+
+    @staticmethod
     def _open_artifact(
         path: Path, mode: str, *, dir_fd: int | None = None, **kwargs
     ):
         """Open a run artifact relative to its safely opened run directory."""
         if dir_fd is None:
             RunState._validate_fallback_path(path)
+            if mode == "r" and os.name == "nt":
+                return RunState._read_with_file_helper(path, **kwargs)
             return open(path, mode, **kwargs)
 
         flags = {

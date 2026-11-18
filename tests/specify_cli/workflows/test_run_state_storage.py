@@ -756,3 +756,84 @@ def test_load_legacy_inputs_sidecar_rejects_null_and_allows_missing(project_dir)
     (run_dir / "inputs.json").write_text("null", encoding="utf-8")
     with pytest.raises(ValueError, match="Invalid run inputs: expected a JSON object"):
         RunState.load("run-1", project_dir)
+
+
+@pytest.mark.parametrize("portable", [False, True])
+def test_dangling_run_directory_symlink_reports_policy_error(
+    project_dir, tmp_path, monkeypatch, portable
+):
+    from specify_cli.workflows._execution import CheckpointError
+    from specify_cli.workflows.engine import (
+        RunState,
+        WorkflowDefinition,
+        WorkflowEngine,
+    )
+
+    if portable:
+        monkeypatch.setattr(
+            RunState, "_supports_descriptor_access", staticmethod(lambda: False)
+        )
+    runs_root = project_dir / ".specify" / "workflows" / "runs"
+    runs_root.mkdir(parents=True, exist_ok=True)
+    (runs_root / "run-1").symlink_to(tmp_path / "missing", target_is_directory=True)
+
+    definition = WorkflowDefinition({
+        "workflow": {"id": "workflow", "name": "Workflow"},
+        "steps": [],
+    })
+    with pytest.raises(ValueError, match="Refusing to use symlinked workflow run path"):
+        WorkflowEngine(project_dir).execute(definition, run_id="run-1")
+
+    state = _state(project_dir)
+    with pytest.raises(ValueError, match="Refusing to use symlinked workflow run path"):
+        state.append_log({"event": "blocked"})
+    with pytest.raises(
+        CheckpointError, match="Refusing to use symlinked workflow run path"
+    ):
+        state.save()
+
+
+def test_read_with_file_helper_enforces_deny_policy_and_directory_errors(
+    project_dir, tmp_path, monkeypatch
+):
+    import errno
+    from specify_cli.file_helper import (
+        FileHelper,
+        SymlinkDeniedError,
+        UnsupportedPathError,
+    )
+    from specify_cli.workflows.engine import RunState
+
+    state = _state(project_dir)
+    state.save()
+    state_path = project_dir / ".specify" / "workflows" / "runs" / "run-1" / "state.json"
+
+    with RunState._read_with_file_helper(state_path, encoding="utf-8") as stream:
+        assert json.load(stream)["run_id"] == "run-1"
+
+    state_path.unlink()
+    state_path.mkdir()
+    with pytest.raises(IsADirectoryError):
+        RunState._read_with_file_helper(state_path, encoding="utf-8")
+    state_path.rmdir()
+
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}", encoding="utf-8")
+    state_path.symlink_to(outside)
+    with pytest.raises(
+        SymlinkDeniedError,
+        match="Refusing to use symlinked workflow run artifact 'state.json' path",
+    ):
+        RunState._read_with_file_helper(state_path, encoding="utf-8")
+    state_path.unlink()
+    state.save()
+
+    monkeypatch.setattr(
+        FileHelper,
+        "read_bytes",
+        lambda self, path: (_ for _ in ()).throw(
+            OSError(errno.ELOOP, "Refusing a reparse-point filesystem path")
+        ),
+    )
+    with pytest.raises(UnsupportedPathError, match="Windows reparse point"):
+        RunState._read_with_file_helper(state_path, encoding="utf-8")
