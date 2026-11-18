@@ -930,7 +930,7 @@ class RunState:
         Storage contract: ``resume`` and ``specify workflow definition`` both
         read this file, so its location and persisted shape must not change.
         """
-        return self.runs_dir / "workflow.yml"
+        return self._run_artifact(self.project_root, self.run_id, "workflow.yml")
 
     def load_definition(self) -> WorkflowDefinition:
         """Load the definition persisted when this run started.
@@ -939,7 +939,16 @@ class RunState:
         for invalid YAML or a non-mapping document. Never consults the
         installed workflow.
         """
-        return WorkflowDefinition.from_yaml(self.definition_path)
+        run_copy = self.definition_path
+        with self._open_run_directory(self.project_root, self.run_id) as run_fd:
+            with self._open_artifact(
+                run_copy, "r", dir_fd=run_fd, encoding="utf-8"
+            ) as f:
+                data = _safe_yaml_load(f, str(run_copy))
+        if not isinstance(data, dict):
+            msg = f"Workflow YAML must be a mapping, got {type(data).__name__}."
+            raise ValueError(msg)
+        return WorkflowDefinition(data, source_path=run_copy)
 
     def load_workflow_scopes(
         self,
@@ -1104,7 +1113,7 @@ class RunState:
                 with cls._open_artifact(
                     state_path, "r", dir_fd=run_fd, encoding="utf-8"
                 ) as f:
-                    state_data = json.load(f)
+                    state_data = _safe_json_load(f, f"run state for {run_id}")
         except FileNotFoundError:
             msg = f"Run state not found: {state_path}"
             raise FileNotFoundError(msg)
@@ -1202,7 +1211,7 @@ class RunState:
                     with cls._open_artifact(
                         inputs_path, "r", dir_fd=run_fd, encoding="utf-8"
                     ) as f:
-                        inputs_data = json.load(f)
+                        inputs_data = _safe_json_load(f, f"run inputs for {run_id}")
             except FileNotFoundError:
                 inputs_data = None
             if inputs_data is not None:
@@ -1398,13 +1407,12 @@ class WorkflowEngine:
         # Validate inputs before creating or replacing any run artifacts.
         resolved_inputs = self._resolve_inputs(definition, inputs or {})
 
-        # Persist a copy of the workflow definition so resume can
-        # reload it even if the original source is no longer available
-        # (e.g. a local YAML path that was moved or deleted).
+        # Persist the definition the run was started with. Storage contract
+        # (see RunState.definition_path): read by resume and by
+        # `specify workflow definition`; do not change location or content.
         workflow_copy = RunState._run_artifact(
             self.project_root, state.run_id, "workflow.yml", create=True
         )
-        import yaml
         with RunState._open_run_directory(
             self.project_root, state.run_id, create=True
         ) as run_fd:
@@ -1479,29 +1487,10 @@ class WorkflowEngine:
         # Load the workflow definition — try the persisted copy in the
         # run directory first so resume works even if the original
         # source (e.g. a local YAML path) is no longer available.
-        run_copy = RunState._run_artifact(
-            self.project_root, run_id, "workflow.yml"
-        )
         try:
-            with RunState._open_run_directory(self.project_root, run_id) as run_fd:
-                with RunState._open_artifact(
-                    run_copy, "r", dir_fd=run_fd, encoding="utf-8"
-                ) as f:
-                    try:
-                        data = yaml.safe_load(f)
-                    except yaml.YAMLError as exc:
-                        msg = f"Invalid YAML in {run_copy}: {exc}"
-                        raise ValueError(msg) from exc
+            definition = state.load_definition()
         except FileNotFoundError:
             definition = self.load_workflow(state.workflow_id)
-        else:
-            if not isinstance(data, dict):
-                msg = (
-                    "Workflow YAML must be a mapping, "
-                    f"got {type(data).__name__}."
-                )
-                raise ValueError(msg)
-            definition = WorkflowDefinition(data, source_path=run_copy)
 
         # RunState.load() rejects a non-int/negative current_step_index but
         # can't check the upper bound — the step count isn't known until the

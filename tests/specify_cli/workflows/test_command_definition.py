@@ -717,6 +717,41 @@ class TestNegative:
         result = _definition(project_dir, "run")
         _assert_json_error(result, "Refusing to use symlinked .specify/workflows/runs path")
 
+    def test_symlinked_run_directory_rejected(self, project_dir, tmp_path):
+        run = _run(project_dir, GATE_WF)
+        run_dir = project_dir / ".specify" / "workflows" / "runs" / run["run_id"]
+        external_dir = tmp_path / "external-run"
+        run_dir.rename(external_dir)
+        (external_dir / "workflow.yml").write_text(
+            GATE_WF.replace('message: "Review"', 'message: "External secret"'),
+            encoding="utf-8",
+        )
+        run_dir.symlink_to(external_dir, target_is_directory=True)
+
+        result = _definition(project_dir, run["run_id"])
+
+        _assert_json_error(result, "Refusing to use symlinked workflow run path")
+        assert "External secret" not in result.stderr
+
+    def test_symlinked_snapshot_rejected(self, project_dir, tmp_path):
+        run = _run(project_dir, GATE_WF)
+        snapshot = _snapshot(project_dir, run["run_id"])
+        external_snapshot = tmp_path / "external-workflow.yml"
+        external_snapshot.write_text(
+            GATE_WF.replace('message: "Review"', 'message: "External secret"'),
+            encoding="utf-8",
+        )
+        snapshot.unlink()
+        snapshot.symlink_to(external_snapshot)
+
+        result = _definition(project_dir, run["run_id"])
+
+        _assert_json_error(
+            result,
+            "Refusing to use symlinked workflow run artifact 'workflow.yml' path",
+        )
+        assert "External secret" not in result.stderr
+
     def test_invalid_specify_init_dir(self, project_dir, tmp_path, monkeypatch):
         invalid_root = tmp_path / "not-a-project"
         invalid_root.mkdir()

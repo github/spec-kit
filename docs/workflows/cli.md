@@ -107,6 +107,13 @@ specify workflow status [<run_id>]
 
 Shows the status of a specific run, or lists all runs if no ID is given. Run states: `created`, `running`, `completed`, `paused`, `failed`, `aborted`.
 
+Persisted-run storage rejects symlinked storage ancestors, per-run directories,
+and known artifact files when those paths are accessed. This applies to reads
+and writes of state, inputs, workflow snapshots, and logs; unrelated entries
+and unused artifacts are not proactively scanned. Workflow storage cannot be
+relocated through symlinks; move the files and directories into the
+project-owned runs directory instead.
+
 ## Workflow Definition
 
 ```bash
