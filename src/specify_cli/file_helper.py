@@ -18,7 +18,7 @@ from weakref import finalize
 from specify_cli._file_handles import (
     _WindowsFileIdentity, _windows_delete, _windows_directory_names, _windows_entry,
     _windows_file_id, _windows_handle, _windows_mode, _windows_overwrite_fd,
-    _windows_readlink, _windows_stat, windows_read_fd,
+    _windows_readlink, _windows_stat, rename_noreplace, windows_read_fd,
 )
 
 
@@ -372,12 +372,90 @@ class FileHelper:
         if not stat.S_ISREG(path.stat().st_mode):
             raise UnsupportedPathError(f"Expected a regular file: {path}")
 
+    @staticmethod
+    def _require_directory(path: Path) -> None:
+        if not stat.S_ISDIR(path.stat().st_mode):
+            raise NotADirectoryError(path)
+
     def mkdir(
         self, path: Path | str, *, parents: bool = False, exist_ok: bool = False
     ) -> None:
         """Create a directory, preflighting the entire requested hierarchy."""
         destination = self._path(path, allow_missing=True)
         destination.mkdir(parents=parents, exist_ok=exist_ok)
+
+    def iterdir(self, path: Path | str) -> tuple[Path, ...]:
+        """Enumerate immediate entries while applying the helper link policy."""
+        destination = self._path(path)
+        self._require_directory(destination)
+        entries = []
+        with os.scandir(destination) as iterator:
+            for entry in iterator:
+                candidate = destination / entry.name
+                mode = self._entry_mode(candidate)
+                if stat.S_ISLNK(mode):
+                    if not self.allow_symlinks:
+                        raise SymlinkDeniedError(
+                            f"Refusing to enumerate symlink: {candidate}"
+                        )
+                    self._path(candidate)
+                elif not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+                    raise UnsupportedPathError(
+                        f"Unsupported filesystem object: {candidate}"
+                    )
+                entries.append(candidate)
+        return tuple(sorted(entries, key=lambda entry: entry.name))
+
+    def replace(self, source: Path | str, destination: Path | str) -> None:
+        """Atomically move a staged file or directory without clobbering a destination."""
+        source_path = self._path(source, follow_leaf=False)
+        source_mode = self._entry_mode(source_path)
+        if not (stat.S_ISREG(source_mode) or stat.S_ISDIR(source_mode)):
+            raise UnsupportedPathError(
+                f"Unsupported filesystem object: {source_path}"
+            )
+
+        destination_path = self._path(
+            destination, allow_missing=True, follow_leaf=False
+        )
+        try:
+            self._entry_mode(destination_path)
+        except FileNotFoundError:
+            pass
+        else:
+            raise FileExistsError(
+                errno.EEXIST, os.strerror(errno.EEXIST), str(destination_path)
+            )
+        rename_noreplace(source_path, destination_path)
+
+    @contextmanager
+    def temporary_directory(
+        self, parent: Path | str, *, prefix: str = "speckit-"
+    ) -> Iterator[Path]:
+        """Create and clean up a staging directory beneath an existing in-root parent."""
+        if any(character in prefix for character in "/\\:\0"):
+            raise PathEscapeError(f"Temporary directory prefix must be a name prefix: {prefix!r}")
+        parent_path = self._path(parent)
+        self._require_directory(parent_path)
+        staging = Path(tempfile.mkdtemp(prefix=prefix, dir=parent_path))
+
+        def cleanup() -> None:
+            try:
+                self._entry_mode(staging)
+            except FileNotFoundError:
+                return
+            self.delete(staging, recursive=True)
+
+        try:
+            yield staging
+        except BaseException as body_error:
+            try:
+                cleanup()
+            except BaseException as cleanup_error:
+                body_error.add_note(f"Could not clean up staging directory {staging}: {cleanup_error}")
+            raise
+        else:
+            cleanup()
 
     def read_bytes(self, path: Path | str) -> bytes:
         destination = self._path(path)

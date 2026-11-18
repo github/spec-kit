@@ -224,6 +224,19 @@ descriptor-relative or change their documented concurrency limitations.
   `with FileHelper(...) as files:` closes on both success and failure. Operations
   on an explicitly closed helper raise `FileHelperError`.
 - `mkdir(path, parents=False, exist_ok=False)` creates directories.
+- `iterdir(path)` enumerates the selected directory's immediate entries in
+  deterministic name order, applying the helper's symlink policy to each entry.
+- `replace(source, destination)` atomically moves a staged regular file or
+  directory on the same filesystem, without clobbering a destination that
+  exists or appears after validation. It uses no-clobber rename on macOS,
+  Linux, and Windows; if the primitive is unavailable, the operation fails
+  rather than falling back to an overwriting rename. Path validation remains
+  pathname-based; atomicity does not extend to parent directory changes.
+  Callers own overwrite and rollback policy.
+- `temporary_directory(parent, prefix="speckit-")` is an in-root staging
+  context manager beneath an existing directory. `prefix` is a name fragment,
+  not a path. If both the body and cleanup fail, the body exception propagates
+  with cleanup details attached as a note.
 - `read_bytes(path)` / `read_text(path, encoding="utf-8")` read regular files.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
   create files with existing parents. A no-follow `lstat` preflight rejects
@@ -433,7 +446,9 @@ infrastructure warning/skip behavior and development-mode link creation are
 unchanged. Migrate one owned operation boundary at a time, carrying original
 paths and an explicit root/policy into the helper before any early resolution.
 Linked command directories and development-mode registration remain dependent
-stages. Non-atomic configuration writes preserve legacy metadata semantics.
+stages. Tree copying is deferred: install callers must retain selection of
+included entries and establish separate trusted source and destination
+boundaries. Non-atomic configuration writes preserve legacy metadata semantics.
 `overwrite_text` keeps the resolved directory/file objects open, but does not
 freeze directory membership on POSIX: an opened directory or file may be
 renamed, and the operation continues against that opened object. The trusted
@@ -451,3 +466,18 @@ handle-sharing behavior requires a native Windows run. Exclusive-creation tests
 cover parent replacement before anchoring and at the final open, along with
 native Windows parent-handle pinning and portable handle-lifetime checks;
 portable checks do not substitute for native Windows execution.
+
+### Migration guard
+
+The lint job runs `.github/scripts/check_file_helper_migration.py` against
+changed Python files in `src/specify_cli`. It reports new or edited direct
+filesystem call sites and unchanged call sites newly identifiable as direct
+I/O. It recognizes known standard-library I/O functions and locally traceable
+`pathlib` receivers; method names alone do not establish filesystem I/O.
+This is not runtime enforcement or whole-program type inference.
+
+Only four modules are exempt: `file_helper.py` implements the primitives,
+`_file_handles.py` provides native filesystem operations, `_file_policy.py`
+establishes trusted roots and bootstraps policy, and `integration_state.py`
+owns the managed-metadata exception described above. Existing direct calls
+elsewhere are not exempt when their call sites change.
