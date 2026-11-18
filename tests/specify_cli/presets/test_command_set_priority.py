@@ -273,3 +273,43 @@ class TestPresetSetPriority(PresetArtifactTestHelpers):
 
         assert result.exit_code == 1, result.output
         assert "not installed" in result.output.lower()
+
+
+    def test_set_priority_does_not_reconcile_a_disabled_preset(
+        self, project_dir, temp_dir
+    ):
+        """A disabled layer's priority change leaves generated files untouched."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        commands_dir = project_dir / ".gemini" / "commands"
+        commands_dir.mkdir(parents=True)
+
+        manager = PresetManager(project_dir)
+        fallback = self._create_command_preset(
+            temp_dir, "priority-fallback", "speckit.demo", "Fallback", "BODY-A"
+        )
+        disabled = self._create_command_preset(
+            temp_dir, "priority-disabled", "speckit.demo", "Disabled", "BODY-B"
+        )
+        manager.install_from_directory(fallback, "0.1.5", priority=10)
+        manager.install_from_directory(disabled, "0.1.5", priority=1)
+        manager.registry.update("priority-disabled", {"enabled": False})
+        manager._reconcile_composed_commands(["speckit.demo"])
+
+        command_file = commands_dir / "speckit.demo.toml"
+        assert "BODY-A" in command_file.read_text()
+        command_file.write_text("user command edit\n")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "set-priority", "priority-disabled", "2"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert PresetManager(project_dir).registry.get("priority-disabled")["priority"] == 2
+        assert command_file.read_text() == "user command edit\n"
