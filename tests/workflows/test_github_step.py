@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 import json
 import subprocess
 import sys
@@ -391,6 +390,19 @@ steps:
     assert len([method for method, _, _ in calls if method == "POST"]) == 2
 
 
+def _patch_cp1252_gh_runner(monkeypatch, fake_gh: Path) -> None:
+    real_run = subprocess.run
+
+    def run_with_cp1252_default(args, **kwargs):
+        if (
+            kwargs.get("text") or kwargs.get("universal_newlines")
+        ) and kwargs.get("encoding") is None:
+            kwargs = {**kwargs, "encoding": "cp1252"}
+        return real_run([sys.executable, str(fake_gh), *args[1:]], **kwargs)
+
+    monkeypatch.setattr(github.subprocess, "run", run_with_cp1252_default)
+
+
 def test_real_subprocess_decodes_utf8_issue_body_and_labels_under_cp1252(
     context, tmp_path: Path, monkeypatch
 ):
@@ -420,22 +432,7 @@ def test_real_subprocess_decodes_utf8_issue_body_and_labels_under_cp1252(
         encoding="utf-8",
     )
 
-    real_run = subprocess.run
-    real_text_encoding = io.text_encoding
-    monkeypatch.setattr(
-        io,
-        "text_encoding",
-        lambda encoding, stacklevel=2: (
-            "cp1252" if encoding is None else real_text_encoding(encoding, stacklevel)
-        ),
-    )
-    monkeypatch.setattr(
-        github.subprocess,
-        "run",
-        lambda args, **kwargs: real_run(
-            [sys.executable, str(fake_gh), *args[1:]], **kwargs
-        ),
-    )
+    _patch_cp1252_gh_runner(monkeypatch, fake_gh)
 
     step = get_step_type("github")
     first = step.execute(config(label="café"), context)
@@ -457,22 +454,7 @@ def test_real_subprocess_non_utf8_stdout_fails_step_cleanly(
         "import sys\nsys.stdout.buffer.write(b'\\x81\\xff')\n",
         encoding="utf-8",
     )
-    real_run = subprocess.run
-    real_text_encoding = io.text_encoding
-    monkeypatch.setattr(
-        io,
-        "text_encoding",
-        lambda encoding, stacklevel=2: (
-            "cp1252" if encoding is None else real_text_encoding(encoding, stacklevel)
-        ),
-    )
-    monkeypatch.setattr(
-        github.subprocess,
-        "run",
-        lambda args, **kwargs: real_run(
-            [sys.executable, str(fake_gh), *args[1:]], **kwargs
-        ),
-    )
+    _patch_cp1252_gh_runner(monkeypatch, fake_gh)
 
     result = get_step_type("github").execute(config(), context)
 
@@ -492,22 +474,7 @@ def test_real_subprocess_matches_non_ascii_label_without_cp1252_mojibake(
         "sys.stdout.buffer.write(json.dumps(payload, ensure_ascii=False).encode('utf-8'))\n",
         encoding="utf-8",
     )
-    real_run = subprocess.run
-    real_text_encoding = io.text_encoding
-    monkeypatch.setattr(
-        io,
-        "text_encoding",
-        lambda encoding, stacklevel=2: (
-            "cp1252" if encoding is None else real_text_encoding(encoding, stacklevel)
-        ),
-    )
-    monkeypatch.setattr(
-        github.subprocess,
-        "run",
-        lambda args, **kwargs: real_run(
-            [sys.executable, str(fake_gh), *args[1:]], **kwargs
-        ),
-    )
+    _patch_cp1252_gh_runner(monkeypatch, fake_gh)
 
     result = get_step_type("github").execute(config(label="café"), context)
 
