@@ -794,7 +794,9 @@ class RunState:
 
     @classmethod
     @contextmanager
-    def _open_runs_directory(cls, project_root: Path, *, create=False):
+    def _open_runs_directory(
+        cls, project_root: Path, *, create=False, readable=False
+    ):
         """Walk storage ancestors relative to the trusted project directory."""
         cls._validate_runs_path(project_root)
         runs_path = project_root / ".specify" / "workflows" / "runs"
@@ -805,10 +807,16 @@ class RunState:
             yield None
             return
 
-        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        traversal_flags = FileHelper._directory_flags()
+        readable_flags = (
+            os.O_RDONLY
+            | os.O_DIRECTORY
+            | os.O_NOFOLLOW
+            | getattr(os, "O_CLOEXEC", 0)
+        )
         if create:
             project_root.mkdir(parents=True, exist_ok=True)
-        fd = os.open(project_root, os.O_RDONLY | os.O_DIRECTORY)
+        fd = os.open(project_root, traversal_flags & ~os.O_NOFOLLOW)
         path = project_root
         try:
             for name in (".specify", "workflows", "runs"):
@@ -819,6 +827,11 @@ class RunState:
                     except FileExistsError:
                         # An existing component must still pass the no-follow open.
                         pass
+                flags = (
+                    readable_flags
+                    if readable and name == "runs"
+                    else traversal_flags
+                )
                 child_fd = cls._open_no_follow(
                     name,
                     flags,
@@ -862,7 +875,7 @@ class RunState:
         with cls._open_runs_directory(project_root) as runs_fd:
             run_fd = cls._open_no_follow(
                 run_id,
-                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                FileHelper._directory_flags(),
                 dir_fd=runs_fd,
                 label="workflow run",
                 path=project_root / ".specify" / "workflows" / "runs" / run_id,
@@ -1925,7 +1938,9 @@ class WorkflowEngine:
         """List all workflow runs in the project."""
         runs_dir = self.project_root / ".specify" / "workflows" / "runs"
         try:
-            with RunState._open_runs_directory(self.project_root) as runs_fd:
+            with RunState._open_runs_directory(
+                self.project_root, readable=True
+            ) as runs_fd:
                 names = sorted(os.listdir(runs_dir if runs_fd is None else runs_fd))
         except FileNotFoundError:
             return []
@@ -1939,10 +1954,10 @@ class WorkflowEngine:
             RunState._reject_symlink(run_dir, "workflow run")
             if not run_dir.is_dir():
                 continue
-            state_path = RunState._run_artifact(
-                self.project_root, run_dir.name, "state.json"
-            )
             try:
+                state_path = RunState._run_artifact(
+                    self.project_root, run_dir.name, "state.json"
+                )
                 with RunState._open_run_directory(
                     self.project_root, run_dir.name
                 ) as run_fd:

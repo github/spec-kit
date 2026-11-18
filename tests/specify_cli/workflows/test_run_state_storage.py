@@ -837,3 +837,61 @@ def test_read_with_file_helper_enforces_deny_policy_and_directory_errors(
     )
     with pytest.raises(UnsupportedPathError, match="Windows reparse point"):
         RunState._read_with_file_helper(state_path, encoding="utf-8")
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or getattr(os, "geteuid", lambda: -1)() == 0,
+    reason="POSIX non-root directory permission enforcement is required",
+)
+def test_search_only_storage_directories_allow_run_access_and_listing(project_dir):
+    from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+    state = _state(project_dir)
+    state.save()
+    runs_dir = project_dir / ".specify" / "workflows" / "runs"
+    run_dir = runs_dir / "run-1"
+    search_only = [
+        project_dir / ".specify",
+        project_dir / ".specify" / "workflows",
+        runs_dir,
+        run_dir,
+    ]
+    try:
+        for directory in search_only:
+            directory.chmod(0o111)
+
+        loaded = RunState.load("run-1", project_dir)
+        assert loaded.run_id == "run-1"
+
+        runs_dir.chmod(0o511)
+        assert [run["run_id"] for run in WorkflowEngine(project_dir).list_runs()] == [
+            "run-1"
+        ]
+    finally:
+        for directory in reversed(search_only):
+            directory.chmod(0o755)
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or getattr(os, "geteuid", lambda: -1)() == 0,
+    reason="POSIX non-root directory permission enforcement is required",
+)
+@pytest.mark.parametrize("portable", [False, True])
+def test_list_runs_skips_unsearchable_run_directory(
+    project_dir, monkeypatch, portable
+):
+    from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+    if portable:
+        monkeypatch.setattr(
+            RunState, "_supports_descriptor_access", staticmethod(lambda: False)
+        )
+    _state(project_dir, "run-1").save()
+    _state(project_dir, "run-2").save()
+    blocked_dir = project_dir / ".specify" / "workflows" / "runs" / "run-1"
+    try:
+        blocked_dir.chmod(0o000)
+        runs = WorkflowEngine(project_dir).list_runs()
+        assert [run["run_id"] for run in runs] == ["run-2"]
+    finally:
+        blocked_dir.chmod(0o755)
