@@ -10,9 +10,11 @@ The engine is the orchestrator that:
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
+import stat
 import threading
 import uuid
 from contextlib import contextmanager
@@ -722,6 +724,44 @@ class RunState:
             and os.listdir in os.supports_fd
         )
 
+    @staticmethod
+    def _open_no_follow(
+        name: str,
+        flags: int,
+        *,
+        dir_fd: int,
+        label: str,
+        path: Path,
+        mode: int = 0o777,
+    ) -> int:
+        """Open *name* under *dir_fd*, reporting a symlink with the storage policy.
+
+        A no-follow open of a symlink fails with an errno that varies by
+        platform and flags (``ELOOP``, ``EMLINK``, or ``ENOTDIR`` with
+        ``O_DIRECTORY``); confirm with ``lstat`` so callers always see the
+        same policy error as the pre-access checks.
+        """
+        try:
+            return os.open(name, flags, mode, dir_fd=dir_fd)
+        except OSError as exc:
+            symlink_errnos = {
+                errno.ELOOP,
+                errno.ENOTDIR,
+                getattr(errno, "EMLINK", errno.ELOOP),
+            }
+            if exc.errno in symlink_errnos:
+                try:
+                    is_link = stat.S_ISLNK(
+                        os.stat(name, dir_fd=dir_fd, follow_symlinks=False).st_mode
+                    )
+                except (OSError, NotImplementedError):
+                    is_link = False
+                if is_link:
+                    raise ValueError(
+                        f"Refusing to use symlinked {label} path: {path}"
+                    ) from exc
+            raise
+
     @classmethod
     def _validate_runs_path(cls, project_root: Path) -> None:
         path = project_root
@@ -746,15 +786,23 @@ class RunState:
         if create:
             project_root.mkdir(parents=True, exist_ok=True)
         fd = os.open(project_root, os.O_RDONLY | os.O_DIRECTORY)
+        path = project_root
         try:
             for name in (".specify", "workflows", "runs"):
+                path = path / name
                 if create:
                     try:
                         os.mkdir(name, dir_fd=fd)
                     except FileExistsError:
                         # An existing component must still pass the no-follow open.
                         pass
-                child_fd = os.open(name, flags, dir_fd=fd)
+                child_fd = cls._open_no_follow(
+                    name,
+                    flags,
+                    dir_fd=fd,
+                    label=f"workflow storage {name!r}",
+                    path=path,
+                )
                 os.close(fd)
                 fd = child_fd
             yield fd
@@ -789,10 +837,12 @@ class RunState:
             return
 
         with cls._open_runs_directory(project_root) as runs_fd:
-            run_fd = os.open(
+            run_fd = cls._open_no_follow(
                 run_id,
                 os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                 dir_fd=runs_fd,
+                label="workflow run",
+                path=project_root / ".specify" / "workflows" / "runs" / run_id,
             )
         try:
             yield run_fd
@@ -818,7 +868,14 @@ class RunState:
         nofollow = getattr(os, "O_NOFOLLOW", None)
         if nofollow is None or os.open not in os.supports_dir_fd:
             raise OSError("Secure workflow artifact access is unavailable")
-        fd = os.open(path.name, flags | nofollow, 0o666, dir_fd=dir_fd)
+        fd = RunState._open_no_follow(
+            path.name,
+            flags | nofollow,
+            dir_fd=dir_fd,
+            label=f"workflow run artifact {path.name!r}",
+            path=path,
+            mode=0o666,
+        )
         return os.fdopen(fd, mode, **kwargs)
 
     @staticmethod
@@ -1045,13 +1102,16 @@ class RunState:
     ) -> None:
         """Write *data* as indented JSON to *path* atomically."""
         tmp = f".{path.name}.{uuid.uuid4().hex}.tmp"
+        # Windows opens descriptors in CRT text mode unless O_BINARY is set,
+        # which would add a second CR to the text layer's CRLF newlines.
+        create_flags = (
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+        )
         if dir_fd is None:
             tmp_path = path.with_name(tmp)
             RunState._validate_fallback_path(path)
             try:
-                fd = os.open(
-                    tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
-                )
+                fd = os.open(tmp_path, create_flags, 0o600)
                 with os.fdopen(
                     fd, "w", encoding="utf-8", errors="backslashreplace"
                 ) as f:
@@ -1068,12 +1128,7 @@ class RunState:
                 raise
             return
 
-        fd = os.open(
-            tmp,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            0o600,
-            dir_fd=dir_fd,
-        )
+        fd = os.open(tmp, create_flags, 0o600, dir_fd=dir_fd)
         try:
             # Keep non-ASCII text readable in these human-auditable records;
             # backslashreplace writes a lone surrogate as its JSON \u escape.
@@ -1095,13 +1150,13 @@ class RunState:
     def load(cls, run_id: str, project_root: Path) -> RunState:
         """Load a run state from disk.
 
-        Validates ``run_id`` against ``_RUN_ID_PATTERN`` *before* building
-        the lookup path. Without this guard, a caller passing a value like
-        ``../escape`` (e.g. via ``specify workflow resume`` CLI argument)
-        would interpolate path-traversal segments into
-        ``runs_dir`` below, letting ``state_path.exists()`` probe arbitrary
-        paths and ``json.load`` read attacker-planted JSON from outside
-        the project's ``runs/`` directory. ``__init__`` already runs this
+        Validates ``run_id`` against ``_RUN_ID_PATTERN`` and enforces the
+        persisted-run storage boundary *before* opening any artifact. Without
+        this guard, a caller passing a value like ``../escape`` (e.g. via
+        ``specify workflow resume`` CLI argument) would interpolate
+        path-traversal segments into the run directory path, letting the
+        lookup probe arbitrary paths and read attacker-planted JSON from
+        outside the project's ``runs/`` directory. ``__init__`` already runs this
         check on the stored ``state_data["run_id"]``, but that fires
         *after* the file lookup — too late to prevent the disclosure.
         Mirrors the precedent in ``agents._ensure_within_directory``.
@@ -1804,6 +1859,9 @@ class WorkflowEngine:
 
         runs: list[dict[str, Any]] = []
         for name in names:
+            if not RunState._RUN_ID_PATTERN.fullmatch(name):
+                # The engine never creates such entries, so they cannot be runs.
+                continue
             run_dir = runs_dir / name
             if run_dir.is_symlink():
                 raise ValueError(

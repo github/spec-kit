@@ -285,6 +285,8 @@ The descriptor-backed path opens the project root and walks `.specify`,
 `workflows`, and `runs` one component at a time with no-follow directory opens.
 Directory creation and run enumeration use those descriptors too, preventing
 an ancestor replacement from redirecting access outside the project.
+A symlink swapped in after the pre-access checks is reported with the same
+policy error as one that existed beforehand.
 Other platforms recheck path components before access and use atomic replacement
 for state writes; that fallback rejects existing symlinks but cannot prevent
 concurrent path replacement.

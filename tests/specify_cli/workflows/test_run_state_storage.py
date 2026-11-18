@@ -415,12 +415,8 @@ def test_ancestor_replacement_never_accesses_external_storage(
     monkeypatch.setattr(
         RunState, "_open_artifact", staticmethod(track_artifact_open)
     )
-    expected = (
-        (CheckpointError, ValueError, OSError)
-        if operation == "save"
-        else (ValueError, OSError)
-    )
-    with pytest.raises(expected):
+    expected = (CheckpointError, ValueError) if operation == "save" else ValueError
+    with pytest.raises(expected, match="symlinked workflow storage"):
         if operation == "load":
             RunState.load("run-1", project_dir)
         elif operation == "save":
@@ -448,3 +444,95 @@ def test_list_rejects_dangling_runs_root(project_dir, tmp_path, monkeypatch, por
 
     with pytest.raises(ValueError, match="symlinked"):
         WorkflowEngine(project_dir).list_runs()
+
+
+@pytest.mark.parametrize("portable", [False, True])
+def test_list_ignores_entries_that_cannot_be_runs(
+    project_dir, tmp_path, monkeypatch, portable
+):
+    from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+    if portable:
+        monkeypatch.setattr(
+            RunState, "_supports_descriptor_access", staticmethod(lambda: False)
+        )
+    _state(project_dir).save()
+    runs_root = project_dir / ".specify" / "workflows" / "runs"
+    (runs_root / ".backup").mkdir()
+    (runs_root / "not a run").mkdir()
+    (runs_root / ".linked").symlink_to(tmp_path, target_is_directory=True)
+
+    runs = WorkflowEngine(project_dir).list_runs()
+
+    assert [run["run_id"] for run in runs] == ["run-1"]
+
+
+@pytest.mark.parametrize("replaced", ["run-directory", "state.json"])
+def test_descriptor_open_reports_policy_for_late_symlink(
+    project_dir, tmp_path, monkeypatch, replaced
+):
+    from specify_cli.workflows.engine import RunState
+
+    if not RunState._supports_descriptor_access():
+        pytest.skip("directory descriptors are unavailable")
+    state = _state(project_dir)
+    state.save()
+    run_dir = project_dir / ".specify" / "workflows" / "runs" / "run-1"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "state.json").write_text(
+        (run_dir / "state.json").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    original_open = RunState._open_no_follow
+    swapped = False
+
+    def swap_before_open(name, flags, **kwargs):
+        nonlocal swapped
+        target = "run-1" if replaced == "run-directory" else "state.json"
+        if not swapped and name == target:
+            swapped = True
+            if replaced == "run-directory":
+                os.rename(run_dir, tmp_path / "detached")
+                run_dir.symlink_to(outside, target_is_directory=True)
+            else:
+                (run_dir / "state.json").unlink()
+                (run_dir / "state.json").symlink_to(outside / "state.json")
+        return original_open(name, flags, **kwargs)
+
+    monkeypatch.setattr(RunState, "_open_no_follow", staticmethod(swap_before_open))
+    label = "workflow run path" if replaced == "run-directory" else (
+        "workflow run artifact 'state.json' path"
+    )
+
+    with pytest.raises(ValueError, match=f"symlinked {label}"):
+        RunState.load("run-1", project_dir)
+
+    assert swapped
+
+
+@pytest.mark.parametrize("portable", [False, True])
+def test_atomic_json_writes_request_binary_descriptors(
+    project_dir, monkeypatch, portable
+):
+    from specify_cli.workflows.engine import RunState
+
+    if portable:
+        monkeypatch.setattr(
+            RunState, "_supports_descriptor_access", staticmethod(lambda: False)
+        )
+    binary_flag = 1 << 30
+    monkeypatch.setattr(os, "O_BINARY", binary_flag, raising=False)
+    original_open = os.open
+    temporary_flags = []
+
+    def record_flags(path, flags, *args, **kwargs):
+        if str(path).endswith(".tmp"):
+            temporary_flags.append(flags)
+        return original_open(path, flags & ~binary_flag, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", record_flags)
+
+    _state(project_dir).save()
+
+    assert len(temporary_flags) == 2
+    assert all(flags & binary_flag for flags in temporary_flags)
