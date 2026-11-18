@@ -3991,7 +3991,9 @@ def test_native_refresh_failure_removes_resources_it_created(project_dir, temp_d
     assert resource.relative_to(project_dir).as_posix() in recorded
 
 
-def test_native_refresh_failure_keeps_previously_recorded_resources(project_dir, temp_dir, monkeypatch):
+def test_native_refresh_failure_keeps_previously_recorded_resources(
+    project_dir, temp_dir, monkeypatch, capsys
+):
     from specify_cli.extensions import ExtensionRegistry
 
     _create_init_options(project_dir, ai="claude", ai_skills=False)
@@ -4007,12 +4009,35 @@ def test_native_refresh_failure_keeps_previously_recorded_resources(project_dir,
     resource = skills / "speckit-test-ext-hello/references/r.md"
     assert resource.read_text() == "package"
 
-    monkeypatch.setattr(
-        ExtensionRegistry, "update",
-        lambda self, ext_id, updates: (_ for _ in ()).throw(OSError("simulated registry failure")),
-    )
+    # Introduce a new resource in the installed extension so the refresh computes
+    # changed skill_resource_hashes and actually invokes ExtensionRegistry.update().
+    installed_ext = manager.extensions_dir / "test-ext"
+    installed_data = yaml.safe_load((installed_ext / "extension.yml").read_text())
+    installed_data["provides"]["commands"][0]["resources"] = [
+        "references/r.md",
+        "references/new.md",
+    ]
+    (installed_ext / "extension.yml").write_text(yaml.safe_dump(installed_data))
+    (installed_ext / "references/new.md").write_text("new")
+    new_resource = skills / "speckit-test-ext-hello/references/new.md"
+
+    update_calls = 0
+
+    def fail_update(self, ext_id, updates):
+        nonlocal update_calls
+        update_calls += 1
+        raise OSError("simulated registry failure")
+
+    monkeypatch.setattr(ExtensionRegistry, "update", fail_update)
     ExtensionManager(project_dir).register_enabled_extensions_for_agent("claude", force=True)
-    assert resource.read_text() == "package"  # a recorded copy is not retired
+
+    assert update_calls == 1
+    assert "simulated registry failure" in capsys.readouterr().out
+    assert not new_resource.exists()  # newly written unrecorded resource is retired
+    assert resource.read_text() == "package"  # previously recorded copy is preserved
+    recorded = ExtensionManager(project_dir).registry.get("test-ext")["skill_resource_hashes"]["project"]
+    assert resource.relative_to(project_dir).as_posix() in recorded
+    assert new_resource.relative_to(project_dir).as_posix() not in recorded
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
