@@ -697,19 +697,32 @@ class RunState:
                         pass
 
         run_dir = runs_root / run_id
-        if run_dir.is_symlink():
-            raise ValueError(
-                f"Refusing to use symlinked workflow run path: {run_dir}"
-            )
+        cls._reject_symlink(run_dir, "workflow run")
         if run_dir.exists() and not run_dir.is_dir():
             raise OSError(f"Workflow run path is not a directory: {run_dir}")
         return run_dir
 
     @staticmethod
     def _reject_symlink(path: Path, label: str) -> None:
-        """Reject an existing symlink without resolving its target."""
-        if path.is_symlink():
+        """Reject an existing symlink or Windows reparse point without resolving its target."""
+        try:
+            entry = path.lstat()
+        except (FileNotFoundError, NotADirectoryError):
+            return
+        except OSError as exc:
+            if (
+                exc.errno in (errno.ENOENT, errno.ENOTDIR)
+                or getattr(exc, "winerror", None) == 267
+            ):
+                return
+            raise
+        if stat.S_ISLNK(entry.st_mode):
             raise ValueError(f"Refusing to use symlinked {label} path: {path}")
+        if getattr(entry, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            raise ValueError(
+                "Unsupported Windows reparse point (including directory junctions) "
+                f"for {label} path: {path}"
+            )
 
     @staticmethod
     def _supports_descriptor_access() -> bool:
@@ -751,15 +764,22 @@ class RunState:
             }
             if exc.errno in symlink_errnos:
                 try:
-                    is_link = stat.S_ISLNK(
-                        os.stat(name, dir_fd=dir_fd, follow_symlinks=False).st_mode
-                    )
+                    entry = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
                 except (OSError, NotImplementedError):
-                    is_link = False
-                if is_link:
-                    raise ValueError(
-                        f"Refusing to use symlinked {label} path: {path}"
-                    ) from exc
+                    entry = None
+                if entry is not None:
+                    if stat.S_ISLNK(entry.st_mode):
+                        raise ValueError(
+                            f"Refusing to use symlinked {label} path: {path}"
+                        ) from exc
+                    if (
+                        getattr(entry, "st_file_attributes", 0)
+                        & stat.FILE_ATTRIBUTE_REPARSE_POINT
+                    ):
+                        raise ValueError(
+                            "Unsupported Windows reparse point (including directory "
+                            f"junctions) for {label} path: {path}"
+                        ) from exc
             raise
 
     @classmethod
@@ -876,7 +896,11 @@ class RunState:
             path=path,
             mode=0o666,
         )
-        return os.fdopen(fd, mode, **kwargs)
+        try:
+            return os.fdopen(fd, mode, **kwargs)
+        except BaseException:
+            os.close(fd)
+            raise
 
     @staticmethod
     def _validate_installed_origin(
@@ -1043,8 +1067,6 @@ class RunState:
         nor leave a reader observing a half-written file. Racing writers only
         contend to be last; they never corrupt.
         """
-        self._run_directory(self.project_root, self.run_id, create=True)
-
         with self._lock:
             if self._checkpoint_failed:
                 from ._execution import CheckpointError
@@ -1112,9 +1134,14 @@ class RunState:
             RunState._validate_fallback_path(path)
             try:
                 fd = os.open(tmp_path, create_flags, 0o600)
-                with os.fdopen(
-                    fd, "w", encoding="utf-8", errors="backslashreplace"
-                ) as f:
+                try:
+                    stream = os.fdopen(
+                        fd, "w", encoding="utf-8", errors="backslashreplace"
+                    )
+                except BaseException:
+                    os.close(fd)
+                    raise
+                with stream as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
                 RunState._validate_fallback_path(path)
                 os.replace(tmp_path, path)
@@ -1132,9 +1159,14 @@ class RunState:
         try:
             # Keep non-ASCII text readable in these human-auditable records;
             # backslashreplace writes a lone surrogate as its JSON \u escape.
-            with os.fdopen(
-                fd, "w", encoding="utf-8", errors="backslashreplace"
-            ) as f:
+            try:
+                stream = os.fdopen(
+                    fd, "w", encoding="utf-8", errors="backslashreplace"
+                )
+            except BaseException:
+                os.close(fd)
+                raise
+            with stream as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             os.rename(
                 tmp, path.name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd
@@ -1268,8 +1300,8 @@ class RunState:
                     ) as f:
                         inputs_data = _safe_json_load(f, f"run inputs for {run_id}")
             except FileNotFoundError:
-                inputs_data = None
-            if inputs_data is not None:
+                pass
+            else:
                 if not isinstance(inputs_data, dict):
                     raise ValueError(
                         "Invalid run inputs: expected a JSON object"
@@ -1863,10 +1895,7 @@ class WorkflowEngine:
                 # The engine never creates such entries, so they cannot be runs.
                 continue
             run_dir = runs_dir / name
-            if run_dir.is_symlink():
-                raise ValueError(
-                    f"Refusing to use symlinked workflow run path: {run_dir}"
-                )
+            RunState._reject_symlink(run_dir, "workflow run")
             if not run_dir.is_dir():
                 continue
             state_path = RunState._run_artifact(

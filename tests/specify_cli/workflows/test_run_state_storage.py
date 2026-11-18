@@ -415,7 +415,7 @@ def test_ancestor_replacement_never_accesses_external_storage(
     monkeypatch.setattr(
         RunState, "_open_artifact", staticmethod(track_artifact_open)
     )
-    expected = (CheckpointError, ValueError) if operation == "save" else ValueError
+    expected = CheckpointError if operation == "save" else ValueError
     with pytest.raises(expected, match="symlinked workflow storage"):
         if operation == "load":
             RunState.load("run-1", project_dir)
@@ -423,6 +423,9 @@ def test_ancestor_replacement_never_accesses_external_storage(
             state.save()
         else:
             WorkflowEngine(project_dir).list_runs()
+
+    if operation == "save":
+        assert state._checkpoint_failed
 
     assert swapped
     assert not artifact_attempts
@@ -516,23 +519,240 @@ def test_atomic_json_writes_request_binary_descriptors(
 ):
     from specify_cli.workflows.engine import RunState
 
-    if portable:
-        monkeypatch.setattr(
-            RunState, "_supports_descriptor_access", staticmethod(lambda: False)
-        )
+    supports_descriptors = RunState._supports_descriptor_access()
+    if not portable and not supports_descriptors:
+        pytest.skip("directory descriptors are unavailable")
+    monkeypatch.setattr(
+        RunState, "_supports_descriptor_access", staticmethod(lambda: not portable)
+    )
     binary_flag = 1 << 30
     monkeypatch.setattr(os, "O_BINARY", binary_flag, raising=False)
     original_open = os.open
-    temporary_flags = []
+    temporary_opens = []
 
     def record_flags(path, flags, *args, **kwargs):
         if str(path).endswith(".tmp"):
-            temporary_flags.append(flags)
+            temporary_opens.append((flags, kwargs.get("dir_fd")))
         return original_open(path, flags & ~binary_flag, *args, **kwargs)
 
     monkeypatch.setattr(os, "open", record_flags)
 
     _state(project_dir).save()
 
-    assert len(temporary_flags) == 2
-    assert all(flags & binary_flag for flags in temporary_flags)
+    assert len(temporary_opens) == 2
+    assert all(flags & binary_flag for flags, _ in temporary_opens)
+    assert all((dir_fd is None) == portable for _, dir_fd in temporary_opens)
+
+
+@pytest.mark.parametrize("component", ["ancestor", "run-directory"])
+def test_portable_storage_rejects_windows_reparse_points(
+    project_dir, monkeypatch, component
+):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from specify_cli.workflows._execution import CheckpointError
+    from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+    monkeypatch.setattr(
+        RunState, "_supports_descriptor_access", staticmethod(lambda: False)
+    )
+    state = _state(project_dir)
+    state.save()
+    runs_root = project_dir / ".specify" / "workflows" / "runs"
+    reparse_target = runs_root if component == "ancestor" else runs_root / "run-1"
+    original_lstat = Path.lstat
+
+    def reparse_lstat(path, *args, **kwargs):
+        result = original_lstat(path, *args, **kwargs)
+        if path == reparse_target:
+            return SimpleNamespace(
+                st_mode=result.st_mode,
+                st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
+            )
+        return result
+
+    monkeypatch.setattr(Path, "lstat", reparse_lstat)
+
+    with pytest.raises(ValueError, match="Windows reparse point"):
+        RunState.load("run-1", project_dir)
+    with pytest.raises(ValueError, match="Windows reparse point"):
+        WorkflowEngine(project_dir).list_runs()
+    with pytest.raises(ValueError, match="Windows reparse point"):
+        state.append_log({"event": "blocked"})
+    with pytest.raises(CheckpointError, match="Windows reparse point"):
+        state.save()
+    assert state._checkpoint_failed
+
+
+def test_windows_symlink_reparse_attributes_still_report_symlink_policy(
+    project_dir, tmp_path, monkeypatch
+):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from specify_cli.workflows.engine import RunState
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    runs_root = project_dir / ".specify" / "workflows" / "runs"
+    runs_root.mkdir(parents=True)
+    linked_run = runs_root / "run-1"
+    linked_run.symlink_to(outside, target_is_directory=True)
+    original_lstat = Path.lstat
+
+    def symlink_with_reparse_attr(path, *args, **kwargs):
+        result = original_lstat(path, *args, **kwargs)
+        if path == linked_run:
+            return SimpleNamespace(
+                st_mode=result.st_mode,
+                st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
+            )
+        return result
+
+    monkeypatch.setattr(Path, "lstat", symlink_with_reparse_attr)
+
+    with pytest.raises(ValueError, match="Refusing to use symlinked workflow run path"):
+        RunState.load("run-1", project_dir)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows junction creation required")
+@pytest.mark.parametrize("component", ["ancestor", "run-directory"])
+def test_native_windows_junctions_rejected_in_storage(
+    project_dir, tmp_path, component
+):
+    import subprocess
+    from specify_cli.workflows._execution import CheckpointError
+    from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+    outside = tmp_path / "outside"
+    outside_run = outside / "run-1" if component == "ancestor" else outside
+    outside_run.mkdir(parents=True)
+    external_state = outside_run / "state.json"
+    external_state.write_text(
+        json.dumps({
+            "run_id": "run-1",
+            "workflow_id": "external",
+            "status": "paused",
+        }),
+        encoding="utf-8",
+    )
+    original_bytes = external_state.read_bytes()
+
+    runs_root = project_dir / ".specify" / "workflows" / "runs"
+    if component == "ancestor":
+        runs_root.parent.mkdir(parents=True, exist_ok=True)
+        junction_path = runs_root
+    else:
+        runs_root.mkdir(parents=True, exist_ok=True)
+        junction_path = runs_root / "run-1"
+
+    created = subprocess.run(
+        ["cmd.exe", "/c", "mklink", "/J", str(junction_path), str(outside)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    if created.returncode:
+        pytest.skip(
+            f"Windows junction creation unavailable: {created.stderr or created.stdout}"
+        )
+    assert not junction_path.is_symlink()
+
+    state = _state(project_dir)
+    with pytest.raises(ValueError, match="Windows reparse point"):
+        RunState.load("run-1", project_dir)
+    with pytest.raises(ValueError, match="Windows reparse point"):
+        WorkflowEngine(project_dir).list_runs()
+    with pytest.raises(ValueError, match="Windows reparse point"):
+        state.append_log({"event": "blocked"})
+    with pytest.raises(CheckpointError, match="Windows reparse point"):
+        state.save()
+    assert state._checkpoint_failed
+
+    assert external_state.read_bytes() == original_bytes
+    assert not (outside_run / "inputs.json").exists()
+    assert not (outside_run / "log.jsonl").exists()
+
+
+def test_open_artifact_closes_descriptor_when_fdopen_fails(
+    project_dir, monkeypatch
+):
+    import errno
+    from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+    if not RunState._supports_descriptor_access():
+        pytest.skip("directory descriptors are unavailable")
+
+    run_dir = _run_dir(project_dir)
+    (run_dir / "state.json").mkdir()
+    original_open_no_follow = RunState._open_no_follow
+    opened_fds = []
+
+    def record_artifact_fd(name, flags, **kwargs):
+        fd = original_open_no_follow(name, flags, **kwargs)
+        if name == "state.json":
+            opened_fds.append(fd)
+        return fd
+
+    monkeypatch.setattr(
+        RunState, "_open_no_follow", staticmethod(record_artifact_fd)
+    )
+
+    with pytest.raises(IsADirectoryError):
+        RunState.load("run-1", project_dir)
+    assert len(opened_fds) == 1
+    with pytest.raises(OSError) as exc_info:
+        os.fstat(opened_fds[-1])
+    assert exc_info.value.errno == errno.EBADF
+
+    assert WorkflowEngine(project_dir).list_runs() == []
+    assert len(opened_fds) == 2
+    with pytest.raises(OSError) as exc_info:
+        os.fstat(opened_fds[-1])
+    assert exc_info.value.errno == errno.EBADF
+
+
+@pytest.mark.parametrize("target", ["runs-ancestor", "run-directory"])
+def test_save_wraps_symlinked_storage_in_checkpoint_error(
+    project_dir, tmp_path, target
+):
+    from specify_cli.workflows._execution import CheckpointError
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    runs_root = project_dir / ".specify" / "workflows" / "runs"
+    if target == "runs-ancestor":
+        runs_root.parent.mkdir(parents=True, exist_ok=True)
+        runs_root.symlink_to(outside, target_is_directory=True)
+    else:
+        runs_root.mkdir(parents=True, exist_ok=True)
+        (runs_root / "run-1").symlink_to(outside, target_is_directory=True)
+
+    state = _state(project_dir)
+    with pytest.raises(CheckpointError, match="Refusing to use symlinked"):
+        state.save()
+
+    assert state._checkpoint_failed is True
+    with pytest.raises(CheckpointError, match="previous checkpoint failed"):
+        state.save()
+
+
+def test_load_legacy_inputs_sidecar_rejects_null_and_allows_missing(project_dir):
+    from specify_cli.workflows.engine import RunState
+
+    run_dir = _run_dir(project_dir)
+    (run_dir / "state.json").write_text(
+        json.dumps({
+            "run_id": "run-1",
+            "workflow_id": "workflow",
+            "status": "paused",
+        }),
+        encoding="utf-8",
+    )
+
+    loaded = RunState.load("run-1", project_dir)
+    assert loaded.inputs == {}
+
+    (run_dir / "inputs.json").write_text("null", encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid run inputs: expected a JSON object"):
+        RunState.load("run-1", project_dir)
