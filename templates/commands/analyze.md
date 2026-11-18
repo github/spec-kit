@@ -119,6 +119,7 @@ Create internal representations (do not include raw artifacts in output):
 - **Constrained-field inventory** (when applicable): Record each canonical `Entity.field`, its constraints, and its location in data-model.md; keep identically named fields on different entities distinct
 - **Field citation mapping** (when applicable): Map explicit data-model.md references with exact `Entity.field` identities to implementing task IDs and task locations; retain unresolved references and task-stated constraints for the detection passes
 - **Constitution rule set**: Extract principle names and MUST/SHOULD normative statements
+- **Closed-vocabulary inventory**: Record explicitly named finite sets (for example statuses, roles, categories, or enum-like value lists), their members, and each location where they are declared
 
 ### 4. Detection Passes (Token-Efficient Analysis)
 
@@ -162,6 +163,14 @@ Focus on high-signal findings. Limit to 50 findings total; aggregate remainder i
 - Conflicting requirements (e.g., one requires Next.js while other specifies Vue)
 - Task-stated field constraints that contradict data-model.md, even when a valid citation is present. Compare any clearly identified field's task prose even when its citation is missing; check length, nullable/required status, enum values, and validation rules
 - For each field mismatch, identify the exact `Entity.field`, task ID, canonical and task-stated restrictions, and both source locations. Do not flag citation-only tasks or semantically matching paraphrases for omitting/rewording constraint values. Do not invent canonical values when the source restriction is unclear; use the existing ambiguity/underspecification passes for unclear definitions
+
+#### G. Closed Vocabulary Consistency
+
+- Find explicitly named finite sets that are enumerated in more than one artifact or section
+- Compare repeated declarations after normalizing case, quoting, and presentation order while preserving the actual member names
+- Flag declarations of the same named set when members are missing, added, or renamed, and report both locations plus the symmetric difference
+- Treat an explicitly identified subset as intentional when the artifact states the subset relationship; otherwise report the divergence as a warning rather than assuming it is an error
+- Do not infer closed vocabularies from unrelated prose or unnamed example lists
 
 ### 5. Severity Assignment
 
@@ -207,6 +216,7 @@ Use the existing finding table for field findings, including source locations an
 - Coverage % (requirements with >=1 task)
 - Ambiguity Count
 - Duplication Count
+- Closed Vocabulary Mismatch Count
 - Critical Issues Count
 
 ### 7. Provide Next Actions
