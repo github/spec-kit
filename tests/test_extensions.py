@@ -2286,6 +2286,68 @@ class TestExtensionManager:
         assert manager.registry.is_installed("test-ext")
         assert config_file.read_bytes() == newer_bytes
 
+    def test_force_reinstall_extensionignore_invalid_utf8_preserves_install(
+        self, extension_dir, project_dir
+    ):
+        """A forced reinstall with invalid UTF-8 in .extensionignore preserves the existing install.
+
+        `.extensionignore` is loaded and validated before `remove()` tears down
+        the existing installation, so a ValidationError must leave the registry
+        entry, installed package files, and rendered outputs completely intact.
+        """
+        import copy
+
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=True
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        rendered_skill = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        assert rendered_skill.exists()
+
+        registry_before = copy.deepcopy(manager.registry.get("test-ext"))
+        assert registry_before is not None
+        installed_before = {
+            p.relative_to(ext_dir).as_posix(): p.read_bytes()
+            for p in ext_dir.rglob("*")
+            if p.is_file()
+        }
+        rendered_before = {
+            p.relative_to(skills_dir).as_posix(): p.read_bytes()
+            for p in skills_dir.rglob("*")
+            if p.is_file()
+        }
+
+        # Modify the source command and write invalid UTF-8 to .extensionignore
+        # so the forced reinstall must abort before removing or overwriting anything.
+        (extension_dir / "commands" / "hello.md").write_text(
+            "---\ndescription: \"Updated\"\n---\n\n# Updated\n\n$ARGUMENTS\n"
+        )
+        (extension_dir / ".extensionignore").write_bytes(b"caf\xe9/\n")
+
+        with pytest.raises(ValidationError, match=r"\.extensionignore is not valid UTF-8"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=True, force=True
+            )
+
+        assert manager.registry.is_installed("test-ext")
+        assert manager.registry.get("test-ext") == registry_before
+        assert {
+            p.relative_to(ext_dir).as_posix(): p.read_bytes()
+            for p in ext_dir.rglob("*")
+            if p.is_file()
+        } == installed_before
+        assert {
+            p.relative_to(skills_dir).as_posix(): p.read_bytes()
+            for p in skills_dir.rglob("*")
+            if p.is_file()
+        } == rendered_before
+        assert not (project_dir / ".specify" / "extensions" / ".backup" / "test-ext").exists()
+
     def test_retry_after_staging_backup_restores_stranded_config(
         self, extension_dir, project_dir, monkeypatch
     ):
