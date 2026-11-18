@@ -907,3 +907,147 @@ class TestGitCommonPython:
     def test_check_feature_branch_no_git_warns_but_passes(self, git_common, capsys):
         assert git_common.check_feature_branch("main", False) is True
         assert "skipped branch validation" in capsys.readouterr().err
+
+
+class TestCreateFeatureBranchPythonLegacyPipe:
+    @staticmethod
+    def _clean_git_env(tmp_path: Path, **extra: str) -> dict[str, str]:
+        empty_cfg = tmp_path / "empty.gitconfig"
+        if not empty_cfg.exists():
+            empty_cfg.write_text("", encoding="utf-8")
+        env = dict(os.environ)
+        env.pop("PYTHONUTF8", None)
+        env.update(
+            {
+                **_GIT_ENV,
+                "GIT_CONFIG_GLOBAL": str(empty_cfg),
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "PYTHONIOENCODING": "cp1252",
+                **extra,
+            }
+        )
+        return env
+
+    @staticmethod
+    def _run_raw(
+        project: Path, env: dict[str, str], *args: str
+    ) -> subprocess.CompletedProcess[bytes]:
+        script = (
+            project
+            / ".specify"
+            / "extensions"
+            / "git"
+            / "scripts"
+            / "python"
+            / "create_new_feature_branch.py"
+        )
+        return subprocess.run(
+            [sys.executable, str(script), *args],
+            cwd=project,
+            capture_output=True,
+            env=env,
+        )
+
+    @pytest.mark.parametrize("dry_run", [True, False], ids=["dry_run", "create"])
+    @pytest.mark.parametrize(
+        ("branch_override", "expected_num"),
+        [
+            ("équipe/042-后台-🚀", "042"),
+            ("équipe-后台", "équipe-后台"),
+        ],
+    )
+    def test_json_mode_survives_cp1252_pipe_with_non_ascii_branch(
+        self,
+        tmp_path: Path,
+        dry_run: bool,
+        branch_override: str,
+        expected_num: str,
+    ):
+        project = _setup_py_project(tmp_path / "proj")
+        env = self._clean_git_env(tmp_path, GIT_BRANCH_NAME=branch_override)
+        args = ["--json", *(["--dry-run"] if dry_run else []), "Add feature"]
+
+        result = self._run_raw(project, env, *args)
+        stderr_text = result.stderr.decode("cp1252")
+
+        assert result.returncode == 0, stderr_text
+        assert "Traceback" not in stderr_text
+        assert result.stdout.isascii(), result.stdout
+        payload = json.loads(result.stdout.decode("cp1252"))
+        expected: dict[str, object] = {
+            "BRANCH_NAME": branch_override,
+            "FEATURE_NUM": expected_num,
+        }
+        if dry_run:
+            expected["DRY_RUN"] = True
+        assert payload == expected
+
+        if not dry_run:
+            head = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=project,
+                capture_output=True,
+                env=env,
+                check=True,
+            )
+            assert head.stdout.decode("utf-8").strip() == branch_override
+
+            rerun = self._run_raw(
+                project, env, "--json", "--allow-existing-branch", "Add feature"
+            )
+            assert rerun.returncode == 0, rerun.stderr.decode("cp1252")
+            assert rerun.stdout.isascii(), rerun.stdout
+            assert json.loads(rerun.stdout.decode("cp1252")) == expected
+
+    def test_numbering_and_text_mode_survive_existing_utf8_branches(
+        self, tmp_path: Path
+    ):
+        project = _setup_py_project(tmp_path / "proj")
+        env = self._clean_git_env(
+            tmp_path, LC_ALL="C", PYTHONCOERCECLOCALE="0"
+        )
+        subprocess.run(
+            ["git", "branch", "003-后台信息架构"],
+            cwd=project,
+            env=env,
+            check=True,
+        )
+
+        numbered = self._run_raw(project, env, "--json", "--dry-run", "Next feature")
+        assert numbered.returncode == 0, numbered.stderr.decode("cp1252", errors="replace")
+        assert numbered.stdout.isascii(), numbered.stdout
+        assert json.loads(numbered.stdout.decode("cp1252"))["FEATURE_NUM"] == "004"
+
+        text_env = {**env, "GIT_BRANCH_NAME": "004-后台信息架构"}
+        text_res = self._run_raw(project, text_env, "Next feature")
+        assert text_res.returncode == 0, text_res.stderr.decode("cp1252")
+        assert "BRANCH_NAME: 004-" in text_res.stdout.decode("cp1252")
+        assert "# To persist:" in text_res.stderr.decode("cp1252")
+
+    def test_existing_non_ascii_branch_and_overlong_override_error_cleanly(
+        self, tmp_path: Path
+    ):
+        project = _setup_py_project(tmp_path / "proj")
+        env = self._clean_git_env(tmp_path, GIT_BRANCH_NAME="003-后台信息架构")
+        subprocess.run(
+            ["git", "branch", "003-后台信息架构"],
+            cwd=project,
+            env=env,
+            check=True,
+        )
+
+        exists_err = self._run_raw(project, env, "--json", "Add feature")
+        stderr_text = exists_err.stderr.decode("cp1252")
+        assert exists_err.returncode == 1
+        assert "Traceback" not in stderr_text
+        assert "already exists" in stderr_text
+        assert exists_err.stdout.strip() == b""
+
+        overlong_env = self._clean_git_env(
+            tmp_path, GIT_BRANCH_NAME="001-" + ("功" * 81)
+        )
+        overlong_err = self._run_raw(
+            project, overlong_env, "--json", "--dry-run", "Add feature"
+        )
+        assert overlong_err.returncode == 1
+        assert overlong_err.stdout.strip() == b""

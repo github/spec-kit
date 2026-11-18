@@ -64,8 +64,21 @@ STOP_WORDS = frozenset(
 )
 
 
+def _write_line(stream: object, message: str) -> None:
+    try:
+        print(message, file=stream)
+    except UnicodeEncodeError:
+        encoding = getattr(stream, "encoding", None) or "ascii"
+        safe = message.encode(encoding, errors="backslashreplace").decode(encoding)
+        print(safe, file=stream)
+
+
 def _err(message: str) -> None:
-    print(message, file=sys.stderr)
+    _write_line(sys.stderr, message)
+
+
+def _out(message: str) -> None:
+    _write_line(sys.stdout, message)
 
 
 def _persist_hint(var_name: str, value: str) -> str:
@@ -190,6 +203,8 @@ def _local_has_git(repo_root: Path) -> bool:
             ["git", "-C", str(repo_root), "rev-parse", "--is-inside-work-tree"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         ).returncode
         == 0
     )
@@ -242,11 +257,17 @@ def _git_lines(repo_root: Path, *args: str, env_extra: dict | None = None) -> li
         return []
     env = {**os.environ, **(env_extra or {})}
     result = subprocess.run(
-        ["git", *args], cwd=repo_root, capture_output=True, text=True, env=env
+        ["git", *args],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
     )
     if result.returncode != 0:
         return []
-    return result.stdout.splitlines()
+    return (result.stdout or "").splitlines()
 
 
 def get_highest_from_branches(repo_root: Path, scope_prefix: str) -> int:
@@ -290,6 +311,8 @@ def check_existing_branches(
             cwd=repo_root,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
         highest_branch = get_highest_from_branches(repo_root, scope_prefix)
@@ -598,6 +621,8 @@ def main(argv: list[str]) -> int:
                 cwd=repo_root,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
             if create.returncode != 0:
                 current_branch_lines = _git_lines(
@@ -615,6 +640,8 @@ def main(argv: list[str]) -> int:
                                 cwd=repo_root,
                                 capture_output=True,
                                 text=True,
+                                encoding="utf-8",
+                                errors="replace",
                             )
                             if switch.returncode != 0:
                                 _err(
@@ -658,12 +685,12 @@ def main(argv: list[str]) -> int:
         }
         if args.dry_run:
             payload["DRY_RUN"] = True
-        print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+        print(json.dumps(payload, separators=(",", ":")))
     else:
-        print(f"BRANCH_NAME: {branch_name}")
-        print(f"FEATURE_NUM: {feature_num}")
+        _out(f"BRANCH_NAME: {branch_name}")
+        _out(f"FEATURE_NUM: {feature_num}")
         if not args.dry_run:
-            print(
+            _out(
                 "# To persist in your shell: "
                 f"{_persist_hint('SPECIFY_FEATURE', branch_name)}"
             )
