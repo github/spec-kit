@@ -68,8 +68,9 @@ class TestExtensionAddCLI:
             (extension_dir / "commands/hello.md").unlink()
 
         write_listing_project_options(project_dir, {"ai": agent, "ai_skills": True})
-        monkeypatch.chdir(project_dir)
-        result = CliRunner().invoke(app, ["extension", "add", "--dev", str(extension_dir)])
+        with monkeypatch.context() as project_context:
+            project_context.chdir(project_dir)
+            result = CliRunner().invoke(app, ["extension", "add", "--dev", str(extension_dir)])
         output = strip_ansi(result.output)
 
         assert result.exit_code == 0, output
