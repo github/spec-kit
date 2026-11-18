@@ -112,6 +112,5 @@ def preset_set_priority(
         f"[green]✓[/green] Preset '{preset_id}' priority changed: {old_priority} → {priority}"
     )
     console.print(
-        "
-[dim]Lower priority = higher precedence in template resolution[/dim]"
+        "\n[dim]Lower priority = higher precedence in template resolution[/dim]"
     )
