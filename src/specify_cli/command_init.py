@@ -1024,7 +1024,18 @@ def register(app: typer.Typer) -> None:
                 ensure_constitution_from_template(project_path, tracker=tracker)
 
                 tracker.complete("final", "project ready")
-            except (typer.Exit, SystemExit):
+            except (typer.Exit, SystemExit) as exc:
+                # A failing step that already reported its own error exits
+                # here (e.g. a shared-infrastructure OSError becomes
+                # typer.Exit(1)); remove a directory this run created, as the
+                # generic failure path below does.
+                exit_code = getattr(exc, "exit_code", getattr(exc, "code", 1))
+                if (
+                    exit_code not in (0, None)
+                    and not here and project_path.exists() and not dir_existed_before
+                    and initial_directory_state(project_path) is None
+                ):
+                    shutil.rmtree(project_path, ignore_errors=True)
                 raise
             except Exception as e:
                 tracker.error("final", str(e))

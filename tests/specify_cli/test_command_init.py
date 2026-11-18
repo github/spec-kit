@@ -189,6 +189,72 @@ def test_invalid_integration_value_is_rendered_literally(tmp_path: Path):
     assert "nope[/red]" in _strip(result.stdout)
 
 
+def _fail_shared_infra(monkeypatch):
+    """Make the shared-infrastructure step fail part-way, as a full disk would.
+
+    ``_install_shared_infra_or_exit`` turns the ``OSError`` into
+    ``typer.Exit(1)``, which is how init sees a real shared-infra failure.
+    """
+    import specify_cli
+
+    def partial_install(project_path, *args, **kwargs):
+        scripts = Path(project_path) / ".specify" / "scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        (scripts / "partial.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(specify_cli, "_install_shared_infra", partial_install)
+
+
+def test_shared_infra_failure_removes_new_project_dir(tmp_path: Path, monkeypatch):
+    """A failed init into a new directory removes it, so a retry can succeed.
+
+    The shared-infrastructure failure arrives as ``typer.Exit(1)``. It used to
+    be re-raised before the cleanup ran, leaving a half-initialized project
+    that made the retry fail with "Directory already exists".
+    """
+    _fail_shared_infra(monkeypatch)
+
+    result = _init(tmp_path, "proj")
+
+    assert result.exit_code == 1, _strip(result.stdout)
+    assert "Failed to install shared infrastructure" in _strip(result.stdout)
+    assert not (tmp_path / "proj").exists()
+
+    monkeypatch.undo()
+    retry = _init(tmp_path, "proj")
+    assert retry.exit_code == 0, _strip(retry.stdout)
+    assert (tmp_path / "proj" / ".specify").is_dir()
+
+
+def test_shared_infra_failure_keeps_existing_project_dir(tmp_path: Path, monkeypatch):
+    """A failed init never deletes a directory that existed before it ran."""
+    existing = tmp_path / "proj"
+    existing.mkdir()
+    keep = existing / "notes.txt"
+    keep.write_text("user data\n", encoding="utf-8")
+    _fail_shared_infra(monkeypatch)
+
+    previous = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        result = CliRunner().invoke(
+            app,
+            [
+                "init", "proj", "--force",
+                "--integration", "generic",
+                "--integration-options", "--commands-dir .agent/commands",
+                "--ignore-agent-tools", "--offline",
+            ],
+            catch_exceptions=True,
+        )
+    finally:
+        os.chdir(previous)
+
+    assert result.exit_code == 1, _strip(result.stdout)
+    assert keep.read_text(encoding="utf-8") == "user data\n"
+
+
 def _cd_argument(stdout: str) -> str:
     """Return the argument of the printed `cd` command, verbatim.
 
