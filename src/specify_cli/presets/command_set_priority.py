@@ -61,20 +61,40 @@ def preset_set_priority(
     manager.registry.update(preset_id, {"priority": priority})
 
     if is_enabled:
-        # A priority change can change the winning command or skill layer, so
-        # refresh the active integration's artifacts from the full priority stack.
-        try:
-            from ._manifest import PresetManifest
+        # Native-skill integrations are deliberately excluded from preset
+        # priority reconciliation. Their SKILL.md files are user-facing native
+        # artifacts and are not rewritten by this command.
+        from .. import load_init_options
 
-            manifest = PresetManifest(manager.presets_dir / preset_id / "preset.yml")
-            command_names = [
-                template["name"]
-                for template in manifest.templates
-                if template.get("type") == "command"
-            ]
-            if command_names:
-                manager._reconcile_composed_commands(command_names)
-                manager._reconcile_skills(command_names)
+        init_options = load_init_options(project_root)
+        active_agent = (
+            init_options.get("ai") if isinstance(init_options, dict) else None
+        )
+        from ..agents import CommandRegistrar
+
+        registrar = CommandRegistrar(project_root, include_generic=False)
+        active_config = registrar.AGENT_CONFIGS.get(active_agent, {})
+        is_native_skill_integration = (
+            active_config.get("extension") == "/SKILL.md"
+        )
+
+        # Command-backed integrations can refresh their generated commands and
+        # supplemental skills through the existing renderers.
+        try:
+            if not is_native_skill_integration:
+                from ._manifest import PresetManifest
+
+                manifest = PresetManifest(
+                    manager.presets_dir / preset_id / "preset.yml"
+                )
+                command_names = [
+                    template["name"]
+                    for template in manifest.templates
+                    if template.get("type") == "command"
+                ]
+                if command_names:
+                    manager._reconcile_composed_commands(command_names)
+                    manager._reconcile_skills(command_names)
         except Exception as exc:  # noqa: BLE001 - lifecycle reconciliation is best-effort
             import warnings
 
@@ -92,5 +112,6 @@ def preset_set_priority(
         f"[green]✓[/green] Preset '{preset_id}' priority changed: {old_priority} → {priority}"
     )
     console.print(
-        "\n[dim]Lower priority = higher precedence in template resolution[/dim]"
+        "
+[dim]Lower priority = higher precedence in template resolution[/dim]"
     )
