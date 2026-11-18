@@ -245,6 +245,7 @@ class _FileJournal:
                 self.directory_states[parent] = parent.is_dir()
 
     def _snapshot(self, source: Path, destination: Path) -> None:
+        """Copy ``source`` to ``destination``; a regular file that is pinned is read through its pin."""
         self.backup_entries += 1
         if self.backup_entries > _MAX_BACKUP_ENTRIES:
             raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (entries)")
@@ -257,9 +258,17 @@ class _FileJournal:
                 self._snapshot(child, destination / child.name)
             shutil.copystat(source, destination, follow_symlinks=False)
         elif stat.S_ISREG(mode):
-            if source.stat().st_size > _MAX_BACKUP_BYTES - self.backup_bytes:
+            pinned = self.pinned_files.get(source)
+            size = os.fstat(pinned).st_size if pinned is not None else source.stat().st_size
+            if size > _MAX_BACKUP_BYTES - self.backup_bytes:
                 raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
-            with source.open("rb") as incoming, destination.open("wb") as outgoing:
+            if pinned is not None:
+                # A duplicate, so reading leaves the pin's own offset alone.
+                incoming = os.fdopen(os.dup(pinned), "rb")
+                incoming.seek(0)
+            else:
+                incoming = source.open("rb")
+            with incoming, destination.open("wb") as outgoing:
                 while content := incoming.read(min(65536, _MAX_BACKUP_BYTES - self.backup_bytes + 1)):
                     self.backup_bytes += len(content)
                     if self.backup_bytes > _MAX_BACKUP_BYTES:
@@ -271,7 +280,7 @@ class _FileJournal:
 
     def _remember_original(self, path: Path, entry: os.stat_result, attributes: dict[str, bytes] | None) -> None:
         """Record what rollback needs to restore ``path`` in place later."""
-        if os.name != "nt" and not self._pin(path, entry):
+        if os.name != "nt" and path not in self.pinned_files:
             self.unverified_files[path] = (entry.st_dev, entry.st_ino)
             return
         self.snapshotted_files[path] = (entry.st_dev, entry.st_ino)
@@ -279,7 +288,11 @@ class _FileJournal:
         self.snapshotted_flags[path] = getattr(entry, "st_flags", None)
 
     def _pin(self, path: Path, entry: os.stat_result) -> bool:
-        """Hold a read-only descriptor on ``path`` if it is still ``entry``."""
+        """Hold a read-only descriptor on ``path`` if it is still ``entry``.
+
+        Taken before the file is snapshotted, so the inode is held from then
+        on and a replacement cannot be mistaken for the original.
+        """
         if len(self.pinned_files) >= self.pin_limit:
             return False
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -296,6 +309,14 @@ class _FileJournal:
             return False
         self.pinned_files[path] = descriptor
         return True
+
+    def _unpin(self, path: Path) -> None:
+        descriptor = self.pinned_files.pop(path, None)
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
 
     def is_original(self, path: Path, current: os.stat_result) -> bool:
         """Whether ``current``, found at ``path``, is the snapshotted file itself.
@@ -389,13 +410,22 @@ class _FileJournal:
                     saved = self.backup / "writes" / str(len(self.changes))
                     saved.parent.mkdir(parents=True, exist_ok=True)
                     entry = path.lstat()
-                    self._snapshot(path, saved)
                     # A file the operation is removing is recreated, never
                     # restored in place, so it is not pinned either.
-                    if stat.S_ISREG(entry.st_mode) and not removal:
-                        attributes = self._read_xattrs(path)
-                        if os.path.samestat(entry, path.lstat()):
-                            self._remember_original(path, entry, attributes)
+                    restorable = stat.S_ISREG(entry.st_mode) and not removal
+                    if restorable and os.name != "nt":
+                        self._pin(path, entry)
+                    try:
+                        self._snapshot(path, saved)
+                        if restorable:
+                            attributes = self._read_xattrs(path)
+                            if os.path.samestat(entry, path.lstat()):
+                                self._remember_original(path, entry, attributes)
+                            else:
+                                self._unpin(path)
+                    except BaseException:
+                        self._unpin(path)
+                        raise
             else:
                 if not any(path == scope or scope in path.parents for scope in self.paths):
                     raise installer.IntegrationInstallError(
@@ -489,6 +519,13 @@ def _restore_file_in_place(
             current = getattr(os.fstat(outgoing.fileno()), "st_flags", file_flags)
             if (current ^ file_flags) & ~_UNCOMPARED_FLAGS:
                 complete = False
+        # A path unlinked or replaced during the copy no longer names the
+        # restored file; report that, and leave whatever is there alone.
+        try:
+            if not os.path.samestat(os.fstat(outgoing.fileno()), path.lstat()):
+                complete = False
+        except OSError:
+            complete = False
         return "restored" if complete else "incomplete"
 
 
@@ -603,10 +640,15 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
                 path, saved, is_original, journal.snapshotted_xattrs.get(path),
                 journal.snapshotted_flags.get(path),
             )
-            if restored == "incomplete" or _still_has_identity(path, journal.unverified_files.get(path)):
-                # An unverified file still at its old inode was probably
-                # rewritten in place; recreating it below loses its owner,
-                # links and any metadata its snapshot could not hold.
+            if (
+                restored == "incomplete"
+                or _still_has_identity(path, journal.unverified_files.get(path))
+                or (restored == "untouched" and _still_has_identity(path, journal.snapshotted_files.get(path)))
+            ):
+                # A file still at its old inode that is not restored in place
+                # (unverified, or refusing to be opened for writing) was
+                # probably rewritten in place; recreating it below loses its
+                # owner, links and any metadata its snapshot could not hold.
                 journal.incomplete_restores.append(path)
             if restored != "untouched":
                 continue

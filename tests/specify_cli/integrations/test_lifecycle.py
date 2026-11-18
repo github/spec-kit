@@ -261,11 +261,12 @@ def test_builtin_journal_recreates_a_file_the_operation_replaced(tmp_path):
     assert witness.read_text(encoding="utf-8") == "original\n"
 
 
-def test_builtin_journal_recreates_a_file_it_cannot_open_in_place(tmp_path, monkeypatch):
-    """A file rollback cannot open for writing is recreated from its snapshot instead."""
+def test_builtin_journal_recreates_and_reports_a_file_it_cannot_open_in_place(tmp_path, monkeypatch, capsys):
+    """A file rollback cannot open for writing is recreated from its snapshot, reported, and its snapshot kept."""
     from specify_cli.integrations import _lifecycle
     from specify_cli.integrations._file_changes import write_text
 
+    backups = _record_rollback_backups(monkeypatch)
     project = tmp_path / "plain"
     target = project / ".specify" / "templates" / "plan.md"
     target.parent.mkdir(parents=True)
@@ -284,6 +285,9 @@ def test_builtin_journal_recreates_a_file_it_cannot_open_in_place(tmp_path, monk
             raise OSError("disk full")
 
     assert target.read_text(encoding="utf-8") == "original\n"
+    assert _INCOMPLETE_WARNING in " ".join(capsys.readouterr().out.split())
+    assert len(backups) == 1 and backups[0].is_dir()
+    shutil.rmtree(backups[0])
 
 
 _INCOMPLETE_WARNING = "timestamps, extended attributes or file flags"
@@ -862,3 +866,100 @@ def test_builtin_journal_recreates_an_unpinned_replaced_file_without_a_warning(t
     assert target.read_text(encoding="utf-8") == "original\n"
     assert _INCOMPLETE_WARNING not in " ".join(capsys.readouterr().out.split())
     assert backups and not backups[0].exists()
+
+
+def test_builtin_journal_restores_the_original_modification_time(tmp_path, monkeypatch, capsys):
+    """A rewritten file comes back with its saved modification time and no incomplete-restore warning."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    saved_mtime = 1_500_000_000_000_000_000
+    os.utime(target, ns=(saved_mtime, saved_mtime))
+    witness = tmp_path / "witness"
+    os.link(target, witness)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            assert target.stat().st_mtime_ns != saved_mtime
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert target.stat().st_mtime_ns == saved_mtime
+    assert os.path.samefile(target, witness)
+    assert _INCOMPLETE_WARNING not in " ".join(capsys.readouterr().out.split())
+    assert backups and not backups[0].exists()
+
+
+@pytest.mark.skipif(not _PINS_FILES, reason="Windows files are never pinned")
+def test_builtin_journal_pins_a_file_before_snapshotting_it(tmp_path, monkeypatch):
+    """The original is pinned before it is snapshotted, so one replaced meanwhile is never taken for it."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    replacement = tmp_path / "replacement"
+    replacement.write_text("replacement\n", encoding="utf-8")
+    other = tmp_path / "other-link"
+    os.link(replacement, other)
+    real_snapshot = _lifecycle._FileJournal._snapshot
+    pins = []
+
+    def swap_during_snapshot(self, source, destination):
+        real_snapshot(self, source, destination)
+        if source == target:
+            pins.append(source in self.pinned_files)
+            os.replace(replacement, target)
+
+    monkeypatch.setattr(_lifecycle._FileJournal, "_snapshot", swap_during_snapshot)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            raise OSError("disk full")
+
+    assert pins == [True]
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert not os.path.samefile(target, other)
+    # The operation's own write went through the replacement; rollback left it as that write made it.
+    assert other.read_text(encoding="utf-8") == "generated\n"
+
+
+@pytest.mark.skipif(not _PINS_FILES, reason="Windows files cannot be replaced while open")
+def test_builtin_journal_keeps_the_snapshot_when_the_path_is_replaced_during_restore(tmp_path, monkeypatch, capsys):
+    """A path swapped for another file while its bytes are restored is reported, kept, and not overwritten."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    replacement = tmp_path / "replacement"
+    replacement.write_text("concurrent\n", encoding="utf-8")
+    real_restore_metadata = _lifecycle._restore_metadata
+
+    def swap_after_copy(*args, **kwargs):
+        result = real_restore_metadata(*args, **kwargs)
+        os.replace(replacement, target)
+        return result
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            monkeypatch.setattr(_lifecycle, "_restore_metadata", swap_after_copy)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "concurrent\n"
+    assert _INCOMPLETE_WARNING in " ".join(capsys.readouterr().out.split())
+    assert len(backups) == 1 and backups[0].is_dir()
+    shutil.rmtree(backups[0])
