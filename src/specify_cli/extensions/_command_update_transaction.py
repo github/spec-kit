@@ -551,7 +551,7 @@ def run_update_command(extension: str | None) -> None:
                     manager.remove(extension_id, keep_config=True)
 
                     # 8. Install new version
-                    _ = manager.install_from_zip(
+                    manager.install_from_zip(
                         archive_path,
                         speckit_version,
                         catalog_name=update.catalog_name,

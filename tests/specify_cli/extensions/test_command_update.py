@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -695,6 +696,264 @@ class TestExtensionUpdateCLI:
         assert result.exit_code == 0, result.output
         assert "test-ext: Missing catalog version (skipping)" in flat
         assert ExtensionManager(project_dir).registry.get("test-ext")["version"] == "1.0.0"
+
+    @pytest.mark.parametrize("previous_registered_skills", [[], None, 17])
+    def test_update_preserves_skills_mode_registration(
+        self, tmp_path, monkeypatch, previous_registered_skills
+    ):
+        """Updating an extension must keep Claude skills in skills mode."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+        project_dir = tmp_path / "project"
+        (project_dir / ".specify").mkdir(parents=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        (project_dir / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "claude", "ai_skills": True, "script": "sh"}),
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
+        manifest_path = v1_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["provides"]["commands"][0]["aliases"] = [
+            "speckit.test-ext.alternate"
+        ]
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        command_path = v1_dir / "commands" / "hello.md"
+        command_path.write_text(
+            command_path.read_text(encoding="utf-8")
+            + "\n- For each executable hook, output the following command name.\n",
+            encoding="utf-8",
+        )
+        manager.install_from_directory(v1_dir, "0.1.0")
+        manager.register_enabled_extensions_for_agent("claude", force=True)
+
+        skill_names = ["speckit-test-ext-hello"]
+        command_names = [
+            "speckit.test-ext.hello",
+            "speckit.test-ext.alternate",
+        ]
+        skill_files = [
+            project_dir / ".claude" / "skills" / name / "SKILL.md"
+            for name in skill_names
+        ]
+        alias_skill_file = (
+            project_dir
+            / ".claude"
+            / "skills"
+            / "speckit-test-ext-alternate"
+            / "SKILL.md"
+        )
+        assert all(path.is_file() for path in skill_files)
+        assert alias_skill_file.is_file()
+        old_entry = manager.registry.get("test-ext")
+        assert old_entry["registered_skills"] == skill_names
+        assert old_entry["registered_commands"] == {"claude": command_names}
+        assert "- For each executable hook, output the following command name." in (
+            skill_files[0].read_text(encoding="utf-8")
+        )
+        # Updates must normalize malformed legacy ownership metadata and still
+        # refresh skills that the current install wrote through native setup.
+        manager.registry.update(
+            "test-ext", {"registered_skills": previous_registered_skills}
+        )
+
+        v2_dir = self._create_extension_source(tmp_path, "2.0.0")
+        manifest_path = v2_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["provides"]["commands"][0]["aliases"] = [
+            "speckit.test-ext.alternate"
+        ]
+        manifest["provides"]["commands"].append(
+            {
+                "name": "speckit.test-ext.new",
+                "file": "commands/new.md",
+                "description": "New command",
+            }
+        )
+        manifest["hooks"]["after_tasks"]["command"] = "speckit.test-ext.new"
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        (v2_dir / "commands" / "new.md").write_text(
+            "---\ndescription: New command\n---\n\nNew command body.\n"
+            "- For each executable hook, output the following command name.\n",
+            encoding="utf-8",
+        )
+        updated_skill_names = skill_names + ["speckit-test-ext-new"]
+        updated_command_names = command_names + ["speckit.test-ext.new"]
+        command_path = v2_dir / "commands" / "hello.md"
+        command_path.write_text(
+            command_path.read_text(encoding="utf-8")
+            + "\nupdated command\n"
+            + "- For each executable hook, output the following command name.\n",
+            encoding="utf-8",
+        )
+        zip_path = tmp_path / "test-ext-2.0.0.zip"
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            for path in v2_dir.rglob("*"):
+                if path.is_file():
+                    archive.write(path, path.relative_to(v2_dir))
+
+        runner = CliRunner()
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch.object(
+                ExtensionCatalog,
+                "get_extension_info",
+                return_value={
+                    "id": "test-ext",
+                    "name": "Test Extension",
+                    "version": "2.0.0",
+                    "_install_allowed": True,
+                },
+            ),
+            patch.object(
+                ExtensionCatalog, "download_extension", return_value=zip_path
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                ["extension", "update", "test-ext"],
+                input="y\n",
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        updated = ExtensionManager(project_dir).registry.get("test-ext")
+        assert updated["registered_skills"] == updated_skill_names
+        assert updated["registered_commands"] == {"claude": updated_command_names}
+        hook_config = HookExecutor(project_dir).get_project_config()
+        hook = hook_config["hooks"]["after_tasks"][0]
+        assert hook["command"] == "speckit.test-ext.new"
+        assert hook["extension"] == "test-ext"
+        assert hook["enabled"] is True
+        assert alias_skill_file.is_file()
+        alias_content = alias_skill_file.read_text(encoding="utf-8")
+        assert "user-invocable: true" in alias_content
+        assert "disable-model-invocation: false" in alias_content
+        assert "When constructing command invocations" in alias_content
+        assert "updated command" in skill_files[0].read_text(encoding="utf-8")
+        updated_content = skill_files[0].read_text(encoding="utf-8")
+        assert (
+            "- For each executable hook, output the following command name."
+            in updated_content
+        )
+        assert (
+            "- When constructing command invocations from hook command names"
+            in updated_content
+        )
+        assert "user-invocable: true" in updated_content
+        assert "disable-model-invocation: false" in updated_content
+        new_skill_file = (
+            project_dir / ".claude" / "skills" / "speckit-test-ext-new" / "SKILL.md"
+        )
+        assert new_skill_file.is_file()
+        assert "New command body." in new_skill_file.read_text(encoding="utf-8")
+        assert "When constructing command invocations" in new_skill_file.read_text(
+            encoding="utf-8"
+        )
+        fresh_project = tmp_path / "fresh-project"
+        (fresh_project / ".specify").mkdir(parents=True)
+        (fresh_project / ".claude" / "skills").mkdir(parents=True)
+        (fresh_project / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "claude", "ai_skills": True, "script": "sh"}),
+            encoding="utf-8",
+        )
+        with patch.object(Path, "cwd", return_value=fresh_project):
+            fresh_result = runner.invoke(
+                app,
+                ["extension", "add", str(v2_dir), "--dev"],
+                catch_exceptions=True,
+            )
+        assert fresh_result.exit_code == 0, fresh_result.output
+        fresh_manager = ExtensionManager(fresh_project)
+        fresh_entry = fresh_manager.registry.get("test-ext")
+        assert updated["registered_skills"] == fresh_entry["registered_skills"]
+        assert updated["registered_commands"] == fresh_entry["registered_commands"]
+        for name in updated_skill_names:
+            fresh_path = fresh_project / ".claude" / "skills" / name / "SKILL.md"
+            updated_path = project_dir / ".claude" / "skills" / name / "SKILL.md"
+            assert updated_path.read_text(encoding="utf-8") == fresh_path.read_text(
+                encoding="utf-8"
+            )
+        assert alias_skill_file.read_text(encoding="utf-8") == (
+            fresh_project
+            / ".claude"
+            / "skills"
+            / alias_skill_file.parent.name
+            / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+    def test_consecutive_hermes_updates_refresh_global_skill(self, tmp_path, monkeypatch):
+        """Each update replaces the marker-owned skill in Hermes' home directory."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+        project_dir = tmp_path / "hermes-project"
+        (project_dir / ".specify").mkdir(parents=True)
+        (project_dir / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "hermes", "ai_skills": True, "script": "sh"}),
+            encoding="utf-8",
+        )
+        skill_file = (
+            fake_home / ".hermes" / "skills" / "speckit-test-ext-hello" / "SKILL.md"
+        )
+
+        def prepare_source(version):
+            source = self._create_extension_source(tmp_path, version)
+            command = source / "commands" / "hello.md"
+            command.write_text(
+                command.read_text(encoding="utf-8") + f"\nrelease {version}\n",
+                encoding="utf-8",
+            )
+            return source
+
+        manager = ExtensionManager(project_dir)
+        v1 = prepare_source("1.0.0")
+        manager.install_from_directory(v1, "0.1.0")
+        assert "release 1.0.0" in skill_file.read_text(encoding="utf-8")
+        assert manager.registry.get("test-ext")["registered_commands"] == {
+            "hermes": ["speckit.test-ext.hello"]
+        }
+
+        runner = CliRunner()
+        for version in ("2.0.0", "3.0.0"):
+            source = prepare_source(version)
+            archive_path = tmp_path / f"test-ext-{version}.zip"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                for path in source.rglob("*"):
+                    if path.is_file():
+                        archive.write(path, path.relative_to(source))
+            with (
+                patch.object(Path, "cwd", return_value=project_dir),
+                patch.object(
+                    ExtensionCatalog,
+                    "get_extension_info",
+                    return_value={
+                        "id": "test-ext",
+                        "name": "Test Extension",
+                        "version": version,
+                        "_install_allowed": True,
+                    },
+                ),
+                patch.object(
+                    ExtensionCatalog,
+                    "download_extension",
+                    return_value=archive_path,
+                ),
+            ):
+                result = runner.invoke(
+                    app,
+                    ["extension", "update", "test-ext"],
+                    input="y\n",
+                    catch_exceptions=True,
+                )
+            assert result.exit_code == 0, result.output
+            assert f"release {version}" in skill_file.read_text(encoding="utf-8")
+            assert ExtensionManager(project_dir).registry.get("test-ext")["version"] == version
 
     def test_update_failure_rolls_back_registry_hooks_and_commands(self, tmp_path, monkeypatch):
         """Failed update should restore original registry, hooks, and command files."""

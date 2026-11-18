@@ -266,6 +266,11 @@ renders primary names and aliases, so integrations whose native command format
 is `SKILL.md` create separate primary and alias skill directories. Non-generic
 native registration writes its selected destination and may replace an
 existing file; the generic integration applies its ownership checks first.
+For native `SKILL.md` integrations, `registered_commands` records the primary
+and alias names. The primary skill name is also refreshed by the shared
+extension-skill renderer; aliases retain their alias-specific frontmatter and
+receive the integration's skill post-processing. Refresh uses an ownership
+allowlist so unrelated user skills remain protected.
 
 Command-backed integrations configured to use skills take a separate
 supplemental path. That path renders only primary commands as

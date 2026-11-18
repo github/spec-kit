@@ -1413,12 +1413,15 @@ class TestExtensionSkillRegistration:
                 "speckit.early-ext.world",
             ]
         }
-        assert metadata["registered_skills"] == []
+        assert metadata["registered_skills"] == [
+            "speckit-early-ext-hello",
+            "speckit-early-ext-world",
+        ]
 
         skill_file = skills_dir / "speckit-early-ext-hello" / "SKILL.md"
         assert skill_file.exists()
         content = skill_file.read_text(encoding="utf-8")
-        assert "source: early-ext:commands/hello.md" in content
+        assert "source: extension:early-ext" in content
 
     def test_hermes_global_skills_dir_used_when_marker_is_recovered(
         self, project_dir, temp_dir, monkeypatch
@@ -1443,7 +1446,10 @@ class TestExtensionSkillRegistration:
                 "speckit.early-ext.world",
             ]
         }
-        assert metadata["registered_skills"] == []
+        assert metadata["registered_skills"] == [
+            "speckit-early-ext-hello",
+            "speckit-early-ext-world",
+        ]
 
         global_skills_dir = home / ".hermes" / "skills"
         assert (
@@ -2877,7 +2883,10 @@ class TestExtensionSkillRegistration:
                 "speckit.early-ext.world",
             ]
         }
-        assert metadata["registered_skills"] == []
+        assert metadata["registered_skills"] == [
+            "speckit-early-ext-hello",
+            "speckit-early-ext-world",
+        ]
 
     def test_missing_shared_skills_dir_uses_normalized_guard_for_later_agents(
         self, project_dir, temp_dir, monkeypatch
@@ -2921,7 +2930,10 @@ class TestExtensionSkillRegistration:
                 "speckit.early-ext.world",
             ]
         }
-        assert metadata["registered_skills"] == []
+        assert metadata["registered_skills"] == [
+            "speckit-early-ext-hello",
+            "speckit-early-ext-world",
+        ]
 
     def test_missing_shared_skills_dir_write_oserror_does_not_register_other_agents(
         self, project_dir, temp_dir, monkeypatch
@@ -3138,6 +3150,67 @@ class TestRegisterExtensionSkillsForceFlag:
             "must contain the extension body, not just the core-template stub."
         )
 
+    def test_registered_skills_are_refreshed_after_integration_registration(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """Native integration writes are refreshed with extension hook output."""
+        from specify_cli.integrations import get_integration
+
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        ext_dir = _create_extension_dir(temp_dir)
+
+        def hook(self, frontmatter, body, *, source_id):
+            updated = dict(frontmatter)
+            updated["description"] = f"[{source_id}] {frontmatter['description']}"
+            return updated, body + "\nHOOKED\n"
+
+        monkeypatch.setattr(
+            get_integration("claude").__class__, "process_registered_command", hook
+        )
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0")
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        skill_file.write_text("native integration registration", encoding="utf-8")
+        manager.register_enabled_extensions_for_agent("claude")
+
+        content = skill_file.read_text(encoding="utf-8")
+        assert "[test-ext] Test hello command" in content
+        assert "HOOKED" in content
+        assert "source: extension:test-ext" in content
+        assert "user-invocable: true" in content
+        assert "native integration registration" not in content
+
+    def test_other_agents_registered_skills_do_not_overwrite_user_skill(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """Only command skills written for this agent may be force-refreshed."""
+        from specify_cli.agents import CommandRegistrar
+
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        ext_dir = _create_extension_dir(temp_dir)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0")
+        metadata = manager.registry.get("test-ext")
+        assert "speckit-test-ext-hello" in metadata["registered_skills"]
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="copilot")
+        user_skill = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        user_skill.parent.mkdir(parents=True)
+        user_skill.write_text("user-owned skill", encoding="utf-8")
+
+        def skip_existing_commands(self, *args, **kwargs):
+            return []
+
+        monkeypatch.setattr(
+            CommandRegistrar, "register_commands", skip_existing_commands
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert user_skill.read_text(encoding="utf-8") == "user-owned skill"
+
     def test_force_true_with_preexisting_dir_but_no_skill_file(
         self, project_dir, temp_dir
     ):
@@ -3164,6 +3237,37 @@ class TestRegisterExtensionSkillsForceFlag:
         assert "speckit-test-ext-hello" in written
         assert skill_file.exists()
         assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("existing_artifact", ["skill_file", "directory"])
+    def test_force_names_preserves_unlisted_existing_artifacts(
+        self, project_dir, temp_dir, existing_artifact
+    ):
+        """Force-refresh leaves pre-existing skills outside the verified allowlist alone."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        ext_dir = _create_extension_dir(temp_dir)
+        skill_subdir = skills_dir / "speckit-test-ext-hello"
+        skill_subdir.mkdir(parents=True)
+        skill_file = skill_subdir / "SKILL.md"
+        if existing_artifact == "skill_file":
+            skill_file.write_text("user-authored content", encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        written = manager._register_extension_skills(
+            manifest,
+            ext_dir,
+            force=True,
+            force_names={"speckit-test-ext-world"},
+        )
+
+        assert "speckit-test-ext-hello" not in written
+        assert "speckit-test-ext-world" in written
+        assert skill_subdir.is_dir()
+        if existing_artifact == "skill_file":
+            assert skill_file.read_text(encoding="utf-8") == "user-authored content"
+        else:
+            assert not skill_file.exists()
 
 
 # ===== Extension Skill Unregistration Tests =====
