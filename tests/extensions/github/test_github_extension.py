@@ -966,6 +966,9 @@ class TestResolveTasksBashJsonEscape:
         "tab": "a\tb",
         "carriage_return": "a\rb",
         "control": "a\x01b",
+        "escape": "a\x1bb",
+        "delete": "a\x7fb",
+        "non_ascii": "aéタ\U0001f4cbb",
     }
 
     @staticmethod
