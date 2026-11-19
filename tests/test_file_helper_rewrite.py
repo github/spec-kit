@@ -114,6 +114,26 @@ def test_access_reports_the_windows_read_only_attribute(tmp_path):
         path.chmod(stat.S_IREAD | stat.S_IWRITE)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX checks through the parent descriptor")
+def test_access_makes_a_plain_faccessat(tmp_path, monkeypatch):
+    # Without faccessat2, libc emulates AT_SYMLINK_NOFOLLOW from mode bits.
+    _seed(tmp_path)
+    calls = []
+    real_access = os.access
+
+    def access(path, mode, **kwargs):
+        calls.append(kwargs)
+        return real_access(path, mode, **kwargs)
+
+    monkeypatch.setattr(os, "access", access)
+    monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {access})
+    monkeypatch.setattr(os, "supports_follow_symlinks", os.supports_follow_symlinks - {real_access})
+    with FileHelper(tmp_path) as files:
+        assert files.access(REL, os.R_OK)
+    assert len(calls) == 1
+    assert "dir_fd" in calls[0] and "follow_symlinks" not in calls[0]
+
+
 def test_access_of_a_missing_entry_raises(tmp_path):
     with FileHelper(tmp_path) as files, pytest.raises(FileNotFoundError):
         files.access("missing", os.R_OK)

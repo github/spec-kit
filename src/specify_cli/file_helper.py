@@ -481,9 +481,10 @@ class FileHelper:
         """Return whether ``os.access`` grants ``mode`` on an existing entry.
 
         The entry is found and anchored as ``stat`` finds it, so a leaf link is
-        refused or resolved by the normal policy walk. Like ``os.access``, the
-        answer uses the real user and group ids and is advisory: act through a
-        descriptor and handle its errors.
+        refused or resolved by the normal policy walk; a leaf swapped for a link
+        after that walk is followed. Like ``os.access``, the answer uses the
+        real user and group ids and is advisory: act through a descriptor and
+        handle its errors.
         """
         destination = self._path(path)
         if destination == self._canonical_root:
