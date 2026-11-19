@@ -820,22 +820,19 @@ class TestCodexNoModelInvocationOwnership:
         # A junction is not a symlink to ``is_symlink`` and is followed when
         # the skills directory is resolved, so the policies' lexical paths
         # would never match the files setup wrote. On other platforms the
-        # attribute Windows sets on one is simulated.
-        import types
+        # refusal ``FileHelper`` gives one on Windows is simulated.
+        from specify_cli.file_helper import FileHelper, UnsupportedPathError
 
         linked = tmp_path / junctioned
         linked.mkdir(parents=True)
-        real_lstat = os.lstat
+        real_stat = FileHelper.stat
 
-        def lstat(path, *args, **kwargs):
-            info = real_lstat(path, *args, **kwargs)
-            if not args and not kwargs and Path(path) == linked:
-                return types.SimpleNamespace(
-                    st_mode=info.st_mode, st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
-                )
-            return info
+        def helper_stat(self, path):
+            if (self.root / path).resolve() == linked.resolve():
+                raise UnsupportedPathError(f"Unsupported Windows reparse point: {linked}")
+            return real_stat(self, path)
 
-        monkeypatch.setattr(os, "lstat", lstat)
+        monkeypatch.setattr(FileHelper, "stat", helper_stat)
         integration = get_integration("codex")
         options = {"no_model_invocation": True}
         with pytest.raises(ValueError, match=f"--no-model-invocation.*reparse point at {junctioned}$"):
@@ -847,16 +844,18 @@ class TestCodexNoModelInvocationOwnership:
     def test_unreadable_entry_on_a_policy_path_is_not_taken_as_no_reparse_point(
         self, tmp_path, monkeypatch
     ):
+        from specify_cli.file_helper import FileHelper
+
         skills = tmp_path / ".agents" / "skills"
         skills.mkdir(parents=True)
-        real_lstat = os.lstat
+        real_stat = FileHelper.stat
 
-        def lstat(path, *args, **kwargs):
-            if not args and not kwargs and Path(path) == skills:
-                raise PermissionError(errno.EACCES, "Access is denied", str(path))
-            return real_lstat(path, *args, **kwargs)
+        def helper_stat(self, path):
+            if (self.root / path).resolve() == skills.resolve():
+                raise PermissionError(errno.EACCES, "Access is denied", str(skills))
+            return real_stat(self, path)
 
-        monkeypatch.setattr(os, "lstat", lstat)
+        monkeypatch.setattr(FileHelper, "stat", helper_stat)
         with pytest.raises(ValueError, match="--no-model-invocation: could not check .agents/skills"):
             get_integration("codex").preflight_setup(
                 tmp_path, {"no_model_invocation": True}, script_type="sh",
@@ -1063,6 +1062,38 @@ class TestCodexNoModelInvocationOwnership:
             assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
         finally:
             path.chmod(0o644)
+
+    def test_user_file_this_user_cannot_open_for_writing_is_not_replaced(self, tmp_path, monkeypatch):
+        # Write bits set, but owned by someone else: only opening it shows that.
+        from specify_cli.file_helper import FileHelper
+
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+
+        def open_rewrite(self, rel):
+            raise PermissionError(errno.EACCES, "Permission denied", str(self.root / rel))
+
+        monkeypatch.setattr(FileHelper, "open_rewrite", open_rewrite)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*read-only"):
+            get_integration("codex").preflight_setup(
+                tmp_path, {"no_model_invocation": True}, script_type="sh",
+            )
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*read-only"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == original
+        assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
+
+    def test_checking_a_user_file_is_writable_leaves_it_untouched(self, tmp_path):
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        os.utime(path, ns=(1_000_000_000_000_000_000, 1_000_000_000_000_000_000))
+        before = path.stat()
+        get_integration("codex").preflight_setup(
+            tmp_path, {"no_model_invocation": True}, script_type="sh",
+        )
+        after = path.stat()
+        assert path.read_bytes() == original
+        assert (after.st_size, after.st_mtime_ns) == (before.st_size, before.st_mtime_ns)
 
     def test_generated_file_with_a_non_boolean_policy_is_not_deleted(self, tmp_path):
         manifest = self._setup(tmp_path)

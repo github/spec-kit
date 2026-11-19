@@ -19,7 +19,7 @@ from typing import Any
 
 import yaml
 
-from ...file_helper import FileHelper
+from ...file_helper import FileHelper, SymlinkDeniedError, UnsupportedPathError
 from .._file_changes import changing_file
 from ..base import (
     IntegrationOption,
@@ -126,9 +126,13 @@ def _replace_file(
                 try:
                     _write_fd(fd, original)
                 except OSError as exc:
+                    try:
+                        kept = _entry_kind(root, backup_rel) == "file"
+                    except (OSError, ValueError):  # ValueError covers FileHelperError
+                        kept = False
                     where = (
                         f"its previous content is in {backup_rel}"
-                        if (root / backup_rel).is_file()
+                        if kept
                         else "its previous content could not be kept"
                     )
                     logger.warning(
@@ -190,39 +194,77 @@ def _require_rewritable_fd(fd: int, path: Path, read: os.stat_result) -> None:
         raise PermissionError(errno.EPERM, "File has other hard links", str(path))
 
 
-def _require_rewritable(path: Path) -> None:
-    # The mode bits catch a read-only file even when running as root.
-    if not os.access(path, os.W_OK) or not path.stat().st_mode & 0o222:
-        raise PermissionError(errno.EACCES, "File is read-only", str(path))
-    # An in-place write would also change every other link, possibly outside
-    # the project.
-    if path.stat().st_nlink > 1:
-        raise PermissionError(errno.EPERM, "File has other hard links", str(path))
+def _entry_kind(root: Path, rel: str) -> str:
+    """What ``rel`` itself is: ``missing``, ``file``, ``dir``, ``symlink`` or ``other``.
+
+    Checked through ``FileHelper``, so no link at or above ``rel`` is followed.
+    ``other`` is any entry the helper refuses to use, such as a FIFO or a
+    Windows junction. A symlinked ancestor raises ``SymlinkDeniedError``.
+    """
+    parent = PurePosixPath(rel).parent
+    try:
+        with FileHelper(root) as helper:
+            if parent.parts:
+                # Denied here, the link is above ``rel``; denied below, it is ``rel``.
+                helper.stat(parent.as_posix())
+            try:
+                mode = helper.stat(rel).st_mode
+            except SymlinkDeniedError:
+                return "symlink"
+            except UnsupportedPathError:
+                return "other"
+    except (FileNotFoundError, NotADirectoryError):
+        return "missing"
+    if stat.S_ISREG(mode):
+        return "file"
+    return "dir" if stat.S_ISDIR(mode) else "other"
+
+
+def _require_rewritable(root: Path, rel: str) -> None:
+    path = root / rel
+    with FileHelper(root) as helper:
+        info = helper.stat(rel)
+        # The mode bits catch a read-only file even when running as root.
+        if not info.st_mode & 0o222:
+            raise PermissionError(errno.EACCES, "File is read-only", str(path))
+        # Opening it for writing, without writing, shows this user may update
+        # it; mode bits alone pass a file owned by someone else.
+        try:
+            with helper.open_rewrite(rel):
+                pass
+        except PermissionError as exc:
+            raise PermissionError(errno.EACCES, "File is read-only", str(path)) from exc
+        # An in-place write would also change every other link, possibly
+        # outside the project.
+        if info.st_nlink > 1:
+            raise PermissionError(errno.EPERM, "File has other hard links", str(path))
 
 
 def _reparse_point_on(root: Path, rel: str) -> str | None:
-    """The first existing entry of ``rel`` that is a non-symlink reparse point.
+    """The first existing entry of ``rel`` that ``FileHelper`` will not use.
 
-    Mirrors ``FileHelper``'s check, which rejects the same entries but only
-    when a file is written through them.
+    That is a Windows junction or other non-symlink reparse point (or, off
+    Windows, a special file such as a FIFO). ``FileHelper`` rejects the same
+    entries, but only when a file is written through them.
     """
-    current = root
-    for part in PurePosixPath(rel).parts:
-        current = current / part
-        try:
-            info = os.lstat(current)
-        except (FileNotFoundError, NotADirectoryError):
-            return None
-        except OSError as exc:
-            raise ValueError(
-                f"Cannot use --no-model-invocation: could not check "
-                f"{current.relative_to(root).as_posix()} for a junction: {exc}"
-            ) from exc
-        if (
-            getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
-            and not stat.S_ISLNK(info.st_mode)
-        ):
-            return current.relative_to(root).as_posix()
+    current = PurePosixPath()
+    with FileHelper(root) as helper:
+        for part in PurePosixPath(rel).parts:
+            current = current / part
+            try:
+                helper.stat(current.as_posix())
+            except (FileNotFoundError, NotADirectoryError):
+                return None
+            except UnsupportedPathError:
+                return current.as_posix()
+            except SymlinkDeniedError:
+                # Symlinks are reported by ``_validate_record_path``.
+                return None
+            except OSError as exc:
+                raise ValueError(
+                    f"Cannot use --no-model-invocation: could not check "
+                    f"{current.as_posix()} for a junction: {exc}"
+                ) from exc
     return None
 
 
@@ -315,13 +357,12 @@ class CodexIntegration(SkillsIntegration):
         Content equality also counts, so a CRLF checkout or an added comment
         does not turn Spec Kit's own file into a user file.
         """
-        path = root / rel
         if prior is None or prior.ownership_modes.get(rel) != "whole":
             return False
         try:
             # A symlinked ancestor makes the file unsafe to rehash or delete.
             _validate_record_path(Path(rel), root)
-            if path.is_symlink() or not path.is_file():
+            if _entry_kind(root, rel) != "file":
                 return False
             if raw is None:
                 raw = _read_policy(root, rel)
@@ -348,15 +389,23 @@ class CodexIntegration(SkillsIntegration):
         path = project_root / rel
         # Checks every ancestor for symlinks before anything is read or written.
         _validate_record_path(Path(rel), project_root)
+
+        def kind(entry: str) -> str:
+            try:
+                return _entry_kind(project_root, entry)
+            except OSError as exc:
+                raise ValueError(f"Cannot update {rel}: {exc}") from exc
+
         for parent in reversed(Path(rel).parents[:-1]):
-            if (project_root / parent).exists() and not (project_root / parent).is_dir():
+            if kind(parent.as_posix()) not in ("missing", "dir"):
                 raise ValueError(f"Cannot update {rel}: {parent.as_posix()} is not a directory")
         tracked = prior is not None and rel in prior.files
         raw: bytes | None = None
-        if not path.exists():
+        existing = kind(rel)
+        if existing == "missing":
             data: dict[str, Any] = {}
             ownership = "whole"
-        elif not path.is_file():
+        elif existing != "file":
             raise ValueError(f"Cannot update {rel}: not a regular file")
         else:
             try:
@@ -367,7 +416,7 @@ class CodexIntegration(SkillsIntegration):
             ownership = "whole" if self._is_generated(project_root, rel, prior, raw) else "partial"
             if (data.get("policy") or {}).get("allow_implicit_invocation") is not False:
                 try:
-                    _require_rewritable(path)
+                    _require_rewritable(project_root, rel)
                 except OSError as exc:
                     raise ValueError(f"Cannot update {rel}: {exc}") from exc
         policy = data.get("policy") or {}
@@ -382,7 +431,7 @@ class CodexIntegration(SkillsIntegration):
                 f"policy: {'; '.join(errors)}"
             )
         backup = project_root / f"{rel}{_BACKUP_SUFFIX}"
-        if backup.exists() or backup.is_symlink():
+        if kind(f"{rel}{_BACKUP_SUFFIX}") != "missing":
             # ``rel`` may be a half-written rewrite, one finished but not yet
             # recorded, or was deleted to start over; either way the backup
             # may be the only intact copy, and ``rel`` cannot be taken for the
@@ -395,16 +444,15 @@ class CodexIntegration(SkillsIntegration):
         if ownership == "partial" and not tracked and already_set:
             # The user already set it; claiming it would let cleanup remove their setting.
             return None
-        if already_set and path.exists():
+        if already_set and raw is not None:
             return rel, None, ownership, raw
         return rel, _openai_yaml.dump(data), ownership, raw
 
     def _remove_policy(self, project_root: Path, rel: str, *, final: bool = False) -> bool:
         """Drop the managed policy from a user-owned file; return whether it is now policy-free."""
-        path = project_root / rel
         try:
             _validate_record_path(Path(rel), project_root)
-            if not path.is_file():
+            if _entry_kind(project_root, rel) != "file":
                 return False
             raw = _read_policy(project_root, rel)
             data = self._load_openai_yaml(raw, rel)
@@ -490,13 +538,18 @@ class CodexIntegration(SkillsIntegration):
     @staticmethod
     def _has_backup(root: Path, rel: str) -> bool:
         """Whether an interrupted update left a backup beside ``rel``; warn if so."""
-        backup = root / f"{rel}{_BACKUP_SUFFIX}"
-        if not (backup.exists() or backup.is_symlink()):
+        backup_rel = f"{rel}{_BACKUP_SUFFIX}"
+        try:
+            if _entry_kind(root, backup_rel) == "missing":
+                return False
+        except (OSError, ValueError):  # ValueError covers FileHelperError
+            # Unreadable or behind a symlinked ancestor: the checks that
+            # follow refuse ``rel`` itself.
             return False
         logger.warning(
             "Leaving %s in place: %s is left from an interrupted update; compare "
             "them, keep the right copy and delete the backup",
-            rel, backup.name,
+            rel, PurePosixPath(backup_rel).name,
         )
         return True
 
@@ -507,10 +560,9 @@ class CodexIntegration(SkillsIntegration):
         An unsafe ancestor (such as a dangling ``agents`` symlink) hides the
         file rather than proving it gone, so it counts as present.
         """
-        path = root / rel
         try:
             _validate_record_path(Path(rel), root)
-            return path.is_file() or path.is_symlink()
+            return _entry_kind(root, rel) in ("file", "symlink")
         except (OSError, ValueError):
             return True
 
@@ -612,8 +664,8 @@ class CodexIntegration(SkillsIntegration):
         # change in between.
         super().preflight_setup(project_root, parsed_options, script_type=script_type)
         if (parsed_options or {}).get("no_model_invocation") is True:
-            root = project_root.resolve()
-            self._plan_policies(root, self._prior_manifest(root))
+            # ``FileHelper`` resolves the root itself, so it is used as given.
+            self._plan_policies(project_root, self._prior_manifest(project_root))
 
     def setup(
         self,
@@ -625,7 +677,8 @@ class CodexIntegration(SkillsIntegration):
         # Codex has no SKILL.md frontmatter flag; the policy lives in a sibling
         # ``agents/openai.yaml``. It is written for core command skills only,
         # since mandatory extension hooks rely on the model invoking them.
-        root = project_root.resolve()
+        # The resolved project root, which ``super().setup`` requires it to be.
+        root = manifest.project_root
         enabled = (parsed_options or {}).get("no_model_invocation") is True
         prior = self._prior_manifest(root)
         self._released_policy_rels = frozenset()
@@ -673,9 +726,9 @@ class CodexIntegration(SkillsIntegration):
                     created.append(path)
                 else:
                     new = content.encode("utf-8")
-                    if path.exists() or path.is_symlink():
+                    if _entry_kind(root, rel) != "missing":
                         raise ValueError(f"Cannot update {rel}: it was created while updating")
-                    new_dir = not (path.parent.exists() or path.parent.is_symlink())
+                    new_dir = _entry_kind(root, PurePosixPath(rel).parent.as_posix()) == "missing"
                     # Created exclusively through the helper, so a directory
                     # swapped for a symlink since planning cannot redirect it.
                     try:
@@ -761,7 +814,7 @@ class CodexIntegration(SkillsIntegration):
         # report the ones cleaned as preserved modified files. Generated files
         # are left to ``uninstall``: content-equal ones are re-hashed so it
         # deletes them, and edited ones lose only the policy unless forced.
-        root = project_root.resolve()
+        root = manifest.project_root
         cleaned: set[Path] = set()
         for rel, mode in list(manifest.ownership_modes.items()):
             if not self._is_policy_rel(rel):
