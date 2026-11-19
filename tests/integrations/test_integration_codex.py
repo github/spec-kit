@@ -1091,7 +1091,15 @@ class TestCodexNoModelInvocationOwnership:
         assert path.read_bytes() == original
         assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
 
-    def test_checking_a_user_file_is_writable_leaves_it_untouched(self, tmp_path):
+    def test_checking_a_user_file_is_writable_leaves_it_untouched(self, tmp_path, monkeypatch):
+        # Opening it for writing would report a Windows sharing violation as
+        # read-only, so preflight must not.
+        from specify_cli.file_helper import FileHelper
+
+        def open_rewrite(self, rel):
+            raise AssertionError(f"preflight opened {rel} for writing")
+
+        monkeypatch.setattr(FileHelper, "open_rewrite", open_rewrite)
         path = self._seed(tmp_path)
         original = path.read_bytes()
         os.utime(path, ns=(1_000_000_000_000_000_000, 1_000_000_000_000_000_000))

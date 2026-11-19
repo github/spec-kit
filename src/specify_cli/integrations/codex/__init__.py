@@ -201,7 +201,10 @@ def _entry_kind(root: Path, rel: str) -> str:
 
     Checked through ``FileHelper``, so no link at or above ``rel`` is followed.
     ``other`` is any entry the helper refuses to use, such as a FIFO or a
-    Windows junction. A symlinked ancestor raises ``SymlinkDeniedError``.
+    Windows junction. An ancestor that cannot be used raises: a symlink
+    ``SymlinkDeniedError``, a junction or special file ``UnsupportedPathError``
+    (both ``FileHelperError``), and a failed check its ``OSError``. Only a
+    missing entry or ancestor reads as ``missing``.
     """
     parent = PurePosixPath(rel).parent
     try:
@@ -417,7 +420,7 @@ class CodexIntegration(SkillsIntegration):
             if (data.get("policy") or {}).get("allow_implicit_invocation") is not False:
                 try:
                     _require_rewritable(project_root, rel)
-                except OSError as exc:
+                except (OSError, FileHelperError) as exc:
                     raise ValueError(f"Cannot update {rel}: {exc}") from exc
         policy = data.get("policy") or {}
         already_set = policy.get("allow_implicit_invocation") is False
