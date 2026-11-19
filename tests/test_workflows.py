@@ -3546,8 +3546,361 @@ def _force_gate_stdin(monkeypatch, *, tty: bool):
     monkeypatch.setattr(gate_module, "sys", _FakeSys(tty=tty))
 
 
+def _isolate_init_home(monkeypatch, tmp_path_factory):
+    """Keep child-process auth, trust and catalog state in fixture-owned homes."""
+    home = tmp_path_factory.mktemp("init-home")
+    for key in ("HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"):
+        monkeypatch.setenv(key, str(home))
+    for key in ("SPECKIT_INTEGRATION_DEFAULT", "SPECKIT_INTEGRATION_CATALOG_URL"):
+        monkeypatch.delenv(key, raising=False)
+
+
+def _gate_init_launch(monkeypatch, before):
+    """Gate the real CLI boundary on both sides of the cwd-isolation fix."""
+    from specify_cli.workflows.step import init
+
+    if hasattr(init, "subprocess"):
+        original = init.subprocess.run
+
+        def run(args, **kwargs):
+            if "init" in args:
+                before(args[args.index("init"):])
+            return original(args, **kwargs)
+
+        monkeypatch.setattr(init.subprocess, "run", run)
+    else:
+        from typer.testing import CliRunner
+
+        original = CliRunner.invoke
+
+        def invoke(self, app, args, **kwargs):
+            before(args)
+            return original(self, app, args, **kwargs)
+
+        monkeypatch.setattr(CliRunner, "invoke", invoke)
+
+
+def _assert_init_scaffold(root, script="sh"):
+    """Require generated files from real init, rather than a mocked mkdir."""
+    from specify_cli._assets import get_speckit_version
+
+    options = json.loads((root / ".specify/init-options.json").read_text(encoding="utf-8"))
+    assert options["speckit_version"] == get_speckit_version()
+    assert (root / ".specify/memory/constitution.md").is_file()
+    assert list((root / ".specify/workflows").glob("*/workflow.yml"))
+    directory = {"sh": "bash", "ps": "powershell", "py": "python"}[script]
+    assert list((root / ".specify/scripts" / directory).iterdir())
+    assert (root / ".github/skills/speckit-specify/SKILL.md").is_file()
+
+
+@pytest.fixture
+def init_empty_catalog(tmp_path, tmp_path_factory, monkeypatch):
+    from tests.specify_cli.integrations.test_installed_adapters import server, tls_certificate
+
+    certificate = tls_certificate.__wrapped__(tmp_path_factory)
+    fixture = server.__wrapped__(tmp_path_factory.mktemp("init-catalog"), monkeypatch, certificate)
+    catalog = next(fixture)
+    try:
+        (catalog.root / "catalog.json").write_text(
+            json.dumps({"schema_version": "1.0", "integrations": {}}), encoding="utf-8"
+        )
+        directory = tmp_path / ".specify"
+        directory.mkdir()
+        (directory / "integration-catalogs.yml").write_text(yaml.safe_dump({
+            "catalogs": [{"name": "empty", "url": f"{catalog.url}/catalog.json",
+                          "install_allowed": False}],
+        }), encoding="utf-8")
+        yield catalog
+    finally:
+        fixture.close()
+
+
 class TestInitStep:
     """Test the init step type."""
+
+    @pytest.fixture(autouse=True)
+    def isolated_home(self, monkeypatch, tmp_path_factory):
+        _isolate_init_home(monkeypatch, tmp_path_factory)
+
+    @pytest.mark.parametrize("separate_roots", [False, True])
+    def test_relative_projects_survive_interleaved_init(self, tmp_path, monkeypatch, separate_roots):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.init import InitStep
+
+        launch = tmp_path / "launch"
+        launch.mkdir()
+        roots = [tmp_path / "root-a", tmp_path / ("root-b" if separate_roots else "root-a")]
+        for root in set(roots):
+            root.mkdir()
+        monkeypatch.chdir(launch)
+        streams = (sys.stdin, sys.stdout, sys.stderr)
+        entered = {name: Event() for name in ("alpha", "beta")}
+        release = {name: Event() for name in entered}
+
+        def before(argv):
+            name = argv[1]
+            entered[name].set()
+            assert release[name].wait(30), f"Timed out releasing {name}"
+
+        _gate_init_launch(monkeypatch, before)
+        step = InitStep()  # The registry shares one instance across fan-out items.
+        contexts = [StepContext(project_root=str(root)) for root in roots]
+        configs = [{"id": name, "project": name, "script": "sh"} for name in entered]
+        pool = ThreadPoolExecutor(max_workers=2)
+        try:
+            first = pool.submit(step.execute, configs[0], contexts[0])
+            assert entered["alpha"].wait(30)
+            second = pool.submit(step.execute, configs[1], contexts[1])
+            assert entered["beta"].wait(30)
+            release["alpha"].set()
+            a = first.result(timeout=60)  # Includes the old cwd-restoring finally.
+            release["beta"].set()
+            b = second.result(timeout=60)
+            final_cwd = Path.cwd()
+        finally:
+            for event in release.values():
+                event.set()
+            pool.shutdown(wait=True)
+            os.chdir(launch)  # Test coordinator cleanup only, after all workers exit.
+
+        assert [a.status, b.status] == [StepStatus.COMPLETED] * 2, [a.error, b.error]
+        for root, name, result in zip(roots, entered, (a, b)):
+            _assert_init_scaffold(root / name)
+            assert name in result.output["stdout"]
+            assert result.output["stderr"] == ""
+            assert not (launch / name).exists()
+        assert [ctx.project_root for ctx in contexts] == [str(root) for root in roots]
+        assert final_cwd == launch
+        assert (sys.stdin, sys.stdout, sys.stderr) == streams
+
+    @pytest.mark.parametrize("root_kind", ["absolute", "relative", "omitted"])
+    @pytest.mark.parametrize("target", [{"here": True, "project": "ignored"}, {"project": "."}, {}])
+    def test_captures_base_once_without_restoring_external_cwd(
+        self, tmp_path, monkeypatch, root_kind, target
+    ):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.init import InitStep
+
+        launch, root, moved = [tmp_path / name for name in ("launch", "root", "moved")]
+        for path in (launch, root, moved):
+            path.mkdir()
+        monkeypatch.chdir(launch)
+        base = {"absolute": str(root), "relative": "../root", "omitted": None}[root_kind]
+        expected = launch if base is None else root
+        streams = (sys.stdin, sys.stdout, sys.stderr)
+        environment = dict(os.environ)
+        _gate_init_launch(monkeypatch, lambda argv: os.chdir(moved))
+        context = StepContext(project_root=base)
+        result = InitStep().execute({"id": "init", "script": "sh", **target}, context)
+        assert result.status == StepStatus.COMPLETED, result.error
+        _assert_init_scaffold(expected)
+        assert not (moved / ".specify").exists()
+        assert Path.cwd() == moved
+        assert (sys.stdin, sys.stdout, sys.stderr) == streams
+        assert dict(os.environ) == environment
+        assert context.project_root == base
+
+    @pytest.mark.parametrize("target_kind", ["nested", "absolute", "parent"])
+    @pytest.mark.parametrize("script", [None, "sh", "ps", "py"])
+    def test_real_target_and_script_matrix(self, tmp_path, target_kind, script):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.init import InitStep
+
+        root = tmp_path / "root"
+        root.mkdir()
+        target = root / "nested/demo" if target_kind == "nested" else tmp_path / "space 项目"
+        project = {"absolute": str(target), "nested": "nested/demo", "parent": "../space 项目"}[target_kind]
+        config = {"id": "init", "project": project}
+        if script:
+            config["script"] = script
+        result = InitStep().execute(config, StepContext(project_root=str(root)))
+        assert result.status == StepStatus.COMPLETED, result.error
+        _assert_init_scaffold(target, script or ("ps" if os.name == "nt" else "sh"))
+        assert result.output["argv"][1] == project
+
+    def test_force_preserves_unrelated_content_and_bundled_preset(self, tmp_path):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.init import InitStep
+
+        sentinel = tmp_path / "keep.bin"
+        sentinel.write_bytes(b"unrelated\x00bytes")
+        result = InitStep().execute(
+            {"id": "init", "here": True, "force": True, "preset": "lean", "script": "py"},
+            StepContext(project_root=str(tmp_path)),
+        )
+        assert result.status == StepStatus.COMPLETED, result.error
+        assert sentinel.read_bytes() == b"unrelated\x00bytes"
+        _assert_init_scaffold(tmp_path, "py")
+        assert (tmp_path / ".specify/presets/lean/preset.yml").is_file()
+
+    def test_relative_root_preserves_symlink_parent_semantics(self, tmp_path, monkeypatch):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.init import InitStep
+
+        launch = tmp_path / "launch"
+        destination = tmp_path / "destination"
+        launch.mkdir()
+        (destination / "nested").mkdir(parents=True)
+        try:
+            (launch / "alias").symlink_to(destination / "nested", target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"Directory symlinks unavailable: {exc}")
+        monkeypatch.chdir(launch)
+        context = StepContext(project_root="alias/..")
+        result = InitStep().execute({"id": "init", "project": "demo", "script": "sh"}, context)
+        assert result.status == StepStatus.COMPLETED, result.error
+        _assert_init_scaffold(destination / "demo")
+        assert not (launch / "demo").exists()
+        assert context.project_root == "alias/.."
+
+    def test_explicit_integration_and_quoted_options_override_defaults(self, tmp_path, monkeypatch):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.init import InitStep
+
+        monkeypatch.setenv("SPECKIT_INTEGRATION_DEFAULT", "gemini")
+        result = InitStep().execute(
+            {"id": "init", "here": "{{ inputs.yes }}", "integration": "generic",
+             "integration_options": '--commands-dir "agent commands"', "script": "py"},
+            StepContext(project_root=str(tmp_path), default_integration="copilot", inputs={"yes": True}),
+        )
+        assert result.status == StepStatus.COMPLETED, result.error
+        assert result.output["integration"] == "generic"
+        assert (tmp_path / "agent commands/speckit.specify.md").is_file()
+
+    @pytest.mark.parametrize("kind", [
+        "missing-root", "file-root", "existing-target", "invalid-script", "missing-traversal",
+    ])
+    def test_real_failures_preserve_parent_state(self, tmp_path, kind):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.init import InitStep
+
+        root = tmp_path / "root"
+        root.mkdir()
+        config = {"id": "init", "project": "demo", "script": "sh"}
+        if kind == "missing-root":
+            root = tmp_path / "missing"
+        elif kind == "file-root":
+            root = tmp_path / "file"
+            root.write_bytes(b"keep")
+        elif kind == "existing-target":
+            (root / "demo").mkdir()
+            (root / "demo/keep").write_bytes(b"keep")
+        elif kind == "missing-traversal":
+            config["project"] = "missing/../escape"
+        else:
+            config["script"] = "invalid"
+        state = (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
+        result = InitStep().execute(config, StepContext(project_root=str(root)))
+        assert result.status == StepStatus.FAILED
+        assert result.error and result.error != "SystemExit: 1"
+        assert result.output["stderr"].strip()
+        assert state == (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
+        assert not (tmp_path / "escape").exists()
+        assert not list(tmp_path.rglob("init-options.json"))
+        if kind == "existing-target":
+            assert (root / "demo/keep").read_bytes() == b"keep"
+
+    def test_pins_interpreter_source_and_child_environment(self, tmp_path, monkeypatch):
+        import subprocess
+        import specify_cli
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step import init
+
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "specify_cli.py").write_text("raise RuntimeError('shadow imported')", encoding="utf-8")
+        decoy = tmp_path / "bin"
+        decoy.mkdir()
+        for name in ("specify", "specify.cmd"):
+            path = decoy / name
+            path.write_text("exit 97\n", encoding="utf-8")
+            path.chmod(0o755)
+        monkeypatch.setenv("PATH", str(decoy) + os.pathsep + os.environ.get("PATH", ""))
+        original = subprocess.run
+        launches = []
+
+        def run(args, **kwargs):
+            if "init" in args:
+                launches.append((args, kwargs))
+            return original(args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", run)
+        environment = dict(os.environ)
+        result = init.InitStep().execute(
+            {"id": "init", "project": "demo", "script": "py"}, StepContext(project_root=str(root))
+        )
+        assert result.status == StepStatus.COMPLETED, result.error
+        _assert_init_scaffold(root / "demo", "py")
+        assert len(launches) == 1
+        args, options = launches[0]
+        assert args[0] == sys.executable
+        assert args[1:3] == ["-P", "-c"]
+        assert args[4] == str(Path(specify_cli.__file__).resolve().parent.parent)
+        assert options["cwd"] == str(root)
+        assert options["stdin"] == subprocess.DEVNULL
+        assert options["capture_output"] is True and options["check"] is False
+        assert options["encoding"] == "utf-8"
+        assert options["env"] is not os.environ
+        assert options["env"]["PYTHONIOENCODING"] == "utf-8"
+        assert dict(os.environ) == environment
+
+    @pytest.mark.parametrize("stdout,stderr,expected", [
+        ("diagnostic\n", "", "diagnostic"), ("out", "real error\n", "real error\n"),
+        ("", "", ""), ("", "Traceback\nRuntimeError: boom inside init", "Traceback\nRuntimeError: boom inside init"),
+    ])
+    def test_child_failure_streams(self, tmp_path, monkeypatch, stdout, stderr, expected):
+        import subprocess
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.init import InitStep
+
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 3, stdout, stderr))
+        result = InitStep().execute({"id": "init", "project": "demo"}, StepContext(project_root=str(tmp_path)))
+        assert result.status == StepStatus.FAILED
+        assert result.output["stdout"] == stdout
+        assert result.output["stderr"] == expected
+        assert result.error == (expected.strip() or stdout.strip() or "specify init exited with code 3.")
+
+    def test_launch_failure_is_actionable(self, tmp_path, monkeypatch):
+        import subprocess
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.init import InitStep
+
+        def fail(*args, **kwargs):
+            raise OSError("fixture launch denied")
+
+        monkeypatch.setattr(subprocess, "run", fail)
+        result = InitStep().execute({"id": "init", "project": "demo"}, StepContext(project_root=str(tmp_path)))
+        assert result.status == StepStatus.FAILED
+        assert str(tmp_path) in result.error and "fixture launch denied" in result.error
+
+    def test_nul_project_argument_returns_failed_result(self, tmp_path):
+        """Real subprocess argument rejection must stay within the step result."""
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.init import InitStep
+
+        step = InitStep()
+        config = {"id": "init", "project": "bad\x00name", "integration": "copilot", "script": "sh"}
+        context = StepContext(project_root=str(tmp_path))
+        assert step.validate(config) == []
+        state = (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
+        try:
+            result = step.execute(config, context)
+        finally:
+            assert state == (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
+            assert context.project_root == str(tmp_path)
+            assert list(tmp_path.iterdir()) == []
+
+        assert result.status == StepStatus.FAILED
+        assert result.output["exit_code"] == 1
+        assert result.output["argv"][1] == "bad\x00name"
+        assert result.output["stdout"] == ""
+        assert result.error == result.output["stderr"]
+        assert "Cannot run specify init" in result.error
+        assert str(tmp_path) in result.error
+        assert "embedded null" in result.error.lower()
 
     def test_docstring_lists_every_valid_script_type(self):
         # The `script` field docstring must not contradict the step's own
@@ -3681,7 +4034,7 @@ class TestInitStep:
         assert result.status == StepStatus.COMPLETED
         assert (tmp_path / "demo" / ".specify").is_dir()
 
-    def test_invalid_integration_fails(self, tmp_path):
+    def test_invalid_integration_fails(self, tmp_path, init_empty_catalog):
         from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
@@ -3700,7 +4053,7 @@ class TestInitStep:
         assert result.output["exit_code"] != 0
         assert result.error is not None
 
-    def test_failed_init_surfaces_inits_own_message(self, tmp_path):
+    def test_failed_init_surfaces_inits_own_message(self, tmp_path, init_empty_catalog):
         """A failing init step must report init's diagnostics, not 'SystemExit: 1'.
 
         `typer.Exit(n)` — how `specify init` reports every ordinary failure —
@@ -3743,42 +4096,29 @@ class TestInitStep:
         assert "no-such-agent" in stderr or "Unknown" in stderr, stderr
 
     def test_unexpected_crash_still_reports_its_exception(self, monkeypatch, tmp_path):
-        """The branch's original purpose is preserved for a genuine crash.
-
-        Only `SystemExit` is now excluded; any other exception escaping the
-        runner must still be surfaced, since nothing else would describe it.
-        """
+        """Preserve exception details emitted by an unexpectedly failing child."""
+        import subprocess
         from specify_cli.workflows.step.init import InitStep
-        import typer.testing
+        original = subprocess.run
 
-        class _Result:
-            exit_code = 1
-            output = ""
-            stderr = ""
-            exception = RuntimeError("boom inside init")
+        def crash(args, **kwargs):
+            return original(
+                [sys.executable, "-P", "-c", "raise RuntimeError('boom inside init')"], **kwargs
+            )
 
-        class _Runner:
-            def __init__(self, *a, **k):
-                pass
-
-            def invoke(self, *a, **k):
-                return _Result()
-
-        monkeypatch.setattr(typer.testing, "CliRunner", _Runner)
-
-        from specify_cli.workflows.base import StepContext
-
+        monkeypatch.setattr(subprocess, "run", crash)
         _code, _stdout, stderr = InitStep()._run_init(
-            ["init", "demo"], StepContext(project_root=str(tmp_path))
+            ["init", "demo"], str(tmp_path)
         )
 
         assert "RuntimeError: boom inside init" in stderr
 
-    def test_non_empty_current_dir_without_force_fails_fast(self, tmp_path):
+    def test_non_empty_current_dir_without_force_fails_fast(self, tmp_path, monkeypatch):
         from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         (tmp_path / "existing.txt").write_text("data")
+        _gate_init_launch(monkeypatch, lambda argv: pytest.fail("Non-empty preflight must not launch init"))
 
         step = InitStep()
         ctx = StepContext(

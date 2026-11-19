@@ -257,6 +257,77 @@ def snapshot(project):
     }
 
 
+@pytest.fixture
+def init_step_environment(monkeypatch, tmp_path_factory):
+    from tests.test_workflows import _isolate_init_home
+
+    _isolate_init_home(monkeypatch, tmp_path_factory)
+
+
+def test_init_step_reloads_trusted_target_adapter(tmp_path, server, init_step_environment):
+    from specify_cli.workflows.base import StepContext, StepStatus
+    from specify_cli.workflows.step.init import InitStep
+
+    publish(server, code=implementation(body='''
+    def setup(self, project_root, manifest, **kwargs):
+        import os
+        result = super().setup(project_root, manifest, **kwargs)
+        (project_root / "adapter-pid").write_text(str(os.getpid()))
+        return result
+'''))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    assert (project / "adapter-pid").read_text() == str(os.getpid())
+    unload_installed_integrations()
+    assert KEY not in INTEGRATION_REGISTRY
+    parent_registry = dict(INTEGRATION_REGISTRY)
+    result = InitStep().execute(
+        {"id": "bootstrap", "here": True, "force": True, "integration": KEY, "script": "py"},
+        StepContext(project_root=str(project)),
+    )
+    assert result.status == StepStatus.COMPLETED, result.error
+    assert (project / "adapter-pid").read_text() != str(os.getpid())
+    assert (project / ".sample-agent/skills/speckit-specify/SKILL.md").is_file()
+    assert (project / ".specify/memory/constitution.md").is_file()
+    assert (project / ".specify/workflows/speckit/workflow.yml").is_file()
+    assert json.loads((project / ".specify/init-options.json").read_text())["script"] == "py"
+    assert INTEGRATION_REGISTRY == parent_registry
+
+
+@pytest.mark.parametrize("damage", ["untrusted", "tampered"])
+def test_init_step_rejects_untrusted_target_adapter(tmp_path, server, damage, init_step_environment):
+    from specify_cli.workflows.base import StepContext, StepStatus
+    from specify_cli.workflows.step.init import InitStep
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    unload_installed_integrations()
+    if damage == "untrusted":
+        path = Path.home() / ".specify/integration-trust.json"
+        state = json.loads(path.read_text())
+        state["grants"] = []
+        path.write_text(json.dumps(state))
+        diagnostic = "no local trust decision"
+    else:
+        path = project / f".specify/integrations/packages/{KEY}/__init__.py"
+        path.write_text(path.read_text() + "\nraise RuntimeError('untrusted code executed')\n")
+        diagnostic = "has been modified"
+    before = snapshot(project)
+    trust_before = (Path.home() / ".specify/integration-trust.json").read_bytes()
+    result = InitStep().execute(
+        {"id": "bootstrap", "here": True, "force": True, "integration": KEY, "script": "py"},
+        StepContext(project_root=str(project)),
+    )
+    assert result.status == StepStatus.FAILED
+    assert diagnostic in " ".join(result.error.split())
+    assert "untrusted code executed" not in result.error
+    assert result.output["stderr"].strip()
+    assert snapshot(project) == before
+    assert (Path.home() / ".specify/integration-trust.json").read_bytes() == trust_before
+    assert KEY not in INTEGRATION_REGISTRY
+
+
 @pytest.mark.parametrize("existing", [False, True])
 @pytest.mark.parametrize("change", ["unchanged", "partial", "concurrent", "deleted"])
 def test_round9_pending_write_preserves_unattributed_changes(tmp_path, server, monkeypatch, existing, change):
