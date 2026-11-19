@@ -793,13 +793,17 @@ def test_builtin_journal_restores_user_attributes_before_a_read_only_access_acl(
     source.write_text("generated\n", encoding="utf-8")
     source.chmod(0o644)
     os.setxattr(source, "user.origin", b"generated")
-    real_listxattr = os.listxattr
+    real_restorable_xattrs = _lifecycle._restorable_xattrs
 
     def acl_first(*args, **kwargs):
-        # ext4 lists user attributes first; other filesystems need not.
-        return sorted(real_listxattr(*args, **kwargs), key=lambda name: name != _ACCESS_ACL)
+        # ext4 lists user attributes first; other filesystems need not. Only
+        # the journal's own reads are reordered: patching os.listxattr would
+        # reorder shutil.copystat() too, and Python before 3.13 raises when it
+        # copies a read-only ACL before the user attributes.
+        attributes = real_restorable_xattrs(*args, **kwargs)
+        return dict(sorted(attributes.items(), key=lambda item: item[0] != _ACCESS_ACL))
 
-    monkeypatch.setattr(_lifecycle.os, "listxattr", acl_first)
+    monkeypatch.setattr(_lifecycle, "_restorable_xattrs", acl_first)
 
     with pytest.raises(OSError, match="disk full"):
         with _lifecycle.builtin_journal(project, "claude", {}):
