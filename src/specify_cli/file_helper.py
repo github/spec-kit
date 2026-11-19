@@ -59,6 +59,10 @@ class UnsupportedPathError(FileHelperError):
     """An accessed object cannot be used by the requested operation."""
 
 
+class _SpecialFileError(UnsupportedPathError):
+    """An entry is neither a directory, regular file, nor symlink."""
+
+
 @dataclass(frozen=True)
 class _WindowsDirectory:
     path: Path
@@ -343,7 +347,7 @@ class FileHelper:
             elif stat.S_ISDIR(mode) or stat.S_ISREG(mode):
                 current = candidate
             else:
-                raise UnsupportedPathError(f"Unsupported filesystem object: {candidate}")
+                raise _SpecialFileError(f"Unsupported filesystem object: {candidate}")
         return current
 
     def _path(
@@ -376,6 +380,17 @@ class FileHelper:
     def _require_directory(path: Path) -> None:
         if not stat.S_ISDIR(path.stat().st_mode):
             raise NotADirectoryError(path)
+
+    def directory_exists(self, path: Path | str) -> bool:
+        """Return False for absence only; reject wrong types and forbidden paths."""
+        try:
+            directory = self._path(path)
+        except FileNotFoundError:
+            return False
+        except _SpecialFileError as exc:
+            raise NotADirectoryError(str(exc)) from exc
+        self._require_directory(directory)
+        return True
 
     def mkdir(
         self, path: Path | str, *, parents: bool = False, exist_ok: bool = False

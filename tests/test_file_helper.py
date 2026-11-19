@@ -3966,6 +3966,23 @@ def test_iterdir_rejects_symlink_policy_and_external_targets(root, link):
     assert external.exists()
 
 
+def test_directory_probe_distinguishes_absent_and_invalid_entries(root):
+    (root / "directory").mkdir()
+    (root / "file").write_text("data", encoding="utf-8")
+    with FileHelper(root) as files:
+        assert files.directory_exists("directory")
+        assert not files.directory_exists("missing")
+        with pytest.raises(NotADirectoryError):
+            files.directory_exists("file")
+
+
+def test_directory_probe_rejects_a_dangling_link_in_deny_mode(root, link):
+    link(root / "alias", root / "missing")
+    with FileHelper(root) as files:
+        with pytest.raises(SymlinkDeniedError):
+            files.directory_exists("alias")
+
+
 def test_iterdir_rejects_missing_and_non_directory_entries(root):
     with pytest.raises(FileNotFoundError):
         FileHelper(root).iterdir("missing")

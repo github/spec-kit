@@ -81,9 +81,11 @@ This guarantee does not cover unmigrated consumers such as
 `bundles.project.active_integration`, whose containment-checked reads can still
 follow contained state-file links.
 
-Existing Path-returning resolvers preflight policy without changing their return
-type or domain constructors. They do not implicitly equip unmigrated domain
-consumers with an operation helper. Failures are translated into existing
+The shared CLI resolver and bundle ancestor search use a deny-mode FileHelper
+probe for the `.specify` marker. Their Path-returning resolvers preflight
+policy without changing their return type or domain constructors. They do not
+implicitly equip unmigrated domain consumers with an operation helper. Failures
+are translated into existing
 command diagnostics, with a single `{"error": "..."}` on stderr and empty
 stdout for JSON policy failures; artifact/list surfaces preserve their error
 envelope contracts. Artifact list/info validate their explicit project roots in
@@ -224,6 +226,10 @@ descriptor-relative or change their documented concurrency limitations.
   `with FileHelper(...) as files:` closes on both success and failure. Operations
   on an explicitly closed helper raise `FileHelperError`.
 - `mkdir(path, parents=False, exist_ok=False)` creates directories.
+- `directory_exists(path)` checks for a directory under the helper's link
+  policy. A missing path returns false; regular and special files raise
+  `NotADirectoryError`. Denied links and unsupported reparse points retain
+  their policy errors rather than appearing absent.
 - `iterdir(path, select=None)` enumerates the selected directory's immediate
   entries in deterministic name order. The optional caller-supplied predicate
   receives each bare name before its entry is inspected. Only included entries
