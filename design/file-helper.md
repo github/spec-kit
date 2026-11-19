@@ -246,8 +246,9 @@ descriptor-relative or change their documented concurrency limitations.
 - `read_bytes(path)` / `read_text(path, encoding="utf-8")` read regular files.
 - `stat(path)` returns the metadata of an existing entry after the normal policy
   walk: allowed contained links, including a leaf link, are resolved, and the
-  resolved entry itself is not followed. Missing entries raise
-  `FileNotFoundError`. It is a point-in-time query, not an anchor: callers that
+  resolved entry itself is not followed. The entry is queried relative to the
+  anchored parent hierarchy, so a parent swapped after resolution cannot
+  redirect it. Missing entries raise `FileNotFoundError`. It is a point-in-time query, not an anchor: callers that
   act on the result must re-check identity on the descriptor they act through.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
   create files with existing parents. A no-follow `lstat` preflight rejects
@@ -275,7 +276,9 @@ descriptor-relative or change their documented concurrency limitations.
   current user can open, with existing parents, and flushes it before
   returning. It shares `create_bytes`'s policy walk, no-follow `lstat`
   preflight and anchored parent hierarchy. POSIX creates the leaf with `0o600`
-  relative to the anchored parent, writes and `fsync`s through that one
+  relative to the anchored parent; on macOS it then clears any extended ACL
+  entries a parent's inheritable ACEs added (Linux default ACLs are bounded by
+  the mask the mode sets). It writes and `fsync`s through that one
   descriptor, then flushes the parent best effort through a readable descriptor
   opened from the anchor (search-only and `O_PATH` anchors reject `fsync`); a
   parent that cannot be flushed does not fail the call. Windows creates the leaf
@@ -284,8 +287,9 @@ descriptor-relative or change their documented concurrency limitations.
   only that user full access, so the content is never readable under an
   inherited ACL. A failure after creation removes only the file this call
   created: POSIX unlinks the name only while it still has the created file's
-  identity, and Windows marks the open handle for deletion. If that removal
-  fails, the original exception carries a note naming the file.
+  identity (an identity never read leaves the name in place), and Windows marks
+  the open handle for deletion. If that removal or the close fails, the original
+  exception is kept and carries a note naming the file.
 - `write_bytes(path, content, mode=0o644)` / `write_text(...)` atomically
   create or update files with existing parents. Text variants also accept
   `encoding="utf-8"`. Replacement files use the supplied mode; metadata and
@@ -326,14 +330,15 @@ descriptor-relative or change their documented concurrency limitations.
   Windows creation also honors the CRT process mask: masking the owner-write
   bit creates a read-only file, matching native text creation, without changing
   the attributes of an existing file.
-- `open_rewrite(path)` is a context manager yielding a binary, writable
-  descriptor on an existing regular file at offset 0, for in-place byte
+- `open_rewrite(path)` is a context manager yielding a blocking, binary,
+  writable descriptor on an existing regular file at offset 0, for in-place byte
   rewrites that must keep the file's identity, owner, mode, ACL and hard links.
   It uses `overwrite_text`'s anchored, non-truncating open, but never creates:
   POSIX omits `O_CREAT` and Windows does not fall back to creation, so a leaf
   removed after resolution raises `FileNotFoundError`. The opened file type is
-  checked with `fstat` before the descriptor is yielded, and the descriptor is
-  closed on exit. Writing, truncating, flushing and any rollback belong to the
+  checked with `fstat` before the descriptor is yielded. The helper closes the
+  descriptor on exit, so callers must not close it; wrap it with
+  `closefd=False`. Writing, truncating, flushing and any rollback belong to the
   caller; nothing is written or truncated by the helper. There is no newline
   translation on either platform.
 - `delete(path, recursive=False)` unlinks files/links or removes directories.
@@ -471,8 +476,9 @@ its replacement: creation stays with the opened directory, even if it is
 renamed out of the root. This is not a guarantee of stable namespace membership
 under concurrent renames, nor does parent anchoring make every leaf preflight
 atomic with the subsequent open.
-On Windows, exclusive creation and text overwrite still open their leaf by
-pathname after pinning the parent hierarchy. Attribute-only reparse updates
+On Windows, exclusive creation (including `create_private_bytes`), text
+overwrite and `open_rewrite` still open their leaf by pathname after pinning the
+parent hierarchy, and `stat` queries its leaf the same way. Attribute-only reparse updates
 can redirect those opens; they do not have the read path's parent-relative
 handle protection.
 The helper does not constrain subprocesses or third-party code.

@@ -503,3 +503,151 @@ def test_windows_create_private_bytes_sets_an_owner_only_protected_acl(tmp_path)
     dacl = sddl.split("D:", 1)[1]
     assert dacl.startswith("P")
     assert dacl.count("(") == 1 and f";;;{sid})" in dacl
+
+
+# Review regressions
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs POSIX symlinks")
+def test_stat_is_not_redirected_by_a_parent_swapped_after_resolution(tmp_path, monkeypatch):
+    path = _seed(tmp_path, b"inside")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "file").write_bytes(b"outside, longer")
+    original = FileHelper._creation_directory
+
+    @contextmanager
+    def swap_first(self, directory):
+        path.parent.rename(tmp_path / "moved")
+        path.parent.symlink_to(outside, target_is_directory=True)
+        with original(self, directory) as anchored:
+            yield anchored
+
+    monkeypatch.setattr(FileHelper, "_creation_directory", swap_first)
+    with FileHelper(tmp_path) as files, pytest.raises(OSError):
+        files.stat(REL)
+
+
+def test_stat_of_the_root(tmp_path):
+    with FileHelper(tmp_path) as files:
+        assert files.stat(tmp_path).st_ino == tmp_path.stat().st_ino
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptors")
+def test_open_rewrite_yields_a_blocking_descriptor(tmp_path):
+    _seed(tmp_path)
+    with FileHelper(tmp_path) as files, files.open_rewrite(REL) as fd:
+        assert os.get_blocking(fd)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS extended ACLs")
+def test_create_private_bytes_drops_acl_entries_inherited_from_the_parent(tmp_path):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    subprocess.run(
+        ["chmod", "+a", "everyone allow read,file_inherit", str(parent)],
+        check=True, capture_output=True,
+    )
+    (parent / "plain").write_bytes(b"")
+    inherited = subprocess.run(
+        ["ls", "-le", str(parent / "plain")], check=True, capture_output=True, text=True,
+    ).stdout
+    if "everyone" not in inherited:
+        pytest.skip("filesystem did not apply the inheritable ACE")
+    with FileHelper(tmp_path) as files:
+        files.create_private_bytes(REL, b"secret")
+    listing = subprocess.run(
+        ["ls", "-le", str(tmp_path / REL)], check=True, capture_output=True, text=True,
+    ).stdout
+    assert "everyone" not in listing
+    assert (tmp_path / REL).read_bytes() == b"secret"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+def test_posix_create_private_bytes_notes_a_partial_file_it_could_not_remove(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "parent").mkdir()
+    real_fsync, real_unlink = os.fsync, os.unlink
+
+    def fsync(fd):
+        if stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.ENOSPC, "No space left")
+        return real_fsync(fd)
+
+    def unlink(path, *args, **kwargs):
+        if os.fspath(path) == "file":
+            raise PermissionError(errno.EACCES, "denied")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    monkeypatch.setattr(os, "unlink", unlink)
+    with FileHelper(tmp_path) as files, pytest.raises(OSError, match="No space left") as raised:
+        files.create_private_bytes(REL, b"content")
+    monkeypatch.undo()
+    assert any("Could not remove partial file" in note for note in raised.value.__notes__)
+    assert (tmp_path / REL).exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+def test_posix_create_private_bytes_never_removes_a_name_it_could_not_identify(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "parent").mkdir()
+    real_fstat = os.fstat
+    leaf: list[int] = []
+    real_open = os.open
+
+    def open_(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        if os.fspath(path) == "file":
+            leaf.append(fd)
+        return fd
+
+    def fstat(fd):
+        if fd in leaf:
+            raise OSError(errno.EIO, "fstat failed")
+        return real_fstat(fd)
+
+    monkeypatch.setattr(os, "open", open_)
+    monkeypatch.setattr(os, "fstat", fstat)
+    with FileHelper(tmp_path) as files, pytest.raises(OSError, match="fstat failed") as raised:
+        files.create_private_bytes(REL, b"content")
+    monkeypatch.undo()
+    assert (tmp_path / REL).exists()
+    assert any("delete it before retrying" in note for note in raised.value.__notes__)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+def test_posix_create_private_bytes_keeps_the_write_error_when_close_also_fails(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "parent").mkdir()
+    real_open, real_write, real_close = os.open, os.write, os.close
+    leaf: list[int] = []
+
+    def open_(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        if os.fspath(path) == "file":
+            leaf.append(fd)
+        return fd
+
+    def write(fd, data):
+        if fd in leaf:
+            raise OSError(errno.ENOSPC, "No space left")
+        return real_write(fd, data)
+
+    def close(fd):
+        real_close(fd)
+        if fd in leaf:
+            leaf.remove(fd)
+            raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(os, "open", open_)
+    monkeypatch.setattr(os, "write", write)
+    monkeypatch.setattr(os, "close", close)
+    with FileHelper(tmp_path) as files, pytest.raises(OSError, match="No space left") as raised:
+        files.create_private_bytes(REL, b"content")
+    monkeypatch.undo()
+    assert any("Could not close" in note for note in raised.value.__notes__)
+    assert not (tmp_path / REL).exists()
