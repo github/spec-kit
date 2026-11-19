@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-16T00:00:00Z",
+  "updated_at": "2026-11-19T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -96,7 +96,7 @@
       "name": "AIDE In-Place Migration",
       "id": "aide-in-place",
       "version": "1.0.0",
-      "description": "Adapts the AIDE workflow for in-place technology migrations (X \u2192 Y pattern). Overrides vision, roadmap, progress, and work item commands with migration-specific guidance.",
+      "description": "Adapts the AIDE workflow for in-place technology migrations (X → Y pattern). Overrides vision, roadmap, progress, and work item commands with migration-specific guidance.",
       "author": "mnriem",
       "repository": "https://github.com/mnriem/spec-kit-presets",
       "download_url": "https://github.com/mnriem/spec-kit-presets/releases/download/aide-in-place-v1.0.0/aide-in-place.zip",
@@ -935,7 +935,7 @@
       "name": "Screenwriting",
       "id": "screenwriting",
       "version": "1.0.0",
-      "description": "Spec-Driven Development for screenwriting/scriptwriting/tutorials: feature films, television (pilot, episode, limited series), and stage plays. Adapts the Spec Kit workflow to screenplay craft \u2014 slug lines, action lines, act breaks, beat sheets, and industry-standard pitch documents replace prose fiction conventions. Supports three-act, Save the Cat, TV pilot, network episode, cable/streaming episode, and stage-play structural frameworks.",
+      "description": "Spec-Driven Development for screenwriting/scriptwriting/tutorials: feature films, television (pilot, episode, limited series), and stage plays. Adapts the Spec Kit workflow to screenplay craft — slug lines, action lines, act breaks, beat sheets, and industry-standard pitch documents replace prose fiction conventions. Supports three-act, Save the Cat, TV pilot, network episode, cable/streaming episode, and stage-play structural frameworks.",
       "author": "Andreas Daumann",
       "repository": "https://github.com/adaumann/speckit-preset-screenwriting",
       "download_url": "https://github.com/adaumann/speckit-preset-screenwriting/archive/refs/tags/v1.0.0.zip",
@@ -1084,11 +1084,39 @@
       "created_at": "2026-10-02T00:00:00Z",
       "updated_at": "2026-10-02T00:00:00Z"
     },
+    "spec-review-layout": {
+      "name": "Spec Review Layout",
+      "id": "spec-review-layout",
+      "version": "0.6.1",
+      "description": "Lays out spec.md for review: an overview map with Mermaid diagrams, table-based scenarios and edge cases, and FRs with labeled sub-rules and condition tables.",
+      "author": "ryukirin",
+      "repository": "https://github.com/ryukirin/spec-kit-preset-review-layout",
+      "download_url": "https://github.com/ryukirin/spec-kit-preset-review-layout/archive/refs/tags/v0.6.1.zip",
+      "sha256": "6ad12363c4ca63c07810757ede543fbd08a31d58435a72c72fb786d775326637",
+      "homepage": "https://github.com/ryukirin/spec-kit-preset-review-layout",
+      "documentation": "https://github.com/ryukirin/spec-kit-preset-review-layout/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=1.0.0"
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 2
+      },
+      "tags": [
+        "spec",
+        "review",
+        "mermaid",
+        "tables"
+      ],
+      "created_at": "2026-11-19T00:00:00Z",
+      "updated_at": "2026-11-19T00:00:00Z"
+    },
     "spec2cloud": {
       "name": "Spec2Cloud",
       "id": "spec2cloud",
       "version": "1.1.0",
-      "description": "Spec-driven workflow tuned for shipping to Azure: spec \u2192 plan \u2192 tasks \u2192 implement \u2192 deploy.",
+      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
       "author": "Azure Samples",
       "repository": "https://github.com/Azure-Samples/Spec2Cloud",
       "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/download/spec-kit-spec2cloud-v1.1.0/preset.zip",
@@ -1147,7 +1175,7 @@
       "id": "test-first-governance",
       "version": "1.3.0",
       "description": "Governs TDD with coverage-complete BDD/ATDD Gherkin scenarios, explicit suite ownership, professional test reports, traceability, and risk-based quality gates.",
-      "author": "Zolt\u00e1n Katona, PhD",
+      "author": "Zoltán Katona, PhD",
       "repository": "https://github.com/ka-zo/spec-kit-preset-test-first-governance",
       "download_url": "https://github.com/ka-zo/spec-kit-preset-test-first-governance/archive/refs/tags/1.3.0.zip",
       "homepage": "https://github.com/ka-zo/spec-kit-preset-test-first-governance",
