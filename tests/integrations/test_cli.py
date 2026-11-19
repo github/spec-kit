@@ -44,8 +44,9 @@ class TestCliDiagnosticFormatting:
         )
 
 
-class TestInitIntegrationFlag:
-    def test_unknown_integration_rejected(self, tmp_path):
+class TestInitIntegrationFlag(IntegrationCatalogCliTestBase):
+    def test_unknown_integration_rejected(self, tmp_path, monkeypatch):
+        self._patch_catalog(monkeypatch, integrations=[])
         from typer.testing import CliRunner
         from specify_cli import app
         runner = CliRunner()

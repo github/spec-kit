@@ -25,7 +25,7 @@ from tests.specify_cli.integrations._helpers import (
     runner,  # noqa: F401
 )
 
-class TestIntegrationInstall:
+class TestIntegrationInstall(IntegrationCatalogCliTestBase):
     @pytest.mark.parametrize("existing_target", [True, False])
     @pytest.mark.parametrize("allow_symlinks", [False, True])
     @pytest.mark.parametrize("contained_target", [False, True])
@@ -82,7 +82,8 @@ class TestIntegrationInstall:
         assert result.exit_code != 0
         assert "Not a Spec Kit project" in result.output
 
-    def test_install_unknown_integration(self, tmp_path):
+    def test_install_unknown_integration(self, tmp_path, monkeypatch):
+        self._patch_catalog(monkeypatch, integrations=[])
         project = _init_project(tmp_path)
         old_cwd = os.getcwd()
         try:
