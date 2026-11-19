@@ -472,8 +472,11 @@ portable checks do not substitute for native Windows execution.
 The lint job runs `.github/scripts/check_file_helper_migration.py` against
 changed Python files in `src/specify_cli`. It reports new or edited direct
 filesystem call sites and unchanged call sites newly identifiable as direct
-I/O. It recognizes known standard-library I/O functions and locally traceable
-`pathlib` receivers; method names alone do not establish filesystem I/O.
+I/O. Pull requests are checked against the first parent of the checked-out
+merge commit, so changes already on the base branch are not attributed to the
+pull request. The guard recognizes known standard-library I/O functions and
+locally traceable `pathlib` receivers; method names alone do not establish
+filesystem I/O.
 This is not runtime enforcement or whole-program type inference.
 
 Only four modules are exempt: `file_helper.py` implements the primitives,

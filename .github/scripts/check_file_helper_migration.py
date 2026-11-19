@@ -67,6 +67,7 @@ DIRECT_MODULE_FUNCTIONS = {
     "os.path.islink",
     "os.path.lexists",
     "os.path.realpath",
+    "os.path.samefile",
     "os.readlink",
     "os.remove",
     "os.rename",
@@ -97,7 +98,8 @@ DIRECT_MODULE_FUNCTIONS = {
 
 ZERO_SHA = "0" * 40
 PATH_TYPES = {"pathlib.Path", "pathlib.PosixPath", "pathlib.WindowsPath"}
-PATH_RESULTS = {"absolute", "joinpath", "resolve", "with_name", "with_stem", "with_suffix"}
+PATH_RESULTS = {"absolute", "expanduser", "joinpath", "resolve", "with_name", "with_stem", "with_suffix"}
+PATH_ITERATORS = {"glob", "iterdir", "rglob"}
 PATH_VALUE = ":path"
 
 
@@ -107,7 +109,8 @@ def _git(repo: Path, *args: str) -> str:
         cwd=repo,
         check=True,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
     ).stdout
 
 
@@ -204,13 +207,33 @@ class _Calls(ast.NodeVisitor):
         self.visit(node.value)
         symbol = self._value(node.value)
         for target in node.targets:
+            self.visit(target)
             self._bind(target, symbol)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if node.value is not None:
             self.visit(node.value)
+        self.visit(node.target)
         value = self._value(node.value) if node.value is not None else ""
         self._bind(node.target, value or self._annotation(node.annotation))
+
+    def visit_For(self, node: ast.For) -> None:
+        self.visit(node.iter)
+        self.visit(node.target)
+        original = self.symbols.copy()
+        iterator = node.iter
+        is_path_iterator = (
+            isinstance(iterator, ast.Call)
+            and isinstance(iterator.func, ast.Attribute)
+            and iterator.func.attr in PATH_ITERATORS
+            and self._value(iterator.func.value) == PATH_VALUE
+        )
+        self._bind(node.target, PATH_VALUE if is_path_iterator else "")
+        for statement in node.body:
+            self.visit(statement)
+        self._merge_symbols(original)
+        for statement in node.orelse:
+            self.visit(statement)
 
     def visit_If(self, node: ast.If) -> None:
         self.visit(node.test)
@@ -221,8 +244,11 @@ class _Calls(ast.NodeVisitor):
         self.symbols = original
         for statement in node.orelse:
             self.visit(statement)
-        for name in body.keys() | self.symbols.keys():
-            left, right = body.get(name, ""), self.symbols.get(name, "")
+        self._merge_symbols(body)
+
+    def _merge_symbols(self, other: dict[str, str]) -> None:
+        for name in other.keys() | self.symbols.keys():
+            left, right = other.get(name, ""), self.symbols.get(name, "")
             self.symbols[name] = left if left == right else PATH_VALUE if PATH_VALUE in (left, right) else ""
 
     def visit_With(self, node: ast.With | ast.AsyncWith) -> None:

@@ -1,10 +1,14 @@
 """Tests for the FileHelper migration I/O guard."""
 
 import importlib.util
+import os
 from pathlib import Path
+import shutil
 import subprocess
+import sys
 
 import pytest
+import yaml
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -35,12 +39,39 @@ def test_guard_ignores_non_filesystem_method_names(expression):
         ("from os import chdir as set_directory\nset_directory(path)", "os.chdir"),
         ("import os as fs\nfs.utime(path, None)", "os.utime"),
         ("from os import path as fs_path\nfs_path.getsize(path)", "os.path.getsize"),
+        ("import os\nos.path.samefile(path, other)", "os.path.samefile"),
+        ("from os.path import samefile as same\nsame(path, other)", "os.path.samefile"),
         ("from pathlib import Path\nPath(path).readlink()", "file-path.readlink"),
         ("from pathlib import Path as LocalPath\nLocalPath(path).samefile(other)", "file-path.samefile"),
     ],
 )
 def test_guard_detects_filesystem_probes_and_mutations(statement, expected):
     assert guard.scan_added_calls(statement, "src/specify_cli/domain.py", {2}) == [(2, expected)]
+
+
+@pytest.mark.parametrize("method", ["read_text", "exists"])
+def test_guard_tracks_expanded_paths(method):
+    source = f"from pathlib import Path\nPath('~/manifest').expanduser().{method}()\n"
+    assert guard.scan_added_calls(source, "src/specify_cli/domain.py", {2}) == [(2, f"file-path.{method}")]
+
+
+@pytest.mark.parametrize("annotation", ["", ": str"])
+def test_guard_visits_assignment_target(annotation):
+    source = f"from pathlib import Path\ncache[Path('manifest').read_text()]{annotation} = value\n"
+    assert guard.scan_added_calls(source, "src/specify_cli/domain.py", {2}) == [(2, "file-path.read_text")]
+
+
+@pytest.mark.parametrize("iterator", ["iterdir()", "glob('*')", "rglob('*')"])
+def test_guard_tracks_path_iteration_targets(iterator):
+    source = (
+        "from pathlib import Path\n"
+        "def read(root: Path, files):\n"
+        f"    for child in root.{iterator}:\n"
+        "        child.read_text()\n"
+        f"    for child in files.{iterator}:\n"
+        "        child.read_text()\n"
+    )
+    assert guard.scan_added_calls(source, "src/specify_cli/domain.py", {4, 6}) == [(4, "file-path.read_text")]
 
 
 @pytest.mark.parametrize(
@@ -276,11 +307,69 @@ def test_guard_check_ignores_unchanged_io_and_allowlisted_change(tmp_path):
     assert guard.check(repo, base, head) == []
 
 
-def test_guard_checks_new_file_with_non_ascii_path(tmp_path):
+def test_guard_checks_new_file_with_non_ascii_path(tmp_path, monkeypatch):
     repo, base = init_repo(tmp_path)
     path = "src/specify_cli/caf\u00e9.py"
-    (repo / path).write_text("open('manifest')\n", encoding="utf-8")
+    (repo / path).write_text("open('caf\u00e9')\n", encoding="utf-8")
     run_git(repo, "add", path)
     head = run_git(repo, "write-tree").strip()
 
-    assert guard.check(repo, base, head) == [(path, 1, "open")]
+    def run_with_ascii_default(*args, **kwargs):
+        kwargs.setdefault("encoding", "ascii")
+        return real_run(*args, **kwargs)
+
+    real_run = subprocess.run
+    with monkeypatch.context() as patch:
+        patch.setattr(guard.subprocess, "run", run_with_ascii_default)
+        assert guard.check(repo, base, head) == [(path, 1, "open")]
+
+
+@pytest.mark.skipif(os.name == "nt" or shutil.which("bash") is None, reason="Lint runs in Bash on Linux")
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+def test_lint_step_uses_correct_base_when_main_has_drifted(tmp_path, event):
+    repo, tree = init_repo(tmp_path)
+    run_git(repo, "config", "user.name", "Guard Test")
+    run_git(repo, "config", "user.email", "guard@example.invalid")
+    ancestor = run_git(repo, "commit-tree", tree, "-m", "Ancestor with legacy I/O").strip()
+    (repo / "unrelated.txt").write_text("PR change\n", encoding="utf-8")
+    run_git(repo, "add", "unrelated.txt")
+    pr_tree = run_git(repo, "write-tree").strip()
+    pr_head = run_git(repo, "commit-tree", pr_tree, "-p", ancestor, "-m", "Unrelated PR").strip()
+    run_git(repo, "read-tree", "--reset", "-u", tree)
+    path = repo / "src/specify_cli/domain.py"
+    path.write_text("def existing():\n    return 'migrated elsewhere'\n", encoding="utf-8")
+    run_git(repo, "add", ".")
+    base = run_git(repo, "commit-tree", run_git(repo, "write-tree").strip(), "-p", ancestor, "-m", "Migrate main").strip()
+    (repo / "unrelated.txt").write_text("PR change\n", encoding="utf-8")
+    run_git(repo, "add", ".")
+    merged_tree = run_git(repo, "write-tree").strip()
+    merge = run_git(repo, "commit-tree", merged_tree, "-p", base, "-p", pr_head, "-m", "Test merge").strip()
+    run_git(repo, "checkout", "--detach", merge)
+    run_git(repo, "remote", "add", "origin", ".")
+    script = repo / SCRIPT.relative_to(REPO)
+    script.parent.mkdir(parents=True)
+    shutil.copyfile(SCRIPT, script)
+
+    config = yaml.safe_load((REPO / ".github/workflows/lint.yml").read_text(encoding="utf-8"))
+    step = next(step for step in config["jobs"]["checks"]["steps"] if step.get("name") == "Check FileHelper migration boundaries")
+    env = {
+        **os.environ,
+        "GITHUB_EVENT_NAME": event,
+        "FILE_HELPER_DIFF_BASE": base,
+        "FILE_HELPER_DIFF_HEAD": pr_head if event == "pull_request" else merge,
+        "PATH": os.pathsep.join((str(Path(sys.executable).parent), os.environ["PATH"])),
+    }
+
+    assert guard.check(repo, base, pr_head)
+    result = subprocess.run(["bash", "-c", step["run"]], cwd=repo, env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    path.write_text("open('new-file')\n", encoding="utf-8")
+    run_git(repo, "add", ".")
+    introduced = run_git(repo, "commit-tree", run_git(repo, "write-tree").strip(), "-p", base, "-p", pr_head, "-m", "New I/O").strip()
+    run_git(repo, "checkout", "--detach", introduced)
+    if event == "push":
+        env["FILE_HELPER_DIFF_HEAD"] = introduced
+    result = subprocess.run(["bash", "-c", step["run"]], cwd=repo, env=env, capture_output=True, text=True)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "src/specify_cli/domain.py:1: open" in result.stdout

@@ -4010,7 +4010,7 @@ def test_replace_does_not_overwrite_destination_created_after_preflight(root, mo
 
 def test_replace_fails_without_native_no_clobber_support(root, monkeypatch):
     monkeypatch.setattr(_file_handles, "sys", SimpleNamespace(platform="unsupported"))
-    monkeypatch.setattr(_file_handles, "os", SimpleNamespace(name="posix"))
+    monkeypatch.setattr(_file_handles, "os", SimpleNamespace(**(vars(os) | {"name": "posix"})))
     (root / "staged").write_text("staged")
 
     with FileHelper(root) as files:
