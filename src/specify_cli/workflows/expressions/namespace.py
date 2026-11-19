@@ -79,6 +79,15 @@ def _build_namespace(context: Any) -> dict[str, Any]:
 # None, so a correction built on one turns a truthy condition false.
 _NAMESPACE_ROOTS = ("inputs", "steps", "item", "fan_in", "context")
 
+# Text that opens by walking into one of those roots: `inputs.mode`, `item[0]`.
+# Derived from the tuple above and kept beside it so the two cannot drift. Matching
+# this is necessary but not sufficient to call a switch expression unevaluated: the
+# same text declared as a case key is a literal the switch really does dispatch, so
+# `switch_expression_is_never_evaluated` checks the declared keys too.
+_NAMESPACE_REFERENCE = re.compile(
+    r"(?:%s)(?:\.[\w-]|\[\d)" % "|".join(_NAMESPACE_ROOTS)
+)
+
 
 def _is_path_segment(segment: str) -> bool:
     """Whether _resolve_dot_path can walk *segment*: a name, or a name it indexes."""
