@@ -45,6 +45,33 @@ def put(path: Path, content: str = "source") -> Path:
     return path
 
 
+def test_retire_skill_resources_preserves_modified_copies_and_hashes(tmp_path):
+    """A switch can retire package copies without losing edited resources (#5366)."""
+    skills = tmp_path / ".claude/skills"
+    name = "speckit-ext-run"
+    modified = put(skills / name / "edited.md")
+    unchanged = put(skills / name / "unchanged.md")
+    unowned = put(skills / name / "user.md", "user file")
+    records = {p.relative_to(tmp_path).as_posix(): _sha256(p) for p in (modified, unchanged)}
+    expected = {modified.relative_to(tmp_path).as_posix(): _sha256(modified)}
+    hashes = {"project": records}
+    modified.write_text("user edit", encoding="utf-8")
+
+    with pytest.warns(UserWarning, match="Preserved modified resource"):
+        retire_skill_resources(
+            tmp_path, "ext", hashes, {name}, skills_dir=skills, preserve_modified=True,
+        )
+    assert modified.read_text(encoding="utf-8") == "user edit"
+    assert hashes == {"project": expected}
+    assert not unchanged.exists()
+    assert unowned.read_text(encoding="utf-8") == "user file"
+
+    retire_skill_resources(tmp_path, "ext", hashes, {name}, skills_dir=skills)
+    assert not modified.exists()
+    assert hashes == {}
+    assert unowned.read_text(encoding="utf-8") == "user file"
+
+
 def link(path: Path, target: Path, *, directory: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
