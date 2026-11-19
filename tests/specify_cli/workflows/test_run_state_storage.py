@@ -544,6 +544,93 @@ def test_atomic_json_writes_request_binary_descriptors(
     assert all((dir_fd is None) == portable for _, dir_fd in temporary_opens)
 
 
+@pytest.mark.parametrize(
+    ("winerror", "blocked", "attempts"),
+    [(5, 1, 2), (32, 1, 2), (5, 5, 5), (None, 5, 1)],
+)
+def test_checkpoint_retries_only_windows_replace_contention(
+    project_dir, monkeypatch, winerror, blocked, attempts
+):
+    import errno
+    from specify_cli.workflows._execution import CheckpointError
+    from specify_cli.workflows.engine import RunState
+
+    monkeypatch.setattr(
+        RunState, "_supports_descriptor_access", staticmethod(lambda: False)
+    )
+    state = _state(project_dir)
+    state.save()
+    state_path = state.runs_dir / "state.json"
+    previous = state_path.read_bytes()
+    state.inputs = {"value": "updated"}
+    failure = PermissionError(errno.EACCES, "replace blocked")
+    failure.winerror = winerror
+    real_replace = os.replace
+    real_validate = RunState._validate_fallback_path
+    replacements = []
+    validated = []
+
+    def validate(path):
+        real_validate(path)
+        validated.append(path)
+
+    def replace(src, dst):
+        if dst == state_path:
+            if replacements:
+                assert set(validated) == {src, dst}
+            validated.clear()
+            replacements.append(src)
+            if len(replacements) <= blocked:
+                raise failure
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(RunState, "_validate_fallback_path", staticmethod(validate))
+    monkeypatch.setattr(os, "replace", replace)
+    if attempts > blocked:
+        state.save()
+        assert RunState.load(state.run_id, project_dir).inputs == state.inputs
+        assert not state._checkpoint_failed
+    else:
+        with pytest.raises(CheckpointError, match="replace blocked") as exc_info:
+            state.save()
+        assert exc_info.value.__cause__ is failure
+        assert state._checkpoint_failed
+        assert state_path.read_bytes() == previous
+    assert len(replacements) == attempts
+    assert not list(state.runs_dir.glob(".state.json.*.tmp"))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows file-sharing semantics are required")
+def test_windows_checkpoint_replaces_state_after_reader_closes(project_dir, monkeypatch):
+    from contextlib import ExitStack
+    from specify_cli._file_handles import _windows_handle
+    from specify_cli.workflows.engine import RunState
+
+    state = _state(project_dir)
+    state.save()
+    state_path = state.runs_dir / "state.json"
+    state.inputs = {"value": "updated"}
+    real_replace = os.replace
+    blocked = []
+    with ExitStack() as reader:
+        reader.enter_context(_windows_handle(state_path, directory=False))
+
+        def replace(src, dst):
+            try:
+                return real_replace(src, dst)
+            except PermissionError as exc:
+                if dst == state_path:
+                    blocked.append(exc.winerror)
+                    reader.close()
+                raise
+
+        monkeypatch.setattr(os, "replace", replace)
+        state.save()
+
+    assert len(blocked) == 1 and blocked[0] in (5, 32)
+    assert RunState.load(state.run_id, project_dir).inputs == state.inputs
+
+
 @pytest.mark.parametrize("component", ["ancestor", "run-directory"])
 def test_portable_storage_rejects_windows_reparse_points(
     project_dir, monkeypatch, component
@@ -683,8 +770,8 @@ def test_open_artifact_closes_descriptor_when_fdopen_fails(
     if not RunState._supports_descriptor_access():
         pytest.skip("directory descriptors are unavailable")
 
-    run_dir = _run_dir(project_dir)
-    (run_dir / "state.json").mkdir()
+    state_path = _run_dir(project_dir) / "state.json"
+    state_path.mkdir()
     original_open_no_follow = RunState._open_no_follow
     opened_fds = []
 
@@ -698,8 +785,10 @@ def test_open_artifact_closes_descriptor_when_fdopen_fails(
         RunState, "_open_no_follow", staticmethod(record_artifact_fd)
     )
 
-    with pytest.raises(IsADirectoryError):
+    with pytest.raises(IsADirectoryError) as artifact_error:
         RunState.load("run-1", project_dir)
+    assert artifact_error.value.errno == errno.EISDIR
+    assert artifact_error.value.filename == str(state_path)
     assert len(opened_fds) == 1
     with pytest.raises(OSError) as exc_info:
         os.fstat(opened_fds[-1])

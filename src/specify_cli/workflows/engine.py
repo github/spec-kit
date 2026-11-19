@@ -17,6 +17,7 @@ import os
 import re
 import stat
 import threading
+import time
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -952,6 +953,9 @@ class RunState:
         )
         try:
             return os.fdopen(fd, mode, **kwargs)
+        except IsADirectoryError as exc:
+            os.close(fd)
+            raise IsADirectoryError(exc.errno, exc.strerror, str(path)) from exc
         except BaseException:
             os.close(fd)
             raise
@@ -1197,8 +1201,19 @@ class RunState:
                     raise
                 with stream as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
-                RunState._validate_fallback_path(path)
-                os.replace(tmp_path, path)
+                # Windows can refuse to replace a checkpoint while a reader
+                # holds it open (access denied or sharing violation).
+                for delay in (0.01, 0.02, 0.04, 0.08, None):
+                    RunState._validate_fallback_path(path)
+                    RunState._validate_fallback_path(tmp_path)
+                    try:
+                        os.replace(tmp_path, path)
+                    except PermissionError as exc:
+                        if delay is None or getattr(exc, "winerror", None) not in (5, 32):
+                            raise
+                        time.sleep(delay)
+                    else:
+                        break
             except BaseException:
                 try:
                     RunState._validate_fallback_path(tmp_path)
