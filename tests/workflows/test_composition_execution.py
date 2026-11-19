@@ -777,6 +777,74 @@ def test_interrupt_during_resume_checkpoint_pauses_run(tmp_path, monkeypatch, pr
     assert probe == {"wait": 2, "next": 1}
 
 
+def test_resume_log_write_failure_persists_failed_state(tmp_path, probe):
+    root = definition(
+        "parent",
+        [
+            {"id": "wait", "type": "probe", "await": True},
+            {"id": "next", "type": "probe"},
+        ],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.PAUSED
+
+    log_path = state.runs_dir / "log.jsonl"
+    original_log = log_path.read_text(encoding="utf-8")
+    log_path.unlink()
+    log_path.mkdir()
+
+    with pytest.raises(IsADirectoryError):
+        WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    persisted = RunState.load(state.run_id, tmp_path)
+    assert persisted.status == RunStatus.FAILED
+
+    log_path.rmdir()
+    log_path.write_text(original_log, encoding="utf-8")
+
+    resumed = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+    assert resumed.status == RunStatus.COMPLETED
+    assert probe["next"] == 1
+
+
+def test_resume_completion_log_failure_keeps_terminal_state(
+    tmp_path, monkeypatch, probe
+):
+    root = definition(
+        "parent",
+        [
+            {"id": "wait", "type": "probe", "await": True},
+            {"id": "next", "type": "probe"},
+        ],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.PAUSED
+
+    original = RunState.append_log
+    failed = False
+
+    def log(self, entry):
+        nonlocal failed
+        if entry["event"] == "workflow_finished" and not failed:
+            failed = True
+            raise OSError("log failed")
+        original(self, entry)
+
+    monkeypatch.setattr(RunState, "append_log", log)
+    with pytest.raises(OSError, match="log failed"):
+        WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    persisted = RunState.load(state.run_id, tmp_path)
+    assert persisted.status == RunStatus.COMPLETED
+    with pytest.raises(
+        ValueError, match=f"Cannot resume run {state.run_id!r} with status 'completed'"
+    ):
+        WorkflowEngine(tmp_path).resume(state.run_id)
+    assert probe["next"] == 1
+
+
 @pytest.mark.parametrize("failure", [KeyboardInterrupt, RuntimeError])
 def test_leave_failure_preserves_step_exception(tmp_path, monkeypatch, failure):
     from specify_cli.workflows._execution import Execution
