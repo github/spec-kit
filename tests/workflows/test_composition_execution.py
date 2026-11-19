@@ -777,6 +777,45 @@ def test_interrupt_during_resume_checkpoint_pauses_run(tmp_path, monkeypatch, pr
     assert probe == {"wait": 2, "next": 1}
 
 
+def test_resume_interrupt_log_failure_persists_paused_state(
+    tmp_path, monkeypatch, probe
+):
+    root = definition(
+        "parent",
+        [
+            {"id": "wait", "type": "probe", "await": True},
+            {"id": "next", "type": "probe"},
+        ],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.PAUSED
+
+    log_path = state.runs_dir / "log.jsonl"
+    original_log = log_path.read_text(encoding="utf-8")
+    log_path.unlink()
+    log_path.mkdir()
+    fired = _interrupt_state_write(
+        monkeypatch,
+        lambda data: data.get("step_results", {}).get("wait", {}).get("status")
+        == "completed",
+    )
+
+    with pytest.raises((IsADirectoryError, PermissionError)):
+        WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert fired
+    persisted = RunState.load(state.run_id, tmp_path)
+    assert persisted.status == RunStatus.PAUSED
+
+    log_path.rmdir()
+    log_path.write_text(original_log, encoding="utf-8")
+
+    resumed = WorkflowEngine(tmp_path).resume(state.run_id)
+    assert resumed.status == RunStatus.COMPLETED
+    assert probe == {"wait": 2, "next": 1}
+
+
 def test_resume_log_write_failure_persists_failed_state(tmp_path, probe):
     root = definition(
         "parent",
@@ -794,7 +833,7 @@ def test_resume_log_write_failure_persists_failed_state(tmp_path, probe):
     log_path.unlink()
     log_path.mkdir()
 
-    with pytest.raises(IsADirectoryError):
+    with pytest.raises((IsADirectoryError, PermissionError)):
         WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
 
     persisted = RunState.load(state.run_id, tmp_path)
