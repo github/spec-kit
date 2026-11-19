@@ -804,7 +804,18 @@ class _PresetSkillMethods:
                         # Command registration writes the alias in place,
                         # which would reach every other link of the file.
                         # As elsewhere for generated artifacts with extra
-                        # links, it is not ours to rewrite: leave it.
+                        # links, it is not ours to rewrite: leave it, and
+                        # say that it no longer matches the preset stack.
+                        import warnings
+
+                        warnings.warn(
+                            f"Alias skill {skill_file} has other hard links "
+                            f"and was not refreshed. It may still contain "
+                            f"content from a preset that is no longer "
+                            f"installed; delete it and reinstall the preset "
+                            f"to regenerate it.",
+                            stacklevel=2,
+                        )
                         continue
                     if missing and not self._validate_skill_subdir(
                         skill_dir, create=True, skills_root=skills_dir
@@ -813,7 +824,8 @@ class _PresetSkillMethods:
                     composed_file = pack_dir / ".composed" / f"{primary}.md"
                     try:
                         self._write_alias_composed_cache(composed_file, composed)
-                    except (ValueError, OSError):
+                    except (ValueError, OSError) as exc:
+                        failures.append(exc)
                         continue
                     try:
                         registrar.register_commands(

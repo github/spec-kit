@@ -3435,11 +3435,37 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         except OSError as exc:  # pragma: no cover - filesystem without hard links
             pytest.skip(f"hard links unsupported: {exc}")
 
-        assert manager.remove("base-preset") is True
+        # It still holds the removed base's text, so the skip is reported.
+        with pytest.warns(UserWarning, match="has other hard links"):
+            assert manager.remove("base-preset") is True
 
         assert target.read_text(encoding="utf-8") == before
         assert alias_file.read_text(encoding="utf-8") == before
         assert os.path.samefile(alias_file, target)
+
+    def test_alias_left_stale_by_failed_cache_write_is_reported(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """An alias is rendered from its preset's ``.composed`` cache. When
+        that cache cannot be written on removal, the alias keeps the removed
+        base's text; the removal must say so instead of passing silently."""
+        manager = self._install_custom_layers(
+            project_dir, temp_dir, core=True, alias=self._ALIAS
+        )
+        alias_file = self._alias_skill(project_dir)
+        skill_file = alias_file.parent.parent / "speckit-custom" / "SKILL.md"
+
+        def failing_cache(composed_file, composed):
+            raise OSError("simulated cache failure")
+
+        monkeypatch.setattr(manager, "_write_alias_composed_cache", failing_cache)
+
+        with pytest.warns(UserWarning, match="simulated cache failure"):
+            assert manager.remove("base-preset") is True
+
+        assert "Base preset body" in alias_file.read_text(encoding="utf-8")
+        skill = skill_file.read_text(encoding="utf-8")
+        assert "Base preset body" not in skill and "Core custom body" in skill
 
     def test_remove_base_keeps_survivor_alias_both_layers_declare(
         self, project_dir, temp_dir
