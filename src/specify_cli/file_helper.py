@@ -34,6 +34,91 @@ _DELETE_DIRECTORY_CACHE_SIZE = 8
 _POSIX_OPEN = os.open
 
 
+def _remove_created(
+    directory: int, name: str, created: os.stat_result | None, error: BaseException
+) -> None:
+    """Unlink ``name`` if it still has the created file's identity (best effort)."""
+    if created is None:
+        error.add_note(f"Left {name}, which may be empty; delete it before retrying")
+        return
+    try:
+        current = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
+            os.unlink(name, dir_fd=directory)
+    except OSError as cleanup_error:
+        error.add_note(f"Could not remove partial file {name}: {cleanup_error}")
+
+
+def _require_owner_only(fd: int, info: os.stat_result, name: str) -> None:
+    """Refuse a new, still-empty file that someone other than its owner can open.
+
+    Group or other mode bits mean the filesystem ignored the creation mode. On
+    macOS, a parent's inheritable ACEs are added to a new file whatever its mode,
+    and they cannot be withheld from a directory-relative create, so such a file
+    is refused before any content reaches it. NFSv4-style inherited ACLs on other
+    systems are not inspected.
+    """
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        raise PermissionError(
+            errno.EACCES,
+            f"Filesystem did not create {name} owner-only "
+            f"(mode {stat.S_IMODE(info.st_mode):o})",
+        )
+    if sys.platform == "darwin" and _has_inherited_allow_entry(fd):
+        raise PermissionError(
+            errno.EACCES,
+            f"Refusing to write {name}: its directory's inheritable ACL entries allow "
+            "others access",
+        )
+
+
+def _has_inherited_allow_entry(fd: int) -> bool:
+    """Whether a macOS file's ACL has an allow entry; deny entries grant nothing."""
+    import ctypes
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.acl_get_fd_np.restype = ctypes.c_void_p
+    libc.acl_get_fd_np.argtypes = [ctypes.c_int, ctypes.c_int]
+    libc.acl_get_entry.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)]
+    libc.acl_get_tag_type.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+    libc.acl_free.argtypes = [ctypes.c_void_p]
+    acl = libc.acl_get_fd_np(fd, 0x00000100)  # ACL_TYPE_EXTENDED
+    if not acl:
+        code = ctypes.get_errno()
+        # No ACL, or a filesystem that cannot hold one.
+        if code in (errno.ENOENT, errno.ENOTSUP, errno.EOPNOTSUPP):
+            return False
+        raise OSError(code, f"Could not read ACL entries: {os.strerror(code)}")
+    try:
+        entry = ctypes.c_void_p()
+        tag = ctypes.c_int()
+        which = 0  # ACL_FIRST_ENTRY, then ACL_NEXT_ENTRY
+        while libc.acl_get_entry(acl, which, ctypes.byref(entry)) == 0:
+            which = -1
+            if libc.acl_get_tag_type(entry, ctypes.byref(tag)) != 0:
+                code = ctypes.get_errno()
+                raise OSError(code, f"Could not read ACL entries: {os.strerror(code)}")
+            if tag.value == 1:  # ACL_EXTENDED_ALLOW
+                return True
+        return False
+    finally:
+        libc.acl_free(acl)
+
+
+def _full_fsync(fd: int) -> None:
+    """Flush to stable storage; macOS ``fsync`` alone leaves data in the drive cache."""
+    os.fsync(fd)
+    if sys.platform == "darwin":
+        import fcntl
+
+        try:
+            fcntl.fcntl(fd, fcntl.F_FULLFSYNC)
+        except OSError as error:
+            # Not every filesystem supports it, and fsync has already run.
+            if error.errno not in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL, errno.ENOTTY):
+                raise
+
+
 def _write_all(fd: int, content: bytes) -> None:
     view = memoryview(content)
     while view:
@@ -389,7 +474,26 @@ class FileHelper:
 
     def stat(self, path: Path | str) -> os.stat_result:
         """Return the metadata of an existing entry, resolving only allowed links."""
-        return os.stat(self._path(path), follow_symlinks=False)
+        destination = self._path(path)
+        if destination == self._canonical_root:
+            return os.stat(destination)
+        # Stat through the anchored parent so a swapped ancestor cannot redirect it.
+        if os.name == "nt":
+            parts = destination.relative_to(self._canonical_root).parts
+            with ExitStack() as stack:
+                parent = stack.enter_context(_windows_handle(
+                    self._canonical_root, directory=True, traverse=True,
+                ))
+                for part in parts[:-1]:
+                    parent = stack.enter_context(_windows_handle(
+                        Path(part), directory=True, parent=parent, traverse=True,
+                    ))
+                return os.stat(destination, follow_symlinks=False)
+        unsupported = "Anchored stat is unsupported on this platform"
+        if os.stat not in os.supports_dir_fd or os.stat not in os.supports_follow_symlinks:
+            raise OSError(errno.ENOTSUP, unsupported)
+        with self._posix_directory(destination.parent, unsupported_message=unsupported) as directory:
+            return os.stat(destination.name, dir_fd=directory, follow_symlinks=False)
 
     def mkdir(
         self, path: Path | str, *, parents: bool = False, exist_ok: bool = False
@@ -606,22 +710,21 @@ class FileHelper:
         fd = os.open(name, flags, 0o600, dir_fd=directory)
         created: os.stat_result | None = None
         try:
+            created = os.fstat(fd)
+            _require_owner_only(fd, created, name)
+            _write_all(fd, content)
+            _full_fsync(fd)
+        except BaseException as error:
             try:
-                created = os.fstat(fd)
-                _write_all(fd, content)
-                os.fsync(fd)
-            finally:
                 os.close(fd)
-        except BaseException:
-            # Never reopen the name: remove it only if it is still the created file.
-            try:
-                current = os.stat(name, dir_fd=directory, follow_symlinks=False)
-                if created is None or (current.st_dev, current.st_ino) == (
-                    created.st_dev, created.st_ino
-                ):
-                    os.unlink(name, dir_fd=directory)
-            except OSError:
-                pass
+            except OSError as close_error:
+                error.add_note(f"Could not close {name}: {close_error}")
+            _remove_created(directory, name, created, error)
+            raise
+        try:
+            os.close(fd)
+        except BaseException as error:
+            _remove_created(directory, name, created, error)
             raise
         # Best effort: the anchor may be O_PATH or search-only, which fsync rejects.
         try:
@@ -632,30 +735,40 @@ class FileHelper:
         except OSError:
             return
         try:
-            os.fsync(parent)
+            _full_fsync(parent)
         except OSError:
             pass
         finally:
-            os.close(parent)
+            try:
+                os.close(parent)
+            except OSError:
+                pass
 
     @staticmethod
     def _windows_create_private(path: Path, content: bytes) -> None:
         fd = _windows_create_private_fd(path)
         try:
-            try:
-                _write_all(fd, content)
-                os.fsync(fd)
-            except BaseException as error:
-                import msvcrt
+            _write_all(fd, content)
+            _full_fsync(fd)
+        except BaseException as error:
+            import msvcrt
 
-                # The handle shares nothing, so it can only name the created file.
-                try:
-                    _windows_delete(msvcrt.get_osfhandle(fd))
-                except Exception as cleanup_error:
-                    error.add_note(f"Could not remove partial file {path}: {cleanup_error}")
-                raise
-        finally:
+            # The handle shares nothing, so it can only name the created file.
+            try:
+                _windows_delete(msvcrt.get_osfhandle(fd))
+            except Exception as cleanup_error:
+                error.add_note(f"Could not remove partial file {path}: {cleanup_error}")
+            try:
+                os.close(fd)
+            except OSError as close_error:
+                error.add_note(f"Could not close {path}: {close_error}")
+            raise
+        try:
             os.close(fd)
+        except OSError as error:
+            # The handle is gone, so it can no longer remove the file.
+            error.add_note(f"{path} was written and flushed but may need deleting before a retry")
+            raise
 
     def write_bytes(self, path: Path | str, content: bytes, *, mode: int = 0o644) -> None:
         """Atomically create/replace a file, preserving any allowed leaf link."""
@@ -696,16 +809,21 @@ class FileHelper:
 
     @contextmanager
     def open_rewrite(self, path: Path | str) -> Iterator[int]:
-        """Yield a binary write descriptor on an existing regular file, untruncated.
+        """Yield a blocking binary write descriptor on an existing regular file, untruncated.
 
-        The descriptor starts at offset 0 and is closed on exit. The caller owns
-        writing, truncating and flushing; owner, mode and links are unchanged.
+        The descriptor starts at offset 0 and the helper closes it on exit, so the
+        caller must not close it (wrap it with ``os.fdopen(fd, "wb", closefd=False)``).
+        The caller owns writing, truncating and flushing; owner, mode and links are
+        unchanged.
         """
         destination = self._path(path)
         self._require_file(destination)
         with self._overwrite_descriptor(destination, create=False) as fd:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise UnsupportedPathError(f"Expected a regular file: {destination}")
+            if os.name != "nt":
+                # Opened non-blocking only so a FIFO swapped in cannot hang the open.
+                os.set_blocking(fd, True)
             yield fd
 
     @contextmanager
