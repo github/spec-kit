@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-16T00:00:00Z",
+  "updated_at": "2026-11-17T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "ado": {
@@ -2064,9 +2064,9 @@
       "id": "docguard",
       "description": "Documentation integrity for AI-assisted repositories: lifecycle registry, drift validation, traceability, safe archival, SARIF/JUnit, MCP, GitHub Actions, and Spec Kit hooks.",
       "author": "raccioly",
-      "version": "0.48.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.48.0/spec-kit-docguard-v0.48.0.zip",
-      "sha256": "3c5b12b03e60b78a21dbe1d0cab218ae8f51bcc52f124855cbe1fe75ee6a979f",
+      "version": "0.49.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.49.0/spec-kit-docguard-v0.49.0.zip",
+      "sha256": "d9daa012fc95321aac30f5973b2fcd829c8f62338578fa8b5acdac4405205983",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -2107,7 +2107,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-11-16T00:00:00Z"
+      "updated_at": "2026-11-17T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -2884,6 +2884,56 @@
       "stars": 0,
       "created_at": "2026-09-11T00:00:00Z",
       "updated_at": "2026-09-11T00:00:00Z"
+    },
+    "ghp": {
+      "name": "Spec Kit for GitHub Projects - human-gated lifecycle",
+      "id": "ghp",
+      "description": "GitHub issue to Done through Spec Kit, with a human sign-off before every write.",
+      "author": "praveenlavu",
+      "version": "0.1.2",
+      "download_url": "https://github.com/praveenlavu/spec-kit-ghp/releases/download/v0.1.2/spec-kit-ghp-extension-0.1.2.zip",
+      "sha256": "21dc228f99fbf9b8768b6f75e889be2bb99c68ed9b5237951276e33e9dedfbda",
+      "repository": "https://github.com/praveenlavu/spec-kit-ghp",
+      "homepage": "https://github.com/praveenlavu/spec-kit-ghp",
+      "documentation": "https://github.com/praveenlavu/spec-kit-ghp/blob/main/README.md",
+      "changelog": "https://github.com/praveenlavu/spec-kit-ghp/blob/v0.1.2/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.2.1",
+        "tools": [
+          {
+            "name": "ghp",
+            "version": ">=0.1.2",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "gh",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 13,
+        "hooks": 2
+      },
+      "tags": [
+        "github-projects",
+        "issue-tracking",
+        "hitl",
+        "workflow",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-17T00:00:00Z",
+      "updated_at": "2026-11-17T00:00:00Z"
     },
     "github-issues": {
       "name": "GitHub Issues Integration 1",

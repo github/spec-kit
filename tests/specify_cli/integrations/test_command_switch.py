@@ -59,7 +59,31 @@ def _project_file_state(project):
     }
 
 
-class TestIntegrationSwitch:
+class TestIntegrationSwitch(IntegrationCatalogCliTestBase):
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
+    )
+    @pytest.mark.parametrize(
+        ("target_state", "flags"),
+        [("new", []), ("installed", []), ("default", ["--force"]), ("default", ["--refresh-shared-infra"])],
+    )
+    def test_switch_keeps_shared_scripts_executable(
+        self, tmp_path, target_state, flags, packaged_scripts_0644
+    ):
+        """Every switch path refreshes shared scripts; they must stay runnable."""
+        if target_state == "default":
+            project = _init_project(tmp_path, "codex")
+        else:
+            project = _init_codex_switch_project(tmp_path, target_state)
+        scripts = sorted((project / ".specify" / "scripts" / "bash").glob("*.sh"))
+        assert scripts and all(os.access(script, os.X_OK) for script in scripts)
+
+        result = _run_in_project(project, ["integration", "switch", "codex", *flags])
+
+        assert result.exit_code == 0, result.output
+        not_executable = [script.name for script in scripts if not os.access(script, os.X_OK)]
+        assert not not_executable, f"switch left shared scripts non-executable: {not_executable}"
+
     @pytest.mark.parametrize("target_state", ["new", "installed", "default"])
     @pytest.mark.parametrize(
         "flags", [[], ["--force"], ["--refresh-shared-infra"], ["--force", "--refresh-shared-infra"]],
@@ -333,7 +357,8 @@ class TestIntegrationSwitch:
         assert result.exit_code != 0
         assert "Not a Spec Kit project" in result.output
 
-    def test_switch_unknown_target(self, tmp_path):
+    def test_switch_unknown_target(self, tmp_path, monkeypatch):
+        self._patch_catalog(monkeypatch, integrations=[])
         project = _init_project(tmp_path)
         old_cwd = os.getcwd()
         try:
@@ -1375,3 +1400,74 @@ def test_switch_preset_skill_cleanup_rollback_preserves_directory_mode(
     check_cleanup_rollback_preserves_directory_mode(
         tmp_path, monkeypatch, capsys, INTEGRATION_SWITCH, user_reference, fallback
     )
+
+
+@pytest.mark.parametrize("installed", [False, True])
+def test_switch_writes_skill_resources_for_new_target(tmp_path, installed):
+    import yaml
+    from specify_cli.extensions import ExtensionManager
+
+    project = _init_project(tmp_path, "claude")
+    if installed:
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+    source = tmp_path / "resource-ext"
+    (source / "commands").mkdir(parents=True)
+    (source / "references").mkdir()
+    (source / "references/r.md").write_text("reference")
+    (source / "commands/run.md").write_text("Read references/r.md")
+    (source / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "extension": {"id": "resource-ext", "name": "Resource", "version": "1.0.0", "description": "test"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"commands": [{"name": "speckit.resource-ext.run", "file": "commands/run.md", "resources": ["references/r.md"]}]},
+    }))
+    manager = ExtensionManager(project)
+    manager.install_from_directory(source, "1.0.0")
+    old_resource = project / ".claude/skills/speckit-resource-ext-run/references/r.md"
+    assert old_resource.read_text() == "reference"
+    resource = project / ".agents/skills/speckit-resource-ext-run/references/r.md"
+    resource.parent.mkdir(parents=True, exist_ok=True)
+    resource.write_text("unowned")
+    result = _run_in_project(project, ["integration", "switch", "codex", "--script", "sh", "--force"])
+    assert result.exit_code == 0, result.output
+    assert resource.read_text() == "reference"
+    hashes = ExtensionManager(project).registry.get("resource-ext")["skill_resource_hashes"]["project"]
+    if not installed:
+        assert not old_resource.exists()
+        assert old_resource.relative_to(project).as_posix() not in hashes
+    else:
+        assert old_resource.read_text() == "reference"
+        assert old_resource.relative_to(project).as_posix() in hashes
+    assert resource.relative_to(project).as_posix() in hashes
+
+
+def test_unregister_agent_keeps_another_agents_resource_with_same_skill_name(tmp_path):
+    import yaml
+    from specify_cli.extensions import ExtensionManager
+
+    project = _init_project(tmp_path, "claude")
+    result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+    assert result.exit_code == 0, result.output
+    source = tmp_path / "ext"
+    (source / "commands").mkdir(parents=True)
+    (source / "references").mkdir()
+    (source / "references/r.md").write_text("reference")
+    (source / "commands/run.md").write_text("Read references/r.md")
+    (source / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0", "extension": {"id": "res", "name": "Res", "version": "1.0.0", "description": "test"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"commands": [{"name": "speckit.res.run", "file": "commands/run.md", "resources": ["references/r.md"]}]},
+    }))
+    ExtensionManager(project).install_from_directory(source, "1.0.0")
+    result = _run_in_project(project, ["integration", "switch", "codex", "--script", "sh"])
+    assert result.exit_code == 0, result.output
+    old = project / ".claude/skills/speckit-res-run/references/r.md"
+    active = project / ".agents/skills/speckit-res-run/references/r.md"
+    assert old.read_text() == active.read_text() == "reference"
+    manager = ExtensionManager(project)
+    manager.unregister_agent_artifacts("codex")
+    assert not active.exists()
+    assert old.read_text() == "reference"
+    hashes = manager.registry.get("res")["skill_resource_hashes"]["project"]
+    assert old.relative_to(project).as_posix() in hashes

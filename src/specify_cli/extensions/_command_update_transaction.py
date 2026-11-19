@@ -19,6 +19,7 @@ from .._init_options import is_ai_skills_enabled
 from . import _commands
 from ._command_update_artifacts import preflight_update_archive
 from ._command_update_discovery import discover_updates
+from ._skill_resources import recorded_resource_hashes, skill_name_parts
 
 
 def run_update_command(extension: str | None) -> None:
@@ -193,15 +194,34 @@ def run_update_command(extension: str | None) -> None:
                     new_command_dirs_absent_before_update.append(parent)
                     parent = parent.parent
 
-            def backup_extension_skills(skill_names, *, skills_dir=None):
+            def backup_extension_skills(skill_names, *, skills_dir=None, native=False):
                 """Back up every owned skill directory that remove() may delete."""
                 nonlocal backup_created_by_attempt
-                for skill_dir in manager._find_extension_skill_dirs(
-                    skill_names,
-                    extension_id,
-                    skills_dir=skills_dir,
-                    create_skills_dir=False,
-                ):
+                if native:
+                    from ..shared_infra import _validate_safe_shared_directory
+
+                    root = manager._extension_skill_trusted_root(skills_dir)
+                    skill_dirs = []
+                    if root is not None:
+                        for name in skill_names:
+                            name_parts = skill_name_parts(name)
+                            if name_parts is None:
+                                continue
+                            skill_dir = skills_dir.joinpath(*name_parts)
+                            try:
+                                _validate_safe_shared_directory(root, skill_dir)
+                            except (OSError, ValueError):
+                                continue
+                            if skill_dir.is_dir():
+                                skill_dirs.append(skill_dir)
+                else:
+                    skill_dirs = manager._find_extension_skill_dirs(
+                        skill_names,
+                        extension_id,
+                        skills_dir=skills_dir,
+                        create_skills_dir=False,
+                    )
+                for skill_dir in skill_dirs:
                     original_key = str(skill_dir)
                     if original_key in backed_up_skill_dirs:
                         continue
@@ -232,6 +252,7 @@ def run_update_command(extension: str | None) -> None:
                     and (
                         "generic" in registrar.AGENT_CONFIGS
                         or backup_registry_entry.get("generic_artifact_hashes")
+                        or recorded_resource_hashes(backup_registry_entry)
                     )
                 ):
                     generic_active = "generic" in registrar.AGENT_CONFIGS
@@ -301,6 +322,10 @@ def run_update_command(extension: str | None) -> None:
                         for dir_index, target_dir in enumerate(
                             dirs_to_backup
                         ):
+                            if agent_config.get("extension") == "/SKILL.md":
+                                backup_extension_skills(
+                                    names_to_backup, skills_dir=target_dir, native=True,
+                                )
                             for name in names_to_backup:
                                 cmd_file = (
                                     target_dir
@@ -421,6 +446,10 @@ def run_update_command(extension: str | None) -> None:
                                 / f"{output_name}{agent_config['extension']}"
                             )
                             _AgentReg._ensure_inside(command_file, commands_dir)
+                            if agent_config.get("extension") == "/SKILL.md":
+                                skill_dir = command_file.parent
+                                if not (skill_dir.exists() or skill_dir.is_symlink()):
+                                    new_skill_paths_absent_before_update.append(skill_dir)
                             backup_command_path = (
                                 backup_commands_dir
                                 / agent_name

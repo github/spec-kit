@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -387,3 +388,95 @@ steps:
     assert set(labels) == {"ready", "needs-review"}
     assert engine.execute(workflow, run_id="labels-run").status == RunStatus.COMPLETED
     assert len([method for method, _, _ in calls if method == "POST"]) == 2
+
+
+def _patch_cp1252_gh_runner(monkeypatch, fake_gh: Path) -> None:
+    real_run = subprocess.run
+
+    def run_with_cp1252_default(args, **kwargs):
+        if (
+            kwargs.get("text") or kwargs.get("universal_newlines")
+        ) and kwargs.get("encoding") is None:
+            kwargs = {**kwargs, "encoding": "cp1252"}
+        return real_run([sys.executable, str(fake_gh), *args[1:]], **kwargs)
+
+    monkeypatch.setattr(github.subprocess, "run", run_with_cp1252_default)
+
+
+def test_real_subprocess_decodes_utf8_issue_body_and_labels_under_cp1252(
+    context, tmp_path: Path, monkeypatch
+):
+    state_file = tmp_path / "labels.json"
+    state_file.write_bytes(json.dumps([], ensure_ascii=False).encode("utf-8"))
+    fake_gh = tmp_path / "fake_gh.py"
+    fake_gh.write_text(
+        "import json, pathlib, sys\n"
+        f"state = pathlib.Path({str(state_file)!r})\n"
+        "labels = json.loads(state.read_bytes().decode('utf-8'))\n"
+        "method = sys.argv[3]\n"
+        "if method == 'GET':\n"
+        "    payload = {\n"
+        "        'number': 12,\n"
+        "        'body': 'Assessment \\U0001f41b \\u201cquote\\u201d \\u540e\\u53f0\\u4fe1\\u606f',\n"
+        "        'labels': [{'name': n} for n in labels],\n"
+        "    }\n"
+        "    sys.stdout.buffer.write(json.dumps(payload, ensure_ascii=False).encode('utf-8'))\n"
+        "else:\n"
+        "    body = json.loads(sys.stdin.buffer.read().decode('utf-8'))\n"
+        "    for item in body['labels']:\n"
+        "        if item.casefold() not in {x.casefold() for x in labels}:\n"
+        "            labels.append(item)\n"
+        "    state.write_bytes(json.dumps(labels, ensure_ascii=False).encode('utf-8'))\n"
+        "    out = [{'name': n} for n in labels]\n"
+        "    sys.stdout.buffer.write(json.dumps(out, ensure_ascii=False).encode('utf-8'))\n",
+        encoding="utf-8",
+    )
+
+    _patch_cp1252_gh_runner(monkeypatch, fake_gh)
+
+    step = get_step_type("github")
+    first = step.execute(config(label="café"), context)
+    retry = step.execute(config(label="CAFÉ"), context)
+
+    assert first.status == StepStatus.COMPLETED, first.error
+    assert first.output["added"] is True
+    assert first.output["label"] == "café"
+    assert retry.status == StepStatus.COMPLETED, retry.error
+    assert retry.output["added"] is False
+    assert json.loads(state_file.read_bytes().decode("utf-8")) == ["café"]
+
+
+def test_real_subprocess_non_utf8_stdout_fails_step_cleanly(
+    context, tmp_path: Path, monkeypatch
+):
+    fake_gh = tmp_path / "bad_gh.py"
+    fake_gh.write_text(
+        "import sys\nsys.stdout.buffer.write(b'\\x81\\xff')\n",
+        encoding="utf-8",
+    )
+    _patch_cp1252_gh_runner(monkeypatch, fake_gh)
+
+    result = get_step_type("github").execute(config(), context)
+
+    assert result.status == StepStatus.FAILED
+    assert "non-UTF-8" in result.error
+    assert result.output == {}
+
+
+def test_real_subprocess_matches_non_ascii_label_without_cp1252_mojibake(
+    context, tmp_path: Path, monkeypatch
+):
+    fake_gh = tmp_path / "mojibake_gh.py"
+    fake_gh.write_text(
+        "import json, sys\n"
+        "method = sys.argv[3]\n"
+        "payload = {'number': 12, 'labels': [{'name': 'caf\\u00e9'}]} if method == 'GET' else [{'name': 'caf\\u00e9'}]\n"
+        "sys.stdout.buffer.write(json.dumps(payload, ensure_ascii=False).encode('utf-8'))\n",
+        encoding="utf-8",
+    )
+    _patch_cp1252_gh_runner(monkeypatch, fake_gh)
+
+    result = get_step_type("github").execute(config(label="café"), context)
+
+    assert result.status == StepStatus.COMPLETED, result.error
+    assert result.output["added"] is False

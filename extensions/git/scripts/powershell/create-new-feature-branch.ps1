@@ -231,6 +231,14 @@ if (-not $commonLoaded) {
     throw "Unable to locate common script file. Please ensure the Specify core scripts are installed."
 }
 
+if (-not (Get-Command ConvertTo-AsciiJson -CommandType Function -ErrorAction SilentlyContinue)) {
+    function ConvertTo-AsciiJson {
+        param([Parameter(Mandatory = $true, ValueFromPipeline = $true)]$InputObject)
+        $json = $InputObject | ConvertTo-Json -Compress
+        return [regex]::Replace($json, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
+    }
+}
+
 # SPECIFY_INIT_DIR is resolved (and validated) by the core resolver. If only the
 # minimal git-common.ps1 was loaded, or an older core common.ps1 without the
 # resolver was loaded, refuse rather than silently falling back to the wrong root.
@@ -589,7 +597,7 @@ if ($Json) {
     if ($DryRun) {
         $obj | Add-Member -NotePropertyName 'DRY_RUN' -NotePropertyValue $true
     }
-    $obj | ConvertTo-Json -Compress
+    $obj | ConvertTo-AsciiJson
 } else {
     Write-Output "BRANCH_NAME: $branchName"
     Write-Output "FEATURE_NUM: $featureNum"
@@ -597,3 +605,5 @@ if ($Json) {
         Write-Output "# To persist in your shell: $featureAssignment"
     }
 }
+
+exit 0

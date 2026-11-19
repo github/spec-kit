@@ -22,7 +22,7 @@ def extension_add(
     extension: Optional[str] = typer.Argument(None, help="Extension name or path (optional when --from is given)"),
     dev: bool = typer.Option(False, "--dev", help="Install from local directory"),
     from_url: Optional[str] = typer.Option(None, "--from", help="Install from custom URL"),
-    force: bool = typer.Option(False, "--force", help="Overwrite if already installed"),
+    force: bool = typer.Option(False, "--force", help="Overwrite if already installed, and overwrite modified or unowned skill resource copies (generic replaces only recorded resources)"),
     priority: int = typer.Option(10, "--priority", help="Resolution priority (lower = higher precedence, default 10)"),
     version: Optional[str] = typer.Option(None, "--version", help="Install an exact version from a catalog"),
 ):
@@ -67,7 +67,7 @@ def extension_add(
     speckit_version = _commands.get_speckit_version()
 
     if force:
-        console.print("[yellow]--force:[/yellow] Will overwrite if already installed")
+        console.print("[yellow]--force:[/yellow] Will overwrite if already installed and overwrite modified or unowned skill resource copies (generic replaces only recorded resources)")
 
     # Prompt for URL-based installs BEFORE the spinner so the user can
     # actually see and respond to the confirmation (the Rich status
@@ -137,7 +137,7 @@ def extension_add(
                     raise typer.Exit(1)
 
                 if force:
-                    console.print(f"[yellow]--force:[/yellow] Installing from [cyan]{safe_source_path}[/cyan] (will overwrite if already installed)...")
+                    console.print(f"[yellow]--force:[/yellow] Installing from [cyan]{safe_source_path}[/cyan] (will overwrite if already installed and overwrite modified or unowned skill resource copies; generic replaces only recorded resources)...")
 
                 manifest = manager.install_from_directory(
                     source_path,
@@ -318,10 +318,24 @@ def extension_add(
         for warning in manifest.warnings:
             console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {_escape_markup(str(warning))}")
 
-        console.print("\n[bold cyan]Provided commands:[/bold cyan]")
+        extension_dir = manager.extensions_dir / manifest.id
+        provided_commands = []
+        missing_commands = []
         for cmd in manifest.commands:
-            cmd_name = _commands._registered_command_name(project_root, cmd['name'])
-            console.print(f"  • {_escape_markup(str(cmd_name))} - {_escape_markup(str(cmd.get('description', '')))}")
+            if (extension_dir / cmd["file"]).is_file():
+                provided_commands.append(cmd)
+            else:
+                missing_commands.append(cmd)
+
+        if provided_commands:
+            console.print("\n[bold cyan]Provided commands:[/bold cyan]")
+            for cmd in provided_commands:
+                cmd_name = _commands._registered_command_name(project_root, cmd["name"])
+                console.print(f"  • {_escape_markup(str(cmd_name))} - {_escape_markup(str(cmd.get('description', '')))}")
+        if missing_commands:
+            console.print("\n[yellow]Warning:[/yellow] Command files missing:")
+            for cmd in missing_commands:
+                console.print(f"  • {_escape_markup(cmd['name'])} ({_escape_markup(cmd['file'])})")
 
         # Report agent skills registration
         reg_meta = manager.registry.get(manifest.id)

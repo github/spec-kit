@@ -35,7 +35,7 @@ def _missing_required_options(integration, parsed_options) -> list[str]:
 def integration_switch(
     target: str = typer.Argument(help="Integration key to switch to"),
     script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or py (default: from init-options.json or platform default)"),
-    force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall of the previous integration"),
+    force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall of the previous integration; also overwrite modified or unowned extension resource copies when the target's skills are rendered"),
     refresh_shared_infra: bool = typer.Option(False, "--refresh-shared-infra", help="Overwrite customized shared scripts, templates, and .specify/.gitignore, including when the target is already the default"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the target integration'),
     trust_integration: bool = typer.Option(False, "--trust-integration", help="Authorize executing a reviewed external integration package without prompting"),
@@ -118,6 +118,7 @@ def integration_switch(
         _register_extensions_for_agent(
             project_root,
             target,
+            overwrite_modified=force,
             continuing=(
                 "The integration switch succeeded, but installed extensions may "
                 "need re-registration."
@@ -407,6 +408,7 @@ def integration_switch(
     _register_extensions_for_agent(
         project_root,
         target,
+        overwrite_modified=force,
         continuing="The integration switch succeeded, but installed extensions may need re-registration.",
     )
     _register_presets_for_agent(

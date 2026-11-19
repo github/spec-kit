@@ -49,6 +49,24 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Check FileHelper migration boundaries
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.python.outcome == 'success' }}
+        env:
+          FILE_HELPER_DIFF_BASE: ${{ github.event.before || '' }}
+          FILE_HELPER_DIFF_HEAD: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            FILE_HELPER_DIFF_HEAD=$(git rev-parse HEAD)
+            FILE_HELPER_DIFF_BASE=$(git rev-parse HEAD^1)
+          elif [ -n "$FILE_HELPER_DIFF_BASE" ] && [ "$FILE_HELPER_DIFF_BASE" != "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags origin "$FILE_HELPER_DIFF_BASE"
+          fi
+          python .github/scripts/check_file_helper_migration.py \
+            --base "$FILE_HELPER_DIFF_BASE" \
+            --head "$FILE_HELPER_DIFF_HEAD"
+
       # Explicit prerequisites let independent checks finish after a failure
       # without masking that failure or continuing after cancellation.
       # Audit committed inputs before Markdownlint can execute repository

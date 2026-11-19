@@ -186,7 +186,7 @@ class TestGitExtensionManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "git"
-        assert m.version == "1.0.6"
+        assert m.version == "1.0.8"
 
     def test_manifest_commands(self):
         """Manifest declares expected commands."""
@@ -534,6 +534,151 @@ class TestPowerShellBracketedProjectPath:
             cwd=project, capture_output=True, text=True,
         )
         assert count.stdout.strip() == "1"
+
+
+@pytest.mark.parametrize(
+    "exe",
+    [
+        pytest.param(
+            "pwsh",
+            marks=pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available"),
+            id="pwsh",
+        ),
+        pytest.param(
+            WINDOWS_POWERSHELL,
+            marks=pytest.mark.skipif(
+                not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
+            ),
+            id="windows-powershell-5.1",
+        ),
+    ],
+)
+class TestCreateFeaturePowerShellLegacyStdout:
+    @staticmethod
+    def _run_legacy_stdout(
+        project: Path,
+        exe: str,
+        *args: str,
+        env_extra: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        def quote(word: str) -> str:
+            return "'" + word.replace("'", "''") + "'"
+
+        script = (
+            project
+            / ".specify"
+            / "extensions"
+            / "git"
+            / "scripts"
+            / "powershell"
+            / "create-new-feature-branch.ps1"
+        )
+        words = [quote(str(script))] + [
+            arg if re.fullmatch(r"-[A-Za-z]+", arg) else quote(arg) for arg in args
+        ]
+        env = {**os.environ, **_GIT_ENV, **(env_extra or {})}
+        return subprocess.run(
+            [
+                exe,
+                "-NoProfile",
+                "-Command",
+                "$previous = [Console]::OutputEncoding; "
+                "[Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding('iso-8859-1'); "
+                f"try {{ & {' '.join(words)} }} finally {{ [Console]::OutputEncoding = $previous }}; "
+                "exit $LASTEXITCODE",
+            ],
+            cwd=project,
+            capture_output=True,
+            env=env,
+        )
+
+    @pytest.mark.parametrize(
+        "layout",
+        ["core_common", "git_common_only", "stale_core_common"],
+    )
+    @pytest.mark.parametrize(
+        ("branch_override", "expected_num"),
+        [
+            ("équipe/042-后台-🚀", "042"),
+            ("équipe-后台", "équipe-后台"),
+        ],
+    )
+    def test_json_mode_escapes_non_ascii_branch_on_legacy_stdout(
+        self,
+        tmp_path: Path,
+        exe: str,
+        layout: str,
+        branch_override: str,
+        expected_num: str,
+    ):
+        project = _setup_project(tmp_path / "proj", git=False)
+        common_ps = project / "scripts" / "powershell" / "common.ps1"
+        if layout == "git_common_only":
+            common_ps.unlink()
+        elif layout == "stale_core_common":
+            common_ps.write_text(
+                "function Get-RepoRoot { return (Get-Location).Path }\n",
+                encoding="utf-8",
+            )
+
+        result = self._run_legacy_stdout(
+            project,
+            exe,
+            "-Json",
+            "-DryRun",
+            "Add feature",
+            env_extra={"GIT_BRANCH_NAME": branch_override},
+        )
+
+        assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
+        assert result.stdout.isascii(), result.stdout
+        payload = json.loads(result.stdout.decode("utf-8"))
+        assert payload == {
+            "BRANCH_NAME": branch_override,
+            "FEATURE_NUM": expected_num,
+            "DRY_RUN": True,
+        }
+
+    def test_creates_non_ascii_branch_and_emits_ascii_json(
+        self, tmp_path: Path, exe: str
+    ):
+        project = _setup_project(tmp_path / "proj")
+        result = self._run_legacy_stdout(
+            project,
+            exe,
+            "-Json",
+            "Add feature",
+            env_extra={"GIT_BRANCH_NAME": "équipe/042-后台"},
+        )
+
+        assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
+        assert result.stdout.isascii(), result.stdout
+        payload = json.loads(result.stdout.decode("utf-8"))
+        assert payload == {"BRANCH_NAME": "équipe/042-后台", "FEATURE_NUM": "042"}
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+        assert head.stdout.decode("utf-8").strip() == "équipe/042-后台"
+
+    def test_overlong_non_ascii_override_fails_without_json_stdout(
+        self, tmp_path: Path, exe: str
+    ):
+        project = _setup_project(tmp_path / "proj", git=False)
+        overlong = "001-" + ("功" * 81)
+        result = self._run_legacy_stdout(
+            project,
+            exe,
+            "-Json",
+            "-DryRun",
+            "Add feature",
+            env_extra={"GIT_BRANCH_NAME": overlong},
+        )
+
+        assert result.returncode != 0
+        assert result.stdout.strip() == b""
 
 
 # ── create-new-feature-branch.sh Tests ──────────────────────────────────────────────
