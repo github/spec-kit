@@ -16,9 +16,10 @@ from typing import TypeVar
 from weakref import finalize
 
 from specify_cli._file_handles import (
-    _WindowsFileIdentity, _windows_delete, _windows_directory_names, _windows_entry,
-    _windows_file_id, _windows_handle, _windows_mode, _windows_overwrite_fd,
-    _windows_readlink, _windows_stat, rename_noreplace, windows_read_fd,
+    _WindowsFileIdentity, _windows_create_private_fd, _windows_delete,
+    _windows_directory_names, _windows_entry, _windows_file_id, _windows_handle,
+    _windows_mode, _windows_overwrite_fd, _windows_readlink, _windows_stat,
+    rename_noreplace, windows_read_fd,
 )
 
 
@@ -31,6 +32,15 @@ _DELETE_DIR_FD_SUPPORTED = (
 _DELETE_DIRECTORY_CACHE_SIZE = 8
 # Wrapping os.open must not change the underlying platform capability.
 _POSIX_OPEN = os.open
+
+
+def _write_all(fd: int, content: bytes) -> None:
+    view = memoryview(content)
+    while view:
+        count = os.write(fd, view)
+        if count == 0:
+            raise OSError(errno.EIO, "Write made no progress")
+        view = view[count:]
 
 
 def _strip_extended_length_prefix(path: _PathType) -> _PathType:
@@ -377,6 +387,10 @@ class FileHelper:
         if not stat.S_ISDIR(path.stat().st_mode):
             raise NotADirectoryError(path)
 
+    def stat(self, path: Path | str) -> os.stat_result:
+        """Return the metadata of an existing entry, resolving only allowed links."""
+        return os.stat(self._path(path), follow_symlinks=False)
+
     def mkdir(
         self, path: Path | str, *, parents: bool = False, exist_ok: bool = False
     ) -> None:
@@ -567,6 +581,82 @@ class FileHelper:
     ) -> None:
         self.create_bytes(path, content.encode(encoding), mode=mode)
 
+    def create_private_bytes(self, path: Path | str, content: bytes) -> None:
+        """Exclusively create a file only the current user can open, flushed to disk.
+
+        A failure after creation removes only the file this call created.
+        """
+        destination = self._path(path, allow_missing=True, follow_leaf=False)
+        try:
+            self._entry_mode(destination)
+        except FileNotFoundError:
+            pass
+        else:
+            raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), str(destination))
+        with self._creation_directory(destination.parent) as directory:
+            if isinstance(directory, Path):
+                self._windows_create_private(directory / destination.name, content)
+            else:
+                self._posix_create_private(directory, destination.name, content)
+
+    @staticmethod
+    def _posix_create_private(directory: int, name: str, content: bytes) -> None:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        flags |= getattr(os, "O_CLOEXEC", 0)
+        fd = os.open(name, flags, 0o600, dir_fd=directory)
+        created: os.stat_result | None = None
+        try:
+            try:
+                created = os.fstat(fd)
+                _write_all(fd, content)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        except BaseException:
+            # Never reopen the name: remove it only if it is still the created file.
+            try:
+                current = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                if created is None or (current.st_dev, current.st_ino) == (
+                    created.st_dev, created.st_ino
+                ):
+                    os.unlink(name, dir_fd=directory)
+            except OSError:
+                pass
+            raise
+        # Best effort: the anchor may be O_PATH or search-only, which fsync rejects.
+        try:
+            parent = os.open(
+                ".", os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
+                dir_fd=directory,
+            )
+        except OSError:
+            return
+        try:
+            os.fsync(parent)
+        except OSError:
+            pass
+        finally:
+            os.close(parent)
+
+    @staticmethod
+    def _windows_create_private(path: Path, content: bytes) -> None:
+        fd = _windows_create_private_fd(path)
+        try:
+            try:
+                _write_all(fd, content)
+                os.fsync(fd)
+            except BaseException as error:
+                import msvcrt
+
+                # The handle shares nothing, so it can only name the created file.
+                try:
+                    _windows_delete(msvcrt.get_osfhandle(fd))
+                except Exception as cleanup_error:
+                    error.add_note(f"Could not remove partial file {path}: {cleanup_error}")
+                raise
+        finally:
+            os.close(fd)
+
     def write_bytes(self, path: Path | str, content: bytes, *, mode: int = 0o644) -> None:
         """Atomically create/replace a file, preserving any allowed leaf link."""
         destination = self._path(path, allow_missing=True)
@@ -605,7 +695,21 @@ class FileHelper:
                 stream.write(content)
 
     @contextmanager
-    def _overwrite_descriptor(self, destination: Path) -> Iterator[int]:
+    def open_rewrite(self, path: Path | str) -> Iterator[int]:
+        """Yield a binary write descriptor on an existing regular file, untruncated.
+
+        The descriptor starts at offset 0 and is closed on exit. The caller owns
+        writing, truncating and flushing; owner, mode and links are unchanged.
+        """
+        destination = self._path(path)
+        self._require_file(destination)
+        with self._overwrite_descriptor(destination, create=False) as fd:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise UnsupportedPathError(f"Expected a regular file: {destination}")
+            yield fd
+
+    @contextmanager
+    def _overwrite_descriptor(self, destination: Path, *, create: bool = True) -> Iterator[int]:
         """Anchor the resolved hierarchy before opening a non-truncating leaf."""
         with ExitStack() as stack:
             if os.name == "nt":
@@ -615,7 +719,7 @@ class FileHelper:
                 for part in parts[:-1]:
                     current = current / part
                     stack.enter_context(_windows_handle(current, directory=True))
-                yield stack.enter_context(_windows_overwrite_fd(destination))
+                yield stack.enter_context(_windows_overwrite_fd(destination, create=create))
                 return
 
             unsupported = "Scoped text overwrite is unsupported on this platform"
@@ -623,8 +727,8 @@ class FileHelper:
                 raise OSError(errno.ENOTSUP, unsupported)
             with self._posix_directory(destination.parent, unsupported_message=unsupported) as parent:
                 flags = (
-                    os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK
-                    | getattr(os, "O_CLOEXEC", 0)
+                    os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+                    | (os.O_CREAT if create else 0)
                 )
                 fd = os.open(destination.name, flags, 0o666, dir_fd=parent)
                 try:
