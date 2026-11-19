@@ -204,7 +204,10 @@ Current behavior differs by primitive:
   sources fetch repository catalogs when online and fall back to packaged
   snapshots only for catalog-unavailable failures; malformed or unsafe content
   is not masked by the snapshot. Bundle stacks memoize parsed payloads for the
-  lifetime of one stack instance.
+  lifetime of one stack instance. When translating an HTTP status error, the
+  fetcher closes its response body before propagating the catalog error, while
+  retaining the original exception as its cause and preserving status-based
+  fallback classification.
 
 A future shared fetch boundary may share URL validation, redirect validation,
 bounded reads, cache records, and error types. It must preserve each

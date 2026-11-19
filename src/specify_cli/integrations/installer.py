@@ -682,6 +682,10 @@ def _validate_registrar_config(key: str, registrar: Any) -> None:
         raise IntegrationInstallError(f"Integration '{key}' registrar_config.invoke_separator must be a non-empty string")
     if "dev_no_symlink" in registrar and not isinstance(registrar["dev_no_symlink"], bool):
         raise IntegrationInstallError(f"Integration '{key}' registrar_config.dev_no_symlink must be a boolean")
+    if "home_scoped" in registrar and not isinstance(registrar["home_scoped"], bool):
+        raise IntegrationInstallError(f"Integration '{key}' registrar_config.home_scoped must be a boolean")
+    if registrar.get("home_scoped"):
+        raise IntegrationInstallError(f"Integration '{key}' output must be project-local")
     if "legacy_dir" in registrar and (
         not isinstance(registrar["legacy_dir"], str) or not registrar["legacy_dir"].strip()
     ):

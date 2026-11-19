@@ -19,7 +19,7 @@ from typing import Any
 
 import yaml
 
-from ..base import IntegrationOption, SkillsIntegration, yaml_quote
+from ..base import IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
 
 
@@ -47,6 +47,7 @@ class HermesIntegration(SkillsIntegration):
     registrar_config = {
         "dir": "~/.hermes/skills",
         "detect_dir": ".hermes/skills",
+        "home_scoped": True,
         "format": "markdown",
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
@@ -111,7 +112,9 @@ class HermesIntegration(SkillsIntegration):
         )
 
         global_skills_dir = self._hermes_home_skills_dir()
-        global_skills_dir.mkdir(parents=True, exist_ok=True)
+        from .._file_changes import make_directories
+
+        make_directories(global_skills_dir)
 
         created: list[Path] = []
 
@@ -184,18 +187,12 @@ class HermesIntegration(SkillsIntegration):
             if not description:
                 description = f"Spec Kit: {command_name} workflow"
 
-            # Build SKILL.md with manually formatted frontmatter. yaml_quote
-            # escapes newlines and control characters that a plain quoted
-            # f-string cannot carry.
+            frontmatter_text = self._render_core_skill_frontmatter(
+                skill_name, description, f"templates/commands/{src_file.name}"
+            )
             skill_content = (
                 f"---\n"
-                f"name: {yaml_quote(skill_name)}\n"
-                f"description: {yaml_quote(description)}\n"
-                f"compatibility: "
-                f"{yaml_quote('Requires spec-kit project structure with .specify/ directory')}\n"
-                f"metadata:\n"
-                f"  author: {yaml_quote('github-spec-kit')}\n"
-                f"  source: {yaml_quote('templates/commands/' + src_file.name)}\n"
+                f"{frontmatter_text}\n"
                 f"---\n"
                 f"{processed_body}"
             )

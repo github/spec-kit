@@ -420,6 +420,7 @@ def _register_extensions_for_agent(
     *,
     continuing: str,
     force: bool = False,
+    overwrite_modified: bool = False,
 ) -> None:
     """Register all enabled extensions' commands/skills for ``agent_key``.
 
@@ -445,7 +446,9 @@ def _register_extensions_for_agent(
     _best_effort_extension_op(
         project_root,
         agent_key,
-        lambda mgr, key: mgr.register_enabled_extensions_for_agent(key, force=force),
+        lambda mgr, key: mgr.register_enabled_extensions_for_agent(
+            key, force=force, overwrite_modified=overwrite_modified
+        ),
         phase="register extension artifacts for",
         continuing=continuing,
     )

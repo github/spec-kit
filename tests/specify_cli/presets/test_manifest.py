@@ -13,6 +13,39 @@ from specify_cli.presets import (
 class TestPresetManifest:
     """Test PresetManifest validation and parsing."""
 
+    @pytest.mark.parametrize("kind", ["template", "command"])
+    def test_section_replacement(self, temp_dir, valid_pack_data, kind):
+        entry = valid_pack_data["provides"]["templates"][0]
+        entry.update(type=kind, strategy="replace-section", selector="requirements")
+        path = temp_dir / "preset.yml"
+        path.write_text(yaml.safe_dump(valid_pack_data), encoding="utf-8")
+        assert PresetManifest(path).templates[0]["selector"] == "requirements"
+
+    @pytest.mark.parametrize("selector", [None, "", " ", 3, [], "#target", "Target", "two words"])
+    def test_invalid_section_selector(self, temp_dir, valid_pack_data, selector):
+        entry = valid_pack_data["provides"]["templates"][0]
+        entry.update(strategy="replace-section", selector=selector)
+        path = temp_dir / "preset.yml"
+        path.write_text(yaml.safe_dump(valid_pack_data), encoding="utf-8")
+        with pytest.raises(PresetValidationError, match="selector"):
+            PresetManifest(path)
+
+    def test_section_strategy_rejects_scripts(self, temp_dir, valid_pack_data):
+        valid_pack_data["provides"]["templates"][0].update(
+            type="script", strategy="replace-section", selector="target",
+        )
+        path = temp_dir / "preset.yml"
+        path.write_text(yaml.safe_dump(valid_pack_data), encoding="utf-8")
+        with pytest.raises(PresetValidationError, match="script"):
+            PresetManifest(path)
+
+    def test_selector_requires_section_strategy(self, temp_dir, valid_pack_data):
+        valid_pack_data["provides"]["templates"][0]["selector"] = "target"
+        path = temp_dir / "preset.yml"
+        path.write_text(yaml.safe_dump(valid_pack_data), encoding="utf-8")
+        with pytest.raises(PresetValidationError, match="selector"):
+            PresetManifest(path)
+
     def test_valid_manifest(self, pack_dir):
         """Test loading a valid manifest."""
         manifest = PresetManifest(pack_dir / "preset.yml")

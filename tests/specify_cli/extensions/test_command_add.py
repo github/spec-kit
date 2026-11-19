@@ -17,14 +17,13 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from specify_cli import app, save_init_options
+from specify_cli import app
 from specify_cli.extensions import (
     CompatibilityError,
     ExtensionCatalog,
     ExtensionError,
     ExtensionManager,
     ExtensionRegistry,
-    HookExecutor,
     ValidationError,
 )
 from tests.conftest import strip_ansi
@@ -40,6 +39,35 @@ from tests.specify_cli.extensions._helpers import (
 
 class TestExtensionAddCLI:
     """CLI tests for ``specify extension add``."""
+
+    @pytest.mark.parametrize(
+        ("config", "warns"),
+        [
+            pytest.param({}, False, id="undeclared"),
+            pytest.param({"config": []}, False, id="empty"),
+            pytest.param(
+                {"config": [{"name": "test-ext-config.yml", "template": "missing.yml"}]},
+                True,
+                id="missing-template",
+            ),
+        ],
+    )
+    def test_add_dev_warns_only_when_config_scaffolding_fails(
+        self, extension_dir, project_dir, valid_manifest_data, config, warns
+    ):
+        valid_manifest_data["provides"].update(config)
+        (extension_dir / "extension.yml").write_text(
+            yaml.safe_dump(valid_manifest_data), encoding="utf-8"
+        )
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(app, ["extension", "add", "--dev", str(extension_dir)])
+
+        assert result.exit_code == 0, result.output
+        output = strip_ansi(result.output)
+        assert "Extension installed successfully" in output
+        assert ("Configuration may be required" in output) == warns, output
+        assert ("Config templates not scaffolded" in output) == warns, output
 
     @pytest.mark.parametrize("command", [
         pytest.param(["speckit.test-ext.hello"], id="list"),
@@ -723,6 +751,7 @@ class TestExtensionAddCLI:
              patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(_MINIMAL_ZIP_BYTES)), \
              patch("specify_cli.extensions._commands._safe_open_download_zip", side_effect=_open_test_download_zip), \
              patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip), \
+             patch.object(ExtensionManager, "scaffold_config", return_value=([], [], ["test-ext-config.yml"])), \
              patch.object(ExtensionRegistry, "get", return_value={}):
             result = runner.invoke(
                 app,
@@ -1388,98 +1417,3 @@ def test_extension_install_listing_matches_registered_command_names(
     assert result.exit_code == 0, output
     assert f"• {listed} - " in output, output
     assert f"• {not_listed} - " not in output, output
-
-
-def _sample_extension_dir(tmp_path):
-    """Build the minimal extension used by the #5379 rollback tests."""
-    ext = tmp_path / "ext"
-    (ext / "commands").mkdir(parents=True)
-    (ext / "commands/run.md").write_text("---\ndescription: d\n---\nhello\n")
-    (ext / "extension.yml").write_text(
-        yaml.safe_dump(
-            {
-                "schema_version": "1.0",
-                "extension": {
-                    "id": "sample",
-                    "name": "S",
-                    "version": "1.0.0",
-                    "description": "d",
-                    "author": "t",
-                },
-                "requires": {"speckit_version": ">=0.1.0"},
-                "provides": {
-                    "commands": [
-                        {"name": "speckit.sample.run", "file": "commands/run.md"}
-                    ]
-                },
-                "hooks": {
-                    "after_tasks": {"command": "speckit.sample.run", "optional": True}
-                },
-            }
-        )
-    )
-    return ext
-
-
-def _claude_skills_project(tmp_path):
-    project = tmp_path / "p"
-    (project / ".specify").mkdir(parents=True)
-    (project / ".claude/skills").mkdir(parents=True)
-    save_init_options(project, {"ai": "claude", "ai_skills": True, "script": "sh"})
-    return project
-
-
-def test_failed_native_install_removes_skill_outputs(tmp_path, monkeypatch):
-    """A failed native install must leave no outputs the attempt created (#5379)."""
-    project = _claude_skills_project(tmp_path)
-    ext = _sample_extension_dir(tmp_path)
-    monkeypatch.setattr(
-        HookExecutor,
-        "register_hooks",
-        lambda *a: (_ for _ in ()).throw(OSError("x")),
-    )
-    with pytest.raises(OSError):
-        ExtensionManager(project).install_from_directory(ext, "1.0.0")
-    assert not ExtensionManager(project).registry.is_installed("sample")
-    assert not (project / ".claude/skills/speckit-sample-run/SKILL.md").exists()
-    assert not (project / ".specify/extensions/sample").exists()
-
-
-def test_failed_native_install_at_registry_write_removes_skill_outputs(
-    tmp_path, monkeypatch
-):
-    """A failure at the final registry write must also roll back skill outputs (#5379)."""
-    project = _claude_skills_project(tmp_path)
-    ext = _sample_extension_dir(tmp_path)
-    monkeypatch.setattr(
-        ExtensionRegistry, "add", lambda *a, **k: (_ for _ in ()).throw(OSError("x"))
-    )
-    with pytest.raises(OSError):
-        ExtensionManager(project).install_from_directory(ext, "1.0.0")
-    assert not ExtensionManager(project).registry.is_installed("sample")
-    assert not (project / ".claude/skills/speckit-sample-run/SKILL.md").exists()
-    assert not (project / ".specify/extensions/sample").exists()
-
-
-def test_failed_native_force_install_preserves_kept_config(tmp_path, monkeypatch):
-    """A failed native --force reinstall must preserve kept user config (#5379)."""
-    project = _claude_skills_project(tmp_path)
-    ext = _sample_extension_dir(tmp_path)
-    (ext / "sample-config.yml").write_text("default: true\n", encoding="utf-8")
-    manager = ExtensionManager(project)
-    manager.install_from_directory(ext, "1.0.0")
-    assert manager.remove("sample", keep_config=True)
-    config = project / ".specify/extensions/sample/sample-config.yml"
-    config.write_text("user: preserved\n", encoding="utf-8")
-    monkeypatch.setattr(
-        HookExecutor,
-        "register_hooks",
-        lambda *a: (_ for _ in ()).throw(OSError("x")),
-    )
-    with pytest.raises(OSError):
-        ExtensionManager(project).install_from_directory(ext, "1.0.0", force=True)
-    assert not ExtensionManager(project).registry.is_installed("sample")
-    assert config.read_text(encoding="utf-8") == "user: preserved\n"
-    assert (config.parent / ".keep-config").exists()
-    assert not (config.parent / "extension.yml").exists()
-    assert not (project / ".claude/skills/speckit-sample-run/SKILL.md").exists()

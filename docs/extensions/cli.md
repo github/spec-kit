@@ -30,10 +30,10 @@ specify extension add --dev <path>
 | `--dev`         | Install from a local directory (for development)         |
 | `--from <url>`  | Install from a custom URL instead of the catalog         |
 | `--version <v>` | Install an exact version advertised by a catalog        |
-| `--force`       | Overwrite if the extension is already installed          |
+| `--force`       | Overwrite if the extension is already installed, and overwrite modified or unowned [skill resource](developing.md#skill-resources) copies (for `generic`, only previously recorded resources are replaced) |
 | `--priority <N>`| Resolution priority (default: 10; lower = higher precedence) |
 
-Installs an extension from the catalog, a URL, or a local directory. Extension commands are registered with the active AI coding agent integration. For `generic`, invocations use the configured `--commands-dir`: flat command files by default, or `speckit-<name>/SKILL.md` with `--skills`.
+Installs an extension from the catalog, a URL, or a local directory. Extension commands are registered with the active AI coding agent integration. For `generic`, invocations use the configured `--commands-dir`: flat command files by default, or `speckit-<name>/SKILL.md` with `--skills`; `extension add --force` replaces unchanged owned invocations and previously recorded skill resources, but refuses to replace edited invocations or unowned files in `--commands-dir`.
 
 The positional name is required for catalog installs, and `--dev` requires a
 local path. With `--from`, the positional name can be omitted; the downloaded
