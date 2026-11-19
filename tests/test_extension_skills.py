@@ -3265,6 +3265,148 @@ class TestExtensionSkillUnregistration:
             encoding="utf-8"
         ) == "personal notes"
 
+    def test_cli_update_recreates_skill_beside_user_notes(
+        self, project_dir, temp_dir
+    ):
+        """``specify extension update`` recreates the skill beside user files.
+
+        The CLI update path removes the old version (``remove(...,
+        keep_config=True)``) and installs the new archive *without* force,
+        so nothing is handed from one call to the other and the registry
+        entry is gone in between. The retained-directory record written by
+        removal is what lets the install recreate SKILL.md in the directory
+        the user's notes kept alive.
+        """
+        import zipfile
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.extensions import ExtensionCatalog
+
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        ext_dir = _create_extension_dir(temp_dir)
+        manager.install_from_directory(ext_dir, "1.0.0", register_commands=False)
+        manager.register_enabled_extensions_for_agent("auggie")
+
+        skill_dir = project_dir / ".augment" / "skills" / "speckit-test-ext-hello"
+        assert (skill_dir / "SKILL.md").is_file()
+        (skill_dir / "my-notes.md").write_text("personal notes", encoding="utf-8")
+
+        manifest_path = ext_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["extension"]["version"] = "2.0.0"
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        archive = temp_dir / "test-ext-update.zip"
+        with zipfile.ZipFile(archive, "w") as zip_file:
+            for file in ext_dir.rglob("*"):
+                if file.is_file():
+                    zip_file.write(file, file.relative_to(ext_dir))
+
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                "id": "test-ext",
+                "name": "Test Extension",
+                "version": "2.0.0",
+                "_install_allowed": True,
+            }),
+            patch.object(ExtensionCatalog, "download_extension", return_value=archive),
+        ):
+            result = CliRunner().invoke(
+                app, ["extension", "update", "test-ext"], input="y\n",
+            )
+
+        assert result.exit_code == 0, result.output
+        assert (skill_dir / "SKILL.md").is_file(), (
+            "extension update must recreate the skill in the directory the "
+            "user's files kept alive"
+        )
+        assert (skill_dir / "my-notes.md").read_text(
+            encoding="utf-8"
+        ) == "personal notes"
+        assert not ExtensionManager(project_dir)._retained_skill_dirs_file().exists(), (
+            "the record is dropped once the directory carries its marker again"
+        )
+
+    def test_switch_round_trip_recreates_skill_and_keeps_user_dir_guard(
+        self, project_dir, temp_dir
+    ):
+        """Deactivating and reactivating an agent keeps the skill and the guard.
+
+        ``unregister_agent_artifacts`` (switching away) and the later
+        ``register_enabled_extensions_for_agent`` (switching back) are
+        separate operations — in practice separate CLI processes, modelled
+        here by a fresh manager. The skill whose directory holds user notes
+        is recreated on return; an unrelated pre-existing user directory of
+        another command's name is still never written to.
+        """
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        skills_root = project_dir / ".augment" / "skills"
+        unrelated = skills_root / "speckit-test-ext-world"
+        unrelated.mkdir(parents=True)
+        (unrelated / "mine.txt").write_text("user", encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir), "1.0.0", register_commands=False
+        )
+        manager.register_enabled_extensions_for_agent("auggie")
+        skill_dir = skills_root / "speckit-test-ext-hello"
+        assert (skill_dir / "SKILL.md").is_file()
+        assert not (unrelated / "SKILL.md").exists(), (
+            "sanity: the unrelated user directory is skipped on first registration"
+        )
+        (skill_dir / "my-notes.md").write_text("personal notes", encoding="utf-8")
+
+        manager.unregister_agent_artifacts("auggie")
+        assert not (skill_dir / "SKILL.md").exists()
+        assert (skill_dir / "my-notes.md").is_file()
+
+        ExtensionManager(project_dir).register_enabled_extensions_for_agent("auggie")
+
+        assert (skill_dir / "SKILL.md").is_file(), (
+            "switching back must recreate the skill beside the user's notes"
+        )
+        assert (skill_dir / "my-notes.md").read_text(
+            encoding="utf-8"
+        ) == "personal notes"
+        assert not (unrelated / "SKILL.md").exists(), (
+            "an unrelated pre-existing user directory is still never written to"
+        )
+        assert (unrelated / "mine.txt").read_text(encoding="utf-8") == "user"
+
+    def test_retained_record_never_authorizes_an_unrecorded_directory(
+        self, project_dir, temp_dir
+    ):
+        """The record is per extension and per directory, and fails closed.
+
+        A malformed record file authorizes nothing, and a record for one
+        extension does not open another extension's same-named directory.
+        """
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        skill_dir = project_dir / ".augment" / "skills" / "speckit-test-ext-hello"
+        skill_dir.mkdir(parents=True)
+
+        record = manager._retained_skill_dirs_file()
+        record.parent.mkdir(parents=True, exist_ok=True)
+        record.write_text("{not json", encoding="utf-8")
+        assert manager._is_retained_skill_dir("test-ext", skill_dir) is False
+
+        manager._remember_retained_skill_dir("other-ext", skill_dir)
+        assert manager._is_retained_skill_dir("other-ext", skill_dir) is True
+        assert manager._is_retained_skill_dir("test-ext", skill_dir) is False
+
+        outside = temp_dir / "outside" / "speckit-test-ext-hello"
+        outside.mkdir(parents=True)
+        manager._remember_retained_skill_dir("test-ext", outside)
+        assert manager._is_retained_skill_dir("test-ext", outside) is False, (
+            "a directory outside the project is never recorded"
+        )
+
     def test_fallback_preserves_user_retargeted_skill_symlink(
         self, project_dir, temp_dir
     ):

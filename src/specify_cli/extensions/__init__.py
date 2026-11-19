@@ -1563,7 +1563,6 @@ class ExtensionManager:
         extension_dir: Path,
         link_outputs: bool = False,
         force: bool = False,
-        recreatable_dirs: Optional[List[Path]] = None,
         *, previous_resource_hashes: Optional[dict] = None,
         resource_hashes: Optional[dict] = None,
         overwrite_modified: bool = False,
@@ -1585,14 +1584,12 @@ class ExtensionManager:
                 ``setup()`` has just freshly regenerated core-template skill
                 files and the skip guard would otherwise prevent extension
                 content from being layered on top.
-            recreatable_dirs: Skill directories whose ownership the removal
-                step of this same replacement operation verified before
-                removing their SKILL.md (as returned by
-                :meth:`_unregister_extension_skills`). A pre-existing
-                directory in this list may receive a fresh SKILL.md even
-                though it now lacks an ownership marker — the user's own
-                files kept it alive — without weakening the guard for
-                unrelated user directories.
+
+        A pre-existing directory without a SKILL.md is skipped as the user's
+        unless removal recorded it as retained (see
+        :meth:`_remember_retained_skill_dir`): it was this extension's skill
+        directory, kept alive only by the user's own files, and the skill is
+        recreated beside them.
 
         Returns:
             List of skill names that were created (for registry storage).
@@ -1709,17 +1706,10 @@ class ExtensionManager:
                 # verifiable SKILL.md ownership marker, rollback/removal cannot
                 # distinguish our output from unrelated user artifacts.
                 # Skipped when force=True (upgrade path), and for a directory
-                # whose ownership the removal step of this same replacement
-                # operation verified before emptying it of its SKILL.md (the
-                # user's files kept the directory alive; the skill must be
-                # recreatable beside them).
-                try:
-                    resolved_subdir = skill_subdir.resolve()
-                except OSError:
-                    continue
-                if resolved_subdir not in {
-                    Path(d) for d in (recreatable_dirs or [])
-                }:
+                # removal recorded as retained: its ownership was verified
+                # before its SKILL.md was removed, and only the user's own
+                # files kept it alive, so the skill is recreated beside them.
+                if not self._is_retained_skill_dir(manifest.id, skill_subdir):
                     continue
 
             # Create skill directory; track whether we created it so we can clean
@@ -1800,6 +1790,8 @@ class ExtensionManager:
                 if skill_file.is_symlink():
                     unlink(skill_file)
                 write_text(skill_file, skill_content, encoding="utf-8")
+            # The directory carries its ownership marker again.
+            self._forget_retained_skill_dir(manifest.id, skill_subdir)
             written.append(skill_name)
             if copy_mode:
                 assert resource_hashes is not None
@@ -2322,14 +2314,25 @@ class ExtensionManager:
             The resolved skill directories whose ownership was verified and
             whose SKILL.md this call removed. A directory that still exists
             afterwards (it held user files, so only the SKILL.md was
-            removed) can be handed back to
-            :meth:`_register_extension_skills` as *recreatable_dirs* so a
-            replacement install may recreate the skill beside the user's
-            files (#5381 review).
+            removed) is recorded through
+            :meth:`_remember_retained_skill_dir`, so any later registration
+            — a force reinstall, ``extension update``, or switching the
+            integration away and back, even in another process — may
+            recreate the skill beside the user's files.
         """
         from ..integrations._file_changes import unlink
 
         removed_owned: List[Path] = []
+
+        def retire(skill_subdir: Path, skill_file: Path) -> None:
+            unlink(skill_file)
+            removed_owned.append(skill_subdir)
+            try:
+                skill_subdir.rmdir()
+            except OSError:
+                pass
+            if skill_subdir.is_dir():
+                self._remember_retained_skill_dir(extension_id, skill_subdir)
 
         generic_roots = {
             Path(path).parent.parent
@@ -2357,12 +2360,7 @@ class ExtensionManager:
                         skill_file.read_bytes()
                     ).hexdigest():
                         continue
-                    unlink(skill_file)
-                    removed_owned.append(skill_subdir)
-                    try:
-                        skill_subdir.rmdir()
-                    except OSError:
-                        pass
+                    retire(skill_subdir, skill_file)
                     continue
             # Remove only the extension's own output. Ownership of the
             # directory is established through the SKILL.md provenance
@@ -2390,13 +2388,98 @@ class ExtensionManager:
                     (self.extensions_dir / extension_id).resolve()
                 ):
                     continue
-            unlink(skill_file)
-            removed_owned.append(skill_subdir)
-            try:
-                skill_subdir.rmdir()
-            except OSError:
-                pass
+            retire(skill_subdir, skill_file)
         return removed_owned
+
+    # -- Retained skill directories -------------------------------------------
+    #
+    # Per-file removal (#5381) leaves a skill directory alive when the user's
+    # own files are in it. The directory then has no SKILL.md, so it carries
+    # no ownership marker, and registration would skip it as an unverifiable
+    # pre-existing user directory. Removal verified the ownership, though, so
+    # it records such a directory here, and registration consults the record
+    # instead of weakening its guard. The record is a file rather than
+    # manager state because the removal and the next registration can be
+    # separate operations in separate processes (``extension update``,
+    # switching the integration away and back) and can outlive the
+    # extension's registry entry (``remove`` followed by ``install``).
+
+    def _retained_skill_dirs_file(self) -> Path:
+        return self.extensions_dir / ".retained-skill-dirs.json"
+
+    def _load_retained_skill_dirs(self) -> Dict[str, List[str]]:
+        """Read the record, tolerating a missing, unreadable, or malformed file."""
+        try:
+            data = json.loads(
+                self._retained_skill_dirs_file().read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {
+            ext_id: [entry for entry in entries if isinstance(entry, str)]
+            for ext_id, entries in data.items()
+            if isinstance(ext_id, str) and isinstance(entries, list)
+        }
+
+    def _save_retained_skill_dirs(self, data: Dict[str, List[str]]) -> None:
+        from ..integrations._file_changes import unlink, write_text
+
+        path = self._retained_skill_dirs_file()
+        data = {ext_id: entries for ext_id, entries in data.items() if entries}
+        if not data:
+            if path.exists() or path.is_symlink():
+                unlink(path)
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_text(
+            path, json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+    def _retained_skill_dir_key(self, skill_subdir: Path) -> Optional[str]:
+        """The record key for *skill_subdir*: its project-relative POSIX path.
+
+        A directory outside the project (a home-scoped skills root) has no
+        key: the record never authorizes a write outside the project.
+        """
+        try:
+            return (
+                skill_subdir.resolve()
+                .relative_to(self.project_root.resolve())
+                .as_posix()
+            )
+        except (OSError, ValueError):
+            return None
+
+    def _remember_retained_skill_dir(
+        self, extension_id: str, skill_subdir: Path
+    ) -> None:
+        key = self._retained_skill_dir_key(skill_subdir)
+        if key is None:
+            return
+        data = self._load_retained_skill_dirs()
+        entries = data.setdefault(extension_id, [])
+        if key not in entries:
+            entries.append(key)
+            self._save_retained_skill_dirs(data)
+
+    def _is_retained_skill_dir(self, extension_id: str, skill_subdir: Path) -> bool:
+        key = self._retained_skill_dir_key(skill_subdir)
+        return key is not None and key in self._load_retained_skill_dirs().get(
+            extension_id, []
+        )
+
+    def _forget_retained_skill_dir(
+        self, extension_id: str, skill_subdir: Path
+    ) -> None:
+        key = self._retained_skill_dir_key(skill_subdir)
+        if key is None:
+            return
+        data = self._load_retained_skill_dirs()
+        if key in data.get(extension_id, []):
+            data[extension_id].remove(key)
+            self._save_retained_skill_dirs(data)
 
     def _extension_owned_skill_names(
         self, skill_names: List[str], extension_id: str
@@ -2729,7 +2812,6 @@ class ExtensionManager:
         # validation failure doesn't leave the user with a half-uninstalled
         # extension (configs stranded in .backup/).
         did_remove = False
-        recreatable_skill_dirs: List[Path] = []
         if force and self.registry.is_installed(manifest.id):
             # Clear any stale backup from a previous remove so that only the
             # backup produced by the current remove() call is restored later.
@@ -2743,11 +2825,7 @@ class ExtensionManager:
                     shutil.rmtree(backup_config_dir)
                 elif backup_config_dir.exists():
                     backup_config_dir.unlink()
-                self._last_removed_owned_skill_dirs = []
                 did_remove = self.remove(manifest.id)
-                recreatable_skill_dirs = list(
-                    self._last_removed_owned_skill_dirs
-                )
             finally:
                 after_file_change(dest_dir)
                 after_file_change(backup_config_dir)
@@ -3280,7 +3358,6 @@ class ExtensionManager:
             # was used during project initialisation (feature parity).
             registered_skills = self._register_extension_skills(
                 manifest, dest_dir, link_outputs=link_commands,
-                recreatable_dirs=recreatable_skill_dirs,
                 previous_resource_hashes=resource_hashes,
                 resource_hashes=resource_hashes, overwrite_modified=force,
             )
@@ -3760,12 +3837,8 @@ class ExtensionManager:
         if metadata:
             self._remove_generic_artifact_paths(extension_id, metadata)
 
-        # Unregister agent skills. Keep the ownership-verified directories
-        # on the manager so a force reinstall (the update path) can let
-        # registration recreate a skill inside a directory this remove just
-        # verified and emptied of its SKILL.md, even when the user's own
-        # files keep the directory alive (#5381 review).
-        self._last_removed_owned_skill_dirs = self._unregister_extension_skills(
+        # Unregister agent skills
+        self._unregister_extension_skills(
             registered_skills,
             extension_id,
             generic_hashes=metadata.get("generic_artifact_hashes") if metadata else None,
