@@ -409,7 +409,7 @@ class FileHelper:
             entries.append(returned_parent / name)
         return tuple(entries)
 
-    def replace(self, source: Path | str, destination: Path | str) -> None:
+    def move_noreplace(self, source: Path | str, destination: Path | str) -> None:
         """Atomically move a staged file or directory without clobbering a destination."""
         source_path = self._path(source, follow_leaf=False)
         source_mode = self._entry_mode(source_path)

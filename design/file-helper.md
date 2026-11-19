@@ -231,7 +231,7 @@ descriptor-relative or change their documented concurrency limitations.
   being listed always undergoes the helper's normal path validation. Returned
   paths preserve the supplied absolute directory spelling; relative inputs
   are returned beneath the original spelling of `root`.
-- `replace(source, destination)` atomically moves a staged regular file or
+- `move_noreplace(source, destination)` atomically moves a staged regular file or
   directory on the same filesystem, without clobbering a destination that
   exists or appears after validation. It uses no-clobber rename on macOS,
   Linux, and Windows; if the primitive is unavailable, the operation fails

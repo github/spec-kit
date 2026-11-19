@@ -3862,7 +3862,7 @@ def test_native_windows_iterdir_rejects_junctions(root, junction, allow):
 
 
 @pytest.mark.parametrize("allow", [False, True])
-def test_native_windows_replace_rejects_junction_source_and_destination(root, junction, allow):
+def test_native_windows_move_noreplace_rejects_junction_source_and_destination(root, junction, allow):
     outside = root.parent / "outside"
     outside.mkdir()
     (outside / "keep").write_text("outside")
@@ -3876,7 +3876,7 @@ def test_native_windows_replace_rejects_junction_source_and_destination(root, ju
                 (root / "staged", alias / "new"),
             ):
                 with pytest.raises(UnsupportedPathError, match="reparse"):
-                    files.replace(source, destination)
+                    files.move_noreplace(source, destination)
         assert (root / "staged").read_text() == "staged"
         assert sorted(path.name for path in outside.iterdir()) == ["keep"]
         assert not (root / "new").exists()
@@ -3974,32 +3974,32 @@ def test_iterdir_rejects_missing_and_non_directory_entries(root):
         FileHelper(root).iterdir("file")
 
 
-def test_replace_file_and_directory_requires_absent_destination(root):
+def test_move_noreplace_file_and_directory_requires_absent_destination(root):
     (root / "staged.txt").write_text("replacement")
     staged_directory = root / "staged-directory"
     staged_directory.mkdir()
     (staged_directory / "payload").write_text("payload")
 
     files = FileHelper(root)
-    files.replace("staged.txt", "replacement.txt")
+    files.move_noreplace("staged.txt", "replacement.txt")
     assert (root / "replacement.txt").read_text() == "replacement"
     assert not (root / "staged.txt").exists()
 
-    files.replace("staged-directory", "installed")
+    files.move_noreplace("staged-directory", "installed")
     assert (root / "installed/payload").read_text() == "payload"
     assert not staged_directory.exists()
 
     (root / "existing").write_text("existing")
     (root / "new-source").write_text("new")
     with pytest.raises(FileExistsError):
-        files.replace("new-source", "existing")
+        files.move_noreplace("new-source", "existing")
 
 
 @pytest.mark.skipif(
     os.name != "nt" and sys.platform not in {"darwin", "linux"}, reason="Native no-clobber rename required"
 )
 @pytest.mark.parametrize("directory", [False, True])
-def test_replace_does_not_overwrite_destination_created_after_preflight(root, monkeypatch, directory):
+def test_move_noreplace_preserves_destination_created_after_preflight(root, monkeypatch, directory):
     with FileHelper(root) as files:
         source = files.root.resolve() / "staged"
         destination = source.with_name("destination")
@@ -4027,7 +4027,7 @@ def test_replace_does_not_overwrite_destination_created_after_preflight(root, mo
 
         monkeypatch.setattr(FileHelper, "_entry_mode", staticmethod(create_destination_after_probe))
         with pytest.raises(FileExistsError):
-            files.replace("staged", "destination")
+            files.move_noreplace("staged", "destination")
 
     assert misses == 2
     if directory:
@@ -4038,30 +4038,30 @@ def test_replace_does_not_overwrite_destination_created_after_preflight(root, mo
         assert source.read_text() == "staged"
 
 
-def test_replace_fails_without_native_no_clobber_support(root, monkeypatch):
+def test_move_noreplace_fails_without_native_no_clobber_support(root, monkeypatch):
     monkeypatch.setattr(_file_handles, "sys", SimpleNamespace(platform="unsupported"))
     monkeypatch.setattr(_file_handles, "os", SimpleNamespace(**(vars(os) | {"name": "posix"})))
     (root / "staged").write_text("staged")
 
     with FileHelper(root) as files:
         with pytest.raises(OSError) as exc:
-            files.replace("staged", "destination")
+            files.move_noreplace("staged", "destination")
 
     assert exc.value.errno == errno.ENOTSUP
     assert (root / "staged").read_text() == "staged"
     assert not (root / "destination").exists()
 
 
-def test_replace_rejects_symlink_source_and_missing_source(root, link):
+def test_move_noreplace_rejects_symlink_source_and_missing_source(root, link):
     target = root / "target"
     target.write_text("target")
     alias = link(root / "alias", target)
 
     with pytest.raises(UnsupportedPathError, match="filesystem object"):
-        FileHelper(root, allow_symlinks=True).replace("alias", "replacement")
+        FileHelper(root, allow_symlinks=True).move_noreplace("alias", "replacement")
 
     with pytest.raises(FileNotFoundError):
-        FileHelper(root).replace("missing", "replacement")
+        FileHelper(root).move_noreplace("missing", "replacement")
 
     assert alias.is_symlink()
     assert target.read_text() == "target"
