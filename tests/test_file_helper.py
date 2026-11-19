@@ -3915,6 +3915,22 @@ def test_native_windows_staging_cleanup_rejects_junction_and_preserves_body_erro
                 files.delete(staging)
 
 
+@pytest.mark.parametrize("spelling", ["relative", "alias", "canonical"])
+def test_enumeration_and_staging_preserve_the_supplied_root_spelling(root, link, spelling):
+    directory = root / "directory"
+    directory.mkdir()
+    (directory / "manifest").write_text("inside")
+    alias = link(root.parent / "alias", root)
+    with FileHelper(alias) as files:
+        parent = {"relative": "directory", "alias": alias / "directory", "canonical": directory.resolve()}[spelling]
+        expected = directory.resolve() if spelling == "canonical" else alias / "directory"
+        assert files.iterdir(parent) == (expected / "manifest",)
+        with files.temporary_directory(parent) as staged:
+            assert staged.parent == expected
+            files.create_text(staged / "payload", "staged")
+        assert not staged.exists()
+
+
 def test_iterdir_enumerates_direct_entries_deterministically(root):
     directory = root / "directory"
     directory.mkdir()

@@ -21,13 +21,17 @@ DIRECT_PATH_AND_FILE_METHODS = {
     "chown",
     "exists",
     "glob",
+    "group",
+    "hardlink_to",
     "is_dir",
     "is_file",
+    "is_mount",
     "is_symlink",
     "iterdir",
     "lstat",
     "mkdir",
     "open",
+    "owner",
     "read_bytes",
     "read_text",
     "readlink",
@@ -41,18 +45,22 @@ DIRECT_PATH_AND_FILE_METHODS = {
     "symlink_to",
     "touch",
     "unlink",
+    "walk",
     "write_bytes",
     "write_text",
 }
 
 DIRECT_MODULE_FUNCTIONS = {
     "builtins.open",
+    "glob.glob",
+    "glob.iglob",
     "io.open",
     "os.access",
     "os.chdir",
     "os.chmod",
     "os.chown",
     "os.fdopen",
+    "os.fwalk",
     "os.link",
     "os.listdir",
     "os.lstat",
@@ -60,6 +68,9 @@ DIRECT_MODULE_FUNCTIONS = {
     "os.mkdir",
     "os.open",
     "os.path.exists",
+    "os.path.getatime",
+    "os.path.getctime",
+    "os.path.getmtime",
     "os.path.getsize",
     "os.path.isfile",
     "os.path.isdir",
@@ -69,7 +80,9 @@ DIRECT_MODULE_FUNCTIONS = {
     "os.path.samefile",
     "os.readlink",
     "os.remove",
+    "os.removedirs",
     "os.rename",
+    "os.renames",
     "os.replace",
     "os.rmdir",
     "os.scandir",
@@ -85,8 +98,10 @@ DIRECT_MODULE_FUNCTIONS = {
     "shutil.copymode",
     "shutil.copystat",
     "shutil.copytree",
+    "shutil.make_archive",
     "shutil.move",
     "shutil.rmtree",
+    "shutil.unpack_archive",
     "tempfile.NamedTemporaryFile",
     "tempfile.SpooledTemporaryFile",
     "tempfile.TemporaryDirectory",
@@ -294,20 +309,40 @@ class _Calls(ast.NodeVisitor):
 
     visit_AsyncWith = visit_With
 
-    def _visit_function(
-        self, node: ast.FunctionDef | ast.AsyncFunctionDef, attributes: tuple[str, ...] = (),
-    ) -> tuple[str, ...]:
-        for expression in [*node.decorator_list, *node.args.defaults, *node.args.kw_defaults]:
+    def _parameters(self, args: ast.arguments) -> dict[str, str]:
+        for expression in [*args.defaults, *args.kw_defaults]:
             if expression is not None:
                 self.visit(expression)
-        self.symbols[node.name] = ""
-        outer = self.symbols
-        self.symbols = outer.copy()
-        args = node.args
+        bindings = {}
         for argument in [*args.posonlyargs, *args.args, *args.kwonlyargs, args.vararg, args.kwarg]:
             if argument is not None:
-                self.symbols[argument.arg] = self._annotation(argument.annotation)
-        positional = args.posonlyargs + args.args
+                if argument.annotation is not None:
+                    self.visit(argument.annotation)
+                bindings[argument.arg] = self._annotation(argument.annotation)
+        return bindings
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        parameters = self._parameters(node.args)
+        outer = self.symbols
+        self.symbols = outer | parameters
+        self.visit(node.body)
+        self.symbols = outer
+
+    def _signature(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, str]:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        parameters = self._parameters(node.args)
+        if node.returns is not None:
+            self.visit(node.returns)
+        return parameters
+
+    def _visit_function_body(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef, parameters: dict[str, str],
+        attributes: tuple[str, ...] = (),
+    ) -> tuple[str, ...]:
+        outer = self.symbols
+        self.symbols = outer | parameters
+        positional = node.args.posonlyargs + node.args.args
         receiver = ""
         if positional and not any(
             _root_name(decorator) in {"staticmethod", "classmethod", "builtins.staticmethod", "builtins.classmethod"}
@@ -325,29 +360,33 @@ class _Calls(ast.NodeVisitor):
         return known_paths
 
     def visit_FunctionDef(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
-        self._visit_function(node)
+        parameters = self._signature(node)
+        self.symbols[node.name] = ""
+        self._visit_function_body(node, parameters)
 
     visit_AsyncFunctionDef = visit_FunctionDef
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         outer = self.symbols
-        self.symbols = outer.copy()
         for expression in [*node.decorator_list, *node.bases, *node.keywords]:
             self.visit(expression)
+        self.symbols = outer.copy()
         methods = []
-        attributes: tuple[str, ...] = ()
         for statement in node.body:
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if statement.name == "__init__":
-                    attributes = self._visit_function(statement)
-                else:
-                    methods.append(statement)
+                methods.append((statement, self._signature(statement)))
+                self.symbols[statement.name] = ""
             else:
                 self.visit(statement)
-        for method in methods:
-            self._visit_function(method, attributes)
         self.symbols = outer
         outer[node.name] = ""
+        attributes: tuple[str, ...] = ()
+        for method, parameters in methods:
+            if method.name == "__init__":
+                attributes = self._visit_function_body(method, parameters)
+        for method, parameters in methods:
+            if method.name != "__init__":
+                self._visit_function_body(method, parameters, attributes)
 
     def visit_Call(self, call: ast.Call) -> None:
         symbol = self._symbol(call.func)

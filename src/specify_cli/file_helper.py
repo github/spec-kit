@@ -388,8 +388,10 @@ class FileHelper:
         self, path: Path | str, *, select: Callable[[str], bool] | None = None,
     ) -> tuple[Path, ...]:
         """Enumerate immediate entries, validating only names selected by the caller."""
-        destination = self._path(path)
+        requested = Path(path)
+        destination = self._path(requested)
         self._require_directory(destination)
+        returned_parent = requested if requested.is_absolute() else self.root / requested
         entries = []
         with os.scandir(destination) as iterator:
             names = sorted(entry.name for entry in iterator)
@@ -404,7 +406,7 @@ class FileHelper:
                 self._path(candidate)
             elif not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
                 raise UnsupportedPathError(f"Unsupported filesystem object: {candidate}")
-            entries.append(candidate)
+            entries.append(returned_parent / name)
         return tuple(entries)
 
     def replace(self, source: Path | str, destination: Path | str) -> None:
@@ -436,9 +438,11 @@ class FileHelper:
         """Create and clean up a staging directory beneath an existing in-root parent."""
         if any(character in prefix for character in "/\\:\0"):
             raise PathEscapeError(f"Temporary directory prefix must be a name prefix: {prefix!r}")
-        parent_path = self._path(parent)
+        requested = Path(parent)
+        parent_path = self._path(requested)
         self._require_directory(parent_path)
         staging = Path(tempfile.mkdtemp(prefix=prefix, dir=parent_path))
+        returned_parent = requested if requested.is_absolute() else self.root / requested
 
         def cleanup() -> None:
             try:
@@ -448,7 +452,7 @@ class FileHelper:
             self.delete(staging, recursive=True)
 
         try:
-            yield staging
+            yield returned_parent / staging.name
         except BaseException as body_error:
             try:
                 cleanup()

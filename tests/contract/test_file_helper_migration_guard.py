@@ -43,10 +43,55 @@ def test_guard_ignores_non_filesystem_method_names(expression):
         ("from os.path import samefile as same\nsame(path, other)", "os.path.samefile"),
         ("from pathlib import Path\nPath(path).readlink()", "file-path.readlink"),
         ("from pathlib import Path as LocalPath\nLocalPath(path).samefile(other)", "file-path.samefile"),
+        ("from pathlib import Path\nPath(path).hardlink_to(other)", "file-path.hardlink_to"),
+        ("from pathlib import Path\nPath(path).owner()", "file-path.owner"),
+        ("from pathlib import Path\nPath(path).group()", "file-path.group"),
+        ("from pathlib import Path\nPath(path).is_mount()", "file-path.is_mount"),
+        ("from pathlib import Path\nPath(path).walk()", "file-path.walk"),
+        ("import glob\nglob.glob(pattern)", "glob.glob"),
+        ("from glob import iglob as scan\nscan(pattern)", "glob.iglob"),
+        ("import os\nos.removedirs(path)", "os.removedirs"),
+        ("import os\nos.renames(path, other)", "os.renames"),
+        ("import os\nos.fwalk(path)", "os.fwalk"),
+        ("import shutil\nshutil.make_archive(path, 'zip')", "shutil.make_archive"),
+        ("import shutil\nshutil.unpack_archive(path)", "shutil.unpack_archive"),
+        ("import os\nos.path.getatime(path)", "os.path.getatime"),
+        ("import os\nos.path.getctime(path)", "os.path.getctime"),
+        ("import os\nos.path.getmtime(path)", "os.path.getmtime"),
     ],
 )
 def test_guard_detects_filesystem_probes_and_mutations(statement, expected):
     assert guard.scan_added_calls(statement, "src/specify_cli/domain.py", {2}) == [(2, expected)]
+
+
+def test_guard_evaluates_lambda_defaults_before_masking_body_parameters():
+    source = """from pathlib import Path
+path = Path('manifest')
+callback = lambda open, path=path.read_text(), /: (open('value'), path.replace('a', 'b'))
+callback = lambda *, open=open('manifest'): open('value')
+path.exists()
+open('manifest')
+"""
+    assert guard.scan_added_calls(source, "src/specify_cli/domain.py", {3, 4, 5, 6}) == [
+        (3, "file-path.read_text"), (4, "open"), (5, "file-path.exists"), (6, "open"),
+    ]
+
+
+def test_guard_uses_class_scope_for_method_signatures_but_not_bodies():
+    source = """from pathlib import Path
+class Reader:
+    LocalPath = Path
+    directory = Path('data')
+    def open(self):
+        pass
+    @decorate(directory.exists())
+    def read(self, file: LocalPath = directory / 'manifest', handler=open('value')):
+        directory.replace('a', 'b')
+        return file.read_text(), open('manifest').read()
+"""
+    assert guard.scan_added_calls(source, "src/specify_cli/domain.py", {7, 8, 9, 10}) == [
+        (7, "file-path.exists"), (10, "file-path.read_text"), (10, "open"),
+    ]
 
 
 @pytest.mark.parametrize("method", ["read_text", "exists"])

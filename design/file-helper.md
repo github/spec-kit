@@ -228,7 +228,9 @@ descriptor-relative or change their documented concurrency limitations.
   entries in deterministic name order. The optional caller-supplied predicate
   receives each bare name before its entry is inspected. Only included entries
   are validated, and omitting the predicate includes every entry. The directory
-  being listed always undergoes the helper's normal path validation.
+  being listed always undergoes the helper's normal path validation. Returned
+  paths preserve the supplied absolute directory spelling; relative inputs
+  are returned beneath the original spelling of `root`.
 - `replace(source, destination)` atomically moves a staged regular file or
   directory on the same filesystem, without clobbering a destination that
   exists or appears after validation. It uses no-clobber rename on macOS,
@@ -239,7 +241,8 @@ descriptor-relative or change their documented concurrency limitations.
 - `temporary_directory(parent, prefix="speckit-")` is an in-root staging
   context manager beneath an existing directory. `prefix` is a name fragment,
   not a path. If both the body and cleanup fail, the body exception propagates
-  with cleanup details attached as a note.
+  with cleanup details attached as a note. The yielded path uses the same
+  spelling rule as `iterdir`; cleanup uses the resolved staging location.
 - `read_bytes(path)` / `read_text(path, encoding="utf-8")` read regular files.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
   create files with existing parents. A no-follow `lstat` preflight rejects
