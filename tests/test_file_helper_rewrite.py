@@ -17,6 +17,10 @@ from specify_cli.file_helper import (
 
 
 REL = "parent/file"
+# What open(O_NOFOLLOW | O_DIRECTORY) of a symlink raises: Linux/macOS, FreeBSD, NetBSD.
+_NOFOLLOW_REFUSALS = {
+    errno.ELOOP, errno.ENOTDIR, errno.EMLINK, getattr(errno, "EFTYPE", errno.ELOOP),
+}
 
 
 def _symlinks_available(tmp_path):
@@ -159,7 +163,7 @@ def test_open_rewrite_refuses_a_parent_swapped_for_a_symlink(tmp_path, monkeypat
     with FileHelper(tmp_path) as files, pytest.raises(OSError) as raised:
         with files.open_rewrite(REL) as fd:
             os.write(fd, b"written")
-    assert raised.value.errno in (errno.ELOOP, errno.ENOTDIR)
+    assert raised.value.errno in _NOFOLLOW_REFUSALS
     assert (outside / "file").read_bytes() == b"outside"
 
 
@@ -250,7 +254,7 @@ def test_create_private_bytes_refuses_a_parent_swapped_for_a_symlink(tmp_path, m
     monkeypatch.setattr(FileHelper, "_creation_directory", swap_first)
     with FileHelper(tmp_path) as files, pytest.raises(OSError) as raised:
         files.create_private_bytes(REL, b"secret")
-    assert raised.value.errno in (errno.ELOOP, errno.ENOTDIR)
+    assert raised.value.errno in _NOFOLLOW_REFUSALS
     assert not list(outside.iterdir())
 
 
@@ -528,7 +532,7 @@ def test_stat_is_not_redirected_by_a_parent_swapped_after_resolution(tmp_path, m
     monkeypatch.setattr(FileHelper, "_posix_directory", swap_first)
     with FileHelper(tmp_path) as files, pytest.raises(OSError) as raised:
         files.stat(REL)
-    assert raised.value.errno in (errno.ELOOP, errno.ENOTDIR)
+    assert raised.value.errno in _NOFOLLOW_REFUSALS
 
 
 def test_stat_of_the_root(tmp_path):
@@ -557,7 +561,7 @@ def test_create_private_bytes_refuses_a_directory_with_inheritable_acl_entries(t
     ).stdout
     if "everyone" not in inherited:
         pytest.skip("filesystem did not apply the inheritable ACE")
-    with FileHelper(tmp_path) as files, pytest.raises(PermissionError, match="inherited ACL"):
+    with FileHelper(tmp_path) as files, pytest.raises(PermissionError, match="inheritable ACL entries allow"):
         files.create_private_bytes(REL, b"secret")
     assert not (tmp_path / REL).exists()
 
@@ -670,3 +674,90 @@ def test_posix_create_private_bytes_keeps_the_write_error_when_close_also_fails(
     monkeypatch.undo()
     assert any("Could not close" in note for note in raised.value.__notes__)
     assert not (tmp_path / REL).exists()
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS extended ACLs")
+def test_create_private_bytes_accepts_inherited_deny_only_acl_entries(tmp_path):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    subprocess.run(
+        ["chmod", "+a", "everyone deny delete,file_inherit", str(parent)],
+        check=True, capture_output=True,
+    )
+    try:
+        with FileHelper(tmp_path) as files:
+            files.create_private_bytes(REL, b"secret")
+        assert (tmp_path / REL).read_bytes() == b"secret"
+    finally:
+        subprocess.run(["chmod", "-RN", str(parent)], check=False, capture_output=True)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS F_FULLFSYNC")
+@pytest.mark.parametrize(("code", "raises"), [(errno.ENOTSUP, False), (errno.EINVAL, False),
+                                               (errno.EIO, True)])
+def test_create_private_bytes_raises_only_real_full_fsync_errors(tmp_path, monkeypatch, code, raises):
+    import fcntl
+
+    (tmp_path / "parent").mkdir()
+    real_fcntl = fcntl.fcntl
+
+    def fail(fd, command, *args):
+        if command == fcntl.F_FULLFSYNC and stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(code, os.strerror(code))
+        return real_fcntl(fd, command, *args)
+
+    monkeypatch.setattr(fcntl, "fcntl", fail)
+    with FileHelper(tmp_path) as files:
+        if raises:
+            with pytest.raises(OSError) as raised:
+                files.create_private_bytes(REL, b"content")
+            assert raised.value.errno == code
+        else:
+            files.create_private_bytes(REL, b"content")
+    monkeypatch.undo()
+    assert (tmp_path / REL).exists() is not raises
+
+
+def test_windows_create_private_notes_a_close_failure_after_a_complete_write(
+    tmp_path, monkeypatch
+):
+    # Drives the Windows branch with a real descriptor so it runs everywhere.
+    from specify_cli import file_helper
+
+    target = tmp_path / "file"
+    real_close = os.close
+    opened: list[int] = []
+
+    def create(path):
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        opened.append(fd)
+        return fd
+
+    def close(fd):
+        real_close(fd)
+        if fd in opened:
+            opened.remove(fd)
+            raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(file_helper, "_windows_create_private_fd", create)
+    monkeypatch.setattr(os, "close", close)
+    with pytest.raises(OSError, match="Input/output error") as raised:
+        FileHelper._windows_create_private(target, b"content")
+    monkeypatch.undo()
+    assert any("may need deleting" in note for note in raised.value.__notes__)
+    assert target.read_bytes() == b"content"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="needs Windows junctions")
+def test_stat_refuses_a_junctioned_parent(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "file").write_bytes(b"outside")
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(project / "parent"), str(outside)],
+        check=True, capture_output=True,
+    )
+    with FileHelper(project) as files, pytest.raises(UnsupportedPathError):
+        files.stat(REL)

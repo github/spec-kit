@@ -64,21 +64,23 @@ def _require_owner_only(fd: int, info: os.stat_result, name: str) -> None:
             f"Filesystem did not create {name} owner-only "
             f"(mode {stat.S_IMODE(info.st_mode):o})",
         )
-    if sys.platform == "darwin" and _has_extended_acl(fd):
+    if sys.platform == "darwin" and _has_inherited_allow_entry(fd):
         raise PermissionError(
             errno.EACCES,
-            f"Refusing to write {name}: its directory's inherited ACL entries grant "
-            "access to others",
+            f"Refusing to write {name}: its directory's inheritable ACL entries allow "
+            "others access",
         )
 
 
-def _has_extended_acl(fd: int) -> bool:
+def _has_inherited_allow_entry(fd: int) -> bool:
+    """Whether a macOS file's ACL has an allow entry; deny entries grant nothing."""
     import ctypes
 
     libc = ctypes.CDLL(None, use_errno=True)
     libc.acl_get_fd_np.restype = ctypes.c_void_p
     libc.acl_get_fd_np.argtypes = [ctypes.c_int, ctypes.c_int]
     libc.acl_get_entry.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)]
+    libc.acl_get_tag_type.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
     libc.acl_free.argtypes = [ctypes.c_void_p]
     acl = libc.acl_get_fd_np(fd, 0x00000100)  # ACL_TYPE_EXTENDED
     if not acl:
@@ -89,7 +91,16 @@ def _has_extended_acl(fd: int) -> bool:
         raise OSError(code, f"Could not read ACL entries: {os.strerror(code)}")
     try:
         entry = ctypes.c_void_p()
-        return libc.acl_get_entry(acl, 0, ctypes.byref(entry)) == 0  # ACL_FIRST_ENTRY
+        tag = ctypes.c_int()
+        which = 0  # ACL_FIRST_ENTRY, then ACL_NEXT_ENTRY
+        while libc.acl_get_entry(acl, which, ctypes.byref(entry)) == 0:
+            which = -1
+            if libc.acl_get_tag_type(entry, ctypes.byref(tag)) != 0:
+                code = ctypes.get_errno()
+                raise OSError(code, f"Could not read ACL entries: {os.strerror(code)}")
+            if tag.value == 1:  # ACL_EXTENDED_ALLOW
+                return True
+        return False
     finally:
         libc.acl_free(acl)
 
@@ -102,8 +113,10 @@ def _full_fsync(fd: int) -> None:
 
         try:
             fcntl.fcntl(fd, fcntl.F_FULLFSYNC)
-        except OSError:
-            pass  # Not every filesystem supports it; fsync has already run.
+        except OSError as error:
+            # Not every filesystem supports it, and fsync has already run.
+            if error.errno not in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL, errno.ENOTTY):
+                raise
 
 
 def _write_all(fd: int, content: bytes) -> None:
@@ -476,9 +489,10 @@ class FileHelper:
                         Path(part), directory=True, parent=parent, traverse=True,
                     ))
                 return os.stat(destination, follow_symlinks=False)
-        with self._posix_directory(
-            destination.parent, unsupported_message="Anchored stat is unsupported on this platform",
-        ) as directory:
+        unsupported = "Anchored stat is unsupported on this platform"
+        if os.stat not in os.supports_dir_fd or os.stat not in os.supports_follow_symlinks:
+            raise OSError(errno.ENOTSUP, unsupported)
+        with self._posix_directory(destination.parent, unsupported_message=unsupported) as directory:
             return os.stat(destination.name, dir_fd=directory, follow_symlinks=False)
 
     def mkdir(

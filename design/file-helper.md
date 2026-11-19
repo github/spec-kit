@@ -248,8 +248,9 @@ descriptor-relative or change their documented concurrency limitations.
   walk: allowed contained links, including a leaf link, are resolved, and the
   resolved entry itself is not followed. The entry is queried relative to the
   anchored parent hierarchy, so a parent swapped after resolution cannot
-  redirect it. Missing entries raise `FileNotFoundError`. It is a point-in-time query, not an anchor: callers that
-  act on the result must re-check identity on the descriptor they act through.
+  redirect it. Missing entries raise `FileNotFoundError`. It is a
+  point-in-time query, not an anchor: callers that act on the result must
+  re-check identity on the descriptor they act through.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
   create files with existing parents. A no-follow `lstat` preflight rejects
   existing leaves, including dangling links, before opening the destination.
@@ -279,11 +280,13 @@ descriptor-relative or change their documented concurrency limitations.
   relative to the anchored parent. Before any content is written, it refuses
   (removing the still-empty file) when the file came out with group or other
   mode bits, which means the filesystem ignored the mode, or, on macOS, with
-  ACL entries inherited from the parent, which a directory-relative create
-  cannot withhold. Linux default ACLs are bounded by the mask the mode sets.
-  NFSv4-style inherited ACLs on other systems are not inspected. It writes and
-  `fsync`s (adding `F_FULLFSYNC` on macOS) through that one descriptor, then flushes the parent best effort through a readable descriptor
-  opened from the anchor (search-only and `O_PATH` anchors reject `fsync`); a
+  inherited ACL allow entries, which a directory-relative create cannot
+  withhold (inherited deny entries are accepted). Linux default ACLs are
+  bounded by the mask the mode sets. NFSv4-style inherited ACLs on other
+  systems are not inspected. It writes and `fsync`s through that one
+  descriptor, adding `F_FULLFSYNC` on macOS where the filesystem supports it,
+  then flushes the parent best effort through a readable descriptor opened
+  from the anchor (search-only and `O_PATH` anchors reject `fsync`); a
   parent that cannot be flushed does not fail the call. Windows creates the leaf
   with `CREATE_NEW`, no sharing, `FILE_FLAG_OPEN_REPARSE_POINT`, and a security
   descriptor naming the current user as owner with a protected DACL granting
