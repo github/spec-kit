@@ -156,9 +156,10 @@ def test_open_rewrite_refuses_a_parent_swapped_for_a_symlink(tmp_path, monkeypat
             yield fd
 
     monkeypatch.setattr(FileHelper, "_overwrite_descriptor", swap_first)
-    with FileHelper(tmp_path) as files, pytest.raises(OSError):
+    with FileHelper(tmp_path) as files, pytest.raises(OSError) as raised:
         with files.open_rewrite(REL) as fd:
             os.write(fd, b"written")
+    assert raised.value.errno in (errno.ELOOP, errno.ENOTDIR)
     assert (outside / "file").read_bytes() == b"outside"
 
 
@@ -247,8 +248,9 @@ def test_create_private_bytes_refuses_a_parent_swapped_for_a_symlink(tmp_path, m
             yield anchored
 
     monkeypatch.setattr(FileHelper, "_creation_directory", swap_first)
-    with FileHelper(tmp_path) as files, pytest.raises(OSError):
+    with FileHelper(tmp_path) as files, pytest.raises(OSError) as raised:
         files.create_private_bytes(REL, b"secret")
+    assert raised.value.errno in (errno.ELOOP, errno.ENOTDIR)
     assert not list(outside.iterdir())
 
 
@@ -514,18 +516,19 @@ def test_stat_is_not_redirected_by_a_parent_swapped_after_resolution(tmp_path, m
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "file").write_bytes(b"outside, longer")
-    original = FileHelper._creation_directory
+    original = FileHelper._posix_directory
 
     @contextmanager
-    def swap_first(self, directory):
+    def swap_first(self, directory, **kwargs):
         path.parent.rename(tmp_path / "moved")
         path.parent.symlink_to(outside, target_is_directory=True)
-        with original(self, directory) as anchored:
+        with original(self, directory, **kwargs) as anchored:
             yield anchored
 
-    monkeypatch.setattr(FileHelper, "_creation_directory", swap_first)
-    with FileHelper(tmp_path) as files, pytest.raises(OSError):
+    monkeypatch.setattr(FileHelper, "_posix_directory", swap_first)
+    with FileHelper(tmp_path) as files, pytest.raises(OSError) as raised:
         files.stat(REL)
+    assert raised.value.errno in (errno.ELOOP, errno.ENOTDIR)
 
 
 def test_stat_of_the_root(tmp_path):
@@ -541,7 +544,7 @@ def test_open_rewrite_yields_a_blocking_descriptor(tmp_path):
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS extended ACLs")
-def test_create_private_bytes_drops_acl_entries_inherited_from_the_parent(tmp_path):
+def test_create_private_bytes_refuses_a_directory_with_inheritable_acl_entries(tmp_path):
     parent = tmp_path / "parent"
     parent.mkdir()
     subprocess.run(
@@ -554,13 +557,29 @@ def test_create_private_bytes_drops_acl_entries_inherited_from_the_parent(tmp_pa
     ).stdout
     if "everyone" not in inherited:
         pytest.skip("filesystem did not apply the inheritable ACE")
-    with FileHelper(tmp_path) as files:
+    with FileHelper(tmp_path) as files, pytest.raises(PermissionError, match="inherited ACL"):
         files.create_private_bytes(REL, b"secret")
-    listing = subprocess.run(
-        ["ls", "-le", str(tmp_path / REL)], check=True, capture_output=True, text=True,
-    ).stdout
-    assert "everyone" not in listing
-    assert (tmp_path / REL).read_bytes() == b"secret"
+    assert not (tmp_path / REL).exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
+def test_create_private_bytes_refuses_a_filesystem_that_ignores_the_mode(tmp_path, monkeypatch):
+    (tmp_path / "parent").mkdir()
+    real_fstat = os.fstat
+
+    def fstat(fd):
+        info = real_fstat(fd)
+        if stat.S_ISREG(info.st_mode):
+            values = list(info)
+            values[0] = stat.S_IFREG | 0o777
+            return os.stat_result(values)
+        return info
+
+    monkeypatch.setattr(os, "fstat", fstat)
+    with FileHelper(tmp_path) as files, pytest.raises(PermissionError, match="owner-only"):
+        files.create_private_bytes(REL, b"secret")
+    monkeypatch.undo()
+    assert not (tmp_path / REL).exists()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")

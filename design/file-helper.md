@@ -276,10 +276,13 @@ descriptor-relative or change their documented concurrency limitations.
   current user can open, with existing parents, and flushes it before
   returning. It shares `create_bytes`'s policy walk, no-follow `lstat`
   preflight and anchored parent hierarchy. POSIX creates the leaf with `0o600`
-  relative to the anchored parent; on macOS it then clears any extended ACL
-  entries a parent's inheritable ACEs added (Linux default ACLs are bounded by
-  the mask the mode sets). It writes and `fsync`s through that one
-  descriptor, then flushes the parent best effort through a readable descriptor
+  relative to the anchored parent. Before any content is written, it refuses
+  (removing the still-empty file) when the file came out with group or other
+  mode bits, which means the filesystem ignored the mode, or, on macOS, with
+  ACL entries inherited from the parent, which a directory-relative create
+  cannot withhold. Linux default ACLs are bounded by the mask the mode sets.
+  NFSv4-style inherited ACLs on other systems are not inspected. It writes and
+  `fsync`s (adding `F_FULLFSYNC` on macOS) through that one descriptor, then flushes the parent best effort through a readable descriptor
   opened from the anchor (search-only and `O_PATH` anchors reject `fsync`); a
   parent that cannot be flushed does not fail the call. Windows creates the leaf
   with `CREATE_NEW`, no sharing, `FILE_FLAG_OPEN_REPARSE_POINT`, and a security
@@ -287,9 +290,11 @@ descriptor-relative or change their documented concurrency limitations.
   only that user full access, so the content is never readable under an
   inherited ACL. A failure after creation removes only the file this call
   created: POSIX unlinks the name only while it still has the created file's
-  identity (an identity never read leaves the name in place), and Windows marks
-  the open handle for deletion. If that removal or the close fails, the original
-  exception is kept and carries a note naming the file.
+  identity, checked immediately before the unlink rather than atomically with
+  it (an identity never read leaves the name in place), and Windows marks the
+  open handle for deletion. If that removal or the close fails, the original
+  exception is kept and carries a note naming the file. A Windows close failure
+  after a complete write leaves the file and says so in the note.
 - `write_bytes(path, content, mode=0o644)` / `write_text(...)` atomically
   create or update files with existing parents. Text variants also accept
   `encoding="utf-8"`. Replacement files use the supplied mode; metadata and
