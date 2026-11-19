@@ -61,26 +61,30 @@ def preset_set_priority(
     manager.registry.update(preset_id, {"priority": priority})
 
     if is_enabled:
-        # Native-skill integrations are deliberately excluded from preset
-        # priority reconciliation. Their SKILL.md files are user-facing native
-        # artifacts and are not rewritten by this command.
-        from .. import load_init_options
-
-        init_options = load_init_options(project_root)
-        active_agent = (
-            init_options.get("ai") if isinstance(init_options, dict) else None
-        )
-        from ..agents import CommandRegistrar
-
-        registrar = CommandRegistrar(project_root, include_generic=False)
-        active_config = registrar.AGENT_CONFIGS.get(active_agent, {})
-        is_native_skill_integration = (
-            active_config.get("extension") == "/SKILL.md"
-        )
-
-        # Command-backed integrations can refresh their generated commands and
-        # supplemental skills through the existing renderers.
         try:
+            # Native-skill integrations are deliberately excluded from preset
+            # priority reconciliation. Their SKILL.md files are user-facing
+            # native artifacts and are not rewritten by this command.
+            from .. import load_init_options
+
+            init_options = load_init_options(project_root)
+            active_agent = (
+                init_options.get("ai") if isinstance(init_options, dict) else None
+            )
+            from ..agents import CommandRegistrar
+
+            registrar = CommandRegistrar(project_root, include_generic=False)
+            active_config = (
+                registrar.AGENT_CONFIGS.get(active_agent, {})
+                if isinstance(active_agent, str)
+                else {}
+            )
+            is_native_skill_integration = (
+                active_config.get("extension") == "/SKILL.md"
+            )
+
+            # Command-backed integrations can refresh their generated commands
+            # and supplemental skills through the existing renderers.
             if not is_native_skill_integration:
                 from ._manifest import PresetManifest
 
