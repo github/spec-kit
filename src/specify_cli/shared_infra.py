@@ -9,7 +9,6 @@ import logging
 import os
 import re
 import stat
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -191,6 +190,8 @@ def _ensure_safe_shared_directory(
     context: str = "shared infrastructure directory",
 ) -> None:
     """Create a shared infra directory without following symlinked parents."""
+    from .integrations._file_changes import directory_created
+
     root = project_path.resolve()
     rel = _shared_relative_path(project_path, directory)
     current = project_path
@@ -211,6 +212,7 @@ def _ensure_safe_shared_directory(
         if not create:
             raise ValueError(f"{context.capitalize()} does not exist: {label}")
         current.mkdir()
+        directory_created(current)
         if current.is_symlink():
             raise SymlinkedSharedPathError(f"Refusing to use symlinked {context}: {label}")
         try:
@@ -318,6 +320,26 @@ def _ensure_safe_shared_destination(
             raise ValueError(f"Shared infrastructure destination escapes project root: {label}") from None
 
 
+def _shared_script_mode(src_path: Path, content: bytes) -> int:
+    """Return the mode a shared script is written with.
+
+    Packaged scripts are 0644. A POSIX shell script that starts with a shebang
+    and no execute bit yet gets one for each class that can read it (always for
+    the owner), the rule ``ensure_executable_scripts`` applies, so a refresh that
+    rewrites it leaves it runnable without a separate chmod pass. A script that
+    already has an execute bit keeps its mode.
+    """
+    mode = src_path.stat().st_mode & 0o777
+    if (
+        os.name != "nt"
+        and src_path.suffix == ".sh"
+        and content.startswith(b"#!")
+        and not mode & 0o111
+    ):
+        mode |= ((mode & 0o444) >> 2) | 0o100
+    return mode
+
+
 def _write_shared_text(
     project_path: Path,
     dest: Path,
@@ -333,8 +355,8 @@ def _write_shared_text(
     does not widen it. A new file gets ``new_file_mode`` when the caller
     knows the bits of the file it stands in for, otherwise the default
     creation mode under the process umask, as an ordinary write would.
-    Content given explicit bits is written into a 0600 temp file, so it is
-    never readable more widely than that before the final mode is applied.
+    Either way the content is never readable under a wider mode than the
+    one it ends up with.
     """
     mode: int | None = 0o644
     if preserve_mode:
@@ -355,34 +377,28 @@ def _write_shared_bytes(
     *,
     mode: int | None = 0o644,
 ) -> None:
-    """Atomically replace ``dest`` with ``content``.
+    """Atomically replace ``dest`` with ``content`` (see ``atomic_write_bytes``).
 
-    ``mode`` is the permission bits of the result. ``None`` leaves them to
-    the process umask: the temp file is then created exclusively with 0666,
-    so the kernel applies the umask and no mode is set afterwards.
+    ``mode`` is the exact permission bits of the result. ``None`` leaves
+    them to the process umask: the file is created with 0666, so the kernel
+    applies the umask, and no mode is set afterwards.
     """
     _ensure_safe_shared_destination(project_path, dest)
-    from .integrations._file_changes import after_file_change, before_file_change
+    from .integrations._file_changes import (
+        after_file_change,
+        atomic_write_bytes,
+        before_file_change,
+    )
 
     before_file_change(dest)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
-    temp_path = Path(temp_name)
-    try:
-        if mode is None:
-            os.close(fd)
-            temp_path.unlink()
-            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-            flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
-            fd = os.open(temp_path, flags, 0o666)
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(content)
-        if mode is not None:
-            temp_path.chmod(mode)
-        _ensure_safe_shared_destination(project_path, dest)
-        os.replace(temp_path, dest)
-        after_file_change(dest)
-    finally:
-        temp_path.unlink(missing_ok=True)
+    atomic_write_bytes(
+        dest,
+        content,
+        0o666 if mode is None else mode,
+        exact=mode is not None,
+        before_replace=lambda: _ensure_safe_shared_destination(project_path, dest),
+    )
+    after_file_change(dest)
 
 
 _BASH_FORMAT_COMMAND_RE = re.compile(
@@ -624,7 +640,11 @@ def install_shared_infra(
                 dest_variant = dest_scripts / variant_dir
                 if not _ensure_or_bucket_dir(dest_variant):
                     continue
-                for src_path in variant_src.rglob("*"):
+                section_engine = Path(__file__).with_name("markdown_sections.py")
+                sources = list(variant_src.rglob("*"))
+                if any(path.name in ("common.sh", "common.ps1", "common.py") for path in sources):
+                    sources.append(section_engine)
+                for src_path in sources:
                     if not src_path.is_file():
                         continue
                     # Python bytecode caches are local artifacts, not
@@ -636,7 +656,10 @@ def install_shared_infra(
                     # stale-cleanup cannot treat its managed scripts as obsolete.
                     scanned_variant_dirs.add(variant_dir)
 
-                    rel_path = src_path.relative_to(variant_src)
+                    rel_path = (
+                        Path(src_path.name) if src_path == section_engine
+                        else src_path.relative_to(variant_src)
+                    )
                     dst_path = dest_variant / rel_path
                     rel = dst_path.relative_to(project_path).as_posix()
                     seen_rels.add(rel)
@@ -676,13 +699,9 @@ def install_shared_infra(
                     content = _resolve_dynamic_command_refs(
                         content, invoke_separator, invoke_prefix
                     )
+                    data = content.encode("utf-8")
                     planned_copies.append(
-                        (
-                            dst_path,
-                            rel,
-                            content.encode("utf-8"),
-                            src_path.stat().st_mode & 0o777,
-                        )
+                        (dst_path, rel, data, _shared_script_mode(src_path, data))
                     )
 
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)

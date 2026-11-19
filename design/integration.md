@@ -148,7 +148,9 @@ Bundled extension commands do not yet use this core-template script routing.
 `__AGENT__` and command references are resolved during rendering, not by
 adding per-agent wrapper scripts. For `generic`, extension registration
 resolves the persisted `--commands-dir` rather than the static registry
-placeholder; `--skills` emits skills into that same directory.
+placeholder; `--skills` emits skills into that same directory. Extension
+commands with declared resources copy those files alongside their rendered
+`SKILL.md` outputs, not into other command formats.
 
 ## External adapter package contract
 
@@ -231,6 +233,12 @@ use the same resolved configuration.
 An optional `registrar_config.legacy_dir` must be a non-empty canonical
 project-relative directory under the same reserved-root and symlink restrictions;
 home-relative destinations are not supported for external adapters.
+A built-in integration whose skills live in the user's home directory declares
+`registrar_config.home_scoped = True` (an optional boolean, default false). It
+is the only signal extension lifecycle code uses to treat that integration's
+resolved skills directory as a permitted home location, for example when
+removing recorded skill resources; the engine does not infer home scope from
+path strings. External adapters cannot set it.
 An adapter's primary root and optional legacy destination must not overlap,
 regardless of whether it supports multi-install. Multi-install-safe adapters
 also cannot overlap another integration's agent roots or legacy destinations.
@@ -346,6 +354,25 @@ after their registries and agent outputs have been rolled back.
 Failed setup or durable package commit restores those
 changes, not entire agent directories or all of `.specify`. Independent workflow
 progress and unowned user files are left untouched.
+A built-in `upgrade`, or a built-in `init` into an existing directory, with no
+external transaction journals the same way until its manifest and integration
+state are saved, because `setup()` writes generated files, in place where they
+exist, before the new manifest does. The upgrade journal starts before the first
+shared-infrastructure refresh; the init journal starts at `setup()` and ends at
+the `integration.json` write, so init's later shared-infrastructure install and
+optional steps run after that commit, as before. Both journals' scopes are
+`.specify` and the integration's own output. They take no project lock and read
+no other integration's state; when the journal cannot cover the operation (a
+symlinked or unsafe scope, an unreadable directory), it runs unjournalled as
+before rather than failing. Extension and preset re-registration runs after that
+commit, as best effort. A failed `init` into a new directory still removes the
+directory instead.
+Rollback also removes directories the operation created through
+`make_directories()` and that are still empty, such as an output directory
+`setup()` created before failing. It never removes a file that way, and it
+leaves alone an empty directory that appeared from elsewhere during the
+operation. A third-party `setup()` that calls `mkdir()` directly can leave an
+empty directory behind after a failure.
 While the lifecycle journal is active, install/switch failure handlers defer
 cleanup to it rather than forcing teardown or rewriting fallback state first.
 This preserves pending-file conflicts and the original directory inventory.

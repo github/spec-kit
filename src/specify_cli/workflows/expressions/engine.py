@@ -48,7 +48,7 @@ from lark import Lark, Token, Transformer_NonRecursive, Tree, v_args
 from lark.exceptions import UnexpectedCharacters, UnexpectedInput, UnexpectedToken, VisitError
 
 from . import namespace
-from .filters import FILTER_TABLE, _EXPECTED_FILTERS
+from .filters import FILTER_TABLE, _expected_filters, call_form_ok
 from .namespace import _resolve_dot_path
 from .operators import _safe_compare, _safe_equals, _safe_membership
 from .template import (
@@ -368,9 +368,9 @@ def _apply_filter(
     evaluated, so an unknown or misused filter is reported as such even when
     an argument would itself fail. The diagnostics walk the parse tree for
     argument leaves, so they do not need the arguments evaluated first. The
-    error wording comes from ``FILTER_TABLE`` and ``_EXPECTED_FILTERS``: the
-    same table the message lists, so adding a filter cannot leave the two
-    disagreeing.
+    error wording comes from the live ``FILTER_TABLE`` through
+    ``_expected_filters()``: the same table the message lists, so adding a
+    filter cannot leave the two disagreeing.
     """
     _, name, arg_nodes, has_parens = filt
     display = f"{name}(...)" if has_parens else name
@@ -378,25 +378,22 @@ def _apply_filter(
     spec = FILTER_TABLE.get(name)
     if spec is None:
         raise ValueError(
-            f"unknown filter '{name}': {_EXPECTED_FILTERS} (got '| {display}')"
+            f"unknown filter '{name}': {_expected_filters()} (got '| {display}')"
         )
-    if not spec.argument:
+    if has_parens and spec.max_args == 0:
         # A zero-argument filter tolerates no parentheses and no trailing
         # tokens; `from_json()` and `from_json('x')` are the same mistake.
-        if has_parens:
-            raise ValueError(
-                f"{name}: expected '| {name}' with no arguments or trailing "
-                f"tokens, got '| {display}'"
-            )
-        return spec.function(value)
-    if has_parens and len(arg_nodes) == 1:
-        return spec.function(value, _eval(arg_nodes[0], namespace_))
-    if not has_parens and spec.bare:
-        return spec.function(value)
-    raise ValueError(
-        f"filter '{name}' used in an unsupported form (got '| {display}'): "
-        f"{_EXPECTED_FILTERS}"
-    )
+        raise ValueError(
+            f"{name}: expected '| {name}' with no arguments or trailing "
+            f"tokens, got '| {display}'"
+        )
+    if not call_form_ok(spec, len(arg_nodes), has_parens):
+        raise ValueError(
+            f"filter '{name}' used in an unsupported form (got '| {display}'): "
+            f"{_expected_filters()}"
+        )
+    evaluated_args = [_eval(arg, namespace_) for arg in arg_nodes]
+    return spec.function(value, *evaluated_args)
 
 
 def _eval(node: Any, namespace_: dict[str, Any]) -> Any:
@@ -580,13 +577,10 @@ def _check_filter(filt: tuple[str, str, tuple[Any, ...], bool]) -> str | None:
     spec = FILTER_TABLE.get(name)
     if spec is None:
         return f"unknown filter '{name}'"
-    if not spec.argument:
-        if has_parens:
-            return f"{name}: expected '| {name}' with no arguments or trailing tokens"
-        return None
-    if has_parens and len(args) == 1:
-        return None
-    if not has_parens and spec.bare:
+    if has_parens and spec.max_args == 0:
+        # Same wording as the evaluator's zero-argument branch in `_apply_filter`.
+        return f"{name}: expected '| {name}' with no arguments or trailing tokens"
+    if call_form_ok(spec, len(args), has_parens):
         return None
     return f"filter '{name}' used in an unsupported form"
 

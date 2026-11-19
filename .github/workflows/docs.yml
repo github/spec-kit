@@ -7,6 +7,8 @@ on:
     branches: ["main"]
     paths:
       - 'docs/**'
+      - 'presets/catalog.community.json'
+      - '.github/workflows/docs.yml'
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -41,6 +43,11 @@ jobs:
 
       - name: Setup DocFX
         run: dotnet tool install -g docfx
+
+      - name: Generate community preset documentation
+        run: python3 docs/generate_presets.py --fetch-stars
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Build with DocFX
         run: |

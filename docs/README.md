@@ -12,14 +12,34 @@ To build the documentation locally:
    dotnet tool install -g docfx
    ```
 
-2. Build the documentation:
+2. Generate the community preset directory from the local catalog:
+
+   ```bash
+   python3 docs/generate_presets.py --fetch-stars
+   ```
+
+3. Build the documentation:
 
    ```bash
    cd docs
    docfx docfx.json --serve
    ```
 
-3. Open your browser to `http://localhost:8080` to view the documentation.
+4. Open your browser to `http://localhost:8080` to view the documentation.
+
+Run the generator again after editing `presets/catalog.community.json`.
+It creates the ignored `_generated/preset-directory.md` include and
+`community/presets/*.md` detail pages, removing pages for deleted entries.
+Do not edit these generated files. The directory uses only catalog metadata:
+building it does not fetch or execute third-party preset content. With
+`--fetch-stars`, it reads star counts from the GitHub API once per repository.
+Set `GH_TOKEN` or `GITHUB_TOKEN` for authenticated API limits; the deployment
+workflow uses its repository token. Counts reflect the last build,
+and shared repositories have the same count. Failed lookups produce warnings
+and show "Stars unavailable", never an invented zero. Omit `--fetch-stars`
+for an offline build with unavailable counts. Its search, tag,
+and sort controls enhance a complete static listing, which remains readable
+without JavaScript.
 
 ## Structure
 
@@ -106,4 +126,9 @@ the site homepage. Process command references and authentication remain under
 
 ## Deployment
 
-Documentation is automatically built and deployed to GitHub Pages when changes are pushed to the `main` branch. The workflow is defined in `.github/workflows/docs.yml`.
+Documentation, community preset catalog, and docs workflow changes on the
+upstream `main` branch trigger the normal GitHub Pages deployment. Each build
+generates the preset directory and detail pages and refreshes repository star
+counts before running DocFX. Manual runs use the same path; there is no separate
+weekly schedule. The workflow is defined in `.github/workflows/docs.yml` and
+runs only in the upstream repository.

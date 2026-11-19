@@ -1,5 +1,6 @@
 """Tests for the integration package's catalog domain API."""
 
+import io
 import json
 
 import pytest
@@ -91,9 +92,10 @@ class TestCatalogURLValidation:
         assert "(got a URL with no scheme)" in str(excinfo.value)
         assert "got ://" not in str(excinfo.value)
 
-    def test_http_localhost_allowed(self):
-        IntegrationCatalog._validate_catalog_url("http://localhost:8080/catalog.json")
-        IntegrationCatalog._validate_catalog_url("http://127.0.0.1/catalog.json")
+    @pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+    def test_http_localhost_rejected(self, host):
+        with pytest.raises(IntegrationCatalogError, match="HTTPS"):
+            IntegrationCatalog._validate_catalog_url(f"http://{host}:8080/catalog.json")
 
     def test_missing_host_rejected(self):
         with pytest.raises(IntegrationCatalogError, match="valid URL"):
@@ -396,6 +398,44 @@ class TestCatalogFetch:
 
         with pytest.raises(IntegrationCatalogError, match="exceeds maximum size"):
             cat._fetch_single_catalog(entry, force_refresh=True)
+
+    @pytest.mark.parametrize("scheme", ["https", "http"])
+    @pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+    def test_fetch_validates_catalog_redirects_before_each_request(
+        self, tmp_path, monkeypatch, scheme, host
+    ):
+        start_url = f"https://{host}:8443/catalog.json"
+        intermediate_url = f"{scheme}://{host}:8080/intermediate.json"
+        final_url = f"https://{host}:8443/final.json"
+        requested = []
+        payload = {"schema_version": "1.0", "integrations": {}}
+
+        class Response(io.BytesIO):
+            def geturl(self):
+                return final_url
+
+        def open_url(url, timeout=10, redirect_validator=None):
+            requested.append(url)
+            for old_url, new_url in (
+                (url, intermediate_url),
+                (intermediate_url, final_url),
+            ):
+                if redirect_validator is not None:
+                    redirect_validator(old_url, new_url)
+                requested.append(new_url)
+            return Response(json.dumps(payload).encode())
+
+        monkeypatch.setattr("specify_cli.authentication.http.open_url", open_url)
+        catalog = IntegrationCatalog(tmp_path)
+        entry = IntegrationCatalogEntry(start_url, "test", 1, False)
+
+        if scheme == "http":
+            with pytest.raises(IntegrationCatalogError, match="HTTPS"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+            assert requested == [start_url]
+        else:
+            assert catalog._fetch_single_catalog(entry, force_refresh=True) == payload
+            assert requested == [start_url, intermediate_url, final_url]
 
     def _patch_urlopen_bytes(self, monkeypatch, bodies):
         """Patch urlopen to serve raw *bodies* keyed by URL substring.

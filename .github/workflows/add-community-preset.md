@@ -61,7 +61,6 @@ safe-outputs:
     max: 1
     allowed-files:
       - presets/catalog.community.json
-      - docs/community/presets.md
     protected-files:
       policy: blocked
       exclude:
@@ -307,7 +306,7 @@ Retain multiline list values as strings. Do not interpolate issue or README text
 into shell commands. Run this fixed command unchanged:
 
 ```bash
-python3 .github/scripts/validate_community_preset.py submission --issue /tmp/gh-aw/preset-submission.json --archive /tmp/gh-aw/community-archive.zip --readme /tmp/gh-aw/preset-readme.md --catalog presets/catalog.community.json --docs docs/community/presets.md --snapshot /tmp/gh-aw/preset-validation.json
+python3 .github/scripts/validate_community_preset.py submission --issue /tmp/gh-aw/preset-submission.json --archive /tmp/gh-aw/community-archive.zip --readme /tmp/gh-aw/preset-readme.md --catalog presets/catalog.community.json --snapshot /tmp/gh-aw/preset-validation.json
 ```
 
 The verifier reads `preset.yml` from the downloaded ZIP, including preset-scoped
@@ -357,7 +356,7 @@ If there are no environment blockers and every required check completed and pass
 1. Remove any stale `validation-passed` and `validation-failed` labels from
    earlier runs.
 2. Continue to Step 3. **Do not add `validation-passed` yet**: the generated
-   catalog and documentation must pass Step 5's verifier before success is recorded.
+   catalog must pass Step 5's verifier before success is recorded.
 
 ## Step 3 — Determine Add vs Update
 
@@ -445,46 +444,25 @@ verifier snapshot's UTC date in ISO 8601 format.
 The generated-file verifier in Step 5 parses and checks the JSON. Fix any
 catalog error it reports and rerun it before continuing.
 
-## Step 5 — Update `docs/community/presets.md`
+## Step 5 — Verify the generated catalog
 
-Edit `docs/community/presets.md` to add or update a row in the Community
-Presets table.
-
-### For a new preset
-
-Insert a new row in **alphabetical order by preset name**:
-
-```
-| <Name> | <Description> | <N> templates, <N> commands | <Requires> | [<repo-name>](<repository-url>) |
-```
-
-For the Requires column:
-- Use `—` if no extensions are required
-- List required extension IDs if any (e.g., `aide extension`), comma-separated
-- Omit zero-count kinds from Provides and use singular nouns for counts of one
-
-If the preset provides scripts, include them: `<N> templates, <N> commands, <N> scripts`
-
-### For an update
-
-Find the existing row and update any changed fields in-place.
-
-### Verify the generated files
+The documentation build generates the alphabetical preset directory and detail
+pages directly from the catalog. Do not edit `docs/community/presets.md` or
+generated documentation as part of a submission.
 
 Before labeling success or requesting a PR, run this fixed command unchanged:
 
 ```bash
-python3 .github/scripts/validate_community_preset.py generated --issue /tmp/gh-aw/preset-submission.json --archive /tmp/gh-aw/community-archive.zip --readme /tmp/gh-aw/preset-readme.md --catalog presets/catalog.community.json --docs docs/community/presets.md --snapshot /tmp/gh-aw/preset-validation.json
+python3 .github/scripts/validate_community_preset.py generated --issue /tmp/gh-aw/preset-submission.json --archive /tmp/gh-aw/community-archive.zip --readme /tmp/gh-aw/preset-readme.md --catalog presets/catalog.community.json --snapshot /tmp/gh-aw/preset-validation.json
 ```
 
 The verifier checks JSON parsing, the validated catalog metadata (including
 `homepage` set to the submitted repository URL) and digest,
 the top-level and entry `updated_at` timestamps against the recorded UTC date
 (and `created_at` for new entries),
-alphabetical ID order, the documentation row's name, purpose, counts, extension
-requirements and repository link, alphabetical name order, and preservation of
-`created_at` on updates. Exit 3 (`REPAIR`) is an agent-generated catalog or
-documentation error, **not** a submitter defect: fix the files and re-run this
+alphabetical ID order, and preservation of `created_at` on updates.
+Exit 3 (`REPAIR`) is an agent-generated catalog error, **not** a submitter
+defect: fix the catalog and re-run this
 command until it exits 0. Do not label `validation-failed` for an error in
 generated files. Exit 2 (`BLOCKED`) means an input or tool is unavailable: report
 the exact error and workflow run link to the maintainer, remove
@@ -500,7 +478,7 @@ branch naming convention:
 
 This repository-owned gh-aw maintenance workflow does not perform the contributor
 open-PR count check or request confirmation. After successful validation and
-allowed catalog/docs file updates, emit the configured draft `create_pull_request`
+allowed catalog updates, emit the configured draft `create_pull_request`
 safe output regardless of the submitter's or filing account's open PR count.
 
 - **New preset:** `add-<preset-id>-preset`
@@ -514,7 +492,6 @@ Add <Name> preset to community catalog
 
 Add <id> preset submitted by @<issue-author> to:
 - presets/catalog.community.json (alphabetical order)
-- docs/community/presets.md community presets table
 
 Closes #<issue-number>
 ```
@@ -525,7 +502,6 @@ Update <Name> preset to v<version>
 
 Update <id> preset submitted by @<issue-author>:
 - presets/catalog.community.json (version, download_url, etc.)
-- docs/community/presets.md community presets table
 
 Closes #<issue-number>
 ```
@@ -540,8 +516,8 @@ Include:
 
 ## Important Rules
 
-- **Alphabetical order matters** — entries must be sorted by ID in the JSON and
-  by name in the docs table
+- **Alphabetical order matters** — entries must be sorted by ID in the JSON;
+  documentation display order is generated automatically
 - **Always validate JSON** after editing — a trailing comma or missing brace
   will break the catalog
 - **Use `Closes` not `Fixes`** — `Closes #N` is the correct keyword for
@@ -549,4 +525,3 @@ Include:
 - **Preserve `created_at` on updates** — keep the original value; only update
   `updated_at`
 - **Do not modify any other files** — only `presets/catalog.community.json`
-  and `docs/community/presets.md`

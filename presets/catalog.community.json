@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-09T00:00:00Z",
+  "updated_at": "2026-11-19T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -96,7 +96,7 @@
       "name": "AIDE In-Place Migration",
       "id": "aide-in-place",
       "version": "1.0.0",
-      "description": "Adapts the AIDE workflow for in-place technology migrations (X \u2192 Y pattern). Overrides vision, roadmap, progress, and work item commands with migration-specific guidance.",
+      "description": "Adapts the AIDE workflow for in-place technology migrations (X → Y pattern). Overrides vision, roadmap, progress, and work item commands with migration-specific guidance.",
       "author": "mnriem",
       "repository": "https://github.com/mnriem/spec-kit-presets",
       "download_url": "https://github.com/mnriem/spec-kit-presets/releases/download/aide-in-place-v1.0.0/aide-in-place.zip",
@@ -152,13 +152,14 @@
     "autonomous-run-governance": {
       "name": "Autonomous Run Governance",
       "id": "autonomous-run-governance",
-      "version": "0.4.4",
-      "description": "Adds permission-bounded autonomous delivery with index-bound staged paths, regular-file modes and bytes, semantic completion, exact-head evidence, and hash-bound historical whitespace exceptions.",
+      "version": "0.4.12",
+      "description": "Adds permission-bounded autonomous delivery and an optional policy-driven intake-review gate before feature creation.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/archive/refs/tags/v0.4.4.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/archive/refs/tags/v0.4.12.zip",
+      "sha256": "3b6282409d323e6f87fcc6f5c5923064bbdc52117b253bf909b61f4881034f81",
       "homepage": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/blob/v0.4.4/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/blob/v0.4.12/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -173,10 +174,10 @@
         "governance",
         "evidence",
         "permissions",
-        "sdd"
+        "checkpoint"
       ],
       "created_at": "2026-07-13T00:00:00Z",
-      "updated_at": "2026-09-14T00:00:00Z"
+      "updated_at": "2026-11-16T00:00:00Z"
     },
     "canon-core": {
       "name": "Canon Core",
@@ -463,14 +464,14 @@
     "intake-authoring-governance": {
       "name": "Intake Authoring Governance",
       "id": "intake-authoring-governance",
-      "version": "0.3.7",
+      "version": "0.3.12",
       "description": "Governs traceable intake CRUD, language-aware requirements collections, bounded public HTTPS sources, and explicitly approved single or series authoring.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.3.7.zip",
-      "sha256": "fc20a010c2124977249f926677d1bb2b03b81e7cd2a549bc4c7489de837e1427",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.3.12.zip",
+      "sha256": "109aaa5f2014209695ef9ee3aa4529dfd8be6ea107f077249242ccf5a951bb81",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.3.7/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.3.12/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -483,24 +484,24 @@
       "tags": [
         "intake",
         "authoring",
-        "governance",
         "requirements",
-        "lifecycle"
+        "governance",
+        "provenance"
       ],
       "created_at": "2026-07-22T00:00:00Z",
-      "updated_at": "2026-10-07T00:00:00Z"
+      "updated_at": "2026-11-10T00:00:00Z"
     },
     "intake-review-governance": {
       "name": "Intake Review Governance",
       "id": "intake-review-governance",
-      "version": "0.2.4",
+      "version": "0.2.8",
       "description": "Reviews single, series, campaign, and language-aware requirements collections before Spec Kit execution.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.2.4.zip",
-      "sha256": "c4a21c4a99ba6eed0df3028bc1ee19158f1274d9e440f433c504877c997ed816",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.2.8.zip",
+      "sha256": "ddc36c0608fcf4399d81e8a6dc8de7efc026536319b310827e9f57f7fc73acf2",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.4/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.8/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -514,23 +515,23 @@
         "intake",
         "review",
         "governance",
-        "requirements",
-        "quality-gate"
+        "quality-gate",
+        "campaign"
       ],
       "created_at": "2026-07-21T00:00:00Z",
-      "updated_at": "2026-10-09T00:00:00Z"
+      "updated_at": "2026-11-11T00:00:00Z"
     },
     "intake-sequencing-governance": {
       "name": "Intake Sequencing Governance",
       "id": "intake-sequencing-governance",
-      "version": "0.2.8",
+      "version": "0.2.13",
       "description": "Manages language-aware intake-series order, typed dependencies, lifecycle, and authority-neutral next-candidate selection.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/archive/refs/tags/v0.2.8.zip",
-      "sha256": "07dbd79f76927136494fe0742b0e8044d7cb2625c9d5d8f61fbe05b1e8d980ac",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/archive/refs/tags/v0.2.13.zip",
+      "sha256": "7dd29964d16bb8a8e0a107c2054ae8e0f69da99bdb7a6d5f320337d055fde3de",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/blob/v0.2.8/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/blob/v0.2.13/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -548,7 +549,7 @@
         "lifecycle"
       ],
       "created_at": "2026-07-27T00:00:00Z",
-      "updated_at": "2026-10-09T00:00:00Z"
+      "updated_at": "2026-11-12T00:00:00Z"
     },
     "inventory-alignment": {
       "name": "Inventory Alignment",
@@ -759,6 +760,34 @@
       "created_at": "2026-09-23T00:00:00Z",
       "updated_at": "2026-09-23T00:00:00Z"
     },
+    "okr-bet": {
+      "name": "OKR Bet Spec Section",
+      "id": "okr-bet",
+      "version": "0.2.1",
+      "description": "Adds a Hypothesis & Bet section (with the bet's verification contract) to every spec and teaches /speckit.specify to fill it from an okr:<team>/H-n bet. Companion of the okr extension.",
+      "author": "juanl",
+      "repository": "https://github.com/juanl/spec-kit-okr",
+      "download_url": "https://github.com/juanl/spec-kit-okr/releases/download/v0.2.1/spec-kit-okr-bet-preset-0.2.1.zip",
+      "sha256": "90c6e1e58956696a6b5fd13082ddcf45ab669c3c742e203f81882ef6a8498cc8",
+      "homepage": "https://github.com/juanl/spec-kit-okr",
+      "documentation": "https://github.com/juanl/spec-kit-okr/blob/v0.2.1/README.md#install",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 1
+      },
+      "tags": [
+        "okr",
+        "hypothesis",
+        "spec-template",
+        "metrics"
+      ],
+      "created_at": "2026-11-16T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z"
+    },
     "openproject": {
       "name": "OpenProject Work Packages",
       "id": "openproject",
@@ -906,7 +935,7 @@
       "name": "Screenwriting",
       "id": "screenwriting",
       "version": "1.0.0",
-      "description": "Spec-Driven Development for screenwriting/scriptwriting/tutorials: feature films, television (pilot, episode, limited series), and stage plays. Adapts the Spec Kit workflow to screenplay craft \u2014 slug lines, action lines, act breaks, beat sheets, and industry-standard pitch documents replace prose fiction conventions. Supports three-act, Save the Cat, TV pilot, network episode, cable/streaming episode, and stage-play structural frameworks.",
+      "description": "Spec-Driven Development for screenwriting/scriptwriting/tutorials: feature films, television (pilot, episode, limited series), and stage plays. Adapts the Spec Kit workflow to screenplay craft — slug lines, action lines, act breaks, beat sheets, and industry-standard pitch documents replace prose fiction conventions. Supports three-act, Save the Cat, TV pilot, network episode, cable/streaming episode, and stage-play structural frameworks.",
       "author": "Andreas Daumann",
       "repository": "https://github.com/adaumann/speckit-preset-screenwriting",
       "download_url": "https://github.com/adaumann/speckit-preset-screenwriting/archive/refs/tags/v1.0.0.zip",
@@ -1055,11 +1084,39 @@
       "created_at": "2026-10-02T00:00:00Z",
       "updated_at": "2026-10-02T00:00:00Z"
     },
+    "spec-review-layout": {
+      "name": "Spec Review Layout",
+      "id": "spec-review-layout",
+      "version": "0.6.1",
+      "description": "Lays out spec.md for review: an overview map with Mermaid diagrams, table-based scenarios and edge cases, and FRs with labeled sub-rules and condition tables.",
+      "author": "ryukirin",
+      "repository": "https://github.com/ryukirin/spec-kit-preset-review-layout",
+      "download_url": "https://github.com/ryukirin/spec-kit-preset-review-layout/archive/refs/tags/v0.6.1.zip",
+      "sha256": "6ad12363c4ca63c07810757ede543fbd08a31d58435a72c72fb786d775326637",
+      "homepage": "https://github.com/ryukirin/spec-kit-preset-review-layout",
+      "documentation": "https://github.com/ryukirin/spec-kit-preset-review-layout/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=1.0.0"
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 2
+      },
+      "tags": [
+        "spec",
+        "review",
+        "mermaid",
+        "tables"
+      ],
+      "created_at": "2026-11-19T00:00:00Z",
+      "updated_at": "2026-11-19T00:00:00Z"
+    },
     "spec2cloud": {
       "name": "Spec2Cloud",
       "id": "spec2cloud",
       "version": "1.1.0",
-      "description": "Spec-driven workflow tuned for shipping to Azure: spec \u2192 plan \u2192 tasks \u2192 implement \u2192 deploy.",
+      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
       "author": "Azure Samples",
       "repository": "https://github.com/Azure-Samples/Spec2Cloud",
       "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/download/spec-kit-spec2cloud-v1.1.0/preset.zip",
@@ -1118,7 +1175,7 @@
       "id": "test-first-governance",
       "version": "1.3.0",
       "description": "Governs TDD with coverage-complete BDD/ATDD Gherkin scenarios, explicit suite ownership, professional test reports, traceability, and risk-based quality gates.",
-      "author": "Zolt\u00e1n Katona, PhD",
+      "author": "Zoltán Katona, PhD",
       "repository": "https://github.com/ka-zo/spec-kit-preset-test-first-governance",
       "download_url": "https://github.com/ka-zo/spec-kit-preset-test-first-governance/archive/refs/tags/1.3.0.zip",
       "homepage": "https://github.com/ka-zo/spec-kit-preset-test-first-governance",

@@ -329,7 +329,7 @@ class WorkflowCatalog:
     # -- Catalog resolution -----------------------------------------------
 
     def _validate_catalog_url(self, url: str) -> None:
-        """Validate that a catalog URL uses HTTPS (localhost HTTP allowed)."""
+        """Validate that a catalog URL uses HTTPS, including local hosts."""
         from urllib.parse import urlparse
 
         # A malformed authority (e.g. an unterminated IPv6 bracket
@@ -346,16 +346,12 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Catalog URL is malformed: {url}"
             ) from None
-        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (
-            parsed.scheme == "http" and is_localhost
-        ):
+        if parsed.scheme != "https":
             # A scheme-less value (``example.com/catalog.json``) would otherwise read
             # "got ://". The value itself is not echoed: callers render errors as Rich markup.
             got = f"{parsed.scheme}://" if parsed.scheme else "a URL with no scheme"
             raise WorkflowValidationError(
-                f"Catalog URL must use HTTPS (got {got}). "
-                "HTTP is only allowed for localhost."
+                f"Catalog URL must use HTTPS (got {got})."
             )
         if not hostname:
             raise WorkflowValidationError(
@@ -380,7 +376,7 @@ class WorkflowCatalog:
         return [entry for _, entry in indexed_entries]
 
     def _parse_catalog_config(
-        self, data: Any, config_path: Path
+        self, data: Any, config_path: Path, *, validate_urls: bool = True
     ) -> list[tuple[int, WorkflowCatalogEntry]] | None:
         """Validate and order sources, retaining their original YAML positions."""
         # An empty document (or explicit ``null``) parses to None -> this config
@@ -428,7 +424,8 @@ class WorkflowCatalog:
             url = str(item.get("url", "")).strip()
             if not url:
                 continue
-            self._validate_catalog_url(url)
+            if validate_urls:
+                self._validate_catalog_url(url)
             raw_priority = item.get("priority", idx + 1)
             # bool is an int subclass: int(True) == 1 would silently accept a
             # ``priority: true`` as priority 1. Reject it explicitly, mirroring
@@ -562,7 +559,7 @@ class WorkflowCatalog:
 
         # Fetch from URL — validate scheme before opening and after redirects
         from urllib.parse import urlparse
-        from specify_cli.authentication.http import open_url as _open_url
+        from specify_cli.authentication.http import URLPolicyError, open_url as _open_url
 
         def _validate_catalog_url(url: str) -> None:
             # A malformed authority (e.g. "https://[::1") makes urlparse /
@@ -575,22 +572,17 @@ class WorkflowCatalog:
                 hostname = parsed.hostname
                 _ = parsed.port
             except (TypeError, ValueError):
-                raise WorkflowCatalogError(
+                raise URLPolicyError(
                     f"Refusing to fetch catalog from malformed URL: {url}"
                 ) from None
-            is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-            if parsed.scheme != "https" and not (
-                parsed.scheme == "http" and is_localhost
-            ):
-                raise WorkflowCatalogError(
+            if parsed.scheme != "https":
+                raise URLPolicyError(
                     f"Refusing to fetch catalog from non-HTTPS URL: {url}"
                 )
             if not hostname:
-                raise WorkflowCatalogError(
+                raise URLPolicyError(
                     f"Refusing to fetch catalog from URL with no hostname: {url}"
                 )
-
-        _validate_catalog_url(entry.url)
 
         # Validate EVERY redirect hop, not just the final URL: _open_url follows
         # redirects, so an https:// entry that 30x-redirects through http:// (or
@@ -603,6 +595,7 @@ class WorkflowCatalog:
             _validate_catalog_url(new_url)
 
         try:
+            _validate_catalog_url(entry.url)
             with _open_url(
                 entry.url, timeout=30, redirect_validator=_validate_redirect
             ) as resp:
@@ -615,6 +608,10 @@ class WorkflowCatalog:
                         label="workflow catalog",
                     ).decode("utf-8")
                 )
+        except URLPolicyError as exc:
+            raise WorkflowCatalogError(
+                f"Failed to fetch catalog from {entry.url}: {exc.reason}"
+            ) from exc
         except Exception as exc:
             # Fall back to cache if available
             try:
@@ -868,7 +865,9 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        entries = self._parse_catalog_config(data, config_path) or []
+        entries = self._parse_catalog_config(
+            data, config_path, validate_urls=False
+        ) or []
 
         if index < 0 or index >= len(entries):
             raise WorkflowValidationError(

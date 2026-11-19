@@ -697,7 +697,7 @@ def test_checkpoint_failure_leaves_running_run_not_resumable(
     assert probe["work"] == 1
 
 
-def _interrupt_state_write(monkeypatch, when):
+def _interrupt_state_write(monkeypatch, when, before_interrupt=None):
     """Raise ``KeyboardInterrupt`` from the first ``state.json`` write matching *when*."""
     original = RunState._atomic_write_json
     fired = []
@@ -705,6 +705,8 @@ def _interrupt_state_write(monkeypatch, when):
     def write(path, data):
         if path.name == "state.json" and not fired and when(data):
             fired.append(path)
+            if before_interrupt is not None:
+                before_interrupt()
             raise KeyboardInterrupt
         original(path, data)
 
@@ -775,6 +777,117 @@ def test_interrupt_during_resume_checkpoint_pauses_run(tmp_path, monkeypatch, pr
     # completed ``wait`` is not run a third time.
     assert state.status == RunStatus.COMPLETED
     assert probe == {"wait": 2, "next": 1}
+
+
+def test_resume_interrupt_log_failure_persists_paused_state(
+    tmp_path, monkeypatch, probe
+):
+    root = definition(
+        "parent",
+        [
+            {"id": "wait", "type": "probe", "await": True},
+            {"id": "next", "type": "probe"},
+        ],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.PAUSED
+
+    log_path = state.runs_dir / "log.jsonl"
+    original_log = log_path.read_text(encoding="utf-8")
+
+    def break_log():
+        log_path.unlink()
+        log_path.mkdir()
+
+    fired = _interrupt_state_write(
+        monkeypatch,
+        lambda data: data.get("step_results", {}).get("wait", {}).get("status")
+        == "completed",
+        before_interrupt=break_log,
+    )
+
+    with pytest.raises((IsADirectoryError, PermissionError)):
+        WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert fired
+    persisted = RunState.load(state.run_id, tmp_path)
+    assert persisted.status == RunStatus.PAUSED
+
+    log_path.rmdir()
+    log_path.write_text(original_log, encoding="utf-8")
+
+    resumed = WorkflowEngine(tmp_path).resume(state.run_id)
+    assert resumed.status == RunStatus.COMPLETED
+    assert probe == {"wait": 2, "next": 1}
+
+
+def test_resume_log_write_failure_persists_failed_state(tmp_path, probe):
+    root = definition(
+        "parent",
+        [
+            {"id": "wait", "type": "probe", "await": True},
+            {"id": "next", "type": "probe"},
+        ],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.PAUSED
+
+    log_path = state.runs_dir / "log.jsonl"
+    original_log = log_path.read_text(encoding="utf-8")
+    log_path.unlink()
+    log_path.mkdir()
+
+    with pytest.raises((IsADirectoryError, PermissionError)):
+        WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    persisted = RunState.load(state.run_id, tmp_path)
+    assert persisted.status == RunStatus.FAILED
+
+    log_path.rmdir()
+    log_path.write_text(original_log, encoding="utf-8")
+
+    resumed = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+    assert resumed.status == RunStatus.COMPLETED
+    assert probe["next"] == 1
+
+
+def test_resume_completion_log_failure_keeps_terminal_state(
+    tmp_path, monkeypatch, probe
+):
+    root = definition(
+        "parent",
+        [
+            {"id": "wait", "type": "probe", "await": True},
+            {"id": "next", "type": "probe"},
+        ],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.PAUSED
+
+    original = RunState.append_log
+    failed = False
+
+    def log(self, entry):
+        nonlocal failed
+        if entry["event"] == "workflow_finished" and not failed:
+            failed = True
+            raise OSError("log failed")
+        original(self, entry)
+
+    monkeypatch.setattr(RunState, "append_log", log)
+    with pytest.raises(OSError, match="log failed"):
+        WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    persisted = RunState.load(state.run_id, tmp_path)
+    assert persisted.status == RunStatus.COMPLETED
+    with pytest.raises(
+        ValueError, match=f"Cannot resume run {state.run_id!r} with status 'completed'"
+    ):
+        WorkflowEngine(tmp_path).resume(state.run_id)
+    assert probe["next"] == 1
 
 
 @pytest.mark.parametrize("failure", [KeyboardInterrupt, RuntimeError])

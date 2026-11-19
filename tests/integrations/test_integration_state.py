@@ -5,7 +5,8 @@ import json
 import pytest
 
 from specify_cli._file_policy import project_files, save_project_options
-from specify_cli.file_helper import SymlinkDeniedError
+from specify_cli.file_helper import FileHelper, FileHelperError, SymlinkDeniedError
+from specify_cli import integration_state
 from specify_cli.integration_state import (
     INTEGRATION_JSON,
     default_integration_key,
@@ -16,6 +17,59 @@ from specify_cli.integration_state import (
     write_integration_json,
 )
 from specify_cli.integrations._file_changes import file_change_observer
+
+
+@pytest.mark.parametrize("reader", [try_read_integration_json, try_read_integration_json_with_raw])
+def test_state_readers_translate_constructor_contract_failure(tmp_path, monkeypatch, reader):
+    def failed(*args, **kwargs):
+        raise FileHelperError("root binding failed")
+
+    monkeypatch.setattr(integration_state, "FileHelper", failed)
+    *states, error = reader(tmp_path)
+    assert all(state is None for state in states)
+    assert error is not None and error.kind == "os"
+    assert "root binding failed" in error.detail
+
+
+@pytest.mark.parametrize("operation", ["read", "read-with-raw", "write"])
+@pytest.mark.parametrize("failure", [False, True])
+def test_managed_state_consumers_close_retained_helpers(tmp_path, monkeypatch, operation, failure):
+    (tmp_path / ".specify").mkdir()
+    (tmp_path / INTEGRATION_JSON).write_text('{"integration": "claude"}')
+    captured = []
+
+    def owner(*args, **kwargs):
+        files = FileHelper(*args, **kwargs)
+        captured.append(files)
+        return files
+
+    def denied(*args, **kwargs):
+        raise PermissionError("managed state access denied")
+
+    monkeypatch.setattr(integration_state, "FileHelper", owner)
+    if failure:
+        monkeypatch.setattr(FileHelper, "overwrite_text" if operation == "write" else "read_text", denied)
+    retained_error = None
+    if operation == "write":
+        if failure:
+            with pytest.raises(PermissionError, match="managed state access denied") as raised:
+                write_integration_json(tmp_path, version="1", integration_key="claude")
+            retained_error = raised.value
+        else:
+            write_integration_json(tmp_path, version="1", integration_key="claude")
+    else:
+        reader = try_read_integration_json if operation == "read" else try_read_integration_json_with_raw
+        *states, retained_error = reader(tmp_path)
+        if failure:
+            assert all(state is None for state in states)
+            assert retained_error is not None and retained_error.kind == "os"
+        else:
+            assert all(state is not None for state in states)
+            assert retained_error is None
+    assert len(captured) == 1
+    assert not captured[0]._root_cleanup.alive
+    if failure:
+        assert retained_error is not None
 
 
 def test_normalize_integration_state_strips_default_key_without_duplicates():

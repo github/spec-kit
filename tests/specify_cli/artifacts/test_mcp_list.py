@@ -232,7 +232,7 @@ EXPECTED_OUTPUT_SCHEMA = {
                     "title": "Presetname",
                 },
                 "strategy": {
-                    "enum": ["replace", "wrap", "prepend", "append"],
+                    "enum": ["replace", "wrap", "prepend", "append", "replace-section"],
                     "title": "Strategy",
                     "type": "string",
                 },

@@ -187,8 +187,9 @@ def test_symlinked_cache_ancestor_cannot_redirect_write(
     assert list(outside.iterdir()) == []
 
 
+@pytest.mark.parametrize("force_refresh", [False, True])
 def test_regular_cache_fresh_refresh_and_stale_fallback(
-    tmp_path, catalog_kind, fetch, monkeypatch
+    tmp_path, catalog_kind, fetch, monkeypatch, force_refresh,
 ):
     catalog_cls, entry_cls, *_ = catalog_kind
     catalog = catalog_cls(tmp_path)
@@ -209,7 +210,82 @@ def test_regular_cache_fresh_refresh_and_stale_fallback(
         raise URLError("isolated offline test")
 
     monkeypatch.setattr("specify_cli.authentication.http.open_url", unavailable)
-    assert catalog._fetch_single_catalog(entry) == fetch[0]
+    assert catalog._fetch_single_catalog(entry, force_refresh=force_refresh) == fetch[0]
+
+
+@pytest.mark.parametrize("force_refresh", [False, True])
+@pytest.mark.parametrize("rejection,target", [
+    ("initial", "https://ex%61mple.com/catalog.json"),
+    ("initial", "http://example.com/catalog.json"),
+    ("initial", "http://localhost/catalog.json"),
+    ("initial", "https://[::1"),
+    ("redirect", "https://localhost/catalog.json"),
+    ("redirect", "http://example.com/catalog.json"),
+    ("redirect", "http://localhost/catalog.json"),
+    ("redirect", "https://[::1"),
+    ("redirect", "https:///catalog.json"),
+    ("redirect", "https://example.com:invalid/catalog.json"),
+    ("final", "http://example.com/catalog.json"),
+    ("final", "http://localhost/catalog.json"),
+    ("final", "https://[::1"),
+    ("final", "https:///catalog.json"),
+])
+def test_url_policy_failure_does_not_use_expired_cache(
+    tmp_path, monkeypatch, catalog_kind, force_refresh, rejection, target,
+):
+    from email.message import Message
+    from unittest.mock import MagicMock, patch
+
+    from specify_cli.authentication import http
+
+    monkeypatch.setattr(http, "_config_override", [])
+    catalog_cls, entry_cls, field, *_ = catalog_kind
+    catalog = catalog_cls(tmp_path)
+    url = target if rejection == "initial" else URL
+    entry = entry_cls(url, "test", 1, False)
+    data, metadata = catalog._get_cache_paths(url)
+    data.parent.mkdir(parents=True, exist_ok=True)
+    payload = {field: {"cached": {"version": "1.0.0"}}}
+    data.write_text(json.dumps(payload), encoding="utf-8")
+    metadata.write_text(json.dumps({"fetched_at": 0}), encoding="utf-8")
+    assert not catalog._is_url_cache_valid(url)
+    error = WorkflowCatalogError if field == "workflows" else StepCatalogError
+
+    with patch.object(http.urllib.request, "build_opener") as build_opener:
+        redirect_parent = MagicMock()
+        redirect_parent.open.side_effect = AssertionError("Rejected redirect was followed")
+
+        def reject_redirect(request, timeout):
+            handler = build_opener.call_args.args[0]
+            handler.add_parent(redirect_parent)
+            request.timeout = timeout
+            headers = Message()
+            headers["Location"] = target
+            return handler.http_error_302(
+                request, io.BytesIO(b""), 302, "Found", headers,
+            )
+
+        if rejection == "redirect":
+            build_opener.return_value.open.side_effect = reject_redirect
+        elif rejection == "final":
+            response = build_opener.return_value.open.return_value.__enter__.return_value
+            response.geturl.return_value = target
+        with pytest.raises(error, match="Failed to fetch catalog") as excinfo:
+            catalog._fetch_single_catalog(entry, force_refresh=force_refresh)
+        assert isinstance(excinfo.value.__cause__, http.URLPolicyError)
+        assert str(excinfo.value) == (
+            f"Failed to fetch catalog from {url}: {excinfo.value.__cause__.reason}"
+        )
+        if rejection == "initial":
+            build_opener.assert_not_called()
+        else:
+            build_opener.return_value.open.assert_called_once()
+        if rejection == "final":
+            response.read.assert_not_called()
+        redirect_parent.open.assert_not_called()
+
+    assert json.loads(data.read_text(encoding="utf-8")) == payload
+    assert json.loads(metadata.read_text(encoding="utf-8")) == {"fetched_at": 0}
 
 
 @pytest.mark.parametrize("leaf", ["data", "metadata"])

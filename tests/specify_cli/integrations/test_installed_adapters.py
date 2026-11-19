@@ -8,6 +8,7 @@ import json
 import marshal
 import os
 import shutil
+import ssl
 import stat
 import struct
 import subprocess
@@ -15,13 +16,19 @@ import sys
 import tarfile
 import threading
 import zipfile
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from ipaddress import ip_address
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import yaml
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 from typer.testing import CliRunner
 
 from specify_cli import AGENT_CONFIG, app
@@ -89,8 +96,43 @@ def isolated_registry(monkeypatch, tmp_path):
     unload_installed_integrations()
 
 
+@pytest.fixture(scope="module")
+def tls_certificate(tmp_path_factory):
+    root = tmp_path_factory.mktemp("integration-catalog-tls")
+    key = ec.generate_private_key(ec.SECP256R1())
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
+    now = datetime.now(timezone.utc)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .add_extension(
+            x509.SubjectAlternativeName([x509.IPAddress(ip_address("127.0.0.1"))]),
+            critical=False,
+        )
+        .sign(key, hashes.SHA256())
+    )
+    cert_path = root / "certificate.pem"
+    key_path = root / "key.pem"
+    cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    key_path.chmod(0o600)
+    return cert_path, key_path
+
+
 @pytest.fixture
-def server(tmp_path):
+def server(tmp_path, monkeypatch, tls_certificate):
     downloads = tmp_path / "downloads"
     downloads.mkdir()
     requests = []
@@ -104,10 +146,16 @@ def server(tmp_path):
             pass
 
     http = ThreadingHTTPServer(("127.0.0.1", 0), partial(Handler, directory=str(downloads)))
+    cert_path, key_path = tls_certificate
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_cert_chain(cert_path, key_path)
+    http.socket = context.wrap_socket(http.socket, server_side=True)
+    monkeypatch.setenv("SSL_CERT_FILE", str(cert_path))
     thread = threading.Thread(target=http.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     result = SimpleNamespace(
-        root=downloads, url=f"http://127.0.0.1:{http.server_port}", requests=requests,
+        root=downloads, url=f"https://127.0.0.1:{http.server_port}", requests=requests,
     )
     try:
         yield result
@@ -115,6 +163,27 @@ def server(tmp_path):
         http.shutdown()
         http.server_close()
         thread.join()
+
+
+def test_catalog_server_explicitly_requires_tls12(request, monkeypatch):
+    configured = []
+    minimum_version = ssl.SSLContext.minimum_version
+
+    def set_minimum_version(context, version):
+        configured.append((context, version))
+        minimum_version.fset(context, version)
+
+    monkeypatch.setattr(
+        ssl.SSLContext,
+        "minimum_version",
+        property(minimum_version.fget, set_minimum_version),
+    )
+    request.getfixturevalue("server")
+
+    assert len(configured) == 1
+    context, version = configured[0]
+    assert version == ssl.TLSVersion.TLSv1_2
+    assert context.minimum_version > ssl.TLSVersion.TLSv1_1
 
 
 def publish(server, *, metadata=None, code=None, version="1.0.0", members=None, archive="zip"):
@@ -937,6 +1006,34 @@ def test_round4_failed_switch_restores_builtin_settings(tmp_path, server, monkey
     assert snapshot(project) == before
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX execute bits are not meaningful on Windows")
+def test_failed_switch_restores_shared_script_mode_and_content(
+    tmp_path, server, monkeypatch, packaged_scripts_0644
+):
+    """A refresh that makes a managed script executable is undone with the rest of the switch."""
+    from specify_cli.integrations import installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    scripts = sorted((project / ".specify/scripts/bash").glob("*.sh"))
+    assert scripts
+    for script in scripts:
+        script.chmod(0o644)
+    before = snapshot(project)
+
+    def fail_commit(*args, **kwargs):
+        assert all(script.stat().st_mode & stat.S_IXUSR for script in scripts)
+        raise OSError("sample package commit failure")
+
+    monkeypatch.setattr(installer, "write_records", fail_commit)
+    result = run(project, ["integration", "switch", "copilot", "--script", "sh"])
+    assert result.exit_code == 1, result.output
+    assert "sample package commit failure" in result.output
+    assert snapshot(project) == before
+    assert all(stat.S_IMODE(script.stat().st_mode) == 0o644 for script in scripts)
+
+
 @pytest.mark.parametrize("install_allowed", [False, True])
 def test_round4_search_advertises_only_allowed_external_installation(tmp_path, server, install_allowed):
     publish(server, code='raise RuntimeError("discovery must not import sample code")')
@@ -1142,6 +1239,19 @@ def test_round5_invalid_public_adapter_attributes_are_rejected(tmp_path, server,
     assert KEY not in INTEGRATION_REGISTRY
 
 
+@pytest.mark.parametrize("value", [True, "true", 1, None])
+def test_external_adapter_cannot_declare_home_scoped_output(tmp_path, server, value):
+    body = f'    registrar_config = {{**registrar_config, "home_scoped": {value!r}}}\n'
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration"])
+    assert result.exit_code == 1, result.output
+    assert "home_scoped" in result.output or "project-local" in result.output, result.output
+    assert snapshot(project) == before
+    assert KEY not in INTEGRATION_REGISTRY
+
+
 @pytest.mark.parametrize("no_symlinks", [False, True])
 def test_round5_valid_public_attributes_propagate_to_rendering_and_recovery(tmp_path, server, no_symlinks):
     from specify_cli.integrations.installer import recovery_metadata
@@ -1297,6 +1407,42 @@ def test_catalog_install_renders_host_templates_and_fresh_process(tmp_path, serv
     status = run(project, ["integration", "status", "--json"])
     assert status.exit_code == 0, status.output
     assert json.loads(status.output)["default_integration"] == KEY
+
+
+def test_https_catalog_installs_loopback_http_archive(tmp_path, server):
+    requested = []
+
+    class Handler(SimpleHTTPRequestHandler):
+        def do_GET(self):
+            requested.append(self.path)
+            super().do_GET()
+
+        def log_message(self, *args):
+            pass
+
+    http = ThreadingHTTPServer(
+        ("127.0.0.1", 0), partial(Handler, directory=str(server.root))
+    )
+    thread = threading.Thread(
+        target=http.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
+    thread.start()
+    try:
+        info, archive = publish(server)
+        info["download_url"] = f"http://127.0.0.1:{http.server_port}/{archive.name}"
+        write_catalog(server, info)
+        project = catalog_project(tmp_path, server)
+
+        install(project)
+
+        assert read_records(project)[KEY]["version"] == "1.0.0"
+        assert "/catalog.json" in server.requests
+        assert requested == [f"/{archive.name}"]
+        assert f"/{archive.name}" not in server.requests
+    finally:
+        http.shutdown()
+        http.server_close()
+        thread.join()
 
 
 def test_markdown_adapter_renders_host_commands(tmp_path, server):
@@ -3571,7 +3717,7 @@ def test_registration_keeps_requested_project_hooks(tmp_path, server, monkeypatc
             return scoped_registrar
 
         monkeypatch.setattr(manager, "_command_registrar", snapshot_then_interleave)
-        manifest = SimpleNamespace(id="sample", templates=[{
+        manifest = SimpleNamespace(id="sample", version="1.0.0", templates=[{
             "type": "command", "name": "speckit.sample", "file": "command.md",
         }])
         manager._register_commands(manifest, source)
@@ -3655,7 +3801,7 @@ def test_registration_pins_hooks_and_lazy_imports_during_another_thread_load(tmp
         )
     else:
         manager = PresetManager(first)
-        manifest = SimpleNamespace(id="sample", templates=[{
+        manifest = SimpleNamespace(id="sample", version="1.0.0", templates=[{
             "type": "command", "name": "speckit.sample", "file": "command.md",
         }])
         manager._register_commands(manifest, source)

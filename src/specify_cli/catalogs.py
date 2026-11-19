@@ -68,7 +68,7 @@ class CatalogStackBase:
 
     @classmethod
     def _validate_catalog_url(cls, url: str) -> None:
-        """Validate that a catalog URL uses HTTPS, except localhost HTTP."""
+        """Validate that a catalog URL uses HTTPS, including local hosts."""
         from urllib.parse import urlparse
 
         try:
@@ -83,14 +83,12 @@ class CatalogStackBase:
             _ = parsed.port
         except ValueError:
             raise cls._error(f"Catalog URL is malformed: {url}") from None
-        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+        if parsed.scheme != "https":
             # A scheme-less value (``example.com/catalog.json``) would otherwise read
             # "got ://". The value itself is not echoed: callers render errors as Rich markup.
             got = f"{parsed.scheme}://" if parsed.scheme else "a URL with no scheme"
             raise cls._error(
-                f"Catalog URL must use HTTPS (got {got}). "
-                "HTTP is only allowed for localhost."
+                f"Catalog URL must use HTTPS (got {got})."
             )
         # Check hostname, not netloc: netloc is truthy for host-less URLs like
         # "https://:8080" or "https://user@", so the host guarantee this error

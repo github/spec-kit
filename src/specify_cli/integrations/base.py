@@ -894,6 +894,22 @@ class IntegrationBase(ABC):
         """
         return f"speckit.{template_name}.md"
 
+    def upgrade_output_folders(
+        self,
+        project_root: Path,
+        parsed_options: dict[str, Any] | None,
+        raw_options: str | None,
+    ) -> set[str]:
+        """Return project-relative output directories an upgrade may create.
+
+        ``integration upgrade`` and ``init`` into an existing directory
+        journal writes beneath the integration's config ``folder``. An
+        integration whose output location comes from its options instead
+        lists that location here, so a failed operation removes directories it
+        created. Default: none.
+        """
+        return set()
+
     def stale_cleanup_exclusions(self) -> set[str]:
         """Return project-relative paths that upgrade must never stale-delete.
 
@@ -1515,7 +1531,9 @@ class MarkdownIntegration(IntegrationBase):
                 f"Integration destination {dest} escapes "
                 f"project root {project_root_resolved}"
             ) from exc
-        dest.mkdir(parents=True, exist_ok=True)
+        from ._file_changes import make_directories
+
+        make_directories(dest)
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = (
@@ -1735,7 +1753,9 @@ class TomlIntegration(IntegrationBase):
                 f"Integration destination {dest} escapes "
                 f"project root {project_root_resolved}"
             ) from exc
-        dest.mkdir(parents=True, exist_ok=True)
+        from ._file_changes import make_directories
+
+        make_directories(dest)
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = (
@@ -1967,7 +1987,9 @@ class YamlIntegration(IntegrationBase):
                 f"Integration destination {dest} escapes "
                 f"project root {project_root_resolved}"
             ) from exc
-        dest.mkdir(parents=True, exist_ok=True)
+        from ._file_changes import make_directories
+
+        make_directories(dest)
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = (
@@ -2158,6 +2180,29 @@ class SkillsIntegration(IntegrationBase):
         invocation_prefix = get_invocation_prefix(self.key, True)
         return self._inject_hook_command_note(content, invocation_prefix)
 
+    def _render_core_skill_frontmatter(
+        self, skill_name: str, description: str, source: str
+    ) -> str:
+        """Render shared core provenance with the native skills' quoted layout."""
+        from specify_cli import get_speckit_version
+        from specify_cli.agents import CommandRegistrar
+
+        frontmatter = CommandRegistrar.build_skill_frontmatter(
+            self.key, skill_name, description, source,
+            version=get_speckit_version(),
+        )
+        lines = [
+            f"{key}: {yaml_quote(value)}"
+            for key, value in frontmatter.items()
+            if key != "metadata"
+        ]
+        lines.append("metadata:")
+        lines.extend(
+            f"  {key}: {yaml_quote(value)}"
+            for key, value in frontmatter["metadata"].items()
+        )
+        return "\n".join(lines)
+
     def setup(
         self,
         project_root: Path,
@@ -2270,17 +2315,12 @@ class SkillsIntegration(IntegrationBase):
             if not description:
                 description = f"Spec Kit: {command_name} workflow"
 
-            # Build SKILL.md with manually formatted frontmatter (stable
-            # double-quoted values). yaml_quote escapes newlines and control
-            # characters that a plain quoted f-string cannot carry.
+            frontmatter_text = self._render_core_skill_frontmatter(
+                skill_name, description, f"templates/commands/{src_file.name}"
+            )
             skill_content = (
                 f"---\n"
-                f"name: {yaml_quote(skill_name)}\n"
-                f"description: {yaml_quote(description)}\n"
-                f"compatibility: {yaml_quote('Requires spec-kit project structure with .specify/ directory')}\n"
-                f"metadata:\n"
-                f"  author: {yaml_quote('github-spec-kit')}\n"
-                f"  source: {yaml_quote('templates/commands/' + src_file.name)}\n"
+                f"{frontmatter_text}\n"
                 f"---\n"
                 f"{processed_body}"
             )

@@ -18,6 +18,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["3.11", "3.12", "3.13", "3.14", "3.15"]' || '["3.11", "3.14", "3.15"]') }}
+        exclude: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '[]' || '[{"os":"windows-latest","python-version":"3.11"},{"os":"macos-latest","python-version":"3.11"}]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

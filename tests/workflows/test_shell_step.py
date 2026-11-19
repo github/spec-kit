@@ -767,3 +767,55 @@ def test_decoding_failure_preserves_exit_code_for_branching(project_dir, utf8_lo
     assert result["output"]["stdout"] == "usable output"
     assert result["output"]["stderr"] == ""
     assert "stderr could not be decoded" in result["error"]
+
+
+@pytest.mark.parametrize(
+    ("printed", "condition", "expected_branch"),
+    [
+        ("10", "== 10", "then-ran"),
+        ("10", "!= 10", "else-ran"),
+        ("10", "== 11", "else-ran"),
+        ("10", "!= 11", "then-ran"),
+        ("10", ">= 10", "then-ran"),
+        ("10", "<= 10", "then-ran"),
+        ("2.5", "== 2.5", "then-ran"),
+        ("10x", "== 10", "else-ran"),
+        ("10x", "!= 10", "then-ran"),
+    ],
+)
+def test_captured_stdout_with_newline_compares_as_number(
+    project_dir, printed, condition, expected_branch
+):
+    """Raw stdout keeps its trailing newline, yet compares as a number.
+
+    A command such as ``echo 10`` captures ``"10\\n"``. ``==``/``!=`` must
+    agree with ``>=``/``<=`` on that value, while non-numeric output is still
+    compared as a string.
+    """
+    run = _python_run(project_dir, f"print({printed!r})\n")
+    definition = WorkflowDefinition.from_string(yaml.safe_dump({
+        "schema_version": "1.0",
+        "workflow": {
+            "id": "shell-stdout-compare",
+            "name": "Shell Stdout Compare",
+            "version": "1.0.0",
+        },
+        "steps": [
+            {"id": "count", "type": "shell", "run": run},
+            {
+                "id": "route",
+                "type": "if",
+                "condition": "{{ steps.count.output.stdout " + condition + " }}",
+                "then": [{"id": "then-ran", "type": "shell", "run": "echo then"}],
+                "else": [{"id": "else-ran", "type": "shell", "run": "echo else"}],
+            },
+        ],
+    }))
+
+    state = WorkflowEngine(project_dir).execute(definition)
+
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["count"]["output"]["stdout"] == f"{printed}\n"
+    other_branch = "else-ran" if expected_branch == "then-ran" else "then-ran"
+    assert expected_branch in state.step_results
+    assert other_branch not in state.step_results

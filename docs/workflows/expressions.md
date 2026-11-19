@@ -13,6 +13,33 @@ Steps can reference inputs and previous step outputs using `{{ expression }}` sy
 
 Available filters: `default`, `join`, `contains`, `map`, `from_json`, `to_json`, `upper`, `lower`, `split`, `length`.
 
+## Custom filters (Workflow Functions)
+
+Projects can install Python callables as pipe filters. See
+[Workflow functions](functions.md) for package and CLI details.
+
+```yaml
+# After installing a package that exports trim:
+message: "{{ inputs.message | trim | upper }}"
+```
+
+A function receives the piped value followed by the explicit filter
+arguments. Manifest `min_args` and `max_args` bounds are enforced when the
+expression is evaluated. Filter names and argument counts in wrapped
+`{{ ... }}` expressions are not checked during workflow validation. Bare form is available for zero-minimum functions;
+parenthesized calls contain one or more arguments. Function names share a flat
+namespace with built-in filters and other installed packages. Collisions are
+errors and built-ins are never shadowed.
+
+Function packages contain executable Python and are imported before workflow
+validation. Review package source before installing it. Handlers should be
+stateless and thread-safe because fan-out can evaluate filters concurrently.
+Function failures use the normal expression-error path, with the function name
+prefixed to the exception; return values use the existing expression consumer
+rules rather than a separate function-specific type contract. As with other
+workflow side effects, an interruption before a resume checkpoint can repeat a
+handler, so resume is at-least-once.
+
 ## Syntax
 
 | Form | Example |

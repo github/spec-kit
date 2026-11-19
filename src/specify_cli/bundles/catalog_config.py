@@ -167,19 +167,17 @@ def add_source(
     if "://" in url and parsed.scheme.lower() not in _REMOTE_SCHEMES:
         raise BundlerError(
             f"Unsupported catalog url scheme '{parsed.scheme}://' in '{url}'. "
-            "Use http(s)://, file://, builtin://, or a local path."
+            "Use https://, file://, builtin://, or a local path."
         )
     if parsed.scheme.lower() in {"http", "https"}:
         # Mirror specify_cli.catalogs._validate_catalog_url (#3209/#3210):
-        # HTTPS only (HTTP just for localhost), and check hostname, not
+        # HTTPS only, including localhost, and check hostname, not
         # netloc — netloc is truthy for host-less URLs like "https://:8080"
         # or "https://user@". Validating here keeps junk out of
         # bundle-catalogs.yml instead of failing later at fetch time.
-        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme.lower() != "https" and not is_localhost:
+        if parsed.scheme.lower() != "https":
             raise BundlerError(
-                f"Catalog url must use HTTPS (got {parsed.scheme}://). "
-                "HTTP is only allowed for localhost."
+                f"Catalog url must use HTTPS (got {parsed.scheme}://)."
             )
         if not hostname:
             raise BundlerError(f"Catalog url must be a valid URL with a host: {url}")

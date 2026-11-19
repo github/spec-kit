@@ -37,9 +37,33 @@ catalogs:
     description: Our vetted workflows
 ```
 
-`url` requires HTTPS (loopback HTTP is allowed for development). Lower numeric priorities win; the first source wins ties. `install_allowed` defaults to false in hand-authored configuration.
+`url` requires HTTPS, including for local development; plain HTTP is rejected
+before network access. Lower numeric priorities win; the first source wins ties.
+`install_allowed` defaults to false in hand-authored configuration.
 
 `specify workflow catalog add` creates project entries with installation allowed and a priority after existing entries. It does not expose preset-style `--install-allowed` or `--priority` flags. Add only vetted sources; edit the configuration when a discovery-only source is intended. Adding a project stack replaces implicit defaults unless you include them explicitly.
+
+### Migrating legacy HTTP sources
+
+Older configurations may contain loopback HTTP URLs that are no longer accepted.
+Remove a legacy project source with `specify workflow catalog remove <index>`;
+removal does not fetch or validate source URLs. Indexes follow ascending
+priority, with YAML declaration order breaking ties; entries without a URL are
+skipped. `catalog list` still rejects invalid URLs, so inspect
+`.specify/workflow-catalogs.yml` to determine the index when it cannot list them.
+Other entries can also be removed while a legacy HTTP source remains.
+
+Alternatively, edit `.specify/workflow-catalogs.yml` for project sources or
+`~/.specify/workflow-catalogs.yml` for user sources. Replace the source's `url`
+with a working HTTPS catalog URL, or remove its entire item from `catalogs`.
+Local HTTPS servers need a certificate trusted by Python's TLS client; browser
+or operating-system trust alone may not suffice. See
+[TLS certificates](../reference/authentication.md#tls-certificates) for
+`SSL_CERT_FILE` configuration. Changing the URL scheme alone does not enable HTTPS.
+
+An empty or deleted configuration falls through to the next level. Built-in
+defaults apply when no higher level supplies a stack. Also update or unset
+`SPECKIT_WORKFLOW_CATALOG_URL` if it still selects an HTTP source.
 
 ## Workflow entry schema
 

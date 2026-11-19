@@ -44,8 +44,9 @@ class TestCliDiagnosticFormatting:
         )
 
 
-class TestInitIntegrationFlag:
-    def test_unknown_integration_rejected(self, tmp_path):
+class TestInitIntegrationFlag(IntegrationCatalogCliTestBase):
+    def test_unknown_integration_rejected(self, tmp_path, monkeypatch):
+        self._patch_catalog(monkeypatch, integrations=[])
         from typer.testing import CliRunner
         from specify_cli import app
         runner = CliRunner()
@@ -585,6 +586,26 @@ class TestInitIntegrationFlag:
         assert (
             project / ".specify" / "scripts" / "python" / "common.py"
         ).exists()
+
+    @pytest.mark.parametrize("flavor,variant", [("sh", "bash"), ("ps", "powershell"), ("py", "python")])
+    def test_section_engine_is_installed_tracked_and_user_edits_preserved(
+        self, tmp_path, flavor, variant,
+    ):
+        from pathlib import Path
+
+        from specify_cli import _install_shared_infra, markdown_sections
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "section-project"
+        project.mkdir()
+        _install_shared_infra(project, flavor)
+        relative = f".specify/scripts/{variant}/markdown_sections.py"
+        engine = project / relative
+        assert engine.read_bytes() == Path(markdown_sections.__file__).read_bytes()
+        assert relative in IntegrationManifest.load("speckit", project).files
+        engine.write_text("# user customization\n", encoding="utf-8")
+        _install_shared_infra(project, flavor, refresh_managed=True)
+        assert engine.read_text(encoding="utf-8") == "# user customization\n"
 
     def test_shared_infra_removes_stale_managed_script(self, tmp_path):
         """A managed script the core no longer ships (e.g. the legacy
