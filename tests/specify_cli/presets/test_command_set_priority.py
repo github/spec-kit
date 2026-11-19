@@ -140,6 +140,49 @@ class TestPresetSetPriority(PresetArtifactTestHelpers):
         assert "BODY-B" in skill_file.read_text()
         assert "BODY-A" not in skill_file.read_text()
 
+    def test_set_priority_does_not_rewrite_native_skills(self, project_dir, temp_dir):
+        """Native SKILL.md integrations remain untouched by priority changes."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        manager = PresetManager(project_dir)
+        preset_id = "priority-second"
+        first = self._create_command_preset(
+            temp_dir, "priority-first", "speckit.demo", "First", "BODY-A"
+        )
+        second = self._create_command_preset(
+            temp_dir, preset_id, "speckit.demo", "Second", "BODY-B"
+        )
+        manager.install_from_directory(first, "0.1.5", priority=10)
+        manager.install_from_directory(second, "0.1.5", priority=20)
+
+        skill_file = project_dir / ".claude" / "skills" / "speckit-demo" / "SKILL.md"
+        skill_file.write_text("user-owned native skill\n")
+        original = skill_file.read_bytes()
+
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch.object(PresetManager, "_reconcile_composed_commands") as commands,
+            patch.object(PresetManager, "_reconcile_skills") as skills,
+            patch.object(PresetManager, "reconcile_constitution") as constitution,
+        ):
+            result = CliRunner().invoke(
+                app, ["preset", "set-priority", preset_id, "1"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert PresetManager(project_dir).registry.get(preset_id)["priority"] == 1
+        assert skill_file.read_bytes() == original
+        commands.assert_not_called()
+        skills.assert_not_called()
+        constitution.assert_called_once_with(
+            "Failed to reconcile constitution after changing priority for preset priority-second"
+        )
+
     def test_set_priority_keeps_update_after_reconciliation_failure(
         self, project_dir, temp_dir
     ):
