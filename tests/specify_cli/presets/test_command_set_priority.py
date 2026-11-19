@@ -117,7 +117,7 @@ class TestPresetSetPriority(PresetArtifactTestHelpers):
 
         from specify_cli import app
 
-        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._write_init_options(project_dir, ai="gemini", ai_skills=True)
         manager = PresetManager(project_dir)
         first = self._create_command_preset(
             temp_dir, "priority-first", "speckit.demo", "First", "BODY-A"
@@ -128,7 +128,7 @@ class TestPresetSetPriority(PresetArtifactTestHelpers):
         manager.install_from_directory(first, "0.1.5", priority=10)
         manager.install_from_directory(second, "0.1.5", priority=20)
 
-        skill_file = project_dir / ".claude" / "skills" / "speckit-demo" / "SKILL.md"
+        skill_file = project_dir / ".gemini" / "skills" / "speckit-demo" / "SKILL.md"
         assert "BODY-A" in skill_file.read_text()
 
         with patch.object(Path, "cwd", return_value=project_dir):
@@ -313,3 +313,37 @@ class TestPresetSetPriority(PresetArtifactTestHelpers):
         assert result.exit_code == 0, result.output
         assert PresetManager(project_dir).registry.get("priority-disabled")["priority"] == 2
         assert command_file.read_text() == "user command edit\n"
+
+
+    def test_set_priority_keeps_constitution_sync_after_adapter_discovery_failure(
+        self, project_dir, pack_dir
+    ):
+        """Adapter setup failures do not skip constitution reconciliation."""
+        from unittest.mock import patch
+
+        import pytest
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5", priority=5)
+
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch(
+                "specify_cli.agents.CommandRegistrar",
+                side_effect=RuntimeError("adapter discovery failed"),
+            ),
+            patch.object(PresetManager, "reconcile_constitution") as constitution,
+            pytest.warns(UserWarning, match="Post-priority reconciliation failed"),
+        ):
+            result = CliRunner().invoke(
+                app, ["preset", "set-priority", "test-pack", "1"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["priority"] == 1
+        constitution.assert_called_once_with(
+            "Failed to reconcile constitution after changing priority for preset test-pack"
+        )
