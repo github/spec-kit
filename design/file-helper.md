@@ -251,6 +251,14 @@ descriptor-relative or change their documented concurrency limitations.
   redirect it. Missing entries raise `FileNotFoundError`. It is a
   point-in-time query, not an anchor: callers that act on the result must
   re-check identity on the descriptor they act through.
+- `access(path, mode)` answers `os.access` for an existing entry found and
+  anchored as `stat` finds it, without following links: POSIX checks relative
+  to the anchored parent descriptor, Windows pins the parent hierarchy first.
+  It uses the real user and group ids, so it also reports a read-only
+  filesystem or a file owned by someone else, which mode bits miss. It is
+  advisory, like `stat`.
+- `canonical_root` is the root with OS and link aliases resolved, fixed on
+  construction; it is the base that resolved operation paths share.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
   create files with existing parents. A no-follow `lstat` preflight rejects
   existing leaves, including dangling links, before opening the destination.
