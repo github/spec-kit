@@ -480,9 +480,10 @@ class FileHelper:
     def access(self, path: Path | str, mode: int) -> bool:
         """Return whether ``os.access`` grants ``mode`` on an existing entry.
 
-        The entry is found and anchored as ``stat`` finds it, and links are not
-        followed. Like ``os.access``, the answer uses the real user and group
-        ids and is advisory: act through a descriptor and handle its errors.
+        The entry is found and anchored as ``stat`` finds it, so a leaf link is
+        refused or resolved by the normal policy walk. Like ``os.access``, the
+        answer uses the real user and group ids and is advisory: act through a
+        descriptor and handle its errors.
         """
         destination = self._path(path)
         if destination == self._canonical_root:
@@ -500,10 +501,12 @@ class FileHelper:
                     ))
                 return os.access(destination, mode)
         unsupported = "Anchored access check is unsupported on this platform"
-        if os.access not in os.supports_dir_fd or os.access not in os.supports_follow_symlinks:
+        if os.access not in os.supports_dir_fd:
             raise OSError(errno.ENOTSUP, unsupported)
         with self._posix_directory(destination.parent, unsupported_message=unsupported) as directory:
-            return os.access(destination.name, mode, dir_fd=directory, follow_symlinks=False)
+            # No ``follow_symlinks=False``: the walk already handled a leaf link,
+            # and without ``faccessat2`` libc emulates that flag from mode bits.
+            return os.access(destination.name, mode, dir_fd=directory)
 
     def stat(self, path: Path | str) -> os.stat_result:
         """Return the metadata of an existing entry, resolving only allowed links."""
