@@ -318,10 +318,24 @@ def extension_add(
         for warning in manifest.warnings:
             console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {_escape_markup(str(warning))}")
 
-        console.print("\n[bold cyan]Provided commands:[/bold cyan]")
+        extension_dir = manager.extensions_dir / manifest.id
+        provided_commands = []
+        missing_commands = []
         for cmd in manifest.commands:
-            cmd_name = _commands._registered_command_name(project_root, cmd['name'])
-            console.print(f"  • {_escape_markup(str(cmd_name))} - {_escape_markup(str(cmd.get('description', '')))}")
+            if (extension_dir / cmd["file"]).is_file():
+                provided_commands.append(cmd)
+            else:
+                missing_commands.append(cmd)
+
+        if provided_commands:
+            console.print("\n[bold cyan]Provided commands:[/bold cyan]")
+            for cmd in provided_commands:
+                cmd_name = _commands._registered_command_name(project_root, cmd["name"])
+                console.print(f"  • {_escape_markup(str(cmd_name))} - {_escape_markup(str(cmd.get('description', '')))}")
+        if missing_commands:
+            console.print("\n[yellow]Warning:[/yellow] Command files missing:")
+            for cmd in missing_commands:
+                console.print(f"  • {_escape_markup(cmd['name'])} ({_escape_markup(cmd['file'])})")
 
         # Report agent skills registration
         reg_meta = manager.registry.get(manifest.id)

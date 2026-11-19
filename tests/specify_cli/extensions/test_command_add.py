@@ -41,6 +41,52 @@ class TestExtensionAddCLI:
     """CLI tests for ``specify extension add``."""
 
     @pytest.mark.parametrize(
+        ("agent", "skills_dir"),
+        [("codex", ".agents/skills"), ("claude", ".claude/skills")],
+    )
+    @pytest.mark.parametrize("case", ["complete", "missing-one", "missing-all", "ignored"])
+    def test_add_dev_reports_missing_command_files(
+        self, extension_dir, project_dir, valid_manifest_data, monkeypatch, agent, skills_dir, case
+    ):
+        provides = valid_manifest_data["provides"]
+        provides["commands"].append({
+            "name": "speckit.test-ext.second",
+            "file": "commands/second.md",
+            "description": "Second test command",
+        })
+        (extension_dir / "extension.yml").write_text(
+            yaml.safe_dump(valid_manifest_data), encoding="utf-8"
+        )
+        if case in {"complete", "ignored"}:
+            (extension_dir / "commands/second.md").write_text(
+                "---\ndescription: Second test command\n---\n\nSecond command\n",
+                encoding="utf-8",
+            )
+        if case == "ignored":
+            (extension_dir / ".extensionignore").write_text("commands/second.md\n", encoding="utf-8")
+        if case == "missing-all":
+            (extension_dir / "commands/hello.md").unlink()
+
+        write_listing_project_options(project_dir, {"ai": agent, "ai_skills": True})
+        with monkeypatch.context() as project_context:
+            project_context.chdir(project_dir)
+            result = CliRunner().invoke(app, ["extension", "add", "--dev", str(extension_dir)])
+        output = strip_ansi(result.output)
+
+        assert result.exit_code == 0, output
+        assert "Extension installed successfully" in output
+        assert ("Provided commands:" in output) == (case != "missing-all")
+        assert ("Command files missing:" in output) == (case != "complete")
+        for command in provides["commands"]:
+            name = command["name"]
+            filename = command["file"]
+            skill_name = name.replace(".", "-")
+            available = case == "complete" or (case != "missing-all" and name.endswith(".hello"))
+            assert (project_dir / skills_dir / skill_name / "SKILL.md").is_file() == available
+            assert (f"• {skill_name} - " in output) == available
+            assert (f"• {name} ({filename})" in output) == (not available)
+
+    @pytest.mark.parametrize(
         ("config", "warns"),
         [
             pytest.param({}, False, id="undeclared"),
