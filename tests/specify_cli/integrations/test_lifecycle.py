@@ -314,6 +314,7 @@ def test_builtin_journal_never_writes_a_different_file_open_returned(tmp_path, m
     from specify_cli.integrations import _lifecycle
     from specify_cli.integrations._file_changes import write_text
 
+    backups = _record_rollback_backups(monkeypatch)
     project = tmp_path / "plain"
     target = project / ".specify" / "templates" / "plan.md"
     target.parent.mkdir(parents=True)
@@ -339,6 +340,8 @@ def test_builtin_journal_never_writes_a_different_file_open_returned(tmp_path, m
     assert decoy.read_text(encoding="utf-8") == "decoy\n"
     assert target.read_text(encoding="utf-8") == "original\n"
     assert not os.path.samefile(target, decoy)
+    for backup in backups:
+        shutil.rmtree(backup)
 
 
 def test_builtin_journal_keeps_restoring_after_a_metadata_refusal(tmp_path, monkeypatch, capsys):
