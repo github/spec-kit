@@ -224,8 +224,11 @@ descriptor-relative or change their documented concurrency limitations.
   `with FileHelper(...) as files:` closes on both success and failure. Operations
   on an explicitly closed helper raise `FileHelperError`.
 - `mkdir(path, parents=False, exist_ok=False)` creates directories.
-- `iterdir(path)` enumerates the selected directory's immediate entries in
-  deterministic name order, applying the helper's symlink policy to each entry.
+- `iterdir(path, select=None)` enumerates the selected directory's immediate
+  entries in deterministic name order. The optional caller-supplied predicate
+  receives each bare name before its entry is inspected. Only included entries
+  are validated, and omitting the predicate includes every entry. The directory
+  being listed always undergoes the helper's normal path validation.
 - `replace(source, destination)` atomically moves a staged regular file or
   directory on the same filesystem, without clobbering a destination that
   exists or appears after validation. It uses no-clobber rename on macOS,
@@ -479,8 +482,8 @@ locally traceable `pathlib` receivers; method names alone do not establish
 filesystem I/O.
 This is not runtime enforcement or whole-program type inference.
 
-Only four modules are exempt: `file_helper.py` implements the primitives,
+Only three modules are exempt: `file_helper.py` implements the primitives,
 `_file_handles.py` provides native filesystem operations, `_file_policy.py`
-establishes trusted roots and bootstraps policy, and `integration_state.py`
-owns the managed-metadata exception described above. Existing direct calls
+establishes trusted roots and bootstraps policy. The deny-mode policy for
+`integration_state.py` does not exempt it from this guard. Existing direct calls
 elsewhere are not exempt when their call sites change.

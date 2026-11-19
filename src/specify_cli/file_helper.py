@@ -7,7 +7,7 @@ import stat
 import sys
 import tempfile
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from copy import copy
 from dataclasses import dataclass, field
@@ -384,27 +384,28 @@ class FileHelper:
         destination = self._path(path, allow_missing=True)
         destination.mkdir(parents=parents, exist_ok=exist_ok)
 
-    def iterdir(self, path: Path | str) -> tuple[Path, ...]:
-        """Enumerate immediate entries while applying the helper link policy."""
+    def iterdir(
+        self, path: Path | str, *, select: Callable[[str], bool] | None = None,
+    ) -> tuple[Path, ...]:
+        """Enumerate immediate entries, validating only names selected by the caller."""
         destination = self._path(path)
         self._require_directory(destination)
         entries = []
         with os.scandir(destination) as iterator:
-            for entry in iterator:
-                candidate = destination / entry.name
-                mode = self._entry_mode(candidate)
-                if stat.S_ISLNK(mode):
-                    if not self.allow_symlinks:
-                        raise SymlinkDeniedError(
-                            f"Refusing to enumerate symlink: {candidate}"
-                        )
-                    self._path(candidate)
-                elif not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
-                    raise UnsupportedPathError(
-                        f"Unsupported filesystem object: {candidate}"
-                    )
-                entries.append(candidate)
-        return tuple(sorted(entries, key=lambda entry: entry.name))
+            names = sorted(entry.name for entry in iterator)
+        for name in names:
+            if select is not None and not select(name):
+                continue
+            candidate = destination / name
+            mode = self._entry_mode(candidate)
+            if stat.S_ISLNK(mode):
+                if not self.allow_symlinks:
+                    raise SymlinkDeniedError(f"Refusing to enumerate symlink: {candidate}")
+                self._path(candidate)
+            elif not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+                raise UnsupportedPathError(f"Unsupported filesystem object: {candidate}")
+            entries.append(candidate)
+        return tuple(entries)
 
     def replace(self, source: Path | str, destination: Path | str) -> None:
         """Atomically move a staged file or directory without clobbering a destination."""

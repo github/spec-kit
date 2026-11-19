@@ -3407,11 +3407,25 @@ def test_special_objects_fail_before_read_update_or_recursive_mutation(root, all
     os.mkfifo(root / "tree/z-fifo")
     for operation in (lambda: files.read_bytes("tree/z-fifo"),
                       lambda: files.write_bytes("tree/z-fifo", b"bad"),
+                      lambda: files.iterdir("tree"),
                       lambda: files.delete("tree", recursive=True)):
         with pytest.raises(UnsupportedPathError):
             operation()
     assert files.read_text("tree/a-file") == "keep"
     assert (root / "tree/z-fifo").exists()
+    assert [entry.name for entry in files.iterdir("tree", select=lambda name: name != "z-fifo")] == ["a-file"]
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_iterdir_selects_names_before_validating_siblings(root, link, allow):
+    (root / "selected").write_text("inside")
+    (root.parent / "outside").write_text("outside")
+    link(root / "alias", root.parent / "outside")
+    with FileHelper(root, allow_symlinks=allow) as files:
+        assert [path.name for path in files.iterdir(".", select=lambda name: name == "selected")] == ["selected"]
+        assert files.iterdir(".", select=lambda name: name == "missing") == ()
+        with pytest.raises(PathEscapeError if allow else SymlinkDeniedError):
+            files.iterdir(".", select=lambda name: name == "alias")
 
 
 def test_atomic_failure_cleans_temp_and_preserves_target(root, monkeypatch):

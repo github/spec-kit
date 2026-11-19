@@ -75,6 +75,52 @@ def test_guard_tracks_path_iteration_targets(iterator):
 
 
 @pytest.mark.parametrize(
+    "expression",
+    ["[{value} {clauses}]", "{{{value} {clauses}}}", "{{{value}: 1 {clauses}}}", "({value} {clauses})"],
+)
+def test_guard_tracks_comprehension_bindings_and_restores_outer_scope(expression):
+    source = (
+        "from pathlib import Path\n"
+        "def scan(root: Path, child: Path):\n"
+        "    scoped = " + expression.format(
+            value="entry.read_text()", clauses="for directory in root.iterdir() for entry in directory.glob('*') if entry.is_file()"
+        ) + "\n"
+        "    shadowed = " + expression.format(value="child.replace('a', 'b')", clauses="for child in ['a']") + "\n"
+        "    return child.read_text()\n"
+    )
+    assert guard.scan_added_calls(source, "src/specify_cli/domain.py", {3, 4, 5}) == [
+        (3, "file-path.glob"), (3, "file-path.is_file"), (3, "file-path.iterdir"),
+        (3, "file-path.read_text"), (5, "file-path.read_text"),
+    ]
+
+
+def test_guard_does_not_infer_paths_from_shadowed_sorted():
+    source = (
+        "from pathlib import Path\n"
+        "def scan(root: Path, sorted):\n"
+        "    for child in sorted(root.iterdir()):\n"
+        "        child.replace('a', 'b')\n"
+    )
+    assert guard.scan_added_calls(source, "src/specify_cli/domain.py", {4}) == []
+
+
+def test_guard_tracks_constructor_paths_across_methods():
+    source = (
+        "from pathlib import Path\n"
+        "class Resolver:\n"
+        "    def scan(self):\n"
+        "        return self.directory.exists(), self.label.replace('a', 'b')\n"
+        "    def __init__(instance, root: Path):\n"
+        "        instance.directory = root / 'templates'\n"
+        "        instance.label = 'a'\n"
+        "class Other:\n"
+        "    def scan(self):\n"
+        "        return self.directory.replace('a', 'b')\n"
+    )
+    assert guard.scan_added_calls(source, "src/specify_cli/domain.py", {4, 10}) == [(4, "file-path.exists")]
+
+
+@pytest.mark.parametrize(
     "source",
     [
         "import tempfile\nwith tempfile.TemporaryFile() as stream:\n    stream.write(b'x')\n",
@@ -130,6 +176,48 @@ def init_repo(tmp_path: Path) -> tuple[Path, str]:
     run_git(repo, "add", ".")
     base = run_git(repo, "write-tree").strip()
     return repo, base
+
+
+def test_guard_checks_new_io_under_unchanged_sorted_loop(tmp_path):
+    repo, _ = init_repo(tmp_path)
+    path = "src/specify_cli/domain.py"
+    loop = "from pathlib import Path\ndef scan(root: Path):\n    for child in sorted(root.iterdir()):\n"
+    revisions = []
+    for body in ("        pass\n", "        child.read_text()\n"):
+        (repo / path).write_text(loop + body, encoding="utf-8")
+        run_git(repo, "add", path)
+        revisions.append(run_git(repo, "write-tree").strip())
+    assert guard.check(repo, *revisions) == [(path, 4, "file-path.read_text")]
+
+
+@pytest.mark.parametrize("kind", ["unchanged", "new-io", "from-exempt"])
+def test_guard_checks_renames_without_losing_following_record(tmp_path, kind):
+    repo, _ = init_repo(tmp_path)
+    prefix = "src/specify_cli/"
+    old = prefix + ("_file_handles.py" if kind == "from-exempt" else "original.py")
+    new = prefix + "renamed.py"
+    source = "open('legacy')\n" + "\n".join(f"# padding line {i}" for i in range(10)) + "\n"
+    (repo / old).write_text(source, encoding="utf-8")
+    run_git(repo, "add", old)
+    base = run_git(repo, "write-tree").strip()
+    (repo / old).rename(repo / new)
+    if kind == "new-io":
+        (repo / new).write_text(source + "open('new')\n", encoding="utf-8")
+    following = prefix + "zzz.py"
+    (repo / following).write_text("open('following')\n", encoding="utf-8")
+    run_git(repo, "add", "-A")
+    head = run_git(repo, "write-tree").strip()
+    assert f"\0{old}\0{new}\0A\0{following}\0" in run_git(
+        repo, "diff", "--name-status", "--find-renames", "-z", base, head
+    )
+    expected = {"unchanged": [], "new-io": [(new, 12, "open")], "from-exempt": [(new, 1, "open")]}
+    assert guard.check(repo, base, head) == [*expected[kind], (following, 1, "open")]
+
+
+def test_guard_checks_direct_io_in_integration_state():
+    assert guard.scan_added_calls(
+        "open('state')\n", "src/specify_cli/integration_state.py", {1}
+    ) == [(1, "open")]
 
 
 @pytest.mark.parametrize(

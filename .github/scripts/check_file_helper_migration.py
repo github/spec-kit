@@ -14,7 +14,6 @@ LOW_LEVEL_BOUNDARY_ALLOWLIST = {
     "src/specify_cli/file_helper.py",
     "src/specify_cli/_file_handles.py",
     "src/specify_cli/_file_policy.py",
-    "src/specify_cli/integration_state.py",
 }
 
 DIRECT_PATH_AND_FILE_METHODS = {
@@ -138,7 +137,7 @@ class _Calls(ast.NodeVisitor):
     """Recognize direct module calls and locally traceable pathlib receivers."""
 
     def __init__(self):
-        self.symbols: dict[str, str] = {"open": "open"}
+        self.symbols: dict[str, str] = {"open": "open", "sorted": "builtins.sorted"}
         self.calls: list[tuple[int, int, str]] = []
 
     def _symbol(self, node: ast.AST) -> str:
@@ -188,6 +187,13 @@ class _Calls(ast.NodeVisitor):
         return self._symbol(node)
 
     def _bind(self, target: ast.AST, symbol: str) -> None:
+        if isinstance(target, (ast.List, ast.Tuple)):
+            for item in target.elts:
+                self._bind(item, "")
+            return
+        if isinstance(target, ast.Starred):
+            self._bind(target.value, "")
+            return
         name = _root_name(target)
         if name is not None:
             self.symbols[name] = symbol
@@ -217,23 +223,50 @@ class _Calls(ast.NodeVisitor):
         value = self._value(node.value) if node.value is not None else ""
         self._bind(node.target, value or self._annotation(node.annotation))
 
+    def _element(self, iterator: ast.AST) -> str:
+        if not isinstance(iterator, ast.Call):
+            return ""
+        if self._symbol(iterator.func) == "builtins.sorted" and iterator.args:
+            return self._element(iterator.args[0])
+        if (
+            isinstance(iterator.func, ast.Attribute)
+            and iterator.func.attr in PATH_ITERATORS
+            and self._value(iterator.func.value) == PATH_VALUE
+        ):
+            return PATH_VALUE
+        return ""
+
     def visit_For(self, node: ast.For) -> None:
         self.visit(node.iter)
         self.visit(node.target)
         original = self.symbols.copy()
-        iterator = node.iter
-        is_path_iterator = (
-            isinstance(iterator, ast.Call)
-            and isinstance(iterator.func, ast.Attribute)
-            and iterator.func.attr in PATH_ITERATORS
-            and self._value(iterator.func.value) == PATH_VALUE
-        )
-        self._bind(node.target, PATH_VALUE if is_path_iterator else "")
+        self._bind(node.target, self._element(node.iter))
         for statement in node.body:
             self.visit(statement)
         self._merge_symbols(original)
         for statement in node.orelse:
             self.visit(statement)
+
+    def _visit_comprehension(self, generators: list[ast.comprehension], *results: ast.expr) -> None:
+        outer = self.symbols
+        self.symbols = outer.copy()
+        for generator in generators:
+            self.visit(generator.iter)
+            self.visit(generator.target)
+            self._bind(generator.target, self._element(generator.iter))
+            for condition in generator.ifs:
+                self.visit(condition)
+        for result in results:
+            self.visit(result)
+        self.symbols = outer
+
+    def visit_ListComp(self, node: ast.ListComp | ast.SetComp | ast.GeneratorExp) -> None:
+        self._visit_comprehension(node.generators, node.elt)
+
+    visit_SetComp = visit_GeneratorExp = visit_ListComp
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        self._visit_comprehension(node.generators, node.key, node.value)
 
     def visit_If(self, node: ast.If) -> None:
         self.visit(node.test)
@@ -261,7 +294,9 @@ class _Calls(ast.NodeVisitor):
 
     visit_AsyncWith = visit_With
 
-    def visit_FunctionDef(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+    def _visit_function(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef, attributes: tuple[str, ...] = (),
+    ) -> tuple[str, ...]:
         for expression in [*node.decorator_list, *node.args.defaults, *node.args.kw_defaults]:
             if expression is not None:
                 self.visit(expression)
@@ -272,16 +307,45 @@ class _Calls(ast.NodeVisitor):
         for argument in [*args.posonlyargs, *args.args, *args.kwonlyargs, args.vararg, args.kwarg]:
             if argument is not None:
                 self.symbols[argument.arg] = self._annotation(argument.annotation)
+        positional = args.posonlyargs + args.args
+        receiver = ""
+        if positional and not any(
+            _root_name(decorator) in {"staticmethod", "classmethod", "builtins.staticmethod", "builtins.classmethod"}
+            for decorator in node.decorator_list
+        ):
+            receiver = positional[0].arg + "."
+            self.symbols.update({receiver + name: PATH_VALUE for name in attributes})
         for statement in node.body:
             self.visit(statement)
+        known_paths = tuple(
+            name.removeprefix(receiver) for name, kind in self.symbols.items()
+            if receiver and name.startswith(receiver) and kind == PATH_VALUE
+        ) if node.name == "__init__" else ()
         self.symbols = outer
+        return known_paths
+
+    def visit_FunctionDef(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        self._visit_function(node)
 
     visit_AsyncFunctionDef = visit_FunctionDef
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         outer = self.symbols
         self.symbols = outer.copy()
-        self.generic_visit(node)
+        for expression in [*node.decorator_list, *node.bases, *node.keywords]:
+            self.visit(expression)
+        methods = []
+        attributes: tuple[str, ...] = ()
+        for statement in node.body:
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if statement.name == "__init__":
+                    attributes = self._visit_function(statement)
+                else:
+                    methods.append(statement)
+            else:
+                self.visit(statement)
+        for method in methods:
+            self._visit_function(method, attributes)
         self.symbols = outer
         outer[node.name] = ""
 
