@@ -1273,17 +1273,17 @@ class TestCodexNoModelInvocationOwnership:
         assert not list(tmp_path.rglob("*.speckit-backup"))
 
     def test_edit_made_while_backing_up_is_not_overwritten(self, tmp_path, monkeypatch):
-        from specify_cli.integrations import codex
+        from specify_cli.file_helper import FileHelper
 
         path = self._seed(tmp_path)
-        real_create_private = codex.create_private
+        real_create_private = FileHelper.create_private_bytes
 
         def create_private(helper, rel, content):
             real_create_private(helper, rel, content)
             with path.open("ab") as stream:  # in place, so the inode is unchanged
                 stream.write(b"# edited\n")
 
-        monkeypatch.setattr(codex, "create_private", create_private)
+        monkeypatch.setattr(FileHelper, "create_private_bytes", create_private)
         with pytest.raises(PermissionError, match="changed while being updated"):
             self._setup(tmp_path)
         assert path.read_bytes().endswith(b"# edited\n")
@@ -1647,7 +1647,7 @@ class TestCodexNoModelInvocationOwnership:
         self._setup(tmp_path)
         assert seen and seen[0][0] == original
         if os.name == "nt":
-            from specify_cli.integrations.codex._private_file import owner_only_sddl
+            from specify_cli._file_handles import _windows_owner_only_sddl as owner_only_sddl
 
             # NTFS may add AI (auto-inherited) to the flags; P is what blocks inheritance.
             flags, aces = _split_dacl(seen[0][1])
@@ -1988,356 +1988,26 @@ class TestCodexNoModelInvocationPresets:
         assert not (project / self.SKILL / "agents").exists()
 
 
-class TestCodexFileHelperInternals:
-    """Pins the ``FileHelper`` internals ``_replace_file`` rewrites through.
-
-    ``FileHelper`` has no public in-place byte rewrite, so the Codex package
-    uses ``_path`` and ``_overwrite_descriptor``, and creates its backup
-    through ``_creation_directory``. A change to any of them should
-    fail here rather than silently in a policy rewrite.
-    """
-
-    REL = ".agents/skills/speckit-plan/agents/openai.yaml"
-
-    def test_create_private_creates_exclusively(self, tmp_path):
-        from specify_cli.file_helper import FileHelper
-        from specify_cli.integrations.codex._private_file import create_private
-
-        rel = f"{self.REL}.speckit-backup"
-        (tmp_path / rel).parent.mkdir(parents=True)
-        with FileHelper(tmp_path) as helper:
-            create_private(helper, rel, b"first")
-            with pytest.raises(FileExistsError):
-                create_private(helper, rel, b"second")
-        assert (tmp_path / rel).read_bytes() == b"first"
-
-    @pytest.mark.skipif(os.name != "nt", reason="Windows creation path")
-    def test_create_private_removes_a_partial_file(self, tmp_path, monkeypatch):
-        from specify_cli.file_helper import FileHelper
-        from specify_cli.integrations.codex import _private_file
-
-        def fail(*args, **kwargs):
-            raise OSError("disk full")
-
-        real_fdopen = os.fdopen
-
-        def fdopen(fd, *args, **kwargs):
-            stream = real_fdopen(fd, *args, **kwargs)
-            monkeypatch.setattr(stream, "write", fail)
-            return stream
-
-        monkeypatch.setattr(_private_file.os, "fdopen", fdopen)
-        rel = f"{self.REL}.speckit-backup"
-        (tmp_path / rel).parent.mkdir(parents=True)
-        with FileHelper(tmp_path) as helper, pytest.raises(OSError, match="disk full"):
-            _private_file.create_private(helper, rel, b"content")
-        assert not (tmp_path / rel).exists()
-
-    @pytest.mark.parametrize("marked", [True, False, None])
-    def test_windows_create_removes_its_file_through_the_handle_if_no_descriptor_is_made(
-        self, tmp_path, monkeypatch, caplog, marked
-    ):
-        # Simulates the Windows calls, so this runs everywhere; the next test
-        # makes the real ones. Without a descriptor the caller cannot remove
-        # the empty backup, and a retry would refuse it as an interrupted run.
-        import ctypes
-        import types
-
-        from specify_cli.integrations.codex import _private_file
-
-        calls = []
-
-        class Attributes(ctypes.Structure):
-            _fields_ = [("nLength", ctypes.c_ulong), ("descriptor", ctypes.c_void_p),
-                        ("inherit", ctypes.c_int)]
-
-        class Kernel:
-            def CreateFileW(self, path, access, share, attributes, disposition, flags, template):
-                calls.append(("CreateFileW", access))
-                return 1234
-
-            def SetFileInformationByHandle(self, handle, kind, info, size):
-                calls.append(("SetFileInformationByHandle", handle, kind, bytes(info._obj)))
-                if marked is None:
-                    raise ctypes.ArgumentError("bad argument")
-                return int(marked)
-
-            def CloseHandle(self, handle):
-                calls.append(("CloseHandle", handle))
-                return 1
-
-            def LocalFree(self, pointer):
-                return None
-
-        class Advapi:
-            def ConvertStringSecurityDescriptorToSecurityDescriptorW(self, *args):
-                return 1
-
-        def open_osfhandle(handle, flags):
-            raise OSError("too many open files")
-
-        monkeypatch.setattr(_private_file, "_windows_api", lambda: (Kernel(), Advapi(), Attributes))
-        monkeypatch.setattr(_private_file, "owner_only_sddl", lambda: "O:S-1-0D:P")
-        monkeypatch.setitem(sys.modules, "msvcrt", types.SimpleNamespace(open_osfhandle=open_osfhandle))
-        monkeypatch.setattr(os, "O_BINARY", 0x8000, raising=False)
-        with pytest.raises(OSError, match="too many open files"):
-            _private_file._create_windows(tmp_path / "openai.yaml.speckit-backup")
-        delete = 0x00010000
-        assert calls[0][0] == "CreateFileW" and calls[0][1] & delete
-        # FileDispositionInfo with DeleteFile set, before the handle closes.
-        assert calls[1:] == [("SetFileInformationByHandle", 1234, 4, b"\x01"), ("CloseHandle", 1234)]
-        # If it cannot be marked, the empty file is named so it can be deleted.
-        warned = "openai.yaml.speckit-backup" in caplog.text
-        assert warned is not bool(marked)
-
-    @pytest.mark.skipif(sys.platform != "win32", reason="Windows creation path")
-    def test_windows_create_private_leaves_no_file_if_no_descriptor_is_made(
-        self, tmp_path, monkeypatch
-    ):
-        import msvcrt
-
-        from specify_cli.file_helper import FileHelper
-        from specify_cli.integrations.codex._private_file import create_private
-
-        def fail(handle, flags):
-            raise OSError("too many open files")
-
-        rel = f"{self.REL}.speckit-backup"
-        (tmp_path / rel).parent.mkdir(parents=True)
-        monkeypatch.setattr(msvcrt, "open_osfhandle", fail)
-        with FileHelper(tmp_path) as helper, pytest.raises(OSError, match="too many open files"):
-            create_private(helper, rel, b"content")
-        assert not (tmp_path / rel).exists()
-        monkeypatch.undo()
-        with FileHelper(tmp_path) as helper:
-            create_private(helper, rel, b"content")
-        assert (tmp_path / rel).read_bytes() == b"content"
-
-    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
-    @pytest.mark.parametrize("step", ["write", "fsync", "close"])
-    def test_posix_create_private_uses_one_descriptor_and_removes_a_partial_file(
-        self, tmp_path, monkeypatch, step
-    ):
-        # Reopening the backup by name could block on a FIFO swapped in for it.
-        from specify_cli.file_helper import FileHelper
-        from specify_cli.integrations.codex._private_file import create_private
-
-        rel = f"{self.REL}.speckit-backup"
-        (tmp_path / rel).parent.mkdir(parents=True)
-        real_open, real_step = os.open, getattr(os, step)
-        leaf: list[int] = []
-        live: set[int] = set()
-
-        def open_(path, flags, *args, **kwargs):
-            fd = real_open(path, flags, *args, **kwargs)
-            if os.fspath(path).endswith(".speckit-backup"):
-                leaf.append(fd)
-                live.add(fd)
-            return fd
-
-        def fail(fd, *args):
-            if fd not in live:
-                return real_step(fd, *args)
-            if step == "close":
-                # Its number may be reused once closed.
-                live.discard(fd)
-                real_step(fd)
-            raise OSError("disk full")
-
-        monkeypatch.setattr(os, "open", open_)
-        monkeypatch.setattr(os, step, fail)
-        with FileHelper(tmp_path) as helper, pytest.raises(OSError, match="disk full"):
-            create_private(helper, rel, b"content")
-        monkeypatch.undo()
-        assert len(leaf) == 1
-        assert not (tmp_path / rel).exists()
-
-    @staticmethod
-    def _fail_directory_fsync(monkeypatch, pinned_only):
-        """Make ``fsync`` of a directory fail as it does on Linux's ``O_PATH`` descriptors."""
-        from specify_cli.file_helper import FileHelper
-
-        real_fsync = os.fsync
-        pinned: set[int] = set()
-        if pinned_only:
-            real_creation = FileHelper._creation_directory
-
-            from contextlib import contextmanager
-
-            @contextmanager
-            def creation_directory(self, directory):
-                with real_creation(self, directory) as handle:
-                    pinned.add(handle)
-                    try:
-                        yield handle
-                    finally:
-                        pinned.discard(handle)
-
-            monkeypatch.setattr(FileHelper, "_creation_directory", creation_directory)
-
-        def fsync(fd):
-            if (fd in pinned) if pinned_only else stat.S_ISDIR(os.fstat(fd).st_mode):
-                raise OSError(errno.EBADF, "Bad file descriptor")
-            return real_fsync(fd)
-
-        monkeypatch.setattr(os, "fsync", fsync)
-
-    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
-    @pytest.mark.parametrize("pinned_only", [True, False])
-    def test_posix_create_private_keeps_the_backup_when_the_directory_cannot_be_flushed(
-        self, tmp_path, monkeypatch, pinned_only
-    ):
-        from specify_cli.file_helper import FileHelper
-        from specify_cli.integrations.codex._private_file import create_private
-
-        rel = f"{self.REL}.speckit-backup"
-        (tmp_path / rel).parent.mkdir(parents=True)
-        self._fail_directory_fsync(monkeypatch, pinned_only)
-        with FileHelper(tmp_path) as helper:
-            create_private(helper, rel, b"content")
-        monkeypatch.undo()
-        assert (tmp_path / rel).read_bytes() == b"content"
-
-    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
-    def test_posix_create_private_flushes_the_directory_through_its_own_descriptor(
-        self, tmp_path, monkeypatch
-    ):
-        from contextlib import contextmanager
-
-        from specify_cli.file_helper import FileHelper
-        from specify_cli.integrations.codex._private_file import create_private
-
-        rel = f"{self.REL}.speckit-backup"
-        (tmp_path / rel).parent.mkdir(parents=True)
-        real_creation, real_fsync = FileHelper._creation_directory, os.fsync
-        pinned: list[int] = []
-        directories: list[int] = []
-
-        @contextmanager
-        def creation_directory(self, directory):
-            with real_creation(self, directory) as handle:
-                pinned.append(handle)
-                yield handle
-
-        def fsync(fd):
-            if stat.S_ISDIR(os.fstat(fd).st_mode):
-                directories.append(fd)
-            return real_fsync(fd)
-
-        monkeypatch.setattr(FileHelper, "_creation_directory", creation_directory)
-        monkeypatch.setattr(os, "fsync", fsync)
-        with FileHelper(tmp_path) as helper:
-            create_private(helper, rel, b"content")
-        monkeypatch.undo()
-        # The pinned descriptor may be O_PATH, which fsync rejects.
-        assert len(directories) == 1 and directories[0] not in pinned
+class TestCodexRewriteDurability:
+    """The rewrite does not depend on flushing the backup's directory."""
 
     @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
     def test_rewrite_succeeds_when_the_directory_cannot_be_flushed(self, tmp_path, monkeypatch):
         owner = TestCodexNoModelInvocationOwnership()
         path = owner._seed(tmp_path)
-        self._fail_directory_fsync(monkeypatch, pinned_only=True)
+        real_fsync = os.fsync
+
+        def fsync(fd):
+            # As on Linux's O_PATH and search-only directory descriptors.
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise OSError(errno.EBADF, "Bad file descriptor")
+            return real_fsync(fd)
+
+        monkeypatch.setattr(os, "fsync", fsync)
         owner._setup(tmp_path)
         monkeypatch.undo()
         assert owner._yaml(path)["policy"] == {"allow_implicit_invocation": False}
         assert not list(tmp_path.rglob("*.speckit-backup"))
-
-    @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
-    def test_posix_create_private_flushes_through_one_descriptor(self, tmp_path, monkeypatch):
-        from specify_cli.file_helper import FileHelper
-        from specify_cli.integrations.codex._private_file import create_private
-
-        rel = f"{self.REL}.speckit-backup"
-        (tmp_path / rel).parent.mkdir(parents=True)
-        real_open, real_fsync = os.open, os.fsync
-        leaf: list[int] = []
-        synced: list[int] = []
-
-        def open_(path, flags, *args, **kwargs):
-            fd = real_open(path, flags, *args, **kwargs)
-            if os.fspath(path).endswith(".speckit-backup"):
-                leaf.append(fd)
-            return fd
-
-        def fsync(fd):
-            synced.append(fd)
-            return real_fsync(fd)
-
-        monkeypatch.setattr(os, "open", open_)
-        monkeypatch.setattr(os, "fsync", fsync)
-        with FileHelper(tmp_path) as helper:
-            create_private(helper, rel, b"content")
-        monkeypatch.undo()
-        assert len(leaf) == 1 and leaf[0] in synced
-        assert (tmp_path / rel).read_bytes() == b"content"
-        assert stat.S_IMODE((tmp_path / rel).stat().st_mode) & 0o077 == 0
-
-    @pytest.mark.skipif(os.name != "nt", reason="needs Windows junctions")
-    def test_create_private_refuses_a_junctioned_parent(self, tmp_path):
-        from specify_cli.file_helper import FileHelper
-        from specify_cli.integrations.codex._private_file import create_private
-
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        project = tmp_path / "project"
-        skill = project / ".agents" / "skills" / "speckit-plan"
-        skill.mkdir(parents=True)
-        subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(skill / "agents"), str(outside)],
-            check=True, capture_output=True,
-        )
-        with FileHelper(project) as helper, pytest.raises((OSError, ValueError)):
-            create_private(helper, f"{self.REL}.speckit-backup", b"secret")
-        assert not list(outside.iterdir())
-
-    @pytest.mark.skipif(os.name == "nt", reason="needs POSIX symlinks")
-    def test_create_private_refuses_a_symlinked_parent(self, tmp_path):
-        from specify_cli.file_helper import FileHelper
-        from specify_cli.integrations.codex._private_file import create_private
-
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        project = tmp_path / "project"
-        (project / ".agents" / "skills" / "speckit-plan").mkdir(parents=True)
-        (project / ".agents" / "skills" / "speckit-plan" / "agents").symlink_to(outside)
-        with FileHelper(project) as helper, pytest.raises((OSError, ValueError)):
-            create_private(helper, f"{self.REL}.speckit-backup", b"secret")
-        assert not list(outside.iterdir())
-
-    def test_overwrite_descriptor_rewrites_in_place_without_truncating(self, tmp_path):
-        from specify_cli.file_helper import FileHelper
-
-        path = tmp_path / self.REL
-        path.parent.mkdir(parents=True)
-        path.write_bytes(b"0123456789")
-        inode = path.stat().st_ino
-        with FileHelper(tmp_path) as helper:
-            destination = helper._path(self.REL)
-            assert destination == path.resolve()
-            with helper._overwrite_descriptor(destination) as fd:
-                assert os.fstat(fd).st_size == 10
-                os.write(fd, b"ab")
-        assert path.read_bytes() == b"ab23456789"
-        assert path.stat().st_ino == inode
-
-    @pytest.mark.skipif(os.name == "nt", reason="needs POSIX symlinks")
-    def test_overwrite_descriptor_refuses_a_symlinked_parent(self, tmp_path):
-        from specify_cli.file_helper import FileHelper
-
-        path = tmp_path / self.REL
-        path.parent.mkdir(parents=True)
-        path.write_bytes(b"inside")
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        (outside / "openai.yaml").write_bytes(b"outside")
-        with FileHelper(tmp_path) as helper:
-            destination = helper._path(self.REL)
-            path.parent.rename(tmp_path / "moved")
-            path.parent.symlink_to(outside, target_is_directory=True)
-            with pytest.raises(OSError):
-                with helper._overwrite_descriptor(destination) as fd:
-                    os.write(fd, b"written")
-        assert (outside / "openai.yaml").read_bytes() == b"outside"
 
 
 class TestCodexManifestInternals:

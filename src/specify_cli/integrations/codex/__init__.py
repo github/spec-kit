@@ -32,7 +32,6 @@ from ..base import (
 # the same lexical path. Pinned by ``TestCodexManifestInternals``.
 from ..manifest import IntegrationManifest, _validate_record_path
 from . import _openai_yaml
-from ._private_file import create_private
 
 logger = logging.getLogger(__name__)
 
@@ -81,11 +80,7 @@ def _replace_file(
     """
     backup_rel = f"{rel}{_BACKUP_SUFFIX}"
     with FileHelper(root) as helper:
-        # FileHelper has no public in-place byte rewrite; this is the anchored,
-        # non-truncating open behind ``overwrite_text``, which would translate
-        # newlines on Windows. Pinned by ``TestCodexFileHelperInternals``.
-        destination = helper._path(rel)
-        read = os.stat(destination, follow_symlinks=False)
+        read = helper.stat(rel)
         original = helper.read_bytes(rel)
         if expected is not None and original != expected:
             raise PermissionError(
@@ -93,7 +88,7 @@ def _replace_file(
             )
         with changing_file(root / backup_rel):
             try:
-                create_private(helper, backup_rel, original)
+                helper.create_private_bytes(backup_rel, original)
             except FileExistsError as exc:
                 raise FileExistsError(
                     errno.EEXIST,
@@ -111,7 +106,7 @@ def _replace_file(
                 ) from exc
         with changing_file(root / rel), ExitStack() as stack:
             try:
-                fd = stack.enter_context(helper._overwrite_descriptor(destination))
+                fd = stack.enter_context(helper.open_rewrite(rel))
                 _require_rewritable_fd(fd, root / rel, read)
                 # Catches an in-place edit the size and timestamp miss, such
                 # as a same-length one on a coarse-timestamp filesystem.
