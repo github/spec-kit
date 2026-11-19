@@ -697,7 +697,7 @@ def test_checkpoint_failure_leaves_running_run_not_resumable(
     assert probe["work"] == 1
 
 
-def _interrupt_state_write(monkeypatch, when):
+def _interrupt_state_write(monkeypatch, when, before_interrupt=None):
     """Raise ``KeyboardInterrupt`` from the first ``state.json`` write matching *when*."""
     original = RunState._atomic_write_json
     fired = []
@@ -705,6 +705,8 @@ def _interrupt_state_write(monkeypatch, when):
     def write(path, data):
         if path.name == "state.json" and not fired and when(data):
             fired.append(path)
+            if before_interrupt is not None:
+                before_interrupt()
             raise KeyboardInterrupt
         original(path, data)
 
@@ -793,12 +795,16 @@ def test_resume_interrupt_log_failure_persists_paused_state(
 
     log_path = state.runs_dir / "log.jsonl"
     original_log = log_path.read_text(encoding="utf-8")
-    log_path.unlink()
-    log_path.mkdir()
+
+    def break_log():
+        log_path.unlink()
+        log_path.mkdir()
+
     fired = _interrupt_state_write(
         monkeypatch,
         lambda data: data.get("step_results", {}).get("wait", {}).get("status")
         == "completed",
+        before_interrupt=break_log,
     )
 
     with pytest.raises((IsADirectoryError, PermissionError)):
