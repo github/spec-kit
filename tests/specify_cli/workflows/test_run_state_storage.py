@@ -306,6 +306,23 @@ def test_run_state_rejects_symlinked_artifact_writes(
             state.append_log({"event": "test"})
 
 
+def test_append_log_reports_full_path_when_artifact_is_directory(project_dir):
+    import errno
+    from specify_cli.workflows.engine import RunState
+
+    if not RunState._supports_descriptor_access():
+        pytest.skip("directory descriptors are unavailable")
+
+    log_path = _run_dir(project_dir) / "log.jsonl"
+    log_path.mkdir()
+
+    with pytest.raises(IsADirectoryError) as exc_info:
+        _state(project_dir).append_log({"event": "test"})
+
+    assert exc_info.value.errno == errno.EISDIR
+    assert exc_info.value.filename == str(log_path)
+
+
 def test_workflow_snapshot_artifact_is_checked(project_dir, tmp_path):
     from specify_cli.workflows.engine import RunState
 

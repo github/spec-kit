@@ -784,6 +784,8 @@ class RunState:
                     raise policy_exc from exc
                 except (OSError, NotImplementedError):
                     pass
+            if exc.filename == name:
+                exc.filename = str(path)
             raise
 
     @classmethod
