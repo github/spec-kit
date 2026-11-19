@@ -28,7 +28,11 @@ agent and its installed mode:
 | Codex, Command Code, ZCode skills | `$speckit-specify` | `$speckit-bug-assess` |
 | Kimi skills | `/skill:speckit-specify` | `/skill:speckit-bug-assess` |
 
-Use the form exposed by your agent. See the
+Use the form exposed by your agent. In skills-backed integrations, generated
+core, extension, and preset skills include hook-command guidance translating
+dotted hook command names (such as `speckit.git.commit`) into the active
+integration's hyphenated skill invocation (such as `/speckit-git-commit` or
+`$speckit-git-commit`). See the
 [GitHub Copilot guide](copilot.md) for its skills and commands
 layouts, or choose another agent from the [integration directory](index.md).
 
@@ -209,8 +213,8 @@ specify integration switch <key>
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
 | `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)        |
-| `--force`                | Force removal of modified files during uninstall; when the target is already installed, overwrite managed shared templates while changing the default |
-| `--refresh-shared-infra` | Also overwrite shared infrastructure files even if you customized them (otherwise customizations are preserved) |
+| `--force`                | Force removal of modified files during uninstall; when the target is already installed, overwrite customized shared infrastructure. Also overwrites modified or unowned extension [skill resource](../extensions/developing.md#skill-resources) copies when the target's skills are rendered |
+| `--refresh-shared-infra` | Overwrite customized shared scripts, page templates, and `.specify/.gitignore`, including for installed targets and the current default |
 | `--integration-options`  | Options for the target integration when it is not already installed      |
 | `--trust-integration` | Authorize downloading and executing a reviewed external adapter without the interactive trust prompt |
 
@@ -222,7 +226,14 @@ specify integration switch <key>
   `switch` rejects setup options for installed targets.
 
 Both paths register enabled extensions and presets for the new default.
-See the option table for the different meanings of `--force`.
+If the target is already the current default, a call without flags does nothing;
+`--refresh-shared-infra` or `--force` refreshes only shared infrastructure, without
+reinstalling the integration or re-registering extensions and presets.
+
+For a target that is not installed, `--force` controls removal of the outgoing
+integration's edited files; only `--refresh-shared-infra` permits overwriting
+shared customizations. For an installed target, either flag permits that shared
+overwrite. Symlinked shared paths remain protected with either flag.
 
 When switching to an external adapter that must be downloaded and installed,
 use `--trust-integration` only after reviewing its code:
@@ -259,7 +270,7 @@ specify integration upgrade [<key>]
 
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
-| `--force`                | Overwrite files even if they have been modified                          |
+| `--force`                | Overwrite files even if they have been modified; when upgrading the active integration, also overwrite modified or unowned extension [skill resource](../extensions/developing.md#skill-resources) copies |
 | `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)        |
 | `--integration-options`  | Options for the integration                                              |
 | `--trust-integration`    | Authorize downloading/importing the reviewed replacement external adapter |
@@ -413,6 +424,7 @@ semantics, examples, and migration caveats live in the relevant agent guide:
 | GitHub Copilot | [Skills and commands layouts](copilot.md#commands-layout) |
 | IBM Bob | [Legacy commands and migration](bob.md#legacy-commands-and-migration) |
 | Kimi Code | [Legacy migration](kimi.md#legacy-migration) |
+| opencode | [Hidden Spec Kit files](opencode.md#hidden-spec-kit-files) |
 
 Other agent-specific details are listed in the
 [integration directory](index.md).

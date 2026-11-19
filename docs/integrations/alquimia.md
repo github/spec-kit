@@ -23,8 +23,10 @@ Skills are installed as `.alquimia/skills/speckit-<command>/SKILL.md`.
 Invoke them in the agent's chat, for example `/speckit-specify` or
 `/speckit-bug-assess` for the installed bug extension.
 
-Generated skills are both user- and model-invocable; supported core skills also
-receive inline argument hints.
+Generated skills are both user- and model-invocable; supported core skills
+receive inline `argument-hint` frontmatter, and extension commands and preset
+command aliases retain any `argument-hint` declared in their source command
+frontmatter.
 
 ## Workflow Dispatch
 

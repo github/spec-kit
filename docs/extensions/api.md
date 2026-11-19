@@ -691,6 +691,8 @@ Standard events (defined by core):
 - `after_clarify` - After spec clarification
 - `before_constitution` - Before constitution update
 - `after_constitution` - After constitution update
+- `before_converge` - Before convergence assessment
+- `after_converge` - After convergence assessment
 
 #### Bundled `bug` extension events (available when the extension is installed)
 

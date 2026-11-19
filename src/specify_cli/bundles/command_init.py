@@ -30,6 +30,13 @@ def bundle_init(
     try:
         project_root = find_project_root()
         if project_root is None:
+            if bundle:
+                # Install resolves and validates the manifest before initializing,
+                # including the bundle-declared integration.
+                bundle_install(
+                    bundle, integration=integration, offline=offline, refresh=False
+                )
+                return
             init_integration = _resolve_init_integration(integration, None)
             console.print(
                 f"[cyan]Initializing a Spec Kit project with integration "

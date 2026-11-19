@@ -2,13 +2,13 @@ schema_version: "1.0"
 workflow:
   id: "bugfix"
   name: "Guided Bug Fix"
-  version: "1.0.0"
+  version: "1.0.1"
   author: "GitHub"
   description: "Runs bug assess → human review gate → bug fix → bug test on a bug report"
 
 requires:
-  # Matches the composed bug extension's requirement (extensions/bug/extension.yml).
-  speckit_version: ">=0.9.0"
+  # Gate verdict inputs require CLI 0.15.1 or later.
+  speckit_version: ">=0.15.1"
 
 inputs:
   report:
@@ -23,6 +23,9 @@ inputs:
     type: string
     default: "auto"
     prompt: "Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's initialized integration)"
+  bug_review_assessment_verdict:
+    type: string
+    default: ""
 
 steps:
   - id: assess
@@ -33,6 +36,7 @@ steps:
 
   - id: review-assessment
     type: gate
+    verdict_input: bug_review_assessment_verdict
     message: "Review the assessment before any code change."
     options: [approve, reject]
     on_reject: abort

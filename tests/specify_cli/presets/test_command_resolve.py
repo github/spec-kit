@@ -3,11 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+import pytest
 
 from specify_cli.presets import (
     PresetManager,
 )
 from tests.conftest import strip_ansi
+from tests.parity_helpers import install_section_stack
 
 
 class TestPresetResolve:
@@ -79,6 +81,34 @@ class TestPresetResolve:
 
         with patch.object(Path, "cwd", return_value=project_dir):
             return CliRunner().invoke(app, args)
+
+    @pytest.mark.parametrize(
+        "content,code",
+        [("# No target\n", "SECTION_NOT_FOUND"), ("## Target\n## Target\n", "SECTION_AMBIGUOUS")],
+    )
+    def test_section_errors_fail_inspection(self, project_dir, content, code):
+        name, _ = install_section_stack(project_dir, content, "new\n")
+        result = self._invoke(project_dir, ["preset", "resolve", name])
+        assert result.exit_code == 1, result.output
+        assert code in result.output
+        assert "Final output is composed" not in result.output
+
+    def test_section_missing_base_fails_inspection(self, project_dir):
+        name, _ = install_section_stack(project_dir, "## Target\nold\n", "new\n")
+        (project_dir / ".specify/templates" / f"{name}.md").unlink()
+        result = self._invoke(project_dir, ["preset", "resolve", name])
+        assert result.exit_code == 1
+        assert "no replace base" in result.output
+
+    def test_hidden_invalid_section_does_not_block_inspection(self, project_dir):
+        name, _ = install_section_stack(project_dir, "## Target\nold\n", "invalid\n", selector=None)
+        override = project_dir / ".specify/templates/overrides" / f"{name}.md"
+        override.parent.mkdir(parents=True, exist_ok=True)
+        override.write_bytes(b"# Winning override\n")
+        result = self._invoke(project_dir, ["preset", "resolve", name])
+        assert result.exit_code == 0, result.output
+        assert "project override" in result.output
+        assert "Error:" not in result.output
 
     def test_resolve_rejects_invalid_template_name(self, project_dir):
         """``preset resolve`` rejects names before joining them into paths."""

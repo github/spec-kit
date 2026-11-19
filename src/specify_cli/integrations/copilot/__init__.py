@@ -723,7 +723,9 @@ class CopilotIntegration(IntegrationBase):
                 f"Integration destination {dest_resolved} escapes "
                 f"project root {project_root_resolved}"
             ) from exc
-        dest.mkdir(parents=True, exist_ok=True)
+        from .._file_changes import make_directories
+
+        make_directories(dest)
         created: list[Path] = []
 
         script_type = opts.get("script_type", "sh")

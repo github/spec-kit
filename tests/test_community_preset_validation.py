@@ -36,7 +36,7 @@ def submission(tmp_path):
         "tags": "sample, example",
     }
     paths = {name: tmp_path / name for name in (
-        "issue.json", "archive.zip", "README.md", "catalog.json", "presets.md",
+        "issue.json", "archive.zip", "README.md", "catalog.json",
         "snapshot.json",
     )}
     paths["README.md"].write_text(
@@ -57,11 +57,6 @@ def submission(tmp_path):
     paths["catalog.json"].write_text(
         json.dumps({"presets": {}}), encoding="utf-8"
     )
-    paths["presets.md"].write_text(
-        "| Preset | Purpose | Provides | Requires | URL |\n"
-        "|--------|---------|----------|----------|-----|\n",
-        encoding="utf-8",
-    )
     return issue, manifest, paths
 
 
@@ -73,7 +68,6 @@ def run_verifier(paths, phase="submission"):
             "--archive", str(paths["archive.zip"]),
             "--readme", str(paths["README.md"]),
             "--catalog", str(paths["catalog.json"]),
-            "--docs", str(paths["presets.md"]),
             "--snapshot", str(paths["snapshot.json"]),
         ],
         capture_output=True, text=True, check=False,
@@ -108,16 +102,6 @@ def write_generated(issue, paths, *, created_at=None):
     paths["catalog.json"].write_text(json.dumps({
         "updated_at": entry["updated_at"], "presets": {"sample": entry},
     }), encoding="utf-8")
-    preset_name = issue["preset_name"].replace("\\", r"\\").replace("|", r"\|")
-    description = issue["description"].replace("\\", r"\\").replace("|", r"\|")
-    paths["presets.md"].write_text(
-        "| Preset | Purpose | Provides | Requires | URL |\n"
-        "|--------|---------|----------|----------|-----|\n"
-        f"| {preset_name} | {description} | 1 template, 1 command | "
-        "aide extension, canon extension | "
-        "[presets](https://github.com/example/presets) |\n",
-        encoding="utf-8",
-    )
     return entry
 
 
@@ -468,11 +452,11 @@ def test_missing_archive_is_blocked_not_failed(submission):
     assert "BLOCKED" in result.stdout
 
 
-def test_missing_generated_documentation_is_repairable(submission):
+def test_missing_generated_catalog_is_repairable(submission):
     issue, _, paths = submission
     assert run_verifier(paths).returncode == 0
     write_generated(issue, paths)
-    paths["presets.md"].unlink()
+    paths["catalog.json"].unlink()
     result = run_verifier(paths, "generated")
     assert result.returncode == 3
     assert "REPAIR" in result.stdout
@@ -535,7 +519,7 @@ def test_generated_update_rejects_stale_homepage(submission):
     assert "homepage" in result.stdout
 
 
-def test_generated_documentation_accepts_escaped_pipe_in_preset_name(submission):
+def test_generated_catalog_accepts_pipe_in_preset_name(submission):
     issue, _, paths = submission
     issue["preset_name"] = "Data | Governance"
     paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
@@ -545,7 +529,7 @@ def test_generated_documentation_accepts_escaped_pipe_in_preset_name(submission)
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_generated_documentation_accepts_backslash_before_pipe(submission):
+def test_generated_catalog_accepts_backslash_before_pipe(submission):
     issue, _, paths = submission
     issue["preset_name"] = r"Data \| Governance"
     paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
@@ -555,21 +539,11 @@ def test_generated_documentation_accepts_backslash_before_pipe(submission):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_generated_documentation_allows_duplicate_display_names(submission):
+def test_generated_catalog_allows_duplicate_display_names(submission):
     issue, _, paths = submission
-    other_row = (
-        "| Sample Preset | Other usage | 1 command | — | "
-        "[other](https://github.com/example/other) |"
-    )
     paths["catalog.json"].write_text(json.dumps({
         "presets": {"other": {"name": issue["preset_name"]}},
     }), encoding="utf-8")
-    paths["presets.md"].write_text(
-        "| Preset | Purpose | Provides | Requires | URL |\n"
-        "|--------|---------|----------|----------|-----|\n"
-        f"{other_row}\n",
-        encoding="utf-8",
-    )
     assert run_verifier(paths).returncode == 0
     entry = write_generated(issue, paths)
     catalog = json.loads(paths["catalog.json"].read_text(encoding="utf-8"))
@@ -578,28 +552,13 @@ def test_generated_documentation_allows_duplicate_display_names(submission):
         "sample": entry,
     }
     paths["catalog.json"].write_text(json.dumps(catalog), encoding="utf-8")
-    paths["presets.md"].write_text(
-        "| Preset | Purpose | Provides | Requires | URL |\n"
-        "|--------|---------|----------|----------|-----|\n"
-        f"{other_row}\n"
-        "| Sample Preset | Sample usage | 1 template, 1 command | "
-        "aide extension, canon extension | "
-        "[presets](https://github.com/example/presets) |\n",
-        encoding="utf-8",
-    )
     result = run_verifier(paths, "generated")
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_generated_documentation_accepts_replaced_renamed_row(submission):
+def test_generated_catalog_accepts_renamed_preset(submission):
     issue, _, paths = submission
     original = write_generated(issue, paths, created_at="2024-12-01T00:00:00Z")
-    paths["presets.md"].write_text(
-        paths["presets.md"].read_text(encoding="utf-8").replace(
-            "Sample usage", "Legacy documentation wording"
-        ),
-        encoding="utf-8",
-    )
     paths["catalog.json"].write_text(json.dumps({
         "updated_at": original["updated_at"], "presets": {"sample": original},
     }), encoding="utf-8")
@@ -611,30 +570,23 @@ def test_generated_documentation_accepts_replaced_renamed_row(submission):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_generated_documentation_rejects_stale_row_after_rename(submission):
+def test_generated_catalog_rejects_stale_name_after_rename(submission):
     issue, _, paths = submission
     original = write_generated(issue, paths, created_at="2024-12-01T00:00:00Z")
-    paths["presets.md"].write_text(
-        paths["presets.md"].read_text(encoding="utf-8").replace(
-            "Sample usage", "Legacy documentation wording"
-        ),
-        encoding="utf-8",
-    )
-    previous_row = paths["presets.md"].read_text(encoding="utf-8").splitlines()[2]
     paths["catalog.json"].write_text(json.dumps({
         "updated_at": original["updated_at"], "presets": {"sample": original},
     }), encoding="utf-8")
     issue["preset_name"] = "Renamed Preset"
     paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
     assert run_verifier(paths).returncode == 0
-    write_generated(issue, paths, created_at="2024-12-01T00:00:00Z")
-    paths["presets.md"].write_text(
-        paths["presets.md"].read_text(encoding="utf-8") + previous_row + "\n",
-        encoding="utf-8",
-    )
+    entry = write_generated(issue, paths, created_at="2024-12-01T00:00:00Z")
+    entry["name"] = original["name"]
+    paths["catalog.json"].write_text(json.dumps({
+        "updated_at": entry["updated_at"], "presets": {"sample": entry},
+    }), encoding="utf-8")
     result = run_verifier(paths, "generated")
     assert result.returncode == 3
-    assert "previous documentation row" in result.stdout
+    assert "name" in result.stdout
 
 
 @pytest.mark.parametrize(("damage", "message"), [
@@ -644,8 +596,8 @@ def test_generated_documentation_rejects_stale_row_after_rename(submission):
     ("homepage-missing", "homepage"),
     ("homepage-stale", "homepage"),
     ("catalog-timestamp", "top-level updated_at"),
-    ("docs-order", "alphabetical"),
-    ("docs-row", "documentation row"),
+    ("catalog-dependencies", "requires"),
+    ("catalog-digest", "sha256"),
     ("created-at", "created_at"),
 ])
 def test_generated_defects_are_fixable_not_submission_failures(submission, damage, message):
@@ -689,18 +641,14 @@ def test_generated_defects_are_fixable_not_submission_failures(submission, damag
                 "sample": entry,
             }}), encoding="utf-8"
         )
-    elif damage == "docs-order":
-        paths["presets.md"].write_text(
-            paths["presets.md"].read_text(encoding="utf-8")
-            + "| AAA | x | 1 command | — | [aaa](https://github.com/aaa/aaa) |\n",
-            encoding="utf-8",
-        )
-    elif damage == "docs-row":
-        paths["presets.md"].write_text(
-            paths["presets.md"].read_text(encoding="utf-8").replace(
-                "Sample usage", "Wrong purpose"
-            ), encoding="utf-8",
-        )
+    elif damage in ("catalog-dependencies", "catalog-digest"):
+        if damage == "catalog-dependencies":
+            entry["requires"]["extensions"] = []
+        else:
+            entry["sha256"] = "0" * 64
+        paths["catalog.json"].write_text(json.dumps({
+            "updated_at": entry["updated_at"], "presets": {"sample": entry},
+        }), encoding="utf-8")
     elif damage == "created-at":
         entry["created_at"] = "2000-01-01T00:00:00Z"
         paths["catalog.json"].write_text(

@@ -67,8 +67,8 @@ function Get-HighestNumberFromSpecs {
     param([string]$SpecsDir)
 
     [long]$highest = 0
-    if (Test-Path $SpecsDir) {
-        Get-ChildItem -Path $SpecsDir -Directory | ForEach-Object {
+    if (Test-Path -LiteralPath $SpecsDir) {
+        Get-ChildItem -LiteralPath $SpecsDir -Directory | ForEach-Object {
             if ($_.Name -match '^(\d{3,})-' -and $_.Name -notmatch '^\d{8}-\d{6}-') {
                 [long]$num = 0
                 if ([long]::TryParse($matches[1], [ref]$num) -and $num -gt $highest) {
@@ -192,10 +192,10 @@ function ConvertTo-CleanBranchName {
 # ---------------------------------------------------------------------------
 function Find-ProjectRoot {
     param([string]$StartDir)
-    $current = Resolve-Path $StartDir
+    $current = Resolve-Path -LiteralPath $StartDir
     while ($true) {
         foreach ($marker in @('.specify', '.git')) {
-            if (Test-Path (Join-Path $current $marker)) {
+            if (Test-Path -LiteralPath (Join-Path $current $marker)) {
                 return $current
             }
         }
@@ -214,7 +214,7 @@ if ($projectRoot) {
         (Join-Path $projectRoot "scripts/powershell/common.ps1")
     )
     foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) {
+        if (Test-Path -LiteralPath $candidate) {
             . $candidate
             $commonLoaded = $true
             break
@@ -222,13 +222,21 @@ if ($projectRoot) {
     }
 }
 
-if (-not $commonLoaded -and (Test-Path "$PSScriptRoot/git-common.ps1")) {
+if (-not $commonLoaded -and (Test-Path -LiteralPath "$PSScriptRoot/git-common.ps1")) {
     . "$PSScriptRoot/git-common.ps1"
     $commonLoaded = $true
 }
 
 if (-not $commonLoaded) {
     throw "Unable to locate common script file. Please ensure the Specify core scripts are installed."
+}
+
+if (-not (Get-Command ConvertTo-AsciiJson -CommandType Function -ErrorAction SilentlyContinue)) {
+    function ConvertTo-AsciiJson {
+        param([Parameter(Mandatory = $true, ValueFromPipeline = $true)]$InputObject)
+        $json = $InputObject | ConvertTo-Json -Compress
+        return [regex]::Replace($json, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
+    }
 }
 
 # SPECIFY_INIT_DIR is resolved (and validated) by the core resolver. If only the
@@ -263,7 +271,7 @@ if (Get-Command Test-HasGit -ErrorAction SilentlyContinue) {
     }
 }
 
-Set-Location $repoRoot
+Set-Location -LiteralPath $repoRoot
 
 $specsDir = Join-Path $repoRoot 'specs'
 $configFile = Join-Path $repoRoot ".specify/extensions/git/git-config.yml"
@@ -273,7 +281,7 @@ function Read-GitConfigValue {
 
     if (-not (Test-Path -LiteralPath $configFile -PathType Leaf)) { return '' }
     $escapedKey = [regex]::Escape($Key)
-    foreach ($line in Get-Content -LiteralPath $configFile) {
+    foreach ($line in Get-Content -LiteralPath $configFile -Encoding UTF8) {
         if ($line -match "^\s*$escapedKey\s*:\s*(.*)$") {
             $val = ($matches[1] -replace '\s+#.*$', '').Trim()
             $val = $val -replace '^["'']', '' -replace '["'']$', ''
@@ -589,7 +597,7 @@ if ($Json) {
     if ($DryRun) {
         $obj | Add-Member -NotePropertyName 'DRY_RUN' -NotePropertyValue $true
     }
-    $obj | ConvertTo-Json -Compress
+    $obj | ConvertTo-AsciiJson
 } else {
     Write-Output "BRANCH_NAME: $branchName"
     Write-Output "FEATURE_NUM: $featureNum"
@@ -597,3 +605,5 @@ if ($Json) {
         Write-Output "# To persist in your shell: $featureAssignment"
     }
 }
+
+exit 0

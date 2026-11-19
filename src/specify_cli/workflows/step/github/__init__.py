@@ -20,9 +20,8 @@ def _run(args: list[str], root: Path, *, input_text: str | None = None) -> str:
         result = subprocess.run(
             args,
             cwd=root,
-            input=input_text,
+            input=input_text.encode("utf-8") if input_text is not None else None,
             capture_output=True,
-            text=True,
             timeout=60,
             check=False,
         )
@@ -31,7 +30,15 @@ def _run(args: list[str], root: Path, *, input_text: str | None = None) -> str:
     if result.returncode:
         # CLI stderr may contain authentication details; never include it in run state.
         raise ValueError(f"{args[0]} request failed (exit code {result.returncode})")
-    return result.stdout.strip()
+    stdout = result.stdout
+    if isinstance(stdout, bytes):
+        try:
+            stdout = stdout.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"{args[0]} returned non-UTF-8 output") from exc
+    elif not isinstance(stdout, str):
+        raise ValueError(f"{args[0]} returned no output")
+    return stdout.strip()
 
 
 def _api(root: Path, endpoint: str, *, labels: list[str] | None = None) -> Any:

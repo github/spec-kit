@@ -132,6 +132,32 @@ def test_http_get_json_preserves_client_error_as_bundler_error(monkeypatch):
     assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
 
 
+@pytest.mark.parametrize("status", [403, 404, 408, 429, 500, 503])
+@pytest.mark.parametrize("already_closed", [False, True])
+def test_http_error_response_is_closed_before_catalog_error_translation(
+    monkeypatch, status, already_closed
+):
+    body = io.BytesIO(b"error response")
+    error = urllib.error.HTTPError(
+        "https://example.com/catalog.json", status, "response failed", {}, body,
+    )
+    if already_closed:
+        error.close()
+
+    def failed(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", failed)
+    with pytest.raises(BundlerError, match=f"HTTP {status}") as raised:
+        adapters._http_get_json("team", error.url)
+    assert raised.value.__cause__ is error
+    assert isinstance(raised.value, adapters._CatalogUnavailable) == (
+        status in (408, 429) or status >= 500
+    )
+    assert body.closed
+    assert error.closed
+
+
 def test_http_get_json_preserves_malformed_json(monkeypatch):
     def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
         return _FakeResponse(b"not json", url)

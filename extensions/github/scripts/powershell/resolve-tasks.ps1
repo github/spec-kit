@@ -149,6 +149,12 @@ function Save-FeatureJson {
     [System.IO.File]::WriteAllText($fjPath, $json, $utf8NoBom)
 }
 
+function ConvertTo-AsciiJson {
+    param([Parameter(Mandatory = $true, ValueFromPipeline = $true)]$InputObject)
+    $json = $InputObject | ConvertTo-Json -Compress
+    return [regex]::Replace($json, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
+}
+
 $repoRoot = Get-ProjectRoot
 
 # Resolve the feature directory. Priority:
@@ -225,7 +231,7 @@ if ($Json) {
         TASKS          = $tasks
         AVAILABLE_DOCS = @($docs)
     }
-    Write-Output ($payload | ConvertTo-Json -Compress)
+    Write-Output ([PSCustomObject]$payload | ConvertTo-AsciiJson)
 } else {
     Write-Output "FEATURE_DIR:$featureDir"
     Write-Output "TASKS:$tasks"
@@ -234,3 +240,5 @@ if ($Json) {
         Write-Output "  [OK] $d"
     }
 }
+
+exit 0

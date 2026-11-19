@@ -23,6 +23,56 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationUse:
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
+    )
+    def test_use_keeps_shared_scripts_executable(self, tmp_path, packaged_scripts_0644):
+        """Making an installed integration the default must keep shared scripts runnable."""
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        scripts = sorted((project / ".specify" / "scripts" / "bash").glob("*.sh"))
+        assert scripts and all(os.access(script, os.X_OK) for script in scripts)
+
+        result = _run_in_project(project, ["integration", "use", "codex"])
+
+        assert result.exit_code == 0, result.output
+        not_executable = [script.name for script in scripts if not os.access(script, os.X_OK)]
+        assert not not_executable, f"use left shared scripts non-executable: {not_executable}"
+
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
+    )
+    @pytest.mark.parametrize("linked_scripts_root", [False, True])
+    def test_use_changes_modes_only_on_scripts_it_writes(
+        self, tmp_path, linked_scripts_root, packaged_scripts_0644
+    ):
+        """Execute bits come from the refresh's own writes, never from a scan.
+
+        A user's script next to the shared ones keeps its mode, and nothing
+        behind a symlinked ``.specify/scripts`` (which the refresh skips) is touched.
+        """
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        scripts_root = project / ".specify" / "scripts"
+        if linked_scripts_root:
+            outside = tmp_path / "outside-scripts"
+            scripts_root.rename(outside)
+            scripts_root.symlink_to(outside, target_is_directory=True)
+        user_script = scripts_root.resolve() / "bash" / "local-helper.sh"
+        user_script.write_bytes(b"#!/usr/bin/env bash\necho local\n")
+        user_script.chmod(0o644)
+
+        result = _run_in_project(project, ["integration", "use", "codex"])
+
+        assert result.exit_code == 0, result.output
+        assert user_script.stat().st_mode & 0o777 == 0o644
+        if not linked_scripts_root:
+            shared = sorted((scripts_root / "bash").glob("*.sh"))
+            not_executable = [s.name for s in shared if s != user_script and not os.access(s, os.X_OK)]
+            assert not not_executable, f"use left shared scripts non-executable: {not_executable}"
+
     @pytest.mark.parametrize("edited_command", [None, "plan", "tasks"])
     def test_use_syncs_manifest_without_blessing_user_edits(
         self, tmp_path, tasks_preset_src, edited_command

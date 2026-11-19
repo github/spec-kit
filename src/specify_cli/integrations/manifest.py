@@ -12,11 +12,12 @@ import hashlib
 import json
 import os
 import tempfile
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ._file_changes import after_file_change, before_file_change
+from ._file_changes import after_file_change, atomic_write_bytes, before_file_change
 
 OWNERSHIP_MODES = frozenset({"whole", "partial", "shared"})
 
@@ -183,12 +184,19 @@ class IntegrationManifest:
     # -- Recording files --------------------------------------------------
 
     def record_file(
-        self, rel_path: str | Path, content: bytes | str, *, ownership: str = "whole",
+        self,
+        rel_path: str | Path,
+        content: bytes | str,
+        *,
+        ownership: str = "whole",
+        mode: int | None = None,
     ) -> Path:
         """Write *content* to *rel_path* (relative to project root) and record its hash.
 
         Creates parent directories as needed.  Returns the absolute path
-        of the written file.
+        of the written file.  With ``mode`` the file is created with those
+        permission bits (narrowed by the process umask) instead of the default
+        project-file mode, and replaces any existing file atomically.
         If the path was previously marked as recovered via
         ``record_existing(recovered=True)``, the recovered marker is
         cleared because the bytes are now produced, not merely observed.
@@ -205,7 +213,10 @@ class IntegrationManifest:
 
         if isinstance(content, str):
             content = content.encode("utf-8")
-        abs_path.write_bytes(content)
+        if mode is None:
+            abs_path.write_bytes(content)
+        else:
+            atomic_write_bytes(abs_path, content, mode)
 
         normalized = abs_path.relative_to(self.project_root).as_posix()
         self._files[normalized] = hashlib.sha256(content).hexdigest()
@@ -371,6 +382,7 @@ class IntegrationManifest:
         *,
         force: bool = False,
         remove_manifest: bool = True,
+        stop_dirs: Iterable[Path] = (),
     ) -> tuple[list[Path], list[Path]]:
         """Remove tracked files whose hash still matches.
 
@@ -382,11 +394,16 @@ class IntegrationManifest:
                 *partial* cleanups (e.g. the upgrade stale-file pass, which
                 builds a throwaway manifest over a subset of files) so the
                 real, freshly-saved manifest for the same key is not destroyed.
+            stop_dirs:       Directories at which empty-parent pruning stops
+                (in addition to ``project_root``), so callers can keep
+                configured root directories such as ``.claude/skills`` intact.
 
         Returns:
             ``(removed, skipped)`` — absolute paths.
         """
         root = (project_root or self.project_root).resolve()
+        stop_set = {Path(d).resolve(strict=False) for d in stop_dirs}
+        stop_set.add(root)
         removed: list[Path] = []
         skipped: list[Path] = []
 
@@ -435,9 +452,9 @@ class IntegrationManifest:
                 continue
             removed.append(path)
             after_file_change(path)
-            # Clean up empty parent directories up to project root
+            # Clean up empty parent directories up to project root or stop_dirs
             parent = path.parent
-            while parent != root:
+            while parent not in stop_set:
                 try:
                     _ensure_safe_manifest_removal(root, parent)
                     parent.rmdir()  # only succeeds if empty
