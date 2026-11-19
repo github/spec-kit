@@ -298,9 +298,10 @@ workflow progress. Conflicting concurrent edits are reported with recovery
 snapshots retained. A file the operation rewrote in place gets its original
 bytes back in that same file, so it keeps its owner, hard links and Windows
 access-control list, and its mode, times, user extended attributes and POSIX
-access ACL are set back where the platform allows it safely. If the bytes come
-back but some of that metadata does not, the file is reported with recovery
-snapshots retained. A file the operation replaced or removed, one rollback
+access ACL are set back where the platform allows it safely. If some of that
+metadata does not come back, or the file is replaced while its bytes are being
+restored, the file is reported as not fully restored, with recovery snapshots
+retained. A file the operation replaced or removed, one rollback
 cannot safely identify as the original, and a directory are recreated from
 their snapshots instead. Adapter authors should follow the
 [setup and file ownership contract](api.md#setup-and-file-ownership)

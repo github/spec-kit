@@ -937,6 +937,33 @@ def test_builtin_journal_pins_a_file_before_snapshotting_it(tmp_path, monkeypatc
     assert other.read_text(encoding="utf-8") == "generated\n"
 
 
+@pytest.mark.skipif(not _PINS_FILES, reason="rollback pins files only outside Windows")
+def test_builtin_journal_snapshots_a_replaced_file_from_its_path_when_its_parent_is_removed(tmp_path, capsys):
+    """A parent snapshotted after its journalled child was rewritten and replaced holds the replacement, not the pinned file."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import changing_file, write_text
+
+    project = tmp_path / "plain"
+    directory = project / ".specify" / "templates"
+    target = directory / "plan.md"
+    directory.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    replacement = tmp_path / "replacement"
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            replacement.write_text("replacement\n", encoding="utf-8")
+            with changing_file(target):
+                os.replace(replacement, target)
+            with changing_file(directory, removal=True):
+                shutil.rmtree(directory)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert "Preserved concurrent edits" not in capsys.readouterr().out
+
+
 @pytest.mark.skipif(not _PINS_FILES, reason="Windows files cannot be replaced while open")
 def test_builtin_journal_keeps_the_snapshot_when_the_path_is_replaced_during_restore(tmp_path, monkeypatch, capsys):
     """A path swapped for another file while its bytes are restored is reported, kept, and not overwritten."""
@@ -964,6 +991,9 @@ def test_builtin_journal_keeps_the_snapshot_when_the_path_is_replaced_during_res
             raise OSError("disk full")
 
     assert target.read_text(encoding="utf-8") == "concurrent\n"
-    assert _INCOMPLETE_WARNING in " ".join(capsys.readouterr().out.split())
+    warning = " ".join(capsys.readouterr().out.split())
+    assert _INCOMPLETE_WARNING in warning
+    # The path still holds the concurrent file, so the warning must not claim its contents came back.
+    assert "Could not fully restore" in warning and "their contents" in warning
     assert len(backups) == 1 and backups[0].is_dir()
     shutil.rmtree(backups[0])

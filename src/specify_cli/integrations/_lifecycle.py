@@ -245,7 +245,12 @@ class _FileJournal:
                 self.directory_states[parent] = parent.is_dir()
 
     def _snapshot(self, source: Path, destination: Path) -> None:
-        """Copy ``source`` to ``destination``; a regular file that is pinned is read through its pin."""
+        """Copy ``source`` to ``destination``; a pinned regular file's first snapshot is read through its pin.
+
+        A file already journalled has been snapshotted, and the operation may
+        have replaced it since, so a later snapshot of a directory holding it
+        reads it from its path: its pin may hold an inode no longer there.
+        """
         self.backup_entries += 1
         if self.backup_entries > _MAX_BACKUP_ENTRIES:
             raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (entries)")
@@ -258,7 +263,7 @@ class _FileJournal:
                 self._snapshot(child, destination / child.name)
             shutil.copystat(source, destination, follow_symlinks=False)
         elif stat.S_ISREG(mode):
-            pinned = self.pinned_files.get(source)
+            pinned = self.pinned_files.get(source) if source not in self.changes else None
             size = os.fstat(pinned).st_size if pinned is not None else source.stat().st_size
             if size > _MAX_BACKUP_BYTES - self.backup_bytes:
                 raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
@@ -829,9 +834,10 @@ def _journalled(
                     )
                 if incomplete:
                     console.print(
-                        "[yellow]Warning:[/yellow] Restored the contents of "
-                        f"{escape(str(incomplete))} but not all of their ownership, links, permissions, "
-                        f"timestamps, extended attributes or file flags. Recovery snapshots retained at {escape(str(backup))}"
+                        "[yellow]Warning:[/yellow] Could not fully restore "
+                        f"{escape(str(incomplete))}: their contents, ownership, links, permissions, "
+                        "timestamps, extended attributes or file flags may differ from the originals. "
+                        f"Recovery snapshots retained at {escape(str(backup))}"
                     )
             except (OSError, installer.IntegrationInstallError) as restore_error:
                 outcome["retained"] = True
