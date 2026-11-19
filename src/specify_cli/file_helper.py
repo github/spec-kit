@@ -472,6 +472,39 @@ class FileHelper:
         if not stat.S_ISDIR(path.stat().st_mode):
             raise NotADirectoryError(path)
 
+    @property
+    def canonical_root(self) -> Path:
+        """``root`` with OS and link aliases resolved, as fixed on construction."""
+        return self._canonical_root
+
+    def access(self, path: Path | str, mode: int) -> bool:
+        """Return whether ``os.access`` grants ``mode`` on an existing entry.
+
+        The entry is found and anchored as ``stat`` finds it, and links are not
+        followed. Like ``os.access``, the answer uses the real user and group
+        ids and is advisory: act through a descriptor and handle its errors.
+        """
+        destination = self._path(path)
+        if destination == self._canonical_root:
+            return os.access(destination, mode)
+        if os.name == "nt":
+            # Pin the hierarchy as ``stat`` does; Windows ``os.access`` has no ``dir_fd``.
+            parts = destination.relative_to(self._canonical_root).parts
+            with ExitStack() as stack:
+                parent = stack.enter_context(_windows_handle(
+                    self._canonical_root, directory=True, traverse=True,
+                ))
+                for part in parts[:-1]:
+                    parent = stack.enter_context(_windows_handle(
+                        Path(part), directory=True, parent=parent, traverse=True,
+                    ))
+                return os.access(destination, mode)
+        unsupported = "Anchored access check is unsupported on this platform"
+        if os.access not in os.supports_dir_fd or os.access not in os.supports_follow_symlinks:
+            raise OSError(errno.ENOTSUP, unsupported)
+        with self._posix_directory(destination.parent, unsupported_message=unsupported) as directory:
+            return os.access(destination.name, mode, dir_fd=directory, follow_symlinks=False)
+
     def stat(self, path: Path | str) -> os.stat_result:
         """Return the metadata of an existing entry, resolving only allowed links."""
         destination = self._path(path)

@@ -77,6 +77,74 @@ def test_stat_refuses_a_path_outside_the_root(tmp_path):
         files.stat("../outside")
 
 
+# access and canonical_root
+
+
+def test_access_grants_an_accessible_entry(tmp_path):
+    _seed(tmp_path)
+    with FileHelper(tmp_path) as files:
+        assert files.access(REL, os.R_OK | os.W_OK)
+        assert files.access("parent", os.X_OK)
+        assert files.access(tmp_path, os.W_OK)
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    reason="needs POSIX permissions enforced for the current user",
+)
+def test_access_refuses_what_the_mode_denies(tmp_path):
+    path = _seed(tmp_path)
+    path.chmod(0o444)
+    try:
+        with FileHelper(tmp_path) as files:
+            assert files.access(REL, os.R_OK)
+            assert not files.access(REL, os.W_OK)
+    finally:
+        path.chmod(0o644)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the read-only attribute is Windows-only")
+def test_access_reports_the_windows_read_only_attribute(tmp_path):
+    path = _seed(tmp_path)
+    path.chmod(stat.S_IREAD)
+    try:
+        with FileHelper(tmp_path) as files:
+            assert not files.access(REL, os.W_OK)
+    finally:
+        path.chmod(stat.S_IREAD | stat.S_IWRITE)
+
+
+def test_access_of_a_missing_entry_raises(tmp_path):
+    with FileHelper(tmp_path) as files, pytest.raises(FileNotFoundError):
+        files.access("missing", os.R_OK)
+
+
+def test_access_refuses_a_symlink_unless_allowed(tmp_path):
+    _symlinks_available(tmp_path)
+    path = _seed(tmp_path)
+    (tmp_path / "link").symlink_to(path)
+    with FileHelper(tmp_path) as files, pytest.raises(SymlinkDeniedError):
+        files.access("link", os.R_OK)
+    with FileHelper(tmp_path, allow_symlinks=True) as files:
+        assert files.access("link", os.R_OK)
+
+
+def test_access_refuses_a_path_outside_the_root(tmp_path):
+    with FileHelper(tmp_path) as files, pytest.raises(ValueError):
+        files.access("../outside", os.R_OK)
+
+
+def test_canonical_root_resolves_a_root_alias(tmp_path):
+    _symlinks_available(tmp_path)
+    real = tmp_path / "real"
+    real.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+    with FileHelper(alias) as files:
+        assert files.root == alias
+        assert files.canonical_root == real.resolve()
+
+
 # open_rewrite
 
 
@@ -532,6 +600,27 @@ def test_stat_is_not_redirected_by_a_parent_swapped_after_resolution(tmp_path, m
     monkeypatch.setattr(FileHelper, "_posix_directory", swap_first)
     with FileHelper(tmp_path) as files, pytest.raises(OSError) as raised:
         files.stat(REL)
+    assert raised.value.errno in _NOFOLLOW_REFUSALS
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX anchors through parent descriptors")
+def test_access_is_not_redirected_by_a_parent_swapped_after_resolution(tmp_path, monkeypatch):
+    path = _seed(tmp_path, b"inside")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "file").write_bytes(b"outside")
+    original = FileHelper._posix_directory
+
+    @contextmanager
+    def swap_first(self, directory, **kwargs):
+        path.parent.rename(tmp_path / "moved")
+        path.parent.symlink_to(outside, target_is_directory=True)
+        with original(self, directory, **kwargs) as anchored:
+            yield anchored
+
+    monkeypatch.setattr(FileHelper, "_posix_directory", swap_first)
+    with FileHelper(tmp_path) as files, pytest.raises(OSError) as raised:
+        files.access(REL, os.R_OK)
     assert raised.value.errno in _NOFOLLOW_REFUSALS
 
 
