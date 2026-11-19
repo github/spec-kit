@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.4.3] - 2026-11-19
+
+### Changed
+
+- fix(extensions): report missing command files on install (#5479)
+- test(integrations): make unknown integration checks independent of network (#5486)
+- fix(git): handle non-ASCII branches over legacy pipes in create_new_feature_branch.py (#5475)
+- feat(extensions): copy declared resources into extension skills (#5383)
+- fix(integrations): keep shared scripts executable when the default integration changes (#5425)
+- fix(workflows): decode gh api output as UTF-8 in github step (#5477)
+- docs: sync Korean README with the current English README (#5473)
+- fix: preserve option-like feature descriptions (#5096) (#5124)
+- Update DocGuard — CDD Enforcement to v0.49.0 (#5472)
+- [extension] Add Spec Kit for GitHub Projects - human-gated lifecycle extension to community catalog (#5463)
+- fix(extensions): write -Json output of extension PowerShell helpers as ASCII (#5466)
+- fix(extensions): read git extension inputs as UTF-8 on Windows PowerShell 5.1 (#5390)
+- fix(integrations): roll back a built-in upgrade or init that fails before its manifest commit (#5402)
+- fix(agents): apply argument-hint and skill post-processing in render_skill_command (#5449)
+- feat(presets): add bounded Markdown section replacement (#5462)
+- [Copilot Dreaming] Prevent metadata-only download checks and unwarranted test demands (#5455)
+- feat(docs): host searchable community preset directory (#5461)
+- Add jira-lifecycle to community workflow catalog (#5434)
+- fix(workflows): preserve run artifacts on invalid startup inputs (#5435)
+- chore: release 1.4.2, begin 1.4.3.dev0 development (#5464)
+
 ## [1.4.2] - 2026-11-17
 
 ### Changed
