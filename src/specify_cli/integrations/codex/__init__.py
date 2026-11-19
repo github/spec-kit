@@ -201,10 +201,11 @@ def _entry_kind(root: Path, rel: str) -> str:
 
     Checked through ``FileHelper``, so no link at or above ``rel`` is followed.
     ``other`` is any entry the helper refuses to use, such as a FIFO or a
-    Windows junction. An ancestor that cannot be used raises: a symlink
-    ``SymlinkDeniedError``, a junction or special file ``UnsupportedPathError``
-    (both ``FileHelperError``), and a failed check its ``OSError``. Only a
-    missing entry or ancestor reads as ``missing``.
+    Windows junction. A missing ancestor, or one that is not a directory,
+    reads as ``missing``, so callers that care check each parent's kind. Any
+    other ancestor that cannot be used raises: a symlink ``SymlinkDeniedError``,
+    a junction or special file ``UnsupportedPathError`` (both
+    ``FileHelperError``), and a failed check its ``OSError``.
     """
     parent = PurePosixPath(rel).parent
     try:
@@ -234,6 +235,8 @@ def _require_rewritable(root: Path, rel: str) -> None:
     path = root / rel
     with FileHelper(root) as helper:
         info = helper.stat(rel)
+        if not stat.S_ISREG(info.st_mode):
+            raise PermissionError(errno.EPERM, "Not a regular file", str(path))
         # The mode bits catch a read-only file even when running as root.
         if not helper.access(rel, os.W_OK) or not info.st_mode & 0o222:
             raise PermissionError(errno.EACCES, "File is read-only", str(path))

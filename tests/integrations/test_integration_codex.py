@@ -1091,9 +1091,27 @@ class TestCodexNoModelInvocationOwnership:
         assert path.read_bytes() == original
         assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
 
+    @pytest.mark.parametrize("refusal", ["symlink", "special"])
+    def test_policy_file_swapped_after_classification_names_the_file(
+        self, tmp_path, monkeypatch, refusal
+    ):
+        from specify_cli.file_helper import FileHelper, SymlinkDeniedError, UnsupportedPathError
+
+        self._seed(tmp_path)
+        error = SymlinkDeniedError if refusal == "symlink" else UnsupportedPathError
+
+        def access(self, rel, mode):
+            raise error(f"Refusing {rel}")
+
+        monkeypatch.setattr(FileHelper, "access", access)
+        with pytest.raises(ValueError, match=r"^Cannot update .*speckit-plan/agents/openai.yaml: Refusing"):
+            get_integration("codex").preflight_setup(
+                tmp_path, {"no_model_invocation": True}, script_type="sh",
+            )
+
     def test_checking_a_user_file_is_writable_leaves_it_untouched(self, tmp_path, monkeypatch):
         # Opening it for writing would report a Windows sharing violation as
-        # read-only, so preflight must not.
+        # read-only, so the writability check must not use open_rewrite.
         from specify_cli.file_helper import FileHelper
 
         def open_rewrite(self, rel):
