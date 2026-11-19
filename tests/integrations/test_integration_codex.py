@@ -820,19 +820,23 @@ class TestCodexNoModelInvocationOwnership:
         # A junction is not a symlink to ``is_symlink`` and is followed when
         # the skills directory is resolved, so the policies' lexical paths
         # would never match the files setup wrote. On other platforms the
-        # refusal ``FileHelper`` gives one on Windows is simulated.
-        from specify_cli.file_helper import FileHelper, UnsupportedPathError
+        # attribute Windows sets on one is simulated where ``FileHelper``
+        # reads it.
+        import types
 
-        linked = tmp_path / junctioned
+        linked = (tmp_path / junctioned).resolve()
         linked.mkdir(parents=True)
-        real_stat = FileHelper.stat
+        real_lstat = Path.lstat
 
-        def helper_stat(self, path):
-            if (self.root / path).resolve() == linked.resolve():
-                raise UnsupportedPathError(f"Unsupported Windows reparse point: {linked}")
-            return real_stat(self, path)
+        def lstat(self, *args, **kwargs):
+            info = real_lstat(self, *args, **kwargs)
+            if self == linked:
+                return types.SimpleNamespace(
+                    st_mode=info.st_mode, st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
+                )
+            return info
 
-        monkeypatch.setattr(FileHelper, "stat", helper_stat)
+        monkeypatch.setattr(Path, "lstat", lstat)
         integration = get_integration("codex")
         options = {"no_model_invocation": True}
         with pytest.raises(ValueError, match=f"--no-model-invocation.*reparse point at {junctioned}$"):
@@ -1063,17 +1067,21 @@ class TestCodexNoModelInvocationOwnership:
         finally:
             path.chmod(0o644)
 
-    def test_user_file_this_user_cannot_open_for_writing_is_not_replaced(self, tmp_path, monkeypatch):
-        # Write bits set, but owned by someone else: only opening it shows that.
+    def test_user_file_this_user_cannot_write_is_not_replaced(self, tmp_path, monkeypatch):
+        # Write bits set, but owned by someone else or on a read-only mount:
+        # only the access check shows that.
         from specify_cli.file_helper import FileHelper
 
         path = self._seed(tmp_path)
         original = path.read_bytes()
+        real_access = FileHelper.access
 
-        def open_rewrite(self, rel):
-            raise PermissionError(errno.EACCES, "Permission denied", str(self.root / rel))
+        def access(self, rel, mode):
+            if mode & os.W_OK and Path(rel).name == "openai.yaml":
+                return False
+            return real_access(self, rel, mode)
 
-        monkeypatch.setattr(FileHelper, "open_rewrite", open_rewrite)
+        monkeypatch.setattr(FileHelper, "access", access)
         with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*read-only"):
             get_integration("codex").preflight_setup(
                 tmp_path, {"no_model_invocation": True}, script_type="sh",

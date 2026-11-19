@@ -19,7 +19,9 @@ from typing import Any
 
 import yaml
 
-from ...file_helper import FileHelper, SymlinkDeniedError, UnsupportedPathError
+from ...file_helper import (
+    FileHelper, FileHelperError, SymlinkDeniedError, UnsupportedPathError,
+)
 from .._file_changes import changing_file
 from ..base import (
     IntegrationOption,
@@ -220,32 +222,30 @@ def _entry_kind(root: Path, rel: str) -> str:
     return "dir" if stat.S_ISDIR(mode) else "other"
 
 
+def _canonical_root(project_root: Path) -> Path:
+    with FileHelper(project_root) as helper:
+        return helper.canonical_root
+
+
 def _require_rewritable(root: Path, rel: str) -> None:
     path = root / rel
     with FileHelper(root) as helper:
         info = helper.stat(rel)
         # The mode bits catch a read-only file even when running as root.
-        if not info.st_mode & 0o222:
+        if not helper.access(rel, os.W_OK) or not info.st_mode & 0o222:
             raise PermissionError(errno.EACCES, "File is read-only", str(path))
-        # Opening it for writing, without writing, shows this user may update
-        # it; mode bits alone pass a file owned by someone else.
-        try:
-            with helper.open_rewrite(rel):
-                pass
-        except PermissionError as exc:
-            raise PermissionError(errno.EACCES, "File is read-only", str(path)) from exc
-        # An in-place write would also change every other link, possibly
-        # outside the project.
-        if info.st_nlink > 1:
-            raise PermissionError(errno.EPERM, "File has other hard links", str(path))
+    # An in-place write would also change every other link, possibly outside
+    # the project.
+    if info.st_nlink > 1:
+        raise PermissionError(errno.EPERM, "File has other hard links", str(path))
 
 
 def _reparse_point_on(root: Path, rel: str) -> str | None:
     """The first existing entry of ``rel`` that ``FileHelper`` will not use.
 
-    That is a Windows junction or other non-symlink reparse point (or, off
-    Windows, a special file such as a FIFO). ``FileHelper`` rejects the same
-    entries, but only when a file is written through them.
+    That is a Windows junction or other non-symlink reparse point, or a
+    special file such as a FIFO. ``FileHelper`` rejects the same entries, but
+    only when a file is written through them.
     """
     current = PurePosixPath()
     with FileHelper(root) as helper:
@@ -393,7 +393,7 @@ class CodexIntegration(SkillsIntegration):
         def kind(entry: str) -> str:
             try:
                 return _entry_kind(project_root, entry)
-            except OSError as exc:
+            except (OSError, FileHelperError) as exc:
                 raise ValueError(f"Cannot update {rel}: {exc}") from exc
 
         for parent in reversed(Path(rel).parents[:-1]):
@@ -542,10 +542,14 @@ class CodexIntegration(SkillsIntegration):
         try:
             if _entry_kind(root, backup_rel) == "missing":
                 return False
-        except (OSError, ValueError):  # ValueError covers FileHelperError
-            # Unreadable or behind a symlinked ancestor: the checks that
-            # follow refuse ``rel`` itself.
-            return False
+        except (OSError, ValueError) as exc:  # ValueError covers FileHelperError
+            # Unreadable or behind a symlinked ancestor: it may still be the
+            # only intact copy, so keep both.
+            logger.warning(
+                "Leaving %s in place: could not check for %s: %s",
+                rel, PurePosixPath(backup_rel).name, exc,
+            )
+            return True
         logger.warning(
             "Leaving %s in place: %s is left from an interrupted update; compare "
             "them, keep the right copy and delete the backup",
@@ -645,8 +649,8 @@ class CodexIntegration(SkillsIntegration):
             reparse = _reparse_point_on(root, rel)
             if reparse is not None:
                 raise ValueError(
-                    f"Cannot use --no-model-invocation: {rel} goes through a Windows "
-                    f"junction or other reparse point at {reparse}"
+                    f"Cannot use --no-model-invocation: {rel} goes through a special "
+                    f"file, Windows junction or other reparse point at {reparse}"
                 )
             plans[name] = self._plan_policy(root, rel, prior)
         return plans
@@ -664,8 +668,8 @@ class CodexIntegration(SkillsIntegration):
         # change in between.
         super().preflight_setup(project_root, parsed_options, script_type=script_type)
         if (parsed_options or {}).get("no_model_invocation") is True:
-            # ``FileHelper`` resolves the root itself, so it is used as given.
-            self._plan_policies(project_root, self._prior_manifest(project_root))
+            root = _canonical_root(project_root)
+            self._plan_policies(root, self._prior_manifest(root))
 
     def setup(
         self,
@@ -677,8 +681,7 @@ class CodexIntegration(SkillsIntegration):
         # Codex has no SKILL.md frontmatter flag; the policy lives in a sibling
         # ``agents/openai.yaml``. It is written for core command skills only,
         # since mandatory extension hooks rely on the model invoking them.
-        # The resolved project root, which ``super().setup`` requires it to be.
-        root = manifest.project_root
+        root = _canonical_root(project_root)
         enabled = (parsed_options or {}).get("no_model_invocation") is True
         prior = self._prior_manifest(root)
         self._released_policy_rels = frozenset()
@@ -726,9 +729,13 @@ class CodexIntegration(SkillsIntegration):
                     created.append(path)
                 else:
                     new = content.encode("utf-8")
-                    if _entry_kind(root, rel) != "missing":
+                    try:
+                        present = _entry_kind(root, rel) != "missing"
+                        new_dir = _entry_kind(root, PurePosixPath(rel).parent.as_posix()) == "missing"
+                    except (OSError, FileHelperError) as exc:
+                        raise ValueError(f"Cannot update {rel}: {exc}") from exc
+                    if present:
                         raise ValueError(f"Cannot update {rel}: it was created while updating")
-                    new_dir = _entry_kind(root, PurePosixPath(rel).parent.as_posix()) == "missing"
                     # Created exclusively through the helper, so a directory
                     # swapped for a symlink since planning cannot redirect it.
                     try:
@@ -814,7 +821,7 @@ class CodexIntegration(SkillsIntegration):
         # report the ones cleaned as preserved modified files. Generated files
         # are left to ``uninstall``: content-equal ones are re-hashed so it
         # deletes them, and edited ones lose only the policy unless forced.
-        root = manifest.project_root
+        root = _canonical_root(project_root)
         cleaned: set[Path] = set()
         for rel, mode in list(manifest.ownership_modes.items()):
             if not self._is_policy_rel(rel):
