@@ -3720,6 +3720,11 @@ class TestInitStep:
         assert result.status == StepStatus.COMPLETED, result.error
         _assert_init_scaffold(target, script or ("ps" if os.name == "nt" else "sh"))
         assert result.output["argv"][1] == project
+        assert "--non-interactive" in result.output["argv"]
+        assert not {"--force", "--trust-integration", "--trust-extension-urls"}.intersection(result.output["argv"])
+        assert result.output["script"] == script
+        if script is None:
+            assert "--script" not in result.output["argv"]
 
     def test_force_preserves_unrelated_content_and_bundled_preset(self, tmp_path):
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -3736,6 +3741,7 @@ class TestInitStep:
         _assert_init_scaffold(tmp_path, "py")
         assert (tmp_path / ".specify/presets/lean/preset.yml").is_file()
 
+    @pytest.mark.skipif(os.name == "nt", reason="Requires POSIX symlink/.. traversal semantics")
     def test_relative_root_preserves_symlink_parent_semantics(self, tmp_path, monkeypatch):
         from specify_cli.workflows.base import StepContext, StepStatus
         from specify_cli.workflows.step.init import InitStep
@@ -3798,10 +3804,316 @@ class TestInitStep:
         assert result.error and result.error != "SystemExit: 1"
         assert result.output["stderr"].strip()
         assert state == (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
-        assert not (tmp_path / "escape").exists()
+        assert not (root / "escape").exists()
         assert not list(tmp_path.rglob("init-options.json"))
+        if kind == "missing-traversal":
+            assert not (root / "missing").exists()
+            assert list(root.iterdir()) == []
         if kind == "existing-target":
             assert (root / "demo/keep").read_bytes() == b"keep"
+
+    @pytest.mark.parametrize("pythonpath_kind", [
+        "unset", "empty", "dot", "relative", "absolute", "leading-empty",
+        "trailing-empty", "double-empty", "mixed",
+    ])
+    def test_pythonpath_cannot_run_project_startup(self, tmp_path, monkeypatch, pythonpath_kind):
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.init import InitStep
+
+        root = tmp_path / "root"
+        root.mkdir()
+        hooks = root / "hooks"
+        hooks.mkdir()
+        benign = tmp_path / "benign"
+        benign.mkdir()
+        marker = tmp_path / "startup-executed"
+        startup = f"from pathlib import Path\nPath({str(marker)!r}).write_text('startup executed', encoding='utf-8')\n"
+        for directory in (root, hooks):
+            (directory / "sitecustomize.py").write_text(startup, encoding="utf-8")
+        (root / "specify_cli.py").write_text("raise RuntimeError('shadow imported')", encoding="utf-8")
+        pythonpath = {
+            "unset": None, "empty": "", "dot": ".", "relative": "hooks", "absolute": str(root),
+            "leading-empty": os.pathsep + str(benign),
+            "trailing-empty": str(benign) + os.pathsep,
+            "double-empty": str(benign) + os.pathsep * 2 + str(benign),
+            "mixed": os.pathsep.join((str(benign), str(hooks))),
+        }[pythonpath_kind]
+        if pythonpath is None:
+            monkeypatch.delenv("PYTHONPATH", raising=False)
+        else:
+            monkeypatch.setenv("PYTHONPATH", pythonpath)
+        context = StepContext(project_root=str(root))
+        state = (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
+        registries = (dict(INTEGRATION_REGISTRY), dict(STEP_REGISTRY))
+        result = InitStep().execute({"id": "init", "project": "demo", "script": "py"}, context)
+        assert result.status == StepStatus.COMPLETED, result.error
+        _assert_init_scaffold(root / "demo", "py")
+        assert state == (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
+        assert registries == (dict(INTEGRATION_REGISTRY), dict(STEP_REGISTRY))
+        assert context.project_root == str(root)
+        assert not marker.exists(), f"Project startup code executed: {marker.read_text(encoding='utf-8')}"
+
+    def test_user_site_startup_and_dependencies_remain_available(self, tmp_path):
+        """Exercise normal site processing without modifying the active environment."""
+        import site
+        import subprocess
+        import specify_cli
+
+        base_python = sys._base_executable
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env.pop("PYTHONNOUSERSITE", None)
+        env["PYTHONUSERBASE"] = str(tmp_path / "userbase")
+        probe = subprocess.run(
+            [base_python, "-B", "-P", "-c",
+             "import json, site; print(json.dumps([site.ENABLE_USER_SITE, site.getusersitepackages()]))"],
+            env=env, cwd=tmp_path, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True,
+        )
+        enabled, user_site = json.loads(probe.stdout)
+        assert enabled is True, "The base interpreter must support normal user-site processing"
+        user_site = Path(user_site)
+        assert user_site.is_relative_to(tmp_path)
+        user_site.mkdir(parents=True)
+        source = str(Path(specify_cli.__file__).resolve().parent.parent)
+        # Borrow dependencies read-only; only the fixture user site gets a .pth.
+        (user_site / "init-fixture.pth").write_text(
+            "\n".join([source, *site.getsitepackages()]) + "\n", encoding="utf-8"
+        )
+        marker = tmp_path / "user-startup.jsonl"
+        (user_site / "usercustomize.py").write_text(
+            "import json, os, site, sys, rich, specify_cli\n"
+            f"with open({str(marker)!r}, 'a', encoding='utf-8') as stream:\n"
+            "    stream.write(json.dumps({'pid': os.getpid(), 'enabled': site.ENABLE_USER_SITE, "
+            "'source': specify_cli.__file__, 'dependency': rich.__file__, "
+            "'executable': sys.executable}) + '\\n')\n",
+            encoding="utf-8",
+        )
+        root = tmp_path / "project"
+        root.mkdir()
+        result = subprocess.run(
+            [base_python, "-B", "-P", "-c",
+             "import sys; from specify_cli.workflows.base import StepContext, StepStatus; "
+             "from specify_cli.workflows.step.init import InitStep; "
+             "result = InitStep().execute({'id': 'init', 'project': 'demo', 'script': 'py'}, "
+             "StepContext(project_root=sys.argv[1])); "
+             "assert result.status == StepStatus.COMPLETED, result.error", str(root)],
+            env=env, cwd=tmp_path, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        _assert_init_scaffold(root / "demo", "py")
+        records = [json.loads(line) for line in marker.read_text(encoding="utf-8").splitlines()]
+        assert len(records) == 2  # Both the fixture caller and the actual InitStep child.
+        assert len({record["pid"] for record in records}) == 2
+        for record in records:
+            assert record["enabled"] is True
+            assert Path(record["source"]).resolve() == Path(specify_cli.__file__).resolve()
+            assert any(Path(record["dependency"]).is_relative_to(path) for path in site.getsitepackages())
+            assert Path(record["executable"]).resolve() == Path(base_python).resolve()
+        print(json.dumps(records, indent=2))
+
+    @pytest.mark.parametrize("layout", [
+        "editable", "relative-search", "source-symlink", "package-symlink",
+        "symlink-parent", "initializer-symlink", "relative-file",
+    ])
+    def test_loaded_source_layout_survives_project_chdir(self, tmp_path, layout):
+        """Observe imports after the real CLI runs, without preloading its package."""
+        import subprocess
+        import textwrap
+        import specify_cli
+
+        source = Path(specify_cli.__file__).parent.parent
+        launch = tmp_path / "launch"
+        launch.mkdir()
+        root = tmp_path / "project"
+        root.mkdir()
+        pin = str(source)
+        if layout not in {"editable", "relative-file"}:
+            if layout == "symlink-parent" and os.name == "nt":
+                pytest.skip("Requires POSIX symlink/.. traversal semantics")
+            trusted = tmp_path / "trusted"
+            trusted.mkdir()
+            try:
+                if layout == "initializer-symlink":
+                    # Same initializer, distinct package trees: resolving the leaf
+                    # must not select the package containing the symlink target.
+                    package = trusted / "specify_cli"
+                    shutil.copytree(source / "specify_cli", package, ignore=shutil.ignore_patterns("__pycache__"))
+                    leaf = tmp_path / "leaf" / "specify_cli"
+                    leaf.mkdir(parents=True)
+                    for entry in package.iterdir():
+                        if entry.name in {"_agent_config.py", "command_init.py"}:
+                            (leaf / entry.name).write_bytes(entry.read_bytes())
+                        elif entry.name != "__init__.py":
+                            (leaf / entry.name).symlink_to(entry, target_is_directory=entry.is_dir())
+                    (leaf / "__init__.py").write_bytes((package / "__init__.py").read_bytes())
+                    (package / "__init__.py").unlink()
+                    (package / "__init__.py").symlink_to(leaf / "__init__.py")
+                    pin = str(trusted)
+                elif layout == "source-symlink":
+                    (trusted / "alias").symlink_to(source, target_is_directory=True)
+                    pin = str(trusted / "alias")
+                elif layout == "symlink-parent":
+                    (trusted / "nested").mkdir()
+                    (trusted / "specify_cli").symlink_to(source / "specify_cli", target_is_directory=True)
+                    (launch / "alias").symlink_to(trusted / "nested", target_is_directory=True)
+                    (launch / "specify_cli.py").write_text("raise RuntimeError('lexical decoy')", encoding="utf-8")
+                    pin = str(launch / "alias" / "..")
+                else:
+                    (trusted / "specify_cli").symlink_to(source / "specify_cli", target_is_directory=True)
+                    pin = str(trusted)
+                # Editable installs locate these assets beside their source
+                # parent. Supply a complete layout for both parent and child.
+                assets = Path(pin).parent
+                assert assets.resolve().is_relative_to(tmp_path)
+                for name in ("templates", "scripts", "presets", "workflows", "extensions"):
+                    (assets / name).symlink_to(source.parent / name, target_is_directory=True)
+            except OSError as exc:
+                pytest.skip(f"Symlinks unavailable: {exc}")
+        search = os.path.relpath(pin, launch) if layout == "relative-search" else pin
+        marker = tmp_path / "decoy-executed"
+        decoy_code = f"from pathlib import Path; Path({str(marker)!r}).write_text('executed')\n"
+        (root / "sitecustomize.py").write_text(decoy_code, encoding="utf-8")
+        (root / "specify_cli.py").write_text(decoy_code + "raise RuntimeError('project decoy')", encoding="utf-8")
+        decoy_bin = tmp_path / "bin"
+        decoy_bin.mkdir()
+        for name in ("specify", "specify.cmd", "python", "python.exe"):
+            executable = decoy_bin / name
+            executable.write_text("exit 97\n", encoding="utf-8")
+            executable.chmod(0o755)
+        child_record = tmp_path / "child.json"
+        parent_record = tmp_path / "parent.json"
+        # This observer consults only sys.modules at exit. It neither imports
+        # specify_cli nor changes sys.path before the production bootstrap.
+        observer = textwrap.dedent("""
+            import atexit, json, os, sys
+            def record():
+                names = ['specify_cli', 'specify_cli._agent_config', 'specify_cli.command_init']
+                data = {'pid': os.getpid(), 'executable': sys.executable,
+                        'files': {name: sys.modules[name].__file__ for name in names},
+                        'package_path': list(sys.modules['specify_cli'].__path__)}
+                with open(RECORD, 'w', encoding='utf-8') as stream:
+                    json.dump(data, stream)
+            atexit.register(record)
+        """).replace("RECORD", repr(str(child_record)))
+        caller = textwrap.dedent("""
+            import json, os, subprocess, sys
+            sys.path.insert(0, sys.argv[1])
+            import specify_cli
+            import specify_cli.command_init
+            from specify_cli.integrations import INTEGRATION_REGISTRY
+            from specify_cli.workflows import STEP_REGISTRY
+            from specify_cli.workflows.base import StepContext, StepStatus
+            from specify_cli.workflows.step.init import InitStep, _INIT_BOOTSTRAP
+            names = ['specify_cli', 'specify_cli._agent_config', 'specify_cli.command_init']
+            files = {name: sys.modules[name].__file__ for name in names}
+            package_path = list(specify_cli.__path__)
+            if sys.argv[5] == 'relative-file':
+                specify_cli.__file__ = os.path.join('specify_cli', '__init__.py')
+            os.chdir(sys.argv[2])
+            os.environ['PYTHONPATH'] = os.getcwd()
+            os.environ['PATH'] = sys.argv[6] + os.pathsep + os.environ.get('PATH', '')
+            original = subprocess.run
+            launches = []
+            def run(args, **kwargs):
+                assert args[0] == sys.executable
+                assert args[1:4] == ['-P', '-c', _INIT_BOOTSTRAP]
+                launches.append(args)
+                # Keep the complete production bootstrap and actual CLI entry.
+                args = [*args[:3], sys.argv[3] + '\\n' + args[3], *args[4:]]
+                return original(args, **kwargs)
+            subprocess.run = run
+            state = (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
+            registries = (dict(INTEGRATION_REGISTRY), dict(STEP_REGISTRY))
+            context = StepContext(project_root=os.getcwd())
+            result = InitStep().execute({'id': 'init', 'project': 'demo', 'script': 'py'}, context)
+            assert state == (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
+            assert registries == (dict(INTEGRATION_REGISTRY), dict(STEP_REGISTRY))
+            assert context.project_root == os.getcwd()
+            assert result.status == StepStatus.COMPLETED, result.error
+            assert len(launches) == 1
+            with open(sys.argv[4], 'w', encoding='utf-8') as stream:
+                json.dump({'pid': os.getpid(), 'executable': sys.executable, 'files': files,
+                           'package_path': package_path, 'source_argv': launches[0][4]}, stream)
+        """)
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        result = subprocess.run(
+            [sys.executable, "-B", "-P", "-c", caller, search, str(root), observer,
+             str(parent_record), layout, str(decoy_bin)],
+            cwd=launch, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        _assert_init_scaffold(root / "demo", "py")
+        parent = json.loads(parent_record.read_text(encoding="utf-8"))
+        child = json.loads(child_record.read_text(encoding="utf-8"))
+        assert parent["pid"] != child["pid"]
+        assert parent["executable"] == child["executable"] == sys.executable
+        assert Path(parent["source_argv"]).is_absolute()
+        # Compare filesystem identities, including submodules and the package
+        # directory: resolving only __init__.py would miss the leaf-symlink bug.
+        for name, path in parent["files"].items():
+            assert Path(path).samefile(child["files"][name]), (parent, child)
+        assert Path(parent["package_path"][0]).samefile(child["package_path"][0]), (parent, child)
+        assert (Path(parent["source_argv"]) / "specify_cli").samefile(parent["package_path"][0]), (parent, child)
+        if layout == "symlink-parent":
+            assert "/alias/../" in parent["files"]["specify_cli"]
+        assert not marker.exists()
+        print(json.dumps({"layout": layout, "parent": parent, "child": child}))
+
+    @pytest.mark.parametrize("metadata", [
+        "missing-file", "relative-origin", "missing-spec", "wrong-name", "not-file-backed",
+        "mismatched-file", "drive-relative", "rooted-only",
+    ])
+    def test_ambiguous_loaded_source_fails_before_launch(self, tmp_path, monkeypatch, metadata):
+        from importlib.machinery import ModuleSpec
+        from pathlib import PureWindowsPath
+        import specify_cli
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step import init
+
+        source = specify_cli.__file__
+        spec = ModuleSpec("specify_cli", loader=None, origin=source)
+        spec.has_location = True
+        file = os.path.join("specify_cli", "__init__.py")
+        if metadata == "missing-file":
+            file = None
+        elif metadata == "relative-origin":
+            spec.origin = file
+        elif metadata == "missing-spec":
+            spec = None
+        elif metadata == "wrong-name":
+            spec.name = "other_package"
+        elif metadata == "not-file-backed":
+            spec.has_location = False
+        elif metadata == "mismatched-file":
+            file = os.path.join("other_package", "__init__.py")
+        else:
+            # Pure parsing coverage only; this does not claim native Windows.
+            monkeypatch.setattr(init, "Path", PureWindowsPath)
+            file = r"C:specify_cli\__init__.py" if metadata == "drive-relative" else r"\specify_cli\__init__.py"
+            spec.origin = file
+        monkeypatch.setattr(specify_cli, "__file__", file)
+        monkeypatch.setattr(specify_cli, "__spec__", spec)
+        launches = []
+
+        def run(*args, **kwargs):
+            launches.append(args)
+            return init.subprocess.CompletedProcess(args, 0, "", "")
+
+        monkeypatch.setattr(init.subprocess, "run", run)
+        context = StepContext(project_root=str(tmp_path))
+        state = (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
+        result = init.InitStep().execute({"id": "init", "project": "demo"}, context)
+        assert result.status == StepStatus.FAILED
+        assert "absolute" in result.error and "specify_cli" in result.error
+        assert result.output["stdout"] == ""
+        assert result.output["stderr"] == result.error
+        assert launches == []
+        assert state == (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
+        assert context.project_root == str(tmp_path)
+        assert list(tmp_path.iterdir()) == []
 
     def test_pins_interpreter_source_and_child_environment(self, tmp_path, monkeypatch):
         import subprocess
@@ -3819,6 +4131,7 @@ class TestInitStep:
             path.write_text("exit 97\n", encoding="utf-8")
             path.chmod(0o755)
         monkeypatch.setenv("PATH", str(decoy) + os.pathsep + os.environ.get("PATH", ""))
+        monkeypatch.setenv("PYTHONPATH", str(root))
         original = subprocess.run
         launches = []
 
@@ -3844,7 +4157,11 @@ class TestInitStep:
         assert options["capture_output"] is True and options["check"] is False
         assert options["encoding"] == "utf-8"
         assert options["env"] is not os.environ
+        assert "PYTHONPATH" not in options["env"]
         assert options["env"]["PYTHONIOENCODING"] == "utf-8"
+        assert options["env"] == {**{key: value for key, value in environment.items() if key != "PYTHONPATH"},
+                                  "PYTHONIOENCODING": "utf-8"}
+        assert "--non-interactive" in args
         assert dict(os.environ) == environment
 
     @pytest.mark.parametrize("stdout,stderr,expected", [
@@ -3863,7 +4180,8 @@ class TestInitStep:
         assert result.output["stderr"] == expected
         assert result.error == (expected.strip() or stdout.strip() or "specify init exited with code 3.")
 
-    def test_launch_failure_is_actionable(self, tmp_path, monkeypatch):
+    @pytest.mark.parametrize("base_name", ["plain", "back\\slash"])
+    def test_launch_failure_is_actionable(self, tmp_path, monkeypatch, base_name):
         import subprocess
         from specify_cli.workflows.base import StepContext, StepStatus
         from specify_cli.workflows.step.init import InitStep
@@ -3872,26 +4190,36 @@ class TestInitStep:
             raise OSError("fixture launch denied")
 
         monkeypatch.setattr(subprocess, "run", fail)
-        result = InitStep().execute({"id": "init", "project": "demo"}, StepContext(project_root=str(tmp_path)))
+        base = tmp_path / base_name
+        base.mkdir(parents=True)
+        state = (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
+        result = InitStep().execute({"id": "init", "project": "demo"}, StepContext(project_root=str(base)))
         assert result.status == StepStatus.FAILED
-        assert str(tmp_path) in result.error and "fixture launch denied" in result.error
+        assert repr(str(base)) in result.error and "fixture launch denied" in result.error
+        assert result.output["exit_code"] == 1 and result.output["stdout"] == ""
+        assert result.output["stderr"] == result.error
+        assert state == (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
+        assert list(base.iterdir()) == []
 
-    def test_nul_project_argument_returns_failed_result(self, tmp_path):
+    @pytest.mark.parametrize("base_name", ["plain", "back\\slash"])
+    def test_nul_project_argument_returns_failed_result(self, tmp_path, base_name):
         """Real subprocess argument rejection must stay within the step result."""
         from specify_cli.workflows.base import StepContext, StepStatus
         from specify_cli.workflows.step.init import InitStep
 
         step = InitStep()
+        base = tmp_path / base_name
+        base.mkdir(parents=True)
         config = {"id": "init", "project": "bad\x00name", "integration": "copilot", "script": "sh"}
-        context = StepContext(project_root=str(tmp_path))
+        context = StepContext(project_root=str(base))
         assert step.validate(config) == []
         state = (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
         try:
             result = step.execute(config, context)
         finally:
             assert state == (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
-            assert context.project_root == str(tmp_path)
-            assert list(tmp_path.iterdir()) == []
+            assert context.project_root == str(base)
+            assert list(base.iterdir()) == []
 
         assert result.status == StepStatus.FAILED
         assert result.output["exit_code"] == 1
@@ -3899,7 +4227,7 @@ class TestInitStep:
         assert result.output["stdout"] == ""
         assert result.error == result.output["stderr"]
         assert "Cannot run specify init" in result.error
-        assert str(tmp_path) in result.error
+        assert repr(str(base)) in result.error
         assert "embedded null" in result.error.lower()
 
     def test_docstring_lists_every_valid_script_type(self):

@@ -134,6 +134,9 @@ class InitStep(StepBase):
             # No explicit target → initialize the current directory.
             argv.append(".")
 
+        # Enforce the unattended contract independently of stdin's TTY status.
+        argv.append("--non-interactive")
+
         # Build the full argv (except --force, which may be set implicitly
         # below) so early-return outputs always reflect the complete command.
         if integration:
@@ -275,10 +278,38 @@ class InitStep(StepBase):
         """Run the real CLI without changing parent cwd, streams or registries."""
         import specify_cli
 
-        package_parent = str(Path(specify_cli.__file__).resolve().parent.parent)
         child_env = os.environ.copy()
+        # -P omits the unsafe cwd entry but still honors PYTHONPATH. Drop it
+        # before startup can import project-controlled sitecustomize code;
+        # bootstrap source pinning happens too late to protect that boundary.
+        child_env.pop("PYTHONPATH", None)
         child_env["PYTHONIOENCODING"] = "utf-8"
         try:
+            source = getattr(specify_cli, "__file__", None)
+            source_error = (
+                "Cannot identify an absolute file location for loaded specify_cli; "
+                "use a file-backed installation with absolute module metadata."
+            )
+            if not isinstance(source, str) or not source:
+                raise ValueError(source_error)
+            if not Path(source).is_absolute():
+                # A relative __file__ cannot be anchored to the current cwd:
+                # it may have changed since import. Only matching metadata from
+                # this same loaded module can supply the original absolute pin.
+                spec = getattr(specify_cli, "__spec__", None)
+                origin = getattr(spec, "origin", None)
+                if (
+                    Path(source).drive or Path(source).root
+                    or getattr(spec, "name", None) != specify_cli.__name__
+                    or not getattr(spec, "has_location", False)
+                    or not isinstance(origin, str) or not Path(origin).is_absolute()
+                    or not origin.endswith(os.sep + source)
+                ):
+                    raise ValueError(source_error)
+                source = origin
+            # Preserve the loaded package tree, including symlink/.. spelling.
+            # Resolving the initializer leaf can select a different package.
+            package_parent = os.path.dirname(os.path.dirname(source))
             result = subprocess.run(
                 [sys.executable, "-P", "-c", _INIT_BOOTSTRAP, package_parent, *argv],
                 cwd=base,
