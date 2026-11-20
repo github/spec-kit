@@ -48,6 +48,12 @@ def _access(path: Path):
     return _sddl_of(descriptor)
 
 
+def _is_policy_write(rel, skill: str) -> bool:
+    """Whether a ``create_bytes`` call writes ``skill``'s policy, staged beside it or not."""
+    posix = Path(rel).as_posix()
+    return f"{skill}/agents/" in posix and posix.endswith("/openai.yaml")
+
+
 def _split_dacl(sddl: str) -> tuple[str, list[str]]:
     """The DACL flags and ACEs of an SDDL string such as ``D:PAI(A;;FA;;;S-1-...)``."""
     import re
@@ -1100,8 +1106,12 @@ class TestCodexNoModelInvocationOwnership:
         self._seed(tmp_path)
         error = SymlinkDeniedError if refusal == "symlink" else UnsupportedPathError
 
+        real_access = FileHelper.access
+
         def access(self, rel, mode):
-            raise error(f"Refusing {rel}")
+            if Path(rel).name == "openai.yaml":
+                raise error(f"Refusing {rel}")
+            return real_access(self, rel, mode)
 
         monkeypatch.setattr(FileHelper, "access", access)
         with pytest.raises(ValueError, match=r"^Cannot update .*speckit-plan/agents/openai.yaml: Refusing"):
@@ -1110,14 +1120,16 @@ class TestCodexNoModelInvocationOwnership:
             )
 
     def test_checking_a_user_file_is_writable_leaves_it_untouched(self, tmp_path, monkeypatch):
-        # Opening it for writing would report a Windows sharing violation as
-        # read-only, so the writability check must not use open_rewrite.
+        # Checking must not change the file; on POSIX it must not even open it
+        # for writing.
         from specify_cli.file_helper import FileHelper
 
         def open_rewrite(self, rel):
             raise AssertionError(f"preflight opened {rel} for writing")
 
-        monkeypatch.setattr(FileHelper, "open_rewrite", open_rewrite)
+        if os.name != "nt":
+            # Windows opens it to check its ACL, without writing.
+            monkeypatch.setattr(FileHelper, "open_rewrite", open_rewrite)
         path = self._seed(tmp_path)
         original = path.read_bytes()
         os.utime(path, ns=(1_000_000_000_000_000_000, 1_000_000_000_000_000_000))
@@ -1445,7 +1457,7 @@ class TestCodexNoModelInvocationOwnership:
         real_create_bytes = FileHelper.create_bytes
 
         def create_bytes(self, rel, *args, **kwargs):
-            if Path(rel).as_posix() == TestCodexNoModelInvocationOwnership.PLAN_REL:
+            if _is_policy_write(rel, "speckit-plan"):
                 theirs.write_bytes(b"")  # appears just before the exclusive create
             return real_create_bytes(self, rel, *args, **kwargs)
 
@@ -1464,7 +1476,7 @@ class TestCodexNoModelInvocationOwnership:
         real_create_bytes = FileHelper.create_bytes
 
         def create_bytes(self, rel, content, *args, **kwargs):
-            if Path(rel).as_posix().endswith("speckit-tasks/agents/openai.yaml"):
+            if _is_policy_write(rel, "speckit-tasks"):
                 real_create_bytes(self, rel, content[:5], *args, **kwargs)
                 raise OSError("disk full")
             return real_create_bytes(self, rel, content, *args, **kwargs)
@@ -1931,7 +1943,7 @@ class TestCodexNoModelInvocationOwnership:
         failing = tmp_path / ".agents/skills/speckit-tasks/agents/openai.yaml"
 
         def create_partly(self, rel, content, *args, **kwargs):
-            if Path(rel).as_posix().endswith("speckit-tasks/agents/openai.yaml"):
+            if _is_policy_write(rel, "speckit-tasks"):
                 real_create_bytes(self, rel, b"", *args, **kwargs)
                 raise OSError("disk full")
             return real_create_bytes(self, rel, content, *args, **kwargs)
@@ -1965,7 +1977,7 @@ class TestCodexNoModelInvocationOwnership:
         plan = project / TestCodexNoModelInvocationOwnership.PLAN_REL
 
         def create_bytes(self, rel, *args, **kwargs):
-            if Path(rel).as_posix().endswith(f"{failing_skill}/agents/openai.yaml"):
+            if _is_policy_write(rel, failing_skill):
                 assert b"allow_implicit_invocation" in plan.read_bytes()
                 raise OSError("disk full")
             return real_create_bytes(self, rel, *args, **kwargs)
@@ -2006,6 +2018,215 @@ class TestCodexNoModelInvocationOwnership:
             self._setup(tmp_path)
         assert path.read_bytes() == original
         assert self._other_policies(tmp_path) == []
+
+    @staticmethod
+    def _init_fails(project):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        args = ["init", "--here", "--force", "--integration", "codex", "--script", "sh",
+                "--ignore-agent-tools", "--integration-options", "--no-model-invocation"]
+        try:
+            result = _run_in_project(project, args)
+        except OSError:
+            return
+        assert result.exit_code != 0, result.output
+
+    def test_journalled_failed_policy_write_leaves_nothing_for_a_retry(self, tmp_path, monkeypatch):
+        from specify_cli.file_helper import FileHelper
+
+        self._init(tmp_path)
+        failing = tmp_path / ".agents/skills/speckit-tasks/agents/openai.yaml"
+        real_create_bytes = FileHelper.create_bytes
+
+        def create_partly(self, rel, content, *args, **kwargs):
+            if _is_policy_write(rel, "speckit-tasks"):
+                real_create_bytes(self, rel, content[:5], *args, **kwargs)
+                raise OSError("disk full")
+            return real_create_bytes(self, rel, content, *args, **kwargs)
+
+        monkeypatch.setattr(FileHelper, "create_bytes", create_partly)
+        self._init_fails(tmp_path)
+        monkeypatch.undo()
+        # A partial file here would be untracked, so a retry would take it for the user's own.
+        assert not failing.exists()
+        assert not list(failing.parent.parent.rglob(".speckit-*"))
+
+        self._init(tmp_path, "--no-model-invocation")
+        rel = failing.relative_to(tmp_path).as_posix()
+        assert self._manifest(tmp_path).ownership_modes[rel] == "whole"
+        self._init(tmp_path)
+        assert not failing.exists()
+
+    def test_journalled_failed_close_after_a_rewrite_restores_the_file(self, tmp_path, monkeypatch):
+        from contextlib import contextmanager
+
+        from specify_cli.file_helper import FileHelper
+
+        self._init(tmp_path)
+        path = self._seed_existing(tmp_path)
+        original = path.read_bytes()
+        real_open_rewrite = FileHelper.open_rewrite
+
+        @contextmanager
+        def open_rewrite(self, rel):
+            with real_open_rewrite(self, rel) as fd:
+                yield fd
+            raise OSError(errno.EIO, "close failed")
+
+        monkeypatch.setattr(FileHelper, "open_rewrite", open_rewrite)
+        self._init_fails(tmp_path)
+        monkeypatch.undo()
+        # Left pending, the journal would keep the untracked policy as a conflict.
+        assert path.read_bytes() == original
+        assert not path.with_name("openai.yaml.speckit-backup").exists()
+
+        self._init(tmp_path, "--no-model-invocation")
+        assert self._yaml(path)["policy"] == self.POLICY
+        self._init(tmp_path)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+
+    def _seed_existing(self, project):
+        """Seed the plan's ``openai.yaml`` in a project that already has its skills."""
+        path = project / self.PLAN_REL
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"interface:\n  display_name: Plan\n")
+        return path
+
+    def test_a_backup_replaced_during_the_rewrite_is_left_in_place(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        backup = path.with_name("openai.yaml.speckit-backup")
+        theirs = b"someone else's file\n"
+        real_write = codex._write_fd
+        replaced = []
+
+        def write_fd(fd, content):
+            if not replaced:
+                other = path.with_name("theirs")
+                other.write_bytes(theirs)
+                os.replace(other, backup)
+                replaced.append(True)
+            real_write(fd, content)
+
+        monkeypatch.setattr(codex, "_write_fd", write_fd)
+        with pytest.raises(PermissionError, match="was replaced during the update"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert backup.read_bytes() == theirs
+        assert path.read_bytes() == original
+
+    def test_rollback_keeps_a_file_that_replaced_a_failed_new_policy(self, tmp_path, monkeypatch):
+        from specify_cli.file_helper import FileHelper
+
+        failing = tmp_path / self.PLAN_REL
+        real_create_bytes = FileHelper.create_bytes
+
+        def create_bytes(self, rel, content, *args, **kwargs):
+            if _is_policy_write(rel, "speckit-plan"):
+                # Someone else's empty file lands just as the write fails.
+                # Empty bytes are a prefix of anything setup writes.
+                failing.parent.mkdir(parents=True, exist_ok=True)
+                other = failing.with_name("theirs")
+                other.write_bytes(b"")
+                os.replace(other, failing)
+                raise OSError("disk full")
+            return real_create_bytes(self, rel, content, *args, **kwargs)
+
+        monkeypatch.setattr(FileHelper, "create_bytes", create_bytes)
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert failing.read_bytes() == b""
+
+    def test_a_generated_policy_that_cannot_be_removed_is_reported(self, tmp_path, monkeypatch, caplog):
+        self._setup(tmp_path).save()
+        path = tmp_path / self.PLAN_REL
+        real_uninstall = IntegrationManifest.uninstall
+
+        def uninstall(self, root, *args, **kwargs):
+            if self.version == "policy-cleanup":
+                return [], [root / rel for rel in self.files]
+            return real_uninstall(self, root, *args, **kwargs)
+
+        monkeypatch.setattr(IntegrationManifest, "uninstall", uninstall)
+        with caplog.at_level("WARNING", logger="specify_cli.integrations.codex"):
+            manifest = self._setup(tmp_path, enabled=False)
+        assert path.exists()
+        assert self.PLAN_REL in manifest.files
+        assert f"Could not remove {self.PLAN_REL}" in caplog.text
+        assert "upgrade codex` again to retry" in caplog.text
+
+    @pytest.mark.skipif(
+        os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+        reason="POSIX directory permissions, which root bypasses",
+    )
+    @pytest.mark.parametrize("existing", [True, False])
+    def test_preflight_refuses_a_policy_directory_it_cannot_write(self, tmp_path, existing):
+        if existing:
+            # The rewrite's backup goes beside the writable file.
+            agents = self._seed(tmp_path).parent
+        else:
+            agents = tmp_path / ".agents/skills/speckit-tasks/agents"
+            agents.mkdir(parents=True)
+        agents.chmod(0o555)
+        try:
+            with pytest.raises(ValueError, match="Directory is not writable"):
+                get_integration("codex").preflight_setup(
+                    tmp_path, {"no_model_invocation": True}, script_type="sh",
+                )
+        finally:
+            agents.chmod(0o755)
+
+    @pytest.mark.parametrize("sharing", [False, True])
+    def test_preflight_probes_write_access_where_access_ignores_the_acl(
+        self, tmp_path, monkeypatch, sharing
+    ):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations import codex
+
+        class SharingViolation(PermissionError):
+            winerror = 32
+
+        self._seed(tmp_path)
+        error = SharingViolation if sharing else PermissionError
+        real_open_rewrite = FileHelper.open_rewrite
+
+        def open_rewrite(self, rel):
+            if Path(rel).name == "openai.yaml":
+                raise error(errno.EACCES, "Access is denied")
+            return real_open_rewrite(self, rel)
+
+        # As on Windows, where ``os.access`` passes a file its ACL denies.
+        monkeypatch.setattr(codex, "_PROBE_WRITE_ACCESS", True)
+        monkeypatch.setattr(FileHelper, "open_rewrite", open_rewrite)
+        def preflight():
+            return get_integration("codex").preflight_setup(
+                tmp_path, {"no_model_invocation": True}, script_type="sh",
+            )
+
+        if sharing:
+            # Held open by another program is not a denial.
+            assert preflight() is None
+        else:
+            with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*cannot be opened for writing"):
+                preflight()
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows access-control lists")
+    def test_preflight_refuses_a_policy_file_its_acl_denies_writing(self, tmp_path):
+        path = self._seed(tmp_path)
+        subprocess.run(
+            ["icacls", str(path), "/deny", "*S-1-1-0:(WD,AD)"], check=True, capture_output=True,
+        )
+        try:
+            assert os.access(path, os.W_OK)  # the read-only attribute is not set
+            with pytest.raises(ValueError, match="cannot be opened for writing"):
+                get_integration("codex").preflight_setup(
+                    tmp_path, {"no_model_invocation": True}, script_type="sh",
+                )
+        finally:
+            subprocess.run(["icacls", str(path), "/reset"], check=True, capture_output=True)
 
     def test_failed_policy_write_is_left_to_an_active_lifecycle_journal(self, tmp_path, monkeypatch):
         from specify_cli.integrations._file_changes import file_change_observer

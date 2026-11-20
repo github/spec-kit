@@ -107,7 +107,12 @@ def _replace_file(
                     "unchanged, so retry",
                     str(root / backup_rel),
                 ) from exc
-        with changing_file(root / rel), ExitStack() as stack:
+            # Cleanup deletes only this entry, never one that replaced it.
+            backup_id = _entry_identity(helper, backup_rel)
+        # The descriptor closes after the journal sees the rewrite finish, so a
+        # failed close is rolled back like any other failure instead of being
+        # left pending, which the journal would preserve as a conflict.
+        with ExitStack() as stack, changing_file(root / rel):
             try:
                 fd = stack.enter_context(helper.open_rewrite(rel))
                 _require_rewritable_fd(fd, root / rel, read)
@@ -120,19 +125,19 @@ def _replace_file(
             except BaseException:
                 # Nothing was written, so the backup is only clutter, and one
                 # left behind would block the next run.
-                _discard_backup(helper, root, backup_rel)
+                _discard_backup(helper, root, backup_rel, backup_id)
                 raise
             try:
                 _write_fd(fd, content)
-                _remove_backup(helper, root, backup_rel)
+                _remove_backup(helper, root, backup_rel, backup_id)
             except BaseException:
                 try:
                     _write_fd(fd, original)
                 except OSError as exc:
-                    try:
-                        kept = _entry_kind(root, backup_rel) == "file"
-                    except (OSError, ValueError):  # ValueError covers FileHelperError
-                        kept = False
+                    kept = (
+                        backup_id is not None
+                        and _entry_identity(helper, backup_rel) == backup_id
+                    )
                     if kept:
                         _keep_through_rollback(root / backup_rel)
                     where = (
@@ -144,14 +149,14 @@ def _replace_file(
                         "Could not restore %s after a failed write: %s; %s", rel, exc, where,
                     )
                 else:
-                    _discard_backup(helper, root, backup_rel)
+                    _discard_backup(helper, root, backup_rel, backup_id)
                 raise
             if on_written is not None:
                 on_written(original)
     return original
 
 
-_Written = tuple[str, bytes | None, bytes, bool, bool, tuple[int, int, int] | None]
+_Written = tuple[str, bytes | None, bytes, bool, tuple[int, int, int] | None]
 
 
 def _entry_identity(helper: FileHelper, rel: str) -> tuple[int, int, int] | None:
@@ -165,6 +170,39 @@ def _entry_identity(helper: FileHelper, rel: str) -> tuple[int, int, int] | None
     except (OSError, ValueError):  # ValueError covers FileHelperError
         return None
     return info.st_dev, info.st_ino, info.st_ctime_ns
+
+
+def _publish_new(helper: FileHelper, rel: str, content: bytes) -> tuple[int, int, int] | None:
+    """Create ``rel`` holding ``content``, never leaving a partial file there.
+
+    The bytes are written in a private staging directory beside ``rel`` and
+    moved into place without replacing anything, so a failed write leaves
+    nothing at ``rel`` for a retry or the lifecycle journal to mistake for a
+    user file. Every step goes through the helper, so a directory swapped
+    for a symlink since planning cannot redirect it. Returns the identity of
+    the published file, or ``None`` if the entry at ``rel`` is not provably
+    the one moved there; rollback deletes only a file whose identity matches.
+    """
+    parent = PurePosixPath(rel).parent.as_posix()
+    helper.mkdir(parent, parents=True, exist_ok=True)
+    identity = None
+    moved = False
+    try:
+        with helper.temporary_directory(parent, prefix=".speckit-") as staging:
+            staged = staging / PurePosixPath(rel).name
+            helper.create_bytes(staged, content)
+            made = helper.stat(staged)
+            helper.move_noreplace(staged, rel)
+            moved = True
+            identity = _entry_identity(helper, rel)
+            if identity is not None and identity[:2] != (made.st_dev, made.st_ino):
+                identity = None
+    except OSError as exc:
+        if not moved:
+            raise
+        # Only the empty staging directory is left; the policy is in place.
+        logger.warning("Could not remove a staging directory in %s: %s", parent, exc)
+    return identity
 
 
 def _keep_through_rollback(backup: Path) -> None:
@@ -205,10 +243,12 @@ def _write_fd(fd: int, content: bytes) -> None:
                 raise
 
 
-def _discard_backup(helper: FileHelper, root: Path, backup_rel: str) -> None:
+def _discard_backup(
+    helper: FileHelper, root: Path, backup_rel: str, identity: tuple[int, int, int] | None,
+) -> None:
     """Remove a backup whose original is intact; a failure only leaves it behind."""
     try:
-        _remove_backup(helper, root, backup_rel)
+        _remove_backup(helper, root, backup_rel, identity)
     except (OSError, ValueError) as exc:  # ValueError covers FileHelperError
         logger.warning(
             "Could not remove %s: %s; %s is intact, so delete the backup before "
@@ -216,12 +256,25 @@ def _discard_backup(helper: FileHelper, root: Path, backup_rel: str) -> None:
         )
 
 
-def _remove_backup(helper: FileHelper, root: Path, backup_rel: str) -> None:
+def _remove_backup(
+    helper: FileHelper, root: Path, backup_rel: str, identity: tuple[int, int, int] | None,
+) -> None:
+    """Delete the backup ``_replace_file`` created, identified by ``identity``.
+
+    An entry that replaced it is someone else's and is left in place.
+    """
     with changing_file(root / backup_rel, removal=True):
         try:
-            helper.delete(backup_rel)
+            info = helper.stat(backup_rel)
         except FileNotFoundError:
-            pass
+            return
+        if identity is None or (info.st_dev, info.st_ino, info.st_ctime_ns) != identity:
+            raise PermissionError(
+                errno.EPERM,
+                f"{backup_rel} was replaced during the update, so it was left in place",
+                str(root / backup_rel),
+            )
+        helper.delete(backup_rel)
 
 
 def _require_rewritable_fd(fd: int, path: Path, read: os.stat_result) -> None:
@@ -274,6 +327,12 @@ def _canonical_root(project_root: Path) -> Path:
         return helper.canonical_root
 
 
+# Windows ``os.access`` reads only the read-only attribute, not the
+# access-control list. A module flag so tests can take the Windows path.
+_PROBE_WRITE_ACCESS = os.name == "nt"
+_ERROR_SHARING_VIOLATION = 32
+
+
 def _require_rewritable(root: Path, rel: str) -> None:
     path = root / rel
     with FileHelper(root) as helper:
@@ -283,10 +342,41 @@ def _require_rewritable(root: Path, rel: str) -> None:
         # The mode bits catch a read-only file even when running as root.
         if not helper.access(rel, os.W_OK) or not info.st_mode & 0o222:
             raise PermissionError(errno.EACCES, "File is read-only", str(path))
+        if _PROBE_WRITE_ACCESS:
+            # Opening for writing, without writing, is what the access-control
+            # list is checked against.
+            try:
+                with helper.open_rewrite(rel):
+                    pass
+            except PermissionError as exc:
+                # Another program holding the file open is not a denial; the
+                # write itself reports it if it still holds it then.
+                if getattr(exc, "winerror", None) != _ERROR_SHARING_VIOLATION:
+                    raise PermissionError(
+                        exc.errno or errno.EACCES, "File cannot be opened for writing", str(path),
+                    ) from exc
     # An in-place write would also change every other link, possibly outside
     # the project.
     if info.st_nlink > 1:
         raise PermissionError(errno.EPERM, "File has other hard links", str(path))
+
+
+def _require_creatable_beside(root: Path, rel: str) -> None:
+    """Refuse unless an entry can be created beside ``rel``.
+
+    The nearest existing ancestor is checked, since setup creates any missing
+    directory below it. Windows ``os.access`` ignores a directory's
+    access-control list, so there this catches only a read-only mount.
+    """
+    parent = PurePosixPath(rel).parent
+    while parent.parts and _entry_kind(root, parent.as_posix()) == "missing":
+        parent = parent.parent
+    with FileHelper(root) as helper:
+        target = parent.as_posix() if parent.parts else "."
+        if not helper.access(target, os.W_OK | os.X_OK):
+            raise PermissionError(
+                errno.EACCES, "Directory is not writable", str(root / parent),
+            )
 
 
 def _reparse_point_on(root: Path, rel: str) -> str | None:
@@ -495,6 +585,11 @@ class CodexIntegration(SkillsIntegration):
             return None
         if already_set and raw is not None:
             return rel, None, ownership, raw
+        try:
+            # A new policy is created here, and a rewrite keeps its backup here.
+            _require_creatable_beside(project_root, rel)
+        except (OSError, FileHelperError) as exc:
+            raise ValueError(f"Cannot update {rel}: {exc}") from exc
         return rel, _openai_yaml.dump(data), ownership, raw
 
     def _remove_policy(self, project_root: Path, rel: str, *, final: bool = False) -> bool:
@@ -569,6 +664,13 @@ class CodexIntegration(SkillsIntegration):
         for path in skipped:
             rel = path.relative_to(project_root).as_posix()
             if self._may_still_exist(project_root, rel):
+                logger.warning(
+                    "Could not remove %s, so it may still set "
+                    "policy.allow_implicit_invocation: false and Codex will not "
+                    "invoke that skill implicitly; run `specify integration upgrade "
+                    "codex` again to retry, or delete the file by hand",
+                    rel,
+                )
                 mode = self._retained_mode(project_root, rel, prior)
                 self._retain(manifest, rel, prior.files[rel], mode)
         return released
@@ -754,8 +856,8 @@ class CodexIntegration(SkillsIntegration):
                     if plan is not None:
                         planned.append(plan)
         # ``(rel, prior bytes or None if new, bytes written, whether its
-        # directory was new, whether the write completed, the identity of a
-        # file it created)``
+        # directory was new, the identity of a file it created, or None when
+        # it is not provably the one setup created)``
         written: list[_Written] = []
         try:
             for rel, content, ownership, read in planned:
@@ -770,7 +872,7 @@ class CodexIntegration(SkillsIntegration):
                         _replace_file(
                             root, rel, new, expected=read,
                             on_written=lambda original, rel=rel, new=new: written.append(
-                                (rel, original, new, False, True, None)
+                                (rel, original, new, False, None)
                             ),
                         )
                     manifest.record_existing(rel, ownership=ownership)
@@ -786,29 +888,17 @@ class CodexIntegration(SkillsIntegration):
                         raise ValueError(f"Cannot update {rel}: {exc}") from exc
                     if present:
                         raise ValueError(f"Cannot update {rel}: it was created while updating")
-                    # Created exclusively through the helper, so a directory
-                    # swapped for a symlink since planning cannot redirect it.
                     identity = None
                     try:
                         with changing_file(path), FileHelper(root) as helper:
-                            helper.mkdir(PurePosixPath(rel).parent.as_posix(), parents=True, exist_ok=True)
-                            try:
-                                helper.create_bytes(rel, new)
-                            except FileExistsError:
-                                raise
-                            except BaseException:
-                                identity = _entry_identity(helper, rel)
-                                raise
-                            # Rollback deletes only this file, never one
-                            # that replaced it, even with matching bytes.
-                            identity = _entry_identity(helper, rel)
+                            identity = _publish_new(helper, rel, new)
                     except FileExistsError as exc:
                         # Someone else's file: not ours to roll back.
                         raise ValueError(f"Cannot update {rel}: it was created while updating") from exc
                     except BaseException:
-                        written.append((rel, None, new, new_dir, False, identity))
+                        written.append((rel, None, new, new_dir, identity))
                         raise
-                    written.append((rel, None, new, new_dir, True, identity))
+                    written.append((rel, None, new, new_dir, identity))
                     manifest.record_existing(rel, ownership=ownership)
                     if manifest.files[rel] != hashlib.sha256(new).hexdigest():
                         raise ValueError(f"Cannot update {rel}: it changed while updating")
@@ -836,7 +926,7 @@ class CodexIntegration(SkillsIntegration):
         created file that is no longer the entry setup created. Only runs
         outside a lifecycle transaction, so nothing journals it.
         """
-        for rel, original, new, new_dir, complete, identity in reversed(written):
+        for rel, original, new, new_dir, identity in reversed(written):
             try:
                 if original is not None:
                     try:
@@ -854,16 +944,15 @@ class CodexIntegration(SkillsIntegration):
                     # ancestor out of the project.
                     try:
                         current = helper.read_bytes(rel)
-                    except FileNotFoundError:  # the write itself failed
+                    except FileNotFoundError:  # never published
                         current = None
                     if current is not None:
                         if identity is None or _entry_identity(helper, rel) != identity:
                             logger.warning(
-                                "Leaving %s in place: it was replaced after it was written", rel,
+                                "Leaving %s in place: it is not the file setup created", rel,
                             )
                             continue
-                        # A write that failed part-way leaves a prefix.
-                        if current != new and (complete or not new.startswith(current)):
+                        if current != new:
                             logger.warning("Leaving %s in place: it changed after it was written", rel)
                             continue
                         helper.delete(rel)
