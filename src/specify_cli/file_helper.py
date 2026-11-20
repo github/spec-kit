@@ -52,7 +52,8 @@ def _remove_created(
 def _require_owner_only(fd: int, info: os.stat_result, name: str) -> None:
     """Refuse a new, still-empty file that someone other than its owner can open.
 
-    Group or other mode bits mean the filesystem ignored the creation mode. On
+    Group or other mode bits mean the filesystem ignored the creation mode, and a
+    different owner means it mapped ownership. On
     macOS, a parent's inheritable ACEs are added to a new file whatever its mode,
     and they cannot be withheld from a directory-relative create, so such a file
     is refused before any content reaches it. NFSv4-style inherited ACLs on other
@@ -63,6 +64,13 @@ def _require_owner_only(fd: int, info: os.stat_result, name: str) -> None:
             errno.EACCES,
             f"Filesystem did not create {name} owner-only "
             f"(mode {stat.S_IMODE(info.st_mode):o})",
+        )
+    # A mapped or fixed-ownership filesystem can give the file to another user,
+    # who could then read the private content however tight its mode is.
+    if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
+        raise PermissionError(
+            errno.EACCES,
+            f"Filesystem created {name} owned by uid {info.st_uid}, not the caller",
         )
     if sys.platform == "darwin" and _has_inherited_allow_entry(fd):
         raise PermissionError(

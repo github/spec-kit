@@ -297,6 +297,16 @@ def test_create_private_bytes_is_owner_only(tmp_path):
     assert stat.S_IMODE((tmp_path / REL).stat().st_mode) & 0o077 == 0
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX ownership")
+def test_create_private_bytes_refuses_a_file_owned_by_another_user(tmp_path, monkeypatch):
+    (tmp_path / "parent").mkdir()
+    monkeypatch.setattr(os, "geteuid", lambda: os.stat(tmp_path).st_uid + 1)
+    with FileHelper(tmp_path) as files, pytest.raises(PermissionError) as raised:
+        files.create_private_bytes(REL, b"private")
+    assert "owned by uid" in str(raised.value)
+    assert not (tmp_path / REL).exists()
+
+
 def test_create_private_bytes_needs_an_existing_parent(tmp_path):
     with FileHelper(tmp_path) as files, pytest.raises(FileNotFoundError):
         files.create_private_bytes(REL, b"content")
@@ -614,8 +624,9 @@ def test_windows_create_private_bytes_sets_an_owner_only_protected_acl(tmp_path)
     result = subprocess.run(
         ["powershell", "-NoProfile", "-Command",
          f"(Get-Acl -LiteralPath '{tmp_path / REL}').Sddl"],
-        check=True, capture_output=True, text=True,
+        capture_output=True, text=True,
     )
+    assert result.returncode == 0, result.stderr
     sddl = result.stdout.strip()
     sid = _file_handles._windows_current_user_sid()
     assert f"O:{sid}" in sddl
