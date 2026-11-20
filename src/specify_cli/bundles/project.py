@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .._file_policy import ProjectPolicyError, project_files
 from .._project import (
     ProjectResolutionError,
     _resolve_init_dir_override_unrendered,
     render_project_error,
 )
-from .._file_policy import ProjectPolicyError, project_files
+from ..file_helper import FileHelper, FileHelperError
 from ..integration_state import clean_integration_key, dedupe_integration_keys
 from . import BundlerError
 from .yamlio import ensure_within, load_json
@@ -47,10 +48,17 @@ def find_project_root(start: Path | None = None) -> Path | None:
     for candidate in (current, *current.parents):
         marker = candidate / ".specify"
         try:
-            marker.lstat()
+            with FileHelper(candidate) as files:
+                try:
+                    if not files.directory_exists(".specify"):
+                        continue
+                except (FileHelperError, NotADirectoryError) as exc:
+                    # Preserve the policy diagnostic for a present invalid marker.
+                    _preflight_policy(candidate)
+                    raise BundlerError(str(exc)) from exc
         except FileNotFoundError:
             continue
-        except OSError as exc:
+        except (OSError, FileHelperError, RuntimeError) as exc:
             error = ProjectPolicyError(f"Cannot inspect project marker {marker}: {exc}")
             raise BundlerError(str(error)) from error
         _preflight_policy(candidate)
@@ -60,7 +68,8 @@ def find_project_root(start: Path | None = None) -> Path | None:
 
 def _preflight_policy(root: Path) -> None:
     try:
-        project_files(root)
+        with project_files(root):
+            pass
     except ProjectPolicyError as exc:
         raise BundlerError(str(exc)) from exc
 

@@ -458,10 +458,10 @@ def _require_specify_project(*, load_integrations: bool = False) -> Path:
     from ._project import ProjectResolutionError, preflight_project_policy, render_project_error
 
     try:
-        preflight_project_policy(project_root)
+        marker_present = preflight_project_policy(project_root)
     except ProjectResolutionError as exc:
         render_project_error(exc)
-    if (project_root / ".specify").is_dir():
+    if marker_present:
         if load_integrations:
             from .integrations.installer import IntegrationInstallError, load_installed_integrations
 

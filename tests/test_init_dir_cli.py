@@ -17,6 +17,9 @@ SPECIFY_* vars are stripped from the environment for every test by the autouse
 explicitly via monkeypatch.
 """
 
+import os
+from pathlib import Path
+
 import pytest
 import yaml
 from typer.testing import CliRunner
@@ -91,6 +94,56 @@ def test_override_trailing_slash_tolerated(tmp_path, monkeypatch):
     assert "No workflows installed" in result.output
 
 
+def test_override_trusts_the_explicit_root_alias(tmp_path, monkeypatch):
+    from specify_cli._project import resolve_specify_project_root
+
+    project = _make_project(tmp_path, "web")
+    (project / ".specify" / "init-options.json").write_text(
+        '{"allow_symlinks": false}', encoding="utf-8"
+    )
+    alias = tmp_path / "alias"
+    try:
+        alias.symlink_to(project, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"Symlinks unavailable: {exc}")
+    monkeypatch.setenv("SPECIFY_INIT_DIR", str(alias))
+    assert resolve_specify_project_root() == project.resolve()
+
+
+def test_cwd_marker_probe_propagates_permission_failure(tmp_path, monkeypatch):
+    from specify_cli._project import ProjectResolutionError, resolve_specify_project_root
+
+    project = _make_project(tmp_path, "web").resolve()
+    monkeypatch.chdir(project)
+    original = Path.lstat
+
+    def deny_marker(path, *args, **kwargs):
+        if path == project / ".specify":
+            raise PermissionError("marker access denied")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", deny_marker)
+    with pytest.raises(ProjectResolutionError, match="marker access denied"):
+        resolve_specify_project_root()
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX special files required")
+@pytest.mark.parametrize(
+    ("fifo_path", "message"),
+    [
+        (".specify", r"\.specify path exists but is not a directory"),
+        (".specify/init-options.json", r"Cannot read \.specify/init-options\.json"),
+    ],
+)
+def test_project_diagnostic_for_fifo(tmp_path, monkeypatch, fifo_path, message):
+    from specify_cli._project import ProjectResolutionError, resolve_specify_project_root
+
+    fifo = tmp_path / fifo_path
+    fifo.parent.mkdir(exist_ok=True)
+    os.mkfifo(fifo)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ProjectResolutionError, match=message):
+        resolve_specify_project_root()
 
 
 def test_unset_override_uses_cwd(tmp_path, monkeypatch):
