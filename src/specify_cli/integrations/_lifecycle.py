@@ -621,14 +621,41 @@ def _restore_file_in_place(
                 current = getattr(os.fstat(descriptor), "st_flags", file_flags)
                 if (current ^ file_flags) & ~_UNCOMPARED_FLAGS:
                     complete = False
-            # A path unlinked or replaced during the copy no longer names the
-            # restored file; report that, and leave whatever is there alone.
+        # Only now that the write handle is closed: on Windows closing it can
+        # move the last-write time again, after any time set while it was open.
+        # The check after setting the times also catches a path unlinked or
+        # replaced during the copy, which no longer names the restored file;
+        # whatever is there is left alone and reported.
+        if not _restore_times(files, path.name, opened, original):
+            complete = False
+        return "restored" if complete else "incomplete"
+
+
+def _restore_times(files: FileHelper, name: str, restored: os.stat_result, original: os.stat_result) -> bool:
+    """Set the snapshot's times on the closed, restored file, then confirm they held.
+
+    The times go through ``files`` (no-follow, relative to the anchored
+    parent) while a fresh descriptor confirms ``name`` still names the
+    restored file; on Windows that descriptor also keeps it from being
+    renamed or replaced until the times are set.
+    """
+    times = (original.st_atime_ns, original.st_mtime_ns)
+    try:
+        with ExitStack() as stack:
             try:
-                if not os.path.samestat(os.fstat(descriptor), files.stat(path.name)):
-                    complete = False
-            except (OSError, FileHelperError):
-                complete = False
-            return "restored" if complete else "incomplete"
+                descriptor = stack.enter_context(files.open_read(name))
+            except PermissionError:
+                # A write-only original: the restore itself opened it for writing.
+                descriptor = stack.enter_context(files.open_rewrite(name))
+            current = os.fstat(descriptor)
+            if not os.path.samestat(current, restored):
+                return False
+            if (current.st_atime_ns, current.st_mtime_ns) != times:
+                files.utime(name, ns=times)
+        final = files.stat(name)
+    except (OSError, FileHelperError):
+        return False
+    return os.path.samestat(final, restored) and final.st_mtime_ns == original.st_mtime_ns
 
 
 def _copy_descriptor(source: int, destination: int) -> None:
@@ -643,17 +670,18 @@ def _restore_metadata(
     descriptor: int, files: FileHelper, name: str, original: os.stat_result,
     attributes: dict[str, bytes] | None,
 ) -> bool:
-    """Restore a snapshot's extended attributes, times and mode onto the open, verified file.
+    """Restore a snapshot's extended attributes and mode onto the open, verified file.
 
     Extended attributes and, where ``os.fchmod`` exists, the mode go through
-    ``descriptor``. Times, and the mode elsewhere, are set through ``files``
-    relative to the file's anchored parent without following a leaf link, so
-    a path swapped for a symlink since the open cannot redirect them. On
-    Windows a file Python opens cannot be renamed, replaced or deleted until
-    it is closed, so ``name`` still names the verified file while
-    ``descriptor`` is open. Values that already match are not set again, so a
-    file the restoring user may write but not otherwise modify is only
-    refused what it actually needs.
+    ``descriptor``. Elsewhere the mode is set through ``files`` relative to
+    the file's anchored parent without following a leaf link, so a path
+    swapped for a symlink since the open cannot redirect it; on Windows a
+    file Python opens cannot be renamed, replaced or deleted until it is
+    closed, so ``name`` still names the verified file while ``descriptor``
+    is open. Times are set after the descriptor closes (``_restore_times``).
+    Values that already match are not set again, so a file the restoring
+    user may write but not otherwise modify is only refused what it actually
+    needs.
     """
     complete = True
     if _HAS_XATTRS:
@@ -664,12 +692,6 @@ def _restore_metadata(
         else:
             complete = _restore_xattrs(descriptor, attributes)
     current = os.fstat(descriptor)
-    times = (original.st_atime_ns, original.st_mtime_ns)
-    if (current.st_atime_ns, current.st_mtime_ns) != times:
-        try:
-            files.utime(name, ns=times)
-        except (OSError, FileHelperError):
-            complete = False
     mode = stat.S_IMODE(original.st_mode)
     if stat.S_IMODE(current.st_mode) != mode:
         try:

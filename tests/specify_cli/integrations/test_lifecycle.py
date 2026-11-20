@@ -1266,3 +1266,37 @@ def test_builtin_journal_refuses_the_write_when_attributes_cannot_be_persisted(t
 
     assert target.read_text(encoding="utf-8") == "original\n"
 
+
+def test_builtin_journal_sets_times_after_the_write_handle_closes(tmp_path, monkeypatch, capsys):
+    """A last-write time moved by closing the write handle (as Windows can) is set back afterwards."""
+    from contextlib import contextmanager
+
+    from specify_cli.file_helper import FileHelper
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    os.utime(target, ns=(1_000_000_000, 1_000_000_000))
+    real_open_rewrite = FileHelper.open_rewrite
+
+    @contextmanager
+    def move_time_on_close(self, path):
+        with real_open_rewrite(self, path) as descriptor:
+            yield descriptor
+            if Path(self.root) / path == target:
+                # What closing a written handle can do on Windows.
+                os.utime(target, ns=(3_000_000_000, 3_000_000_000))
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            monkeypatch.setattr(FileHelper, "open_rewrite", move_time_on_close)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert target.stat().st_mtime_ns == 1_000_000_000
+    assert _INCOMPLETE_WARNING not in " ".join(capsys.readouterr().out.split())
+
