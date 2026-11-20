@@ -107,7 +107,6 @@ class GitHubAuth(AuthProvider):
             result = subprocess.run(  # noqa: S603
                 [resolved, "auth", "token", "--hostname", hostname],
                 capture_output=True,
-                text=True,
                 timeout=_GITHUB_CLI_TIMEOUT_SECONDS,
                 check=False,
                 shell=False,
@@ -130,7 +129,19 @@ class GitHubAuth(AuthProvider):
                 f"Run 'gh auth login --hostname {hostname}'."
             )
 
-        token = result.stdout.strip()
+        stdout = result.stdout
+        if isinstance(stdout, bytes):
+            try:
+                stdout = stdout.decode("utf-8")
+            except UnicodeDecodeError:
+                stdout = None
+        if not isinstance(stdout, str):
+            raise GitHubCliAuthError(
+                "GitHub authentication failed for provider 'github': "
+                f"GitHub CLI could not provide a token for {hostname!r}."
+            )
+
+        token = stdout.strip()
         if not token:
             raise GitHubCliAuthError(
                 "GitHub authentication failed for provider 'github': "
