@@ -3663,6 +3663,59 @@ def test_atomic_windows_length_retry_uses_only_file_creation(root, monkeypatch):
     assert list(root.iterdir()) == [destination]
 
 
+def test_atomic_windows_length_retry_rejects_different_parent(root, monkeypatch):
+    destination = root / "file"
+    destination.write_bytes(b"old")
+    other_parent = root / "other"
+    other_parent.mkdir()
+    attempts = []
+
+    def open_stage(path, flags, mode):
+        attempts.append(path)
+        if len(attempts) == 1:
+            raise OSError(errno.ENAMETOOLONG, "modeled path limit")
+        return os.open(path, flags, mode)
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "open": open_stage}))
+        model.setattr(file_helper, "_windows_extended_path", lambda _: other_parent)
+        with pytest.raises(FileHelperError, match="does not match destination parent"):
+            files.write_bytes(destination, b"new")
+    assert len(attempts) == 1
+    assert destination.read_bytes() == b"old"
+    assert set(root.iterdir()) == {destination, other_parent}
+    assert not list(other_parent.iterdir())
+
+
+def test_atomic_windows_length_retry_rechecks_destination_before_replace(root, link, monkeypatch):
+    destination = root / "file"
+    target = root / "target"
+    target.write_bytes(b"keep")
+    attempts = []
+    chmod = Path.chmod
+
+    def open_stage(path, flags, mode):
+        attempts.append(path)
+        if len(attempts) == 1:
+            raise OSError(errno.ENAMETOOLONG, "modeled path limit")
+        return os.open(path, flags, mode)
+
+    def change_destination(path, mode):
+        chmod(path, mode)
+        link(destination, target)
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "open": open_stage}))
+        model.setattr(file_helper, "_windows_extended_path", lambda path: path)
+        model.setattr(Path, "chmod", change_destination)
+        with pytest.raises(SymlinkDeniedError):
+            files.write_bytes(destination, b"new")
+    assert len(attempts) == 2
+    assert destination.is_symlink()
+    assert target.read_bytes() == b"keep"
+    assert set(root.iterdir()) == {destination, target}
+
+
 @pytest.mark.parametrize(("source", "expected"), [
     (r"C:\project\dir", r"\\?\C:\project\dir"),
     (r"\\server\share\dir", r"\\?\UNC\server\share\dir"),
@@ -3703,8 +3756,12 @@ def test_atomic_windows_extended_staging_inherits_parent_acl(root, monkeypatch):
         assert source == stages[-1] and target == destination
         raise PermissionError(errno.EACCES, "replacement denied")
 
+    def replace(source, target):
+        assert source == stages[-1] and str(target) == str(destination)
+        real_replace(source, target)
+
     with FileHelper(root) as files, monkeypatch.context() as model:
-        windows_os = SimpleNamespace(**{**vars(os), "open": open_stage})
+        windows_os = SimpleNamespace(**{**vars(os), "open": open_stage, "replace": replace})
         model.setattr(file_helper, "os", windows_os)
         files.write_bytes(destination, b"first")
         assert destination.read_bytes() == b"first"

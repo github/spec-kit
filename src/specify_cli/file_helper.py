@@ -647,8 +647,14 @@ class FileHelper:
                 if os.name == "nt":
                     if extended_parent is not None or not destination.parent.is_dir():
                         raise
+                    parent_info = destination.parent.stat()
                     # Keep file-only ACL inheritance and avoid requiring directory creation rights.
                     extended_parent = _windows_extended_path(destination.parent)
+                    # The extended spelling bypasses Win32 name normalization.
+                    if not os.path.samestat(parent_info, extended_parent.stat()):
+                        raise FileHelperError(
+                            f"Extended staging path does not match destination parent: {destination.parent}"
+                        )
                     continue
                 if not {os.rename, os.unlink} <= os.supports_dir_fd:
                     raise
