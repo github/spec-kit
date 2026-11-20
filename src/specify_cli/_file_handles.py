@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 import errno
+import functools
 import os
 import secrets
 import stat
@@ -440,6 +441,39 @@ def _windows_stat(handle: int) -> os.stat_result:
         os.close(fd)
 
 
+def _has_inherited_allow_entry(fd: int) -> bool:
+    """Whether a macOS file's ACL has an allow entry; deny entries grant nothing."""
+    import ctypes
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.acl_get_fd_np.restype = ctypes.c_void_p
+    libc.acl_get_fd_np.argtypes = [ctypes.c_int, ctypes.c_int]
+    libc.acl_get_entry.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)]
+    libc.acl_get_tag_type.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+    libc.acl_free.argtypes = [ctypes.c_void_p]
+    acl = libc.acl_get_fd_np(fd, 0x00000100)  # ACL_TYPE_EXTENDED
+    if not acl:
+        code = ctypes.get_errno()
+        # No ACL, or a filesystem that cannot hold one.
+        if code in (errno.ENOENT, errno.ENOTSUP, errno.EOPNOTSUPP):
+            return False
+        raise OSError(code, f"Could not read ACL entries: {os.strerror(code)}")
+    try:
+        entry = ctypes.c_void_p()
+        tag = ctypes.c_int()
+        which = 0  # ACL_FIRST_ENTRY, then ACL_NEXT_ENTRY
+        while libc.acl_get_entry(acl, which, ctypes.byref(entry)) == 0:
+            which = -1
+            if libc.acl_get_tag_type(entry, ctypes.byref(tag)) != 0:
+                code = ctypes.get_errno()
+                raise OSError(code, f"Could not read ACL entries: {os.strerror(code)}")
+            if tag.value == 1:  # ACL_EXTENDED_ALLOW
+                return True
+        return False
+    finally:
+        libc.acl_free(acl)
+
+
 @contextmanager
 def windows_read_fd(handle: int) -> Iterator[int]:
     """Read the validated object through an independently owned duplicate."""
@@ -462,11 +496,13 @@ def windows_read_fd(handle: int) -> Iterator[int]:
 
 
 @contextmanager
-def _windows_overwrite_fd(path: Path) -> Iterator[int]:
+def _windows_overwrite_fd(path: Path, *, create: bool = True) -> Iterator[int]:
     """Open/create without following a new leaf or changing the CRT mask."""
     try:
         handle = _open_windows_handle(path, directory=False, overwrite=True)
     except FileNotFoundError:
+        if not create:
+            raise
         attributes = _windows_creation_attributes()
         handle = _open_windows_handle(
             path, directory=False, overwrite=True, create_attributes=attributes
@@ -500,3 +536,184 @@ def _windows_creation_attributes() -> int:
                     os.close(fd)
                     os.unlink(probe)
     return 0x1 if readonly else 0
+
+
+_GENERIC_WRITE = 0x40000000
+_DELETE = 0x00010000
+_CREATE_NEW = 1
+_FILE_ATTRIBUTE_NORMAL = 0x80
+_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
+_FILE_DISPOSITION_INFO = 4
+_TOKEN_QUERY = 0x8
+_TOKEN_USER = 1
+_ERROR_INSUFFICIENT_BUFFER = 122
+_SDDL_REVISION_1 = 1
+_FILE_PERSISTENT_ACLS = 0x8
+
+
+def _windows_create_private_fd(path: Path) -> int:
+    """Create ``path`` owned by, and only accessible to, the current user.
+
+    The owner and protected access-control list are set by the call that
+    creates the file, and nothing is shared until it closes, so the content is
+    never readable under an inherited list. A volume that does not persist
+    access-control lists would drop that list, so the empty file is removed and
+    the call refused. Returns a binary CRT descriptor.
+    """
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    kernel, advapi, attributes_type = _windows_security_api()
+    descriptor = ctypes.c_void_p()
+    if not advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        _windows_owner_only_sddl(), _SDDL_REVISION_1, ctypes.byref(descriptor), None,
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        attributes = attributes_type(ctypes.sizeof(attributes_type), descriptor, False)
+        # DELETE lets a later failure remove the file through its own handle.
+        handle = kernel.CreateFileW(
+            str(path), _GENERIC_WRITE | _DELETE, 0, ctypes.byref(attributes), _CREATE_NEW,
+            _FILE_ATTRIBUTE_NORMAL | _FILE_FLAG_OPEN_REPARSE_POINT, None,
+        )
+        if handle is None or handle == wintypes.HANDLE(-1).value:
+            raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        kernel.LocalFree(descriptor)
+    try:
+        _require_persistent_acls(kernel, handle, path)
+        return msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
+    except BaseException as error:
+        # No descriptor reaches the caller, so remove the empty file here. With
+        # no sharing, nothing else could have opened, renamed or replaced it.
+        class FileDispositionInfo(ctypes.Structure):
+            _fields_ = [("DeleteFile", wintypes.BOOLEAN)]
+
+        try:
+            disposition = FileDispositionInfo(True)
+            if not kernel.SetFileInformationByHandle(
+                handle, _FILE_DISPOSITION_INFO, ctypes.byref(disposition),
+                ctypes.sizeof(disposition),
+            ):
+                raise ctypes.WinError(ctypes.get_last_error())
+        except Exception as cleanup_error:
+            error.add_note(f"Could not remove empty file {path}: {cleanup_error}")
+        finally:
+            kernel.CloseHandle(handle)
+        raise
+
+
+def _require_persistent_acls(kernel, handle: int, path: Path) -> None:
+    """Refuse a volume that drops security descriptors, such as FAT or exFAT."""
+    import ctypes
+    from ctypes import wintypes
+
+    flags = wintypes.DWORD()
+    if not kernel.GetVolumeInformationByHandleW(
+        handle, None, 0, None, None, ctypes.byref(flags), None, 0,
+    ):
+        error = ctypes.WinError(ctypes.get_last_error())
+        error.add_note(f"Could not check that the volume holding {path} keeps access-control lists")
+        raise error
+    if not flags.value & _FILE_PERSISTENT_ACLS:
+        raise PermissionError(
+            errno.EACCES,
+            f"Refusing to write {path}: its volume does not keep access-control lists",
+        )
+
+
+def _windows_owner_only_sddl() -> str:
+    """The security descriptor, as SDDL, private files are created with."""
+    sid = _windows_current_user_sid()
+    return f"O:{sid}D:P(A;;FA;;;{sid})"
+
+
+@functools.lru_cache(maxsize=1)
+def _windows_current_user_sid() -> str:
+    import ctypes
+    from ctypes import wintypes
+
+    kernel, advapi, _ = _windows_security_api()
+    token = wintypes.HANDLE()
+    if not advapi.OpenProcessToken(kernel.GetCurrentProcess(), _TOKEN_QUERY, ctypes.byref(token)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        size = wintypes.DWORD()
+        if not advapi.GetTokenInformation(token, _TOKEN_USER, None, 0, ctypes.byref(size)):
+            code = ctypes.get_last_error()
+            if code != _ERROR_INSUFFICIENT_BUFFER:
+                raise ctypes.WinError(code)
+        buffer = ctypes.create_string_buffer(size.value)
+        if not advapi.GetTokenInformation(
+            token, _TOKEN_USER, buffer, size, ctypes.byref(size),
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        # TOKEN_USER starts with SID_AND_ATTRIBUTES, whose first field is the SID.
+        sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
+        text = wintypes.LPWSTR()
+        if not advapi.ConvertSidToStringSidW(sid, ctypes.byref(text)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            value = text.value
+        finally:
+            kernel.LocalFree(ctypes.cast(text, ctypes.c_void_p))
+    finally:
+        kernel.CloseHandle(token)
+    if not value or not value.startswith("S-"):
+        raise OSError(errno.EINVAL, "Could not read the current user's security identifier")
+    return value
+
+
+@functools.lru_cache(maxsize=1)
+def _windows_security_api():
+    """kernel32 and advapi32 with private prototypes, and SECURITY_ATTRIBUTES."""
+    import ctypes
+    from ctypes import wintypes
+
+    class SecurityAttributes(ctypes.Structure):
+        _fields_ = [
+            ("nLength", wintypes.DWORD),
+            ("lpSecurityDescriptor", ctypes.c_void_p),
+            ("bInheritHandle", wintypes.BOOL),
+        ]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel.LocalFree.restype = ctypes.c_void_p
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    kernel.GetCurrentProcess.argtypes = []
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel.CreateFileW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+        ctypes.POINTER(SecurityAttributes), wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+    ]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.SetFileInformationByHandle.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD,
+    ]
+    kernel.SetFileInformationByHandle.restype = wintypes.BOOL
+    kernel.GetVolumeInformationByHandleW.argtypes = [
+        wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
+        ctypes.POINTER(wintypes.DWORD), ctypes.POINTER(wintypes.DWORD), wintypes.LPWSTR,
+        wintypes.DWORD,
+    ]
+    kernel.GetVolumeInformationByHandleW.restype = wintypes.BOOL
+    advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p), wintypes.LPVOID,
+    ]
+    advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
+    advapi.OpenProcessToken.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE),
+    ]
+    advapi.OpenProcessToken.restype = wintypes.BOOL
+    advapi.GetTokenInformation.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi.GetTokenInformation.restype = wintypes.BOOL
+    advapi.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi.ConvertSidToStringSidW.restype = wintypes.BOOL
+    return kernel, advapi, SecurityAttributes
