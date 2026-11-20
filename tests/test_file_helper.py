@@ -3986,6 +3986,47 @@ def test_atomic_write_creates_and_replaces_long_component(root, monkeypatch):
             old_content = content
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows path handling required")
+@pytest.mark.parametrize("case", ["long-component", "near-limit-parent"])
+def test_atomic_windows_create_and_replace_at_path_limits(root, case):
+    parent = root.resolve()
+    if case == "long-component":
+        name = "x" * 252 + ".sh"
+    else:
+        # Leave room to create the directory under legacy MAX_PATH, but not
+        # for the 21-character staging leaf (without long-path support).
+        units = len(str(parent).encode("utf-16-le")) // 2
+        while units < 245:
+            size = min(64, 246 - units)
+            parent /= "d" * size
+            units += size + 1
+        name = "f"
+    destination = parent / name
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+        # Native rename to the long path is part of the capability probe.
+        destination.touch()
+        probe = parent / "p"
+        probe.write_bytes(b"replacement probe")
+        os.replace(probe, destination)
+    except OSError as exc:
+        # The CRT may map a too-long path to ENOENT even with an existing parent.
+        crt_limit = (
+            exc.errno == errno.ENOENT and exc.filename == str(destination)
+            and len(str(destination).encode("utf-16-le")) // 2 >= 260 and parent.is_dir()
+        )
+        if crt_limit or exc.errno == errno.ENAMETOOLONG or getattr(exc, "winerror", None) == 206:
+            pytest.skip(f"Direct create/replace probe hit the host path limit: {exc}")
+        raise
+    destination.unlink()
+
+    with FileHelper(root) as files:
+        for content in (b"first", b"second"):
+            files.write_bytes(destination, content)
+            assert destination.read_bytes() == content
+            assert list(parent.iterdir()) == [destination]
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits required")
 @pytest.mark.parametrize(("mode", "staging_mode"), [(0o400, 0o400), (0o755, 0o600)])
 def test_atomic_write_staging_mode_and_exact_final_mode(root, monkeypatch, mode, staging_mode):
