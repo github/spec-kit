@@ -2,6 +2,7 @@
 
 import errno
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -297,6 +298,16 @@ def test_create_private_bytes_is_owner_only(tmp_path):
     assert stat.S_IMODE((tmp_path / REL).stat().st_mode) & 0o077 == 0
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX ownership")
+def test_create_private_bytes_refuses_a_file_owned_by_another_user(tmp_path, monkeypatch):
+    (tmp_path / "parent").mkdir()
+    monkeypatch.setattr(os, "geteuid", lambda: os.stat(tmp_path).st_uid + 1)
+    with FileHelper(tmp_path) as files, pytest.raises(PermissionError) as raised:
+        files.create_private_bytes(REL, b"private")
+    assert "owned by uid" in str(raised.value)
+    assert not (tmp_path / REL).exists()
+
+
 def test_create_private_bytes_needs_an_existing_parent(tmp_path):
     with FileHelper(tmp_path) as files, pytest.raises(FileNotFoundError):
         files.create_private_bytes(REL, b"content")
@@ -410,10 +421,14 @@ def test_posix_create_private_bytes_keeps_a_replacement_it_did_not_create(tmp_pa
         return real_fsync(fd)
 
     monkeypatch.setattr(os, "fsync", replace_then_fail)
-    with FileHelper(tmp_path) as files, pytest.raises(OSError, match="disk full"):
+    with FileHelper(tmp_path) as files, pytest.raises(OSError, match="disk full") as raised:
         files.create_private_bytes(REL, b"content")
     monkeypatch.undo()
     assert (tmp_path / REL).read_bytes() == b"someone else's"
+    # The caller is told the name was left, rather than cleanup failing silently.
+    assert any(
+        "Left file" in note and "not removed" in note for note in raised.value.__notes__
+    )
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
@@ -611,17 +626,30 @@ def test_windows_create_private_bytes_sets_an_owner_only_protected_acl(tmp_path)
     (tmp_path / "parent").mkdir()
     with FileHelper(tmp_path) as files:
         files.create_private_bytes(REL, b"content")
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-Command",
-         f"(Get-Acl -LiteralPath '{tmp_path / REL}').Sddl"],
-        check=True, capture_output=True, text=True,
+    # A step's PowerShell 7 puts its own module paths in PSModulePath, and Windows
+    # PowerShell then fails to load Microsoft.PowerShell.Security for Get-Acl.
+    # Prefer pwsh, and let either shell rebuild its default module path.
+    env = {key: value for key, value in os.environ.items() if key.upper() != "PSMODULEPATH"}
+    # SDDL abbreviates well-known accounts (the built-in Administrator is "LA"),
+    # so compare resolved SIDs rather than the descriptor string.
+    script = (
+        f"$acl = Get-Acl -LiteralPath '{tmp_path / REL}'; "
+        "$sid = [System.Security.Principal.SecurityIdentifier]; "
+        "$acl.GetOwner($sid).Value; "
+        "$acl.AreAccessRulesProtected; "
+        "$acl.GetAccessRules($true, $true, $sid) | ForEach-Object { "
+        "\"$($_.IdentityReference.Value) $($_.AccessControlType) $($_.FileSystemRights)\" }"
     )
-    sddl = result.stdout.strip()
+    result = subprocess.run(
+        [shutil.which("pwsh") or "powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    owner, protected, *rules = result.stdout.strip().splitlines()
     sid = _file_handles._windows_current_user_sid()
-    assert f"O:{sid}" in sddl
-    dacl = sddl.split("D:", 1)[1]
-    assert dacl.startswith("P")
-    assert dacl.count("(") == 1 and f";;;{sid})" in dacl
+    assert owner == sid
+    assert protected == "True"
+    assert rules == [f"{sid} Allow FullControl"]
 
 
 # Review regressions
@@ -773,6 +801,73 @@ def test_posix_create_private_bytes_never_removes_a_name_it_could_not_identify(
     monkeypatch.undo()
     assert (tmp_path / REL).exists()
     assert any("delete it before retrying" in note for note in raised.value.__notes__)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+@pytest.mark.parametrize("replaced", [False, True])
+def test_posix_create_private_bytes_notes_a_partial_file_moved_before_cleanup(
+    tmp_path, monkeypatch, replaced
+):
+    (tmp_path / "parent").mkdir()
+    real_fsync = os.fsync
+
+    def move_then_fail(fd):
+        if stat.S_ISREG(os.fstat(fd).st_mode):
+            (tmp_path / REL).rename(tmp_path / "parent" / "moved")
+            if replaced:
+                (tmp_path / REL).write_bytes(b"someone else's")
+            raise OSError("disk full")
+        return real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", move_then_fail)
+    with FileHelper(tmp_path) as files, pytest.raises(OSError, match="disk full") as raised:
+        files.create_private_bytes(REL, b"content")
+    monkeypatch.undo()
+    notes = raised.value.__notes__
+    # Neither case is a removal failure, and both say the partial file may remain.
+    assert not any("Could not remove" in note for note in notes)
+    assert any("may still exist" in note for note in notes)
+    assert (tmp_path / "parent" / "moved").exists()
+    if replaced:
+        assert (tmp_path / REL).read_bytes() == b"someone else's"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+def test_posix_create_private_bytes_reports_a_failed_close_of_the_last_descriptor(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "parent").mkdir()
+    real_open, real_dup, real_close = os.open, os.dup, os.close
+    leaf: list[int] = []
+    duplicates: list[int] = []
+
+    def open_(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        if os.fspath(path) == "file":
+            leaf.append(fd)
+        return fd
+
+    def dup(fd):
+        copy_ = real_dup(fd)
+        if fd in leaf:
+            duplicates.append(copy_)
+        return copy_
+
+    def close(fd):
+        real_close(fd)
+        if fd in duplicates:
+            duplicates.remove(fd)
+            raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(os, "open", open_)
+    monkeypatch.setattr(os, "dup", dup)
+    monkeypatch.setattr(os, "close", close)
+    with FileHelper(tmp_path) as files, pytest.raises(OSError, match="Input/output") as raised:
+        files.create_private_bytes(REL, b"content")
+    monkeypatch.undo()
+    assert any("check its content" in note for note in raised.value.__notes__)
+    # The write completed, so the file is left for the caller to inspect.
+    assert (tmp_path / REL).read_bytes() == b"content"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")

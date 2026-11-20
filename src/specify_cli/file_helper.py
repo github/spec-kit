@@ -37,14 +37,38 @@ _POSIX_OPEN = os.open
 def _remove_created(
     directory: int, name: str, created: os.stat_result | None, error: BaseException
 ) -> None:
-    """Unlink ``name`` if it still has the created file's identity (best effort)."""
+    """Unlink ``name`` if it still has the created file's identity (best effort).
+
+    A name that now holds a different file is left in place and named in a note
+    on ``error``, so the caller learns that cleanup did not happen.
+    """
     if created is None:
         error.add_note(f"Left {name}, which may be empty; delete it before retrying")
         return
     try:
         current = os.stat(name, dir_fd=directory, follow_symlinks=False)
-        if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
-            os.unlink(name, dir_fd=directory)
+    except FileNotFoundError:
+        error.add_note(
+            f"Found nothing at {name} to remove: the partial file was moved or deleted "
+            "by another process and may still exist elsewhere"
+        )
+        return
+    except OSError as cleanup_error:
+        error.add_note(f"Could not remove partial file {name}: {cleanup_error}")
+        return
+    if (current.st_dev, current.st_ino) != (created.st_dev, created.st_ino):
+        error.add_note(
+            f"Left {name}: another writer replaced the partial file, so it was not removed; "
+            "the partial file may still exist under another name"
+        )
+        return
+    try:
+        # Accepted residual race: POSIX has no unlink-if-inode, so a writer that
+        # swaps the leaf between this stat and the unlink loses its file. Both
+        # calls go through the same directory descriptor with nothing between
+        # them, and the caller pins the created inode so its number cannot be
+        # reused by a replacement that would then pass the check above.
+        os.unlink(name, dir_fd=directory)
     except OSError as cleanup_error:
         error.add_note(f"Could not remove partial file {name}: {cleanup_error}")
 
@@ -52,7 +76,8 @@ def _remove_created(
 def _require_owner_only(fd: int, info: os.stat_result, name: str) -> None:
     """Refuse a new, still-empty file that someone other than its owner can open.
 
-    Group or other mode bits mean the filesystem ignored the creation mode. On
+    Group or other mode bits mean the filesystem ignored the creation mode, and a
+    different owner means it mapped ownership. On
     macOS, a parent's inheritable ACEs are added to a new file whatever its mode,
     and they cannot be withheld from a directory-relative create, so such a file
     is refused before any content reaches it. NFSv4-style inherited ACLs on other
@@ -63,6 +88,13 @@ def _require_owner_only(fd: int, info: os.stat_result, name: str) -> None:
             errno.EACCES,
             f"Filesystem did not create {name} owner-only "
             f"(mode {stat.S_IMODE(info.st_mode):o})",
+        )
+    # A mapped or fixed-ownership filesystem can give the file to another user,
+    # who could then read the private content however tight its mode is.
+    if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
+        raise PermissionError(
+            errno.EACCES,
+            f"Filesystem created {name} owned by uid {info.st_uid}, not the caller",
         )
     if sys.platform == "darwin" and _has_inherited_allow_entry(fd):
         raise PermissionError(
@@ -748,18 +780,23 @@ class FileHelper:
             try:
                 _remove_created(directory, name, created, error)
             finally:
-                if fd >= 0:
-                    try:
-                        os.close(fd)
-                    except OSError as close_error:
-                        error.add_note(f"Could not close {name}: {close_error}")
+                for descriptor in (fd, -1 if pin is None else pin):
+                    if descriptor >= 0:
+                        try:
+                            os.close(descriptor)
+                        except OSError as close_error:
+                            error.add_note(f"Could not close {name}: {close_error}")
             raise
-        finally:
-            if pin is not None:
-                try:
-                    os.close(pin)
-                except OSError:
-                    pass  # A duplicate holds no buffered data.
+        # The duplicate is now the file's last descriptor, so its close is the
+        # one that reports a deferred write error (NFS, for example).
+        try:
+            os.close(pin)
+        except OSError as close_error:
+            close_error.add_note(
+                f"Wrote and flushed {name}, but closing it failed; check its content "
+                "before relying on it"
+            )
+            raise
         # Best effort: the anchor may be O_PATH or search-only, which fsync rejects.
         try:
             parent = os.open(
