@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-17T00:00:00Z",
+  "updated_at": "2026-11-20T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "ado": {
@@ -1990,6 +1990,40 @@
       "stars": 0,
       "created_at": "2026-11-05T00:00:00Z",
       "updated_at": "2026-11-05T00:00:00Z"
+    },
+    "deliberate": {
+      "name": "Deliberate",
+      "id": "deliberate",
+      "description": "Exploration, decision records, status, triage, and a gated autopilot pipeline for Spec Kit.",
+      "author": "luismoriguerra",
+      "version": "0.5.2",
+      "download_url": "https://github.com/luismoriguerra/spec-kit-deliberate/releases/download/v0.5.2/deliberate-v0.5.2.zip",
+      "sha256": "0bbe36d869bc4fce61cf7c6c19a96f3c31c71eafefc17b12d21c534f715e058b",
+      "repository": "https://github.com/luismoriguerra/spec-kit-deliberate",
+      "homepage": "https://github.com/luismoriguerra/spec-kit-deliberate",
+      "documentation": "https://github.com/luismoriguerra/spec-kit-deliberate/blob/v0.5.2/README.md",
+      "changelog": "https://github.com/luismoriguerra/spec-kit-deliberate/blob/v0.5.2/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 0
+      },
+      "tags": [
+        "decisions",
+        "exploration",
+        "workflow",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-20T00:00:00Z",
+      "updated_at": "2026-11-20T00:00:00Z"
     },
     "diagram": {
       "name": "Spec Diagram",
