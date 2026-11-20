@@ -2,6 +2,7 @@
 
 import errno
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -420,10 +421,14 @@ def test_posix_create_private_bytes_keeps_a_replacement_it_did_not_create(tmp_pa
         return real_fsync(fd)
 
     monkeypatch.setattr(os, "fsync", replace_then_fail)
-    with FileHelper(tmp_path) as files, pytest.raises(OSError, match="disk full"):
+    with FileHelper(tmp_path) as files, pytest.raises(OSError, match="disk full") as raised:
         files.create_private_bytes(REL, b"content")
     monkeypatch.undo()
     assert (tmp_path / REL).read_bytes() == b"someone else's"
+    # The caller is told the name was left, rather than cleanup failing silently.
+    assert any(
+        "Left file" in note and "not removed" in note for note in raised.value.__notes__
+    )
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
@@ -621,10 +626,14 @@ def test_windows_create_private_bytes_sets_an_owner_only_protected_acl(tmp_path)
     (tmp_path / "parent").mkdir()
     with FileHelper(tmp_path) as files:
         files.create_private_bytes(REL, b"content")
+    # A step's PowerShell 7 puts its own module paths in PSModulePath, and Windows
+    # PowerShell then fails to load Microsoft.PowerShell.Security for Get-Acl.
+    # Prefer pwsh, and let either shell rebuild its default module path.
+    env = {key: value for key, value in os.environ.items() if key.upper() != "PSMODULEPATH"}
     result = subprocess.run(
-        ["powershell", "-NoProfile", "-Command",
+        [shutil.which("pwsh") or "powershell", "-NoProfile", "-NonInteractive", "-Command",
          f"(Get-Acl -LiteralPath '{tmp_path / REL}').Sddl"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=env,
     )
     assert result.returncode == 0, result.stderr
     sddl = result.stdout.strip()

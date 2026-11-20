@@ -37,14 +37,27 @@ _POSIX_OPEN = os.open
 def _remove_created(
     directory: int, name: str, created: os.stat_result | None, error: BaseException
 ) -> None:
-    """Unlink ``name`` if it still has the created file's identity (best effort)."""
+    """Unlink ``name`` if it still has the created file's identity (best effort).
+
+    A name that now holds a different file is left in place and named in a note
+    on ``error``, so the caller learns that cleanup did not happen.
+    """
     if created is None:
         error.add_note(f"Left {name}, which may be empty; delete it before retrying")
         return
     try:
         current = os.stat(name, dir_fd=directory, follow_symlinks=False)
-        if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
-            os.unlink(name, dir_fd=directory)
+        if (current.st_dev, current.st_ino) != (created.st_dev, created.st_ino):
+            error.add_note(
+                f"Left {name}: another writer replaced the partial file, so it was not removed"
+            )
+            return
+        # Accepted residual race: POSIX has no unlink-if-inode, so a writer that
+        # swaps the leaf between this stat and the unlink loses its file. Both
+        # calls go through the same directory descriptor with nothing between
+        # them, and the caller pins the created inode so its number cannot be
+        # reused by a replacement that would then pass the check above.
+        os.unlink(name, dir_fd=directory)
     except OSError as cleanup_error:
         error.add_note(f"Could not remove partial file {name}: {cleanup_error}")
 
