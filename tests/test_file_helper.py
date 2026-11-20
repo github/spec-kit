@@ -776,7 +776,8 @@ def test_overwrite_text_io_errors_propagate(root, monkeypatch, allow):
         raise PermissionError("denied")
 
     if os.name == "nt":
-        def denied_windows(path):
+        def denied_windows(path, *, create=True):
+            assert create
             assert path == root / "new"
             calls.append(path)
             raise PermissionError("denied")
