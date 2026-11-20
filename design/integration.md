@@ -348,10 +348,12 @@ read-only descriptor, up to a quarter of the open-file limit (at most 1,024),
 so its inode cannot be reused by a replacement; a file without a pin, one the
 operation replaced or removed, and a directory are recreated from their
 snapshots instead. A file edited in place while it is snapshotted fails the
-write. Rollback keeps as a conflict a file whose contents, mode, mtime or
-attributes differ from what the operation left, or that is replaced while
-rollback works on it. A file whose bytes come back without all of its metadata
-is reported as incomplete. Either way the snapshots are retained, with captured
+write. Rollback keeps as a conflict a file whose contents, mode, mtime,
+attributes or BSD file flags differ from what the operation left (a repeated
+notification with no write in between does not move that baseline), or that
+is replaced or edited while rollback works on it. A recreated file gets its
+captured attributes back. A file whose bytes come back without all of its
+metadata is reported as incomplete. Either way the snapshots are retained, with captured
 attributes beside each snapshot as `<snapshot>.xattrs.json`, and the warning
 names the snapshot of each affected path.
 Preset and extension package installation/replacement, configuration rescue

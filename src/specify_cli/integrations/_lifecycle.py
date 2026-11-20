@@ -377,6 +377,9 @@ class _FileJournal:
 
     def _remember_original(self, path: Path, entry: os.stat_result, attributes: dict[str, bytes] | None) -> None:
         """Record what rollback needs to restore ``path`` in place later."""
+        # Kept for every file, pinned or not: a file rollback recreates gets
+        # them back from here when the snapshot's filesystem dropped them.
+        self.snapshotted_xattrs[path] = attributes
         if os.name != "nt" and path not in self.pinned_files:
             self.unverified_files[path] = (entry.st_dev, entry.st_ino)
             return
@@ -468,15 +471,28 @@ class _FileJournal:
                 attributes = _restorable_xattrs(path)
             except OSError:
                 pass
-        self.written_metadata[path] = (state[0], state[4], attributes)
+        try:
+            flags = _entry_flags(path)
+        except (OSError, FileHelperError):
+            flags = None
+        self.written_metadata[path] = (state[0], state[4], attributes, flags)
 
     def metadata_changed(self, path: Path, state: tuple[int, ...] | None) -> bool:
-        """Whether ``path``, found as ``state``, has a mode, mtime or attribute the operation did not leave."""
+        """Whether ``path``, found as ``state``, has a mode, mtime, attribute or file flag the operation did not leave."""
         written = self.written_metadata.get(path)
         if written is None or state is None or not stat.S_ISREG(state[0]):
             return False
         if (state[0], state[4]) != written[:2]:
             return True
+        if written[3] is not None:
+            try:
+                flags = _entry_flags(path)
+            except (OSError, FileHelperError):
+                return True
+            if flags is None:
+                return True
+            if (flags ^ written[3]) & ~_UNCOMPARED_FLAGS:
+                return True
         if written[2] is None:
             return False
         try:
@@ -578,8 +594,13 @@ class _FileJournal:
         if not before:
             saved, _ = self.changes[path]
             self.changes[path] = (saved, _file_identity(path))
+            # A repeated after-notification with no write since (as
+            # ``record_existing`` sends after ``write_file_and_record``) keeps
+            # the metadata the write left, so a mode changed in between is
+            # still someone else's edit.
+            if path in self.pending or path not in self.written_metadata:
+                self._remember_written(path)
             self.pending.discard(path)
-            self._remember_written(path)
         else:
             self.pending.add(path)
 
@@ -646,7 +667,9 @@ def _restore_file_in_place(
             except (OSError, FileHelperError):
                 return "untouched"
             opened = os.fstat(descriptor)
-            if checked is not None and (opened.st_dev, opened.st_ino) != checked[1:3]:
+            # The whole entry, not just its identity: an in-place edit between
+            # the stat above and this open keeps the inode.
+            if checked is not None and _stat_state(opened) != checked:
                 return "modified"
             if not is_original(opened):
                 return "untouched"
@@ -800,6 +823,25 @@ def _restore_xattrs(descriptor: int, attributes: dict[str, bytes]) -> bool:
     return complete
 
 
+def _recreated_xattrs_restored(path: Path, attributes: dict[str, bytes]) -> bool:
+    """Set captured attributes on a file just recreated from its snapshot.
+
+    ``copy2`` copies only what the snapshot holds, and the snapshot's
+    filesystem may have dropped them; the captured ones are the record.
+    """
+    try:
+        with FileHelper(path.parent) as files, files.open_read(path.name) as descriptor:
+            return _restore_xattrs(descriptor, attributes)
+    except (OSError, FileHelperError):
+        return False
+
+
+def _entry_flags(path: Path) -> int | None:
+    """The BSD file flags of ``path`` itself, or None where the platform has none."""
+    with FileHelper(path.parent) as files:
+        return getattr(files.stat(path.name), "st_flags", None)
+
+
 def _current_state(path: Path) -> tuple[int, ...] | None:
     """``_entry_state`` of ``path``, or None when nothing is there."""
     try:
@@ -898,6 +940,13 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
                 shutil.copytree(saved, path, symlinks=True)
             else:
                 shutil.copy2(saved, path)
+                attributes = journal.snapshotted_xattrs.get(path)
+                if (
+                    attributes and not _recreated_xattrs_restored(path, attributes)
+                    and path not in journal.incomplete_restores
+                ):
+                    # The sidecar is then the only copy, so it is retained.
+                    journal.incomplete_restores.append(path)
         else:
             _prune_new_parents(root, journal, path)
     _prune_new_directories(journal)

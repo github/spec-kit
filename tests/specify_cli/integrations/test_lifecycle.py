@@ -271,18 +271,20 @@ def test_builtin_journal_recreates_and_reports_a_file_it_cannot_open_in_place(tm
     target = project / ".specify" / "templates" / "plan.md"
     target.parent.mkdir(parents=True)
     target.write_text("original\n", encoding="utf-8")
-    real_open = os.open
+    from specify_cli.file_helper import FileHelper
 
-    def refuse_target(path, flags, *args, **kwargs):
-        # FileHelper opens the leaf by name relative to its anchored parent.
-        if os.fspath(path) == target.name and flags & os.O_WRONLY:
+    real_open_rewrite = FileHelper.open_rewrite
+
+    def refuse_target(self, path):
+        # Patched here, not at os.open: Windows opens through CreateFileW.
+        if Path(self.root) / path == target:
             raise PermissionError("read-only")
-        return real_open(path, flags, *args, **kwargs)
+        return real_open_rewrite(self, path)
 
     with pytest.raises(OSError, match="disk full"):
         with _lifecycle.builtin_journal(project, "claude", {}):
             write_text(target, "generated\n")
-            monkeypatch.setattr(_lifecycle.os, "open", refuse_target)
+            monkeypatch.setattr(FileHelper, "open_rewrite", refuse_target)
             raise OSError("disk full")
 
     assert target.read_text(encoding="utf-8") == "original\n"
@@ -355,20 +357,31 @@ def test_builtin_journal_never_writes_a_different_file_open_returned(tmp_path, m
     target.write_text("original\n", encoding="utf-8")
     decoy = tmp_path / "decoy"
     decoy.write_text("decoy\n", encoding="utf-8")
-    real_open = os.open
+    from contextlib import contextmanager
+
+    from specify_cli.file_helper import FileHelper
+
+    real_open_rewrite = FileHelper.open_rewrite
     opened = []
 
-    def open_decoy(path, flags, *args, **kwargs):
-        # FileHelper opens the leaf by name relative to its anchored parent.
-        if os.fspath(path) == target.name and flags & os.O_WRONLY:
-            opened.append(path)
-            return real_open(decoy, flags, *args, **kwargs)
-        return real_open(path, flags, *args, **kwargs)
+    @contextmanager
+    def open_decoy(self, path):
+        # Patched here, not at os.open: Windows opens through CreateFileW.
+        if Path(self.root) / path != target:
+            with real_open_rewrite(self, path) as descriptor:
+                yield descriptor
+            return
+        opened.append(path)
+        descriptor = os.open(decoy, os.O_WRONLY | getattr(os, "O_BINARY", 0))
+        try:
+            yield descriptor
+        finally:
+            os.close(descriptor)
 
     with pytest.raises(OSError, match="disk full"):
         with _lifecycle.builtin_journal(project, "claude", {}):
             write_text(target, "generated\n")
-            monkeypatch.setattr(_lifecycle.os, "open", open_decoy)
+            monkeypatch.setattr(FileHelper, "open_rewrite", open_decoy)
             raise OSError("disk full")
 
     assert opened
@@ -1435,3 +1448,182 @@ def test_restorable_xattrs_stops_reading_once_the_budget_is_spent(monkeypatch):
     with pytest.raises(IntegrationInstallError, match="budget exceeded"):
         _lifecycle._restorable_xattrs(3, journal)
     assert len(read) == 2
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
+def test_builtin_journal_keeps_a_mode_changed_between_repeated_after_notifications(tmp_path, monkeypatch, capsys):
+    """A second after-notification with no write in between keeps the metadata the write left."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import after_file_change, before_file_change
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    target.chmod(0o600)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            before_file_change(target)
+            target.write_text("generated\n", encoding="utf-8")
+            after_file_change(target)
+            target.chmod(0o644)  # someone else's change
+            after_file_change(target)  # as record_existing() sends after write_file_and_record()
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "generated\n"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+    assert "Preserved concurrent edits" in " ".join(capsys.readouterr().out.split())
+    shutil.rmtree(backups[0])
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "chflags") or not hasattr(stat, "UF_NODUMP"), reason="no BSD file flags",
+)
+def test_builtin_journal_keeps_a_file_flag_set_after_the_operation_wrote(tmp_path, monkeypatch, capsys):
+    """A BSD flag set after the operation's write is kept as a conflict, not undone."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            os.chflags(target, target.stat().st_flags | stat.UF_NODUMP)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "generated\n"
+    assert target.stat().st_flags & stat.UF_NODUMP
+    assert "Preserved concurrent edits" in " ".join(capsys.readouterr().out.split())
+    os.chflags(target, target.stat().st_flags & ~stat.UF_NODUMP)
+    shutil.rmtree(backups[0])
+
+
+def test_builtin_journal_keeps_an_in_place_edit_made_just_before_the_restore_opens(
+    tmp_path, monkeypatch, capsys
+):
+    """An edit that keeps the inode, landing between the state check and the open, is not truncated."""
+    from contextlib import contextmanager
+
+    from specify_cli.file_helper import FileHelper
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    real_open_rewrite = FileHelper.open_rewrite
+    edited = []
+
+    @contextmanager
+    def edit_then_open(self, path):
+        if Path(self.root) / path == target and not edited:
+            with target.open("r+b") as stream:  # same inode
+                stream.write(b"EDITED!!!\n")
+            os.utime(target, ns=(3_000_000_000, 3_000_000_000))
+            edited.append(path)
+        with real_open_rewrite(self, path) as descriptor:
+            yield descriptor
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            monkeypatch.setattr(FileHelper, "open_rewrite", edit_then_open)
+            raise OSError("disk full")
+
+    assert edited
+    assert target.read_bytes() == b"EDITED!!!\n"
+    assert "Preserved concurrent edits" in " ".join(capsys.readouterr().out.split())
+    for backup in backups:
+        shutil.rmtree(backup)
+
+
+@pytest.mark.parametrize("refused", [False, True], ids=["restored", "refused"])
+def test_builtin_journal_sets_captured_attributes_on_a_recreated_file(tmp_path, monkeypatch, capsys, refused):
+    """A replaced file recreated from a snapshot gets its captured attributes, or is reported incomplete."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import after_file_change, before_file_change
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    replacement = tmp_path / "replacement"
+    replacement.write_text("generated\n", encoding="utf-8")
+    # The snapshot's filesystem keeps none of them, so only the capture has them.
+    _fake_xattrs(monkeypatch, target, {"user.label": b"mine"})
+    set_attributes = []
+
+    def setxattr(descriptor, name, value, *args, **kwargs):
+        if refused:
+            raise OSError(1, "Operation not permitted")
+        set_attributes.append((name, value))
+
+    monkeypatch.setattr(os, "setxattr", setxattr, raising=False)
+    monkeypatch.setattr(os, "removexattr", lambda *args, **kwargs: None, raising=False)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            before_file_change(target)
+            os.replace(replacement, target)
+            after_file_change(target)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "original\n"
+    output = " ".join(capsys.readouterr().out.split())
+    if refused:
+        assert _INCOMPLETE_WARNING in output
+        assert len(backups) == 1 and backups[0].is_dir()
+        assert list((backups[0] / "writes").glob("*.xattrs.json"))
+        shutil.rmtree(backups[0])
+    else:
+        assert set_attributes == [("user.label", b"mine")]
+        assert _INCOMPLETE_WARNING not in output
+
+
+@pytest.mark.parametrize("soft, expected", [
+    (400, 100),
+    (1_000_000, 1024),
+    (3, 0),
+])
+def test_pin_limit_is_a_quarter_of_the_open_file_limit_up_to_the_cap(monkeypatch, soft, expected):
+    resource = pytest.importorskip("resource")
+    from specify_cli.integrations import _lifecycle
+
+    monkeypatch.setattr(resource, "getrlimit", lambda which: (soft, resource.RLIM_INFINITY))
+    assert _lifecycle._pin_limit() == expected
+
+
+def test_pin_limit_caps_an_unlimited_open_file_limit(monkeypatch):
+    resource = pytest.importorskip("resource")
+    from specify_cli.integrations import _lifecycle
+
+    monkeypatch.setattr(resource, "getrlimit", lambda which: (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+    assert _lifecycle._pin_limit() == _lifecycle._MAX_PINNED_FILES
+
+
+@pytest.mark.parametrize("failure", ["getrlimit", "import"])
+def test_pin_limit_assumes_256_descriptors_when_the_limit_is_unknown(monkeypatch, failure):
+    import sys
+
+    from specify_cli.integrations import _lifecycle
+
+    if failure == "import":
+        monkeypatch.setitem(sys.modules, "resource", None)
+    else:
+        resource = pytest.importorskip("resource")
+
+        def fail(which):
+            raise OSError("unavailable")
+
+        monkeypatch.setattr(resource, "getrlimit", fail)
+    assert _lifecycle._pin_limit() == 64

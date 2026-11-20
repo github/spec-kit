@@ -996,14 +996,29 @@ class FileHelper:
         Where the platform has no no-follow ``fchmodat`` (Linux), the leaf is
         checked with a no-follow stat relative to the anchored parent first and a
         link is refused; a link swapped in between that check and the change is
-        followed. Windows pins the parent hierarchy and sets the mode by path,
+        followed. The root itself is changed through a no-follow descriptor
+        that must still be the root the helper was built on. Windows pins the
+        parent hierarchy and sets the mode by path,
         which only toggles the read-only attribute, without following a leaf
         reparse point where Python supports that (3.13 and later). Prefer
         ``os.fchmod`` on an open descriptor where it exists.
         """
         destination = self._path(path)
         if destination == self._canonical_root:
-            os.chmod(destination, mode, **_NO_FOLLOW_CHMOD)
+            if os.name == "nt":
+                os.chmod(destination, mode, **_NO_FOLLOW_CHMOD)
+                return
+            # Through a no-follow descriptor checked against the root this
+            # helper was built on, so a root renamed and replaced by a link
+            # (or another directory) since then is refused, never changed.
+            flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(destination, flags | getattr(os, "O_CLOEXEC", 0))
+            try:
+                if not os.path.samestat(self._root_stat, os.fstat(descriptor)):
+                    raise FileHelperError(f"Established root changed: {self.root}")
+                os.fchmod(descriptor, mode)
+            finally:
+                os.close(descriptor)
             return
         if os.name == "nt":
             with self._windows_parents(destination):

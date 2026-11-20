@@ -161,6 +161,32 @@ def test_utime_and_chmod_accept_the_root(tmp_path):
         assert stat.S_IMODE(tmp_path.stat().st_mode) == 0o750
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks and modes")
+@pytest.mark.parametrize("replacement", ["symlink", "directory"])
+def test_chmod_of_a_replaced_root_changes_nothing(tmp_path, monkeypatch, replacement):
+    from specify_cli import file_helper
+
+    # As on Linux, which has no no-follow chmod to fall back on.
+    monkeypatch.setattr(file_helper, "_NO_FOLLOW_CHMOD", {})
+    root = tmp_path / "root"
+    root.mkdir()
+    target = tmp_path / "target"
+    target.mkdir()
+    target.chmod(0o755)
+    with FileHelper(root) as files:
+        root.rename(tmp_path / "moved")
+        if replacement == "symlink":
+            root.symlink_to(target, target_is_directory=True)
+        else:
+            root.mkdir()
+            root.chmod(0o755)
+        with pytest.raises((OSError, ValueError)):
+            files.chmod(".", 0o700)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+    if replacement == "directory":
+        assert stat.S_IMODE(root.stat().st_mode) == 0o755
+
+
 @pytest.mark.skipif(os.utime not in os.supports_fd, reason="no descriptor form of utime")
 def test_futime_sets_times_through_the_descriptor(tmp_path):
     path = _seed(tmp_path)
