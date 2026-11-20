@@ -250,6 +250,12 @@ descriptor-relative or change their documented concurrency limitations.
   with cleanup details attached as a note. The yielded path uses the same
   spelling rule as `iterdir`; cleanup uses the resolved staging location.
 - `read_bytes(path)` / `read_text(path, encoding="utf-8")` read regular files.
+- `file_mode(path)` returns a regular file's permission bits, or `None` when
+  no entry exists at the path. It never follows the leaf: a link (even an
+  allowed one), a directory or any other non-regular entry is an error, so the
+  bits describe the entry an atomic write to the same path would replace.
+  Callers that keep an existing file's permissions across a rewrite pass the
+  result as the write's `mode`.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
   create files with existing parents. A no-follow `lstat` preflight rejects
   existing leaves, including dangling links, before opening the destination.

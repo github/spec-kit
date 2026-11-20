@@ -1959,3 +1959,80 @@ def _create_pack(temp_dir, valid_pack_data, pack_id, content,
         (subdir / f"{template_name}.md").write_text(content)
 
     return pack_dir
+
+
+def _install_layer_stack(root):
+    """Core template, a replacing preset and an appending preset above it."""
+    name = "layers-template"
+    templates = root / ".specify" / "templates"
+    templates.mkdir(parents=True)
+    (templates / f"{name}.md").write_text("core body\n", encoding="utf-8")
+    presets = root / ".specify" / "presets"
+    presets.mkdir()
+    registry = PresetRegistry(presets)
+    for preset_id, priority, strategy in [("base", 10, "replace"), ("extra", 5, "append")]:
+        directory = presets / preset_id
+        directory.mkdir()
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": preset_id,
+                "name": preset_id,
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": name,
+                        "file": "body.md",
+                        "strategy": strategy,
+                    }
+                ]
+            },
+        }
+        (directory / "preset.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        (directory / "body.md").write_text(f"{preset_id} body\n", encoding="utf-8")
+        registry.add(preset_id, {"priority": priority, "enabled": True})
+    return name
+
+
+def test_resolve_content_composes_supplied_layers_instead_of_the_stack(tmp_path):
+    name = _install_layer_stack(tmp_path)
+    resolver = PresetResolver(tmp_path)
+    extra, base, core = resolver.collect_all_layers(name)
+    assert [layer["strategy"] for layer in (extra, base, core)] == [
+        "append", "replace", "replace",
+    ]
+    whole = resolver.resolve_content(name)
+    assert "base body" in whole and "extra body" in whole and "core body" not in whole
+
+    assert resolver.resolve_content(name, layers=[extra, base, core]) == whole
+    # One layer and everything below it.
+    below_extra = resolver.resolve_content(name, layers=[base, core])
+    assert "base body" in below_extra and "extra body" not in below_extra
+    # A slice that leaves a layer out composes onto what the slice holds.
+    without_base = resolver.resolve_content(name, layers=[extra, core])
+    assert "core body" in without_base and "extra body" in without_base
+    assert "base body" not in without_base
+    assert without_base.index("core body") < without_base.index("extra body")
+
+
+def test_resolve_content_with_layers_that_have_no_replace_base(tmp_path):
+    name = _install_layer_stack(tmp_path)
+    resolver = PresetResolver(tmp_path)
+    extra = resolver.collect_all_layers(name)[0]
+
+    # The stack has a base, but the supplied slice does not: nothing to
+    # compose onto, and the rest of the stack is not consulted.
+    assert resolver.resolve_content(name, layers=[extra]) is None
+
+
+def test_resolve_content_with_empty_layers_does_not_fall_back_to_the_stack(tmp_path):
+    name = _install_layer_stack(tmp_path)
+    resolver = PresetResolver(tmp_path)
+
+    assert resolver.resolve_content(name) is not None
+    assert resolver.resolve_content(name, layers=[]) is None

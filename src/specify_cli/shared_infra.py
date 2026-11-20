@@ -339,8 +339,33 @@ def _shared_script_mode(src_path: Path, content: bytes) -> int:
     return mode
 
 
-def _write_shared_text(project_path: Path, dest: Path, content: str) -> None:
-    _write_shared_bytes(project_path, dest, content.encode("utf-8"))
+def _write_shared_text(
+    project_path: Path,
+    dest: Path,
+    content: str,
+    *,
+    preserve_mode: bool = False,
+    new_file_mode: int | None = None,
+) -> None:
+    """Atomically write ``content`` to ``dest`` (see ``_write_shared_bytes``).
+
+    With ``preserve_mode``, an existing regular file keeps its permission
+    bits instead of being reset to 0644, so refreshing a private output
+    does not widen it. A new file gets ``new_file_mode`` when the caller
+    knows the bits of the file it stands in for, otherwise the default
+    creation mode under the process umask, as an ordinary write would.
+    Either way the content is never readable under a wider mode than the
+    one it ends up with.
+    """
+    mode: int | None = 0o644
+    if preserve_mode:
+        from .file_helper import FileHelper
+
+        _ensure_safe_shared_destination(project_path, dest)
+        with FileHelper(project_path) as files:
+            existing_mode = files.file_mode(dest)
+        mode = new_file_mode if existing_mode is None else existing_mode
+    _write_shared_bytes(project_path, dest, content.encode("utf-8"), mode=mode)
 
 
 def _write_shared_bytes(
@@ -348,8 +373,14 @@ def _write_shared_bytes(
     dest: Path,
     content: bytes,
     *,
-    mode: int = 0o644,
+    mode: int | None = 0o644,
 ) -> None:
+    """Atomically replace ``dest`` with ``content`` (see ``atomic_write_bytes``).
+
+    ``mode`` is the exact permission bits of the result. ``None`` leaves
+    them to the process umask: the file is created with 0666, so the kernel
+    applies the umask, and no mode is set afterwards.
+    """
     _ensure_safe_shared_destination(project_path, dest)
     from .integrations._file_changes import (
         after_file_change,
@@ -359,7 +390,10 @@ def _write_shared_bytes(
 
     before_file_change(dest)
     atomic_write_bytes(
-        dest, content, mode, exact=True,
+        dest,
+        content,
+        0o666 if mode is None else mode,
+        exact=mode is not None,
         before_replace=lambda: _ensure_safe_shared_destination(project_path, dest),
     )
     after_file_change(dest)

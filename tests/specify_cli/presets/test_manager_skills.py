@@ -1,12 +1,16 @@
 """Tests for preset skill artifacts in specify_cli.presets._manager_skills."""
 
+import functools
 import os
 import shutil
+import stat
+import warnings
 from pathlib import Path
 
 import pytest
 import yaml
 
+from specify_cli.extensions import ExtensionManager
 from specify_cli.presets import PresetManager
 from tests.specify_cli.presets._helpers import (
     PresetArtifactTestHelpers,
@@ -1917,6 +1921,2058 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             "---\nname: speckit-specify\n---\n\nUser-owned body\n"
         )
 
+    def _install_composed_specify_stack(self, project_dir, temp_dir, layers):
+        """Install ``(preset_id, body, strategy, priority)`` layers for speckit.specify."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-specify")
+        (project_dir / ".specify" / "templates" / "commands" / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+        manager = PresetManager(project_dir)
+        for preset_id, body, strategy, priority in layers:
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.specify", preset_id, body
+            )
+            if strategy != "replace":
+                manifest_path = preset_dir / "preset.yml"
+                manifest = yaml.safe_load(manifest_path.read_text())
+                manifest["provides"]["templates"][0]["strategy"] = strategy
+                manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+        return manager, project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
+
+    def _install_unbacked_custom_stack(self, project_dir, temp_dir, layers=None):
+        """Presets for ``speckit.custom``, which has no core template."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        manager = PresetManager(project_dir)
+        for preset_id, body, strategy, priority in layers or [
+            ("base-preset", "Base preset body", "replace", 10),
+            ("append-preset", "Appended body", "append", 5),
+        ]:
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            if strategy != "replace":
+                manifest_path = preset_dir / "preset.yml"
+                manifest = yaml.safe_load(manifest_path.read_text())
+                manifest["provides"]["templates"][0]["strategy"] = strategy
+                manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+        skill_file = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        if layers is None:
+            assert "Base preset body" in skill_file.read_text(encoding="utf-8")
+        return manager, skill_file
+
+    def test_remove_sole_base_preset_retires_stale_composed_skill(
+        self, project_dir, temp_dir
+    ):
+        """With no core or extension fallback, removing the only base leaves
+        nothing to compose onto: the composer's skill is removed, and a later
+        rescaffold does not render its stale cached composition back."""
+        manager, skill_file = self._install_unbacked_custom_stack(project_dir, temp_dir)
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+            manager.register_enabled_presets_for_agent("claude")
+
+        assert not skill_file.exists()
+
+    def test_remove_sole_base_preset_keeps_hand_edited_skill(
+        self, project_dir, temp_dir
+    ):
+        manager, skill_file = self._install_unbacked_custom_stack(project_dir, temp_dir)
+        edited = "---\nname: speckit-custom\n---\n\nUser-owned body\n"
+        skill_file.write_text(edited, encoding="utf-8")
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+
+        assert skill_file.read_text(encoding="utf-8") == edited
+
+    def test_remove_sole_base_under_two_composers_survives_rescaffold(
+        self, project_dir, temp_dir
+    ):
+        """With two composers and no base left, the skill is removed and a
+        rescaffold does not render either composer's stale cache back."""
+        manager, skill_file = self._install_unbacked_custom_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("middle-preset", "Middle body", "append", 7),
+                ("top-preset", "Top body", "append", 5),
+            ],
+        )
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+            manager.register_enabled_presets_for_agent("claude")
+
+        assert not skill_file.exists()
+
+    def test_stale_skill_removal_is_journaled(self, project_dir, temp_dir):
+        """Removing the composer's stale skill is reported to the lifecycle journal."""
+        from specify_cli.integrations._file_changes import file_change_observer
+
+        manager, _skill = self._install_unbacked_custom_stack(project_dir, temp_dir)
+        events = []
+        token = file_change_observer.set(
+            lambda path, before, removal: events.append((path, before, removal))
+        )
+        try:
+            with pytest.warns(UserWarning, match="no base layer"):
+                assert manager.remove("base-preset") is True
+        finally:
+            file_change_observer.reset(token)
+
+        skill_dir = project_dir / ".claude" / "skills" / "speckit-custom"
+        assert (skill_dir, True, True) in events
+        assert not skill_dir.exists()
+
+    def _install_custom_layers(self, project_dir, temp_dir, *, core=False, alias=None):
+        """Base (replace) + append presets for ``speckit.custom`` under Claude."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        if core:
+            core_cmds = project_dir / ".specify" / "templates" / "commands"
+            core_cmds.mkdir(parents=True, exist_ok=True)
+            (core_cmds / "custom.md").write_text(
+                "---\ndescription: Core custom\n---\n\nCore custom body\n",
+                encoding="utf-8",
+            )
+        manager = PresetManager(project_dir)
+        for preset_id, body, strategy, priority in [
+            ("base-preset", "Base preset body", "replace", 10),
+            ("append-preset", "Appended body", "append", 5),
+        ]:
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            manifest_path = preset_dir / "preset.yml"
+            manifest = yaml.safe_load(manifest_path.read_text())
+            manifest["provides"]["templates"][0]["strategy"] = strategy
+            if alias and strategy != "replace":
+                manifest["provides"]["templates"][0]["aliases"] = [alias]
+            manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+        return manager
+
+    _ALIAS = "speckit.custom-short"
+
+    def _alias_skill(self, project_dir):
+        return project_dir / ".claude" / "skills" / "speckit-custom-short" / "SKILL.md"
+
+    def test_remove_sole_base_retires_composer_alias_skill(self, project_dir, temp_dir):
+        """A composer's native alias goes with its primary when no base is left,
+        and a rescaffold does not render the removed base's text back into it."""
+        from specify_cli.integrations._file_changes import file_change_observer
+
+        manager = self._install_custom_layers(project_dir, temp_dir, alias=self._ALIAS)
+        alias_file = self._alias_skill(project_dir)
+        assert "Base preset body" in alias_file.read_text(encoding="utf-8")
+        events = []
+        token = file_change_observer.set(
+            lambda path, before, removal: events.append((path, before, removal))
+        )
+        try:
+            with pytest.warns(UserWarning, match="no base layer"):
+                assert manager.remove("base-preset") is True
+        finally:
+            file_change_observer.reset(token)
+
+        assert not alias_file.parent.exists()
+        assert (alias_file.parent, True, True) in events
+        with pytest.warns(UserWarning, match="no base layer"):
+            manager.register_enabled_presets_for_agent("claude")
+        assert not alias_file.parent.exists()
+
+    def test_remove_base_recomposes_composer_alias_skill(self, project_dir, temp_dir):
+        """With a core fallback, the alias is recomposed on removal exactly as a
+        rescaffold would render it."""
+        manager = self._install_custom_layers(
+            project_dir, temp_dir, core=True, alias=self._ALIAS
+        )
+        alias_file = self._alias_skill(project_dir)
+        # The refresh keeps the preset version command registration records.
+        assert "  version: 1.0.0\n" in alias_file.read_text(encoding="utf-8")
+
+        assert manager.remove("base-preset") is True
+
+        after_remove = alias_file.read_text(encoding="utf-8")
+        assert "Base preset body" not in after_remove
+        assert "Core custom body" in after_remove
+        assert "Appended body" in after_remove
+        assert "  version: 1.0.0\n" in after_remove
+        manager.register_enabled_presets_for_agent("claude")
+        assert alias_file.read_text(encoding="utf-8") == after_remove
+
+        # The alias stays tracked as the composer's command output, so
+        # removing the composer after the rescaffold still cleans it up.
+        assert manager.remove("append-preset") is True
+        assert not alias_file.parent.exists()
+
+    def test_new_base_restores_retired_composer_alias_skill(self, project_dir, temp_dir):
+        """An alias retired with its base comes back with its primary once a new
+        base makes the command composable again."""
+        manager = self._install_custom_layers(project_dir, temp_dir, alias=self._ALIAS)
+        alias_file = self._alias_skill(project_dir)
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+        assert not alias_file.parent.exists()
+
+        new_base = self._create_command_preset(
+            temp_dir, "new-base", "speckit.custom", "new-base", "New base body"
+        )
+        manager.install_from_directory(new_base, "0.1.5", priority=10)
+
+        restored = alias_file.read_text(encoding="utf-8")
+        assert "New base body" in restored and "Appended body" in restored
+        assert "Base preset body" not in restored
+        assert "source: append-preset:" in restored
+
+    def test_unreadable_surviving_base_keeps_alias_skill(self, project_dir, temp_dir):
+        """A surviving replace base that cannot be decoded makes resolution
+        fail; that is not a missing base, so the alias is kept like the
+        primary skill's output."""
+        manager = self._install_custom_layers(
+            project_dir, temp_dir, alias=self._ALIAS
+        )
+        other = self._create_command_preset(
+            temp_dir, "other-base", "speckit.custom", "other-base", "Other base body"
+        )
+        # Lower-priority than base-preset, so it only becomes the base once
+        # base-preset is removed.
+        manager.install_from_directory(other, "0.1.5", priority=12)
+        alias_file = self._alias_skill(project_dir)
+        before = alias_file.read_text(encoding="utf-8")
+        assert "Base preset body" in before
+        manifest = yaml.safe_load(
+            (manager.presets_dir / "other-base" / "preset.yml").read_text()
+        )
+        command_file = (
+            manager.presets_dir / "other-base"
+            / manifest["provides"]["templates"][0]["file"]
+        )
+        command_file.write_bytes(b"---\ndescription: x\n---\n\xff\xfe broken\n")
+
+        assert manager.remove("base-preset") is True
+
+        assert alias_file.read_text(encoding="utf-8") == before
+
+    def test_install_does_not_rewrite_inactive_agent_alias_skill(
+        self, project_dir, temp_dir
+    ):
+        """Installing a new base while another agent is active must not write
+        an inactive agent's alias: registration is active-only (#2948)."""
+        manager = self._install_custom_layers(
+            project_dir, temp_dir, alias=self._ALIAS
+        )
+        claude_alias = self._alias_skill(project_dir)
+        before = claude_alias.read_text(encoding="utf-8")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+
+        new_base = self._create_command_preset(
+            temp_dir, "new-base", "speckit.custom", "new-base", "New base body"
+        )
+        manager.install_from_directory(new_base, "0.1.5", priority=8)
+
+        assert claude_alias.read_text(encoding="utf-8") == before
+
+    def test_shared_dir_alias_rendered_once_with_active_renderer(
+        self, project_dir, temp_dir
+    ):
+        """Codex and agy share ``.agents/skills``. A shared alias must be
+        rendered once, with the active agent's command-reference syntax."""
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        shared = project_dir / ".agents" / "skills"
+        self._create_skill(shared, "speckit-custom")
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "custom.md").write_text(
+            "---\ndescription: Core custom\n---\n\nCore custom body\n",
+            encoding="utf-8",
+        )
+        manager = PresetManager(project_dir)
+        for preset_id, body, strategy, priority in [
+            ("base-preset", "Base preset body", "replace", 10),
+            ("append-preset", "Run `__SPECKIT_COMMAND_PLAN__`.", "append", 5),
+        ]:
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            manifest_path = preset_dir / "preset.yml"
+            manifest = yaml.safe_load(manifest_path.read_text())
+            manifest["provides"]["templates"][0]["strategy"] = strategy
+            if strategy != "replace":
+                manifest["provides"]["templates"][0]["aliases"] = [self._ALIAS]
+            manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+
+        # `integration use agy` then back to codex records both agent keys
+        # against the one shared directory.
+        self._write_init_options(project_dir, ai="agy", ai_skills=True)
+        manager.register_enabled_presets_for_agent("agy")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        recorded = manager.registry.get("append-preset").get("registered_commands", {})
+        assert {"codex", "agy"} <= set(recorded)
+
+        assert manager.remove("base-preset") is True
+
+        alias_text = (shared / "speckit-custom-short" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        assert "Core custom body" in alias_text
+        # Codex is active, so references use its "$" prefix, not agy's "/".
+        assert "$speckit-plan" in alias_text
+        assert "/speckit-plan" not in alias_text
+
+    @pytest.mark.parametrize("core", [True, False], ids=["core", "no-core"])
+    def test_alias_in_dir_shared_with_command_agent_in_skills_mode(
+        self, project_dir, temp_dir, core
+    ):
+        """Amp in skills mode uses ``.agents/skills`` like Codex, but its
+        registrar writes ``.md`` command files under the dotted name. A
+        Codex alias there must still be found under its hyphenated skill
+        name and rendered as a skill, with no command file beside it."""
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        shared = project_dir / ".agents" / "skills"
+        self._create_skill(shared, "speckit-custom")
+        if core:
+            self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("append-preset", "Appended body", "append", 5)
+        alias_file = shared / "speckit-custom-short" / "SKILL.md"
+        assert "Base preset body" in alias_file.read_text(encoding="utf-8")
+        self._write_init_options(project_dir, ai="amp", ai_skills=True)
+        assert manager._get_skills_dir() == shared
+
+        with warnings.catch_warnings():
+            if not core:
+                warnings.simplefilter("ignore", UserWarning)
+            assert manager.remove("base-preset") is True
+
+        if core:
+            content = alias_file.read_text(encoding="utf-8")
+            assert "Core custom body" in content and "Appended body" in content
+            assert "Base preset body" not in content
+        else:
+            assert not alias_file.parent.exists()
+            install("new-base", "New base body", "replace", 10, alias=False)
+        assert not list(shared.glob("speckit.custom-short*"))
+
+    def test_remove_sole_base_keeps_hand_edited_alias_skill(self, project_dir, temp_dir):
+        manager = self._install_custom_layers(project_dir, temp_dir, alias=self._ALIAS)
+        alias_file = self._alias_skill(project_dir)
+        edited = "---\nname: speckit-custom-short\n---\n\nUser-owned body\n"
+        alias_file.write_text(edited, encoding="utf-8")
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+
+        assert alias_file.read_text(encoding="utf-8") == edited
+
+
+    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    def test_remove_base_reconciles_skill_owned_by_lower_survivor_in_historical_dir(
+        self, project_dir, temp_dir, core
+    ):
+        """Claude's skill was rendered by ``middle``; ``top`` was installed later
+        under Codex only. Removing the base must still refresh Claude's skill,
+        whose recorded owner is ``middle``, not the current winner ``top``."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        if core:
+            core_cmds = project_dir / ".specify" / "templates" / "commands"
+            core_cmds.mkdir(parents=True, exist_ok=True)
+            (core_cmds / "custom.md").write_text(
+                "---\ndescription: Core custom\n---\n\nCore custom body\n",
+                encoding="utf-8",
+            )
+        manager = PresetManager(project_dir)
+
+        def install(preset_id, body, strategy, priority):
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            manifest_path = preset_dir / "preset.yml"
+            manifest = yaml.safe_load(manifest_path.read_text())
+            manifest["provides"]["templates"][0]["strategy"] = strategy
+            manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+
+        install("base-preset", "Base preset body", "replace", 10)
+        install("middle-preset", "Middle body", "append", 7)
+        assert "preset:middle-preset" in claude_skill.read_text(encoding="utf-8")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", "append", 5)
+
+        if core:
+            assert manager.remove("base-preset") is True
+            content = claude_skill.read_text(encoding="utf-8")
+            assert "Base preset body" not in content
+            assert "Core custom body" in content and "Middle body" in content
+            # top-preset was never registered under Claude.
+            assert "Top body" not in content
+            assert "preset:middle-preset" in content
+        else:
+            with pytest.warns(UserWarning, match="no base layer"):
+                assert manager.remove("base-preset") is True
+            assert not claude_skill.exists()
+
+    def test_remove_shadowed_base_leaves_replace_survivor_in_historical_dir(
+        self, project_dir, temp_dir
+    ):
+        """``middle`` replaces ``base`` in Claude's skill; ``top`` is installed
+        later under Codex only. Removing the shadowed base must not touch
+        Claude's skill, and must not render ``top`` into it."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        manager = PresetManager(project_dir)
+
+        def install(preset_id, body, priority):
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+
+        install("base-preset", "Base preset body", 10)
+        install("middle-preset", "Middle body", 7)
+        before = claude_skill.read_text(encoding="utf-8")
+        assert "preset:middle-preset" in before
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", 5)
+
+        assert manager.remove("base-preset") is True
+
+        assert claude_skill.read_text(encoding="utf-8") == before
+
+    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    def test_remove_base_reconciles_alias_owned_by_lower_survivor_in_historical_dir(
+        self, project_dir, temp_dir, core
+    ):
+        """Like the primary skill, Claude's alias skill rendered by ``middle``
+        must drop the removed base's body even though ``top`` (Codex only)
+        now wins, and must not pick up ``top``'s body."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills = project_dir / ".claude" / "skills"
+        self._create_skill(skills, "speckit-custom")
+        alias_file = self._alias_skill(project_dir)
+        if core:
+            core_cmds = project_dir / ".specify" / "templates" / "commands"
+            core_cmds.mkdir(parents=True, exist_ok=True)
+            (core_cmds / "custom.md").write_text(
+                "---\ndescription: Core custom\n---\n\nCore custom body\n",
+                encoding="utf-8",
+            )
+        manager = PresetManager(project_dir)
+
+        def install(preset_id, body, strategy, priority):
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            manifest_path = preset_dir / "preset.yml"
+            manifest = yaml.safe_load(manifest_path.read_text())
+            manifest["provides"]["templates"][0]["strategy"] = strategy
+            if strategy != "replace":
+                manifest["provides"]["templates"][0]["aliases"] = [self._ALIAS]
+            manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+
+        install("base-preset", "Base preset body", "replace", 10)
+        install("middle-preset", "Middle body", "append", 7)
+        assert "Base preset body" in alias_file.read_text(encoding="utf-8")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", "append", 5)
+
+        if core:
+            assert manager.remove("base-preset") is True
+            content = alias_file.read_text(encoding="utf-8")
+            assert "Base preset body" not in content
+            assert "Core custom body" in content and "Middle body" in content
+            assert "Top body" not in content
+            assert "middle-preset:" in content
+        else:
+            with pytest.warns(UserWarning, match="no base layer"):
+                assert manager.remove("base-preset") is True
+            assert not alias_file.exists()
+
+    @pytest.mark.parametrize("link", ["cache-file", "cache-dir"])
+    def test_historical_alias_refresh_does_not_write_through_symlinked_cache(
+        self, project_dir, temp_dir, link
+    ):
+        """Refreshing a shadowed survivor's historical alias writes its
+        ``.composed`` cache; a symlinked cache directory or file must not
+        redirect that write outside the project."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "custom.md").write_text(
+            "---\ndescription: Core custom\n---\n\nCore custom body\n",
+            encoding="utf-8",
+        )
+        manager = PresetManager(project_dir)
+
+        def install(preset_id, body, strategy, priority):
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            manifest_path = preset_dir / "preset.yml"
+            manifest = yaml.safe_load(manifest_path.read_text())
+            manifest["provides"]["templates"][0]["strategy"] = strategy
+            if strategy != "replace":
+                manifest["provides"]["templates"][0]["aliases"] = [self._ALIAS]
+            manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+
+        install("base-preset", "Base preset body", "replace", 10)
+        install("middle-preset", "Middle body", "append", 7)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", "append", 5)
+
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        target = outside / "speckit.custom.md"
+        target.write_text("external\n", encoding="utf-8")
+        cache_dir = manager.presets_dir / "middle-preset" / ".composed"
+        if link == "cache-dir":
+            if cache_dir.exists():
+                shutil.rmtree(cache_dir)
+            cache_dir.symlink_to(outside, target_is_directory=True)
+        else:
+            cache_dir.mkdir(exist_ok=True)
+            cache_file = cache_dir / "speckit.custom.md"
+            if cache_file.exists():
+                cache_file.unlink()
+            cache_file.symlink_to(target)
+
+        assert manager.remove("base-preset") is True
+
+        assert target.read_text(encoding="utf-8") == "external\n"
+        assert sorted(p.name for p in outside.iterdir()) == ["speckit.custom.md"]
+
+    def _install_alias_layer(
+        self, manager, temp_dir, preset_id, body, strategy, priority, *, alias=True
+    ):
+        preset_dir = self._create_command_preset(
+            temp_dir, preset_id, "speckit.custom", preset_id, body
+        )
+        manifest_path = preset_dir / "preset.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        manifest["provides"]["templates"][0]["strategy"] = strategy
+        if alias:
+            manifest["provides"]["templates"][0]["aliases"] = [self._ALIAS]
+        manifest_path.write_text(yaml.dump(manifest))
+        manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+
+    def _write_core_custom(self, project_dir):
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "custom.md").write_text(
+            "---\ndescription: Core custom\n---\n\nCore custom body\n",
+            encoding="utf-8",
+        )
+
+    def test_historical_alias_refresh_does_not_write_through_hardlinked_cache(
+        self, project_dir, temp_dir
+    ):
+        """A ``.composed`` cache file hard-linked to a file outside the project
+        passes the symlink and containment checks; the refresh must replace
+        the entry rather than write through the shared inode."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", "append", 5)
+
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        target = outside / "speckit.custom.md"
+        target.write_text("external\n", encoding="utf-8")
+        cache_dir = manager.presets_dir / "middle-preset" / ".composed"
+        cache_dir.mkdir(exist_ok=True)
+        cache_file = cache_dir / "speckit.custom.md"
+        cache_file.unlink(missing_ok=True)
+        try:
+            os.link(target, cache_file)
+        except OSError as exc:  # pragma: no cover - filesystem without hard links
+            pytest.skip(f"hard links unsupported: {exc}")
+
+        assert manager.remove("base-preset") is True
+
+        assert target.read_text(encoding="utf-8") == "external\n"
+        assert "Core custom body" in self._alias_skill(project_dir).read_text(
+            encoding="utf-8"
+        )
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_alias_refresh_preserves_existing_output_mode(
+        self, project_dir, temp_dir
+    ):
+        """Replacing the alias entry must keep a private (0600) output private
+        rather than resetting it to a fixed world-readable mode."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10)
+        install("append-preset", "Appended body", "append", 5)
+        alias_file = self._alias_skill(project_dir)
+        alias_file.chmod(0o600)
+
+        assert manager.remove("base-preset") is True
+
+        assert "Core custom body" in alias_file.read_text(encoding="utf-8")
+        assert stat.S_IMODE(alias_file.stat().st_mode) == 0o600
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_new_alias_output_honors_umask(self, project_dir, temp_dir):
+        """A newly created alias output gets the default creation mode under
+        the process umask, as an ordinary file write would."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        old_umask = os.umask(0o077)
+        try:
+            install("append-preset", "Appended body", "append", 5)
+        finally:
+            os.umask(old_umask)
+
+        alias_file = self._alias_skill(project_dir)
+        assert "Appended body" in alias_file.read_text(encoding="utf-8")
+        assert stat.S_IMODE(alias_file.stat().st_mode) == 0o600
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_historical_alias_refresh_preserves_cache_mode(
+        self, project_dir, temp_dir
+    ):
+        """Refreshing a shadowed survivor's ``.composed`` cache keeps a private
+        (0600) cache file private."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", "append", 5)
+        cache_file = (
+            manager.presets_dir / "middle-preset" / ".composed" / "speckit.custom.md"
+        )
+        cache_file.parent.mkdir(exist_ok=True)
+        cache_file.write_text("stale\n", encoding="utf-8")
+        cache_file.chmod(0o600)
+
+        assert manager.remove("base-preset") is True
+
+        assert "Core custom body" in cache_file.read_text(encoding="utf-8")
+        assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_historical_alias_refresh_creates_cache_under_umask(
+        self, project_dir, temp_dir
+    ):
+        """When the survivor has no ``.composed`` cache yet, the refresh
+        creates one. Like the other ``.composed`` writes, the new file must
+        get its mode from the process umask, not a fixed 0644."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", "append", 5)
+        cache_dir = manager.presets_dir / "middle-preset" / ".composed"
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
+        cache_file = cache_dir / "speckit.custom.md"
+
+        old_umask = os.umask(0o077)
+        try:
+            assert manager.remove("base-preset") is True
+        finally:
+            os.umask(old_umask)
+
+        assert "Core custom body" in cache_file.read_text(encoding="utf-8")
+        assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
+        assert "Core custom body" in self._alias_skill(project_dir).read_text(
+            encoding="utf-8"
+        )
+
+    def test_rescaffold_recomposes_alias_declared_only_by_lower_preset(
+        self, project_dir, temp_dir
+    ):
+        """``top`` wins the primary command but does not declare the alias, so
+        ``middle`` still owns it: a rescaffold must recompose it onto the base
+        instead of leaving the raw fragment it re-registers."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        install("top-preset", "Top body", "append", 5, alias=False)
+        alias_file = self._alias_skill(project_dir)
+
+        manager.register_enabled_presets_for_agent("claude")
+
+        content = alias_file.read_text(encoding="utf-8")
+        assert "Base preset body" in content and "Middle body" in content
+        assert "Top body" not in content
+        assert "source: middle-preset:" in content
+
+    def test_new_base_restores_alias_declared_only_by_lower_preset(
+        self, project_dir, temp_dir
+    ):
+        """An alias retired with its base comes back when a new base arrives,
+        even though a higher preset (which does not declare the alias) wins
+        the primary command."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        install("top-preset", "Top body", "append", 5, alias=False)
+        alias_file = self._alias_skill(project_dir)
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+        assert not alias_file.parent.exists()
+
+        install("new-base", "New base body", "replace", 10, alias=False)
+
+        content = alias_file.read_text(encoding="utf-8")
+        assert "New base body" in content and "Middle body" in content
+        assert "Top body" not in content
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_skill_refresh_on_removal_preserves_skill_mode(
+        self, project_dir, temp_dir
+    ):
+        """Recomposing a surviving preset's skill keeps a private (0600)
+        ``SKILL.md`` private instead of resetting it to 0644."""
+        manager = self._install_custom_layers(project_dir, temp_dir, core=True)
+        skill_file = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        skill_file.chmod(0o600)
+
+        assert manager.remove("base-preset") is True
+
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Core custom body" in content and "Appended body" in content
+        assert stat.S_IMODE(skill_file.stat().st_mode) == 0o600
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_skill_restore_on_removal_preserves_skill_mode(
+        self, project_dir, temp_dir
+    ):
+        """Restoring the core skill when the last preset goes keeps the
+        existing ``SKILL.md`` mode."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        self._install_alias_layer(
+            manager, temp_dir, "base-preset", "Base preset body", "replace", 10,
+            alias=False,
+        )
+        skill_file = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        assert "Base preset body" in skill_file.read_text(encoding="utf-8")
+        skill_file.chmod(0o600)
+
+        assert manager.remove("base-preset") is True
+
+        assert "Base preset body" not in skill_file.read_text(encoding="utf-8")
+        assert stat.S_IMODE(skill_file.stat().st_mode) == 0o600
+
+    def test_new_base_restores_retired_outputs_beside_companion_files(
+        self, project_dir, temp_dir
+    ):
+        """Retiring a stale skill removes only ``SKILL.md``, so a directory
+        holding a user's companion file stays behind. A new base must still
+        bring the primary skill and its alias back, next to those files."""
+        manager = self._install_custom_layers(project_dir, temp_dir, alias=self._ALIAS)
+        alias_file = self._alias_skill(project_dir)
+        skill_file = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        for skill in (alias_file, skill_file):
+            (skill.parent / "notes.md").write_text("mine\n", encoding="utf-8")
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+        for skill in (alias_file, skill_file):
+            assert not skill.exists()
+            assert (skill.parent / "notes.md").read_text(encoding="utf-8") == "mine\n"
+
+        self._install_alias_layer(
+            manager, temp_dir, "new-base", "New base body", "replace", 10, alias=False
+        )
+
+        for skill in (alias_file, skill_file):
+            restored = skill.read_text(encoding="utf-8")
+            assert "New base body" in restored and "Appended body" in restored
+            assert (skill.parent / "notes.md").read_text(encoding="utf-8") == "mine\n"
+
+    def test_new_base_does_not_restore_alias_through_symlinked_dir(
+        self, project_dir, temp_dir
+    ):
+        """A retired alias whose directory was swapped for a symlink has no
+        ``SKILL.md`` either, but restoring it must not write through the link."""
+        manager = self._install_custom_layers(project_dir, temp_dir, alias=self._ALIAS)
+        alias_dir = self._alias_skill(project_dir).parent
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+        assert not alias_dir.exists()
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        try:
+            alias_dir.symlink_to(outside, target_is_directory=True)
+        except OSError as exc:  # pragma: no cover - symlinks unavailable
+            pytest.skip(f"symlinks unsupported: {exc}")
+
+        self._install_alias_layer(
+            manager, temp_dir, "new-base", "New base body", "replace", 10, alias=False
+        )
+
+        assert list(outside.iterdir()) == []
+
+    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    @pytest.mark.parametrize("legacy", [False, True], ids=["per-agent", "legacy"])
+    def test_remove_base_does_not_compose_other_agents_layer_into_historical_dir(
+        self, project_dir, temp_dir, core, legacy
+    ):
+        """``low`` is installed while Codex is active, so it was never
+        registered for Claude. When the base under Claude's composing owner
+        is removed, Claude's skill and alias must be recomposed only from
+        layers registered there (single-active, #2948), not onto ``low``."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        if core:
+            self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        claude_skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        claude_alias = self._alias_skill(project_dir)
+        assert "Base preset body" in claude_alias.read_text(encoding="utf-8")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("low-preset", "Low body", "replace", 12, alias=False)
+        if legacy:
+            manager.registry.update("low-preset", {"registered_skills": ["speckit-custom"]})
+
+        assert manager.remove("base-preset") is True
+
+        codex_skill = project_dir / ".agents" / "skills" / "speckit-custom" / "SKILL.md"
+        codex = codex_skill.read_text(encoding="utf-8")
+        assert "Low body" in codex and "Middle body" in codex
+        for output in (claude_skill, claude_alias):
+            if not core:
+                assert not output.exists()
+                continue
+            content = output.read_text(encoding="utf-8")
+            assert "Low body" not in content and "Base preset body" not in content
+            assert "Core custom body" in content and "Middle body" in content
+
+    @pytest.mark.parametrize(
+        "extension_agent,unrelated_claude_command",
+        [("codex", False), ("codex", True), ("claude", False)],
+        ids=["codex", "codex-unrelated-claude-command", "claude"],
+    )
+    def test_historical_skill_uses_only_registered_extension(
+        self, project_dir, temp_dir, extension_agent, unrelated_claude_command
+    ):
+        """Removing a base must not introduce another agent's extension
+        into a historical skill or alias; a registered base must survive.
+        Another command of the extension recorded for Claude (a partial
+        registration) does not register this one there."""
+        self._write_init_options(project_dir, ai=extension_agent, ai_skills=True)
+        for folder in (".agents", ".claude"):
+            (project_dir / folder / "skills").mkdir(parents=True)
+        extension = temp_dir / "foreign-extension"
+        (extension / "commands").mkdir(parents=True)
+        (extension / "commands" / "run.md").write_text(
+            "---\ndescription: Foreign command\n---\n\nFOREIGN EXTENSION BODY\n",
+            encoding="utf-8",
+        )
+        manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "foreign", "name": "Foreign",
+                "version": "1.0.0", "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": [{
+                "name": "speckit.foreign.run",
+                "file": "commands/run.md", "description": "Run",
+            }]},
+        }
+        (extension / "extension.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        extensions = ExtensionManager(project_dir)
+        extensions.install_from_directory(extension, "0.1.5")
+        assert extensions.registry.get("foreign")["registered_commands"] == {
+            extension_agent: ["speckit.foreign.run"]
+        }
+        assert extensions.registry.get("foreign")["registered_skills"] == []
+        if unrelated_claude_command:
+            extensions.registry.update(
+                "foreign",
+                {
+                    "registered_commands": {
+                        extension_agent: ["speckit.foreign.run"],
+                        "claude": ["speckit.foreign.other"],
+                    }
+                },
+            )
+
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-foreign-run")
+        manager = PresetManager(project_dir)
+        for preset_id, body, strategy, priority in [
+            ("base-preset", "BASE BODY", "replace", 10),
+            ("append-preset", "APPEND BODY", "append", 5),
+        ]:
+            preset = self._create_command_preset(
+                temp_dir, preset_id, "speckit.foreign.run", preset_id, body
+            )
+            path = preset / "preset.yml"
+            manifest = yaml.safe_load(path.read_text(encoding="utf-8"))
+            manifest["provides"]["templates"][0]["strategy"] = strategy
+            if strategy == "append":
+                manifest["provides"]["templates"][0]["aliases"] = ["speckit.foreign.short"]
+            path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+            manager.install_from_directory(preset, "0.1.5", priority=priority)
+        skill = project_dir / ".claude" / "skills" / "speckit-foreign-run" / "SKILL.md"
+        alias = project_dir / ".claude" / "skills" / "speckit-foreign-short" / "SKILL.md"
+        assert "BASE BODY" in skill.read_text(encoding="utf-8")
+        assert "FOREIGN EXTENSION BODY" not in skill.read_text(encoding="utf-8")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        assert manager.remove("base-preset")
+        for output in (skill, alias):
+            if extension_agent == "codex":
+                assert not output.exists(), output.read_text(encoding="utf-8")
+            else:
+                content = output.read_text(encoding="utf-8")
+                assert "FOREIGN EXTENSION BODY" in content
+                assert "APPEND BODY" in content
+                assert "BASE BODY" not in content
+        active = project_dir / ".agents" / "skills" / "speckit-foreign-run" / "SKILL.md"
+        assert "FOREIGN EXTENSION BODY" in active.read_text(encoding="utf-8")
+        assert "APPEND BODY" in active.read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    def test_remove_base_does_not_compose_command_mode_layer_into_shared_skills_dir(
+        self, project_dir, temp_dir, core
+    ):
+        """Amp is command-backed (``.agents/commands``), yet its skills
+        directory resolves to ``.agents/skills``, which is Codex's native
+        one. ``low`` is installed while Amp is active in command mode, so it
+        only ever wrote an Amp command file. Its ``registered_commands``
+        entry must not make it count as registered in Codex's skills."""
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(skills_dir, "speckit-custom")
+        if core:
+            self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        codex_skill = skills_dir / "speckit-custom" / "SKILL.md"
+        codex_alias = skills_dir / "speckit-custom-short" / "SKILL.md"
+        assert "Base preset body" in codex_skill.read_text(encoding="utf-8")
+        assert "Base preset body" in codex_alias.read_text(encoding="utf-8")
+        (project_dir / ".agents" / "commands").mkdir()
+        self._write_init_options(project_dir, ai="amp", ai_skills=False)
+        install("low-preset", "Low body", "replace", 12, alias=False)
+        low = manager.registry.get("low-preset")
+        assert low["registered_commands"] == {"amp": ["speckit.custom"]}
+        assert not low.get("registered_skills")
+        # Amp is historical too once another agent becomes active.
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        manager.register_enabled_presets_for_agent("claude")
+
+        assert manager.remove("base-preset") is True
+
+        for output in (codex_skill, codex_alias):
+            if not core:
+                assert not output.exists()
+                continue
+            content = output.read_text(encoding="utf-8")
+            assert "Low body" not in content and "Base preset body" not in content
+            assert "Core custom body" in content and "Middle body" in content
+
+    @pytest.mark.parametrize(
+        "strategy,body",
+        [("append", "Appended body"), ("wrap", "Pre\n\n{CORE_TEMPLATE}\n\nPost")],
+    )
+    def test_frontmatter_strategy_alias_never_carries_a_preset_base(
+        self, project_dir, temp_dir, strategy, body
+    ):
+        """A composer may declare its strategy only in the command file's
+        frontmatter. Command registration composes an alias onto preset
+        layers only for a manifest strategy, so this alias is the preset's
+        own file (wrap: around the core template) and holds nothing of the
+        base preset. Removing the base therefore leaves it exactly as a
+        rescaffold renders it, while the primary skill is recomposed."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        self._install_alias_layer(
+            manager, temp_dir, "base-preset", "Base preset body", "replace", 10,
+            alias=False,
+        )
+        preset_dir = self._create_command_preset(
+            temp_dir, "fm-preset", "speckit.custom", "fm-preset", "unused"
+        )
+        (preset_dir / "commands" / "speckit.custom.md").write_text(
+            f"---\ndescription: fm-preset\nstrategy: {strategy}\n---\n\n{body}\n",
+            encoding="utf-8",
+        )
+        manifest_path = preset_dir / "preset.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        assert "strategy" not in manifest["provides"]["templates"][0]
+        manifest["provides"]["templates"][0]["aliases"] = [self._ALIAS]
+        manifest_path.write_text(yaml.dump(manifest))
+        manager.install_from_directory(preset_dir, "0.1.5", priority=5)
+        skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        alias_file = self._alias_skill(project_dir)
+        assert "Base preset body" in skill.read_text(encoding="utf-8")
+        installed = alias_file.read_text(encoding="utf-8")
+        assert "Base preset body" not in installed
+        assert "source: fm-preset:commands/speckit.custom.md" in installed
+
+        assert manager.remove("base-preset") is True
+
+        recomposed = skill.read_text(encoding="utf-8")
+        assert "Base preset body" not in recomposed
+        assert "Core custom body" in recomposed
+        assert alias_file.read_text(encoding="utf-8") == installed
+        manager.register_enabled_presets_for_agent("claude")
+        assert alias_file.read_text(encoding="utf-8") == installed
+        assert skill.read_text(encoding="utf-8") == recomposed
+
+    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    @pytest.mark.parametrize("historical", [False, True], ids=["active", "historical"])
+    def test_remove_base_renders_project_override_over_survivor_skill(
+        self, project_dir, temp_dir, core, historical
+    ):
+        """A project override added after the presets were installed wins the
+        command, but the composer's skill still shows the old composition
+        until something re-renders it. Removing the base must not recompose
+        (or retire) that skill from the composer's layer down as if the
+        override were not there: it renders the override, as a rescaffold
+        does."""
+        manager = self._install_custom_layers(project_dir, temp_dir, core=core)
+        skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        assert "source: preset:append-preset" in skill.read_text(encoding="utf-8")
+        overrides = project_dir / ".specify" / "templates" / "overrides"
+        overrides.mkdir(parents=True)
+        (overrides / "speckit.custom.md").write_text(
+            "---\ndescription: Override\n---\n\nOverride body\n", encoding="utf-8"
+        )
+        if historical:
+            self._write_init_options(project_dir, ai="codex", ai_skills=True)
+            manager.register_enabled_presets_for_agent("codex")
+            assert "Base preset body" in skill.read_text(encoding="utf-8")
+
+        assert manager.remove("base-preset") is True
+
+        removed = skill.read_text(encoding="utf-8")
+        assert "Override body" in removed and "source: override:speckit.custom" in removed
+        assert "Base preset body" not in removed and "Appended body" not in removed
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        manager.register_enabled_presets_for_agent("claude")
+        assert skill.read_text(encoding="utf-8") == removed
+
+    def test_alias_refresh_leaves_alias_registered_for_another_command(
+        self, project_dir, temp_dir
+    ):
+        """Two commands of one preset declare the same alias, so the single
+        alias file belongs to whichever was registered last (``speckit.b``).
+        Reconciling ``speckit.a`` must not write its composition over it."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        manager = PresetManager(project_dir)
+        for name in ("a", "b"):
+            self._create_skill(skills_dir, f"speckit-{name}")
+            (core_cmds / f"{name}.md").write_text(
+                f"---\ndescription: Core {name}\n---\n\nCore {name} body\n",
+                encoding="utf-8",
+            )
+            base = self._create_command_preset(
+                temp_dir, f"base-{name}", f"speckit.{name}", f"base-{name}",
+                f"Base {name} body",
+            )
+            manager.install_from_directory(base, "0.1.5", priority=10)
+        preset_dir = self._create_multi_command_preset(
+            temp_dir, "multi", ["speckit.a", "speckit.b"]
+        )
+        manifest_path = preset_dir / "preset.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        for tmpl in manifest["provides"]["templates"]:
+            tmpl["strategy"] = "append"
+            tmpl["aliases"] = ["speckit.shared"]
+            (preset_dir / tmpl["file"]).write_text(
+                f"---\ndescription: multi\n---\n\nAppended {tmpl['name']}\n",
+                encoding="utf-8",
+            )
+        manifest_path.write_text(yaml.dump(manifest))
+        manager.install_from_directory(preset_dir, "0.1.5", priority=5)
+        alias_file = skills_dir / "speckit-shared" / "SKILL.md"
+        installed = alias_file.read_text(encoding="utf-8")
+        assert "source: multi:.composed/speckit.b.md" in installed
+        assert "Base b body" in installed and "Appended speckit.b" in installed
+
+        assert manager.remove("base-a") is True
+
+        assert alias_file.read_text(encoding="utf-8") == installed
+        primary = (skills_dir / "speckit-a" / "SKILL.md").read_text(encoding="utf-8")
+        assert "Core a body" in primary and "Base a body" not in primary
+        manager.register_enabled_presets_for_agent("claude")
+        assert alias_file.read_text(encoding="utf-8") == installed
+
+    @pytest.mark.parametrize("core", [True, False], ids=["core", "no-core"])
+    @pytest.mark.parametrize(
+        "order",
+        [("speckit.a", "speckit.b"), ("speckit.b", "speckit.a")],
+        ids=["replace-last", "append-last"],
+    )
+    def test_alias_of_two_commands_sharing_one_source_file(
+        self, project_dir, temp_dir, order, core
+    ):
+        """``speckit.a`` (append) and ``speckit.b`` (replace) of one preset
+        declare the same alias and render it from the same file, so the raw
+        ``<id>:<file>`` marker does not say which command the alias was
+        registered for. Registration writes in manifest order: the alias
+        is ``speckit.b``'s when that comes last, and ``speckit.b`` renders
+        it without a base either way. Reconciling ``speckit.a`` must not
+        write its composition over the former or delete the latter."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        manager = PresetManager(project_dir)
+        for name in ("a", "b"):
+            self._create_skill(skills_dir, f"speckit-{name}")
+        if core:
+            core_cmds = project_dir / ".specify" / "templates" / "commands"
+            core_cmds.mkdir(parents=True, exist_ok=True)
+            (core_cmds / "a.md").write_text(
+                "---\ndescription: Core a\n---\n\nCore a body\n", encoding="utf-8"
+            )
+        base = self._create_command_preset(
+            temp_dir, "base-a", "speckit.a", "base-a", "Base a body"
+        )
+        manager.install_from_directory(base, "0.1.5", priority=10)
+        preset_dir = self._create_multi_command_preset(temp_dir, "multi", list(order))
+        (preset_dir / "commands" / "shared.md").write_text(
+            "---\ndescription: multi\n---\n\nShared fragment\n", encoding="utf-8"
+        )
+        manifest_path = preset_dir / "preset.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        for tmpl in manifest["provides"]["templates"]:
+            tmpl["strategy"] = "append" if tmpl["name"] == "speckit.a" else "replace"
+            tmpl["aliases"] = ["speckit.shared"]
+            tmpl["file"] = "commands/shared.md"
+        manifest_path.write_text(yaml.dump(manifest))
+        manager.install_from_directory(preset_dir, "0.1.5", priority=5)
+        alias_file = skills_dir / "speckit-shared" / "SKILL.md"
+        raw_marker = "source: multi:commands/shared.md"
+        installed = alias_file.read_text(encoding="utf-8")
+
+        def remove_base_and_rescaffold():
+            with warnings.catch_warnings():
+                if not core:
+                    warnings.simplefilter("ignore", UserWarning)
+                assert manager.remove("base-a") is True
+                removed = (
+                    alias_file.read_text(encoding="utf-8")
+                    if alias_file.exists()
+                    else None
+                )
+                manager.register_enabled_presets_for_agent("claude")
+            return removed, alias_file.read_text(encoding="utf-8")
+
+        if order[-1] == "speckit.b":
+            # The alias is speckit.b's and stays exactly as registered.
+            assert raw_marker in installed and "Base a body" not in installed
+            removed, rescaffolded = remove_base_and_rescaffold()
+            assert removed == installed
+            assert rescaffolded == installed
+        else:
+            assert "source: multi:.composed/speckit.a.md" in installed
+            assert "Base a body" in installed
+            removed, rescaffolded = remove_base_and_rescaffold()
+            if core:
+                assert "Core a body" in removed and "Shared fragment" in removed
+                assert "Base a body" not in removed
+                assert rescaffolded == removed
+            else:
+                # speckit.a's composition is retired with its base. The
+                # rescaffold registers the alias for speckit.b from the raw
+                # file, and reconciling speckit.a leaves that in place.
+                assert removed is None
+                assert raw_marker in rescaffolded
+                assert "Shared fragment" in rescaffolded
+                assert "Base a body" not in rescaffolded
+
+    def test_rescaffold_keeps_other_presets_alias_named_like_baseless_command(
+        self, project_dir, temp_dir
+    ):
+        """``speckit.custom`` lost its base, so its skill is retired while its
+        composer stays installed. Another preset then registers an alias of
+        that name for its own command. A rescaffold still finds the command
+        uncomposable, but the file under its skill name is the other
+        preset's alias, not a stale output of the command."""
+        manager = self._install_custom_layers(project_dir, temp_dir)
+        skills_dir = project_dir / ".claude" / "skills"
+        target = skills_dir / "speckit-custom" / "SKILL.md"
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+        assert not target.exists()
+        self._create_skill(skills_dir, "speckit-other")
+        other = self._create_command_preset(
+            temp_dir, "other-preset", "speckit.other", "other", "Other body"
+        )
+        manifest_path = other / "preset.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        manifest["provides"]["templates"][0]["aliases"] = ["speckit.custom"]
+        manifest_path.write_text(yaml.dump(manifest))
+        manager.install_from_directory(other, "0.1.5", priority=20)
+        installed = target.read_text(encoding="utf-8")
+        assert "source: other-preset:commands/speckit.other.md" in installed
+        assert "Other body" in installed
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            manager.register_enabled_presets_for_agent("claude")
+
+        assert target.read_text(encoding="utf-8") == installed
+
+    @pytest.mark.parametrize(
+        "active,expected,unexpected",
+        [
+            ("codex", "$speckit-plan", "/speckit-plan"),
+            ("agy", "/speckit-plan", "$speckit-plan"),
+            ("claude", "/speckit-plan", "$speckit-plan"),
+        ],
+        ids=["codex-active", "agy-active", "shared-dir-historical"],
+    )
+    @pytest.mark.parametrize("middle", [False, True], ids=["winner", "owner-refresh"])
+    def test_shared_dir_survivor_skill_rendered_once_per_directory(
+        self, project_dir, temp_dir, active, expected, unexpected, middle
+    ):
+        """Codex and agy share ``.agents/skills``, and the surviving composer
+        records both. Its primary skill is one file, so it is refreshed once:
+        with the active agent's renderer when that agent uses the directory,
+        otherwise with the first recorded agent in sorted order (agy), the
+        same choice the alias pass and preset removal make. ``middle`` adds a
+        higher preset registered only for another directory, which sends the
+        refresh through the owner route instead of the winner route."""
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        shared = project_dir / ".agents" / "skills"
+        self._create_skill(shared, "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("append-preset", "Run `__SPECKIT_COMMAND_PLAN__`.", "append", 5)
+        self._write_init_options(project_dir, ai="agy", ai_skills=True)
+        manager.register_enabled_presets_for_agent("agy")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        recorded = manager.registry.get("append-preset").get("registered_skills", {})
+        assert {"codex", "agy"} <= set(recorded)
+        if middle or active == "claude":
+            self._write_init_options(project_dir, ai="claude", ai_skills=True)
+            self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+            if middle:
+                install("top-preset", "Top body", "append", 3, alias=False)
+        self._write_init_options(project_dir, ai=active, ai_skills=True)
+
+        assert manager.remove("base-preset") is True
+
+        for name in ("speckit-custom", "speckit-custom-short"):
+            text = (shared / name / "SKILL.md").read_text(encoding="utf-8")
+            assert "Core custom body" in text and "Base preset body" not in text
+            assert "Top body" not in text
+            assert expected in text and unexpected not in text
+
+    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    def test_remove_base_requires_this_commands_registration_in_historical_dir(
+        self, project_dir, temp_dir, core
+    ):
+        """``low`` provides ``speckit.custom`` and ``speckit.other`` and is
+        installed while Codex is active. A partial registration then records
+        only its unrelated ``speckit.other`` skill for Claude. That record
+        must not admit its ``speckit.custom`` layer into Claude's skill and
+        alias when the base under Claude's composer is removed."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        if core:
+            self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        claude_skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        claude_alias = self._alias_skill(project_dir)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        low = self._create_multi_command_preset(
+            temp_dir, "low-preset", ["speckit.custom", "speckit.other"]
+        )
+        (low / "commands" / "speckit.custom.md").write_text(
+            "---\ndescription: low\n---\n\nLow body\n", encoding="utf-8"
+        )
+        manager.install_from_directory(low, "0.1.5", priority=12)
+        meta = manager.registry.get("low-preset")
+        assert "claude" not in meta["registered_skills"]
+        assert "claude" not in meta["registered_commands"]
+        manager.registry.update(
+            "low-preset",
+            {
+                "registered_skills": {
+                    **meta["registered_skills"], "claude": ["speckit-other"],
+                },
+                "registered_commands": {
+                    **meta["registered_commands"], "claude": ["speckit.other"],
+                },
+            },
+        )
+
+        assert manager.remove("base-preset") is True
+
+        for output in (claude_skill, claude_alias):
+            if not core:
+                assert not output.exists()
+                continue
+            content = output.read_text(encoding="utf-8")
+            assert "Low body" not in content and "Base preset body" not in content
+            assert "Core custom body" in content and "Middle body" in content
+
+    def test_shared_dir_outputs_use_active_renderer_when_only_another_agent_recorded(
+        self, project_dir, temp_dir
+    ):
+        """The presets were registered while agy was active. Codex uses the
+        same ``.agents/skills`` and is active now, without having been
+        recorded. The primary skill and its alias are refreshed in Codex's
+        directory, so both use Codex's command-reference syntax."""
+        self._write_init_options(project_dir, ai="agy", ai_skills=True)
+        shared = project_dir / ".agents" / "skills"
+        self._create_skill(shared, "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("append-preset", "Run `__SPECKIT_COMMAND_PLAN__`.", "append", 5)
+        meta = manager.registry.get("append-preset")
+        assert set(meta["registered_skills"]) == {"agy"}
+        assert set(meta["registered_commands"]) == {"agy"}
+        for name in ("speckit-custom", "speckit-custom-short"):
+            assert "/speckit-plan" in (shared / name / "SKILL.md").read_text(
+                encoding="utf-8"
+            )
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+
+        assert manager.remove("base-preset") is True
+
+        for name in ("speckit-custom", "speckit-custom-short"):
+            text = (shared / name / "SKILL.md").read_text(encoding="utf-8")
+            assert "Core custom body" in text and "Base preset body" not in text
+            assert "$speckit-plan" in text and "/speckit-plan" not in text
+
+    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    @pytest.mark.parametrize("historical", [False, True], ids=["active", "historical"])
+    def test_remove_base_refreshes_survivor_skill_left_by_command_registration(
+        self, project_dir, temp_dir, monkeypatch, core, historical
+    ):
+        """The composer's skills phase fails while Codex is activated, so its
+        primary skill there is the composed command registration
+        (``<id>:.composed/<command>.md``) and only ``registered_commands``
+        records it. Removing the base must still recompose or retire that
+        skill, as it does the alias, instead of leaving the removed preset's
+        text in it."""
+        manager = self._install_custom_layers(
+            project_dir, temp_dir, core=core, alias=self._ALIAS
+        )
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        shared = project_dir / ".agents" / "skills"
+        shared.mkdir(parents=True)
+        original = manager._register_skills
+
+        def fail_composer(manifest, *args, **kwargs):
+            if manifest.id == "append-preset":
+                raise RuntimeError("simulated composer skills phase failure")
+            return original(manifest, *args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(manager, "_register_skills", fail_composer)
+            with pytest.warns(UserWarning, match="simulated composer skills phase"):
+                manager.register_enabled_presets_for_agent("codex")
+        skill = shared / "speckit-custom" / "SKILL.md"
+        alias = shared / "speckit-custom-short" / "SKILL.md"
+        for output in (skill, alias):
+            content = output.read_text(encoding="utf-8")
+            assert "source: append-preset:.composed/speckit.custom.md" in content
+            assert "Base preset body" in content
+        composer = manager.registry.get("append-preset")
+        assert "speckit.custom" in composer["registered_commands"]["codex"]
+        assert not composer["registered_skills"].get("codex")
+        if historical:
+            self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        if core:
+            assert manager.remove("base-preset") is True
+        else:
+            with pytest.warns(UserWarning, match="no base layer"):
+                assert manager.remove("base-preset") is True
+
+        for output in (skill, alias):
+            if not core:
+                assert not output.exists()
+                continue
+            content = output.read_text(encoding="utf-8")
+            assert "Base preset body" not in content
+            assert "Core custom body" in content and "Appended body" in content
+        if core:
+            removed = skill.read_text(encoding="utf-8")
+            assert "source: preset:append-preset" in removed
+            self._write_init_options(project_dir, ai="codex", ai_skills=True)
+            manager.register_enabled_presets_for_agent("codex")
+            assert skill.read_text(encoding="utf-8") == removed
+
+    @pytest.mark.parametrize(
+        "broken", ["claude-skill", "codex-skill", "claude-alias", "codex-alias"]
+    )
+    def test_failed_write_in_one_destination_does_not_skip_the_others(
+        self, project_dir, temp_dir, monkeypatch, broken
+    ):
+        """One output that cannot be written on removal is reported, but the
+        other directories and the alias pass still run, so the removed
+        preset's text is left in that one file only."""
+        import specify_cli.shared_infra as shared_infra
+        from specify_cli.agents import CommandRegistrar
+
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        manager.register_enabled_presets_for_agent("codex")
+        # Only Codex gets the top preset, so Claude's directory is refreshed
+        # from its own owner while Codex's takes the winner.
+        install("top-preset", "Top body", "append", 5)
+        outputs = {
+            f"{agent}-{kind}": project_dir / root / "skills" / name / "SKILL.md"
+            for agent, root in (("claude", ".claude"), ("codex", ".agents"))
+            for kind, name in (
+                ("skill", "speckit-custom"),
+                ("alias", "speckit-custom-short"),
+            )
+        }
+        for output in outputs.values():
+            assert "Base preset body" in output.read_text(encoding="utf-8")
+        target = outputs[broken]
+        write_skill = shared_infra._write_shared_text
+        write_alias = CommandRegistrar._write_registered_output
+
+        def failing_skill(project_path, dest, content, **kwargs):
+            if dest == target:
+                raise OSError("simulated write failure")
+            return write_skill(project_path, dest, content, **kwargs)
+
+        def failing_alias(dest_file, *args, **kwargs):
+            if dest_file == target:
+                raise OSError("simulated write failure")
+            return write_alias(dest_file, *args, **kwargs)
+
+        monkeypatch.setattr(shared_infra, "_write_shared_text", failing_skill)
+        monkeypatch.setattr(
+            CommandRegistrar, "_write_registered_output", staticmethod(failing_alias)
+        )
+
+        with pytest.warns(UserWarning, match="simulated write failure"):
+            assert manager.remove("base-preset") is True
+
+        for key, output in outputs.items():
+            content = output.read_text(encoding="utf-8")
+            if key == broken:
+                assert "Base preset body" in content
+                continue
+            assert "Base preset body" not in content, key
+            assert "Core custom body" in content, key
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_skill_rewritten_for_next_winner_honors_umask(
+        self, project_dir, temp_dir
+    ):
+        """Removing the winner deletes its skill; the next winner's skill is a
+        new file there and must get its mode from the process umask, like the
+        one it replaces, not a fixed 0644."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        manager = PresetManager(project_dir)
+        install = functools.partial(
+            self._install_alias_layer, manager, temp_dir, alias=False
+        )
+        skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        old_umask = os.umask(0o077)
+        try:
+            install("low-preset", "Low body", "replace", 10)
+            install("top-preset", "Top body", "replace", 5)
+            assert stat.S_IMODE(skill.stat().st_mode) == 0o600
+            assert manager.remove("top-preset") is True
+        finally:
+            os.umask(old_umask)
+
+        assert "Low body" in skill.read_text(encoding="utf-8")
+        assert stat.S_IMODE(skill.stat().st_mode) == 0o600
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    @pytest.mark.parametrize("historical", [False, True], ids=["active", "historical"])
+    def test_private_skill_stays_private_when_next_winner_takes_over(
+        self, project_dir, temp_dir, historical
+    ):
+        """A preset-only skill made private (0600) is deleted with its preset
+        and rewritten for the next winner. The new file takes the old one's
+        bits instead of the umask default; a skill created later does not."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        manager = PresetManager(project_dir)
+        install = functools.partial(
+            self._install_alias_layer, manager, temp_dir, alias=False
+        )
+        skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        old_umask = os.umask(0o022)
+        try:
+            install("low-preset", "Low body", "replace", 10)
+            install("top-preset", "Top body", "replace", 5)
+            assert stat.S_IMODE(skill.stat().st_mode) == 0o644
+            skill.chmod(0o600)
+            if historical:
+                self._write_init_options(project_dir, ai="codex", ai_skills=True)
+
+            assert manager.remove("top-preset") is True
+
+            assert "Low body" in skill.read_text(encoding="utf-8")
+            assert stat.S_IMODE(skill.stat().st_mode) == 0o600
+
+            self._write_init_options(project_dir, ai="claude", ai_skills=True)
+            assert manager.remove("low-preset") is True
+            assert not skill.exists()
+            shutil.rmtree(temp_dir / "low-preset")
+            install("low-preset", "Low body", "replace", 10)
+            assert stat.S_IMODE(skill.stat().st_mode) == 0o644
+        finally:
+            os.umask(old_umask)
+
+    def test_alias_refresh_rewrites_the_same_file(self, project_dir, temp_dir):
+        """The alias is refreshed in place, as command registration always
+        wrote it: the same inode keeps its owner, ACL and mode."""
+        manager = self._install_custom_layers(
+            project_dir, temp_dir, core=True, alias=self._ALIAS
+        )
+        alias_file = self._alias_skill(project_dir)
+        before = alias_file.stat()
+
+        assert manager.remove("base-preset") is True
+
+        assert "Core custom body" in alias_file.read_text(encoding="utf-8")
+        after = alias_file.stat()
+        assert (after.st_ino, after.st_dev) == (before.st_ino, before.st_dev)
+        assert sorted(p.name for p in alias_file.parent.iterdir()) == ["SKILL.md"]
+
+    def test_alias_refresh_does_not_write_through_hardlinked_skill(
+        self, project_dir, temp_dir
+    ):
+        """An alias ``SKILL.md`` hard-linked to a file outside the project
+        carries the preset's own source marker, so the marker check passes.
+        Like other generated artifacts with extra links, it is not ours to
+        rewrite: the refresh on removal leaves it, and the file it is linked
+        to, untouched."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10)
+        install("append-preset", "Appended body", "append", 5)
+        alias_file = self._alias_skill(project_dir)
+        before = alias_file.read_text(encoding="utf-8")
+        assert "Base preset body" in before
+
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        target = outside / "SKILL.md"
+        try:
+            os.link(alias_file, target)
+        except OSError as exc:  # pragma: no cover - filesystem without hard links
+            pytest.skip(f"hard links unsupported: {exc}")
+
+        # It still holds the removed base's text, so the skip is reported.
+        with pytest.warns(UserWarning, match="has other hard links"):
+            assert manager.remove("base-preset") is True
+
+        assert target.read_text(encoding="utf-8") == before
+        assert alias_file.read_text(encoding="utf-8") == before
+        assert os.path.samefile(alias_file, target)
+
+    def test_alias_left_stale_by_failed_cache_write_is_reported(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """An alias is rendered from its preset's ``.composed`` cache. When
+        that cache cannot be written on removal, the alias keeps the removed
+        base's text; the removal must say so instead of passing silently."""
+        manager = self._install_custom_layers(
+            project_dir, temp_dir, core=True, alias=self._ALIAS
+        )
+        alias_file = self._alias_skill(project_dir)
+        skill_file = alias_file.parent.parent / "speckit-custom" / "SKILL.md"
+
+        def failing_cache(composed_file, composed):
+            raise OSError("simulated cache failure")
+
+        monkeypatch.setattr(manager, "_write_alias_composed_cache", failing_cache)
+
+        with pytest.warns(UserWarning, match="simulated cache failure"):
+            assert manager.remove("base-preset") is True
+
+        assert "Base preset body" in alias_file.read_text(encoding="utf-8")
+        skill = skill_file.read_text(encoding="utf-8")
+        assert "Base preset body" not in skill and "Core custom body" in skill
+
+    def test_remove_base_keeps_survivor_alias_both_layers_declare(
+        self, project_dir, temp_dir
+    ):
+        """When the removed base and the surviving composer declare the same
+        alias, the file on disk is the composer's; removing the base must not
+        delete it while the core fallback keeps the command composable."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10)
+        install("append-preset", "Appended body", "append", 5)
+        alias_file = self._alias_skill(project_dir)
+        assert "source: append-preset:" in alias_file.read_text(encoding="utf-8")
+
+        assert manager.remove("base-preset") is True
+
+        content = alias_file.read_text(encoding="utf-8")
+        assert "Base preset body" not in content
+        assert "Core custom body" in content and "Appended body" in content
+        assert "source: append-preset:" in content
+        manager.register_enabled_presets_for_agent("claude")
+        assert alias_file.read_text(encoding="utf-8") == content
+
+    @pytest.mark.parametrize("survivor_file", ["current", "dotted"])
+    def test_remove_base_decides_alias_ownership_per_file(
+        self, project_dir, temp_dir, survivor_file
+    ):
+        """Command cleanup removes an alias under its current name and under
+        the dotted name older releases wrote. When the surviving composer
+        owns only one of the two files, that one stays and the removed
+        preset's file goes."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10)
+        install("append-preset", "Appended body", "append", 5)
+        current = self._alias_skill(project_dir)
+        dotted = current.parent.parent / self._ALIAS / "SKILL.md"
+        survivor_text = current.read_text(encoding="utf-8")
+        assert "source: append-preset:" in survivor_text
+        retiring_text = (
+            "---\nname: speckit-custom-short\nmetadata:\n"
+            "  source: base-preset:commands/speckit.custom.md\n---\n\n"
+            "Base preset body\n"
+        )
+        dotted.parent.mkdir()
+        if survivor_file == "current":
+            dotted.write_text(retiring_text, encoding="utf-8")
+            kept, removed = current, dotted
+        else:
+            dotted.write_text(survivor_text, encoding="utf-8")
+            current.write_text(retiring_text, encoding="utf-8")
+            kept, removed = dotted, current
+
+        assert manager.remove("base-preset") is True
+
+        assert not removed.parent.exists()
+        content = kept.read_text(encoding="utf-8")
+        assert "source: append-preset:" in content
+        if survivor_file == "current":
+            assert "Base preset body" not in content
+            assert "Core custom body" in content and "Appended body" in content
+        else:
+            assert content == survivor_text
+
+    @pytest.mark.parametrize("historical", [False, True], ids=["active", "historical"])
+    def test_remove_base_keeps_native_survivor_after_partial_skill_registration(
+        self, project_dir, temp_dir, monkeypatch, historical
+    ):
+        """A failed base skill phase must not let command cleanup delete
+        the surviving composer's successfully registered native skill."""
+        manager = self._install_custom_layers(project_dir, temp_dir, core=True)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        original = manager._register_skills
+
+        def fail_base(manifest, *args, **kwargs):
+            if manifest.id == "base-preset":
+                raise RuntimeError("simulated base skills phase failure")
+            return original(manifest, *args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(manager, "_register_skills", fail_base)
+            manager.register_enabled_presets_for_agent("codex")
+
+        skill = project_dir / ".agents" / "skills" / "speckit-custom" / "SKILL.md"
+        assert "preset:append-preset" in skill.read_text(encoding="utf-8")
+        base = manager.registry.get("base-preset")
+        assert "speckit.custom" in base["registered_commands"]["codex"]
+        assert not base["registered_skills"].get("codex")
+        if historical:
+            self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        assert manager.remove("base-preset") is True
+
+        content = skill.read_text(encoding="utf-8")
+        assert "Core custom body" in content and "Appended body" in content
+        assert "Base preset body" not in content
+
+    @pytest.mark.parametrize("survivor_id", ["unrelated", "preset"])
+    def test_remove_native_skill_with_survivor_named_preset(
+        self, project_dir, temp_dir, monkeypatch, survivor_id
+    ):
+        """A preset named ``preset`` must not own every ``preset:<id>``
+        marker when command cleanup handles a partial skills record."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        manager = PresetManager(project_dir)
+        for preset_id, command in [
+            ("base-preset", "speckit.custom"),
+            (survivor_id, "speckit.other"),
+        ]:
+            preset = self._create_command_preset(temp_dir, preset_id, command, preset_id, preset_id)
+            manager.install_from_directory(preset, "0.1.5")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        original = manager._merge_pack_registered_skills
+
+        def fail_base_record(pack_id, written):
+            if pack_id == "base-preset" and written and "codex" in written:
+                raise OSError("simulated skill registry write failure")
+            return original(pack_id, written)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(manager, "_merge_pack_registered_skills", fail_base_record)
+            with pytest.warns(UserWarning, match="simulated skill registry write failure"):
+                manager.register_enabled_presets_for_agent("codex")
+
+        skill = project_dir / ".agents" / "skills" / "speckit-custom" / "SKILL.md"
+        assert "preset:base-preset" in skill.read_text(encoding="utf-8")
+        base = manager.registry.get("base-preset")
+        assert "speckit.custom" in base["registered_commands"]["codex"]
+        assert not base["registered_skills"].get("codex")
+
+        assert manager.remove("base-preset") is True
+
+        assert not skill.exists()
+        assert manager.registry.is_installed(survivor_id)
+
+    def test_baseless_lower_composer_alias_stays_retired_after_rescaffold(
+        self, project_dir, temp_dir
+    ):
+        """With two composers and no base left, a rescaffold re-registers the
+        lower composer's alias from its raw fragment; reconciliation must
+        retire it again rather than skip it because another layer wins."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("middle-preset", "Middle body", "append", 7)
+        install("top-preset", "Top body", "append", 5, alias=False)
+        alias_file = self._alias_skill(project_dir)
+        assert alias_file.is_file()
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+            manager.register_enabled_presets_for_agent("claude")
+
+        assert not alias_file.parent.exists()
+
+    def test_remove_base_keeps_lower_survivor_skill_when_core_base_is_unreadable(
+        self, project_dir, temp_dir
+    ):
+        """The core base under ``middle`` exists but is not UTF-8, so its
+        composition fails. That is not "no base left": Claude's skill, owned by
+        ``middle``, must be kept rather than deleted."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "custom.md").write_bytes(b"---\ndescription: x\n---\n\n\xff\xfe\n")
+        manager = PresetManager(project_dir)
+
+        def install(preset_id, body, strategy, priority):
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            manifest_path = preset_dir / "preset.yml"
+            manifest = yaml.safe_load(manifest_path.read_text())
+            manifest["provides"]["templates"][0]["strategy"] = strategy
+            manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+
+        install("base-preset", "Base preset body", "replace", 10)
+        install("middle-preset", "Middle body", "append", 7)
+        before = claude_skill.read_text(encoding="utf-8")
+        assert "preset:middle-preset" in before
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", "append", 5)
+
+        assert manager.remove("base-preset") is True
+
+        assert claude_skill.read_text(encoding="utf-8") == before
+
+    def test_remove_base_reconciles_survivor_with_legacy_flat_skill_record(
+        self, project_dir, temp_dir
+    ):
+        """A surviving composer whose ``registered_skills`` is still a legacy
+        flat list gets its inactive agent's skill refreshed too."""
+        manager = self._install_custom_layers(project_dir, temp_dir, core=True)
+        claude_skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        manager.registry.update("append-preset", {"registered_skills": ["speckit-custom"]})
+
+        assert manager.remove("base-preset") is True
+
+        content = claude_skill.read_text(encoding="utf-8")
+        assert "Base preset body" not in content
+        assert "Core custom body" in content and "Appended body" in content
+
+    def test_reenabled_sole_composer_does_not_render_removed_base(
+        self, project_dir, temp_dir
+    ):
+        """The only composer is disabled while its base is removed; re-enabling
+        and rescaffolding neither renders its stale cache nor keeps its old
+        skill, since nothing is left to compose onto."""
+        manager = self._install_custom_layers(project_dir, temp_dir)
+        skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        manager.registry.update("append-preset", {"enabled": False})
+        manager.remove("base-preset")
+        manager.registry.update("append-preset", {"enabled": True})
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            manager.register_enabled_presets_for_agent("claude")
+
+        assert not skill.exists()
+
+    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    def test_remove_base_reconciles_historical_agent_skill(
+        self, project_dir, temp_dir, core
+    ):
+        """A composer's skill in a historical (inactive) agent directory is
+        recomposed onto the fallback, or retired when there is none."""
+        manager = self._install_custom_layers(project_dir, temp_dir, core=core)
+        claude_skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+
+        if core:
+            assert manager.remove("base-preset") is True
+            content = claude_skill.read_text(encoding="utf-8")
+            assert "Base preset body" not in content
+            assert "Core custom body" in content and "Appended body" in content
+        else:
+            with pytest.warns(UserWarning, match="no base layer"):
+                assert manager.remove("base-preset") is True
+            assert not claude_skill.exists()
+
+    def test_remove_sole_base_with_disabled_composer_survives_rescaffold(
+        self, project_dir, temp_dir
+    ):
+        """A composer disabled during the removal can't bring the removed base
+        back through its stale cache once it is re-enabled and rescaffolded."""
+        manager, skill_file = self._install_unbacked_custom_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("middle-preset", "Middle body", "append", 7),
+                ("top-preset", "Top body", "append", 5),
+            ],
+        )
+        manager.registry.update("middle-preset", {"enabled": False})
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+            manager.registry.update("middle-preset", {"enabled": True})
+            manager.register_enabled_presets_for_agent("claude")
+
+        assert not skill_file.exists()
+
+    def test_unreadable_surviving_base_keeps_composed_output(
+        self, project_dir, temp_dir
+    ):
+        """Resolution also fails when a surviving base can't be decoded; that
+        must not be treated as a missing base that retires the output."""
+        manager, skill_file = self._install_unbacked_custom_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("other-base", "Other base body", "replace", 8),
+                ("append-preset", "Appended body", "append", 5),
+            ],
+        )
+        cache = manager.presets_dir / "append-preset" / ".composed" / "speckit.custom.md"
+        skill_before = skill_file.read_text(encoding="utf-8")
+        assert cache.is_file() and "Other base body" in skill_before
+        manifest = yaml.safe_load(
+            (manager.presets_dir / "other-base" / "preset.yml").read_text()
+        )
+        command_file = manager.presets_dir / "other-base" / manifest["provides"]["templates"][0]["file"]
+        command_file.write_bytes(b"---\ndescription: x\n---\n\xff\xfe broken\n")
+
+        manager.remove("base-preset")
+
+        assert cache.is_file()
+        assert skill_file.read_text(encoding="utf-8") == skill_before
+
+    def test_remove_base_preset_recomposes_surviving_composed_skill(
+        self, project_dir, temp_dir
+    ):
+        """Removing a composition's base layer must recompose the surviving skill.
+
+        The appending preset owns the composed SKILL.md, so removing the
+        replace preset beneath it restored nothing in the active skills
+        directory and reconciliation skipped it: the skill kept the removed
+        preset's body while command-file agents were recomposed onto core.
+        """
+        manager, skill_file = self._install_composed_specify_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("append-preset", "Appended body", "append", 5),
+            ],
+        )
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Base preset body" in content and "Appended body" in content
+
+        assert manager.remove("base-preset") is True
+
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Base preset body" not in content
+        assert "Core specify body" in content
+        assert "Appended body" in content
+        assert "preset:append-preset" in content
+
+    def test_remove_middle_preset_drops_its_layer_from_composed_skill(
+        self, project_dir, temp_dir
+    ):
+        """Removing a middle composing layer must drop its fragment from the skill."""
+        manager, skill_file = self._install_composed_specify_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("middle-preset", "Middle body", "append", 7),
+                ("top-preset", "Top body", "append", 5),
+            ],
+        )
+        assert "Middle body" in skill_file.read_text(encoding="utf-8")
+
+        assert manager.remove("middle-preset") is True
+
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Middle body" not in content
+        assert "Base preset body" in content
+        assert "Top body" in content
+
+    def test_remove_base_preset_preserves_hand_edited_composed_skill(
+        self, project_dir, temp_dir
+    ):
+        """Recomposition after removal must not overwrite a hand-edited skill."""
+        manager, skill_file = self._install_composed_specify_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("append-preset", "Appended body", "append", 5),
+            ],
+        )
+        edited = "---\nname: speckit-specify\n---\n\nUser-owned body\n"
+        skill_file.write_text(edited, encoding="utf-8")
+
+        assert manager.remove("base-preset") is True
+
+        assert skill_file.read_text(encoding="utf-8") == edited
+
+    def test_remove_base_preset_preserves_user_owned_legacy_skill(
+        self, project_dir, temp_dir
+    ):
+        """Recomposition writes only the skill name that still carries the
+        winning preset's marker, not a user-owned legacy sibling."""
+        manager, skill_file = self._install_composed_specify_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("append-preset", "Appended body", "append", 5),
+            ],
+        )
+        legacy_file = skill_file.parent.parent / "speckit.specify" / "SKILL.md"
+        legacy_file.parent.mkdir(parents=True, exist_ok=True)
+        legacy = "---\nname: speckit.specify\n---\n\nUser-owned legacy body\n"
+        legacy_file.write_text(legacy, encoding="utf-8")
+
+        assert manager.remove("base-preset") is True
+
+        assert legacy_file.read_text(encoding="utf-8") == legacy
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Base preset body" not in content
+        assert "Appended body" in content
+
     def test_shared_skills_dir_restored_once_using_active_agent(
         self, project_dir, temp_dir
     ):
@@ -2127,6 +4183,42 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             "the surviving preset's override must also be restored for "
             "the currently active agent"
         )
+
+    def test_remove_keeps_user_owned_legacy_skill_in_historical_dir(
+        self, project_dir, temp_dir
+    ):
+        """Reconciling an inactive agent's directory writes only the managed
+        skill name, not a user-owned legacy sibling beside it."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "hist-legacy-b", "speckit.specify", "Preset B", "preset B body",
+        )
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "hist-legacy-a", "speckit.specify", "Preset A", "preset A body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_b_dir, "0.1.5", priority=10)
+        manager.install_from_directory(preset_a_dir, "0.1.5", priority=1)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        legacy_file = claude_skills_dir / "speckit.specify" / "SKILL.md"
+        legacy_file.parent.mkdir(parents=True)
+        legacy = "---\nname: speckit.specify\n---\n\nUser-owned legacy body\n"
+        legacy_file.write_text(legacy, encoding="utf-8")
+
+        assert manager.remove("hist-legacy-a") is True
+
+        assert legacy_file.read_text(encoding="utf-8") == legacy
+        assert "preset:hist-legacy-b" in (
+            claude_skills_dir / "speckit-specify" / "SKILL.md"
+        ).read_text()
 
     def test_skill_reconciliation_preserves_per_directory_names(
         self, project_dir, temp_dir
