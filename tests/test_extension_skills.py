@@ -15,6 +15,7 @@ import os
 import stat
 import pytest
 import tempfile
+import threading
 import shutil
 import yaml
 from pathlib import Path
@@ -720,6 +721,123 @@ class TestExtensionSkillRegistration:
         metadata = manager.registry.get(manifest.id)
         assert "speckit-test-ext-hello" not in metadata["registered_skills"]
         assert "speckit-test-ext-world" in metadata["registered_skills"]
+
+    def test_native_registration_does_not_overwrite_user_skill(
+        self, skills_project, extension_dir
+    ):
+        """Native registration must not overwrite a pre-existing user skill (#5380).
+
+        The supplemental skills route already skips pre-existing unowned
+        directories, but native command registration wrote SKILL.md
+        unconditionally, so a later ``extension remove`` deleted the user's
+        content outright.
+        """
+        project_dir, skills_dir = skills_project
+        user_dir = skills_dir / "speckit-test-ext-hello"
+        user_dir.mkdir(parents=True)
+        (user_dir / "SKILL.md").write_text("user skill", encoding="utf-8")
+        (user_dir / "notes.txt").write_text("user", encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(extension_dir, "0.1.0")
+
+        # Install must leave the user's SKILL.md untouched ...
+        assert (user_dir / "SKILL.md").read_text(encoding="utf-8") == "user skill"
+        # ... and must not register the skipped skill (native registration
+        # writes the surviving skill, so it lands in registered_commands
+        # while the supplemental route leaves registered_skills empty).
+        metadata = manager.registry.get(manifest.id)
+        registered_commands = metadata.get("registered_commands", {})
+        assert "speckit.test-ext.hello" not in registered_commands.get("claude", [])
+        assert "speckit.test-ext.world" in registered_commands.get("claude", [])
+
+        manager.remove(manifest.id, keep_config=False)
+
+        # ... so removal cannot delete content the extension never created.
+        assert (user_dir / "SKILL.md").read_text(encoding="utf-8") == "user skill"
+        assert (user_dir / "notes.txt").read_text(encoding="utf-8") == "user"
+
+    def test_owned_by_tooling_rejects_url_like_native_source(self, tmp_path):
+        """A URL-like metadata.source must not pass as tooling-owned.
+
+        The native marker is "<source_id>:<source file>"; "https://..."
+        splits into head "https" and a slash-containing tail, which the old
+        check accepted, so an unrelated user skill could be overwritten by
+        registration and then deleted on removal.
+        """
+        from specify_cli.agents import CommandRegistrar
+
+        skill = tmp_path / "SKILL.md"
+        skill.write_text(
+            "---\n"
+            "name: review\n"
+            "description: Unrelated user skill\n"
+            "metadata:\n"
+            "  source: https://example.com/skills/review\n"
+            "---\n"
+            "\n"
+            "# Review\n",
+            encoding="utf-8",
+        )
+
+        assert CommandRegistrar._skill_file_owned_by_tooling(skill) is False
+
+    def test_owned_by_tooling_accepts_safe_native_source(self, tmp_path):
+        """A genuine native marker still counts as tooling-owned."""
+        from specify_cli.agents import CommandRegistrar
+
+        skill = tmp_path / "SKILL.md"
+        skill.write_text(
+            "---\n"
+            "name: hello\n"
+            "description: Extension skill\n"
+            "metadata:\n"
+            "  source: test-ext:commands/hello.md\n"
+            "---\n"
+            "\n"
+            "# Hello\n",
+            encoding="utf-8",
+        )
+
+        assert CommandRegistrar._skill_file_owned_by_tooling(skill) is True
+
+    @pytest.mark.parametrize("metadata", [None, "plain-string", ["a", "b"], 42])
+    def test_owned_by_tooling_tolerates_non_dict_metadata(self, tmp_path, metadata):
+        """Non-dict metadata must not crash the ownership check."""
+        from specify_cli.agents import CommandRegistrar
+
+        frontmatter = yaml.safe_dump(
+            {"name": "review", "description": "User skill", "metadata": metadata},
+            sort_keys=False,
+        )
+        skill = tmp_path / "SKILL.md"
+        skill.write_text(f"---\n{frontmatter}---\n\n# Review\n", encoding="utf-8")
+
+        assert CommandRegistrar._skill_file_owned_by_tooling(skill) is False
+
+    def test_owned_by_tooling_rejects_symlink_to_fifo(self, tmp_path):
+        """A symlink to a non-regular target must not be read."""
+        from specify_cli.agents import CommandRegistrar
+
+        if os.name != "posix":
+            pytest.skip("FIFO targets are POSIX-only")
+        if not _can_create_symlink(tmp_path):
+            pytest.skip("Current platform/user cannot create symlinks")
+        fifo = tmp_path / "pipe"
+        os.mkfifo(fifo)
+        link = tmp_path / "SKILL.md"
+        os.symlink(fifo, link)
+
+        result: list = []
+
+        def _check() -> None:
+            result.append(CommandRegistrar._skill_file_owned_by_tooling(link))
+
+        worker = threading.Thread(target=_check, daemon=True)
+        worker.start()
+        worker.join(timeout=10)
+        assert not worker.is_alive(), "ownership check blocked reading a FIFO target"
+        assert result == [False]
 
     def test_dev_skill_symlink_refreshes_existing_cache(
         self, skills_project, extension_dir, temp_dir
