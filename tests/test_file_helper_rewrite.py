@@ -1110,3 +1110,64 @@ def test_posix_create_private_bytes_keeps_the_inode_pinned_during_cleanup(
     monkeypatch.undo()
     assert pinned_at_check == [True]
     assert not (tmp_path / REL).exists()
+
+
+def test_rewrite_descriptor_replaces_and_truncates_from_any_offset(tmp_path):
+    target = tmp_path / "file.txt"
+    target.write_bytes(b"a much longer original\n")
+    inode = target.stat().st_ino
+    with FileHelper(tmp_path) as helper, helper.open_rewrite("file.txt") as fd:
+        os.lseek(fd, 0, os.SEEK_END)
+        FileHelper.rewrite_descriptor(fd, b"short\n")
+    assert target.read_bytes() == b"short\n"
+    assert target.stat().st_ino == inode
+
+
+def test_rewrite_descriptor_flushes_after_writing(tmp_path, monkeypatch):
+    target = tmp_path / "file.txt"
+    target.write_bytes(b"old\n")
+    seen = []
+    real_fsync = os.fsync
+
+    def fsync(fd):
+        seen.append(os.fstat(fd).st_size)
+        return real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    with FileHelper(tmp_path) as helper, helper.open_rewrite("file.txt") as fd:
+        FileHelper.rewrite_descriptor(fd, b"newer\n")
+    assert seen == [len(b"newer\n")]
+
+
+def test_rewrite_descriptor_raises_when_a_write_makes_no_progress(tmp_path, monkeypatch):
+    target = tmp_path / "file.txt"
+    target.write_bytes(b"old\n")
+    monkeypatch.setattr(os, "write", lambda fd, data: 0)
+    with FileHelper(tmp_path) as helper, helper.open_rewrite("file.txt") as fd:
+        with pytest.raises(OSError, match="no progress"):
+            FileHelper.rewrite_descriptor(fd, b"new\n")
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS F_FULLFSYNC")
+@pytest.mark.parametrize("code, raises", [(errno.ENOTSUP, False), (errno.EIO, True)])
+def test_rewrite_descriptor_raises_only_real_full_fsync_errors(tmp_path, monkeypatch, code, raises):
+    import fcntl
+
+    target = tmp_path / "file.txt"
+    target.write_bytes(b"old\n")
+    real_fcntl = fcntl.fcntl
+
+    def fail(fd, command, *args):
+        if command == fcntl.F_FULLFSYNC:
+            raise OSError(code, os.strerror(code))
+        return real_fcntl(fd, command, *args)
+
+    monkeypatch.setattr(fcntl, "fcntl", fail)
+    with FileHelper(tmp_path) as helper, helper.open_rewrite("file.txt") as fd:
+        if raises:
+            with pytest.raises(OSError):
+                FileHelper.rewrite_descriptor(fd, b"new\n")
+        else:
+            FileHelper.rewrite_descriptor(fd, b"new\n")
+    if not raises:
+        assert target.read_bytes() == b"new\n"
