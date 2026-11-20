@@ -1202,3 +1202,67 @@ def test_builtin_journal_keeps_an_attribute_edit_made_after_the_operation_wrote(
     assert "Preserved concurrent edits" in " ".join(capsys.readouterr().out.split())
     shutil.rmtree(backups[0])
 
+
+def _fake_xattrs(monkeypatch, target, attributes):
+    """Report ``attributes`` on ``target`` and none elsewhere, with or without an os xattr API."""
+    from specify_cli.integrations import _lifecycle
+
+    def restorable(path, journal=None):
+        if isinstance(path, Path) and path == target:
+            return dict(attributes)
+        return {}
+
+    monkeypatch.setattr(_lifecycle, "_HAS_XATTRS", True)
+    monkeypatch.setattr(_lifecycle, "_restorable_xattrs", restorable)
+
+
+def test_builtin_journal_persists_captured_attributes_beside_the_snapshot(tmp_path, monkeypatch):
+    """Captured attributes are written to a sidecar, so a retained snapshot keeps them after the process exits."""
+    import base64
+
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    _fake_xattrs(monkeypatch, target, {"user.label": b"\x00mine", "system.posix_acl_access": b"acl"})
+
+    with _lifecycle.builtin_journal(project, "claude", {}):
+        write_text(target, "generated\n")
+        sidecars = list((backups[0] / "writes").glob("*.xattrs.json"))
+        assert len(sidecars) == 1
+        record = json.loads(sidecars[0].read_text(encoding="utf-8"))
+        if os.name != "nt":
+            assert stat.S_IMODE(sidecars[0].stat().st_mode) == 0o600
+
+    assert record["path"] == str(target)
+    assert {name: base64.b64decode(value) for name, value in record["attributes"].items()} == {
+        "user.label": b"\x00mine", "system.posix_acl_access": b"acl",
+    }
+
+
+def test_builtin_journal_refuses_the_write_when_attributes_cannot_be_persisted(tmp_path, monkeypatch):
+    """A sidecar that cannot be written fails the operation before it writes the file."""
+    from specify_cli.file_helper import FileHelper
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    _fake_xattrs(monkeypatch, target, {"user.label": b"mine"})
+
+    def refuse(self, path, content):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(FileHelper, "create_private_bytes", refuse)
+    with pytest.raises(OSError, match="No space left"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+
+    assert target.read_text(encoding="utf-8") == "original\n"
+

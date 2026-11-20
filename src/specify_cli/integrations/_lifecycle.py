@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import errno
 import hashlib
 import inspect
+import json
 import os
 import shutil
 import stat
@@ -311,6 +313,26 @@ class _FileJournal:
             files.utime(destination.name, ns=(original.st_atime_ns, original.st_mtime_ns))
             files.chmod(destination.name, stat.S_IMODE(original.st_mode))
 
+    @staticmethod
+    def _persist_xattrs(path: Path, saved: Path, attributes: dict[str, bytes] | None) -> None:
+        """Write ``path``'s captured attributes beside its snapshot, as ``<snapshot>.xattrs.json``.
+
+        The snapshot copy keeps them only where the temporary filesystem has
+        user attributes, so a retained snapshot would otherwise lose them when
+        the process exits. A sidecar that cannot be written raises, before the
+        operation writes the file.
+        """
+        if not attributes:
+            return
+        record = {
+            "path": str(path),
+            "attributes": {name: base64.b64encode(value).decode("ascii") for name, value in attributes.items()},
+        }
+        with FileHelper(saved.parent) as files:
+            files.create_private_bytes(
+                f"{saved.name}.xattrs.json", json.dumps(record, indent=2, sort_keys=True).encode("utf-8"),
+            )
+
     def _remember_original(self, path: Path, entry: os.stat_result, attributes: dict[str, bytes] | None) -> None:
         """Record what rollback needs to restore ``path`` in place later."""
         if os.name != "nt" and path not in self.pinned_files:
@@ -490,6 +512,7 @@ class _FileJournal:
                                     f"Integration output changed during the operation; refusing to overwrite {path}"
                                 )
                             elif restorable:
+                                self._persist_xattrs(path, saved, attributes)
                                 self._remember_original(path, entry, attributes)
                     except BaseException:
                         self._unpin(path)
