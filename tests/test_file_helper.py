@@ -15,7 +15,7 @@ import weakref
 
 import pytest
 
-from specify_cli import file_helper
+from specify_cli import _file_handles, file_helper
 from specify_cli._file_handles import _WindowsFileIdentity
 from specify_cli.file_helper import (
     FileHelper,
@@ -3407,11 +3407,25 @@ def test_special_objects_fail_before_read_update_or_recursive_mutation(root, all
     os.mkfifo(root / "tree/z-fifo")
     for operation in (lambda: files.read_bytes("tree/z-fifo"),
                       lambda: files.write_bytes("tree/z-fifo", b"bad"),
+                      lambda: files.iterdir("tree"),
                       lambda: files.delete("tree", recursive=True)):
         with pytest.raises(UnsupportedPathError):
             operation()
     assert files.read_text("tree/a-file") == "keep"
     assert (root / "tree/z-fifo").exists()
+    assert [entry.name for entry in files.iterdir("tree", select=lambda name: name != "z-fifo")] == ["a-file"]
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_iterdir_selects_names_before_validating_siblings(root, link, allow):
+    (root / "selected").write_text("inside")
+    (root.parent / "outside").write_text("outside")
+    link(root / "alias", root.parent / "outside")
+    with FileHelper(root, allow_symlinks=allow) as files:
+        assert [path.name for path in files.iterdir(".", select=lambda name: name == "selected")] == ["selected"]
+        assert files.iterdir(".", select=lambda name: name == "missing") == ()
+        with pytest.raises(PathEscapeError if allow else SymlinkDeniedError):
+            files.iterdir(".", select=lambda name: name == "alias")
 
 
 def test_atomic_failure_cleans_temp_and_preserves_target(root, monkeypatch):
@@ -3828,3 +3842,304 @@ def test_native_windows_junctions_never_traversed_or_deleted(root, junction, all
     assert (target / "keep").read_text() == "keep"
     assert (tree / "a-file").read_text() == "keep"
     assert sorted(p.name for p in target.iterdir()) == ["keep"]
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_native_windows_iterdir_rejects_junctions(root, junction, allow):
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "keep").write_text("outside")
+    alias = junction(root / "junction", outside)
+    try:
+        with FileHelper(root, allow_symlinks=allow) as files:
+            with pytest.raises(UnsupportedPathError, match="reparse"):
+                files.iterdir(".")
+            with pytest.raises(UnsupportedPathError, match="reparse"):
+                files.iterdir(alias)
+        assert (outside / "keep").read_text() == "outside"
+    finally:
+        alias.rmdir()
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_native_windows_move_noreplace_rejects_junction_source_and_destination(root, junction, allow):
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "keep").write_text("outside")
+    alias = junction(root / "junction", outside)
+    (root / "staged").write_text("staged")
+    try:
+        with FileHelper(root, allow_symlinks=allow) as files:
+            for source, destination in (
+                (alias, root / "new"),
+                (root / "staged", alias),
+                (root / "staged", alias / "new"),
+            ):
+                with pytest.raises(UnsupportedPathError, match="reparse"):
+                    files.move_noreplace(source, destination)
+        assert (root / "staged").read_text() == "staged"
+        assert sorted(path.name for path in outside.iterdir()) == ["keep"]
+        assert not (root / "new").exists()
+    finally:
+        alias.rmdir()
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_native_windows_staging_cleanup_rejects_junction_and_preserves_body_error(root, junction, allow):
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "keep").write_text("outside")
+    with FileHelper(root, allow_symlinks=allow) as files:
+        parent_alias = junction(root / "junction", outside)
+        try:
+            with pytest.raises(UnsupportedPathError, match="reparse"):
+                with files.temporary_directory(parent_alias):
+                    pytest.fail("junction accepted as staging parent")
+        finally:
+            parent_alias.rmdir()
+
+        alias = None
+        body_error = ValueError("body failed")
+        try:
+            with pytest.raises(ValueError) as raised:
+                with files.temporary_directory(".") as staging:
+                    alias = junction(staging / "junction", outside)
+                    raise body_error
+            assert raised.value is body_error
+            assert any("reparse" in note.lower() for note in body_error.__notes__)
+            assert (outside / "keep").read_text() == "outside"
+            assert alias.is_dir()
+        finally:
+            if alias is not None:
+                alias.rmdir()
+                files.delete(staging)
+
+
+@pytest.mark.parametrize("spelling", ["relative", "alias", "canonical"])
+def test_enumeration_and_staging_preserve_the_supplied_root_spelling(root, link, spelling):
+    directory = root / "directory"
+    directory.mkdir()
+    (directory / "manifest").write_text("inside")
+    alias = link(root.parent / "alias", root)
+    with FileHelper(alias) as files:
+        parent = {"relative": "directory", "alias": alias / "directory", "canonical": directory.resolve()}[spelling]
+        expected = directory.resolve() if spelling == "canonical" else alias / "directory"
+        assert files.iterdir(parent) == (expected / "manifest",)
+        with files.temporary_directory(parent) as staged:
+            assert staged.parent == expected
+            files.create_text(staged / "payload", "staged")
+        assert not staged.exists()
+
+
+def test_iterdir_enumerates_direct_entries_deterministically(root):
+    directory = root / "directory"
+    directory.mkdir()
+    (directory / "z-file").write_text("z")
+    (directory / "a-file").write_text("a")
+    (directory / "nested").mkdir()
+
+    assert [entry.name for entry in FileHelper(root).iterdir("directory")] == [
+        "a-file",
+        "nested",
+        "z-file",
+    ]
+
+
+def test_iterdir_rejects_symlink_policy_and_external_targets(root, link):
+    contained = root / "contained"
+    contained.mkdir()
+    (contained / "file").write_text("inside")
+    link(root / "alias", contained)
+
+    with pytest.raises(SymlinkDeniedError, match="enumerate symlink"):
+        FileHelper(root).iterdir(root)
+    assert [entry.name for entry in FileHelper(root, allow_symlinks=True).iterdir(root)] == [
+        "alias",
+        "contained",
+    ]
+
+    outside = root.parent / "outside"
+    outside.mkdir()
+    external = link(root / "external", outside)
+    with pytest.raises(PathEscapeError, match="outside root"):
+        FileHelper(root, allow_symlinks=True).iterdir(root)
+    assert external.exists()
+
+
+def test_directory_probe_distinguishes_absent_and_invalid_entries(root):
+    (root / "directory").mkdir()
+    (root / "file").write_text("data", encoding="utf-8")
+    with FileHelper(root) as files:
+        assert files.directory_exists("directory")
+        assert not files.directory_exists("missing")
+        with pytest.raises(NotADirectoryError):
+            files.directory_exists("file")
+
+
+def test_directory_probe_rejects_a_dangling_link_in_deny_mode(root, link):
+    link(root / "alias", root / "missing")
+    with FileHelper(root) as files:
+        with pytest.raises(SymlinkDeniedError):
+            files.directory_exists("alias")
+
+
+def test_iterdir_rejects_missing_and_non_directory_entries(root):
+    with pytest.raises(FileNotFoundError):
+        FileHelper(root).iterdir("missing")
+    (root / "file").write_text("not a directory")
+    with pytest.raises(NotADirectoryError):
+        FileHelper(root).iterdir("file")
+
+
+def test_move_noreplace_file_and_directory_requires_absent_destination(root):
+    (root / "staged.txt").write_text("replacement")
+    staged_directory = root / "staged-directory"
+    staged_directory.mkdir()
+    (staged_directory / "payload").write_text("payload")
+
+    files = FileHelper(root)
+    files.move_noreplace("staged.txt", "replacement.txt")
+    assert (root / "replacement.txt").read_text() == "replacement"
+    assert not (root / "staged.txt").exists()
+
+    files.move_noreplace("staged-directory", "installed")
+    assert (root / "installed/payload").read_text() == "payload"
+    assert not staged_directory.exists()
+
+    (root / "existing").write_text("existing")
+    (root / "new-source").write_text("new")
+    with pytest.raises(FileExistsError):
+        files.move_noreplace("new-source", "existing")
+
+
+@pytest.mark.skipif(
+    os.name != "nt" and sys.platform not in {"darwin", "linux"}, reason="Native no-clobber rename required"
+)
+@pytest.mark.parametrize("directory", [False, True])
+def test_move_noreplace_preserves_destination_created_after_preflight(root, monkeypatch, directory):
+    with FileHelper(root) as files:
+        source = files.root.resolve() / "staged"
+        destination = source.with_name("destination")
+        if directory:
+            source.mkdir()
+            (source / "keep").write_text("staged")
+        else:
+            source.write_text("staged")
+        original_entry_mode = FileHelper._entry_mode
+        misses = 0
+
+        def create_destination_after_probe(path, **kwargs):
+            nonlocal misses
+            try:
+                return original_entry_mode(path, **kwargs)
+            except FileNotFoundError:
+                if path == destination:
+                    misses += 1
+                    if misses == 2:
+                        if directory:
+                            destination.mkdir()
+                        else:
+                            destination.write_text("arrived late")
+                raise
+
+        monkeypatch.setattr(FileHelper, "_entry_mode", staticmethod(create_destination_after_probe))
+        with pytest.raises(FileExistsError):
+            files.move_noreplace("staged", "destination")
+
+    assert misses == 2
+    if directory:
+        assert list(destination.iterdir()) == []
+        assert (source / "keep").read_text() == "staged"
+    else:
+        assert destination.read_text() == "arrived late"
+        assert source.read_text() == "staged"
+
+
+def test_move_noreplace_fails_without_native_no_clobber_support(root, monkeypatch):
+    monkeypatch.setattr(_file_handles, "sys", SimpleNamespace(platform="unsupported"))
+    monkeypatch.setattr(_file_handles, "os", SimpleNamespace(**(vars(os) | {"name": "posix"})))
+    (root / "staged").write_text("staged")
+
+    with FileHelper(root) as files:
+        with pytest.raises(OSError) as exc:
+            files.move_noreplace("staged", "destination")
+
+    assert exc.value.errno == errno.ENOTSUP
+    assert (root / "staged").read_text() == "staged"
+    assert not (root / "destination").exists()
+
+
+def test_move_noreplace_rejects_symlink_source_and_missing_source(root, link):
+    target = root / "target"
+    target.write_text("target")
+    alias = link(root / "alias", target)
+
+    with pytest.raises(UnsupportedPathError, match="filesystem object"):
+        FileHelper(root, allow_symlinks=True).move_noreplace("alias", "replacement")
+
+    with pytest.raises(FileNotFoundError):
+        FileHelper(root).move_noreplace("missing", "replacement")
+
+    assert alias.is_symlink()
+    assert target.read_text() == "target"
+
+
+def test_temporary_directory_is_in_root_and_cleans_up(root):
+    staging_parent = root / "staging"
+    staging_parent.mkdir()
+
+    with FileHelper(root) as files:
+        with files.temporary_directory("staging", prefix="test-") as staging:
+            assert staging.parent == staging_parent
+            assert staging.is_dir()
+            (staging / "payload").write_text("payload")
+            staging_path = staging
+        assert not staging_path.exists()
+    assert list(staging_parent.iterdir()) == []
+
+
+def test_temporary_directory_requires_existing_directory_parent(root):
+    with pytest.raises(FileNotFoundError):
+        with FileHelper(root).temporary_directory("missing", prefix="test-"):
+            pass
+
+
+@pytest.mark.parametrize("prefix", ["../outside-", "nested/name-", r"..\outside-", "C:outside-", "/outside-"])
+def test_temporary_directory_rejects_path_prefixes_before_creation(root, monkeypatch, prefix):
+    def unexpected_creation(*args, **kwargs):
+        pytest.fail("invalid prefix reached mkdtemp")
+
+    monkeypatch.setattr(file_helper.tempfile, "mkdtemp", unexpected_creation)
+    with FileHelper(root) as files:
+        with pytest.raises(PathEscapeError, match="prefix"):
+            with files.temporary_directory(".", prefix=prefix):
+                pytest.fail("invalid prefix accepted")
+
+
+@pytest.mark.parametrize("removed", [False, True])
+def test_temporary_directory_preserves_body_exception(root, monkeypatch, removed):
+    def fail_cleanup(*args, **kwargs):
+        raise PermissionError("cleanup failed")
+
+    body_error = ValueError("body failed")
+    with FileHelper(root) as files:
+        with pytest.raises(ValueError) as raised:
+            with files.temporary_directory(".") as staging:
+                if removed:
+                    staging.rmdir()
+                else:
+                    monkeypatch.setattr(FileHelper, "delete", fail_cleanup)
+                raise body_error
+    assert raised.value is body_error
+    if not removed:
+        assert any("cleanup failed" in note for note in body_error.__notes__)
+
+
+def test_temporary_directory_propagates_cleanup_failure_after_success(root, monkeypatch):
+    def fail_cleanup(*args, **kwargs):
+        raise PermissionError("cleanup failed")
+
+    with FileHelper(root) as files:
+        with pytest.raises(PermissionError, match="cleanup failed"):
+            with files.temporary_directory("."):
+                monkeypatch.setattr(FileHelper, "delete", fail_cleanup)

@@ -1,4 +1,4 @@
-"""Private platform handles for confined filesystem operations."""
+"""Private platform primitives for confined filesystem operations."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -7,12 +7,44 @@ import os
 import secrets
 import stat
 import struct
+import sys
 import tempfile
 from pathlib import Path, PureWindowsPath
 from typing import Literal, NamedTuple
 
 
 _IdentityKind = Literal["fileid128", "legacy64"]
+
+
+def rename_noreplace(source: Path, destination: Path) -> None:
+    """Rename on the same filesystem without ever replacing the destination."""
+    if os.name == "nt":
+        os.rename(source, destination)  # Windows does not enable replacement for os.rename.
+        return
+
+    unsupported = "Atomic no-clobber rename is unavailable on this platform"
+    if sys.platform not in {"darwin", "linux"}:
+        raise OSError(errno.ENOTSUP, unsupported, source, None, destination)
+
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        if sys.platform == "darwin":
+            rename = libc.renamex_np
+            rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+            args = (os.fsencode(source), os.fsencode(destination), 0x4)  # RENAME_EXCL
+        else:
+            rename = libc.renameat2
+            rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+            args = (-100, os.fsencode(source), -100, os.fsencode(destination), 1)  # AT_FDCWD, RENAME_NOREPLACE
+    except (ImportError, AttributeError) as exc:
+        raise OSError(errno.ENOTSUP, unsupported, source, None, destination) from exc
+
+    rename.restype = ctypes.c_int
+    if rename(*args) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), source, None, destination)
 
 
 class _WindowsFileIdentity(NamedTuple):

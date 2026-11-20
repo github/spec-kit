@@ -648,6 +648,29 @@ class TestExtensionManifest:
         assert manifest.commands[0]["aliases"] == ["speckit.hello"]
         assert manifest.warnings == []
 
+    def test_command_resources_valid_patterns(self, temp_dir, valid_manifest_data):
+        command = valid_manifest_data["provides"]["commands"][0]
+        manifest_path = temp_dir / "extension.yml"
+        manifest_path.write_text(yaml.safe_dump(valid_manifest_data), encoding="utf-8")
+        assert ExtensionManifest(manifest_path).commands[0]["resources"] == []
+
+        command["resources"] = ["references/r.md", "templates/*.md", r"assets\**"]
+        manifest_path.write_text(yaml.safe_dump(valid_manifest_data), encoding="utf-8")
+        assert ExtensionManifest(manifest_path).commands[0]["resources"] == [
+            "references/r.md", "templates/*.md", "assets/**"
+        ]
+
+    @pytest.mark.parametrize("resources", [
+        None, "x", [1], [""], ["  "], ["/absolute"], [r"C:\absolute"],
+        ["a/../b"], [r"a\..\b"], ["!secret"], ["[z-a]"],
+    ])
+    def test_command_resources_invalid(self, temp_dir, valid_manifest_data, resources):
+        valid_manifest_data["provides"]["commands"][0]["resources"] = resources
+        manifest_path = temp_dir / "extension.yml"
+        manifest_path.write_text(yaml.safe_dump(valid_manifest_data), encoding="utf-8")
+        with pytest.raises(ValidationError, match="[Rr]esource"):
+            ExtensionManifest(manifest_path)
+
     def test_valid_command_name_has_no_warnings(self, temp_dir, valid_manifest_data):
         """Test that a correctly-named command produces no warnings."""
         import yaml
@@ -1760,6 +1783,7 @@ class TestExtensionManager:
             project_root,
             link_outputs=False,
             create_missing_active_skills_dir=False,
+            **kwargs,
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
@@ -1798,6 +1822,7 @@ class TestExtensionManager:
             only_agent=None,
             author="github-spec-kit",
             version=None,
+            **kwargs,
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
@@ -2260,6 +2285,68 @@ class TestExtensionManager:
 
         assert manager.registry.is_installed("test-ext")
         assert config_file.read_bytes() == newer_bytes
+
+    def test_force_reinstall_extensionignore_invalid_utf8_preserves_install(
+        self, extension_dir, project_dir
+    ):
+        """A forced reinstall with invalid UTF-8 in .extensionignore preserves the existing install.
+
+        `.extensionignore` is loaded and validated before `remove()` tears down
+        the existing installation, so a ValidationError must leave the registry
+        entry, installed package files, and rendered outputs completely intact.
+        """
+        import copy
+
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=True
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        rendered_skill = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        assert rendered_skill.exists()
+
+        registry_before = copy.deepcopy(manager.registry.get("test-ext"))
+        assert registry_before is not None
+        installed_before = {
+            p.relative_to(ext_dir).as_posix(): p.read_bytes()
+            for p in ext_dir.rglob("*")
+            if p.is_file()
+        }
+        rendered_before = {
+            p.relative_to(skills_dir).as_posix(): p.read_bytes()
+            for p in skills_dir.rglob("*")
+            if p.is_file()
+        }
+
+        # Modify the source command and write invalid UTF-8 to .extensionignore
+        # so the forced reinstall must abort before removing or overwriting anything.
+        (extension_dir / "commands" / "hello.md").write_text(
+            "---\ndescription: \"Updated\"\n---\n\n# Updated\n\n$ARGUMENTS\n"
+        )
+        (extension_dir / ".extensionignore").write_bytes(b"caf\xe9/\n")
+
+        with pytest.raises(ValidationError, match=r"\.extensionignore is not valid UTF-8"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=True, force=True
+            )
+
+        assert manager.registry.is_installed("test-ext")
+        assert manager.registry.get("test-ext") == registry_before
+        assert {
+            p.relative_to(ext_dir).as_posix(): p.read_bytes()
+            for p in ext_dir.rglob("*")
+            if p.is_file()
+        } == installed_before
+        assert {
+            p.relative_to(skills_dir).as_posix(): p.read_bytes()
+            for p in skills_dir.rglob("*")
+            if p.is_file()
+        } == rendered_before
+        assert not (project_dir / ".specify" / "extensions" / ".backup" / "test-ext").exists()
 
     def test_retry_after_staging_backup_restores_stranded_config(
         self, extension_dir, project_dir, monkeypatch
@@ -9396,3 +9483,24 @@ class TestExtensionConfigScaffolding:
 
         assert deployed == ["test-config.local.yml"]
         assert failed == []
+
+
+def test_ensure_executable_scripts_only_selected_files(tmp_path, monkeypatch):
+    import os
+    from specify_cli import ensure_executable_scripts
+
+    if os.name == "nt":
+        pytest.skip("POSIX permissions required")
+    selected = tmp_path / "selected.sh"
+    other = tmp_path / "other.sh"
+    nonshebang = tmp_path / "nonshebang.sh"
+    for path in (selected, other, nonshebang):
+        path.write_text("echo ok\n" if path == nonshebang else "#!/bin/sh\necho ok\n")
+        path.chmod(0o600)
+    ensure_executable_scripts(tmp_path, files=[selected, nonshebang])
+    assert selected.stat().st_mode & 0o100
+    assert not other.stat().st_mode & 0o111
+    assert not nonshebang.stat().st_mode & 0o111
+    monkeypatch.setattr("specify_cli.os.name", "nt")
+    ensure_executable_scripts(tmp_path, files=[other])
+    assert not other.stat().st_mode & 0o111

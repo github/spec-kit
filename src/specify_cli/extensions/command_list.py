@@ -21,11 +21,14 @@ from . import _commands
 
 @_commands.extension_app.command("list", cls=InstalledListJSONCommand)
 def extension_list(
-    available: bool = typer.Option(False, "--available", help="Show available extensions from catalog"),
-    all_extensions: bool = typer.Option(False, "--all", help="Show both installed and available"),
+    available: bool = typer.Option(False, "--available", help="Show installed extensions and an installation hint"),
+    all_extensions: bool = typer.Option(False, "--all", help="Show installed extensions and an installation hint"),
     json_output: bool = typer.Option(False, "--json", help="Output installed extensions as JSON"),
 ):
-    """List installed extensions."""
+    """List installed extensions.
+
+    Use specify extension search to discover catalog extensions.
+    """
     from . import ExtensionManager, normalize_priority
 
     if json_output:

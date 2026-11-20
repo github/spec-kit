@@ -7,7 +7,7 @@ import stat
 import sys
 import tempfile
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from copy import copy
 from dataclasses import dataclass, field
@@ -18,7 +18,7 @@ from weakref import finalize
 from specify_cli._file_handles import (
     _WindowsFileIdentity, _windows_delete, _windows_directory_names, _windows_entry,
     _windows_file_id, _windows_handle, _windows_mode, _windows_overwrite_fd,
-    _windows_readlink, _windows_stat, windows_read_fd,
+    _windows_readlink, _windows_stat, rename_noreplace, windows_read_fd,
 )
 
 
@@ -57,6 +57,10 @@ class PathEscapeError(FileHelperError):
 
 class UnsupportedPathError(FileHelperError):
     """An accessed object cannot be used by the requested operation."""
+
+
+class _SpecialFileError(UnsupportedPathError):
+    """An entry is neither a directory, regular file, nor symlink."""
 
 
 @dataclass(frozen=True)
@@ -343,7 +347,7 @@ class FileHelper:
             elif stat.S_ISDIR(mode) or stat.S_ISREG(mode):
                 current = candidate
             else:
-                raise UnsupportedPathError(f"Unsupported filesystem object: {candidate}")
+                raise _SpecialFileError(f"Unsupported filesystem object: {candidate}")
         return current
 
     def _path(
@@ -372,12 +376,106 @@ class FileHelper:
         if not stat.S_ISREG(path.stat().st_mode):
             raise UnsupportedPathError(f"Expected a regular file: {path}")
 
+    @staticmethod
+    def _require_directory(path: Path) -> None:
+        if not stat.S_ISDIR(path.stat().st_mode):
+            raise NotADirectoryError(path)
+
+    def directory_exists(self, path: Path | str) -> bool:
+        """Return False for absence only; reject wrong types and forbidden paths."""
+        try:
+            directory = self._path(path)
+        except FileNotFoundError:
+            return False
+        except _SpecialFileError as exc:
+            raise NotADirectoryError(str(exc)) from exc
+        self._require_directory(directory)
+        return True
+
     def mkdir(
         self, path: Path | str, *, parents: bool = False, exist_ok: bool = False
     ) -> None:
         """Create a directory, preflighting the entire requested hierarchy."""
         destination = self._path(path, allow_missing=True)
         destination.mkdir(parents=parents, exist_ok=exist_ok)
+
+    def iterdir(
+        self, path: Path | str, *, select: Callable[[str], bool] | None = None,
+    ) -> tuple[Path, ...]:
+        """Enumerate immediate entries, validating only names selected by the caller."""
+        requested = Path(path)
+        destination = self._path(requested)
+        self._require_directory(destination)
+        returned_parent = requested if requested.is_absolute() else self.root / requested
+        entries = []
+        with os.scandir(destination) as iterator:
+            names = sorted(entry.name for entry in iterator)
+        for name in names:
+            if select is not None and not select(name):
+                continue
+            candidate = destination / name
+            mode = self._entry_mode(candidate)
+            if stat.S_ISLNK(mode):
+                if not self.allow_symlinks:
+                    raise SymlinkDeniedError(f"Refusing to enumerate symlink: {candidate}")
+                self._path(candidate)
+            elif not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+                raise UnsupportedPathError(f"Unsupported filesystem object: {candidate}")
+            entries.append(returned_parent / name)
+        return tuple(entries)
+
+    def move_noreplace(self, source: Path | str, destination: Path | str) -> None:
+        """Atomically move a staged file or directory without clobbering a destination."""
+        source_path = self._path(source, follow_leaf=False)
+        source_mode = self._entry_mode(source_path)
+        if not (stat.S_ISREG(source_mode) or stat.S_ISDIR(source_mode)):
+            raise UnsupportedPathError(
+                f"Unsupported filesystem object: {source_path}"
+            )
+
+        destination_path = self._path(
+            destination, allow_missing=True, follow_leaf=False
+        )
+        try:
+            self._entry_mode(destination_path)
+        except FileNotFoundError:
+            pass
+        else:
+            raise FileExistsError(
+                errno.EEXIST, os.strerror(errno.EEXIST), str(destination_path)
+            )
+        rename_noreplace(source_path, destination_path)
+
+    @contextmanager
+    def temporary_directory(
+        self, parent: Path | str, *, prefix: str = "speckit-"
+    ) -> Iterator[Path]:
+        """Create and clean up a staging directory beneath an existing in-root parent."""
+        if any(character in prefix for character in "/\\:\0"):
+            raise PathEscapeError(f"Temporary directory prefix must be a name prefix: {prefix!r}")
+        requested = Path(parent)
+        parent_path = self._path(requested)
+        self._require_directory(parent_path)
+        staging = Path(tempfile.mkdtemp(prefix=prefix, dir=parent_path))
+        returned_parent = requested if requested.is_absolute() else self.root / requested
+
+        def cleanup() -> None:
+            try:
+                self._entry_mode(staging)
+            except FileNotFoundError:
+                return
+            self.delete(staging, recursive=True)
+
+        try:
+            yield returned_parent / staging.name
+        except BaseException as body_error:
+            try:
+                cleanup()
+            except BaseException as cleanup_error:
+                body_error.add_note(f"Could not clean up staging directory {staging}: {cleanup_error}")
+            raise
+        else:
+            cleanup()
 
     def read_bytes(self, path: Path | str) -> bytes:
         destination = self._path(path)

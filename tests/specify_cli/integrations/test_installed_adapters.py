@@ -1006,6 +1006,34 @@ def test_round4_failed_switch_restores_builtin_settings(tmp_path, server, monkey
     assert snapshot(project) == before
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX execute bits are not meaningful on Windows")
+def test_failed_switch_restores_shared_script_mode_and_content(
+    tmp_path, server, monkeypatch, packaged_scripts_0644
+):
+    """A refresh that makes a managed script executable is undone with the rest of the switch."""
+    from specify_cli.integrations import installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    scripts = sorted((project / ".specify/scripts/bash").glob("*.sh"))
+    assert scripts
+    for script in scripts:
+        script.chmod(0o644)
+    before = snapshot(project)
+
+    def fail_commit(*args, **kwargs):
+        assert all(script.stat().st_mode & stat.S_IXUSR for script in scripts)
+        raise OSError("sample package commit failure")
+
+    monkeypatch.setattr(installer, "write_records", fail_commit)
+    result = run(project, ["integration", "switch", "copilot", "--script", "sh"])
+    assert result.exit_code == 1, result.output
+    assert "sample package commit failure" in result.output
+    assert snapshot(project) == before
+    assert all(stat.S_IMODE(script.stat().st_mode) == 0o644 for script in scripts)
+
+
 @pytest.mark.parametrize("install_allowed", [False, True])
 def test_round4_search_advertises_only_allowed_external_installation(tmp_path, server, install_allowed):
     publish(server, code='raise RuntimeError("discovery must not import sample code")')
@@ -1207,6 +1235,19 @@ def test_round5_invalid_public_adapter_attributes_are_rejected(tmp_path, server,
     result = run(project, ["integration", "install", KEY, "--trust-integration"])
     assert result.exit_code == 1, result.output
     assert field in result.output, result.output
+    assert snapshot(project) == before
+    assert KEY not in INTEGRATION_REGISTRY
+
+
+@pytest.mark.parametrize("value", [True, "true", 1, None])
+def test_external_adapter_cannot_declare_home_scoped_output(tmp_path, server, value):
+    body = f'    registrar_config = {{**registrar_config, "home_scoped": {value!r}}}\n'
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration"])
+    assert result.exit_code == 1, result.output
+    assert "home_scoped" in result.output or "project-local" in result.output, result.output
     assert snapshot(project) == before
     assert KEY not in INTEGRATION_REGISTRY
 

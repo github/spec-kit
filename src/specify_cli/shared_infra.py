@@ -8,7 +8,6 @@ import hmac
 import logging
 import os
 import re
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -320,6 +319,26 @@ def _ensure_safe_shared_destination(
             raise ValueError(f"Shared infrastructure destination escapes project root: {label}") from None
 
 
+def _shared_script_mode(src_path: Path, content: bytes) -> int:
+    """Return the mode a shared script is written with.
+
+    Packaged scripts are 0644. A POSIX shell script that starts with a shebang
+    and no execute bit yet gets one for each class that can read it (always for
+    the owner), the rule ``ensure_executable_scripts`` applies, so a refresh that
+    rewrites it leaves it runnable without a separate chmod pass. A script that
+    already has an execute bit keeps its mode.
+    """
+    mode = src_path.stat().st_mode & 0o777
+    if (
+        os.name != "nt"
+        and src_path.suffix == ".sh"
+        and content.startswith(b"#!")
+        and not mode & 0o111
+    ):
+        mode |= ((mode & 0o444) >> 2) | 0o100
+    return mode
+
+
 def _write_shared_text(project_path: Path, dest: Path, content: str) -> None:
     _write_shared_bytes(project_path, dest, content.encode("utf-8"))
 
@@ -332,20 +351,18 @@ def _write_shared_bytes(
     mode: int = 0o644,
 ) -> None:
     _ensure_safe_shared_destination(project_path, dest)
-    from .integrations._file_changes import after_file_change, before_file_change
+    from .integrations._file_changes import (
+        after_file_change,
+        atomic_write_bytes,
+        before_file_change,
+    )
 
     before_file_change(dest)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
-    temp_path = Path(temp_name)
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(content)
-        temp_path.chmod(mode)
-        _ensure_safe_shared_destination(project_path, dest)
-        os.replace(temp_path, dest)
-        after_file_change(dest)
-    finally:
-        temp_path.unlink(missing_ok=True)
+    atomic_write_bytes(
+        dest, content, mode, exact=True,
+        before_replace=lambda: _ensure_safe_shared_destination(project_path, dest),
+    )
+    after_file_change(dest)
 
 
 _BASH_FORMAT_COMMAND_RE = re.compile(
@@ -646,13 +663,9 @@ def install_shared_infra(
                     content = _resolve_dynamic_command_refs(
                         content, invoke_separator, invoke_prefix
                     )
+                    data = content.encode("utf-8")
                     planned_copies.append(
-                        (
-                            dst_path,
-                            rel,
-                            content.encode("utf-8"),
-                            src_path.stat().st_mode & 0o777,
-                        )
+                        (dst_path, rel, data, _shared_script_mode(src_path, data))
                     )
 
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)

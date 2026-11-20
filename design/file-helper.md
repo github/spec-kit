@@ -81,9 +81,11 @@ This guarantee does not cover unmigrated consumers such as
 `bundles.project.active_integration`, whose containment-checked reads can still
 follow contained state-file links.
 
-Existing Path-returning resolvers preflight policy without changing their return
-type or domain constructors. They do not implicitly equip unmigrated domain
-consumers with an operation helper. Failures are translated into existing
+The shared CLI resolver and bundle ancestor search use a deny-mode FileHelper
+probe for the `.specify` marker. Their Path-returning resolvers preflight
+policy without changing their return type or domain constructors. They do not
+implicitly equip unmigrated domain consumers with an operation helper. Failures
+are translated into existing
 command diagnostics, with a single `{"error": "..."}` on stderr and empty
 stdout for JSON policy failures; artifact/list surfaces preserve their error
 envelope contracts. Artifact list/info validate their explicit project roots in
@@ -224,6 +226,29 @@ descriptor-relative or change their documented concurrency limitations.
   `with FileHelper(...) as files:` closes on both success and failure. Operations
   on an explicitly closed helper raise `FileHelperError`.
 - `mkdir(path, parents=False, exist_ok=False)` creates directories.
+- `directory_exists(path)` checks for a directory under the helper's link
+  policy. A missing path returns false; regular and special files raise
+  `NotADirectoryError`. Denied links and unsupported reparse points retain
+  their policy errors rather than appearing absent.
+- `iterdir(path, select=None)` enumerates the selected directory's immediate
+  entries in deterministic name order. The optional caller-supplied predicate
+  receives each bare name before its entry is inspected. Only included entries
+  are validated, and omitting the predicate includes every entry. The directory
+  being listed always undergoes the helper's normal path validation. Returned
+  paths preserve the supplied absolute directory spelling; relative inputs
+  are returned beneath the original spelling of `root`.
+- `move_noreplace(source, destination)` atomically moves a staged regular file or
+  directory on the same filesystem, without clobbering a destination that
+  exists or appears after validation. It uses no-clobber rename on macOS,
+  Linux, and Windows; if the primitive is unavailable, the operation fails
+  rather than falling back to an overwriting rename. Path validation remains
+  pathname-based; atomicity does not extend to parent directory changes.
+  Callers own overwrite and rollback policy.
+- `temporary_directory(parent, prefix="speckit-")` is an in-root staging
+  context manager beneath an existing directory. `prefix` is a name fragment,
+  not a path. If both the body and cleanup fail, the body exception propagates
+  with cleanup details attached as a note. The yielded path uses the same
+  spelling rule as `iterdir`; cleanup uses the resolved staging location.
 - `read_bytes(path)` / `read_text(path, encoding="utf-8")` read regular files.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
   create files with existing parents. A no-follow `lstat` preflight rejects
@@ -433,7 +458,9 @@ infrastructure warning/skip behavior and development-mode link creation are
 unchanged. Migrate one owned operation boundary at a time, carrying original
 paths and an explicit root/policy into the helper before any early resolution.
 Linked command directories and development-mode registration remain dependent
-stages. Non-atomic configuration writes preserve legacy metadata semantics.
+stages. Tree copying is deferred: install callers must retain selection of
+included entries and establish separate trusted source and destination
+boundaries. Non-atomic configuration writes preserve legacy metadata semantics.
 `overwrite_text` keeps the resolved directory/file objects open, but does not
 freeze directory membership on POSIX: an opened directory or file may be
 renamed, and the operation continues against that opened object. The trusted
@@ -451,3 +478,21 @@ handle-sharing behavior requires a native Windows run. Exclusive-creation tests
 cover parent replacement before anchoring and at the final open, along with
 native Windows parent-handle pinning and portable handle-lifetime checks;
 portable checks do not substitute for native Windows execution.
+
+### Migration guard
+
+The lint job runs `.github/scripts/check_file_helper_migration.py` against
+changed Python files in `src/specify_cli`. It reports new or edited direct
+filesystem call sites and unchanged call sites newly identifiable as direct
+I/O. Pull requests are checked against the first parent of the checked-out
+merge commit, so changes already on the base branch are not attributed to the
+pull request. The guard recognizes known standard-library I/O functions and
+locally traceable `pathlib` receivers; method names alone do not establish
+filesystem I/O.
+This is not runtime enforcement or whole-program type inference.
+
+Only three modules are exempt: `file_helper.py` implements the primitives,
+`_file_handles.py` provides native filesystem operations, `_file_policy.py`
+establishes trusted roots and bootstraps policy. The deny-mode policy for
+`integration_state.py` does not exempt it from this guard. Existing direct calls
+elsewhere are not exempt when their call sites change.

@@ -21,6 +21,14 @@ from tests.conftest import strip_ansi
 class TestExtensionListCLI:
     """Test extension list CLI output format."""
 
+    def test_list_help_points_to_search_for_catalog_entries(self):
+        result = CliRunner().invoke(app, ["extension", "list", "--help"])
+
+        assert result.exit_code == 0, result.output
+        plain = " ".join(strip_ansi(result.output).replace("│", " ").split())
+        assert "Use specify extension search to discover catalog extensions" in plain
+        assert plain.count("Show installed extensions and an installation hint") == 2
+
     def test_list_shows_extension_id(self, extension_dir, project_dir):
         """extension list should display the extension ID."""
 

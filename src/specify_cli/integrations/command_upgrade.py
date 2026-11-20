@@ -31,7 +31,7 @@ from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _cli_e
 @external_lifecycle("upgrade")
 def integration_upgrade(
     key: str | None = typer.Argument(None, help="Integration key to upgrade (default: current integration)"),
-    force: bool = typer.Option(False, "--force", help="Force upgrade even if files are modified"),
+    force: bool = typer.Option(False, "--force", help="Force upgrade even if files are modified; when upgrading the active integration, also overwrite modified or unowned extension resource copies"),
     script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or py (default: from init-options.json or platform default)"),
     integration_options: str | None = typer.Option(None, "--integration-options", help="Options for the integration"),
     trust_integration: bool = typer.Option(False, "--trust-integration", help="Authorize executing a reviewed external integration update without prompting"),
@@ -352,6 +352,7 @@ def integration_upgrade(
             project_root,
             key,
             force=True,
+            overwrite_modified=force,
             continuing="The integration was upgraded, but installed extensions may need re-registration.",
         )
         _register_presets_for_agent(
