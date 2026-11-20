@@ -1032,3 +1032,36 @@ def test_builtin_journal_keeps_the_snapshot_when_the_path_is_replaced_during_res
     assert "Could not fully restore" in warning and "their contents" in warning
     assert len(backups) == 1 and backups[0].is_dir()
     shutil.rmtree(backups[0])
+
+
+@pytest.mark.parametrize("edit", ["append", "same-size"])
+def test_builtin_journal_refuses_a_file_edited_in_place_while_it_is_snapshotted(tmp_path, monkeypatch, edit):
+    """A snapshot taken while the file changed in place may hold mixed bytes, so the write is refused."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+    from specify_cli.integrations.installer import IntegrationInstallError
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    os.utime(target, ns=(1_000_000_000, 1_000_000_000))
+    real_snapshot = _lifecycle._FileJournal._snapshot
+
+    def edit_during_snapshot(self, source, destination):
+        real_snapshot(self, source, destination)
+        if source == target:
+            with target.open("ab" if edit == "append" else "r+b") as stream:
+                stream.write(b"user edit\n" if edit == "append" else b"ORIGINAL\n")
+            if edit == "same-size":
+                os.utime(target, ns=(1_000_000_000, 2_000_000_000))
+
+    monkeypatch.setattr(_lifecycle._FileJournal, "_snapshot", edit_during_snapshot)
+
+    with pytest.raises(IntegrationInstallError, match="changed during the operation"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+
+    edited = "original\nuser edit\n" if edit == "append" else "ORIGINAL\n"
+    assert target.read_text(encoding="utf-8") == edited
+

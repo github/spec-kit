@@ -145,6 +145,14 @@ def _entry_state(path: Path) -> tuple[int, ...]:
         entry.st_mtime_ns, entry.st_ctime_ns,
     )
 
+def _stat_state(entry: os.stat_result) -> tuple[int, ...]:
+    """The fields ``_entry_state`` compares, from a stat result already taken."""
+    return (
+        entry.st_mode, entry.st_dev, entry.st_ino, entry.st_size,
+        entry.st_mtime_ns, entry.st_ctime_ns,
+    )
+
+
 def _matches_directory_before_write(current: Any, expected: Any, parents: tuple[str, ...]) -> bool:
     """Allow only new empty directories on the destination's parent chain."""
     if current == expected:
@@ -438,12 +446,19 @@ class _FileJournal:
                         self._pin(path, entry)
                     try:
                         self._snapshot(path, saved)
-                        if restorable:
-                            attributes = self._read_xattrs(path)
-                            if os.path.samestat(entry, path.lstat()):
-                                self._remember_original(path, entry, attributes)
-                            else:
+                        if stat.S_ISREG(entry.st_mode):
+                            attributes = self._read_xattrs(path) if restorable else None
+                            after = _entry_state(path)
+                            if after[1:3] != (entry.st_dev, entry.st_ino):
                                 self._unpin(path)
+                            elif after != _stat_state(entry):
+                                # Same file, but its size or times moved while it
+                                # was copied: the snapshot may hold mixed bytes.
+                                raise installer.IntegrationInstallError(
+                                    f"Integration output changed during the operation; refusing to overwrite {path}"
+                                )
+                            elif restorable:
+                                self._remember_original(path, entry, attributes)
                     except BaseException:
                         self._unpin(path)
                         raise
