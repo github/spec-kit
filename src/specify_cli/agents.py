@@ -641,14 +641,17 @@ class CommandRegistrar:
                 target = None
             if target is not None and ".specify-dev" in target.parts:
                 return True
+            # A symlink to a non-regular target (device, pipe, socket) must
+            # not be read below: reading it could block or exhaust memory.
+            if target is not None and target.exists() and not target.is_file():
+                return False
         try:
             raw = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             return False
         fm, _ = CommandRegistrar.parse_frontmatter(raw)
-        source = (
-            fm.get("metadata", {}).get("source", "") if isinstance(fm, dict) else ""
-        )
+        metadata = fm.get("metadata", {}) if isinstance(fm, dict) else {}
+        source = metadata.get("source", "") if isinstance(metadata, dict) else ""
         if not isinstance(source, str) or not source:
             return False
         if source.startswith("extension:") and len(source) > len("extension:"):
@@ -658,14 +661,14 @@ class CommandRegistrar:
         if source.startswith("templates/commands/") and source.endswith(".md"):
             return True
         head, sep, tail = source.partition(":")
-        return bool(
-            sep
-            and head
-            and "/" not in head
-            and not any(ch.isspace() for ch in head)
-            and tail
-            and ("/" in tail or tail.endswith(".md"))
-        )
+        # A native marker is "<source_id>:<source file>"; the file part must
+        # be a safe extension-relative path under the same policy
+        # registration uses, so a URL-like source (e.g. an unrelated skill
+        # whose metadata.source is "https://example.com/skills/review")
+        # cannot pass as tooling-owned.
+        if not sep or not head or "/" in head or any(ch.isspace() for ch in head):
+            return False
+        return relative_extension_path_violation(tail) is None
 
     @staticmethod
     def _same_lexical_path(left: Path, right: Path) -> bool:
