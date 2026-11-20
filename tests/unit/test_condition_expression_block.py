@@ -1008,6 +1008,27 @@ def test_both_sides_of_a_boolean_are_reported():
     assert _unresolvable_term("false and bogus") is not None
 
 
+def test_every_operand_of_a_comparison_chain_is_reported():
+    """Validation visits chain operands that runtime may skip (#5071).
+
+    A chained comparison short-circuits at the first false pair, like
+    ``and``; the diagnostics walk the parse tree instead, so the final
+    operand's name and a misused filter in a later operand are still
+    reported -- including inside a parenthesized comparison, which ends the
+    chain for evaluation but stays transparent to the walk.
+    """
+    chain = "5 <= inputs.n <= bogus"
+    assert _collect_leaves(chain) == ["inputs.n", "bogus"]
+    assert _unresolvable_term(chain) is not None
+    assert _evaluator_rejects("0 <= inputs.n <= (inputs.x | nosuchfilter)") is not None
+    assert _evaluator_rejects(
+        "(inputs.a < (inputs.x | nosuchfilter)) < inputs.b"
+    ) is not None
+    assert _evaluator_rejects("0 <= inputs.n <= (inputs.items | length)") is None
+    grouped = "(1 < inputs.a) < inputs.b"
+    assert _collect_leaves(grouped) == ["inputs.a", "inputs.b"]
+
+
 def test_a_long_boolean_chain_is_validated_without_exhausting_the_stack():
     """Validation walks every operand of a long chain, the last one included."""
     chain = " or ".join(["inputs.flag"] * 1000)
