@@ -501,6 +501,7 @@ def _prune_new_parents(root: Path, journal: _FileJournal, path: Path) -> None:
 def _restore_file_in_place(
     path: Path, saved: Path, is_original: Callable[[os.stat_result], bool] | None,
     attributes: dict[str, bytes] | None, file_flags: int | None = None,
+    checked: tuple[int, ...] | None = None,
 ) -> str:
     """Write a snapshot back into the file it was taken from.
 
@@ -516,7 +517,11 @@ def _restore_file_in_place(
     or a directory) or cannot be opened for writing; the caller then
     recreates it. Returns ``"incomplete"`` when the bytes were restored but
     some metadata could not be, safely or at all (another user's file, say),
-    and ``"restored"`` otherwise. ``file_flags`` are the file's BSD flags when
+    and ``"restored"`` otherwise. ``checked`` is the ``_entry_state`` the
+    caller's content check saw; when given, a path that no longer holds that
+    entry, before or after the open, returns ``"modified"`` with nothing
+    written, so the caller keeps it as a conflict rather than recreating over
+    it. ``file_flags`` are the file's BSD flags when
     snapshotted; Python has no descriptor form of ``chflags()``, so changed
     flags are reported, not set back. A failed byte write raises.
     """
@@ -531,6 +536,8 @@ def _restore_file_in_place(
             entry = files.stat(path.name)
         except (OSError, FileHelperError):
             return "untouched"
+        if checked is not None and _stat_state(entry) != checked:
+            return "modified"
         if not is_original(entry):
             return "untouched"
         with ExitStack() as stack:
@@ -541,6 +548,8 @@ def _restore_file_in_place(
             except (OSError, FileHelperError):
                 return "untouched"
             opened = os.fstat(descriptor)
+            if checked is not None and (opened.st_dev, opened.st_ino) != checked[1:3]:
+                return "modified"
             if not is_original(opened):
                 return "untouched"
             # Open the snapshot before truncating: one this process cannot read
@@ -640,6 +649,14 @@ def _restore_xattrs(descriptor: int, attributes: dict[str, bytes]) -> bool:
     return complete
 
 
+def _current_state(path: Path) -> tuple[int, ...] | None:
+    """``_entry_state`` of ``path``, or None when nothing is there."""
+    try:
+        return _entry_state(path)
+    except FileNotFoundError:
+        return None
+
+
 def _still_has_identity(path: Path, identity: tuple[int, int] | None) -> bool:
     if identity is None:
         return False
@@ -653,7 +670,14 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
     conflicts = []
     for path, (saved, written_identity) in reversed(tuple(journal.changes.items())):
         journal.safe_path(path)
+        # The entry the content check below sees. Everything rollback does to
+        # the path afterwards first confirms it still holds this entry, so a
+        # replacement or edit made meanwhile is kept as a conflict.
+        checked = _current_state(path)
         current_identity = _file_identity(path)
+        if _current_state(path) != checked:
+            conflicts.append(path)
+            continue
         if path in journal.pending or any(path in pending.parents for pending in journal.pending):
             original_identity = _file_identity(saved) if saved is not None else None
             if saved is None and path not in journal.pending and current_identity == written_identity:
@@ -676,8 +700,11 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
             is_original = partial(journal.is_original, path) if path in journal.snapshotted_files else None
             restored = _restore_file_in_place(
                 path, saved, is_original, journal.snapshotted_xattrs.get(path),
-                journal.snapshotted_flags.get(path),
+                journal.snapshotted_flags.get(path), checked,
             )
+            if restored == "modified":
+                conflicts.append(path)
+                continue
             if (
                 restored == "incomplete"
                 or _still_has_identity(path, journal.unverified_files.get(path))
@@ -690,6 +717,10 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
                 journal.incomplete_restores.append(path)
             if restored != "untouched":
                 continue
+        if _current_state(path) != checked:
+            # Replaced or edited since the content check: never delete it.
+            conflicts.append(path)
+            continue
         if path.is_dir() and not path.is_symlink():
             shutil.rmtree(path)
         elif path.exists() or path.is_symlink():

@@ -343,7 +343,7 @@ def _record_rollback_backups(monkeypatch):
     return backups
 
 
-def test_builtin_journal_never_writes_a_different_file_open_returned(tmp_path, monkeypatch):
+def test_builtin_journal_never_writes_a_different_file_open_returned(tmp_path, monkeypatch, capsys):
     """A descriptor that is not the snapshotted file is neither truncated nor written."""
     from specify_cli.integrations import _lifecycle
     from specify_cli.integrations._file_changes import write_text
@@ -373,8 +373,12 @@ def test_builtin_journal_never_writes_a_different_file_open_returned(tmp_path, m
 
     assert opened
     assert decoy.read_text(encoding="utf-8") == "decoy\n"
-    assert target.read_text(encoding="utf-8") == "original\n"
+    # A descriptor on another file means the path cannot be trusted, so it is
+    # kept as a conflict, with its snapshot, rather than recreated.
+    assert target.read_text(encoding="utf-8") == "generated\n"
     assert not os.path.samefile(target, decoy)
+    assert "Preserved concurrent edits" in " ".join(capsys.readouterr().out.split())
+    assert len(backups) == 1 and backups[0].is_dir()
     for backup in backups:
         shutil.rmtree(backup)
 
@@ -1064,4 +1068,74 @@ def test_builtin_journal_refuses_a_file_edited_in_place_while_it_is_snapshotted(
 
     edited = "original\nuser edit\n" if edit == "append" else "ORIGINAL\n"
     assert target.read_text(encoding="utf-8") == edited
+
+
+@pytest.mark.skipif(not _PINS_FILES, reason="Windows files cannot be replaced while open")
+def test_builtin_journal_keeps_a_file_replaced_before_its_in_place_restore_opens_it(tmp_path, monkeypatch, capsys):
+    """A path replaced after the content check is a conflict, never an untouched file to recreate."""
+    from specify_cli.file_helper import FileHelper
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    replacement = tmp_path / "replacement"
+    replacement.write_text("concurrent\n", encoding="utf-8")
+    real_open_rewrite = FileHelper.open_rewrite
+
+    def replace_then_open(self, path):
+        if Path(self.root) / path == target and replacement.exists():
+            os.replace(replacement, target)
+        return real_open_rewrite(self, path)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            monkeypatch.setattr(FileHelper, "open_rewrite", replace_then_open)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "concurrent\n"
+    assert "Preserved concurrent edits" in " ".join(capsys.readouterr().out.split())
+    assert len(backups) == 1 and backups[0].is_dir()
+    shutil.rmtree(backups[0])
+
+
+def test_builtin_journal_keeps_a_file_replaced_before_it_is_recreated(tmp_path, monkeypatch, capsys):
+    """A path replaced between the content check and the fallback recreate is kept as a conflict."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import after_file_change, before_file_change
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    generated = tmp_path / "generated"
+    generated.write_text("generated\n", encoding="utf-8")
+    concurrent = tmp_path / "concurrent"
+    concurrent.write_text("concurrent\n", encoding="utf-8")
+    real_restore = _lifecycle._restore_file_in_place
+
+    def restore_then_replace(path, *args, **kwargs):
+        result = real_restore(path, *args, **kwargs)
+        if path == target:
+            os.replace(concurrent, target)
+        return result
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            before_file_change(target)
+            # The operation replaces the file, so rollback recreates it.
+            os.replace(generated, target)
+            after_file_change(target)
+            monkeypatch.setattr(_lifecycle, "_restore_file_in_place", restore_then_replace)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "concurrent\n"
+    assert "Preserved concurrent edits" in " ".join(capsys.readouterr().out.split())
+    assert len(backups) == 1 and backups[0].is_dir()
+    shutil.rmtree(backups[0])
 
