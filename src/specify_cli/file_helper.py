@@ -3,6 +3,7 @@
 import codecs
 import errno
 import os
+import secrets
 import stat
 import sys
 import tempfile
@@ -587,17 +588,44 @@ class FileHelper:
         destination = self._path(path, allow_missing=True)
         if destination.exists():
             self._require_file(destination)
-        fd, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
-        temporary_path = Path(temporary)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        flags |= getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        # Keep the sibling name short regardless of the destination's length.
+        for _ in range(10):
+            name = f".{secrets.token_hex(8)}.tmp"
+            if name == destination.name.rstrip(" .").casefold():
+                continue
+            temporary_path = destination.with_name(name)
+            try:
+                # Retain private staging, intersected with the requested mode.
+                fd = os.open(temporary_path, flags, mode & 0o600)
+            except FileExistsError:
+                continue
+            break
+        else:
+            raise FileExistsError(errno.EEXIST, "Could not allocate a staging file", str(destination))
+        published = False
         try:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(content)
+            try:
+                with os.fdopen(fd, "wb", closefd=False) as stream:
+                    stream.write(content)
+            finally:
+                os.close(fd)
             temporary_path.chmod(mode)
             if self._path(path, allow_missing=True) != destination:
                 raise FileHelperError(f"Destination changed during write: {path}")
             os.replace(temporary_path, destination)
+            published = True
         finally:
-            temporary_path.unlink(missing_ok=True)
+            if not published:
+                try:
+                    temporary_path.unlink(missing_ok=True)
+                except PermissionError:
+                    if os.name != "nt" or temporary_path.stat().st_mode & stat.S_IWRITE:
+                        raise
+                    # Windows cannot unlink a read-only file without clearing the attribute.
+                    temporary_path.chmod(0o600)
+                    temporary_path.unlink(missing_ok=True)
 
     def write_text(
         self, path: Path | str, content: str, *, encoding: str = "utf-8", mode: int = 0o644

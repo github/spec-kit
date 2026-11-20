@@ -3442,6 +3442,124 @@ def test_atomic_failure_cleans_temp_and_preserves_target(root, monkeypatch):
     assert list(root.iterdir()) == [root / "file"]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows path length depends on host configuration")
+def test_atomic_write_creates_and_replaces_long_component(root, monkeypatch):
+    destination = root / ("x" * 252 + ".sh")
+    try:
+        destination.touch()
+    except OSError as exc:
+        if exc.errno == errno.ENAMETOOLONG:
+            pytest.skip("Filesystem does not support a 255-byte component")
+        raise
+    destination.unlink()
+    replace = os.replace
+    old_content = None
+
+    def observe(source, target):
+        assert source.parent == target.parent == destination.parent
+        assert source != target == destination
+        assert (target.read_bytes() if target.exists() else None) == old_content
+        replace(source, target)
+
+    monkeypatch.setattr(os, "replace", observe)
+    with FileHelper(root) as files:
+        for content in (b"first", b"second"):
+            files.write_bytes(destination, content)
+            assert destination.read_bytes() == content
+            assert list(root.iterdir()) == [destination]
+            old_content = content
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits required")
+@pytest.mark.parametrize(("mode", "staging_mode"), [(0o400, 0o400), (0o755, 0o600)])
+def test_atomic_write_staging_mode_and_exact_final_mode(root, monkeypatch, mode, staging_mode):
+    fdopen = os.fdopen
+    observed_modes = []
+
+    def observe(fd, *args, **kwargs):
+        observed_modes.append(stat.S_IMODE(os.fstat(fd).st_mode))
+        return fdopen(fd, *args, **kwargs)
+
+    monkeypatch.setattr(os, "fdopen", observe)
+    previous = os.umask(0o077)
+    try:
+        with FileHelper(root) as files:
+            files.write_bytes("file", b"new", mode=mode)
+    finally:
+        os.umask(previous)
+    assert observed_modes == [staging_mode]
+    assert stat.S_IMODE((root / "file").stat().st_mode) == mode
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows read-only semantics required")
+def test_atomic_write_windows_readonly_mode_and_cleanup(root, monkeypatch):
+    fdopen = os.fdopen
+    replace = os.replace
+    observed_modes = []
+
+    def observe(fd, *args, **kwargs):
+        observed_modes.append(os.fstat(fd).st_mode & stat.S_IWRITE)
+        return fdopen(fd, *args, **kwargs)
+
+    def fail(source, target):
+        assert not source.stat().st_mode & stat.S_IWRITE
+        raise PermissionError("replacement denied")
+
+    monkeypatch.setattr(os, "fdopen", observe)
+    monkeypatch.setattr(os, "replace", fail)
+    with FileHelper(root) as files:
+        with pytest.raises(PermissionError, match="replacement denied"):
+            files.write_bytes("file", b"new", mode=0o400)
+        assert not list(root.iterdir())
+        monkeypatch.setattr(os, "replace", replace)
+        files.write_bytes("file", b"new", mode=0o400)
+    target = root / "file"
+    try:
+        assert not target.stat().st_mode & stat.S_IWRITE
+        assert target.read_bytes() == b"new"
+        assert observed_modes == [0, 0]
+    finally:
+        target.chmod(0o600)
+
+
+def test_atomic_write_retries_staging_collisions_without_touching_entries(root, monkeypatch):
+    existing = root / ".0000000000000000.tmp"
+    existing.write_bytes(b"keep")
+    destination = root / ".1111111111111111.tmp"
+    tokens = iter(["0" * 16, "1" * 16, "2" * 16])
+    replace = os.replace
+
+    def observe(source, target):
+        assert not target.exists()
+        replace(source, target)
+
+    monkeypatch.setattr(file_helper.secrets, "token_hex", lambda _: next(tokens))
+    monkeypatch.setattr(os, "replace", observe)
+    with FileHelper(root) as files:
+        files.write_bytes(destination, b"new")
+    assert existing.read_bytes() == b"keep"
+    assert destination.read_bytes() == b"new"
+    assert set(root.iterdir()) == {destination, existing}
+
+
+def test_atomic_write_deny_revalidates_destination_and_cleans_stage(root, link, monkeypatch):
+    target = root / "target"
+    target.write_bytes(b"old")
+    destination = root / "destination"
+    chmod = Path.chmod
+
+    def insert_link(path, mode, **kwargs):
+        chmod(path, mode, **kwargs)
+        link(destination, target)
+
+    monkeypatch.setattr(Path, "chmod", insert_link)
+    with FileHelper(root) as files, pytest.raises(SymlinkDeniedError):
+        files.write_bytes(destination, b"new")
+    assert destination.is_symlink()
+    assert target.read_bytes() == b"old"
+    assert set(root.iterdir()) == {destination, target}
+
+
 def test_native_permission_failure_is_not_suppressed(root, monkeypatch):
     files = FileHelper(root)
 

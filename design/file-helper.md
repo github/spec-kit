@@ -274,9 +274,12 @@ descriptor-relative or change their documented concurrency limitations.
   fail explicitly rather than falling back to unanchored creation.
 - `write_bytes(path, content, mode=0o644)` / `write_text(...)` atomically
   create or update files with existing parents. Text variants also accept
-  `encoding="utf-8"`. Replacement files use the supplied mode; metadata and
+  `encoding="utf-8"`. A short, exclusively created sibling stages the write.
+  On POSIX, the initial mode is restricted to the requested owner read/write
+  bits and filtered by the process umask. After writing, the supplied mode is
+  applied with `chmod` using the platform's supported semantics. Metadata and
   hard-link identity are not preserved. Atomic means same-directory
-  `os.replace`, not crash durability.
+  `os.replace`, not crash durability or protection from concurrent path changes.
 - `overwrite_text(path, content, encoding="utf-8")` is a **non-atomic** text
   upsert with existing parents, used for configuration compatibility. It uses
   the same accessed-path/link/containment checks as other operations, follows
