@@ -12,7 +12,7 @@ from rich.markup import escape
 
 from ._console import err_console
 from ._file_policy import ProjectPolicyError, project_files
-from .file_helper import FileHelper
+from .file_helper import FileHelper, FileHelperError, SymlinkDeniedError
 
 try:
     from typer._click.globals import get_current_context
@@ -37,12 +37,16 @@ def _resolve_init_dir_override_unrendered() -> Path | None:
         raise ProjectResolutionError(
             f"Cannot resolve SPECIFY_INIT_DIR '{raw}': {exc}"
         ) from exc
-    if not init_root.is_dir():
+    try:
+        with FileHelper(init_root):
+            pass
+    except (FileNotFoundError, NotADirectoryError) as exc:
         raise ProjectResolutionError(
             f"SPECIFY_INIT_DIR does not point to an existing directory: {raw}"
-        )
-    preflight_project_policy(init_root)
-    if not (init_root / ".specify").is_dir():
+        ) from exc
+    except (OSError, FileHelperError, RuntimeError) as exc:
+        raise ProjectResolutionError(f"Cannot resolve SPECIFY_INIT_DIR '{raw}': {exc}") from exc
+    if not preflight_project_policy(init_root):
         raise ProjectResolutionError(
             "SPECIFY_INIT_DIR is not a Spec Kit project "
             f"(no .specify/ directory): {init_root}"
@@ -50,20 +54,31 @@ def _resolve_init_dir_override_unrendered() -> Path | None:
     return init_root
 
 
-def preflight_project_policy(project_root: Path) -> None:
-    """Validate at the resolved project boundary without printing or caching."""
+def preflight_project_policy(project_root: Path) -> bool:
+    """Validate policy and report marker presence without printing or caching."""
     try:
-        project_files(project_root)
+        with project_files(project_root):
+            pass
     except ProjectPolicyError as exc:
         marker = project_root / ".specify"
-        if marker.is_symlink():
+        try:
+            with FileHelper(project_root) as files:
+                files.directory_exists(".specify")
+        except SymlinkDeniedError:
             raise ProjectResolutionError(
                 f"Refusing to use symlinked .specify path: {marker}. {exc}"
             ) from exc
-        if marker.exists() and not marker.is_dir():
+        except NotADirectoryError:
             raise ProjectResolutionError(
                 f"Not a Spec Kit project: .specify path exists but is not a directory: {marker}"
             ) from exc
+        except (OSError, FileHelperError, RuntimeError):
+            pass  # Keep the original policy failure when the marker cannot be classified.
+        raise ProjectResolutionError(str(exc)) from exc
+    try:
+        with FileHelper(project_root) as files:
+            return files.directory_exists(".specify")
+    except (OSError, FileHelperError, RuntimeError) as exc:
         raise ProjectResolutionError(str(exc)) from exc
 
 
@@ -107,8 +122,7 @@ def resolve_specify_project_root() -> Path:
     if override is not None:
         return override
     project_root = Path.cwd()
-    preflight_project_policy(project_root)
-    if not (project_root / ".specify").is_dir():
+    if not preflight_project_policy(project_root):
         raise ProjectResolutionError("Not a Spec Kit project (no .specify/ directory)")
     return project_root
 
