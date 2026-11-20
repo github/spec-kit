@@ -44,6 +44,15 @@ def _strip_extended_length_prefix(path: _PathType) -> _PathType:
     return path
 
 
+def _windows_extended_path(path: _PathType) -> _PathType:
+    raw = str(path)
+    if raw.startswith("\\\\?\\"):
+        return path
+    if raw.startswith("\\\\"):
+        return type(path)("\\\\?\\UNC\\" + raw[2:])
+    return type(path)("\\\\?\\" + raw)
+
+
 class FileHelperError(ValueError):
     """An operation violates the scoped filesystem contract."""
 
@@ -590,16 +599,41 @@ class FileHelper:
             self._require_file(destination)
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         flags |= getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-        use_short_name = False
+        with ExitStack() as staging:
+            fd, stage, parent_fd = self._open_atomic_stage(destination, flags, mode, staging)
+            published = False
+            try:
+                try:
+                    with os.fdopen(fd, "wb", closefd=False) as stream:
+                        stream.write(content)
+                    if parent_fd is not None:
+                        os.fchmod(fd, mode)
+                finally:
+                    os.close(fd)
+                if parent_fd is None:
+                    stage.chmod(mode)
+                if self._path(path, allow_missing=True) != destination:
+                    raise FileHelperError(f"Destination changed during write: {path}")
+                if parent_fd is None:
+                    os.replace(stage, destination)
+                else:
+                    os.replace(stage, destination, src_dir_fd=parent_fd)
+                published = True
+            finally:
+                if not published:
+                    self._unlink_atomic_stage(stage, parent_fd)
+
+    def _open_atomic_stage(
+        self, destination: Path, flags: int, mode: int, staging: ExitStack,
+    ) -> tuple[int, Path, int | None]:
+        mode &= 0o600
         for _ in range(10):
-            token = secrets.token_hex(8)
-            name = token[:len(destination.name)] if use_short_name else f".{token}.tmp"
+            name = f".{secrets.token_hex(8)}.tmp"
             if name == destination.name.rstrip(" .").casefold():
                 continue
-            temporary_path = destination.with_name(name)
+            stage = destination.with_name(name)
             try:
-                # Retain private staging, intersected with the requested mode.
-                fd = os.open(temporary_path, flags, mode & 0o600)
+                return os.open(stage, flags, mode), stage, None
             except FileExistsError:
                 continue
             except OSError as exc:
@@ -607,35 +641,88 @@ class FileHelper:
                 length_error = exc.errno == errno.ENAMETOOLONG or (
                     os.name == "nt" and exc.errno == errno.ENOENT
                 )
-                if use_short_name or len(name) <= len(destination.name) or not length_error:
+                if not length_error or len(name) <= len(destination.name):
                     raise
-                use_short_name = True
-                continue
+                if os.name == "nt":
+                    if not destination.parent.is_dir():
+                        raise
+                    directory = Path(tempfile.mkdtemp(dir=_windows_extended_path(destination.parent)))
+                    staging.enter_context(self._remove_atomic_directory(directory))
+                    stage = directory / "payload"
+                    return os.open(stage, flags, mode), stage, None
+                if not {os.mkdir, os.chmod, os.rename, os.rmdir, os.unlink} <= os.supports_dir_fd:
+                    raise
             break
         else:
             raise FileExistsError(errno.EEXIST, "Could not allocate a staging file", str(destination))
-        published = False
-        try:
+
+        # Keep the payload out of the destination's namespace, without
+        # spending the remaining absolute path budget on the staging name.
+        parent = staging.enter_context(self._posix_directory(
+            destination.parent, unsupported_message="Directory-relative staging is unsupported",
+        ))
+        for _ in range(10):
+            name = f".{secrets.token_hex(8)}.tmp"
             try:
-                with os.fdopen(fd, "wb", closefd=False) as stream:
-                    stream.write(content)
-            finally:
-                os.close(fd)
-            temporary_path.chmod(mode)
-            if self._path(path, allow_missing=True) != destination:
-                raise FileHelperError(f"Destination changed during write: {path}")
-            os.replace(temporary_path, destination)
-            published = True
-        finally:
-            if not published:
+                os.mkdir(name, 0o700, dir_fd=parent)
+            except FileExistsError:
+                continue
+            staging.enter_context(self._remove_atomic_directory(Path(name), parent))
+            break
+        else:
+            raise FileExistsError(errno.EEXIST, "Could not allocate a staging directory", str(destination))
+        # A restrictive umask must not make the private staging directory unusable.
+        os.chmod(name, 0o700, dir_fd=parent, follow_symlinks=False)
+        directory_fd = os.open(name, self._directory_flags(), dir_fd=parent)
+        staging.callback(os.close, directory_fd)
+        stage = Path("payload")
+        return os.open(stage, flags, mode, dir_fd=directory_fd), stage, directory_fd
+
+    @staticmethod
+    @contextmanager
+    def _remove_atomic_directory(directory: Path, parent: int | None = None) -> Iterator[None]:
+        def remove() -> None:
+            if parent is None:
+                directory.rmdir()
+            else:
+                os.rmdir(directory, dir_fd=parent)
+
+        try:
+            yield
+        except BaseException as exc:
+            try:
+                remove()
+            except OSError as cleanup_error:
+                exc.add_note(f"Could not remove atomic staging directory: {cleanup_error}")
+            raise
+        else:
+            remove()
+
+    @staticmethod
+    def _unlink_atomic_stage(stage: Path, parent: int | None) -> None:
+        if parent is not None:
+            try:
+                os.unlink(stage, dir_fd=parent)
+            except FileNotFoundError:
+                pass
+            return
+        try:
+            stage.unlink(missing_ok=True)
+        except PermissionError:
+            if os.name != "nt":
+                raise
+            mode = stat.S_IMODE(stage.stat().st_mode)
+            if mode & stat.S_IWRITE:
+                raise
+            stage.chmod(mode | stat.S_IWRITE)
+            try:
+                stage.unlink(missing_ok=True)
+            except OSError as exc:
                 try:
-                    temporary_path.unlink(missing_ok=True)
-                except PermissionError:
-                    if os.name != "nt" or temporary_path.stat().st_mode & stat.S_IWRITE:
-                        raise
-                    # Windows cannot unlink a read-only file without clearing the attribute.
-                    temporary_path.chmod(0o600)
-                    temporary_path.unlink(missing_ok=True)
+                    stage.chmod(mode)
+                except OSError as restore_error:
+                    exc.add_note(f"Could not restore atomic stage permissions: {restore_error}")
+                raise
 
     def write_text(
         self, path: Path | str, content: str, *, encoding: str = "utf-8", mode: int = 0o644

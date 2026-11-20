@@ -275,13 +275,16 @@ descriptor-relative or change their documented concurrency limitations.
 - `write_bytes(path, content, mode=0o644)` / `write_text(...)` atomically
   create or update files with existing parents. Text variants also accept
   `encoding="utf-8"`. A short, exclusively created sibling stages the write.
-  If the staging name exceeds a path limit, retry with a name no longer than
-  the destination's final component.
+  If the staging path exceeds a path limit, stage inside a separate temporary
+  directory under the destination's parent instead of using a short file name
+  that could also be another write's destination. This uses directory-relative
+  operations where supported on POSIX and an extended staging path on Windows.
   On POSIX, the initial mode is restricted to the requested owner read/write
   bits and filtered by the process umask. After writing, the supplied mode is
   applied with `chmod` using the platform's supported semantics. Metadata and
-  hard-link identity are not preserved. Atomic means same-directory
-  `os.replace`, not crash durability or protection from concurrent path changes.
+  hard-link identity are not preserved. Atomic means same-filesystem
+  replacement with `os.replace`, not crash durability or protection from
+  concurrent path changes.
 - `overwrite_text(path, content, encoding="utf-8")` is a **non-atomic** text
   upsert with existing parents, used for configuration compatibility. It uses
   the same accessed-path/link/containment checks as other operations, follows

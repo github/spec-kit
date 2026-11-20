@@ -3497,9 +3497,7 @@ def test_atomic_writable_stage_cleanup_propagates_unlink_failure(root, monkeypat
     failed_unlinks[0].unlink()
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")
-@pytest.mark.parametrize("leaf_budget", [1, 16])
-def test_atomic_write_near_native_path_limit(root, monkeypatch, leaf_budget):
+def _near_limit_parent(root, leaf_budget):
     parent = root.resolve()
     path_max = os.pathconf(parent, "PC_PATH_MAX")
     name_max = os.pathconf(parent, "PC_NAME_MAX")
@@ -3512,35 +3510,177 @@ def test_atomic_write_near_native_path_limit(root, monkeypatch, leaf_budget):
             component_size -= 1
         parent /= "x" * component_size
         parent.mkdir()
+    return parent
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")
+@pytest.mark.parametrize("leaf_budget", [1, 16])
+def test_atomic_write_near_native_path_limit(root, monkeypatch, leaf_budget):
+    parent = _near_limit_parent(root, leaf_budget)
     destination = parent / "f"
+    path_max = os.pathconf(parent, "PC_PATH_MAX")
     assert len(os.fsencode(destination)) == path_max - leaf_budget
     destination.write_bytes(b"probe")
     destination.unlink()
     monkeypatch.setattr(file_helper.secrets, "token_hex", lambda _: "2" * 16)
+    previous = os.umask(0o700)
+    try:
+        with FileHelper(root) as files:
+            for content in (b"first", b"second"):
+                files.write_bytes(destination, content, mode=0o640)
+                assert destination.read_bytes() == content
+                assert stat.S_IMODE(destination.stat().st_mode) == 0o640
+                assert list(parent.iterdir()) == [destination]
+    finally:
+        os.umask(previous)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")
+def test_atomic_near_limit_writes_do_not_move_each_others_payload(root, monkeypatch):
+    parent = _near_limit_parent(root, 1)
+    first, second = parent / "a", parent / "2"
+    fdopen = os.fdopen
+    interleaved = False
+
+    def interleave(fd, *args, **kwargs):
+        nonlocal interleaved
+        if not interleaved:
+            interleaved = True
+            with FileHelper(root) as other:
+                other.write_bytes(second, b"second")
+        return fdopen(fd, *args, **kwargs)
+
+    monkeypatch.setattr(file_helper.secrets, "token_hex", lambda _: ("3" if interleaved else "2") * 16)
+    monkeypatch.setattr(os, "fdopen", interleave)
     with FileHelper(root) as files:
-        for content in (b"first", b"second"):
-            files.write_bytes(destination, content)
-            assert destination.read_bytes() == content
-            assert list(parent.iterdir()) == [destination]
+        files.write_bytes(first, b"first")
+    assert first.read_bytes() == b"first"
+    assert second.read_bytes() == b"second"
+    assert set(parent.iterdir()) == {first, second}
 
 
-def test_atomic_write_retries_windows_enoent_with_short_name(root, monkeypatch):
+@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")
+def test_atomic_near_limit_write_ignores_occupied_short_names(root, monkeypatch):
+    parent = _near_limit_parent(root, 1)
+    occupied = {parent / name for name in "0123456789abcdef"}
+    for path in occupied:
+        path.write_bytes(b"keep")
+    target = parent / "x"
+    monkeypatch.setattr(file_helper.secrets, "token_hex", lambda _: "2" * 16)
+    with FileHelper(root) as files:
+        files.write_bytes(target, b"new")
+    assert all(path.read_bytes() == b"keep" for path in occupied)
+    assert target.read_bytes() == b"new"
+    assert set(parent.iterdir()) == occupied | {target}
+
+
+def test_atomic_windows_failed_cleanup_restores_readonly_stage(root, monkeypatch):
     destination = root / "file"
+    error = PermissionError(errno.EACCES, "retry unlink denied")
+    stages = []
+
+    def replace_fails(source, target):
+        raise OSError("replacement failed")
+
+    def unlink_fails(path, *, missing_ok=False):
+        stages.append(path)
+        if len(stages) == 1:
+            assert not path.stat().st_mode & stat.S_IWRITE
+            raise PermissionError(errno.EACCES, "read-only")
+        assert path.stat().st_mode & stat.S_IWRITE
+        raise error
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "replace": replace_fails}))
+        model.setattr(Path, "unlink", unlink_fails)
+        with pytest.raises(PermissionError) as exc:
+            files.write_bytes(destination, b"new", mode=0o400)
+    assert exc.value is error
+    assert len(stages) == 2 and stages[0] == stages[1]
+    try:
+        assert not stages[0].stat().st_mode & stat.S_IWRITE
+        assert stages[0].read_bytes() == b"new"
+        assert not destination.exists()
+    finally:
+        stages[0].chmod(0o600)
+        stages[0].unlink()
+
+
+def test_atomic_write_retries_windows_enoent_in_staging_directory(root, monkeypatch):
+    destination = root / "file"
+    parent = root.resolve()
     attempted = []
 
     def open_with_limit(path, flags, mode):
         attempted.append(path)
-        if len(path.name) > len(destination.name):
+        if path.parent == parent:
             raise FileNotFoundError(errno.ENOENT, "modeled Windows CRT path limit")
         return os.open(path, flags, mode)
 
     with FileHelper(root) as files, monkeypatch.context() as model:
         model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "open": open_with_limit}))
-        model.setattr(file_helper.secrets, "token_hex", lambda _: "2" * 16)
+        model.setattr(file_helper, "_windows_extended_path", lambda path: path)
         files.write_bytes(destination, b"new")
     assert len(attempted) == 2
+    assert attempted[1].parent.parent == parent
     assert destination.read_bytes() == b"new"
     assert list(root.iterdir()) == [destination]
+
+
+@pytest.mark.parametrize(("name", "code"), [
+    ("file", errno.EACCES),
+    ("x" * 22, errno.ENAMETOOLONG),
+    ("missing/file", errno.ENOENT),
+])
+def test_atomic_staging_nonretryable_error_is_preserved(root, monkeypatch, name, code):
+    destination = root / name
+    error = OSError(code, "staging denied")
+    attempts = []
+    keep = root / "keep"
+    keep.write_bytes(b"old")
+
+    def reject(path, flags, mode):
+        attempts.append(path)
+        raise error
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "open": reject}))
+        with pytest.raises(OSError) as exc:
+            files.write_bytes(destination, b"new")
+    assert exc.value is error
+    assert len(attempts) == 1
+    assert not destination.exists()
+    assert list(root.iterdir()) == [keep]
+    assert keep.read_bytes() == b"old"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")
+@pytest.mark.parametrize("fail_at", ["open", "replace"])
+def test_atomic_near_limit_staging_failure_cleans_directory(root, monkeypatch, fail_at):
+    parent = _near_limit_parent(root, 1)
+    destination = parent / "f"
+    destination.write_bytes(b"old")
+    error = OSError(errno.ENAMETOOLONG if fail_at == "open" else errno.EACCES, "staging failed")
+
+    def observe_open(path, flags, *args, **kwargs):
+        if fail_at == "open" and path == Path("payload"):
+            raise error
+        return os.open(path, flags, *args, **kwargs)
+
+    def observe_replace(source, target, *, src_dir_fd):
+        assert fail_at == "replace"
+        assert stat.S_ISREG(os.stat(source, dir_fd=src_dir_fd).st_mode)
+        raise error
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{
+            **vars(os), "open": observe_open, "replace": observe_replace,
+        }))
+        with pytest.raises(OSError) as exc:
+            files.write_bytes(destination, b"new")
+    assert exc.value is error
+    assert destination.read_bytes() == b"old"
+    assert list(parent.iterdir()) == [destination]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Windows path length depends on host configuration")
