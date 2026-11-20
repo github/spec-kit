@@ -947,6 +947,10 @@ def _journalled(
     Sets ``outcome["retained"]`` when recovery snapshots are kept because
     restoring them found conflicts, restored a file's contents without all of
     its metadata (mode, times, extended attributes or BSD flags), or failed.
+    A conflict is a path whose contents, or mode, mtime or extended
+    attributes, differ from what the body left, or that is replaced while
+    rollback works on it; it is left as found. Captured extended attributes
+    are kept beside their snapshot as ``<snapshot>.xattrs.json``.
     A file the body rewrote in place is restored in place; a file it replaced
     or removed, one rollback cannot safely identify, and a directory are
     recreated from their snapshots. ``initial`` is the census of ``paths``,

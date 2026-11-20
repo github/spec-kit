@@ -295,7 +295,10 @@ Recovery does not bypass catalog policy or replacement-package trust.
 
 Failed operations roll back their own changes, not unrelated user files or
 workflow progress. Conflicting concurrent edits are reported with recovery
-snapshots retained. A file the operation rewrote in place gets its original
+snapshots retained, including a file replaced while rollback restores it and a
+mode, time or attribute changed after the operation wrote the file. A file
+edited in place while the operation snapshots it stops the operation before
+it writes. A file the operation rewrote in place gets its original
 bytes back in that same file, so it keeps its owner, hard links and Windows
 access-control list, and its mode, times, user extended attributes and POSIX
 access ACL are set back where the platform allows it safely. If some of that
