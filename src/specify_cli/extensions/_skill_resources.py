@@ -550,12 +550,17 @@ def retire_skill_resources(
             for key, digest in list(selected.items()):
                 try:
                     path = _validate_record_path(Path(key), trusted)
-                    if path.is_file() and _sha256(path) != digest:
-                        warnings.warn(f"Preserved modified resource {key}", stacklevel=2)
-                        selected.pop(key)
                 except (ValueError, OSError):
-                    # Existing removal safeguards report unsafe or unreadable paths.
+                    # Existing removal safeguards report unsafe paths.
                     continue
+                try:
+                    if not path.is_file() or _sha256(path) == digest:
+                        continue
+                    warnings.warn(f"Preserved modified resource {key}", stacklevel=2)
+                except OSError:
+                    # A copy that can't be read can't be shown to be unmodified.
+                    warnings.warn(f"Preserved unreadable resource {key}", stacklevel=2)
+                selected.pop(key)
         if not selected:
             continue
         skill_dirs = [trusted / Path(*prefix) for prefix in prefixes]

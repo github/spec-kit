@@ -72,6 +72,30 @@ def test_retire_skill_resources_preserves_modified_copies_and_hashes(tmp_path):
     assert unowned.read_text(encoding="utf-8") == "user file"
 
 
+def test_retire_skill_resources_preserves_unreadable_copies(tmp_path, monkeypatch):
+    """A copy whose hash can't be read is kept with its record on a switch (#5366)."""
+    import specify_cli.extensions._skill_resources as skill_resources
+
+    skills = tmp_path / ".claude/skills"
+    name = "speckit-ext-run"
+    unreadable = put(skills / name / "unreadable.md")
+    key = unreadable.relative_to(tmp_path).as_posix()
+    hashes = {"project": {key: _sha256(unreadable)}}
+
+    def fail_on_unreadable(path):
+        if Path(path) == unreadable:
+            raise PermissionError("read denied")
+        return _sha256(path)
+
+    monkeypatch.setattr(skill_resources, "_sha256", fail_on_unreadable)
+    with pytest.warns(UserWarning, match="Preserved unreadable resource"):
+        retire_skill_resources(
+            tmp_path, "ext", hashes, {name}, skills_dir=skills, preserve_modified=True,
+        )
+    assert unreadable.exists()
+    assert key in hashes["project"]
+
+
 def link(path: Path, target: Path, *, directory: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:

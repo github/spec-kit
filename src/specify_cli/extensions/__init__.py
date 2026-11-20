@@ -3940,6 +3940,7 @@ class ExtensionManager:
                         self._historical_generic_roots(metadata, owned_skills)
                         if agent_name == "generic" else ()
                     ),
+                    preserve_modified=preserve_modified,
                 )
             if resource_hashes != metadata.get("skill_resource_hashes", {}):
                 updates["skill_resource_hashes"] = resource_hashes

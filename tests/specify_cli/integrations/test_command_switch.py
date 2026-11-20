@@ -1442,9 +1442,17 @@ def test_switch_writes_skill_resources_for_new_target(tmp_path, installed):
     assert resource.relative_to(project).as_posix() in hashes
 
 
+@pytest.mark.parametrize("stale_supplemental", [False, True], ids=["native", "stale-supplemental"])
 @pytest.mark.parametrize("force", [False, True])
-def test_switch_preserves_edited_source_resources_unless_forced(tmp_path, monkeypatch, force):
-    """Unforced native-skill switches must retain edited resource copies (#5366)."""
+def test_switch_preserves_edited_source_resources_unless_forced(
+    tmp_path, monkeypatch, force, stale_supplemental
+):
+    """Unforced native-skill switches must retain edited resource copies (#5366).
+
+    ``stale-supplemental`` also lists the native skill names in
+    ``registered_skills``, as a project that used Copilot skills mode
+    earlier can, so the supplemental cleanup sees the same copies.
+    """
     import yaml
     from typer.testing import CliRunner
     from specify_cli.extensions import ExtensionManager
@@ -1466,6 +1474,10 @@ def test_switch_preserves_edited_source_resources_unless_forced(tmp_path, monkey
     }), encoding="utf-8")
     manager = ExtensionManager(project)
     manager.install_from_directory(source, "1.0.0")
+    if stale_supplemental:
+        manager.registry.update(
+            "resource-ext", {"registered_skills": ["speckit-resource-ext-run", "speckit-resource-ext-rv"]}
+        )
     skills = project / ".claude/skills"
     resources = [skills / f"speckit-resource-ext-{name}/references/r.md" for name in ("run", "rv")]
     original = {p.relative_to(project).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in resources}
