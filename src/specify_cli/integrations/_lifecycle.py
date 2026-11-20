@@ -235,6 +235,10 @@ class _FileJournal:
         self.snapshotted_flags: dict[Path, int | None] = {}
         # Files whose bytes rollback restored without all of their metadata.
         self.incomplete_restores: list[Path] = []
+        # The mode, mtime and restorable extended attributes (None when not
+        # read) each regular file had after the operation last wrote it, so
+        # rollback can tell a later metadata-only edit from the operation's.
+        self.written_metadata: dict[Path, tuple[int, int, dict[str, bytes] | None]] = {}
         for path in paths:
             self._remember_parents(path)
 
@@ -388,6 +392,34 @@ class _FileJournal:
                 return {}
             return None
 
+    def _remember_written(self, path: Path) -> None:
+        """Record the metadata the operation left on ``path``, if it is a regular file."""
+        self.written_metadata.pop(path, None)
+        state = _current_state(path)
+        if state is None or not stat.S_ISREG(state[0]):
+            return
+        attributes = None
+        if _HAS_XATTRS:
+            try:
+                attributes = _restorable_xattrs(path)
+            except OSError:
+                pass
+        self.written_metadata[path] = (state[0], state[4], attributes)
+
+    def metadata_changed(self, path: Path, state: tuple[int, ...] | None) -> bool:
+        """Whether ``path``, found as ``state``, has a mode, mtime or attribute the operation did not leave."""
+        written = self.written_metadata.get(path)
+        if written is None or state is None or not stat.S_ISREG(state[0]):
+            return False
+        if (state[0], state[4]) != written[:2]:
+            return True
+        if written[2] is None:
+            return False
+        try:
+            return _restorable_xattrs(path) != written[2]
+        except OSError:
+            return True
+
     def directory_created(self, path: Path) -> None:
         entry = path.lstat()
         self.created_directories.append((Path(os.path.abspath(path)), (entry.st_dev, entry.st_ino)))
@@ -482,6 +514,7 @@ class _FileJournal:
             saved, _ = self.changes[path]
             self.changes[path] = (saved, _file_identity(path))
             self.pending.discard(path)
+            self._remember_written(path)
         else:
             self.pending.add(path)
 
@@ -694,6 +727,11 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
                     _prune_new_parents(root, journal, path)
                 continue
         if path not in journal.pending and current_identity != written_identity:
+            conflicts.append(path)
+            continue
+        if path not in journal.pending and journal.metadata_changed(path, checked):
+            # Same bytes, but a mode, time or attribute changed after the
+            # operation's write: someone else's edit, so keep it.
             conflicts.append(path)
             continue
         if saved is not None:

@@ -621,7 +621,6 @@ def test_builtin_journal_never_writes_through_a_replacement_that_reuses_the_inod
 
 _PINS_FILES = os.name != "nt"
 
-
 @pytest.mark.skipif(not _PINS_FILES, reason="Windows files are never pinned")
 def test_builtin_journal_recreates_and_reports_a_file_it_could_not_pin(tmp_path, monkeypatch, capsys):
     """A file without a pin is recreated from its snapshot, not written in place, and reported."""
@@ -1137,5 +1136,69 @@ def test_builtin_journal_keeps_a_file_replaced_before_it_is_recreated(tmp_path, 
     assert target.read_text(encoding="utf-8") == "concurrent\n"
     assert "Preserved concurrent edits" in " ".join(capsys.readouterr().out.split())
     assert len(backups) == 1 and backups[0].is_dir()
+    shutil.rmtree(backups[0])
+
+
+@pytest.mark.parametrize("edit", [
+    "mtime",
+    pytest.param("mode", marks=pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")),
+])
+def test_builtin_journal_keeps_a_metadata_edit_made_after_the_operation_wrote(tmp_path, monkeypatch, capsys, edit):
+    """A mode or time changed after the operation's write is kept as a conflict, not silently undone."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    target.chmod(0o644)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            if edit == "mode":
+                target.chmod(0o600)
+            else:
+                os.utime(target, ns=(1_000_000_000, 1_000_000_000))
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "generated\n"
+    if edit == "mode":
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    else:
+        assert target.stat().st_mtime_ns == 1_000_000_000
+    assert "Preserved concurrent edits" in " ".join(capsys.readouterr().out.split())
+    assert len(backups) == 1 and backups[0].is_dir()
+    shutil.rmtree(backups[0])
+
+
+@pytest.mark.skipif(not hasattr(os, "setxattr"), reason="no extended-attribute API in the os module")
+def test_builtin_journal_keeps_an_attribute_edit_made_after_the_operation_wrote(tmp_path, monkeypatch, capsys):
+    """A user attribute set after the operation's write is kept as a conflict."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    try:
+        os.setxattr(target, "user.probe", b"1")
+        os.removexattr(target, "user.probe")
+    except OSError as exc:
+        pytest.skip(f"user attributes unsupported here: {exc}")
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            os.setxattr(target, "user.label", b"mine")
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "generated\n"
+    assert os.getxattr(target, "user.label") == b"mine"
+    assert "Preserved concurrent edits" in " ".join(capsys.readouterr().out.split())
     shutil.rmtree(backups[0])
 
