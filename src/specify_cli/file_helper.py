@@ -16,10 +16,10 @@ from typing import TypeVar
 from weakref import finalize
 
 from specify_cli._file_handles import (
-    _WindowsFileIdentity, _windows_create_private_fd, _windows_delete,
-    _windows_directory_names, _windows_entry, _windows_file_id, _windows_handle,
-    _windows_mode, _windows_overwrite_fd, _windows_readlink, _windows_stat,
-    rename_noreplace, windows_read_fd,
+    _WindowsFileIdentity, _has_inherited_allow_entry, _windows_create_private_fd,
+    _windows_delete, _windows_directory_names, _windows_entry, _windows_file_id,
+    _windows_handle, _windows_mode, _windows_overwrite_fd, _windows_readlink,
+    _windows_stat, rename_noreplace, windows_read_fd,
 )
 
 
@@ -70,39 +70,6 @@ def _require_owner_only(fd: int, info: os.stat_result, name: str) -> None:
             f"Refusing to write {name}: its directory's inheritable ACL entries allow "
             "others access",
         )
-
-
-def _has_inherited_allow_entry(fd: int) -> bool:
-    """Whether a macOS file's ACL has an allow entry; deny entries grant nothing."""
-    import ctypes
-
-    libc = ctypes.CDLL(None, use_errno=True)
-    libc.acl_get_fd_np.restype = ctypes.c_void_p
-    libc.acl_get_fd_np.argtypes = [ctypes.c_int, ctypes.c_int]
-    libc.acl_get_entry.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)]
-    libc.acl_get_tag_type.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
-    libc.acl_free.argtypes = [ctypes.c_void_p]
-    acl = libc.acl_get_fd_np(fd, 0x00000100)  # ACL_TYPE_EXTENDED
-    if not acl:
-        code = ctypes.get_errno()
-        # No ACL, or a filesystem that cannot hold one.
-        if code in (errno.ENOENT, errno.ENOTSUP, errno.EOPNOTSUPP):
-            return False
-        raise OSError(code, f"Could not read ACL entries: {os.strerror(code)}")
-    try:
-        entry = ctypes.c_void_p()
-        tag = ctypes.c_int()
-        which = 0  # ACL_FIRST_ENTRY, then ACL_NEXT_ENTRY
-        while libc.acl_get_entry(acl, which, ctypes.byref(entry)) == 0:
-            which = -1
-            if libc.acl_get_tag_type(entry, ctypes.byref(tag)) != 0:
-                code = ctypes.get_errno()
-                raise OSError(code, f"Could not read ACL entries: {os.strerror(code)}")
-            if tag.value == 1:  # ACL_EXTENDED_ALLOW
-                return True
-        return False
-    finally:
-        libc.acl_free(acl)
 
 
 def _full_fsync(fd: int) -> None:
@@ -513,7 +480,7 @@ class FileHelper:
         """Return the metadata of an existing entry, resolving only allowed links."""
         destination = self._path(path)
         if destination == self._canonical_root:
-            return os.stat(destination)
+            return os.stat(destination, follow_symlinks=False)
         # Stat through the anchored parent so a swapped ancestor cannot redirect it.
         if os.name == "nt":
             parts = destination.relative_to(self._canonical_root).parts
@@ -727,6 +694,10 @@ class FileHelper:
 
         A failure after creation removes only the file this call created.
         """
+        if os.name == "nt" and ":" in Path(path).name:
+            # A named NTFS stream shares its base file's security descriptor, so
+            # the owner-only descriptor would not apply to it.
+            raise UnsupportedPathError(f"Refusing to create a named stream: {path}")
         destination = self._path(path, allow_missing=True, follow_leaf=False)
         try:
             self._entry_mode(destination)
@@ -746,23 +717,34 @@ class FileHelper:
         flags |= getattr(os, "O_CLOEXEC", 0)
         fd = os.open(name, flags, 0o600, dir_fd=directory)
         created: os.stat_result | None = None
+        pin: int | None = None
         try:
             created = os.fstat(fd)
+            # Holds the created inode until any cleanup is done, even if the final
+            # close releases ``fd``, so a replacement cannot reuse its number and
+            # pass the identity check.
+            pin = os.dup(fd)
             _require_owner_only(fd, created, name)
             _write_all(fd, content)
             _full_fsync(fd)
+            closing, fd = fd, -1
+            os.close(closing)
         except BaseException as error:
             try:
-                os.close(fd)
-            except OSError as close_error:
-                error.add_note(f"Could not close {name}: {close_error}")
-            _remove_created(directory, name, created, error)
+                _remove_created(directory, name, created, error)
+            finally:
+                if fd >= 0:
+                    try:
+                        os.close(fd)
+                    except OSError as close_error:
+                        error.add_note(f"Could not close {name}: {close_error}")
             raise
-        try:
-            os.close(fd)
-        except BaseException as error:
-            _remove_created(directory, name, created, error)
-            raise
+        finally:
+            if pin is not None:
+                try:
+                    os.close(pin)
+                except OSError:
+                    pass  # A duplicate holds no buffered data.
         # Best effort: the anchor may be O_PATH or search-only, which fsync rejects.
         try:
             parent = os.open(

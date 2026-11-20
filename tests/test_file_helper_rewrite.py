@@ -12,7 +12,7 @@ import pytest
 
 from specify_cli import _file_handles
 from specify_cli.file_helper import (
-    FileHelper, SymlinkDeniedError, UnsupportedPathError,
+    FileHelper, FileHelperError, SymlinkDeniedError, UnsupportedPathError,
 )
 
 
@@ -522,15 +522,9 @@ def test_windows_create_private_bytes_leaves_no_file_if_no_descriptor_is_made(
     assert (tmp_path / REL).read_bytes() == b"content"
 
 
-@pytest.mark.parametrize("marked", [True, False, None])
-def test_windows_private_fd_removes_its_file_through_the_handle_if_no_descriptor_is_made(
-    tmp_path, monkeypatch, marked
-):
-    # Simulates the Windows calls, so this runs everywhere; the test above
-    # makes the real ones.
+def _simulate_windows_create(monkeypatch, calls, *, marked=True, volume_flags=0x8):
+    """Fake the Windows calls ``_windows_create_private_fd`` makes, so it runs everywhere."""
     import ctypes
-
-    calls = []
 
     class Attributes(ctypes.Structure):
         _fields_ = [("nLength", ctypes.c_ulong), ("descriptor", ctypes.c_void_p),
@@ -540,6 +534,10 @@ def test_windows_private_fd_removes_its_file_through_the_handle_if_no_descriptor
         def CreateFileW(self, path, access, share, attributes, disposition, flags, template):
             calls.append(("CreateFileW", access, share, disposition))
             return 1234
+
+        def GetVolumeInformationByHandleW(self, handle, *args):
+            args[4]._obj.value = volume_flags  # lpFileSystemFlags
+            return 1
 
         def SetFileInformationByHandle(self, handle, kind, info, size):
             calls.append(("SetFileInformationByHandle", handle, kind, bytes(info._obj)))
@@ -559,6 +557,7 @@ def test_windows_private_fd_removes_its_file_through_the_handle_if_no_descriptor
             return 1
 
     def open_osfhandle(handle, flags):
+        calls.append(("open_osfhandle", handle))
         raise OSError("too many open files")
 
     monkeypatch.setattr(
@@ -569,16 +568,42 @@ def test_windows_private_fd_removes_its_file_through_the_handle_if_no_descriptor
     monkeypatch.setattr(ctypes, "WinError", lambda code=None: OSError(code, "denied"), raising=False)
     monkeypatch.setitem(sys.modules, "msvcrt", types.SimpleNamespace(open_osfhandle=open_osfhandle))
     monkeypatch.setattr(os, "O_BINARY", 0x8000, raising=False)
+
+
+@pytest.mark.parametrize("marked", [True, False, None])
+def test_windows_private_fd_removes_its_file_through_the_handle_if_no_descriptor_is_made(
+    tmp_path, monkeypatch, marked
+):
+    # Simulates the Windows calls, so this runs everywhere; the test above
+    # makes the real ones.
+    calls = []
+    _simulate_windows_create(monkeypatch, calls, marked=marked)
     with pytest.raises(OSError, match="too many open files") as raised:
         _file_handles._windows_create_private_fd(tmp_path / "file")
     delete, create_new = 0x00010000, 1
     access, share, disposition = calls[0][1:]
     assert access & delete and share == 0 and disposition == create_new
     # FileDispositionInfo with DeleteFile set, before the handle closes.
-    assert calls[1:] == [("SetFileInformationByHandle", 1234, 4, b"\x01"), ("CloseHandle", 1234)]
+    assert calls[1:] == [
+        ("open_osfhandle", 1234),
+        ("SetFileInformationByHandle", 1234, 4, b"\x01"),
+        ("CloseHandle", 1234),
+    ]
     # If it cannot be marked, the error names the empty file so it can be deleted.
     noted = any(str(tmp_path / "file") in note for note in getattr(raised.value, "__notes__", []))
     assert noted is not bool(marked)
+
+
+def test_windows_private_fd_refuses_a_volume_without_persistent_acls(tmp_path, monkeypatch):
+    # FAT and exFAT accept the security descriptor but do not keep it.
+    calls = []
+    _simulate_windows_create(monkeypatch, calls, volume_flags=0)
+    with pytest.raises(PermissionError, match="does not keep access-control lists"):
+        _file_handles._windows_create_private_fd(tmp_path / "file")
+    # Refused before a descriptor exists; the empty file is removed through its handle.
+    assert [call[0] for call in calls] == [
+        "CreateFileW", "SetFileInformationByHandle", "CloseHandle",
+    ]
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows access-control lists")
@@ -870,3 +895,123 @@ def test_stat_refuses_a_junctioned_parent(tmp_path):
     )
     with FileHelper(project) as files, pytest.raises(UnsupportedPathError):
         files.stat(REL)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="NTFS named streams")
+def test_windows_create_private_bytes_refuses_a_named_stream(tmp_path):
+    # A stream shares its base file's security descriptor, so it cannot be owner-only.
+    path = _seed(tmp_path, b"base")
+    with FileHelper(tmp_path) as files, pytest.raises(FileHelperError):
+        files.create_private_bytes(REL + ":backup", b"secret")
+    assert path.read_bytes() == b"base"
+    with pytest.raises(FileNotFoundError):
+        open(f"{path}:backup", "rb").close()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs POSIX symlinks")
+def test_stat_does_not_follow_a_root_replaced_by_a_symlink(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    other = tmp_path / "other"
+    other.mkdir()
+    with FileHelper(root) as files:
+        root.rename(tmp_path / "moved")
+        root.symlink_to(other, target_is_directory=True)
+        assert stat.S_ISLNK(files.stat(".").st_mode)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs POSIX FIFOs")
+def test_open_rewrite_refuses_a_nonregular_leaf_swapped_in_after_preflight(tmp_path, monkeypatch):
+    # A FIFO with a reader opens for writing, so only the descriptor check can refuse it.
+    path = _seed(tmp_path)
+    real_open = os.open
+    original = FileHelper._overwrite_descriptor
+    leaf: list[int] = []
+    readers: list[int] = []
+
+    def open_(name, flags, *args, **kwargs):
+        fd = real_open(name, flags, *args, **kwargs)
+        if os.fspath(name) == "file":
+            leaf.append(fd)
+        return fd
+
+    @contextmanager
+    def swap_first(self, destination, **kwargs):
+        path.unlink()
+        os.mkfifo(path)
+        readers.append(real_open(path, os.O_RDONLY | os.O_NONBLOCK))
+        with original(self, destination, **kwargs) as fd:
+            yield fd
+
+    monkeypatch.setattr(os, "open", open_)
+    monkeypatch.setattr(FileHelper, "_overwrite_descriptor", swap_first)
+    entered = False
+    try:
+        with FileHelper(tmp_path) as files, pytest.raises(UnsupportedPathError):
+            with files.open_rewrite(REL):
+                entered = True
+    finally:
+        for fd in readers:
+            os.close(fd)
+    monkeypatch.undo()
+    assert not entered
+    assert len(leaf) == 1
+    with pytest.raises(OSError) as raised:
+        os.fstat(leaf[0])
+    assert raised.value.errno == errno.EBADF
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+@pytest.mark.parametrize("step", ["write", "fsync", "close"])
+def test_posix_create_private_bytes_keeps_the_inode_pinned_during_cleanup(
+    tmp_path, monkeypatch, step
+):
+    # Once nothing holds the created inode its number can be reused, and a
+    # replacement could then pass the identity check and be removed.
+    (tmp_path / "parent").mkdir()
+    real_open, real_dup, real_close, real_stat = os.open, os.dup, os.close, os.stat
+    real_step = {"write": os.write, "fsync": os.fsync, "close": real_close}[step]
+    pinned: set[int] = set()
+    leaf: list[int] = []
+    pinned_at_check: list[bool] = []
+
+    def open_(name, flags, *args, **kwargs):
+        fd = real_open(name, flags, *args, **kwargs)
+        if os.fspath(name) == "file":
+            leaf.append(fd)
+            pinned.add(fd)
+        return fd
+
+    def dup(fd):
+        copy = real_dup(fd)
+        if fd in pinned:
+            pinned.add(copy)
+        return copy
+
+    def close(fd):
+        pinned.discard(fd)
+        real_close(fd)
+        if step == "close" and leaf and fd == leaf[0]:
+            raise OSError("disk full")
+
+    def fail(fd, *args):
+        if leaf and fd == leaf[0]:
+            raise OSError("disk full")
+        return real_step(fd, *args)
+
+    def stat_(name, *args, **kwargs):
+        if os.fspath(name) == "file" and kwargs.get("dir_fd") is not None:
+            pinned_at_check.append(bool(pinned))
+        return real_stat(name, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", open_)
+    monkeypatch.setattr(os, "dup", dup)
+    monkeypatch.setattr(os, "stat", stat_)
+    monkeypatch.setattr(os, "close", close)
+    if step != "close":
+        monkeypatch.setattr(os, step, fail)
+    with FileHelper(tmp_path) as files, pytest.raises(OSError, match="disk full"):
+        files.create_private_bytes(REL, b"content")
+    monkeypatch.undo()
+    assert pinned_at_check == [True]
+    assert not (tmp_path / REL).exists()

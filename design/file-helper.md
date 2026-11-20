@@ -248,7 +248,9 @@ descriptor-relative or change their documented concurrency limitations.
   walk: allowed contained links, including a leaf link, are resolved, and the
   resolved entry itself is not followed. The entry is queried relative to the
   anchored parent hierarchy, so a parent swapped after resolution cannot
-  redirect it. Missing entries raise `FileNotFoundError`. It is a
+  redirect it. The root itself is queried without following a link, so a root
+  replaced by a link after construction is not followed. Missing entries raise
+  `FileNotFoundError`. It is a
   point-in-time query, not an anchor: callers that act on the result must
   re-check identity on the descriptor they act through.
 - `access(path, mode)` answers `os.access` for an existing entry found and
@@ -301,13 +303,18 @@ descriptor-relative or change their documented concurrency limitations.
   with `CREATE_NEW`, no sharing, `FILE_FLAG_OPEN_REPARSE_POINT`, and a security
   descriptor naming the current user as owner with a protected DACL granting
   only that user full access, so the content is never readable under an
-  inherited ACL. A failure after creation removes only the file this call
-  created: POSIX unlinks the name only while it still has the created file's
-  identity, checked immediately before the unlink rather than atomically with
-  it (an identity never read leaves the name in place), and Windows marks the
-  open handle for deletion. If that removal or the close fails, the original
-  exception is kept and carries a note naming the file. A Windows close failure
-  after a complete write leaves the file and says so in the note.
+  inherited ACL. It refuses a stream-qualified leaf (`file:stream`), since a
+  named NTFS stream shares its base file's security descriptor, and, before any
+  content is written, a volume without `FILE_PERSISTENT_ACLS` (FAT, exFAT),
+  which would drop the descriptor. A failure after creation removes only the
+  file this call created: POSIX unlinks the name only while it still has the
+  created file's identity, checked immediately before the unlink rather than
+  atomically with it (an identity never read leaves the name in place), with
+  the created inode held open until the check is done so its number cannot be
+  reused by a replacement; Windows marks the open handle for deletion. If that
+  removal or the close fails, the original exception is kept and carries a note
+  naming the file. A Windows close failure after a complete write leaves the
+  file and says so in the note.
 - `write_bytes(path, content, mode=0o644)` / `write_text(...)` atomically
   create or update files with existing parents. Text variants also accept
   `encoding="utf-8"`. Replacement files use the supplied mode; metadata and
