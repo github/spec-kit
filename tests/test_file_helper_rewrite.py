@@ -796,6 +796,73 @@ def test_posix_create_private_bytes_never_removes_a_name_it_could_not_identify(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+@pytest.mark.parametrize("replaced", [False, True])
+def test_posix_create_private_bytes_notes_a_partial_file_moved_before_cleanup(
+    tmp_path, monkeypatch, replaced
+):
+    (tmp_path / "parent").mkdir()
+    real_fsync = os.fsync
+
+    def move_then_fail(fd):
+        if stat.S_ISREG(os.fstat(fd).st_mode):
+            (tmp_path / REL).rename(tmp_path / "parent" / "moved")
+            if replaced:
+                (tmp_path / REL).write_bytes(b"someone else's")
+            raise OSError("disk full")
+        return real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", move_then_fail)
+    with FileHelper(tmp_path) as files, pytest.raises(OSError, match="disk full") as raised:
+        files.create_private_bytes(REL, b"content")
+    monkeypatch.undo()
+    notes = raised.value.__notes__
+    # Neither case is a removal failure, and both say the partial file may remain.
+    assert not any("Could not remove" in note for note in notes)
+    assert any("may still exist" in note for note in notes)
+    assert (tmp_path / "parent" / "moved").exists()
+    if replaced:
+        assert (tmp_path / REL).read_bytes() == b"someone else's"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
+def test_posix_create_private_bytes_reports_a_failed_close_of_the_last_descriptor(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "parent").mkdir()
+    real_open, real_dup, real_close = os.open, os.dup, os.close
+    leaf: list[int] = []
+    duplicates: list[int] = []
+
+    def open_(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        if os.fspath(path) == "file":
+            leaf.append(fd)
+        return fd
+
+    def dup(fd):
+        copy_ = real_dup(fd)
+        if fd in leaf:
+            duplicates.append(copy_)
+        return copy_
+
+    def close(fd):
+        real_close(fd)
+        if fd in duplicates:
+            duplicates.remove(fd)
+            raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(os, "open", open_)
+    monkeypatch.setattr(os, "dup", dup)
+    monkeypatch.setattr(os, "close", close)
+    with FileHelper(tmp_path) as files, pytest.raises(OSError, match="Input/output") as raised:
+        files.create_private_bytes(REL, b"content")
+    monkeypatch.undo()
+    assert any("check its content" in note for note in raised.value.__notes__)
+    # The write completed, so the file is left for the caller to inspect.
+    assert (tmp_path / REL).read_bytes() == b"content"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX creation path")
 def test_posix_create_private_bytes_keeps_the_write_error_when_close_also_fails(
     tmp_path, monkeypatch
 ):

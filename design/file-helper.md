@@ -318,7 +318,10 @@ descriptor-relative or change their documented concurrency limitations.
   atomically with it (an identity never read leaves the name in place), with
   the created inode held open until the check is done so its number cannot be
   reused by a replacement. A name that already holds another file is left, and
-  the note names it; a replacement swapped in between the check and the unlink
+  the note names it; a name found empty gets a note that the partial file may
+  have been moved rather than a removal failure. A failed close of that held
+  descriptor after a complete write raises, leaving the file and saying so in a
+  note. A replacement swapped in between the check and the unlink
   is an accepted residual race, since POSIX has no unlink-if-identity primitive.
   Windows marks the open handle for deletion. If that
   removal or the close fails, the original exception is kept and carries a note

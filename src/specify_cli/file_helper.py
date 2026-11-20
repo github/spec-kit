@@ -47,11 +47,22 @@ def _remove_created(
         return
     try:
         current = os.stat(name, dir_fd=directory, follow_symlinks=False)
-        if (current.st_dev, current.st_ino) != (created.st_dev, created.st_ino):
-            error.add_note(
-                f"Left {name}: another writer replaced the partial file, so it was not removed"
-            )
-            return
+    except FileNotFoundError:
+        error.add_note(
+            f"Found nothing at {name} to remove: the partial file was moved or deleted "
+            "by another process and may still exist elsewhere"
+        )
+        return
+    except OSError as cleanup_error:
+        error.add_note(f"Could not remove partial file {name}: {cleanup_error}")
+        return
+    if (current.st_dev, current.st_ino) != (created.st_dev, created.st_ino):
+        error.add_note(
+            f"Left {name}: another writer replaced the partial file, so it was not removed; "
+            "the partial file may still exist under another name"
+        )
+        return
+    try:
         # Accepted residual race: POSIX has no unlink-if-inode, so a writer that
         # swaps the leaf between this stat and the unlink loses its file. Both
         # calls go through the same directory descriptor with nothing between
@@ -769,18 +780,23 @@ class FileHelper:
             try:
                 _remove_created(directory, name, created, error)
             finally:
-                if fd >= 0:
-                    try:
-                        os.close(fd)
-                    except OSError as close_error:
-                        error.add_note(f"Could not close {name}: {close_error}")
+                for descriptor in (fd, -1 if pin is None else pin):
+                    if descriptor >= 0:
+                        try:
+                            os.close(descriptor)
+                        except OSError as close_error:
+                            error.add_note(f"Could not close {name}: {close_error}")
             raise
-        finally:
-            if pin is not None:
-                try:
-                    os.close(pin)
-                except OSError:
-                    pass  # A duplicate holds no buffered data.
+        # The duplicate is now the file's last descriptor, so its close is the
+        # one that reports a deferred write error (NFS, for example).
+        try:
+            os.close(pin)
+        except OSError as close_error:
+            close_error.add_note(
+                f"Wrote and flushed {name}, but closing it failed; check its content "
+                "before relying on it"
+            )
+            raise
         # Best effort: the anchor may be O_PATH or search-only, which fsync rejects.
         try:
             parent = os.open(
