@@ -18,8 +18,9 @@ _YAML11_ONLY_TAGS = {
     for name in ("bool", "int", "float", "timestamp", "value", "merge")
 }
 _MERGE_TAG = "tag:yaml.org,2002:merge"
-# Merging an anchored mapping repeatedly copies its keys each time, so nested
-# merges grow exponentially; far beyond any real ``openai.yaml``.
+# Merging an anchored mapping copies its keys each time, so nested merges grow
+# exponentially and repeated ones add up. A document's merges may produce this
+# many key-value pairs in all, far beyond any real ``openai.yaml``.
 _MAX_MERGED_KEYS = 10_000
 _YAML12_RESOLVERS = (
     ("tag:yaml.org,2002:bool", r"true|True|TRUE|false|False|FALSE", "tTfF"),
@@ -40,6 +41,7 @@ class Yaml12Loader(yaml.SafeLoader):
         super().__init__(stream)
         self._own_keys_checked: set[yaml.Node] = set()
         self._merged_sizes: dict[yaml.Node, int] = {}
+        self._merged_total = 0
 
     def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
         # A dict keeps one of two keys Python treats as equal, such as ``true``
@@ -50,7 +52,9 @@ class Yaml12Loader(yaml.SafeLoader):
         # are equal must also have the same type.
         if isinstance(node, yaml.MappingNode):
             self._check_own_keys(node)
-            if self._merged_size(node) > _MAX_MERGED_KEYS:
+            if any(key.tag == _MERGE_TAG for key, _ in node.value):
+                self._merged_total += self._merged_size(node)
+            if self._merged_total > _MAX_MERGED_KEYS:
                 raise yaml.constructor.ConstructorError(
                     None, None,
                     f"found merges that expand to more than {_MAX_MERGED_KEYS} keys",

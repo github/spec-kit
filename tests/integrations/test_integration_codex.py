@@ -1870,6 +1870,18 @@ class TestCodexNoModelInvocationOwnership:
             self._setup(tmp_path)
         assert path.read_bytes() == content
 
+    def test_repeated_merges_that_add_up_abort_without_overwriting(self, tmp_path):
+        # Each mapping alone stays under the limit; together they pass it.
+        levels = ["l0: &l0 {k: 1}"] + [
+            f"l{i}: &l{i} {{!!merge <<: [*l{i - 1}, *l{i - 1}]}}" for i in range(1, 12)
+        ]
+        repeats = [f"x{i}: {{!!merge <<: *l11}}" for i in range(10)]
+        content = "\n".join([*levels, *repeats, ""]).encode()
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*expand to more than"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+
     def test_merges_that_expand_exponentially_abort_without_overwriting(self, tmp_path):
         # Each level merges the one below twice, doubling its keys: 2**16 here.
         levels = ["l0: &l0 {k: 1}"] + [
@@ -2169,7 +2181,6 @@ class TestCodexRewriteDurability:
         assert owner._yaml(path)["policy"] == {"allow_implicit_invocation": False}
         assert not list(tmp_path.rglob("*.speckit-backup"))
 
-
     @pytest.mark.skipif(sys.platform != "darwin", reason="macOS F_FULLFSYNC")
     def test_rewrite_is_fully_flushed_before_the_backup_is_removed(self, tmp_path, monkeypatch):
         import fcntl
@@ -2224,6 +2235,7 @@ class TestCodexRewriteDurability:
         else:
             assert owner._yaml(path)["policy"] == {"allow_implicit_invocation": False}
         assert not list(tmp_path.rglob("*.speckit-backup"))
+
 
 class TestCodexManifestInternals:
     """Pins the manifest internals the Codex policy cleanup depends on.

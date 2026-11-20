@@ -151,16 +151,20 @@ def _replace_file(
     return original
 
 
-_Written = tuple[str, bytes | None, bytes, bool, bool, tuple[int, int] | None]
+_Written = tuple[str, bytes | None, bytes, bool, bool, tuple[int, int, int] | None]
 
 
-def _entry_identity(helper: FileHelper, rel: str) -> tuple[int, int] | None:
-    """The device and inode of ``rel`` itself, or ``None`` if it cannot be read."""
+def _entry_identity(helper: FileHelper, rel: str) -> tuple[int, int, int] | None:
+    """The device, inode and change time of ``rel`` itself, or ``None`` if unreadable.
+
+    The change time tells a file recreated under a reused inode number from
+    the one first seen.
+    """
     try:
         info = helper.stat(rel)
     except (OSError, ValueError):  # ValueError covers FileHelperError
         return None
-    return info.st_dev, info.st_ino
+    return info.st_dev, info.st_ino, info.st_ctime_ns
 
 
 def _keep_through_rollback(backup: Path) -> None:
