@@ -3574,6 +3574,37 @@ def test_atomic_near_limit_write_ignores_occupied_short_names(root, monkeypatch)
     assert set(parent.iterdir()) == occupied | {target}
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")
+@pytest.mark.parametrize("exhausted", [False, True])
+def test_atomic_near_limit_stage_collisions_preserve_existing_files(root, monkeypatch, exhausted):
+    parent = _near_limit_parent(root, 14)
+    occupied = parent / ("." + "a" * 13)
+    occupied.write_bytes(b"keep")
+    destination = parent / "f"
+    destination.write_bytes(b"old")
+    attempts = []
+
+    def token_hex(size):
+        attempts.append(size)
+        digit = "a" if exhausted or len(attempts) <= 2 else "b"
+        return digit * (size * 2)
+
+    monkeypatch.setattr(file_helper.secrets, "token_hex", token_hex)
+    with FileHelper(root) as files:
+        if exhausted:
+            with pytest.raises(FileExistsError) as exc:
+                files.write_bytes(destination, b"new")
+            assert exc.value.errno == errno.EEXIST
+            assert destination.read_bytes() == b"old"
+            assert attempts == [8] + [7] * 10
+        else:
+            files.write_bytes(destination, b"new")
+            assert destination.read_bytes() == b"new"
+            assert attempts == [8, 7, 7]
+    assert occupied.read_bytes() == b"keep"
+    assert set(parent.iterdir()) == {destination, occupied}
+
+
 def test_atomic_windows_failed_cleanup_restores_readonly_stage(root, monkeypatch):
     destination = root / "file"
     error = PermissionError(errno.EACCES, "retry unlink denied")
