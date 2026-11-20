@@ -1703,6 +1703,49 @@ class TestExtensionRegistry:
             ExtensionRegistry.REGISTRY_FILE
         ]
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
+    @pytest.mark.parametrize("umask, expected", [(0o077, 0o600), (0o022, 0o644)])
+    def test_new_registry_mode_follows_umask(self, temp_dir, umask, expected):
+        """A newly created registry gets the mode the umask allows, as the
+        previous ``open(..., "w")`` writer did, rather than a fixed mode."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        previous = os.umask(umask)
+        try:
+            ExtensionRegistry(extensions_dir).add("first-ext", {"version": "1.0.0"})
+        finally:
+            os.umask(previous)
+
+        registry_path = extensions_dir / ExtensionRegistry.REGISTRY_FILE
+        assert registry_path.stat().st_mode & 0o777 == expected
+
+    def test_save_through_symlinked_registry_replaces_the_link(self, temp_dir):
+        """Saving through a ``.registry`` symlink replaces the link with a
+        regular registry and leaves the link's original target untouched."""
+        if not can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        target = temp_dir / "shared-registry.json"
+        original = json.dumps(
+            {"schema_version": "1.0", "extensions": {"first-ext": {"version": "1.0.0"}}}
+        )
+        target.write_text(original, encoding="utf-8")
+        registry_path = extensions_dir / ExtensionRegistry.REGISTRY_FILE
+        registry_path.symlink_to(target)
+
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("second-ext", {"version": "2.0.0"})
+
+        assert not registry_path.is_symlink()
+        assert registry_path.is_file()
+        data = json.loads(registry_path.read_text(encoding="utf-8"))
+        assert sorted(data["extensions"]) == ["first-ext", "second-ext"]
+        assert target.read_text(encoding="utf-8") == original
+        assert sorted(p.name for p in extensions_dir.iterdir()) == [
+            ExtensionRegistry.REGISTRY_FILE
+        ]
+
 
 # ===== ExtensionManager Tests =====
 
