@@ -1171,3 +1171,60 @@ def test_rewrite_descriptor_raises_only_real_full_fsync_errors(tmp_path, monkeyp
             FileHelper.rewrite_descriptor(fd, b"new\n")
     if not raises:
         assert target.read_bytes() == b"new\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX append-mode descriptors")
+def test_rewrite_descriptor_refuses_an_append_mode_descriptor(tmp_path):
+    target = tmp_path / "file.txt"
+    target.write_bytes(b"original bytes")
+    fd = os.open(target, os.O_WRONLY | os.O_APPEND)
+    try:
+        with pytest.raises(OSError, match="append-mode"):
+            FileHelper.rewrite_descriptor(fd, b"new")
+    finally:
+        os.close(fd)
+    assert target.read_bytes() == b"original bytes"
+
+
+def _short_writes(monkeypatch, fail_after=None):
+    """Make ``os.write`` accept at most 3 bytes a call, optionally failing after some calls."""
+    real_write = os.write
+    calls = []
+
+    def write(fd, data):
+        calls.append(fd)
+        if fail_after is not None and len(calls) > fail_after:
+            raise OSError(errno.EIO, "I/O error")
+        return real_write(fd, bytes(data[:3]))
+
+    monkeypatch.setattr(os, "write", write)
+    return calls
+
+
+def test_rewrite_descriptor_retries_short_writes(tmp_path, monkeypatch):
+    target = tmp_path / "file.txt"
+    target.write_bytes(b"a much longer original\n")
+    with FileHelper(tmp_path) as helper, helper.open_rewrite("file.txt") as fd:
+        calls = _short_writes(monkeypatch)
+        FileHelper.rewrite_descriptor(fd, b"replacement\n")
+        monkeypatch.undo()
+    assert len(calls) > 1
+    assert target.read_bytes() == b"replacement\n"
+
+
+def test_create_private_bytes_retries_short_writes(tmp_path, monkeypatch):
+    calls = _short_writes(monkeypatch)
+    with FileHelper(tmp_path) as helper:
+        helper.create_private_bytes("backup", b"private content\n")
+    monkeypatch.undo()
+    assert len(calls) > 1
+    assert (tmp_path / "backup").read_bytes() == b"private content\n"
+
+
+def test_create_private_bytes_removes_its_file_after_a_short_write_then_an_error(tmp_path, monkeypatch):
+    _short_writes(monkeypatch, fail_after=1)
+    with FileHelper(tmp_path) as helper:
+        with pytest.raises(OSError, match="I/O error"):
+            helper.create_private_bytes("backup", b"private content\n")
+    monkeypatch.undo()
+    assert not (tmp_path / "backup").exists()

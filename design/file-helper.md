@@ -380,10 +380,12 @@ descriptor-relative or change their documented concurrency limitations.
   `closefd=False`. Writing, truncating, flushing and any rollback belong to the
   caller; nothing is written or truncated by the helper. There is no newline
   translation on either platform.
-- `rewrite_descriptor(fd, content)` (static) replaces the whole content of an
-  open writable descriptor, such as one from `open_rewrite`: it seeks to offset
-  0, writes every byte, truncates to the new length after writing, then
-  `fsync`s, adding `F_FULLFSYNC` on macOS where the filesystem supports it. It
+- `rewrite_descriptor(fd, content)` (static) replaces the whole content of a
+  descriptor returned by `open_rewrite`: it seeks to offset 0, writes every
+  byte (retrying short writes), truncates to the new length after writing, then
+  `fsync`s, adding `F_FULLFSYNC` on macOS where the filesystem supports it. An
+  append-mode descriptor is refused (`EINVAL`) before anything is written,
+  since its writes ignore the seek and the truncate would cut them off. It
   shares that write loop and flush policy with `create_private_bytes`, so a
   caller's in-place rewrite and its private backup have the same durability.
   A failure can leave partial content; restoring it is the caller's job.
