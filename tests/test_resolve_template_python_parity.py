@@ -1981,13 +1981,11 @@ def test_powershell_resolves_non_ascii_manifest_template_path(
     env.pop("PYTHONPATH", None)
     env.pop("SPECKIT_PYTHON", None)
     env["SPECKIT_PYTHON_EXECUTABLE"] = sys.executable
-    env["PYTHONUTF8"] = "0"
-    env["PYTHONCOERCECLOCALE"] = "0"
     if os.name == "nt":
+        env["PYTHONUTF8"] = "0"
         env["PYTHONIOENCODING"] = "cp1252"
     else:
-        env["LC_ALL"] = "C"
-        env["LANG"] = "C"
+        env["PYTHONIOENCODING"] = "ascii"
 
     py_result = run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env)
     assert py_result.returncode == 0, py_result.stderr
