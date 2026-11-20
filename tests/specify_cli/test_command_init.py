@@ -189,11 +189,13 @@ def test_invalid_integration_value_is_rendered_literally(tmp_path: Path):
     assert "nope[/red]" in _strip(result.stdout)
 
 
-def _fail_shared_infra(monkeypatch):
+def _fail_shared_infra(monkeypatch, unowned: str | None = None):
     """Make the shared-infrastructure step fail part-way, as a full disk would.
 
     ``_install_shared_infra_or_exit`` turns the ``OSError`` into
     ``typer.Exit(1)``, which is how init sees a real shared-infra failure.
+    ``unowned`` names a project-root file written outside any journalled
+    scope, standing in for a concurrent write the rollback must preserve.
     """
     import specify_cli
 
@@ -201,6 +203,8 @@ def _fail_shared_infra(monkeypatch):
         scripts = Path(project_path) / ".specify" / "scripts"
         scripts.mkdir(parents=True, exist_ok=True)
         (scripts / "partial.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+        if unowned:
+            (Path(project_path) / unowned).write_text("unowned\n", encoding="utf-8")
         raise OSError(28, "No space left on device")
 
     monkeypatch.setattr(specify_cli, "_install_shared_infra", partial_install)
@@ -213,18 +217,43 @@ def test_shared_infra_failure_removes_new_project_dir(tmp_path: Path, monkeypatc
     be re-raised before the cleanup ran, leaving a half-initialized project
     that made the retry fail with "Directory already exists".
     """
-    _fail_shared_infra(monkeypatch)
-
-    result = _init(tmp_path, "proj")
+    # Scope only the failing installer, so the retry keeps the home and
+    # environment isolation fixtures.
+    with monkeypatch.context() as failing:
+        _fail_shared_infra(failing)
+        result = _init(tmp_path, "proj")
 
     assert result.exit_code == 1, _strip(result.stdout)
     assert "Failed to install shared infrastructure" in _strip(result.stdout)
     assert not (tmp_path / "proj").exists()
 
-    monkeypatch.undo()
     retry = _init(tmp_path, "proj")
     assert retry.exit_code == 0, _strip(retry.stdout)
     assert (tmp_path / "proj" / ".specify").is_dir()
+
+
+def test_shared_infra_failure_leaves_noncanonical_target_to_lifecycle(
+    tmp_path: Path, monkeypatch
+):
+    """Lifecycle rollback, not init's cleanup, owns a noncanonical new target.
+
+    The lifecycle records ``anchor/../proj`` as spelled while init works with
+    the resolved path. The lookup must still match, so init leaves the
+    directory to journal rollback, which preserves files it does not own
+    instead of deleting the whole target.
+    """
+    from specify_cli.integrations import installer
+
+    (tmp_path / "anchor").mkdir()
+    monkeypatch.setattr(installer, "read_records", lambda root: {"generic": {}})
+    monkeypatch.setattr(installer, "load_installed_integrations", lambda root: None)
+    _fail_shared_infra(monkeypatch, unowned="concurrent.txt")
+
+    result = _init(tmp_path, str(Path("anchor") / ".." / "proj"))
+
+    assert result.exit_code == 1, _strip(result.stdout)
+    project = tmp_path / "proj"
+    assert (project / "concurrent.txt").read_text(encoding="utf-8") == "unowned\n"
 
 
 def test_shared_infra_failure_keeps_existing_project_dir(tmp_path: Path, monkeypatch):

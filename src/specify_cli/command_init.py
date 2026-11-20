@@ -1034,6 +1034,7 @@ def register(app: typer.Typer) -> None:
                     exit_code not in (0, None)
                     and not here and project_path.exists() and not dir_existed_before
                     and initial_directory_state(project_path) is None
+                    and not lifecycle_owns_rollback()
                 ):
                     shutil.rmtree(project_path, ignore_errors=True)
                 raise
