@@ -2036,6 +2036,46 @@ def test_builtin_upgrade_rolls_back_when_it_fails_before_committing(tmp_path, mo
     assert _tree(project) == before
 
 
+def test_builtin_upgrade_rollback_restores_a_rewritten_file_in_place(tmp_path, monkeypatch):
+    """Rollback writes the original bytes back into a file the upgrade rewrote.
+
+    Recreating the file instead would give it the restoring user as owner and
+    the directory's default permissions, which on Windows replaces its
+    access-control list. A hard link to the original file sees the restored
+    bytes only if rollback wrote through that same file.
+    """
+    project = _init_project(tmp_path, "claude")
+    skill = project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
+    skill.write_text("# user customization\n", encoding="utf-8")
+    if os.name != "nt":
+        skill.chmod(0o600)
+    mode = skill.stat().st_mode
+    witness = tmp_path / "witness"
+    os.link(skill, witness)
+    from specify_cli.integrations.claude import ClaudeIntegration
+
+    real_setup = ClaudeIntegration.setup
+    written = []
+
+    def setup(self, *args, **kwargs):
+        real_setup(self, *args, **kwargs)
+        written.append(witness.read_text(encoding="utf-8"))
+        raise OSError("disk full")
+
+    monkeypatch.setattr(ClaudeIntegration, "setup", setup)
+
+    result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+
+    assert result.exit_code != 0
+    assert "disk full" in result.output
+    # The upgrade rewrote the file through the same inode before failing.
+    assert written and written[0] != "# user customization\n"
+    assert skill.read_text(encoding="utf-8") == "# user customization\n"
+    assert os.path.samefile(skill, witness)
+    assert witness.read_text(encoding="utf-8") == "# user customization\n"
+    assert skill.stat().st_mode == mode
+
+
 def test_builtin_upgrade_journal_needs_no_trust_store_or_other_manifests(tmp_path, monkeypatch):
     """The journal adds no precondition a built-in upgrade did not already have."""
     from specify_cli.integrations import installer

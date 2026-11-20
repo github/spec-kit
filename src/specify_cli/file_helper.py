@@ -16,9 +16,10 @@ from typing import TypeVar
 from weakref import finalize
 
 from specify_cli._file_handles import (
-    _WindowsFileIdentity, _windows_delete, _windows_directory_names, _windows_entry,
-    _windows_file_id, _windows_handle, _windows_mode, _windows_overwrite_fd,
-    _windows_readlink, _windows_stat, rename_noreplace, windows_read_fd,
+    _WindowsFileIdentity, _has_inherited_allow_entry, _windows_create_private_fd,
+    _windows_delete, _windows_directory_names, _windows_entry, _windows_file_id,
+    _windows_handle, _windows_mode, _windows_overwrite_fd, _windows_readlink,
+    _windows_stat, rename_noreplace, windows_read_fd,
 )
 
 
@@ -31,6 +32,112 @@ _DELETE_DIR_FD_SUPPORTED = (
 _DELETE_DIRECTORY_CACHE_SIZE = 8
 # Wrapping os.open must not change the underlying platform capability.
 _POSIX_OPEN = os.open
+_NO_FOLLOW_UTIME = {"follow_symlinks": False} if os.utime in os.supports_follow_symlinks else {}
+_NO_FOLLOW_CHMOD = {"follow_symlinks": False} if os.chmod in os.supports_follow_symlinks else {}
+
+
+def futime(fd: int, *, ns: tuple[int, int]) -> None:
+    """Set an open file's access and modification times through its descriptor.
+
+    Raises ``OSError(ENOTSUP)`` where ``os.utime`` takes no descriptor
+    (Windows); use ``FileHelper.utime`` there.
+    """
+    if os.utime not in os.supports_fd:
+        raise OSError(errno.ENOTSUP, "Setting times through a descriptor is unsupported on this platform")
+    os.utime(fd, ns=ns)
+
+
+def _remove_created(
+    directory: int, name: str, created: os.stat_result | None, error: BaseException
+) -> None:
+    """Unlink ``name`` if it still has the created file's identity (best effort).
+
+    A name that now holds a different file is left in place and named in a note
+    on ``error``, so the caller learns that cleanup did not happen.
+    """
+    if created is None:
+        error.add_note(f"Left {name}, which may be empty; delete it before retrying")
+        return
+    try:
+        current = os.stat(name, dir_fd=directory, follow_symlinks=False)
+    except FileNotFoundError:
+        error.add_note(
+            f"Found nothing at {name} to remove: the partial file was moved or deleted "
+            "by another process and may still exist elsewhere"
+        )
+        return
+    except OSError as cleanup_error:
+        error.add_note(f"Could not remove partial file {name}: {cleanup_error}")
+        return
+    if (current.st_dev, current.st_ino) != (created.st_dev, created.st_ino):
+        error.add_note(
+            f"Left {name}: another writer replaced the partial file, so it was not removed; "
+            "the partial file may still exist under another name"
+        )
+        return
+    try:
+        # Accepted residual race: POSIX has no unlink-if-inode, so a writer that
+        # swaps the leaf between this stat and the unlink loses its file. Both
+        # calls go through the same directory descriptor with nothing between
+        # them, and the caller pins the created inode so its number cannot be
+        # reused by a replacement that would then pass the check above.
+        os.unlink(name, dir_fd=directory)
+    except OSError as cleanup_error:
+        error.add_note(f"Could not remove partial file {name}: {cleanup_error}")
+
+
+def _require_owner_only(fd: int, info: os.stat_result, name: str) -> None:
+    """Refuse a new, still-empty file that someone other than its owner can open.
+
+    Group or other mode bits mean the filesystem ignored the creation mode, and a
+    different owner means it mapped ownership. On
+    macOS, a parent's inheritable ACEs are added to a new file whatever its mode,
+    and they cannot be withheld from a directory-relative create, so such a file
+    is refused before any content reaches it. NFSv4-style inherited ACLs on other
+    systems are not inspected.
+    """
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        raise PermissionError(
+            errno.EACCES,
+            f"Filesystem did not create {name} owner-only "
+            f"(mode {stat.S_IMODE(info.st_mode):o})",
+        )
+    # A mapped or fixed-ownership filesystem can give the file to another user,
+    # who could then read the private content however tight its mode is.
+    if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
+        raise PermissionError(
+            errno.EACCES,
+            f"Filesystem created {name} owned by uid {info.st_uid}, not the caller",
+        )
+    if sys.platform == "darwin" and _has_inherited_allow_entry(fd):
+        raise PermissionError(
+            errno.EACCES,
+            f"Refusing to write {name}: its directory's inheritable ACL entries allow "
+            "others access",
+        )
+
+
+def _full_fsync(fd: int) -> None:
+    """Flush to stable storage; macOS ``fsync`` alone leaves data in the drive cache."""
+    os.fsync(fd)
+    if sys.platform == "darwin":
+        import fcntl
+
+        try:
+            fcntl.fcntl(fd, fcntl.F_FULLFSYNC)
+        except OSError as error:
+            # Not every filesystem supports it, and fsync has already run.
+            if error.errno not in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL, errno.ENOTTY):
+                raise
+
+
+def _write_all(fd: int, content: bytes) -> None:
+    view = memoryview(content)
+    while view:
+        count = os.write(fd, view)
+        if count == 0:
+            raise OSError(errno.EIO, "Write made no progress")
+        view = view[count:]
 
 
 def _strip_extended_length_prefix(path: _PathType) -> _PathType:
@@ -381,6 +488,66 @@ class FileHelper:
         if not stat.S_ISDIR(path.stat().st_mode):
             raise NotADirectoryError(path)
 
+    @property
+    def canonical_root(self) -> Path:
+        """``root`` with OS and link aliases resolved, as fixed on construction."""
+        return self._canonical_root
+
+    def access(self, path: Path | str, mode: int) -> bool:
+        """Return whether ``os.access`` grants ``mode`` on an existing entry.
+
+        The entry is found and anchored as ``stat`` finds it, so a leaf link is
+        refused or resolved by the normal policy walk; a leaf swapped for a link
+        after that walk is followed. Like ``os.access``, the answer uses the
+        real user and group ids and is advisory: act through a descriptor and
+        handle its errors.
+        """
+        destination = self._path(path)
+        if destination == self._canonical_root:
+            return os.access(destination, mode)
+        if os.name == "nt":
+            # Pin the hierarchy as ``stat`` does; Windows ``os.access`` has no ``dir_fd``.
+            parts = destination.relative_to(self._canonical_root).parts
+            with ExitStack() as stack:
+                parent = stack.enter_context(_windows_handle(
+                    self._canonical_root, directory=True, traverse=True,
+                ))
+                for part in parts[:-1]:
+                    parent = stack.enter_context(_windows_handle(
+                        Path(part), directory=True, parent=parent, traverse=True,
+                    ))
+                return os.access(destination, mode)
+        unsupported = "Anchored access check is unsupported on this platform"
+        if os.access not in os.supports_dir_fd:
+            raise OSError(errno.ENOTSUP, unsupported)
+        with self._posix_directory(destination.parent, unsupported_message=unsupported) as directory:
+            # No ``follow_symlinks=False``: the walk already handled a leaf link,
+            # and without ``faccessat2`` libc emulates that flag from mode bits.
+            return os.access(destination.name, mode, dir_fd=directory)
+
+    def stat(self, path: Path | str) -> os.stat_result:
+        """Return the metadata of an existing entry, resolving only allowed links."""
+        destination = self._path(path)
+        if destination == self._canonical_root:
+            return os.stat(destination, follow_symlinks=False)
+        # Stat through the anchored parent so a swapped ancestor cannot redirect it.
+        if os.name == "nt":
+            parts = destination.relative_to(self._canonical_root).parts
+            with ExitStack() as stack:
+                parent = stack.enter_context(_windows_handle(
+                    self._canonical_root, directory=True, traverse=True,
+                ))
+                for part in parts[:-1]:
+                    parent = stack.enter_context(_windows_handle(
+                        Path(part), directory=True, parent=parent, traverse=True,
+                    ))
+                return os.stat(destination, follow_symlinks=False)
+        unsupported = "Anchored stat is unsupported on this platform"
+        if os.stat not in os.supports_dir_fd or os.stat not in os.supports_follow_symlinks:
+            raise OSError(errno.ENOTSUP, unsupported)
+        with self._posix_directory(destination.parent, unsupported_message=unsupported) as directory:
+            return os.stat(destination.name, dir_fd=directory, follow_symlinks=False)
+
     def directory_exists(self, path: Path | str) -> bool:
         """Return False for absence only; reject wrong types and forbidden paths."""
         try:
@@ -478,6 +645,16 @@ class FileHelper:
             cleanup()
 
     def read_bytes(self, path: Path | str) -> bytes:
+        with self.open_read(path) as fd, os.fdopen(fd, "rb", closefd=False) as stream:
+            return stream.read()
+
+    @contextmanager
+    def open_read(self, path: Path | str) -> Iterator[int]:
+        """Yield a blocking binary read descriptor on an existing regular file.
+
+        The helper closes the descriptor on exit, so the caller must not close it;
+        ``os.dup`` it to keep the file open longer.
+        """
         destination = self._path(path)
         self._require_file(destination)
         with ExitStack() as stack:
@@ -507,8 +684,10 @@ class FileHelper:
                     stack.callback(os.close, fd)
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise UnsupportedPathError(f"Expected a regular file: {destination}")
-            with os.fdopen(fd, "rb", closefd=False) as stream:
-                return stream.read()
+            if os.name != "nt":
+                # Opened non-blocking only so a FIFO swapped in cannot hang the open.
+                os.set_blocking(fd, True)
+            yield fd
 
     def read_text(self, path: Path | str, *, encoding: str = "utf-8") -> str:
         return self.read_bytes(path).decode(encoding)
@@ -582,6 +761,111 @@ class FileHelper:
     ) -> None:
         self.create_bytes(path, content.encode(encoding), mode=mode)
 
+    def create_private_bytes(self, path: Path | str, content: bytes) -> None:
+        """Exclusively create a file only the current user can open, flushed to disk.
+
+        A failure after creation removes only the file this call created.
+        """
+        if os.name == "nt" and ":" in Path(path).name:
+            # A named NTFS stream shares its base file's security descriptor, so
+            # the owner-only descriptor would not apply to it.
+            raise UnsupportedPathError(f"Refusing to create a named stream: {path}")
+        destination = self._path(path, allow_missing=True, follow_leaf=False)
+        try:
+            self._entry_mode(destination)
+        except FileNotFoundError:
+            pass
+        else:
+            raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), str(destination))
+        with self._creation_directory(destination.parent) as directory:
+            if isinstance(directory, Path):
+                self._windows_create_private(directory / destination.name, content)
+            else:
+                self._posix_create_private(directory, destination.name, content)
+
+    @staticmethod
+    def _posix_create_private(directory: int, name: str, content: bytes) -> None:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        flags |= getattr(os, "O_CLOEXEC", 0)
+        fd = os.open(name, flags, 0o600, dir_fd=directory)
+        created: os.stat_result | None = None
+        pin: int | None = None
+        try:
+            created = os.fstat(fd)
+            # Holds the created inode until any cleanup is done, even if the final
+            # close releases ``fd``, so a replacement cannot reuse its number and
+            # pass the identity check.
+            pin = os.dup(fd)
+            _require_owner_only(fd, created, name)
+            _write_all(fd, content)
+            _full_fsync(fd)
+            closing, fd = fd, -1
+            os.close(closing)
+        except BaseException as error:
+            try:
+                _remove_created(directory, name, created, error)
+            finally:
+                for descriptor in (fd, -1 if pin is None else pin):
+                    if descriptor >= 0:
+                        try:
+                            os.close(descriptor)
+                        except OSError as close_error:
+                            error.add_note(f"Could not close {name}: {close_error}")
+            raise
+        # The duplicate is now the file's last descriptor, so its close is the
+        # one that reports a deferred write error (NFS, for example).
+        try:
+            os.close(pin)
+        except OSError as close_error:
+            close_error.add_note(
+                f"Wrote and flushed {name}, but closing it failed; check its content "
+                "before relying on it"
+            )
+            raise
+        # Best effort: the anchor may be O_PATH or search-only, which fsync rejects.
+        try:
+            parent = os.open(
+                ".", os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
+                dir_fd=directory,
+            )
+        except OSError:
+            return
+        try:
+            _full_fsync(parent)
+        except OSError:
+            pass
+        finally:
+            try:
+                os.close(parent)
+            except OSError:
+                pass
+
+    @staticmethod
+    def _windows_create_private(path: Path, content: bytes) -> None:
+        fd = _windows_create_private_fd(path)
+        try:
+            _write_all(fd, content)
+            _full_fsync(fd)
+        except BaseException as error:
+            import msvcrt
+
+            # The handle shares nothing, so it can only name the created file.
+            try:
+                _windows_delete(msvcrt.get_osfhandle(fd))
+            except Exception as cleanup_error:
+                error.add_note(f"Could not remove partial file {path}: {cleanup_error}")
+            try:
+                os.close(fd)
+            except OSError as close_error:
+                error.add_note(f"Could not close {path}: {close_error}")
+            raise
+        try:
+            os.close(fd)
+        except OSError as error:
+            # The handle is gone, so it can no longer remove the file.
+            error.add_note(f"{path} was written and flushed but may need deleting before a retry")
+            raise
+
     def write_bytes(self, path: Path | str, content: bytes, *, mode: int = 0o644) -> None:
         """Atomically create/replace a file, preserving any allowed leaf link."""
         destination = self._path(path, allow_missing=True)
@@ -620,7 +904,49 @@ class FileHelper:
                 stream.write(content)
 
     @contextmanager
-    def _overwrite_descriptor(self, destination: Path) -> Iterator[int]:
+    def open_rewrite(self, path: Path | str) -> Iterator[int]:
+        """Yield a blocking binary write descriptor on an existing regular file, untruncated.
+
+        The descriptor starts at offset 0 and the helper closes it on exit, so the
+        caller must not close it (wrap it with ``os.fdopen(fd, "wb", closefd=False)``).
+        The caller owns writing, truncating and flushing; owner, mode and links are
+        unchanged.
+        """
+        destination = self._path(path)
+        self._require_file(destination)
+        with self._overwrite_descriptor(destination, create=False) as fd:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise UnsupportedPathError(f"Expected a regular file: {destination}")
+            if os.name != "nt":
+                # Opened non-blocking only so a FIFO swapped in cannot hang the open.
+                os.set_blocking(fd, True)
+            yield fd
+
+    @staticmethod
+    def rewrite_descriptor(fd: int, content: bytes) -> None:
+        """Replace everything in the open file ``fd`` with ``content``, flushed to disk.
+
+        Only for a descriptor from ``open_rewrite``. It writes from offset 0
+        whatever the current offset, truncates after writing (so the old bytes'
+        space is reused rather than freed first), then ``fsync``s, adding
+        ``F_FULLFSYNC`` on macOS where the filesystem supports it: the same
+        write and flush that ``create_private_bytes`` uses. An append-mode
+        descriptor is refused before anything is written, since its writes
+        ignore the seek and the truncate would then cut them off. A failure can
+        leave partial content; restoring it is the caller's job.
+        """
+        if os.name != "nt":
+            import fcntl
+
+            if fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_APPEND:
+                raise OSError(errno.EINVAL, "Refusing to rewrite through an append-mode descriptor")
+        os.lseek(fd, 0, os.SEEK_SET)
+        _write_all(fd, content)
+        os.ftruncate(fd, len(content))
+        _full_fsync(fd)
+
+    @contextmanager
+    def _overwrite_descriptor(self, destination: Path, *, create: bool = True) -> Iterator[int]:
         """Anchor the resolved hierarchy before opening a non-truncating leaf."""
         with ExitStack() as stack:
             if os.name == "nt":
@@ -630,7 +956,7 @@ class FileHelper:
                 for part in parts[:-1]:
                     current = current / part
                     stack.enter_context(_windows_handle(current, directory=True))
-                yield stack.enter_context(_windows_overwrite_fd(destination))
+                yield stack.enter_context(_windows_overwrite_fd(destination, create=create))
                 return
 
             unsupported = "Scoped text overwrite is unsupported on this platform"
@@ -638,14 +964,97 @@ class FileHelper:
                 raise OSError(errno.ENOTSUP, unsupported)
             with self._posix_directory(destination.parent, unsupported_message=unsupported) as parent:
                 flags = (
-                    os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK
-                    | getattr(os, "O_CLOEXEC", 0)
+                    os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+                    | (os.O_CREAT if create else 0)
                 )
                 fd = os.open(destination.name, flags, 0o666, dir_fd=parent)
                 try:
                     yield fd
                 finally:
                     os.close(fd)
+
+    def utime(self, path: Path | str, *, ns: tuple[int, int]) -> None:
+        """Set an existing entry's access and modification times, in nanoseconds.
+
+        The entry is found as ``stat`` finds it and set without following a leaf
+        link swapped in after that walk (POSIX ``utimensat`` relative to the
+        anchored parent). Windows pins the parent hierarchy and sets the times by
+        path, without following a leaf reparse point where Python supports that.
+        A regular file renamed over the leaf after the walk still gets the times;
+        callers holding a verified descriptor should use ``futime``.
+        """
+        destination = self._path(path)
+        if destination == self._canonical_root:
+            os.utime(destination, ns=ns, **_NO_FOLLOW_UTIME)
+            return
+        if os.name == "nt":
+            with self._windows_parents(destination):
+                os.utime(destination, ns=ns, **_NO_FOLLOW_UTIME)
+            return
+        unsupported = "Anchored utime is unsupported on this platform"
+        if os.utime not in os.supports_dir_fd or os.utime not in os.supports_follow_symlinks:
+            raise OSError(errno.ENOTSUP, unsupported)
+        with self._posix_directory(destination.parent, unsupported_message=unsupported) as directory:
+            os.utime(destination.name, ns=ns, dir_fd=directory, follow_symlinks=False)
+
+    def chmod(self, path: Path | str, mode: int) -> None:
+        """Set an existing entry's permission bits, without following a leaf link.
+
+        Where the platform has no no-follow ``fchmodat`` (Linux), the leaf is
+        checked with a no-follow stat relative to the anchored parent first and a
+        link is refused; a link swapped in between that check and the change is
+        followed. The root itself is changed through a no-follow descriptor
+        that must still be the root the helper was built on. Windows pins the
+        parent hierarchy and sets the mode by path,
+        which only toggles the read-only attribute, without following a leaf
+        reparse point where Python supports that (3.13 and later). Prefer
+        ``os.fchmod`` on an open descriptor where it exists.
+        """
+        destination = self._path(path)
+        if destination == self._canonical_root:
+            if os.name == "nt":
+                os.chmod(destination, mode, **_NO_FOLLOW_CHMOD)
+                return
+            # Through a no-follow descriptor checked against the root this
+            # helper was built on, so a root renamed and replaced by a link
+            # (or another directory) since then is refused, never changed.
+            flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(destination, flags | getattr(os, "O_CLOEXEC", 0))
+            try:
+                if not os.path.samestat(self._root_stat, os.fstat(descriptor)):
+                    raise FileHelperError(f"Established root changed: {self.root}")
+                os.fchmod(descriptor, mode)
+            finally:
+                os.close(descriptor)
+            return
+        if os.name == "nt":
+            with self._windows_parents(destination):
+                os.chmod(destination, mode, **_NO_FOLLOW_CHMOD)
+            return
+        unsupported = "Anchored chmod is unsupported on this platform"
+        if os.chmod not in os.supports_dir_fd:
+            raise OSError(errno.ENOTSUP, unsupported)
+        with self._posix_directory(destination.parent, unsupported_message=unsupported) as directory:
+            if os.chmod in os.supports_follow_symlinks:
+                os.chmod(destination.name, mode, dir_fd=directory, follow_symlinks=False)
+                return
+            if stat.S_ISLNK(os.stat(destination.name, dir_fd=directory, follow_symlinks=False).st_mode):
+                raise SymlinkDeniedError(f"Refusing to change the mode of a link: {destination}")
+            os.chmod(destination.name, mode, dir_fd=directory)
+
+    @contextmanager
+    def _windows_parents(self, destination: Path) -> Iterator[None]:
+        """Pin the Windows directory handles from the root to ``destination``'s parent."""
+        parts = destination.relative_to(self._canonical_root).parts
+        with ExitStack() as stack:
+            parent = stack.enter_context(_windows_handle(
+                self._canonical_root, directory=True, traverse=True,
+            ))
+            for part in parts[:-1]:
+                parent = stack.enter_context(_windows_handle(
+                    Path(part), directory=True, parent=parent, traverse=True,
+                ))
+            yield
 
     def symlink(self, target: Path | str, path: Path | str) -> None:
         """Create a link to an existing contained regular file or directory.
