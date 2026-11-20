@@ -405,10 +405,12 @@ descriptor-relative or change their documented concurrency limitations.
   no-follow directory descriptor that must still be the root the helper was
   built on, so a root renamed and replaced since construction is refused.
   Callers that hold a descriptor should prefer `os.fchmod`.
-- `rewrite_descriptor(fd, content)` (static) replaces the whole content of an
-  open writable descriptor, such as one from `open_rewrite`: it seeks to offset
-  0, writes every byte, truncates to the new length after writing, then
-  `fsync`s, adding `F_FULLFSYNC` on macOS where the filesystem supports it. It
+- `rewrite_descriptor(fd, content)` (static) replaces the whole content of a
+  descriptor returned by `open_rewrite`: it seeks to offset 0, writes every
+  byte (retrying short writes), truncates to the new length after writing, then
+  `fsync`s, adding `F_FULLFSYNC` on macOS where the filesystem supports it. An
+  append-mode descriptor is refused (`EINVAL`) before anything is written,
+  since its writes ignore the seek and the truncate would cut them off. It
   shares that write loop and flush policy with `create_private_bytes`, so a
   caller's in-place rewrite and its private backup have the same durability.
   A failure can leave partial content; restoring it is the caller's job.

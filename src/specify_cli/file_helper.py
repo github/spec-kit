@@ -926,13 +926,20 @@ class FileHelper:
     def rewrite_descriptor(fd: int, content: bytes) -> None:
         """Replace everything in the open file ``fd`` with ``content``, flushed to disk.
 
-        For a descriptor from ``open_rewrite``. It writes from offset 0 whatever
-        the current offset, truncates after writing (so the old bytes' space is
-        reused rather than freed first), then ``fsync``s, adding ``F_FULLFSYNC``
-        on macOS where the filesystem supports it: the same write and flush that
-        ``create_private_bytes`` uses. A failure can leave partial content;
-        restoring it is the caller's job.
+        Only for a descriptor from ``open_rewrite``. It writes from offset 0
+        whatever the current offset, truncates after writing (so the old bytes'
+        space is reused rather than freed first), then ``fsync``s, adding
+        ``F_FULLFSYNC`` on macOS where the filesystem supports it: the same
+        write and flush that ``create_private_bytes`` uses. An append-mode
+        descriptor is refused before anything is written, since its writes
+        ignore the seek and the truncate would then cut them off. A failure can
+        leave partial content; restoring it is the caller's job.
         """
+        if os.name != "nt":
+            import fcntl
+
+            if fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_APPEND:
+                raise OSError(errno.EINVAL, "Refusing to rewrite through an append-mode descriptor")
         os.lseek(fd, 0, os.SEEK_SET)
         _write_all(fd, content)
         os.ftruncate(fd, len(content))
