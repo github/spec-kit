@@ -290,6 +290,37 @@ def test_builtin_journal_recreates_and_reports_a_file_it_cannot_open_in_place(tm
     shutil.rmtree(backups[0])
 
 
+def test_builtin_journal_leaves_a_file_intact_when_its_snapshot_cannot_be_read(tmp_path, monkeypatch):
+    """An unreadable snapshot must not empty the live file or its hard links."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    link = tmp_path / "link"
+    os.link(target, link)
+    real_open = Path.open
+
+    def refuse_snapshot(self, mode="r", *args, **kwargs):
+        if mode == "rb" and any(parent in backups for parent in self.parents):
+            raise PermissionError("unreadable snapshot")
+        return real_open(self, mode, *args, **kwargs)
+
+    with pytest.raises(Exception, match="rollback failed"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            monkeypatch.setattr(Path, "open", refuse_snapshot)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "generated\n"
+    assert link.read_text(encoding="utf-8") == "generated\n"
+    for backup in backups:
+        shutil.rmtree(backup)
+
+
 _INCOMPLETE_WARNING = "timestamps, extended attributes or file flags"
 
 

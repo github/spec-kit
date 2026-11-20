@@ -515,8 +515,11 @@ def _restore_file_in_place(
             return "untouched"
         # Before reading the snapshot, which can move its access time.
         original = saved.stat()
-        outgoing.truncate(0)
+        # Open the snapshot before truncating: one this process cannot read
+        # (a group-readable source another user owns, say) must raise with the
+        # live file, and every hard link to it, still intact.
         with saved.open("rb") as incoming:
+            outgoing.truncate(0)
             shutil.copyfileobj(incoming, outgoing)
         outgoing.flush()
         complete = _restore_metadata(outgoing.fileno(), path, original, attributes)
