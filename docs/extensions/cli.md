@@ -79,9 +79,7 @@ specify extension list --json
 
 Lists installed extensions with their status, version, and command counts.
 
-Although help describes `--available` and `--all` as including catalog entries,
-the current handler does not fetch or list uninstalled extensions. Use
-`specify extension search` to discover available extensions.
+Use `specify extension search` to discover extensions in active catalogs.
 
 `--json` writes a JSON array to stdout. Every item has the keys `id`, `name`,
 `description`, `version`, `author`, `priority`, `enabled`, `source`, and
