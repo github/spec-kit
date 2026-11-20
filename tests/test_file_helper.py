@@ -137,6 +137,37 @@ def test_plain_operations(root, allow):
     assert list(root.iterdir()) == []
 
 
+@pytest.mark.parametrize("allow", [False, True])
+def test_file_mode_reports_regular_file_bits_and_absence(root, allow):
+    files = FileHelper(root, allow_symlinks=allow)
+    files.mkdir("nested")
+    files.create_bytes("nested/private", b"secret", mode=0o600)
+    if os.name != "nt":
+        assert files.file_mode("nested/private") == 0o600
+        (root / "nested/private").chmod(0o640)
+        assert files.file_mode(root / "nested/private") == 0o640
+    else:
+        assert files.file_mode("nested/private") is not None
+    assert files.file_mode("nested/missing") is None
+    assert files.file_mode("missing/parent/file") is None
+    with pytest.raises(UnsupportedPathError, match="Expected a regular file"):
+        files.file_mode("nested")
+    with pytest.raises(PathEscapeError):
+        files.file_mode(root.parent / "outside")
+
+
+@pytest.mark.parametrize("kind", ["file", "dangling"])
+def test_file_mode_never_follows_a_leaf_link(root, link, kind):
+    target = root / "target"
+    if kind == "file":
+        target.write_bytes(b"data")
+    link(root / "alias", target)
+    with pytest.raises(SymlinkDeniedError):
+        FileHelper(root).file_mode("alias")
+    with pytest.raises(UnsupportedPathError, match="Expected a regular file"):
+        FileHelper(root, allow_symlinks=True).file_mode("alias")
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shared directory traversal")
 @pytest.mark.parametrize("operation", ["read_bytes", "create_bytes", "overwrite_text"])
 def test_posix_operations_share_parent_walk_and_preserve_leaf_flags(root, monkeypatch, operation):

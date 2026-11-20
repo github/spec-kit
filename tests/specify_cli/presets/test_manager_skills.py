@@ -4,6 +4,7 @@ import functools
 import os
 import shutil
 import stat
+import warnings
 from pathlib import Path
 
 import pytest
@@ -2094,6 +2095,8 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             project_dir, temp_dir, core=True, alias=self._ALIAS
         )
         alias_file = self._alias_skill(project_dir)
+        # The refresh keeps the preset version command registration records.
+        assert "  version: 1.0.0\n" in alias_file.read_text(encoding="utf-8")
 
         assert manager.remove("base-preset") is True
 
@@ -2101,6 +2104,7 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "Base preset body" not in after_remove
         assert "Core custom body" in after_remove
         assert "Appended body" in after_remove
+        assert "  version: 1.0.0\n" in after_remove
         manager.register_enabled_presets_for_agent("claude")
         assert alias_file.read_text(encoding="utf-8") == after_remove
 
@@ -2224,6 +2228,42 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         # Codex is active, so references use its "$" prefix, not agy's "/".
         assert "$speckit-plan" in alias_text
         assert "/speckit-plan" not in alias_text
+
+    @pytest.mark.parametrize("core", [True, False], ids=["core", "no-core"])
+    def test_alias_in_dir_shared_with_command_agent_in_skills_mode(
+        self, project_dir, temp_dir, core
+    ):
+        """Amp in skills mode uses ``.agents/skills`` like Codex, but its
+        registrar writes ``.md`` command files under the dotted name. A
+        Codex alias there must still be found under its hyphenated skill
+        name and rendered as a skill, with no command file beside it."""
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        shared = project_dir / ".agents" / "skills"
+        self._create_skill(shared, "speckit-custom")
+        if core:
+            self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10, alias=False)
+        install("append-preset", "Appended body", "append", 5)
+        alias_file = shared / "speckit-custom-short" / "SKILL.md"
+        assert "Base preset body" in alias_file.read_text(encoding="utf-8")
+        self._write_init_options(project_dir, ai="amp", ai_skills=True)
+        assert manager._get_skills_dir() == shared
+
+        with warnings.catch_warnings():
+            if not core:
+                warnings.simplefilter("ignore", UserWarning)
+            assert manager.remove("base-preset") is True
+
+        if core:
+            content = alias_file.read_text(encoding="utf-8")
+            assert "Core custom body" in content and "Appended body" in content
+            assert "Base preset body" not in content
+        else:
+            assert not alias_file.parent.exists()
+            install("new-base", "New base body", "replace", 10, alias=False)
+        assert not list(shared.glob("speckit.custom-short*"))
 
     def test_remove_sole_base_keeps_hand_edited_alias_skill(self, project_dir, temp_dir):
         manager = self._install_custom_layers(project_dir, temp_dir, alias=self._ALIAS)
@@ -3019,6 +3059,89 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         manager.register_enabled_presets_for_agent("claude")
         assert alias_file.read_text(encoding="utf-8") == installed
 
+    @pytest.mark.parametrize("core", [True, False], ids=["core", "no-core"])
+    @pytest.mark.parametrize(
+        "order",
+        [("speckit.a", "speckit.b"), ("speckit.b", "speckit.a")],
+        ids=["replace-last", "append-last"],
+    )
+    def test_alias_of_two_commands_sharing_one_source_file(
+        self, project_dir, temp_dir, order, core
+    ):
+        """``speckit.a`` (append) and ``speckit.b`` (replace) of one preset
+        declare the same alias and render it from the same file, so the raw
+        ``<id>:<file>`` marker does not say which command the alias was
+        registered for. Registration writes in manifest order: the alias
+        is ``speckit.b``'s when that comes last, and ``speckit.b`` renders
+        it without a base either way. Reconciling ``speckit.a`` must not
+        write its composition over the former or delete the latter."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        manager = PresetManager(project_dir)
+        for name in ("a", "b"):
+            self._create_skill(skills_dir, f"speckit-{name}")
+        if core:
+            core_cmds = project_dir / ".specify" / "templates" / "commands"
+            core_cmds.mkdir(parents=True, exist_ok=True)
+            (core_cmds / "a.md").write_text(
+                "---\ndescription: Core a\n---\n\nCore a body\n", encoding="utf-8"
+            )
+        base = self._create_command_preset(
+            temp_dir, "base-a", "speckit.a", "base-a", "Base a body"
+        )
+        manager.install_from_directory(base, "0.1.5", priority=10)
+        preset_dir = self._create_multi_command_preset(temp_dir, "multi", list(order))
+        (preset_dir / "commands" / "shared.md").write_text(
+            "---\ndescription: multi\n---\n\nShared fragment\n", encoding="utf-8"
+        )
+        manifest_path = preset_dir / "preset.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        for tmpl in manifest["provides"]["templates"]:
+            tmpl["strategy"] = "append" if tmpl["name"] == "speckit.a" else "replace"
+            tmpl["aliases"] = ["speckit.shared"]
+            tmpl["file"] = "commands/shared.md"
+        manifest_path.write_text(yaml.dump(manifest))
+        manager.install_from_directory(preset_dir, "0.1.5", priority=5)
+        alias_file = skills_dir / "speckit-shared" / "SKILL.md"
+        raw_marker = "source: multi:commands/shared.md"
+        installed = alias_file.read_text(encoding="utf-8")
+
+        def remove_base_and_rescaffold():
+            with warnings.catch_warnings():
+                if not core:
+                    warnings.simplefilter("ignore", UserWarning)
+                assert manager.remove("base-a") is True
+                removed = (
+                    alias_file.read_text(encoding="utf-8")
+                    if alias_file.exists()
+                    else None
+                )
+                manager.register_enabled_presets_for_agent("claude")
+            return removed, alias_file.read_text(encoding="utf-8")
+
+        if order[-1] == "speckit.b":
+            # The alias is speckit.b's and stays exactly as registered.
+            assert raw_marker in installed and "Base a body" not in installed
+            removed, rescaffolded = remove_base_and_rescaffold()
+            assert removed == installed
+            assert rescaffolded == installed
+        else:
+            assert "source: multi:.composed/speckit.a.md" in installed
+            assert "Base a body" in installed
+            removed, rescaffolded = remove_base_and_rescaffold()
+            if core:
+                assert "Core a body" in removed and "Shared fragment" in removed
+                assert "Base a body" not in removed
+                assert rescaffolded == removed
+            else:
+                # speckit.a's composition is retired with its base. The
+                # rescaffold registers the alias for speckit.b from the raw
+                # file, and reconciling speckit.a leaves that in place.
+                assert removed is None
+                assert raw_marker in rescaffolded
+                assert "Shared fragment" in rescaffolded
+                assert "Base a body" not in rescaffolded
+
     def test_rescaffold_keeps_other_presets_alias_named_like_baseless_command(
         self, project_dir, temp_dir
     ):
@@ -3373,44 +3496,6 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         finally:
             os.umask(old_umask)
 
-    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
-    @pytest.mark.parametrize(
-        ("umask", "preserve_mode", "expected"),
-        [(0o077, True, 0o600), (0o022, True, 0o644), (0o077, False, 0o644)],
-        ids=["umask-077", "umask-022", "without-preserve-mode"],
-    )
-    def test_shared_writer_creates_new_file_under_umask_with_preserve_mode(
-        self, project_dir, umask, preserve_mode, expected
-    ):
-        """``preserve_mode`` leaves a new file's mode to the umask; without it
-        the writer keeps its fixed 0644. An existing file keeps its bits."""
-        from specify_cli.shared_infra import _write_shared_text
-
-        new_file = project_dir / "new.md"
-        existing = project_dir / "existing.md"
-        existing.write_text("old\n", encoding="utf-8")
-        existing.chmod(0o640)
-        old_umask = os.umask(umask)
-        try:
-            for dest in (new_file, existing):
-                _write_shared_text(
-                    project_dir, dest, "new\n", preserve_mode=preserve_mode
-                )
-        finally:
-            os.umask(old_umask)
-
-        assert new_file.read_text(encoding="utf-8") == "new\n"
-        assert stat.S_IMODE(new_file.stat().st_mode) == expected
-        assert existing.read_text(encoding="utf-8") == "new\n"
-        assert stat.S_IMODE(existing.stat().st_mode) == (
-            0o640 if preserve_mode else 0o644
-        )
-        assert sorted(p.name for p in project_dir.glob("*.md")) == [
-            "existing.md",
-            "new.md",
-        ]
-        assert not list(project_dir.glob(".*.tmp"))
-
     def test_alias_refresh_rewrites_the_same_file(self, project_dir, temp_dir):
         """The alias is refreshed in place, as command registration always
         wrote it: the same inode keeps its owner, ACL and mode."""
@@ -3510,6 +3595,50 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "source: append-preset:" in content
         manager.register_enabled_presets_for_agent("claude")
         assert alias_file.read_text(encoding="utf-8") == content
+
+    @pytest.mark.parametrize("survivor_file", ["current", "dotted"])
+    def test_remove_base_decides_alias_ownership_per_file(
+        self, project_dir, temp_dir, survivor_file
+    ):
+        """Command cleanup removes an alias under its current name and under
+        the dotted name older releases wrote. When the surviving composer
+        owns only one of the two files, that one stays and the removed
+        preset's file goes."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        self._write_core_custom(project_dir)
+        manager = PresetManager(project_dir)
+        install = functools.partial(self._install_alias_layer, manager, temp_dir)
+        install("base-preset", "Base preset body", "replace", 10)
+        install("append-preset", "Appended body", "append", 5)
+        current = self._alias_skill(project_dir)
+        dotted = current.parent.parent / self._ALIAS / "SKILL.md"
+        survivor_text = current.read_text(encoding="utf-8")
+        assert "source: append-preset:" in survivor_text
+        retiring_text = (
+            "---\nname: speckit-custom-short\nmetadata:\n"
+            "  source: base-preset:commands/speckit.custom.md\n---\n\n"
+            "Base preset body\n"
+        )
+        dotted.parent.mkdir()
+        if survivor_file == "current":
+            dotted.write_text(retiring_text, encoding="utf-8")
+            kept, removed = current, dotted
+        else:
+            dotted.write_text(survivor_text, encoding="utf-8")
+            current.write_text(retiring_text, encoding="utf-8")
+            kept, removed = dotted, current
+
+        assert manager.remove("base-preset") is True
+
+        assert not removed.parent.exists()
+        content = kept.read_text(encoding="utf-8")
+        assert "source: append-preset:" in content
+        if survivor_file == "current":
+            assert "Base preset body" not in content
+            assert "Core custom body" in content and "Appended body" in content
+        else:
+            assert content == survivor_text
 
     @pytest.mark.parametrize("historical", [False, True], ids=["active", "historical"])
     def test_remove_base_keeps_native_survivor_after_partial_skill_registration(

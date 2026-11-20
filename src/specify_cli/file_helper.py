@@ -498,6 +498,22 @@ class FileHelper:
     def read_text(self, path: Path | str, *, encoding: str = "utf-8") -> str:
         return self.read_bytes(path).decode(encoding)
 
+    def file_mode(self, path: Path | str) -> int | None:
+        """Return a regular file's permission bits, or ``None`` when no entry exists.
+
+        The leaf is never followed: a link, a directory or any other
+        non-regular entry is refused, so the bits always describe the file a
+        scoped write to ``path`` would replace.
+        """
+        destination = self._path(path, allow_missing=True, follow_leaf=False)
+        try:
+            mode = self._entry_mode(destination)
+        except FileNotFoundError:
+            return None
+        if not stat.S_ISREG(mode):
+            raise UnsupportedPathError(f"Expected a regular file: {destination}")
+        return stat.S_IMODE(mode)
+
     @contextmanager
     def _posix_directory(self, directory: Path, *, unsupported_message: str) -> Iterator[int]:
         """Walk an already policy-resolved parent with bounded descriptor ownership."""

@@ -2,7 +2,6 @@
 
 import copy
 import os
-import stat
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Union
 
@@ -14,6 +13,7 @@ from .._init_options import is_ai_skills_enabled
 from .._invocation_style import get_invocation_prefix
 from .._utils import dump_frontmatter
 from ..extensions import ExtensionRegistry
+from ..file_helper import FileHelper
 from ..integrations.base import IntegrationBase
 from ..integrations._registration import project_registration
 from ._manager_commands import _substitute_core_template
@@ -646,7 +646,8 @@ class _PresetSkillMethods:
             if not manifest:
                 continue
             alias_to_tmpl: Dict[str, Dict[str, Any]] = {}
-            for tmpl in manifest.templates:
+            templates = list(manifest.templates)
+            for tmpl in templates:
                 if tmpl.get("type") != "command" or tmpl.get("name") not in wanted:
                     continue
                 if tmpl.get("strategy", "replace") == "replace":
@@ -689,13 +690,25 @@ class _PresetSkillMethods:
 
             for skills_dir, group in groups.items():
                 agents = group["agents"]
-                # Same choice as the primary skill of that directory.
+                # Same choice as the primary skill of that directory, as
+                # long as the active agent's registrar writes skills. An
+                # agent in skills mode can share this directory while its
+                # registrar still emits command files (Amp writes
+                # ``.agents/commands/*.md`` but uses ``.agents/skills``): it
+                # would look for the alias under the dotted command name and
+                # write a ``.md`` file here. A recorded agent renders then.
+                active_config = (
+                    registrar.AGENT_CONFIGS.get(active_ai)
+                    if isinstance(active_ai, str)
+                    else None
+                )
                 agent = (
                     active_ai
                     if active_ai in agents
                     or (
                         skills_dir == active_skills_dir
-                        and active_ai in registrar.AGENT_CONFIGS
+                        and active_config is not None
+                        and active_config.get("extension") == "/SKILL.md"
                     )
                     else sorted(agents)[0]
                 )
@@ -715,6 +728,7 @@ class _PresetSkillMethods:
                     # is about the file, not the directory.
                     missing = not skill_file.exists() and not skill_file.is_symlink()
                     hard_linked = False
+                    standalone_twin = False
                     if missing:
                         if not (create_missing and skills_dir == active_skills_dir):
                             continue
@@ -737,10 +751,29 @@ class _PresetSkillMethods:
                         # file (raw or composed) leaves alone an alias name
                         # another command of the preset declares too and was
                         # registered for last.
-                        if source not in (
-                            f"{pack_id}:{tmpl.get('file')}",
-                            f"{pack_id}:.composed/{tmpl['name']}.md",
-                        ):
+                        if source == f"{pack_id}:{tmpl.get('file')}":
+                            # The raw marker names a file, not a command.
+                            # Other commands of the preset can render this
+                            # alias from the same file: registration writes
+                            # them in manifest order, so the file belongs
+                            # to the last one, and one that replaces is
+                            # complete without a base.
+                            position = templates.index(tmpl)
+                            twins = [
+                                (idx, other)
+                                for idx, other in enumerate(templates)
+                                if other is not tmpl
+                                and other.get("type") == "command"
+                                and other.get("file") == tmpl.get("file")
+                                and alias in (other.get("aliases") or [])
+                            ]
+                            if any(idx > position for idx, _ in twins):
+                                continue
+                            standalone_twin = any(
+                                other.get("strategy", "replace") == "replace"
+                                for _, other in twins
+                            )
+                        elif source != f"{pack_id}:.composed/{tmpl['name']}.md":
                             continue
 
                     primary = tmpl["name"]
@@ -781,13 +814,15 @@ class _PresetSkillMethods:
                         primary, "command", layers=owner_layers
                     )
                     if composed is None:
-                        if missing or any(
+                        if missing or standalone_twin or any(
                             layer["strategy"] == "replace" for layer in owner_layers
                         ):
                             # A replace base is still there, so this is a
                             # resolution failure (e.g. an unreadable layer),
                             # not a missing base: keep the alias, as the
-                            # primary-skill path keeps its output.
+                            # primary-skill path keeps its output. So is an
+                            # alias another command of the preset renders
+                            # from this file without needing a base.
                             continue
                         alias_file = skill_dir / "SKILL.md"
                         try:
@@ -835,6 +870,7 @@ class _PresetSkillMethods:
                             pack_dir,
                             self.project_root,
                             _resolved_dir=skills_dir,
+                            version=manifest.version,
                         )
                     except (ValueError, OSError) as exc:
                         failures.append(exc)
@@ -847,22 +883,16 @@ class _PresetSkillMethods:
 
         Every ancestor and the cache file itself must stay inside the project
         and off symlinks, so a planted ``.composed`` link cannot redirect the
-        write. An existing entry goes through the shared writer, which
-        replaces it atomically (a hard link to an outside file is broken, not
-        written through) and keeps its permission bits. A missing entry is
-        created exclusively, so the kernel applies the process umask, as it
-        does for the other ``.composed`` writes, and nothing planted at the
-        path in the meantime is opened or followed.
+        write. The shared writer replaces the entry atomically, so a hard
+        link to an outside file is broken, not written through, and nothing
+        planted at the path in the meantime is opened or followed. An
+        existing entry keeps its permission bits; a missing one is created
+        under the process umask, as the other ``.composed`` writes are.
 
         Raises:
             ValueError, OSError: The path is unsafe or the write failed.
         """
-        from ..integrations._file_changes import changing_file
-        from ..shared_infra import (
-            _ensure_safe_shared_destination,
-            _ensure_safe_shared_directory,
-            _write_shared_text,
-        )
+        from ..shared_infra import _ensure_safe_shared_directory, _write_shared_text
 
         _ensure_safe_shared_directory(
             self.project_root,
@@ -870,15 +900,9 @@ class _PresetSkillMethods:
             create=True,
             context="preset composed cache directory",
         )
-        if composed_file.exists() or composed_file.is_symlink():
-            _write_shared_text(
-                self.project_root, composed_file, composed, preserve_mode=True
-            )
-            return
-        _ensure_safe_shared_destination(self.project_root, composed_file)
-        with changing_file(composed_file):
-            with open(composed_file, "x", encoding="utf-8") as cache:
-                cache.write(composed)
+        _write_shared_text(
+            self.project_root, composed_file, composed, preserve_mode=True
+        )
 
     def _layers_registered_in(
         self,
@@ -1043,7 +1067,16 @@ class _PresetSkillMethods:
         pass) cannot bring back, so keep
         those names out of the unregister list and let reconciliation
         recompose them.
+
+        ``unregister_commands()`` removes a skill under its current name
+        and under the dotted name older releases wrote
+        (``speckit.custom-short/SKILL.md``). Ownership is decided for each
+        of the two files: when a survivor owns only one, the name is still
+        left out, and the other file is removed here, as the unregister
+        would have removed it.
         """
+        from ..integrations._file_changes import unlink_in_directory
+
         try:
             registrar = self._command_registrar()
         except ImportError:
@@ -1052,6 +1085,29 @@ class _PresetSkillMethods:
         survivors = [pid for pid in self.registry.list() if pid != pack_id]
         if not survivors:
             return registered_commands
+
+        def survivor_owned(skills_dir: Path, skill_dir: Path) -> bool:
+            if not self._validate_skill_subdir(
+                skill_dir, create=False, skills_root=skills_dir
+            ):
+                return False
+            try:
+                with FileHelper(skills_dir) as files:
+                    content = files.read_text(skill_dir / "SKILL.md")
+            except (OSError, ValueError):
+                # Missing, unreadable, not a regular file or not UTF-8.
+                return False
+            metadata = registrar.parse_frontmatter(content)[0].get("metadata")
+            source = metadata.get("source") if isinstance(metadata, dict) else None
+            return (
+                isinstance(source, str)
+                and source != f"preset:{pack_id}"
+                and any(
+                    source == f"preset:{other}" or source.startswith(f"{other}:")
+                    for other in survivors
+                )
+            )
+
         result: Dict[str, List[str]] = {}
         for agent, names in registered_commands.items():
             agent_config = registrar.AGENT_CONFIGS.get(agent)
@@ -1065,33 +1121,31 @@ class _PresetSkillMethods:
             skills_dir = self._safe_skills_dir_for_agent(agent)
             kept: List[str] = []
             for name in names:
-                if skills_dir is not None and isinstance(name, str):
-                    skill_dir = skills_dir / registrar._compute_output_name(
-                        agent, name, agent_config
-                    )
-                    skill_file = skill_dir / "SKILL.md"
-                    source = None
-                    if self._validate_skill_subdir(
+                if skills_dir is None or not isinstance(name, str):
+                    kept.append(name)
+                    continue
+                output = registrar._compute_output_name(agent, name, agent_config)
+                outputs = [output]
+                if output != name and registrar._is_safe_command_name(name):
+                    outputs.append(name)
+                owned = [
+                    survivor_owned(skills_dir, skills_dir / candidate)
+                    for candidate in outputs
+                ]
+                if not any(owned):
+                    kept.append(name)
+                    continue
+                for candidate, is_owned in zip(outputs, owned):
+                    skill_dir = skills_dir / candidate
+                    if is_owned or not self._validate_skill_subdir(
                         skill_dir, create=False, skills_root=skills_dir
-                    ) and skill_file.is_file():
-                        try:
-                            metadata = registrar.parse_frontmatter(
-                                skill_file.read_text(encoding="utf-8")
-                            )[0].get("metadata")
-                        except (OSError, UnicodeDecodeError):
-                            metadata = None
-                        if isinstance(metadata, dict):
-                            source = metadata.get("source")
-                    if (
-                        isinstance(source, str)
-                        and source != f"preset:{pack_id}"
-                        and any(
-                            source == f"preset:{other}" or source.startswith(f"{other}:")
-                            for other in survivors
-                        )
                     ):
                         continue
-                kept.append(name)
+                    skill_file = skill_dir / "SKILL.md"
+                    unlink_in_directory(
+                        skill_file,
+                        root=self.project_root if skill_file.is_relative_to(self.project_root) else skills_dir,
+                    )
             if kept:
                 result[agent] = kept
         return result
@@ -1247,11 +1301,13 @@ class _PresetSkillMethods:
             skill_file = skill_dir / "SKILL.md"
             if not self._validate_skill_subdir(
                 skill_dir, create=False, skills_root=skills_dir
-            ) or not skill_file.is_file():
+            ):
                 continue
             try:
-                content = skill_file.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+                with FileHelper(skills_dir) as files:
+                    content = files.read_text(skill_file)
+            except (OSError, ValueError):
+                # Missing, unreadable, not a regular file or not UTF-8.
                 continue
             metadata = registrar.parse_frontmatter(content)[0].get("metadata")
             source = metadata.get("source") if isinstance(metadata, dict) else None
@@ -1600,11 +1656,10 @@ class _PresetSkillMethods:
                 continue
 
             # Parse the command file
+            content = source_file.read_text(encoding="utf-8")
             override = (content_overrides or {}).get(cmd_name)
-            content = (
-                override if override is not None
-                else source_file.read_text(encoding="utf-8")
-            )
+            if override is not None:
+                content = override
             frontmatter, body = registrar.parse_frontmatter(content)
 
             # A composition-strategy command (wrap/prepend/append) needs a
@@ -1876,11 +1931,13 @@ class _PresetSkillMethods:
                     continue
                 skill_file = skills_dir / name / "SKILL.md"
                 try:
-                    skill_stat = os.lstat(skill_file)
-                except OSError:
+                    with FileHelper(skills_dir) as files:
+                        mode = files.file_mode(skill_file)
+                except (OSError, ValueError):
+                    # Unreadable, or not a regular file reached without links.
                     continue
-                if stat.S_ISREG(skill_stat.st_mode):
-                    modes[skill_file] = stat.S_IMODE(skill_stat.st_mode)
+                if mode is not None:
+                    modes[skill_file] = mode
         return modes
 
     def _safe_skills_dir_for_agent(self, agent_name: str) -> Optional[Path]:

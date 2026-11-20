@@ -8,7 +8,6 @@ import hmac
 import logging
 import os
 import re
-import stat
 from pathlib import Path
 from typing import Any
 
@@ -360,13 +359,12 @@ def _write_shared_text(
     """
     mode: int | None = 0o644
     if preserve_mode:
-        try:
-            dest_stat = os.lstat(dest)
-        except FileNotFoundError:
-            mode = new_file_mode
-        else:
-            if stat.S_ISREG(dest_stat.st_mode):
-                mode = stat.S_IMODE(dest_stat.st_mode)
+        from .file_helper import FileHelper
+
+        _ensure_safe_shared_destination(project_path, dest)
+        with FileHelper(project_path) as files:
+            existing_mode = files.file_mode(dest)
+        mode = new_file_mode if existing_mode is None else existing_mode
     _write_shared_bytes(project_path, dest, content.encode("utf-8"), mode=mode)
 
 
