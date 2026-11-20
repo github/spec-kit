@@ -275,6 +275,8 @@ descriptor-relative or change their documented concurrency limitations.
 - `write_bytes(path, content, mode=0o644)` / `write_text(...)` atomically
   create or update files with existing parents. Text variants also accept
   `encoding="utf-8"`. A short, exclusively created sibling stages the write.
+  If the staging name exceeds a path limit, retry with a name no longer than
+  the destination's final component.
   On POSIX, the initial mode is restricted to the requested owner read/write
   bits and filtered by the process umask. After writing, the supplied mode is
   applied with `chmod` using the platform's supported semantics. Metadata and

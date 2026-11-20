@@ -590,9 +590,10 @@ class FileHelper:
             self._require_file(destination)
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         flags |= getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-        # Keep the sibling name short regardless of the destination's length.
+        use_short_name = False
         for _ in range(10):
-            name = f".{secrets.token_hex(8)}.tmp"
+            token = secrets.token_hex(8)
+            name = token[:len(destination.name)] if use_short_name else f".{token}.tmp"
             if name == destination.name.rstrip(" .").casefold():
                 continue
             temporary_path = destination.with_name(name)
@@ -600,6 +601,15 @@ class FileHelper:
                 # Retain private staging, intersected with the requested mode.
                 fd = os.open(temporary_path, flags, mode & 0o600)
             except FileExistsError:
+                continue
+            except OSError as exc:
+                # The Windows CRT can report an overlong path as ENOENT.
+                length_error = exc.errno == errno.ENAMETOOLONG or (
+                    os.name == "nt" and exc.errno == errno.ENOENT
+                )
+                if use_short_name or len(name) <= len(destination.name) or not length_error:
+                    raise
+                use_short_name = True
                 continue
             break
         else:

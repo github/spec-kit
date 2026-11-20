@@ -3442,6 +3442,107 @@ def test_atomic_failure_cleans_temp_and_preserves_target(root, monkeypatch):
     assert list(root.iterdir()) == [root / "file"]
 
 
+def test_atomic_fdopen_failure_closes_stage_and_preserves_target(root, monkeypatch):
+    destination = root / "file"
+    destination.write_bytes(b"old")
+    stage_fds = []
+
+    def fail(fd, *args, **kwargs):
+        os.fstat(fd)
+        stage_fds.append(fd)
+        raise OSError("fdopen failed")
+
+    monkeypatch.setattr(os, "fdopen", fail)
+    with FileHelper(root) as files, pytest.raises(OSError, match="fdopen failed"):
+        files.write_bytes(destination, b"new")
+    assert len(stage_fds) == 1
+    with pytest.raises(OSError) as exc:
+        os.fstat(stage_fds[0])
+    assert exc.value.errno == errno.EBADF
+    assert destination.read_bytes() == b"old"
+    assert list(root.iterdir()) == [destination]
+
+
+def test_atomic_writable_stage_cleanup_propagates_unlink_failure(root, monkeypatch):
+    destination = root / "file"
+    destination.write_bytes(b"old")
+    error = PermissionError(errno.EACCES, "unlink denied")
+    chmod = Path.chmod
+    modes = []
+    failed_unlinks = []
+
+    def replace_fails(source, target):
+        assert source.stat().st_mode & stat.S_IWRITE
+        raise OSError("replacement failed")
+
+    def unlink_fails(path, *, missing_ok=False):
+        failed_unlinks.append(path)
+        raise error
+
+    def observe_chmod(path, mode):
+        modes.append(mode)
+        chmod(path, mode)
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "replace": replace_fails}))
+        model.setattr(Path, "chmod", observe_chmod)
+        model.setattr(Path, "unlink", unlink_fails)
+        with pytest.raises(PermissionError) as exc:
+            files.write_bytes(destination, b"new")
+    assert exc.value is error
+    assert modes == [0o644]
+    assert len(failed_unlinks) == 1
+    assert destination.read_bytes() == b"old"
+    assert set(root.iterdir()) == {destination, failed_unlinks[0]}
+    failed_unlinks[0].unlink()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")
+@pytest.mark.parametrize("leaf_budget", [1, 16])
+def test_atomic_write_near_native_path_limit(root, monkeypatch, leaf_budget):
+    parent = root.resolve()
+    path_max = os.pathconf(parent, "PC_PATH_MAX")
+    name_max = os.pathconf(parent, "PC_NAME_MAX")
+    if path_max < 0 or name_max < 0 or path_max - len(os.fsencode(parent)) < 22:
+        pytest.skip("No usable native path-length limit")
+    # Reserve the leaf budget plus the separator and NUL.
+    while (remaining := path_max - leaf_budget - 2 - len(os.fsencode(parent))) > 0:
+        component_size = min(name_max, remaining - 1)
+        if remaining - component_size == 2:
+            component_size -= 1
+        parent /= "x" * component_size
+        parent.mkdir()
+    destination = parent / "f"
+    assert len(os.fsencode(destination)) == path_max - leaf_budget
+    destination.write_bytes(b"probe")
+    destination.unlink()
+    monkeypatch.setattr(file_helper.secrets, "token_hex", lambda _: "2" * 16)
+    with FileHelper(root) as files:
+        for content in (b"first", b"second"):
+            files.write_bytes(destination, content)
+            assert destination.read_bytes() == content
+            assert list(parent.iterdir()) == [destination]
+
+
+def test_atomic_write_retries_windows_enoent_with_short_name(root, monkeypatch):
+    destination = root / "file"
+    attempted = []
+
+    def open_with_limit(path, flags, mode):
+        attempted.append(path)
+        if len(path.name) > len(destination.name):
+            raise FileNotFoundError(errno.ENOENT, "modeled Windows CRT path limit")
+        return os.open(path, flags, mode)
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "open": open_with_limit}))
+        model.setattr(file_helper.secrets, "token_hex", lambda _: "2" * 16)
+        files.write_bytes(destination, b"new")
+    assert len(attempted) == 2
+    assert destination.read_bytes() == b"new"
+    assert list(root.iterdir()) == [destination]
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Windows path length depends on host configuration")
 def test_atomic_write_creates_and_replaces_long_component(root, monkeypatch):
     destination = root / ("x" * 252 + ".sh")
@@ -3539,6 +3640,20 @@ def test_atomic_write_retries_staging_collisions_without_touching_entries(root, 
         files.write_bytes(destination, b"new")
     assert existing.read_bytes() == b"keep"
     assert destination.read_bytes() == b"new"
+    assert set(root.iterdir()) == {destination, existing}
+
+
+def test_atomic_write_collision_exhaustion_preserves_entries(root, monkeypatch):
+    existing = root / ".0000000000000000.tmp"
+    existing.write_bytes(b"keep")
+    destination = root / "file"
+    destination.write_bytes(b"old")
+    monkeypatch.setattr(file_helper.secrets, "token_hex", lambda _: "0" * 16)
+    with FileHelper(root) as files, pytest.raises(FileExistsError) as exc:
+        files.write_bytes(destination, b"new")
+    assert exc.value.errno == errno.EEXIST
+    assert existing.read_bytes() == b"keep"
+    assert destination.read_bytes() == b"old"
     assert set(root.iterdir()) == {destination, existing}
 
 
