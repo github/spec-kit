@@ -3749,10 +3749,9 @@ def test_atomic_windows_failed_length_retry_is_preserved(root, monkeypatch, code
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative staging required")
 def test_atomic_staging_respects_posix_minimum_name_max(root, monkeypatch):
-    destination = root / (".s" + "2" * 12)
-    tokens = iter(["1" * 16, "2" * 12, "3" * 12])
+    destination = root / ("." + "2" * 13)
+    tokens = iter(["1" * 16, "2" * 16, "3" * 16])
     real_open = os.open
-    real_mkdir = os.mkdir
 
     def check(path):
         if len(os.fsencode(Path(path).name)) > 14:
@@ -3760,23 +3759,41 @@ def test_atomic_staging_respects_posix_minimum_name_max(root, monkeypatch):
 
     def open_checked(path, flags, *args, **kwargs):
         check(path)
+        if flags & os.O_CREAT and kwargs.get("dir_fd") is not None:
+            assert os.path.samestat(os.fstat(kwargs["dir_fd"]), root.stat())
+            assert Path(path).name != destination.name
+            assert flags & os.O_EXCL
         return real_open(path, flags, *args, **kwargs)
 
-    def mkdir_checked(path, mode, *, dir_fd):
-        check(path)
-        assert path != destination.name
-        return real_mkdir(path, mode, dir_fd=dir_fd)
+    def forbid_mkdir(*args, **kwargs):
+        raise PermissionError(errno.EACCES, "parent allows only file creation")
 
     with FileHelper(root) as files, monkeypatch.context() as model:
         # FileHelper's resolved root name also has to fit the modeled limit.
         model.setattr(file_helper, "os", SimpleNamespace(**{
-            **vars(os), "open": open_checked, "mkdir": mkdir_checked,
-            "supports_dir_fd": os.supports_dir_fd | {mkdir_checked},
+            **vars(os), "open": open_checked, "mkdir": forbid_mkdir,
+            "supports_dir_fd": os.supports_dir_fd | {forbid_mkdir},
         }))
         model.setattr(file_helper.secrets, "token_hex", lambda _: next(tokens))
         files.write_bytes(destination, b"new")
     assert destination.read_bytes() == b"new"
     assert list(root.iterdir()) == [destination]
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Native macOS ACL inheritance required")
+def test_atomic_near_limit_inherits_file_only_parent_acl(root):
+    parent = _near_limit_parent(root, 1)
+    destination = parent / "f"
+    marker = "group:everyone deny writeextattr,file_inherit,limit_inherit,only_inherit"
+    subprocess.run(["/bin/chmod", "+a", marker, str(parent)], check=True, capture_output=True)
+    with FileHelper(root) as files:
+        files.write_bytes(destination, b"new")
+    acl = subprocess.run(
+        ["/bin/ls", "-led", str(destination)], check=True, capture_output=True, text=True,
+    ).stdout
+    assert "group:everyone inherited deny writeextattr" in acl
+    assert destination.read_bytes() == b"new"
+    assert list(parent.iterdir()) == [destination]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative staging required")
@@ -3801,44 +3818,26 @@ def test_atomic_near_limit_missing_capability_preserves_destination(root, monkey
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory modes required")
-@pytest.mark.parametrize(("mask", "chmod_supported"), [(0o077, False), (0o700, True), (0o700, False)])
-def test_atomic_near_limit_preserves_inherited_setgid(root, monkeypatch, mask, chmod_supported):
+@pytest.mark.parametrize("mask", [0o077, 0o700, 0o777])
+def test_atomic_near_limit_inherits_parent_group_and_applies_mode(root, mask):
     parent = _near_limit_parent(root, 1)
     destination = parent / "f"
-    real_mkdir, real_chmod = os.mkdir, os.chmod
-    changed = []
-
-    def mkdir_with_setgid(path, mode, *, dir_fd):
-        real_mkdir(path, mode, dir_fd=dir_fd)
-        # Model inheritance on filesystems that do not inherit setgid by default.
-        real_chmod(path, (mode & ~mask) | stat.S_ISGID, dir_fd=dir_fd)
-
-    def chmod_stage(path, mode, **kwargs):
-        changed.append(mode)
-        real_chmod(path, mode, **kwargs)
-
-    with FileHelper(root) as files, monkeypatch.context() as model:
-        model.setattr(file_helper, "os", SimpleNamespace(**{
-            **vars(os), "mkdir": mkdir_with_setgid, "chmod": chmod_stage,
-            "supports_dir_fd": os.supports_dir_fd | {mkdir_with_setgid} | (
-                {chmod_stage} if chmod_supported else set()
-            ),
-        }))
-        if mask == 0o700 and not chmod_supported:
-            with pytest.raises(OSError) as exc:
-                files.write_bytes(destination, b"new")
-            assert exc.value.errno == errno.ENOTSUP
-            assert not list(parent.iterdir())
-        else:
-            files.write_bytes(destination, b"new")
-            assert destination.read_bytes() == b"new"
-            assert list(parent.iterdir()) == [destination]
-    assert changed == ([0o2700] if mask == 0o700 and chmod_supported else [])
+    parent.chmod(0o2700)
+    previous = os.umask(mask)
+    try:
+        with FileHelper(root) as files:
+            files.write_bytes(destination, b"new", mode=0o640)
+    finally:
+        os.umask(previous)
+    assert destination.stat().st_gid == parent.stat().st_gid
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o640
+    assert destination.read_bytes() == b"new"
+    assert list(parent.iterdir()) == [destination]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")
 @pytest.mark.parametrize("fail_at", ["open", "replace"])
-def test_atomic_near_limit_staging_failure_cleans_directory(root, monkeypatch, fail_at):
+def test_atomic_near_limit_staging_failure_cleans_sibling(root, monkeypatch, fail_at):
     parent = _near_limit_parent(root, 1)
     destination = parent / "f"
     destination.write_bytes(b"old")
@@ -3848,8 +3847,8 @@ def test_atomic_near_limit_staging_failure_cleans_directory(root, monkeypatch, f
     def observe_open(path, flags, *args, **kwargs):
         if flags & os.O_CREAT:
             stage_attempts.append(path)
-        if fail_at == "open" and path == Path("payload"):
-            raise error
+            if fail_at == "open" and kwargs.get("dir_fd") is not None:
+                raise error
         return os.open(path, flags, *args, **kwargs)
 
     def observe_replace(source, target, *, src_dir_fd):
@@ -3865,7 +3864,8 @@ def test_atomic_near_limit_staging_failure_cleans_directory(root, monkeypatch, f
             files.write_bytes(destination, b"new")
     assert exc.value is error
     assert exc.value.errno == error.errno
-    assert len(stage_attempts) == 2 and stage_attempts[-1] == Path("payload")
+    assert len(stage_attempts) == 2
+    assert not stage_attempts[-1].is_absolute()
     assert destination.read_bytes() == b"old"
     assert list(parent.iterdir()) == [destination]
 

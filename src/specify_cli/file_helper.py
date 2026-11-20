@@ -650,62 +650,27 @@ class FileHelper:
                     # Keep file-only ACL inheritance and avoid requiring directory creation rights.
                     extended_parent = _windows_extended_path(destination.parent)
                     continue
-                if not (
-                    {os.mkdir, os.rename, os.rmdir, os.stat, os.unlink} <= os.supports_dir_fd
-                    and os.stat in os.supports_follow_symlinks
-                ):
+                if not {os.rename, os.unlink} <= os.supports_dir_fd:
                     raise
             break
         else:
             raise FileExistsError(errno.EEXIST, "Could not allocate a staging file", str(destination))
 
-        # Keep the payload out of the destination's namespace, without
-        # spending the remaining absolute path budget on the staging name.
+        # A parent-relative sibling keeps direct inheritance and avoids the
+        # absolute path limit without shrinking the name to the leaf budget.
         parent = staging.enter_context(self._posix_directory(
             destination.parent, unsupported_message="Directory-relative staging is unsupported",
         ))
         for _ in range(10):
-            name = f".s{secrets.token_hex(6)}"
+            name = "." + secrets.token_hex(7)[:13]  # POSIX minimum NAME_MAX is 14.
             if name == destination.name.rstrip(" .").casefold():
                 continue
-            directory = Path(name)
+            stage = Path(name)
             try:
-                os.mkdir(directory.name, 0o700, dir_fd=parent)
+                return os.open(stage, flags, mode, dir_fd=parent), stage, parent
             except FileExistsError:
                 continue
-            staging.enter_context(self._remove_atomic_directory(directory, parent))
-            break
-        else:
-            raise FileExistsError(errno.EEXIST, "Could not allocate a staging directory", str(destination))
-        directory_mode = os.stat(name, dir_fd=parent, follow_symlinks=False).st_mode
-        if not stat.S_ISDIR(directory_mode):
-            raise NotADirectoryError(errno.ENOTDIR, os.strerror(errno.ENOTDIR), name)
-        if directory_mode & 0o700 != 0o700:
-            # Restore owner access masked by umask without clearing inherited setgid.
-            if os.chmod not in os.supports_dir_fd:
-                raise OSError(errno.ENOTSUP, "Directory-relative staging chmod is unsupported", name)
-            try:
-                os.chmod(name, stat.S_IMODE(directory_mode) | 0o700, dir_fd=parent, follow_symlinks=False)
-            except (NotImplementedError, ValueError) as exc:
-                raise OSError(errno.ENOTSUP, "Directory-relative staging chmod is unsupported", name) from exc
-        directory_fd = os.open(directory, self._directory_flags(), dir_fd=parent)
-        staging.callback(os.close, directory_fd)
-        stage = Path("payload")
-        return os.open(stage, flags, mode, dir_fd=directory_fd), stage, directory_fd
-
-    @staticmethod
-    @contextmanager
-    def _remove_atomic_directory(directory: Path, parent: int) -> Iterator[None]:
-        try:
-            yield
-        except BaseException as exc:
-            try:
-                os.rmdir(directory, dir_fd=parent)
-            except OSError as cleanup_error:
-                exc.add_note(f"Could not remove atomic staging directory: {cleanup_error}")
-            raise
-        else:
-            os.rmdir(directory, dir_fd=parent)
+        raise FileExistsError(errno.EEXIST, "Could not allocate a staging file", str(destination))
 
     @staticmethod
     def _unlink_atomic_stage(stage: Path, parent: int | None) -> None:
