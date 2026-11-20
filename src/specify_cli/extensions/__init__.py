@@ -1585,6 +1585,12 @@ class ExtensionManager:
                 files and the skip guard would otherwise prevent extension
                 content from being layered on top.
 
+        A pre-existing directory without a SKILL.md is skipped as the user's
+        unless removal recorded it as retained (see
+        :meth:`_remember_retained_skill_dir`): it was this extension's skill
+        directory, kept alive only by the user's own files, and the skill is
+        recreated beside them.
+
         Returns:
             List of skill names that were created (for registry storage).
         """
@@ -1699,8 +1705,12 @@ class ExtensionManager:
                 # Never add files to a pre-existing user directory. Without a
                 # verifiable SKILL.md ownership marker, rollback/removal cannot
                 # distinguish our output from unrelated user artifacts.
-                # Skipped when force=True (upgrade path).
-                continue
+                # Skipped when force=True (upgrade path), and for a directory
+                # removal recorded as retained: its ownership was verified
+                # before its SKILL.md was removed, and only the user's own
+                # files kept it alive, so the skill is recreated beside them.
+                if not self._is_retained_skill_dir(manifest.id, skill_subdir):
+                    continue
 
             # Create skill directory; track whether we created it so we can clean
             # up safely if reading the source file subsequently fails.
@@ -1780,6 +1790,8 @@ class ExtensionManager:
                 if skill_file.is_symlink():
                     unlink(skill_file)
                 write_text(skill_file, skill_content, encoding="utf-8")
+            # The directory carries its ownership marker again.
+            self._forget_retained_skill_dir(manifest.id, skill_subdir)
             written.append(skill_name)
             if copy_mode:
                 assert resource_hashes is not None
@@ -2276,7 +2288,7 @@ class ExtensionManager:
         extension_id: str,
         skills_dir: Optional[Path] = None,
         generic_hashes: Optional[Dict[str, str]] = None,
-    ) -> None:
+    ) -> List[Path]:
         """Remove SKILL.md directories for extension skills.
 
         Called during extension removal to clean up skill files that
@@ -2297,8 +2309,30 @@ class ExtensionManager:
                 currently-active agent in init-options. When omitted,
                 every configured agent's skills directory is scanned
                 instead of resolving just the currently active one.
+
+        Returns:
+            The resolved skill directories whose ownership was verified and
+            whose SKILL.md this call removed. A directory that still exists
+            afterwards (it held user files, so only the SKILL.md was
+            removed) is recorded through
+            :meth:`_remember_retained_skill_dir`, so any later registration
+            — a force reinstall, ``extension update``, or switching the
+            integration away and back, even in another process — may
+            recreate the skill beside the user's files.
         """
-        from ..integrations._file_changes import changing_file, unlink
+        from ..integrations._file_changes import unlink
+
+        removed_owned: List[Path] = []
+
+        def retire(skill_subdir: Path, skill_file: Path) -> None:
+            unlink(skill_file)
+            removed_owned.append(skill_subdir)
+            try:
+                skill_subdir.rmdir()
+            except OSError:
+                pass
+            if skill_subdir.is_dir():
+                self._remember_retained_skill_dir(extension_id, skill_subdir)
 
         generic_roots = {
             Path(path).parent.parent
@@ -2326,14 +2360,126 @@ class ExtensionManager:
                         skill_file.read_bytes()
                     ).hexdigest():
                         continue
-                    unlink(skill_file)
-                    try:
-                        skill_subdir.rmdir()
-                    except OSError:
-                        pass
+                    retire(skill_subdir, skill_file)
                     continue
-            with changing_file(skill_subdir, removal=True):
-                shutil.rmtree(skill_subdir)
+            # Remove only the extension's own output. Ownership of the
+            # directory is established through the SKILL.md provenance
+            # marker alone, so every other file in it is the user's (notes,
+            # extra references) and must survive removal (#5381) — the same
+            # per-file discipline the generic branch above applies with its
+            # hash check. The directory itself goes only once it is empty.
+            if skill_file.is_symlink():
+                # A symlink the user re-pointed outside this extension is not
+                # our rendered output; leave it, as the generic branch does.
+                # A dev-mode link into a ``.specify-dev/extension-skills``
+                # cache (which may live in the original --dev source tree,
+                # outside the installed directory) is still ours to remove.
+                try:
+                    target = skill_file.resolve()
+                except OSError:
+                    continue
+                parts = target.parts
+                is_dev_cache_link = any(
+                    parts[i] == ".specify-dev"
+                    and parts[i + 1] == "extension-skills"
+                    for i in range(len(parts) - 1)
+                )
+                if not is_dev_cache_link and not target.is_relative_to(
+                    (self.extensions_dir / extension_id).resolve()
+                ):
+                    continue
+            retire(skill_subdir, skill_file)
+        return removed_owned
+
+    # -- Retained skill directories -------------------------------------------
+    #
+    # Per-file removal (#5381) leaves a skill directory alive when the user's
+    # own files are in it. The directory then has no SKILL.md, so it carries
+    # no ownership marker, and registration would skip it as an unverifiable
+    # pre-existing user directory. Removal verified the ownership, though, so
+    # it records such a directory here, and registration consults the record
+    # instead of weakening its guard. The record is a file rather than
+    # manager state because the removal and the next registration can be
+    # separate operations in separate processes (``extension update``,
+    # switching the integration away and back) and can outlive the
+    # extension's registry entry (``remove`` followed by ``install``).
+
+    def _retained_skill_dirs_file(self) -> Path:
+        return self.extensions_dir / ".retained-skill-dirs.json"
+
+    def _load_retained_skill_dirs(self) -> Dict[str, List[str]]:
+        """Read the record, tolerating a missing, unreadable, or malformed file."""
+        try:
+            data = json.loads(
+                self._retained_skill_dirs_file().read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {
+            ext_id: [entry for entry in entries if isinstance(entry, str)]
+            for ext_id, entries in data.items()
+            if isinstance(ext_id, str) and isinstance(entries, list)
+        }
+
+    def _save_retained_skill_dirs(self, data: Dict[str, List[str]]) -> None:
+        from ..integrations._file_changes import unlink, write_text
+
+        path = self._retained_skill_dirs_file()
+        data = {ext_id: entries for ext_id, entries in data.items() if entries}
+        if not data:
+            if path.exists() or path.is_symlink():
+                unlink(path)
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_text(
+            path, json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+    def _retained_skill_dir_key(self, skill_subdir: Path) -> Optional[str]:
+        """The record key for *skill_subdir*: its project-relative POSIX path.
+
+        A directory outside the project (a home-scoped skills root) has no
+        key: the record never authorizes a write outside the project.
+        """
+        try:
+            return (
+                skill_subdir.resolve()
+                .relative_to(self.project_root.resolve())
+                .as_posix()
+            )
+        except (OSError, ValueError):
+            return None
+
+    def _remember_retained_skill_dir(
+        self, extension_id: str, skill_subdir: Path
+    ) -> None:
+        key = self._retained_skill_dir_key(skill_subdir)
+        if key is None:
+            return
+        data = self._load_retained_skill_dirs()
+        entries = data.setdefault(extension_id, [])
+        if key not in entries:
+            entries.append(key)
+            self._save_retained_skill_dirs(data)
+
+    def _is_retained_skill_dir(self, extension_id: str, skill_subdir: Path) -> bool:
+        key = self._retained_skill_dir_key(skill_subdir)
+        return key is not None and key in self._load_retained_skill_dirs().get(
+            extension_id, []
+        )
+
+    def _forget_retained_skill_dir(
+        self, extension_id: str, skill_subdir: Path
+    ) -> None:
+        key = self._retained_skill_dir_key(skill_subdir)
+        if key is None:
+            return
+        data = self._load_retained_skill_dirs()
+        if key in data.get(extension_id, []):
+            data[extension_id].remove(key)
+            self._save_retained_skill_dirs(data)
 
     def _extension_owned_skill_names(
         self, skill_names: List[str], extension_id: str
