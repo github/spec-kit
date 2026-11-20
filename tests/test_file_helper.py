@@ -3627,6 +3627,57 @@ def test_atomic_write_retries_windows_enoent_in_staging_directory(root, monkeypa
     assert list(root.iterdir()) == [destination]
 
 
+@pytest.mark.parametrize(("source", "expected"), [
+    (r"C:\project\dir", r"\\?\C:\project\dir"),
+    (r"\\server\share\dir", r"\\?\UNC\server\share\dir"),
+    (r"\\?\C:\project\dir", r"\\?\C:\project\dir"),
+    (r"\\?\UNC\server\share\dir", r"\\?\UNC\server\share\dir"),
+])
+def test_windows_extended_atomic_path(source, expected):
+    assert str(file_helper._windows_extended_path(PureWindowsPath(source))) == expected
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows staging and ACLs required")
+def test_atomic_windows_extended_staging_inherits_parent_acl(root, monkeypatch):
+    parent = root.resolve()
+    destination = parent / "file"
+    acl = parent.parent / "acl.txt"
+    run = subprocess.run
+    run(["icacls", str(parent), "/grant", "*S-1-5-11:(OI)(CI)(RX)"], check=True, capture_output=True)
+    real_open = os.open
+    real_replace = os.replace
+    stages = []
+
+    def open_stage(path, flags, mode):
+        if path.parent == parent:
+            raise FileNotFoundError(errno.ENOENT, "forced CRT length error")
+        assert str(path).startswith("\\\\?\\")
+        stages.append(path)
+        return real_open(path, flags, mode)
+
+    def fail(source, target):
+        assert source == stages[-1] and target == destination
+        raise PermissionError(errno.EACCES, "replacement denied")
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        windows_os = SimpleNamespace(**{**vars(os), "open": open_stage})
+        model.setattr(file_helper, "os", windows_os)
+        files.write_bytes(destination, b"first")
+        assert destination.read_bytes() == b"first"
+        files.write_bytes(destination, b"second")
+        assert destination.read_bytes() == b"second"
+        model.setattr(windows_os, "replace", fail)
+        with pytest.raises(PermissionError, match="replacement denied"):
+            files.write_bytes(destination, b"rejected", mode=0o400)
+        model.setattr(windows_os, "replace", real_replace)
+    assert len(stages) == 3
+    assert list(parent.iterdir()) == [destination]
+    assert destination.read_bytes() == b"second"
+    run(["icacls", str(destination), "/save", str(acl)], check=True, capture_output=True)
+    sddl = acl.read_text(encoding="utf-16-le")
+    assert ";;;AU)" in sddl or ";;;S-1-5-11)" in sddl
+
+
 @pytest.mark.parametrize(("name", "code"), [
     ("file", errno.EACCES),
     ("x" * 22, errno.ENAMETOOLONG),
@@ -3652,6 +3703,95 @@ def test_atomic_staging_nonretryable_error_is_preserved(root, monkeypatch, name,
     assert not destination.exists()
     assert list(root.iterdir()) == [keep]
     assert keep.read_bytes() == b"old"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative staging required")
+def test_atomic_staging_respects_posix_minimum_name_max(root, monkeypatch):
+    destination = root / (".s" + "2" * 12)
+    tokens = iter(["1" * 16, "2" * 12, "3" * 12])
+    real_open = os.open
+    real_mkdir = os.mkdir
+
+    def check(path):
+        if len(os.fsencode(Path(path).name)) > 14:
+            raise OSError(errno.ENAMETOOLONG, "modeled NAME_MAX")
+
+    def open_checked(path, flags, *args, **kwargs):
+        check(path)
+        return real_open(path, flags, *args, **kwargs)
+
+    def mkdir_checked(path, mode, *, dir_fd):
+        check(path)
+        assert path != destination.name
+        return real_mkdir(path, mode, dir_fd=dir_fd)
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        # FileHelper's resolved root name also has to fit the modeled limit.
+        model.setattr(file_helper, "os", SimpleNamespace(**{
+            **vars(os), "open": open_checked, "mkdir": mkdir_checked,
+            "supports_dir_fd": os.supports_dir_fd | {mkdir_checked},
+        }))
+        model.setattr(file_helper.secrets, "token_hex", lambda _: next(tokens))
+        files.write_bytes(destination, b"new")
+    assert destination.read_bytes() == b"new"
+    assert list(root.iterdir()) == [destination]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative staging required")
+@pytest.mark.parametrize(("capability", "code"), [
+    ("supports_dir_fd", errno.ENAMETOOLONG),
+    ("O_NOFOLLOW", errno.ENOTSUP),
+    ("O_DIRECTORY", errno.ENOTSUP),
+])
+def test_atomic_near_limit_missing_capability_preserves_destination(root, monkeypatch, capability, code):
+    parent = _near_limit_parent(root, 1)
+    destination = parent / "f"
+    destination.write_bytes(b"old")
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{
+            **vars(os), capability: set() if capability == "supports_dir_fd" else 0,
+        }))
+        with pytest.raises(OSError) as exc:
+            files.write_bytes(destination, b"new")
+    assert exc.value.errno == code
+    assert destination.read_bytes() == b"old"
+    assert list(parent.iterdir()) == [destination]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory modes required")
+@pytest.mark.parametrize(("mask", "chmod_supported"), [(0o077, False), (0o700, True), (0o700, False)])
+def test_atomic_near_limit_preserves_inherited_setgid(root, monkeypatch, mask, chmod_supported):
+    parent = _near_limit_parent(root, 1)
+    destination = parent / "f"
+    real_mkdir, real_chmod = os.mkdir, os.chmod
+    changed = []
+
+    def mkdir_with_setgid(path, mode, *, dir_fd):
+        real_mkdir(path, mode, dir_fd=dir_fd)
+        # Model inheritance on filesystems that do not inherit setgid by default.
+        real_chmod(path, (mode & ~mask) | stat.S_ISGID, dir_fd=dir_fd)
+
+    def chmod_stage(path, mode, **kwargs):
+        changed.append(mode)
+        real_chmod(path, mode, **kwargs)
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{
+            **vars(os), "mkdir": mkdir_with_setgid, "chmod": chmod_stage,
+            "supports_dir_fd": os.supports_dir_fd | {mkdir_with_setgid} | (
+                {chmod_stage} if chmod_supported else set()
+            ),
+        }))
+        if mask == 0o700 and not chmod_supported:
+            with pytest.raises(OSError) as exc:
+                files.write_bytes(destination, b"new")
+            assert exc.value.errno == errno.ENOTSUP
+            assert not list(parent.iterdir())
+        else:
+            files.write_bytes(destination, b"new")
+            assert destination.read_bytes() == b"new"
+            assert list(parent.iterdir()) == [destination]
+    assert changed == ([0o2700] if mask == 0o700 and chmod_supported else [])
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")

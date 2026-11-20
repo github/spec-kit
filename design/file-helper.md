@@ -279,6 +279,8 @@ descriptor-relative or change their documented concurrency limitations.
   directory under the destination's parent instead of using a short file name
   that could also be another write's destination. This uses directory-relative
   operations where supported on POSIX and an extended staging path on Windows.
+  The staging directory preserves inherited setgid on POSIX and inherits
+  the destination parent's access control on Windows.
   On POSIX, the initial mode is restricted to the requested owner read/write
   bits and filtered by the process umask. After writing, the supplied mode is
   applied with `chmod` using the platform's supported semantics. Metadata and

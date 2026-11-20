@@ -646,11 +646,10 @@ class FileHelper:
                 if os.name == "nt":
                     if not destination.parent.is_dir():
                         raise
-                    directory = Path(tempfile.mkdtemp(dir=_windows_extended_path(destination.parent)))
-                    staging.enter_context(self._remove_atomic_directory(directory))
-                    stage = directory / "payload"
-                    return os.open(stage, flags, mode), stage, None
-                if not {os.mkdir, os.chmod, os.rename, os.rmdir, os.unlink} <= os.supports_dir_fd:
+                elif not (
+                    {os.mkdir, os.rename, os.rmdir, os.stat, os.unlink} <= os.supports_dir_fd
+                    and os.stat in os.supports_follow_symlinks
+                ):
                     raise
             break
         else:
@@ -658,22 +657,41 @@ class FileHelper:
 
         # Keep the payload out of the destination's namespace, without
         # spending the remaining absolute path budget on the staging name.
-        parent = staging.enter_context(self._posix_directory(
+        parent = None if os.name == "nt" else staging.enter_context(self._posix_directory(
             destination.parent, unsupported_message="Directory-relative staging is unsupported",
         ))
         for _ in range(10):
-            name = f".{secrets.token_hex(8)}.tmp"
+            name = f".s{secrets.token_hex(6)}"
+            if name == destination.name.rstrip(" .").casefold():
+                continue
+            directory = _windows_extended_path(destination.parent) / name if parent is None else Path(name)
             try:
-                os.mkdir(name, 0o700, dir_fd=parent)
+                if parent is None:
+                    # The payload should inherit the destination parent's ACL.
+                    directory.mkdir()
+                else:
+                    os.mkdir(directory.name, 0o700, dir_fd=parent)
             except FileExistsError:
                 continue
-            staging.enter_context(self._remove_atomic_directory(Path(name), parent))
+            staging.enter_context(self._remove_atomic_directory(directory, parent))
             break
         else:
             raise FileExistsError(errno.EEXIST, "Could not allocate a staging directory", str(destination))
-        # A restrictive umask must not make the private staging directory unusable.
-        os.chmod(name, 0o700, dir_fd=parent, follow_symlinks=False)
-        directory_fd = os.open(name, self._directory_flags(), dir_fd=parent)
+        if parent is None:
+            stage = directory / "payload"
+            return os.open(stage, flags, mode), stage, None
+        directory_mode = os.stat(name, dir_fd=parent, follow_symlinks=False).st_mode
+        if not stat.S_ISDIR(directory_mode):
+            raise NotADirectoryError(errno.ENOTDIR, os.strerror(errno.ENOTDIR), name)
+        if directory_mode & 0o700 != 0o700:
+            # Restore owner access masked by umask without clearing inherited setgid.
+            if os.chmod not in os.supports_dir_fd:
+                raise OSError(errno.ENOTSUP, "Directory-relative staging chmod is unsupported", name)
+            try:
+                os.chmod(name, stat.S_IMODE(directory_mode) | 0o700, dir_fd=parent, follow_symlinks=False)
+            except (NotImplementedError, ValueError) as exc:
+                raise OSError(errno.ENOTSUP, "Directory-relative staging chmod is unsupported", name) from exc
+        directory_fd = os.open(directory, self._directory_flags(), dir_fd=parent)
         staging.callback(os.close, directory_fd)
         stage = Path("payload")
         return os.open(stage, flags, mode, dir_fd=directory_fd), stage, directory_fd
