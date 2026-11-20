@@ -1,4 +1,4 @@
-"""Implementation of the ``specify preset set-priority`` command."""
+"""Implementation of the specify preset set-priority command."""
 
 from __future__ import annotations
 
@@ -55,12 +55,62 @@ def preset_set_priority(
         raise typer.Exit(0)
 
     old_priority = normalize_priority(raw_priority)
+    is_enabled = metadata.get("enabled", True)
 
     # Update priority
     manager.registry.update(preset_id, {"priority": priority})
-    manager.reconcile_constitution(
-        f"Failed to reconcile constitution after changing priority for preset {preset_id}"
-    )
+
+    if is_enabled:
+        try:
+            # Native-skill integrations are deliberately excluded from preset
+            # priority reconciliation. Their SKILL.md files are user-facing
+            # native artifacts and are not rewritten by this command.
+            from .. import load_init_options
+
+            init_options = load_init_options(project_root)
+            active_agent = (
+                init_options.get("ai") if isinstance(init_options, dict) else None
+            )
+            from ..agents import CommandRegistrar
+
+            registrar = CommandRegistrar(project_root, include_generic=False)
+            active_config = (
+                registrar.AGENT_CONFIGS.get(active_agent, {})
+                if isinstance(active_agent, str)
+                else {}
+            )
+            is_native_skill_integration = (
+                active_config.get("extension") == "/SKILL.md"
+            )
+
+            # Command-backed integrations can refresh their generated commands
+            # and supplemental skills through the existing renderers.
+            if not is_native_skill_integration:
+                from ._manifest import PresetManifest
+
+                manifest = PresetManifest(
+                    manager.presets_dir / preset_id / "preset.yml"
+                )
+                command_names = [
+                    template["name"]
+                    for template in manifest.templates
+                    if template.get("type") == "command"
+                ]
+                if command_names:
+                    manager._reconcile_composed_commands(command_names)
+                    manager._reconcile_skills(command_names)
+        except Exception as exc:  # noqa: BLE001 - lifecycle reconciliation is best-effort
+            import warnings
+
+            warnings.warn(
+                f"Post-priority reconciliation failed for {preset_id}: {exc}. "
+                "Agent command files may not reflect the current priority stack.",
+                stacklevel=2,
+            )
+
+        manager.reconcile_constitution(
+            f"Failed to reconcile constitution after changing priority for preset {preset_id}"
+        )
 
     console.print(
         f"[green]✓[/green] Preset '{preset_id}' priority changed: {old_priority} → {priority}"

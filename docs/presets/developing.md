@@ -179,8 +179,8 @@ Test overlapping presets at different priorities and equal priorities,
 project-local overrides, removal/restoration, and missing dependencies or
 composition bases. If you ship executable scripts, test their intended
 behavior and failures; PowerShell scripts must target Windows PowerShell
-5.1. Do not expect enable, disable, or priority changes alone to rewrite
-already delivered command or skill files.
+5.1. Enabled preset priority changes refresh affected command and skill files through active integration renderers. Disabled preset priority changes leave
+delivered files untouched. Enable and disable operations alone do not rewrite delivered files. Native-skill integrations are not refreshed by command-priority changes.
 
 For section replacement, test that an unrelated upstream section update flows
 through unchanged. Also test a renamed target and duplicate normalized headings:

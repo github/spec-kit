@@ -226,7 +226,7 @@ specify preset set-priority <preset_id> <priority>
 Changes an installed preset's resolution priority. The value must be a
 positive integer; lower numbers take precedence, with alphabetical ID
 ordering for ties. This updates the registry and opted-in constitution
-reconciliation; it does not itself rescaffold command and skill outputs.
+reconciliation. Enabled presets refresh affected commands and skills through the active integration's renderers; disabled presets leave delivered files untouched. Native-skill integrations are not refreshed by this command.
 
 ## Catalog management
 

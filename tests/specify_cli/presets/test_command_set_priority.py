@@ -7,13 +7,16 @@ from specify_cli.presets import (
 )
 from tests.conftest import strip_ansi
 from tests.specify_cli.presets._helpers import (
+    PresetArtifactTestHelpers,
     install_constitution_sync_preset,
     install_self_test_preset,
+)
+from tests.specify_cli.presets._helpers import (
     make_convention_constitution_preset as _make_convention_constitution_preset,
 )
 
 
-class TestPresetSetPriority:
+class TestPresetSetPriority(PresetArtifactTestHelpers):
     """Test preset set-priority CLI command."""
 
     def test_set_priority_changes_priority(self, project_dir, pack_dir):
@@ -71,6 +74,155 @@ class TestPresetSetPriority:
 
         assert result.exit_code == 0, result.output
         assert memory.read_text() == "# Convention Constitution\n"
+
+    def test_set_priority_reconciles_generated_commands(self, project_dir, temp_dir):
+        """Changing priority rematerializes the winning preset command."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        commands_dir = project_dir / ".gemini" / "commands"
+        commands_dir.mkdir(parents=True)
+
+        manager = PresetManager(project_dir)
+        first = self._create_command_preset(
+            temp_dir, "priority-first", "speckit.demo", "First", "BODY-A"
+        )
+        second = self._create_command_preset(
+            temp_dir, "priority-second", "speckit.demo", "Second", "BODY-B"
+        )
+        manager.install_from_directory(first, "0.1.5", priority=10)
+        manager.install_from_directory(second, "0.1.5", priority=20)
+
+        command_file = commands_dir / "speckit.demo.toml"
+        assert "BODY-A" in command_file.read_text()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "set-priority", "priority-second", "1"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "BODY-B" in command_file.read_text()
+        assert "BODY-A" not in command_file.read_text()
+
+    def test_set_priority_reconciles_active_skills(self, project_dir, temp_dir):
+        """Changing priority refreshes the active integration's generated skill."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        self._write_init_options(project_dir, ai="gemini", ai_skills=True)
+        manager = PresetManager(project_dir)
+        first = self._create_command_preset(
+            temp_dir, "priority-first", "speckit.demo", "First", "BODY-A"
+        )
+        second = self._create_command_preset(
+            temp_dir, "priority-second", "speckit.demo", "Second", "BODY-B"
+        )
+        manager.install_from_directory(first, "0.1.5", priority=10)
+        manager.install_from_directory(second, "0.1.5", priority=20)
+
+        skill_file = project_dir / ".gemini" / "skills" / "speckit-demo" / "SKILL.md"
+        assert "BODY-A" in skill_file.read_text()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "set-priority", "priority-second", "1"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "BODY-B" in skill_file.read_text()
+        assert "BODY-A" not in skill_file.read_text()
+
+    def test_set_priority_does_not_rewrite_native_skills(self, project_dir, temp_dir):
+        """Native SKILL.md integrations remain untouched by priority changes."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        manager = PresetManager(project_dir)
+        preset_id = "priority-second"
+        first = self._create_command_preset(
+            temp_dir, "priority-first", "speckit.demo", "First", "BODY-A"
+        )
+        second = self._create_command_preset(
+            temp_dir, preset_id, "speckit.demo", "Second", "BODY-B"
+        )
+        manager.install_from_directory(first, "0.1.5", priority=10)
+        manager.install_from_directory(second, "0.1.5", priority=20)
+
+        skill_file = project_dir / ".claude" / "skills" / "speckit-demo" / "SKILL.md"
+        skill_file.write_text("user-owned native skill\n")
+        original = skill_file.read_bytes()
+
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch.object(PresetManager, "_reconcile_composed_commands") as commands,
+            patch.object(PresetManager, "_reconcile_skills") as skills,
+            patch.object(PresetManager, "reconcile_constitution") as constitution,
+        ):
+            result = CliRunner().invoke(
+                app, ["preset", "set-priority", preset_id, "1"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert PresetManager(project_dir).registry.get(preset_id)["priority"] == 1
+        assert skill_file.read_bytes() == original
+        commands.assert_not_called()
+        skills.assert_not_called()
+        constitution.assert_called_once_with(
+            "Failed to reconcile constitution after changing priority for preset priority-second"
+        )
+
+    def test_set_priority_keeps_update_after_reconciliation_failure(
+        self, project_dir, temp_dir
+    ):
+        """Artifact failures warn without undoing the priority or skipping constitution sync."""
+        from unittest.mock import patch
+
+        import pytest
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        (project_dir / ".gemini" / "commands").mkdir(parents=True)
+        preset_id = "priority-failure"
+        preset_dir = self._create_command_preset(
+            temp_dir, preset_id, "speckit.demo", "Demo", "BODY"
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5", priority=10)
+
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch.object(
+                PresetManager,
+                "_reconcile_composed_commands",
+                side_effect=OSError("write failed"),
+            ) as reconcile_commands,
+            patch.object(PresetManager, "reconcile_constitution") as reconcile_constitution,
+            pytest.warns(UserWarning, match="Post-priority reconciliation failed"),
+        ):
+            result = CliRunner().invoke(
+                app, ["preset", "set-priority", preset_id, "1"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert PresetManager(project_dir).registry.get(preset_id)["priority"] == 1
+        reconcile_commands.assert_called_once_with(["speckit.demo"])
+        reconcile_constitution.assert_called_once_with(
+            f"Failed to reconcile constitution after changing priority for preset {preset_id}"
+        )
 
     def test_set_priority_same_value_no_change(self, project_dir, pack_dir):
         """Test set-priority with same value shows already set message."""
@@ -164,3 +316,77 @@ class TestPresetSetPriority:
 
         assert result.exit_code == 1, result.output
         assert "not installed" in result.output.lower()
+
+
+    def test_set_priority_does_not_reconcile_a_disabled_preset(
+        self, project_dir, temp_dir
+    ):
+        """A disabled layer's priority change leaves generated files untouched."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        commands_dir = project_dir / ".gemini" / "commands"
+        commands_dir.mkdir(parents=True)
+
+        manager = PresetManager(project_dir)
+        fallback = self._create_command_preset(
+            temp_dir, "priority-fallback", "speckit.demo", "Fallback", "BODY-A"
+        )
+        disabled = self._create_command_preset(
+            temp_dir, "priority-disabled", "speckit.demo", "Disabled", "BODY-B"
+        )
+        manager.install_from_directory(fallback, "0.1.5", priority=10)
+        manager.install_from_directory(disabled, "0.1.5", priority=1)
+        manager.registry.update("priority-disabled", {"enabled": False})
+        manager._reconcile_composed_commands(["speckit.demo"])
+
+        command_file = commands_dir / "speckit.demo.toml"
+        assert "BODY-A" in command_file.read_text()
+        command_file.write_text("user command edit\n")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "set-priority", "priority-disabled", "2"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert PresetManager(project_dir).registry.get("priority-disabled")["priority"] == 2
+        assert command_file.read_text() == "user command edit\n"
+
+
+    def test_set_priority_keeps_constitution_sync_after_adapter_discovery_failure(
+        self, project_dir, pack_dir
+    ):
+        """Adapter setup failures do not skip constitution reconciliation."""
+        from unittest.mock import patch
+
+        import pytest
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5", priority=5)
+
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch(
+                "specify_cli.agents.CommandRegistrar",
+                side_effect=RuntimeError("adapter discovery failed"),
+            ),
+            patch.object(PresetManager, "reconcile_constitution") as constitution,
+            pytest.warns(UserWarning, match="Post-priority reconciliation failed"),
+        ):
+            result = CliRunner().invoke(
+                app, ["preset", "set-priority", "test-pack", "1"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert PresetManager(project_dir).registry.get("test-pack")["priority"] == 1
+        constitution.assert_called_once_with(
+            "Failed to reconcile constitution after changing priority for preset test-pack"
+        )
