@@ -627,11 +627,12 @@ class FileHelper:
         self, destination: Path, flags: int, mode: int, staging: ExitStack,
     ) -> tuple[int, Path, int | None]:
         mode &= 0o600
+        extended_parent = None
         for _ in range(10):
             name = f".{secrets.token_hex(8)}.tmp"
             if name == destination.name.rstrip(" .").casefold():
                 continue
-            stage = destination.with_name(name)
+            stage = (extended_parent or destination.parent) / name
             try:
                 return os.open(stage, flags, mode), stage, None
             except FileExistsError:
@@ -644,9 +645,12 @@ class FileHelper:
                 if not length_error or len(name) <= len(destination.name):
                     raise
                 if os.name == "nt":
-                    if not destination.parent.is_dir():
+                    if extended_parent is not None or not destination.parent.is_dir():
                         raise
-                elif not (
+                    # Keep file-only ACL inheritance and avoid requiring directory creation rights.
+                    extended_parent = _windows_extended_path(destination.parent)
+                    continue
+                if not (
                     {os.mkdir, os.rename, os.rmdir, os.stat, os.unlink} <= os.supports_dir_fd
                     and os.stat in os.supports_follow_symlinks
                 ):
@@ -657,29 +661,22 @@ class FileHelper:
 
         # Keep the payload out of the destination's namespace, without
         # spending the remaining absolute path budget on the staging name.
-        parent = None if os.name == "nt" else staging.enter_context(self._posix_directory(
+        parent = staging.enter_context(self._posix_directory(
             destination.parent, unsupported_message="Directory-relative staging is unsupported",
         ))
         for _ in range(10):
             name = f".s{secrets.token_hex(6)}"
             if name == destination.name.rstrip(" .").casefold():
                 continue
-            directory = _windows_extended_path(destination.parent) / name if parent is None else Path(name)
+            directory = Path(name)
             try:
-                if parent is None:
-                    # The payload should inherit the destination parent's ACL.
-                    directory.mkdir()
-                else:
-                    os.mkdir(directory.name, 0o700, dir_fd=parent)
+                os.mkdir(directory.name, 0o700, dir_fd=parent)
             except FileExistsError:
                 continue
             staging.enter_context(self._remove_atomic_directory(directory, parent))
             break
         else:
             raise FileExistsError(errno.EEXIST, "Could not allocate a staging directory", str(destination))
-        if parent is None:
-            stage = directory / "payload"
-            return os.open(stage, flags, mode), stage, None
         directory_mode = os.stat(name, dir_fd=parent, follow_symlinks=False).st_mode
         if not stat.S_ISDIR(directory_mode):
             raise NotADirectoryError(errno.ENOTDIR, os.strerror(errno.ENOTDIR), name)
@@ -698,23 +695,17 @@ class FileHelper:
 
     @staticmethod
     @contextmanager
-    def _remove_atomic_directory(directory: Path, parent: int | None = None) -> Iterator[None]:
-        def remove() -> None:
-            if parent is None:
-                directory.rmdir()
-            else:
-                os.rmdir(directory, dir_fd=parent)
-
+    def _remove_atomic_directory(directory: Path, parent: int) -> Iterator[None]:
         try:
             yield
         except BaseException as exc:
             try:
-                remove()
+                os.rmdir(directory, dir_fd=parent)
             except OSError as cleanup_error:
                 exc.add_note(f"Could not remove atomic staging directory: {cleanup_error}")
             raise
         else:
-            remove()
+            os.rmdir(directory, dir_fd=parent)
 
     @staticmethod
     def _unlink_atomic_stage(stage: Path, parent: int | None) -> None:

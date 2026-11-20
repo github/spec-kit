@@ -275,12 +275,11 @@ descriptor-relative or change their documented concurrency limitations.
 - `write_bytes(path, content, mode=0o644)` / `write_text(...)` atomically
   create or update files with existing parents. Text variants also accept
   `encoding="utf-8"`. A short, exclusively created sibling stages the write.
-  If the staging path exceeds a path limit, stage inside a separate temporary
-  directory under the destination's parent instead of using a short file name
-  that could also be another write's destination. This uses directory-relative
-  operations where supported on POSIX and an extended staging path on Windows.
-  The staging directory preserves inherited setgid on POSIX and inherits
-  the destination parent's access control on Windows.
+  If the staging path exceeds a path limit, POSIX uses directory-relative
+  operations where supported to stage inside a separate temporary directory
+  that preserves inherited setgid. Windows retries the same kind of sibling
+  file with an extended path, retaining direct inheritance of the destination
+  parent's access control without requiring subdirectory creation rights.
   On POSIX, the initial mode is restricted to the requested owner read/write
   bits and filtered by the process umask. After writing, the supplied mode is
   applied with `chmod` using the platform's supported semantics. Metadata and

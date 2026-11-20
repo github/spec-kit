@@ -3606,23 +3606,28 @@ def test_atomic_windows_failed_cleanup_restores_readonly_stage(root, monkeypatch
         stages[0].unlink()
 
 
-def test_atomic_write_retries_windows_enoent_in_staging_directory(root, monkeypatch):
+def test_atomic_windows_length_retry_uses_only_file_creation(root, monkeypatch):
     destination = root / "file"
     parent = root.resolve()
     attempted = []
 
     def open_with_limit(path, flags, mode):
         attempted.append(path)
-        if path.parent == parent:
+        if len(attempted) == 1:
             raise FileNotFoundError(errno.ENOENT, "modeled Windows CRT path limit")
+        assert path.parent == parent
+        assert flags & os.O_EXCL
         return os.open(path, flags, mode)
+
+    def deny_mkdir(*args, **kwargs):
+        raise PermissionError(errno.EACCES, "parent allows only file creation")
 
     with FileHelper(root) as files, monkeypatch.context() as model:
         model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "open": open_with_limit}))
+        model.setattr(Path, "mkdir", deny_mkdir)
         model.setattr(file_helper, "_windows_extended_path", lambda path: path)
         files.write_bytes(destination, b"new")
     assert len(attempted) == 2
-    assert attempted[1].parent.parent == parent
     assert destination.read_bytes() == b"new"
     assert list(root.iterdir()) == [destination]
 
@@ -3643,15 +3648,23 @@ def test_atomic_windows_extended_staging_inherits_parent_acl(root, monkeypatch):
     destination = parent / "file"
     acl = parent.parent / "acl.txt"
     run = subprocess.run
-    run(["icacls", str(parent), "/grant", "*S-1-5-11:(OI)(CI)(RX)"], check=True, capture_output=True)
+    # File-only, non-propagating deny for a principal outside the runner's token.
+    run(["icacls", str(parent), "/deny", "*S-1-5-32-546:(OI)(IO)(NP)(RD)"], check=True, capture_output=True)
+    user = run(["whoami"], check=True, capture_output=True, text=True).stdout.strip()
+    run(["icacls", str(parent), "/deny", f"{user}:(AD)"], check=True, capture_output=True)
+    with pytest.raises(PermissionError):
+        (parent / "blocked-directory").mkdir()
+    probe = parent / "allowed-file"
+    probe.write_bytes(b"probe")
+    probe.unlink()
     real_open = os.open
     real_replace = os.replace
     stages = []
 
     def open_stage(path, flags, mode):
-        if path.parent == parent:
+        if not str(path).startswith("\\\\?\\"):
             raise FileNotFoundError(errno.ENOENT, "forced CRT length error")
-        assert str(path).startswith("\\\\?\\")
+        assert path.parent == file_helper._windows_extended_path(parent)
         stages.append(path)
         return real_open(path, flags, mode)
 
@@ -3675,7 +3688,11 @@ def test_atomic_windows_extended_staging_inherits_parent_acl(root, monkeypatch):
     assert destination.read_bytes() == b"second"
     run(["icacls", str(destination), "/save", str(acl)], check=True, capture_output=True)
     sddl = acl.read_text(encoding="utf-16-le")
-    assert ";;;AU)" in sddl or ";;;S-1-5-11)" in sddl
+    aces = (part.split(")", 1)[0] for part in sddl.split("(")[1:])
+    assert any(
+        ace.startswith("D;") and ace.endswith((";;;BG", ";;;S-1-5-32-546"))
+        for ace in aces
+    )
 
 
 @pytest.mark.parametrize(("name", "code"), [
@@ -3699,10 +3716,35 @@ def test_atomic_staging_nonretryable_error_is_preserved(root, monkeypatch, name,
         with pytest.raises(OSError) as exc:
             files.write_bytes(destination, b"new")
     assert exc.value is error
+    assert exc.value.errno == code
     assert len(attempts) == 1
     assert not destination.exists()
     assert list(root.iterdir()) == [keep]
     assert keep.read_bytes() == b"old"
+
+
+@pytest.mark.parametrize("code", [errno.ENAMETOOLONG, errno.ENOENT])
+def test_atomic_windows_failed_length_retry_is_preserved(root, monkeypatch, code):
+    destination = root / "file"
+    destination.write_bytes(b"old")
+    initial = OSError(errno.ENAMETOOLONG, "regular path exceeds limit")
+    error = OSError(code, "extended path still exceeds limit")
+    attempts = []
+
+    def reject(path, flags, mode):
+        attempts.append(path)
+        raise initial if len(attempts) == 1 else error
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "open": reject}))
+        model.setattr(file_helper, "_windows_extended_path", lambda path: path)
+        with pytest.raises(OSError) as exc:
+            files.write_bytes(destination, b"new")
+    assert exc.value is error
+    assert exc.value.errno == code
+    assert len(attempts) == 2
+    assert destination.read_bytes() == b"old"
+    assert list(root.iterdir()) == [destination]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative staging required")
@@ -3801,8 +3843,11 @@ def test_atomic_near_limit_staging_failure_cleans_directory(root, monkeypatch, f
     destination = parent / "f"
     destination.write_bytes(b"old")
     error = OSError(errno.ENAMETOOLONG if fail_at == "open" else errno.EACCES, "staging failed")
+    stage_attempts = []
 
     def observe_open(path, flags, *args, **kwargs):
+        if flags & os.O_CREAT:
+            stage_attempts.append(path)
         if fail_at == "open" and path == Path("payload"):
             raise error
         return os.open(path, flags, *args, **kwargs)
@@ -3819,6 +3864,8 @@ def test_atomic_near_limit_staging_failure_cleans_directory(root, monkeypatch, f
         with pytest.raises(OSError) as exc:
             files.write_bytes(destination, b"new")
     assert exc.value is error
+    assert exc.value.errno == error.errno
+    assert len(stage_attempts) == 2 and stage_attempts[-1] == Path("payload")
     assert destination.read_bytes() == b"old"
     assert list(parent.iterdir()) == [destination]
 
