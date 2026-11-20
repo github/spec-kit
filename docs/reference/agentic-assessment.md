@@ -60,7 +60,8 @@ directory exists.
 
 Existing artifacts are not overwritten without confirmation. In automated mode,
 commands refuse to overwrite them. For routine clarification, refine the existing
-artifact rather than rerunning the command.
+artifact rather than rerunning its command; the verdict is then updated by
+re-running `decide`, which asks before overwriting the previous `decision.md`.
 
 ## Decisions and evidence
 
@@ -82,11 +83,15 @@ A documented decision to stop is a useful result.
 Run each stage once in the usual flow. To resolve clarification markers or a
 `needs-clarification` verdict, edit the affected Markdown directly or ask the
 agent in free-form chat to incorporate the missing facts. Preserve sources and
-confidence tags, then review dependent artifacts and revise `decision.md` as
-needed. This is artifact refinement, not repeated command execution.
+confidence tags, and review dependent wording across the affected artifacts —
+a clarification in one artifact can leave a downstream artifact stale.
+`decision.md` itself is not revised in place: once the refined artifacts answer
+the blocking questions, request reassessment by re-running the decide command,
+which rebuilds the scorecard, verdict, and handoff from the updated artifacts
+and asks before overwriting the previous decision.
 
-Rerunning an earlier command is reserved for exceptions such as a wrong slug or
-discarded draft. See the
+Rerunning a command earlier than decide is reserved for exceptions such as a
+wrong slug or discarded draft. See the
 [guided clarification example](../guides/assessment.md#resolve-unknowns-by-refining-the-artifacts).
 
 ## Handoff and guardrails
