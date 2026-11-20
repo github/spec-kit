@@ -2,6 +2,7 @@
 
 import sys
 import urllib.error
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -538,3 +539,78 @@ class TestTokenScrubbing:
         assert "GITHUB_REPOSITORY" not in env
         assert "GITHUB_WORKSPACE" not in env
         assert "GITHUB_USER" not in env
+
+
+class TestVerifyUpgradeSubprocessEncoding:
+    @staticmethod
+    def _install_narrow_runner(
+        monkeypatch, helper: Path, default_encoding: str = "cp1252"
+    ) -> list[BaseException]:
+        import subprocess
+        import threading
+
+        real_run = subprocess.run
+        thread_errors: list[BaseException] = []
+        monkeypatch.setattr(
+            threading, "excepthook", lambda args: thread_errors.append(args.exc_value)
+        )
+
+        def run_with_narrow_default(argv, *args, **kwargs):
+            if (
+                kwargs.get("text") or kwargs.get("universal_newlines")
+            ) and kwargs.get("encoding") is None:
+                kwargs = {**kwargs, "encoding": default_encoding}
+            return real_run([sys.executable, str(helper), *argv[1:]], *args, **kwargs)
+
+        monkeypatch.setattr("specify_cli._version.subprocess.run", run_with_narrow_default)
+        return thread_errors
+
+    def test_verify_upgrade_decodes_utf8_output_under_cp1252(
+        self, uv_tool_argv0, clean_environ, monkeypatch, tmp_path
+    ):
+        fake_specify = tmp_path / "fake_specify.py"
+        fake_specify.write_text(
+            "import sys\n"
+            "sys.stdout.buffer.write('# C:\\\\Users\\\\\\u540e\\u53f0\\\\specify\\nspecify 0.7.6\\n'.encode('utf-8'))\n"
+            "sys.stderr.buffer.write('note: \\u201cok\\u201d\\n'.encode('utf-8'))\n",
+            encoding="utf-8",
+        )
+        thread_errors = self._install_narrow_runner(monkeypatch, fake_specify, "cp1252")
+        plan = _UpgradePlan(
+            method=_InstallMethod.UV_TOOL,
+            current_version="0.7.5",
+            target_tag="v0.7.6",
+            installer_argv=["/usr/bin/uv", "tool", "install", "specify-cli"],
+            preview_summary="",
+            pre_upgrade_snapshot="0.7.5",
+        )
+
+        with patch("specify_cli._version.os.access", return_value=True):
+            verified = _verify_upgrade(plan)
+
+        assert verified == "0.7.6"
+        assert thread_errors == []
+
+    def test_verify_upgrade_non_utf8_output_returns_none_without_raising(
+        self, uv_tool_argv0, clean_environ, monkeypatch, tmp_path
+    ):
+        fake_specify = tmp_path / "bad_specify.py"
+        fake_specify.write_text(
+            "import sys\nsys.stdout.buffer.write(b'\\x81\\xff\\x90\\n')\n",
+            encoding="utf-8",
+        )
+        thread_errors = self._install_narrow_runner(monkeypatch, fake_specify, "ascii")
+        plan = _UpgradePlan(
+            method=_InstallMethod.UV_TOOL,
+            current_version="0.7.5",
+            target_tag="v0.7.6",
+            installer_argv=["/usr/bin/uv", "tool", "install", "specify-cli"],
+            preview_summary="",
+            pre_upgrade_snapshot="0.7.5",
+        )
+
+        with patch("specify_cli._version.os.access", return_value=True):
+            verified = _verify_upgrade(plan)
+
+        assert thread_errors == []
+        assert verified is None
