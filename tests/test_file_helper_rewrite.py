@@ -630,18 +630,26 @@ def test_windows_create_private_bytes_sets_an_owner_only_protected_acl(tmp_path)
     # PowerShell then fails to load Microsoft.PowerShell.Security for Get-Acl.
     # Prefer pwsh, and let either shell rebuild its default module path.
     env = {key: value for key, value in os.environ.items() if key.upper() != "PSMODULEPATH"}
+    # SDDL abbreviates well-known accounts (the built-in Administrator is "LA"),
+    # so compare resolved SIDs rather than the descriptor string.
+    script = (
+        f"$acl = Get-Acl -LiteralPath '{tmp_path / REL}'; "
+        "$sid = [System.Security.Principal.SecurityIdentifier]; "
+        "$acl.GetOwner($sid).Value; "
+        "$acl.AreAccessRulesProtected; "
+        "$acl.GetAccessRules($true, $true, $sid) | ForEach-Object { "
+        "\"$($_.IdentityReference.Value) $($_.AccessControlType) $($_.FileSystemRights)\" }"
+    )
     result = subprocess.run(
-        [shutil.which("pwsh") or "powershell", "-NoProfile", "-NonInteractive", "-Command",
-         f"(Get-Acl -LiteralPath '{tmp_path / REL}').Sddl"],
+        [shutil.which("pwsh") or "powershell", "-NoProfile", "-NonInteractive", "-Command", script],
         capture_output=True, text=True, env=env,
     )
     assert result.returncode == 0, result.stderr
-    sddl = result.stdout.strip()
+    owner, protected, *rules = result.stdout.strip().splitlines()
     sid = _file_handles._windows_current_user_sid()
-    assert f"O:{sid}" in sddl
-    dacl = sddl.split("D:", 1)[1]
-    assert dacl.startswith("P")
-    assert dacl.count("(") == 1 and f";;;{sid})" in dacl
+    assert owner == sid
+    assert protected == "True"
+    assert rules == [f"{sid} Allow FullControl"]
 
 
 # Review regressions
