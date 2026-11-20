@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import stat
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import ExitStack
 from pathlib import Path, PurePosixPath
@@ -22,7 +23,7 @@ import yaml
 from ...file_helper import (
     FileHelper, FileHelperError, SymlinkDeniedError, UnsupportedPathError,
 )
-from .._file_changes import changing_file
+from .._file_changes import before_file_change, changing_file
 from ..base import (
     IntegrationOption,
     SkillsIntegration,
@@ -132,6 +133,8 @@ def _replace_file(
                         kept = _entry_kind(root, backup_rel) == "file"
                     except (OSError, ValueError):  # ValueError covers FileHelperError
                         kept = False
+                    if kept:
+                        _keep_through_rollback(root / backup_rel)
                     where = (
                         f"its previous content is in {backup_rel}"
                         if kept
@@ -148,6 +151,31 @@ def _replace_file(
     return original
 
 
+_Written = tuple[str, bytes | None, bytes, bool, bool, tuple[int, int] | None]
+
+
+def _entry_identity(helper: FileHelper, rel: str) -> tuple[int, int] | None:
+    """The device and inode of ``rel`` itself, or ``None`` if it cannot be read."""
+    try:
+        info = helper.stat(rel)
+    except (OSError, ValueError):  # ValueError covers FileHelperError
+        return None
+    return info.st_dev, info.st_ino
+
+
+def _keep_through_rollback(backup: Path) -> None:
+    """Stop a lifecycle rollback from deleting a backup that is now the only copy.
+
+    The journal recorded the backup as created by this run, so a rollback
+    would remove it. Reporting it as about to change again leaves it pending,
+    which the rollback preserves and reports instead of deleting.
+    """
+    try:
+        before_file_change(backup)
+    except Exception as exc:  # the observer refuses paths it cannot restore
+        logger.warning("Could not protect %s from rollback: %s", backup, exc)
+
+
 def _write_fd(fd: int, content: bytes) -> None:
     # Truncating after writing, not before, means the old bytes' space is
     # reused rather than freed first.
@@ -160,6 +188,17 @@ def _write_fd(fd: int, content: bytes) -> None:
         view = view[count:]
     os.ftruncate(fd, len(content))
     os.fsync(fd)
+    if sys.platform == "darwin":
+        # macOS ``fsync`` can leave the bytes in the drive cache, and the
+        # caller deletes the backup next.
+        import fcntl
+
+        try:
+            fcntl.fcntl(fd, fcntl.F_FULLFSYNC)
+        except OSError as exc:
+            # Not every filesystem supports it, and fsync has already run.
+            if exc.errno not in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL, errno.ENOTTY):
+                raise
 
 
 def _discard_backup(helper: FileHelper, root: Path, backup_rel: str) -> None:
@@ -711,8 +750,9 @@ class CodexIntegration(SkillsIntegration):
                     if plan is not None:
                         planned.append(plan)
         # ``(rel, prior bytes or None if new, bytes written, whether its
-        # directory was new, whether the write completed)``
-        written: list[tuple[str, bytes | None, bytes, bool, bool]] = []
+        # directory was new, whether the write completed, the identity of a
+        # file it created)``
+        written: list[_Written] = []
         try:
             for rel, content, ownership, read in planned:
                 path = root / rel
@@ -726,7 +766,7 @@ class CodexIntegration(SkillsIntegration):
                         _replace_file(
                             root, rel, new, expected=read,
                             on_written=lambda original, rel=rel, new=new: written.append(
-                                (rel, original, new, False, True)
+                                (rel, original, new, False, True, None)
                             ),
                         )
                     manifest.record_existing(rel, ownership=ownership)
@@ -744,17 +784,27 @@ class CodexIntegration(SkillsIntegration):
                         raise ValueError(f"Cannot update {rel}: it was created while updating")
                     # Created exclusively through the helper, so a directory
                     # swapped for a symlink since planning cannot redirect it.
+                    identity = None
                     try:
                         with changing_file(path), FileHelper(root) as helper:
                             helper.mkdir(PurePosixPath(rel).parent.as_posix(), parents=True, exist_ok=True)
-                            helper.create_bytes(rel, new)
+                            try:
+                                helper.create_bytes(rel, new)
+                            except FileExistsError:
+                                raise
+                            except BaseException:
+                                identity = _entry_identity(helper, rel)
+                                raise
+                            # Rollback deletes only this file, never one
+                            # that replaced it, even with matching bytes.
+                            identity = _entry_identity(helper, rel)
                     except FileExistsError as exc:
                         # Someone else's file: not ours to roll back.
                         raise ValueError(f"Cannot update {rel}: it was created while updating") from exc
                     except BaseException:
-                        written.append((rel, None, new, new_dir, False))
+                        written.append((rel, None, new, new_dir, False, identity))
                         raise
-                    written.append((rel, None, new, new_dir, True))
+                    written.append((rel, None, new, new_dir, True, identity))
                     manifest.record_existing(rel, ownership=ownership)
                     if manifest.files[rel] != hashlib.sha256(new).hexdigest():
                         raise ValueError(f"Cannot update {rel}: it changed while updating")
@@ -775,13 +825,14 @@ class CodexIntegration(SkillsIntegration):
         return created
 
     @staticmethod
-    def _roll_back_policies(root: Path, written: list[tuple[str, bytes | None, bytes, bool, bool]]) -> None:
+    def _roll_back_policies(root: Path, written: list[_Written]) -> None:
         """Undo the policy writes of a setup that failed part-way.
 
-        A file that no longer holds what setup wrote is left alone. Only runs
+        A file that no longer holds what setup wrote is left alone, as is a
+        created file that is no longer the entry setup created. Only runs
         outside a lifecycle transaction, so nothing journals it.
         """
-        for rel, original, new, new_dir, complete in reversed(written):
+        for rel, original, new, new_dir, complete, identity in reversed(written):
             try:
                 if original is not None:
                     try:
@@ -802,6 +853,11 @@ class CodexIntegration(SkillsIntegration):
                     except FileNotFoundError:  # the write itself failed
                         current = None
                     if current is not None:
+                        if identity is None or _entry_identity(helper, rel) != identity:
+                            logger.warning(
+                                "Leaving %s in place: it was replaced after it was written", rel,
+                            )
+                            continue
                         # A write that failed part-way leaves a prefix.
                         if current != new and (complete or not new.startswith(current)):
                             logger.warning("Leaving %s in place: it changed after it was written", rel)
@@ -840,8 +896,12 @@ class CodexIntegration(SkillsIntegration):
             if mode != "whole":
                 if self._remove_policy(root, rel, final=True):
                     cleaned.add(root / rel)
-            elif self._is_generated(root, rel, manifest):
-                manifest.record_existing(rel)
+                continue
+            verified = self._generated_bytes(root, rel, manifest)
+            if verified is not None:
+                # The hash of the bytes just checked, so ``uninstall`` keeps a
+                # file edited since.
+                self._retain(manifest, rel, hashlib.sha256(verified).hexdigest(), "whole")
             elif not force:
                 self._remove_policy(root, rel, final=True)
         removed, skipped = super().teardown(project_root, manifest, force=force)

@@ -1281,6 +1281,30 @@ class TestCodexNoModelInvocationOwnership:
         assert backup.read_bytes() == original
         assert backup.name in caplog.text
 
+    def test_journalled_rollback_keeps_the_backup_of_a_failed_restore(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import codex
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        real_write = codex._write_fd
+
+        def write_fd(fd, content):
+            real_write(fd, content[:5])
+            raise OSError("disk full")
+
+        monkeypatch.setattr(codex, "_write_fd", write_fd)
+        result = _run_in_project(tmp_path, [
+            "init", "--here", "--force", "--integration", "codex", "--script", "sh",
+            "--ignore-agent-tools", "--integration-options", "--no-model-invocation",
+        ])
+        monkeypatch.undo()
+        assert result.exit_code != 0
+        # The rollback keeps the partial file, so the backup is the only
+        # copy of the previous content left in the project.
+        backup = path.with_name("openai.yaml.speckit-backup")
+        assert backup.read_bytes() == original
+
     def test_retry_after_a_failed_restore_keeps_the_backup(self, tmp_path, monkeypatch):
         from specify_cli.integrations import codex
 
@@ -1846,6 +1870,18 @@ class TestCodexNoModelInvocationOwnership:
             self._setup(tmp_path)
         assert path.read_bytes() == content
 
+    def test_merges_that_expand_exponentially_abort_without_overwriting(self, tmp_path):
+        # Each level merges the one below twice, doubling its keys: 2**16 here.
+        levels = ["l0: &l0 {k: 1}"] + [
+            f"l{i}: &l{i} {{!!merge <<: [*l{i - 1}, *l{i - 1}]}}" for i in range(1, 17)
+        ]
+        content = "\n".join([*levels, "custom: *l16", ""]).encode()
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml.*expand to more than"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+        assert self._other_policies(tmp_path) == []
+
     def test_same_key_from_two_merges_is_not_a_collision(self, tmp_path):
         content = b"a: &a {k: 1}\nb: &b {k: 2}\ncustom: {!!merge <<: [*a, *b]}\n"
         path = self._seed(tmp_path, content)
@@ -1871,6 +1907,42 @@ class TestCodexNoModelInvocationOwnership:
         path.write_bytes(b"shared: &p\n  allow_implicit_invocation: false\npolicy: *p\n")
         get_integration("codex").teardown(tmp_path, manifest)
         assert self._yaml(path) == {"shared": self.POLICY}
+
+    def test_rollback_keeps_a_file_that_replaced_a_partly_created_policy(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations.codex import CodexIntegration
+
+        self._seed(tmp_path)
+        real_create_bytes = FileHelper.create_bytes
+        failing = tmp_path / ".agents/skills/speckit-tasks/agents/openai.yaml"
+
+        def create_partly(self, rel, content, *args, **kwargs):
+            if Path(rel).as_posix().endswith("speckit-tasks/agents/openai.yaml"):
+                real_create_bytes(self, rel, b"", *args, **kwargs)
+                raise OSError("disk full")
+            return real_create_bytes(self, rel, content, *args, **kwargs)
+
+        real_roll_back = CodexIntegration._roll_back_policies
+
+        def replace_then_roll_back(root, written):
+            # Someone else's empty file, created while the partial one still
+            # exists so it cannot reuse its inode. Empty bytes are a prefix
+            # of anything setup writes.
+            replacement = failing.with_name("theirs")
+            replacement.write_bytes(b"")
+            os.replace(replacement, failing)
+            real_roll_back(root, written)
+
+        monkeypatch.setattr(FileHelper, "create_bytes", create_partly)
+        monkeypatch.setattr(
+            CodexIntegration, "_roll_back_policies", staticmethod(replace_then_roll_back)
+        )
+        with pytest.raises(OSError, match="disk full"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert failing.read_bytes() == b""
 
     @staticmethod
     def _fail_policy_record(monkeypatch, project, failing_skill="speckit-tasks"):
@@ -1958,6 +2030,29 @@ class TestCodexNoModelInvocationOwnership:
         )
         get_integration("codex").teardown(tmp_path, manifest, force=True)
         assert not path.exists()
+        assert self._other_policies(tmp_path) == []
+
+    def test_teardown_keeps_a_generated_file_edited_after_it_was_verified(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.integrations.codex import CodexIntegration
+
+        manifest = self._setup(tmp_path)
+        path = tmp_path / self.PLAN_REL
+        edited = b"interface:\n  display_name: Mine\npolicy:\n  allow_implicit_invocation: false\n"
+        real_is_generated = CodexIntegration._is_generated
+        plan_rel = self.PLAN_REL
+
+        def edit_after_check(integration, root, rel, prior, *args):
+            generated = real_is_generated(integration, root, rel, prior, *args)
+            if rel == plan_rel:
+                path.write_bytes(edited)
+            return generated
+
+        monkeypatch.setattr(CodexIntegration, "_is_generated", edit_after_check)
+        get_integration("codex").teardown(tmp_path, manifest)
+        monkeypatch.undo()
+        assert path.read_bytes() == edited
         assert self._other_policies(tmp_path) == []
 
     def test_forced_teardown_keeps_a_user_file_and_removes_only_the_policy(self, tmp_path):
@@ -2074,6 +2169,61 @@ class TestCodexRewriteDurability:
         assert owner._yaml(path)["policy"] == {"allow_implicit_invocation": False}
         assert not list(tmp_path.rglob("*.speckit-backup"))
 
+
+    @pytest.mark.skipif(sys.platform != "darwin", reason="macOS F_FULLFSYNC")
+    def test_rewrite_is_fully_flushed_before_the_backup_is_removed(self, tmp_path, monkeypatch):
+        import fcntl
+
+        owner = TestCodexNoModelInvocationOwnership()
+        path = owner._seed(tmp_path)
+        inode = path.stat().st_ino
+        backup = path.with_name(path.name + ".speckit-backup")
+        real_fcntl = fcntl.fcntl
+        flushed = []
+
+        def record(fd, command, *args):
+            if command == fcntl.F_FULLFSYNC and os.fstat(fd).st_ino == inode:
+                flushed.append(backup.exists())
+            return real_fcntl(fd, command, *args)
+
+        monkeypatch.setattr(fcntl, "fcntl", record)
+        owner._setup(tmp_path)
+        monkeypatch.undo()
+        assert flushed == [True]
+        assert not backup.exists()
+
+    @pytest.mark.skipif(sys.platform != "darwin", reason="macOS F_FULLFSYNC")
+    @pytest.mark.parametrize("code, raises", [(errno.ENOTSUP, False), (errno.EIO, True)])
+    def test_rewrite_raises_only_real_full_fsync_errors(self, tmp_path, monkeypatch, code, raises):
+        import fcntl
+
+        owner = TestCodexNoModelInvocationOwnership()
+        path = owner._seed(tmp_path)
+        original = path.read_bytes()
+        inode = path.stat().st_ino
+        real_fcntl = fcntl.fcntl
+        failed = []
+
+        def fail(fd, command, *args):
+            # Only the rewrite's flush; the restore that follows succeeds.
+            if command == fcntl.F_FULLFSYNC and os.fstat(fd).st_ino == inode and not failed:
+                failed.append(fd)
+                raise OSError(code, os.strerror(code))
+            return real_fcntl(fd, command, *args)
+
+        monkeypatch.setattr(fcntl, "fcntl", fail)
+        if raises:
+            with pytest.raises(OSError):
+                owner._setup(tmp_path)
+        else:
+            owner._setup(tmp_path)
+        monkeypatch.undo()
+        if raises:
+            # The failed flush restores the previous bytes before propagating.
+            assert path.read_bytes() == original
+        else:
+            assert owner._yaml(path)["policy"] == {"allow_implicit_invocation": False}
+        assert not list(tmp_path.rglob("*.speckit-backup"))
 
 class TestCodexManifestInternals:
     """Pins the manifest internals the Codex policy cleanup depends on.

@@ -70,7 +70,8 @@ description in Codex's context.
   policy from your own file, it logs a warning naming the file so you can
   remove it by hand. If an existing file cannot be read, is not valid YAML, is
   not a mapping, repeats a key or has keys that would merge into one (such as
-  `true` and `1`, including keys a `!!merge` brings in), or has a field Codex
+  `true` and `1`, including keys a `!!merge` brings in), has `!!merge`s that
+  expand to more than 10,000 keys, or has a field Codex
   would reject (for example `interface` or `dependencies.tools` of the wrong
   type, or a `dependencies.tools` or `policy.products` set to null, which
   makes Codex ignore the whole file), setup stops with an error naming the
@@ -83,8 +84,10 @@ description in Codex's context.
   Once the policy has been removed from a file Spec Kit no longer tracks it, so
   a policy you set there yourself afterwards is never removed. If writing or
   removing policies fails part-way through setup, the policies it had already
-  written are undone. If Spec Kit is stopped while rewriting a file, the
-  previous content is left beside it as `openai.yaml.speckit-backup`. While
+  written are undone, except a file that was replaced or changed since. If
+  Spec Kit is stopped while rewriting a file, or cannot restore one after a
+  failed rewrite, the previous content is left beside it as
+  `openai.yaml.speckit-backup`, and a failed command's rollback keeps it. While
   that backup exists, setup stops with an error and policy cleanup, including
   uninstall, leaves both files alone, so neither is lost. Compare the two, keep
   the right content in `openai.yaml` and delete the backup. After a failed

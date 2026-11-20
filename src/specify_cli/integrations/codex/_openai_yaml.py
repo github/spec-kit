@@ -18,6 +18,9 @@ _YAML11_ONLY_TAGS = {
     for name in ("bool", "int", "float", "timestamp", "value", "merge")
 }
 _MERGE_TAG = "tag:yaml.org,2002:merge"
+# Merging an anchored mapping repeatedly copies its keys each time, so nested
+# merges grow exponentially; far beyond any real ``openai.yaml``.
+_MAX_MERGED_KEYS = 10_000
 _YAML12_RESOLVERS = (
     ("tag:yaml.org,2002:bool", r"true|True|TRUE|false|False|FALSE", "tTfF"),
     ("tag:yaml.org,2002:int", r"[-+]?[0-9]+|0o[0-7]+|0x[0-9a-fA-F]+", "-+0123456789"),
@@ -36,6 +39,7 @@ class Yaml12Loader(yaml.SafeLoader):
     def __init__(self, stream: Any) -> None:
         super().__init__(stream)
         self._own_keys_checked: set[yaml.Node] = set()
+        self._merged_sizes: dict[yaml.Node, int] = {}
 
     def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
         # A dict keeps one of two keys Python treats as equal, such as ``true``
@@ -46,6 +50,12 @@ class Yaml12Loader(yaml.SafeLoader):
         # are equal must also have the same type.
         if isinstance(node, yaml.MappingNode):
             self._check_own_keys(node)
+            if self._merged_size(node) > _MAX_MERGED_KEYS:
+                raise yaml.constructor.ConstructorError(
+                    None, None,
+                    f"found merges that expand to more than {_MAX_MERGED_KEYS} keys",
+                    node.start_mark,
+                )
             self.flatten_mapping(node)  # merged keys first, then the mapping's own
             self._check_keys(
                 [key for key, _ in node.value],
@@ -86,6 +96,30 @@ class Yaml12Loader(yaml.SafeLoader):
                     )
                 if isinstance(merged, yaml.MappingNode):
                     self._check_own_keys(merged, merging)
+
+    def _merged_size(self, node: yaml.MappingNode) -> int:
+        """How many key-value pairs flattening ``node`` produces, counted before it runs.
+
+        Only called after ``_check_own_keys``, which rejects a mapping that
+        merges itself. A flattened node has no merge keys left, so its count is
+        its length, the same as before it was flattened.
+        """
+        size = self._merged_sizes.get(node)
+        if size is not None:
+            return size
+        size = 0
+        for key, value in node.value:
+            if key.tag != _MERGE_TAG:
+                size += 1
+                continue
+            for merged in value.value if isinstance(value, yaml.SequenceNode) else [value]:
+                if isinstance(merged, yaml.MappingNode):
+                    size += self._merged_size(merged)
+                    if size > _MAX_MERGED_KEYS:
+                        self._merged_sizes[node] = size
+                        return size
+        self._merged_sizes[node] = size
+        return size
 
     def _check_keys(
         self,
