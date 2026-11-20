@@ -12,7 +12,6 @@ import logging
 import os
 import re
 import stat
-import sys
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import ExitStack
 from pathlib import Path, PurePosixPath
@@ -219,28 +218,9 @@ def _keep_through_rollback(backup: Path) -> None:
 
 
 def _write_fd(fd: int, content: bytes) -> None:
-    # Truncating after writing, not before, means the old bytes' space is
-    # reused rather than freed first.
-    os.lseek(fd, 0, os.SEEK_SET)
-    view = memoryview(content)
-    while view:
-        count = os.write(fd, view)
-        if count == 0:
-            raise OSError(errno.EIO, "Write made no progress")
-        view = view[count:]
-    os.ftruncate(fd, len(content))
-    os.fsync(fd)
-    if sys.platform == "darwin":
-        # macOS ``fsync`` can leave the bytes in the drive cache, and the
-        # caller deletes the backup next.
-        import fcntl
-
-        try:
-            fcntl.fcntl(fd, fcntl.F_FULLFSYNC)
-        except OSError as exc:
-            # Not every filesystem supports it, and fsync has already run.
-            if exc.errno not in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL, errno.ENOTTY):
-                raise
+    # The helper's write and flush, shared with the backup's creation, so
+    # both have the same durability before the backup is removed.
+    FileHelper.rewrite_descriptor(fd, content)
 
 
 def _discard_backup(
