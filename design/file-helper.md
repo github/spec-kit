@@ -296,10 +296,12 @@ descriptor-relative or change their documented concurrency limitations.
   returning. It shares `create_bytes`'s policy walk, no-follow `lstat`
   preflight and anchored parent hierarchy. POSIX creates the leaf with `0o600`
   relative to the anchored parent. Before any content is written, it refuses
-  (removing the still-empty file) when the file came out with group or other
-  mode bits, which means the filesystem ignored the mode, or, on macOS, with
-  inherited ACL allow entries, which a directory-relative create cannot
-  withhold (inherited deny entries are accepted). Linux default ACLs are
+  (removing the still-empty file, with `PermissionError`) when the file came
+  out with group or other mode bits, which means the filesystem ignored the
+  mode; when it is owned by a uid other than the caller's effective uid, which
+  means the filesystem mapped ownership (some network and container mounts);
+  or, on macOS, with inherited ACL allow entries, which a directory-relative
+  create cannot withhold (inherited deny entries are accepted). Linux default ACLs are
   bounded by the mask the mode sets. NFSv4-style inherited ACLs on other
   systems are not inspected. It writes and `fsync`s through that one
   descriptor, adding `F_FULLFSYNC` on macOS where the filesystem supports it,
@@ -378,6 +380,13 @@ descriptor-relative or change their documented concurrency limitations.
   `closefd=False`. Writing, truncating, flushing and any rollback belong to the
   caller; nothing is written or truncated by the helper. There is no newline
   translation on either platform.
+- `rewrite_descriptor(fd, content)` (static) replaces the whole content of an
+  open writable descriptor, such as one from `open_rewrite`: it seeks to offset
+  0, writes every byte, truncates to the new length after writing, then
+  `fsync`s, adding `F_FULLFSYNC` on macOS where the filesystem supports it. It
+  shares that write loop and flush policy with `create_private_bytes`, so a
+  caller's in-place rewrite and its private backup have the same durability.
+  A failure can leave partial content; restoring it is the caller's job.
 - `delete(path, recursive=False)` unlinks files/links or removes directories.
   Nonrecursive directory deletion requires an empty directory. The established
   root cannot be deleted. Recursive enumeration and each removal use anchored

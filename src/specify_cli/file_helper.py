@@ -897,6 +897,22 @@ class FileHelper:
                 os.set_blocking(fd, True)
             yield fd
 
+    @staticmethod
+    def rewrite_descriptor(fd: int, content: bytes) -> None:
+        """Replace everything in the open file ``fd`` with ``content``, flushed to disk.
+
+        For a descriptor from ``open_rewrite``. It writes from offset 0 whatever
+        the current offset, truncates after writing (so the old bytes' space is
+        reused rather than freed first), then ``fsync``s, adding ``F_FULLFSYNC``
+        on macOS where the filesystem supports it: the same write and flush that
+        ``create_private_bytes`` uses. A failure can leave partial content;
+        restoring it is the caller's job.
+        """
+        os.lseek(fd, 0, os.SEEK_SET)
+        _write_all(fd, content)
+        os.ftruncate(fd, len(content))
+        _full_fsync(fd)
+
     @contextmanager
     def _overwrite_descriptor(self, destination: Path, *, create: bool = True) -> Iterator[int]:
         """Anchor the resolved hierarchy before opening a non-truncating leaf."""
