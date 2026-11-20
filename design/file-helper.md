@@ -378,6 +378,23 @@ descriptor-relative or change their documented concurrency limitations.
   `closefd=False`. Writing, truncating, flushing and any rollback belong to the
   caller; nothing is written or truncated by the helper. There is no newline
   translation on either platform.
+- `open_read(path)` is a context manager yielding a blocking, binary, read-only
+  descriptor on an existing regular file, opened as `read_bytes` opens it
+  (which now reads through it): POSIX opens the leaf no-follow and non-blocking
+  relative to the anchored parent, and Windows reads through a duplicate of the
+  validated leaf handle. The helper closes the descriptor on exit; a caller
+  that keeps the file open longer (to pin its inode, say) `os.dup`s it.
+- `utime(path, *, ns)` sets an existing entry's access and modification times,
+  found by the normal policy walk. POSIX uses `utimensat` relative to the
+  anchored parent without following the leaf, so a leaf swapped for a link
+  after the walk sets the link's own times, not its target's. Windows pins the
+  parent hierarchy and sets the times by path.
+- `chmod(path, mode)` sets an existing entry's permission bits the same way.
+  Where no no-follow `fchmodat` exists (Linux), the leaf is checked with a
+  no-follow stat relative to the anchored parent and a link is refused; a link
+  swapped in between that check and the change is followed. Windows sets the
+  read-only attribute by path after pinning the parent hierarchy. Callers that
+  hold a descriptor should prefer `os.fchmod`.
 - `delete(path, recursive=False)` unlinks files/links or removes directories.
   Nonrecursive directory deletion requires an empty directory. The established
   root cannot be deleted. Recursive enumeration and each removal use anchored
@@ -515,7 +532,7 @@ under concurrent renames, nor does parent anchoring make every leaf preflight
 atomic with the subsequent open.
 On Windows, exclusive creation (including `create_private_bytes`), text
 overwrite and `open_rewrite` still open their leaf by pathname after pinning the
-parent hierarchy, and `stat` queries its leaf the same way. Attribute-only reparse updates
+parent hierarchy, and `stat`, `utime` and `chmod` reach their leaf the same way. Attribute-only reparse updates
 can redirect those opens; they do not have the read path's parent-relative
 handle protection.
 The helper does not constrain subprocesses or third-party code.

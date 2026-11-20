@@ -21,6 +21,7 @@ import typer
 from rich.markup import escape
 
 from .._console import console
+from ..file_helper import FileHelper, FileHelperError
 from ..integration_state import (
     default_integration_key,
     installed_integration_keys,
@@ -262,18 +263,12 @@ class _FileJournal:
             for child in source.iterdir():
                 self._snapshot(child, destination / child.name)
             shutil.copystat(source, destination, follow_symlinks=False)
+        elif stat.S_ISREG(mode) and source in self.pinned_files and source not in self.changes:
+            self._snapshot_pinned(self.pinned_files[source], destination)
         elif stat.S_ISREG(mode):
-            pinned = self.pinned_files.get(source) if source not in self.changes else None
-            size = os.fstat(pinned).st_size if pinned is not None else source.stat().st_size
-            if size > _MAX_BACKUP_BYTES - self.backup_bytes:
+            if source.stat().st_size > _MAX_BACKUP_BYTES - self.backup_bytes:
                 raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
-            if pinned is not None:
-                # A duplicate, so reading leaves the pin's own offset alone.
-                incoming = os.fdopen(os.dup(pinned), "rb")
-                incoming.seek(0)
-            else:
-                incoming = source.open("rb")
-            with incoming, destination.open("wb") as outgoing:
+            with source.open("rb") as incoming, destination.open("wb") as outgoing:
                 while content := incoming.read(min(65536, _MAX_BACKUP_BYTES - self.backup_bytes + 1)):
                     self.backup_bytes += len(content)
                     if self.backup_bytes > _MAX_BACKUP_BYTES:
@@ -282,6 +277,27 @@ class _FileJournal:
             shutil.copystat(source, destination, follow_symlinks=False)
         else:
             raise installer.IntegrationInstallError(f"Unsupported integration output: {source}")
+
+    def _snapshot_pinned(self, pinned: int, destination: Path) -> None:
+        """Copy a pinned file's bytes, times and mode to ``destination`` through its pin.
+
+        ``os.pread`` leaves the pin's own offset alone.
+        """
+        original = os.fstat(pinned)
+        if original.st_size > _MAX_BACKUP_BYTES - self.backup_bytes:
+            raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
+        chunks = []
+        offset = 0
+        while content := os.pread(pinned, min(65536, _MAX_BACKUP_BYTES - self.backup_bytes + 1), offset):
+            self.backup_bytes += len(content)
+            if self.backup_bytes > _MAX_BACKUP_BYTES:
+                raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
+            chunks.append(content)
+            offset += len(content)
+        with FileHelper(destination.parent) as files:
+            files.create_bytes(destination.name, b"".join(chunks))
+            files.utime(destination.name, ns=(original.st_atime_ns, original.st_mtime_ns))
+            files.chmod(destination.name, stat.S_IMODE(original.st_mode))
 
     def _remember_original(self, path: Path, entry: os.stat_result, attributes: dict[str, bytes] | None) -> None:
         """Record what rollback needs to restore ``path`` in place later."""
@@ -300,10 +316,10 @@ class _FileJournal:
         """
         if len(self.pinned_files) >= self.pin_limit:
             return False
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         try:
-            descriptor = os.open(path, flags)
-        except OSError:
+            with FileHelper(path.parent) as files, files.open_read(path.name) as opened:
+                descriptor = os.dup(opened)
+        except (OSError, FileHelperError):
             return False
         try:
             same = os.path.samestat(entry, os.fstat(descriptor))
@@ -492,65 +508,72 @@ def _restore_file_in_place(
     if is_original is None:
         return "untouched"
     try:
-        entry = path.lstat()
-    except FileNotFoundError:
+        files = FileHelper(path.parent)
+    except (OSError, FileHelperError):
         return "untouched"
-    if not is_original(entry):
-        return "untouched"
-    # No O_TRUNC: nothing is written until the opened file is known to be the
-    # snapshotted one. Windows has no O_NOFOLLOW, so the identity check after
-    # opening is what stops a symlink swapped in after lstat() being written.
-    # O_NONBLOCK keeps a FIFO swapped in from blocking the open.
-    flags = (
-        os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-        | getattr(os, "O_BINARY", 0)
-    )
-    try:
-        descriptor = os.open(path, flags)
-    except OSError:
-        return "untouched"
-    with os.fdopen(descriptor, "wb") as outgoing:
-        opened = os.fstat(outgoing.fileno())
-        if not is_original(opened):
-            return "untouched"
-        # Before reading the snapshot, which can move its access time.
-        original = saved.stat()
-        # Open the snapshot before truncating: one this process cannot read
-        # (a group-readable source another user owns, say) must raise with the
-        # live file, and every hard link to it, still intact.
-        with saved.open("rb") as incoming:
-            outgoing.truncate(0)
-            shutil.copyfileobj(incoming, outgoing)
-        outgoing.flush()
-        complete = _restore_metadata(outgoing.fileno(), path, original, attributes)
-        if file_flags is not None:
-            current = getattr(os.fstat(outgoing.fileno()), "st_flags", file_flags)
-            if (current ^ file_flags) & ~_UNCOMPARED_FLAGS:
-                complete = False
-        # A path unlinked or replaced during the copy no longer names the
-        # restored file; report that, and leave whatever is there alone.
+    with files:
         try:
-            if not os.path.samestat(os.fstat(outgoing.fileno()), path.lstat()):
+            entry = files.stat(path.name)
+        except (OSError, FileHelperError):
+            return "untouched"
+        if not is_original(entry):
+            return "untouched"
+        with ExitStack() as stack:
+            # Opened without truncating: nothing is written until the opened
+            # file is known to be the snapshotted one.
+            try:
+                descriptor = stack.enter_context(files.open_rewrite(path.name))
+            except (OSError, FileHelperError):
+                return "untouched"
+            opened = os.fstat(descriptor)
+            if not is_original(opened):
+                return "untouched"
+            # Open the snapshot before truncating: one this process cannot read
+            # (a group-readable source another user owns, say) must raise with
+            # the live file, and every hard link to it, still intact.
+            with FileHelper(saved.parent) as backup, backup.open_read(saved.name) as incoming:
+                # Before reading the snapshot, which can move its access time.
+                original = os.fstat(incoming)
+                os.ftruncate(descriptor, 0)
+                _copy_descriptor(incoming, descriptor)
+            complete = _restore_metadata(descriptor, files, path.name, original, attributes)
+            if file_flags is not None:
+                current = getattr(os.fstat(descriptor), "st_flags", file_flags)
+                if (current ^ file_flags) & ~_UNCOMPARED_FLAGS:
+                    complete = False
+            # A path unlinked or replaced during the copy no longer names the
+            # restored file; report that, and leave whatever is there alone.
+            try:
+                if not os.path.samestat(os.fstat(descriptor), files.stat(path.name)):
+                    complete = False
+            except (OSError, FileHelperError):
                 complete = False
-        except OSError:
-            complete = False
-        return "restored" if complete else "incomplete"
+            return "restored" if complete else "incomplete"
+
+
+def _copy_descriptor(source: int, destination: int) -> None:
+    """Copy the rest of ``source`` to ``destination`` through their descriptors."""
+    while content := os.read(source, 65536):
+        view = memoryview(content)
+        while view:
+            view = view[os.write(destination, view):]
 
 
 def _restore_metadata(
-    descriptor: int, path: Path, original: os.stat_result, attributes: dict[str, bytes] | None,
+    descriptor: int, files: FileHelper, name: str, original: os.stat_result,
+    attributes: dict[str, bytes] | None,
 ) -> bool:
     """Restore a snapshot's extended attributes, times and mode onto the open, verified file.
 
-    Every change goes through ``descriptor``, so a path swapped for a symlink
-    since the open cannot redirect it to another file. Windows offers no
-    descriptor form of ``os.utime`` (nor of ``os.chmod`` before Python
-    3.13), but a file Python opens there cannot be renamed, replaced or
-    deleted until it is closed, so ``path`` still names the verified file
-    while ``descriptor`` is open. Anywhere else without a descriptor form,
-    the metadata is left and the restore reported incomplete. Values that
-    already match are not set again, so a file the restoring user may write
-    but not otherwise modify is only refused what it actually needs.
+    Extended attributes and, where ``os.fchmod`` exists, the mode go through
+    ``descriptor``. Times, and the mode elsewhere, are set through ``files``
+    relative to the file's anchored parent without following a leaf link, so
+    a path swapped for a symlink since the open cannot redirect them. On
+    Windows a file Python opens cannot be renamed, replaced or deleted until
+    it is closed, so ``name`` still names the verified file while
+    ``descriptor`` is open. Values that already match are not set again, so a
+    file the restoring user may write but not otherwise modify is only
+    refused what it actually needs.
     """
     complete = True
     if _HAS_XATTRS:
@@ -564,24 +587,17 @@ def _restore_metadata(
     times = (original.st_atime_ns, original.st_mtime_ns)
     if (current.st_atime_ns, current.st_mtime_ns) != times:
         try:
-            if os.utime in os.supports_fd:
-                os.utime(descriptor, ns=times)
-            elif os.name == "nt":
-                os.utime(path, ns=times)
-            else:
-                complete = False
-        except OSError:
+            files.utime(name, ns=times)
+        except (OSError, FileHelperError):
             complete = False
     mode = stat.S_IMODE(original.st_mode)
     if stat.S_IMODE(current.st_mode) != mode:
         try:
             if hasattr(os, "fchmod"):
                 os.fchmod(descriptor, mode)
-            elif os.name == "nt":
-                os.chmod(path, mode)
             else:
-                complete = False
-        except OSError:
+                files.chmod(name, mode)
+        except (OSError, FileHelperError):
             complete = False
     return complete
 
@@ -613,10 +629,9 @@ def _still_has_identity(path: Path, identity: tuple[int, int] | None) -> bool:
     if identity is None:
         return False
     try:
-        entry = path.lstat()
+        return _entry_state(path)[1:3] == identity
     except OSError:
         return False
-    return (entry.st_dev, entry.st_ino) == identity
 
 
 def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:

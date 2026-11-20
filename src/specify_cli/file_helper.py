@@ -632,6 +632,16 @@ class FileHelper:
             cleanup()
 
     def read_bytes(self, path: Path | str) -> bytes:
+        with self.open_read(path) as fd, os.fdopen(fd, "rb", closefd=False) as stream:
+            return stream.read()
+
+    @contextmanager
+    def open_read(self, path: Path | str) -> Iterator[int]:
+        """Yield a blocking binary read descriptor on an existing regular file.
+
+        The helper closes the descriptor on exit, so the caller must not close it;
+        ``os.dup`` it to keep the file open longer.
+        """
         destination = self._path(path)
         self._require_file(destination)
         with ExitStack() as stack:
@@ -661,8 +671,10 @@ class FileHelper:
                     stack.callback(os.close, fd)
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise UnsupportedPathError(f"Expected a regular file: {destination}")
-            with os.fdopen(fd, "rb", closefd=False) as stream:
-                return stream.read()
+            if os.name != "nt":
+                # Opened non-blocking only so a FIFO swapped in cannot hang the open.
+                os.set_blocking(fd, True)
+            yield fd
 
     def read_text(self, path: Path | str, *, encoding: str = "utf-8") -> str:
         return self.read_bytes(path).decode(encoding)
@@ -924,6 +936,65 @@ class FileHelper:
                     yield fd
                 finally:
                     os.close(fd)
+
+    def utime(self, path: Path | str, *, ns: tuple[int, int]) -> None:
+        """Set an existing entry's access and modification times, in nanoseconds.
+
+        The entry is found as ``stat`` finds it and set without following a leaf
+        link swapped in after that walk (POSIX ``utimensat`` relative to the
+        anchored parent). Windows pins the parent hierarchy and sets the times by
+        path, as ``stat`` queries it.
+        """
+        destination = self._path(path)
+        if os.name == "nt":
+            with self._windows_parents(destination):
+                os.utime(destination, ns=ns)
+            return
+        unsupported = "Anchored utime is unsupported on this platform"
+        if os.utime not in os.supports_dir_fd or os.utime not in os.supports_follow_symlinks:
+            raise OSError(errno.ENOTSUP, unsupported)
+        with self._posix_directory(destination.parent, unsupported_message=unsupported) as directory:
+            os.utime(destination.name, ns=ns, dir_fd=directory, follow_symlinks=False)
+
+    def chmod(self, path: Path | str, mode: int) -> None:
+        """Set an existing entry's permission bits, without following a leaf link.
+
+        Where the platform has no no-follow ``fchmodat`` (Linux), the leaf is
+        checked with a no-follow stat relative to the anchored parent first and a
+        link is refused; a link swapped in between that check and the change is
+        followed. Windows pins the parent hierarchy and sets the mode by path,
+        which only toggles the read-only attribute. Prefer ``os.fchmod`` on an
+        open descriptor where it exists.
+        """
+        destination = self._path(path)
+        if os.name == "nt":
+            with self._windows_parents(destination):
+                os.chmod(destination, mode)
+            return
+        unsupported = "Anchored chmod is unsupported on this platform"
+        if os.chmod not in os.supports_dir_fd:
+            raise OSError(errno.ENOTSUP, unsupported)
+        with self._posix_directory(destination.parent, unsupported_message=unsupported) as directory:
+            if os.chmod in os.supports_follow_symlinks:
+                os.chmod(destination.name, mode, dir_fd=directory, follow_symlinks=False)
+                return
+            if stat.S_ISLNK(os.stat(destination.name, dir_fd=directory, follow_symlinks=False).st_mode):
+                raise SymlinkDeniedError(f"Refusing to change the mode of a link: {destination}")
+            os.chmod(destination.name, mode, dir_fd=directory)
+
+    @contextmanager
+    def _windows_parents(self, destination: Path) -> Iterator[None]:
+        """Pin the Windows directory handles from the root to ``destination``'s parent."""
+        parts = destination.relative_to(self._canonical_root).parts
+        with ExitStack() as stack:
+            parent = stack.enter_context(_windows_handle(
+                self._canonical_root, directory=True, traverse=True,
+            ))
+            for part in parts[:-1]:
+                parent = stack.enter_context(_windows_handle(
+                    Path(part), directory=True, parent=parent, traverse=True,
+                ))
+            yield
 
     def symlink(self, target: Path | str, path: Path | str) -> None:
         """Create a link to an existing contained regular file or directory.

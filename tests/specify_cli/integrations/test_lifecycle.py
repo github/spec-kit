@@ -274,7 +274,8 @@ def test_builtin_journal_recreates_and_reports_a_file_it_cannot_open_in_place(tm
     real_open = os.open
 
     def refuse_target(path, flags, *args, **kwargs):
-        if Path(path) == target and flags & os.O_WRONLY:
+        # FileHelper opens the leaf by name relative to its anchored parent.
+        if os.fspath(path) == target.name and flags & os.O_WRONLY:
             raise PermissionError("read-only")
         return real_open(path, flags, *args, **kwargs)
 
@@ -302,17 +303,19 @@ def test_builtin_journal_leaves_a_file_intact_when_its_snapshot_cannot_be_read(t
     target.write_text("original\n", encoding="utf-8")
     link = tmp_path / "link"
     os.link(target, link)
-    real_open = Path.open
+    from specify_cli.file_helper import FileHelper
 
-    def refuse_snapshot(self, mode="r", *args, **kwargs):
-        if mode == "rb" and any(parent in backups for parent in self.parents):
+    real_open_read = FileHelper.open_read
+
+    def refuse_snapshot(self, path):
+        if any(parent in backups for parent in (Path(self.root), *Path(self.root).parents)):
             raise PermissionError("unreadable snapshot")
-        return real_open(self, mode, *args, **kwargs)
+        return real_open_read(self, path)
 
     with pytest.raises(Exception, match="rollback failed"):
         with _lifecycle.builtin_journal(project, "claude", {}):
             write_text(target, "generated\n")
-            monkeypatch.setattr(Path, "open", refuse_snapshot)
+            monkeypatch.setattr(FileHelper, "open_read", refuse_snapshot)
             raise OSError("disk full")
 
     assert target.read_text(encoding="utf-8") == "generated\n"
@@ -356,7 +359,8 @@ def test_builtin_journal_never_writes_a_different_file_open_returned(tmp_path, m
     opened = []
 
     def open_decoy(path, flags, *args, **kwargs):
-        if Path(path) == target and flags & os.O_WRONLY:
+        # FileHelper opens the leaf by name relative to its anchored parent.
+        if os.fspath(path) == target.name and flags & os.O_WRONLY:
             opened.append(path)
             return real_open(decoy, flags, *args, **kwargs)
         return real_open(path, flags, *args, **kwargs)
@@ -389,14 +393,14 @@ def test_builtin_journal_keeps_restoring_after_a_metadata_refusal(tmp_path, monk
     refused = project / ".specify" / "templates" / "plan.md"
     refused.write_text("refused original\n", encoding="utf-8")
     refused_inode = refused.stat().st_ino
-    real_utime = os.utime
+    from specify_cli.file_helper import FileHelper
 
-    def refuse_refused(target, *args, **kwargs):
-        if isinstance(target, int) and os.fstat(target).st_ino == refused_inode:
+    real_utime = FileHelper.utime
+
+    def refuse_refused(self, path, **kwargs):
+        if Path(self.root) / path == refused:
             raise PermissionError("not the owner")
-        if not isinstance(target, int) and Path(target) == refused:
-            raise PermissionError("not the owner")
-        return real_utime(target, *args, **kwargs)
+        return real_utime(self, path, **kwargs)
 
     with pytest.raises(OSError, match="disk full"):
         with _lifecycle.builtin_journal(project, "claude", {}):
@@ -405,10 +409,7 @@ def test_builtin_journal_keeps_restoring_after_a_metadata_refusal(tmp_path, monk
             write_text(created / "file.md", "new\n")
             # Restored first, as rollback runs newest first.
             write_text(refused, "refused generated\n")
-            monkeypatch.setattr(_lifecycle.os, "utime", refuse_refused)
-            if real_utime in os.supports_fd:
-                # So rollback takes the descriptor call and meets the refusal.
-                monkeypatch.setattr(_lifecycle.os, "supports_fd", os.supports_fd | {refuse_refused})
+            monkeypatch.setattr(FileHelper, "utime", refuse_refused)
             raise OSError("disk full")
 
     assert refused.read_text(encoding="utf-8") == "refused original\n"
@@ -424,7 +425,7 @@ def test_builtin_journal_keeps_restoring_after_a_metadata_refusal(tmp_path, monk
 def test_builtin_journal_never_restores_metadata_by_path_without_descriptor_support(
     tmp_path, monkeypatch, capsys,
 ):
-    """Without descriptor-based times, a path swapped for a symlink cannot redirect them."""
+    """Times set by path after the copy cannot be redirected by a path swapped for a symlink."""
     from specify_cli.integrations import _lifecycle
     from specify_cli.integrations._file_changes import write_text
 
@@ -441,12 +442,12 @@ def test_builtin_journal_never_restores_metadata_by_path_without_descriptor_supp
     victim.write_text("victim\n", encoding="utf-8")
     victim.chmod(0o644)
     victim_before = victim.stat()
-    real_copyfileobj = shutil.copyfileobj
+    real_copy = _lifecycle._copy_descriptor
 
-    def copy_then_swap(source, destination, *args, **kwargs):
+    def copy_then_swap(source, destination):
         # Once the bytes are back, swap the path for a symlink, so any
         # metadata restored by path from here on lands on the victim.
-        real_copyfileobj(source, destination, *args, **kwargs)
+        real_copy(source, destination)
         target.unlink()
         target.symlink_to(victim)
 
@@ -454,7 +455,7 @@ def test_builtin_journal_never_restores_metadata_by_path_without_descriptor_supp
         with _lifecycle.builtin_journal(project, "claude", {}):
             write_text(target, "generated\n")
             monkeypatch.setattr(_lifecycle.os, "supports_fd", os.supports_fd - {os.utime})
-            monkeypatch.setattr(_lifecycle.shutil, "copyfileobj", copy_then_swap)
+            monkeypatch.setattr(_lifecycle, "_copy_descriptor", copy_then_swap)
             raise OSError("disk full")
 
     victim_after = victim.stat()
