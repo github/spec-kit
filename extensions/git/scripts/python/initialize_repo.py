@@ -16,6 +16,15 @@ import sys
 from pathlib import Path
 
 
+def _err(message: str) -> None:
+    try:
+        print(message, file=sys.stderr)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stderr, "encoding", None) or "ascii"
+        safe = message.encode(encoding, errors="backslashreplace").decode(encoding)
+        print(safe, file=sys.stderr)
+
+
 def _find_project_root(start: Path) -> Path | None:
     current = start
     while True:
@@ -53,10 +62,7 @@ def main() -> int:
     commit_msg = _read_commit_message(repo_root)
 
     if shutil.which("git") is None:
-        print(
-            "[specify] Warning: Git not found; skipped repository initialization",
-            file=sys.stderr,
-        )
+        _err("[specify] Warning: Git not found; skipped repository initialization")
         return 0
 
     probe = subprocess.run(
@@ -64,9 +70,11 @@ def main() -> int:
         cwd=repo_root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if probe.returncode == 0:
-        print("[specify] Git repository already initialized; skipping", file=sys.stderr)
+        _err("[specify] Git repository already initialized; skipping")
         return 0
 
     steps = [
@@ -75,13 +83,20 @@ def main() -> int:
         (["git", "commit", "--allow-empty", "-q", "-m", commit_msg], "git commit"),
     ]
     for cmd, label in steps:
-        result = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         if result.returncode != 0:
-            output = (result.stdout + result.stderr).strip()
-            print(f"[specify] Error: {label} failed: {output}", file=sys.stderr)
+            output = ((result.stdout or "") + (result.stderr or "")).strip()
+            _err(f"[specify] Error: {label} failed: {output}")
             return 1
 
-    print("[OK] Git repository initialized", file=sys.stderr)
+    _err("[OK] Git repository initialized")
     return 0
 
 

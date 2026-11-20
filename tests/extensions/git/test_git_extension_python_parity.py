@@ -1131,3 +1131,157 @@ class TestCreateFeatureBranchPythonLegacyPipe:
         )
         assert overlong_err.returncode == 1
         assert overlong_err.stdout.strip() == b""
+
+
+class TestOtherGitPythonScriptsLegacyPipe:
+    @staticmethod
+    def _clean_git_env(tmp_path: Path, **extra: str) -> dict[str, str]:
+        empty_cfg = tmp_path / "empty.gitconfig"
+        if not empty_cfg.exists():
+            empty_cfg.write_text("", encoding="utf-8")
+        env = dict(os.environ)
+        env.pop("PYTHONUTF8", None)
+        env.update(
+            {
+                **_GIT_ENV,
+                "GIT_CONFIG_GLOBAL": str(empty_cfg),
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "PYTHONIOENCODING": "cp1252",
+                "LC_ALL": "C",
+                "PYTHONCOERCECLOCALE": "0",
+                **extra,
+            }
+        )
+        return env
+
+    @staticmethod
+    def _run_script_raw(
+        project: Path, script_file: str, env: dict[str, str], *args: str
+    ) -> subprocess.CompletedProcess[bytes]:
+        script = (
+            project
+            / ".specify"
+            / "extensions"
+            / "git"
+            / "scripts"
+            / "python"
+            / script_file
+        )
+        return subprocess.run(
+            [sys.executable, str(script), *args],
+            cwd=project,
+            capture_output=True,
+            env=env,
+        )
+
+    def test_auto_commit_commits_untracked_utf8_paths_under_cp1252(
+        self, tmp_path: Path
+    ):
+        project = _setup_py_project(tmp_path / "proj")
+        env = self._clean_git_env(tmp_path)
+        subprocess.run(
+            ["git", "config", "core.quotepath", "false"],
+            cwd=project,
+            env=env,
+            check=True,
+        )
+        _write_config(
+            project,
+            "auto_commit:\n  after_specify:\n    enabled: true\n",
+        )
+        spec_dir = project / "specs" / "001-后台信息架构"
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "spec.md").write_text("# Spec\n", encoding="utf-8")
+
+        result = self._run_script_raw(
+            project, "auto_commit.py", env, "after_specify"
+        )
+        stderr_text = result.stderr.decode("cp1252")
+
+        assert result.returncode == 0, stderr_text
+        assert "Traceback" not in stderr_text
+        assert "[OK] Changes committed after specify" in stderr_text
+        committed = subprocess.run(
+            ["git", "-c", "core.quotepath=false", "show", "--name-only", "--format="],
+            cwd=project,
+            capture_output=True,
+            env=env,
+            check=True,
+        )
+        assert "specs/001-后台信息架构/spec.md" in committed.stdout.decode("utf-8")
+
+    def test_auto_commit_reports_utf8_git_failure_cleanly_over_cp1252_pipe(
+        self, tmp_path: Path
+    ):
+        project = _setup_py_project(tmp_path / "proj")
+        env = self._clean_git_env(tmp_path)
+        subprocess.run(
+            ["git", "config", "commit.gpgsign", "true"],
+            cwd=project,
+            env=env,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "gpg.program", "missing-后台-\u201cgpg\u201d"],
+            cwd=project,
+            env=env,
+            check=True,
+        )
+        _write_config(
+            project,
+            "auto_commit:\n  after_specify:\n    enabled: true\n",
+        )
+        (project / "dirty.txt").write_text("change\n", encoding="utf-8")
+
+        result = self._run_script_raw(
+            project, "auto_commit.py", env, "after_specify"
+        )
+        stderr_text = result.stderr.decode("cp1252")
+
+        assert result.returncode == 1
+        assert "Traceback" not in stderr_text
+        assert "[specify] Error: git commit failed:" in stderr_text
+        assert "\\u540e\\u53f0" in stderr_text
+
+    def test_initialize_repo_reports_utf8_git_failure_cleanly_over_cp1252_pipe(
+        self, tmp_path: Path
+    ):
+        project = _setup_py_project(tmp_path / "proj", git=False)
+        env = self._clean_git_env(
+            tmp_path,
+            GIT_CONFIG_COUNT="2",
+            GIT_CONFIG_KEY_0="commit.gpgsign",
+            GIT_CONFIG_VALUE_0="true",
+            GIT_CONFIG_KEY_1="gpg.program",
+            GIT_CONFIG_VALUE_1="missing-后台-\u201cgpg\u201d",
+        )
+
+        result = self._run_script_raw(project, "initialize_repo.py", env)
+        stderr_text = result.stderr.decode("cp1252")
+
+        assert result.returncode == 1
+        assert "Traceback" not in stderr_text
+        assert "[specify] Error: git commit failed:" in stderr_text
+        assert "\\u540e\\u53f0" in stderr_text
+
+    def test_git_common_check_feature_branch_survives_cp1252_stderr(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        import io
+
+        sys.path.insert(0, str(EXT_PY))
+        try:
+            import git_common
+
+            buf = io.BytesIO()
+            narrow_stderr = io.TextIOWrapper(buf, encoding="cp1252")
+            monkeypatch.setattr(git_common.sys, "stderr", narrow_stderr)
+
+            assert git_common.check_feature_branch("main-后台", True) is False
+            narrow_stderr.flush()
+        finally:
+            sys.path.remove(str(EXT_PY))
+            sys.modules.pop("git_common", None)
+
+        rendered = buf.getvalue().decode("cp1252")
+        assert "ERROR: Not on a feature branch. Current branch: main-\\u540e\\u53f0" in rendered

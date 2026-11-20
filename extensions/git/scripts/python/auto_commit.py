@@ -18,6 +18,15 @@ import sys
 from pathlib import Path
 
 
+def _err(message: str) -> None:
+    try:
+        print(message, file=sys.stderr)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stderr, "encoding", None) or "ascii"
+        safe = message.encode(encoding, errors="backslashreplace").decode(encoding)
+        print(safe, file=sys.stderr)
+
+
 def _find_project_root(start: Path) -> Path | None:
     current = start
     while True:
@@ -117,14 +126,14 @@ def _parse_auto_commit_config(
 def main(argv: list[str]) -> int:
     event_name = argv[0] if argv else ""
     if not event_name:
-        print(f"Usage: {Path(sys.argv[0]).name} <event_name>", file=sys.stderr)
+        _err(f"Usage: {Path(sys.argv[0]).name} <event_name>")
         return 1
 
     script_dir = Path(__file__).resolve().parent
     repo_root = _find_project_root(script_dir) or Path.cwd()
 
     if shutil.which("git") is None:
-        print("[specify] Warning: Git not found; skipped auto-commit", file=sys.stderr)
+        _err("[specify] Warning: Git not found; skipped auto-commit")
         return 0
 
     probe = subprocess.run(
@@ -132,12 +141,11 @@ def main(argv: list[str]) -> int:
         cwd=repo_root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if probe.returncode != 0:
-        print(
-            "[specify] Warning: Not a Git repository; skipped auto-commit",
-            file=sys.stderr,
-        )
+        _err("[specify] Warning: Not a Git repository; skipped auto-commit")
         return 0
 
     config_file = repo_root / ".specify" / "extensions" / "git" / "git-config.yml"
@@ -153,19 +161,27 @@ def main(argv: list[str]) -> int:
     def _quiet(*args: str) -> bool:
         return (
             subprocess.run(
-                ["git", *args], cwd=repo_root, capture_output=True, text=True
+                ["git", *args],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
             ).returncode
             == 0
         )
 
-    untracked = subprocess.run(
+    untracked_result = subprocess.run(
         ["git", "ls-files", "--others", "--exclude-standard"],
         cwd=repo_root,
         capture_output=True,
         text=True,
-    ).stdout.strip()
+        encoding="utf-8",
+        errors="replace",
+    )
+    untracked = (untracked_result.stdout or "").strip()
     if _quiet("diff", "--quiet", "HEAD") and _quiet("diff", "--cached", "--quiet") and not untracked:
-        print(f"[specify] No changes to commit after {event_name}", file=sys.stderr)
+        _err(f"[specify] No changes to commit after {event_name}")
         return 0
 
     # Derive a human-readable command name from the event
@@ -181,13 +197,20 @@ def main(argv: list[str]) -> int:
         (["git", "commit", "-q", "-m", commit_msg], "git commit"),
     ]
     for cmd, label in steps:
-        result = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         if result.returncode != 0:
-            output = (result.stdout + result.stderr).strip()
-            print(f"[specify] Error: {label} failed: {output}", file=sys.stderr)
+            output = ((result.stdout or "") + (result.stderr or "")).strip()
+            _err(f"[specify] Error: {label} failed: {output}")
             return 1
 
-    print(f"[OK] Changes committed {phase} {command_name}", file=sys.stderr)
+    _err(f"[OK] Changes committed {phase} {command_name}")
     return 0
 
 
