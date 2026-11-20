@@ -6,7 +6,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from specify_cli.file_helper import FileHelper, SymlinkDeniedError, UnsupportedPathError
+from specify_cli.file_helper import FileHelper, SymlinkDeniedError, UnsupportedPathError, futime
 
 
 REL = "parent/file"
@@ -149,3 +149,28 @@ def test_windows_chmod_toggles_read_only(tmp_path):
         assert not path.stat().st_mode & stat.S_IWRITE
         files.chmod(REL, stat.S_IREAD | stat.S_IWRITE)
     assert path.stat().st_mode & stat.S_IWRITE
+
+
+def test_utime_and_chmod_accept_the_root(tmp_path):
+    with FileHelper(tmp_path) as files:
+        files.utime(".", ns=(1_000_000_000, 2_000_000_000))
+        if os.name != "nt":
+            files.chmod(".", 0o750)
+    assert tmp_path.stat().st_mtime_ns == 2_000_000_000
+    if os.name != "nt":
+        assert stat.S_IMODE(tmp_path.stat().st_mode) == 0o750
+
+
+@pytest.mark.skipif(os.utime not in os.supports_fd, reason="no descriptor form of utime")
+def test_futime_sets_times_through_the_descriptor(tmp_path):
+    path = _seed(tmp_path)
+    with FileHelper(tmp_path) as files, files.open_read(REL) as fd:
+        futime(fd, ns=(1_000_000_000, 2_000_000_000))
+    assert path.stat().st_mtime_ns == 2_000_000_000
+
+
+def test_futime_refuses_where_descriptors_are_unsupported(tmp_path, monkeypatch):
+    path = _seed(tmp_path)
+    monkeypatch.setattr(os, "supports_fd", os.supports_fd - {os.utime})
+    with path.open("rb") as stream, pytest.raises(OSError, match="unsupported"):
+        futime(stream.fileno(), ns=(1_000_000_000, 1_000_000_000))

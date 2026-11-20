@@ -32,6 +32,19 @@ _DELETE_DIR_FD_SUPPORTED = (
 _DELETE_DIRECTORY_CACHE_SIZE = 8
 # Wrapping os.open must not change the underlying platform capability.
 _POSIX_OPEN = os.open
+_NO_FOLLOW_UTIME = {"follow_symlinks": False} if os.utime in os.supports_follow_symlinks else {}
+_NO_FOLLOW_CHMOD = {"follow_symlinks": False} if os.chmod in os.supports_follow_symlinks else {}
+
+
+def futime(fd: int, *, ns: tuple[int, int]) -> None:
+    """Set an open file's access and modification times through its descriptor.
+
+    Raises ``OSError(ENOTSUP)`` where ``os.utime`` takes no descriptor
+    (Windows); use ``FileHelper.utime`` there.
+    """
+    if os.utime not in os.supports_fd:
+        raise OSError(errno.ENOTSUP, "Setting times through a descriptor is unsupported on this platform")
+    os.utime(fd, ns=ns)
 
 
 def _remove_created(
@@ -943,12 +956,17 @@ class FileHelper:
         The entry is found as ``stat`` finds it and set without following a leaf
         link swapped in after that walk (POSIX ``utimensat`` relative to the
         anchored parent). Windows pins the parent hierarchy and sets the times by
-        path, as ``stat`` queries it.
+        path, without following a leaf reparse point where Python supports that.
+        A regular file renamed over the leaf after the walk still gets the times;
+        callers holding a verified descriptor should use ``futime``.
         """
         destination = self._path(path)
+        if destination == self._canonical_root:
+            os.utime(destination, ns=ns, **_NO_FOLLOW_UTIME)
+            return
         if os.name == "nt":
             with self._windows_parents(destination):
-                os.utime(destination, ns=ns)
+                os.utime(destination, ns=ns, **_NO_FOLLOW_UTIME)
             return
         unsupported = "Anchored utime is unsupported on this platform"
         if os.utime not in os.supports_dir_fd or os.utime not in os.supports_follow_symlinks:
@@ -963,13 +981,17 @@ class FileHelper:
         checked with a no-follow stat relative to the anchored parent first and a
         link is refused; a link swapped in between that check and the change is
         followed. Windows pins the parent hierarchy and sets the mode by path,
-        which only toggles the read-only attribute. Prefer ``os.fchmod`` on an
-        open descriptor where it exists.
+        which only toggles the read-only attribute, without following a leaf
+        reparse point where Python supports that (3.13 and later). Prefer
+        ``os.fchmod`` on an open descriptor where it exists.
         """
         destination = self._path(path)
+        if destination == self._canonical_root:
+            os.chmod(destination, mode, **_NO_FOLLOW_CHMOD)
+            return
         if os.name == "nt":
             with self._windows_parents(destination):
-                os.chmod(destination, mode)
+                os.chmod(destination, mode, **_NO_FOLLOW_CHMOD)
             return
         unsupported = "Anchored chmod is unsupported on this platform"
         if os.chmod not in os.supports_dir_fd:

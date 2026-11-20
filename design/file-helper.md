@@ -388,12 +388,18 @@ descriptor-relative or change their documented concurrency limitations.
   found by the normal policy walk. POSIX uses `utimensat` relative to the
   anchored parent without following the leaf, so a leaf swapped for a link
   after the walk sets the link's own times, not its target's. Windows pins the
-  parent hierarchy and sets the times by path.
+  parent hierarchy and sets the times by path, without following a leaf
+  reparse point where Python supports that. A regular file renamed over the
+  leaf after the walk still gets the times, so a caller that holds a verified
+  descriptor uses the module-level `futime(fd, ns=...)` instead, which sets
+  them through the descriptor (POSIX only; it raises `ENOTSUP` on Windows).
 - `chmod(path, mode)` sets an existing entry's permission bits the same way.
   Where no no-follow `fchmodat` exists (Linux), the leaf is checked with a
   no-follow stat relative to the anchored parent and a link is refused; a link
   swapped in between that check and the change is followed. Windows sets the
-  read-only attribute by path after pinning the parent hierarchy. Callers that
+  read-only attribute by path after pinning the parent hierarchy, without
+  following a leaf reparse point on Python 3.13 and later. Both methods also
+  accept the root itself. Callers that
   hold a descriptor should prefer `os.fchmod`.
 - `delete(path, recursive=False)` unlinks files/links or removes directories.
   Nonrecursive directory deletion requires an empty directory. The established

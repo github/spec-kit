@@ -400,11 +400,17 @@ def test_builtin_journal_keeps_restoring_after_a_metadata_refusal(tmp_path, monk
     from specify_cli.file_helper import FileHelper
 
     real_utime = FileHelper.utime
+    real_futime = _lifecycle.futime
 
     def refuse_refused(self, path, **kwargs):
         if Path(self.root) / path == refused:
             raise PermissionError("not the owner")
         return real_utime(self, path, **kwargs)
+
+    def refuse_refused_descriptor(descriptor, **kwargs):
+        if os.fstat(descriptor).st_ino == refused_inode:
+            raise PermissionError("not the owner")
+        return real_futime(descriptor, **kwargs)
 
     with pytest.raises(OSError, match="disk full"):
         with _lifecycle.builtin_journal(project, "claude", {}):
@@ -414,6 +420,7 @@ def test_builtin_journal_keeps_restoring_after_a_metadata_refusal(tmp_path, monk
             # Restored first, as rollback runs newest first.
             write_text(refused, "refused generated\n")
             monkeypatch.setattr(FileHelper, "utime", refuse_refused)
+            monkeypatch.setattr(_lifecycle, "futime", refuse_refused_descriptor)
             raise OSError("disk full")
 
     assert refused.read_text(encoding="utf-8") == "refused original\n"
@@ -426,7 +433,7 @@ def test_builtin_journal_keeps_restoring_after_a_metadata_refusal(tmp_path, monk
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes and symlinks")
-def test_builtin_journal_never_restores_metadata_by_path_without_descriptor_support(
+def test_builtin_journal_never_restores_metadata_through_a_path_swapped_for_a_symlink(
     tmp_path, monkeypatch, capsys,
 ):
     """Times set by path after the copy cannot be redirected by a path swapped for a symlink."""
@@ -458,7 +465,6 @@ def test_builtin_journal_never_restores_metadata_by_path_without_descriptor_supp
     with pytest.raises(OSError, match="disk full"):
         with _lifecycle.builtin_journal(project, "claude", {}):
             write_text(target, "generated\n")
-            monkeypatch.setattr(_lifecycle.os, "supports_fd", os.supports_fd - {os.utime})
             monkeypatch.setattr(_lifecycle, "_copy_descriptor", copy_then_swap)
             raise OSError("disk full")
 
@@ -1300,3 +1306,69 @@ def test_builtin_journal_sets_times_after_the_write_handle_closes(tmp_path, monk
     assert target.stat().st_mtime_ns == 1_000_000_000
     assert _INCOMPLETE_WARNING not in " ".join(capsys.readouterr().out.split())
 
+
+@pytest.mark.skipif(not _PINS_FILES, reason="Windows sets times by path while its handle pins the file")
+def test_builtin_journal_never_sets_times_on_a_file_renamed_over_the_path(tmp_path, monkeypatch):
+    """Times go through the verified descriptor, so a regular file renamed over the path keeps its own."""
+    from specify_cli.file_helper import FileHelper
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    os.utime(target, ns=(1_000_000_000, 1_000_000_000))
+    other = tmp_path / "other"
+    other.write_text("other\n", encoding="utf-8")
+    os.utime(other, ns=(5_000_000_000, 5_000_000_000))
+    witness = tmp_path / "witness"
+    os.link(other, witness)
+    real_utime = FileHelper.utime
+    real_futime = _lifecycle.futime
+
+    def rename_then(set_times):
+        def swap(*args, **kwargs):
+            if other.exists():
+                os.replace(other, target)
+            return set_times(*args, **kwargs)
+        return swap
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            monkeypatch.setattr(FileHelper, "utime", rename_then(real_utime))
+            monkeypatch.setattr(_lifecycle, "futime", rename_then(real_futime))
+            raise OSError("disk full")
+
+    assert witness.stat().st_mtime_ns == 5_000_000_000
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "chflags") or not hasattr(stat, "UF_HIDDEN"), reason="no BSD file flags",
+)
+def test_builtin_journal_recreates_a_replaced_pinned_file_with_its_flags(tmp_path, capsys):
+    """A pinned file's snapshot carries its BSD flags, so recreating a replaced file keeps them."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import after_file_change, before_file_change
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    try:
+        os.chflags(target, stat.UF_HIDDEN)
+    except OSError as exc:
+        pytest.skip(f"cannot set file flags here: {exc}")
+    replacement = tmp_path / "replacement"
+    replacement.write_text("generated\n", encoding="utf-8")
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            before_file_change(target)
+            os.replace(replacement, target)
+            after_file_change(target)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert target.stat().st_flags & stat.UF_HIDDEN

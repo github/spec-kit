@@ -23,7 +23,7 @@ import typer
 from rich.markup import escape
 
 from .._console import console
-from ..file_helper import FileHelper, FileHelperError
+from ..file_helper import FileHelper, FileHelperError, futime
 from ..integration_state import (
     default_integration_key,
     installed_integration_keys,
@@ -293,25 +293,37 @@ class _FileJournal:
             raise installer.IntegrationInstallError(f"Unsupported integration output: {source}")
 
     def _snapshot_pinned(self, pinned: int, destination: Path) -> None:
-        """Copy a pinned file's bytes, times and mode to ``destination`` through its pin.
+        """Copy a pinned file to ``destination`` through its pin, as ``shutil.copy2`` would.
 
-        ``os.pread`` leaves the pin's own offset alone.
+        Bytes stream through ``os.pread``, which leaves the pin's own offset
+        alone. Restorable extended attributes, times, mode and BSD flags follow,
+        each set as best effort where the temporary filesystem refuses it,
+        like ``shutil.copystat``.
         """
         original = os.fstat(pinned)
         if original.st_size > _MAX_BACKUP_BYTES - self.backup_bytes:
             raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
-        chunks = []
-        offset = 0
-        while content := os.pread(pinned, min(65536, _MAX_BACKUP_BYTES - self.backup_bytes + 1), offset):
-            self.backup_bytes += len(content)
-            if self.backup_bytes > _MAX_BACKUP_BYTES:
-                raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
-            chunks.append(content)
-            offset += len(content)
         with FileHelper(destination.parent) as files:
-            files.create_bytes(destination.name, b"".join(chunks))
-            files.utime(destination.name, ns=(original.st_atime_ns, original.st_mtime_ns))
-            files.chmod(destination.name, stat.S_IMODE(original.st_mode))
+            files.create_bytes(destination.name, b"")
+            with files.open_rewrite(destination.name) as outgoing:
+                offset = 0
+                while content := os.pread(pinned, min(65536, _MAX_BACKUP_BYTES - self.backup_bytes + 1), offset):
+                    self.backup_bytes += len(content)
+                    if self.backup_bytes > _MAX_BACKUP_BYTES:
+                        raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
+                    _write_descriptor(outgoing, content)
+                    offset += len(content)
+                if _HAS_XATTRS:
+                    _copy_xattrs(pinned, outgoing)
+                futime(outgoing, ns=(original.st_atime_ns, original.st_mtime_ns))
+                os.fchmod(outgoing, stat.S_IMODE(original.st_mode))
+        flags = getattr(original, "st_flags", 0)
+        if flags and hasattr(os, "chflags"):
+            try:
+                os.chflags(destination, flags, follow_symlinks=False)
+            except OSError as exc:
+                if exc.errno not in _XATTRS_UNSUPPORTED:
+                    raise
 
     @staticmethod
     def _persist_xattrs(path: Path, saved: Path, attributes: dict[str, bytes] | None) -> None:
@@ -634,10 +646,11 @@ def _restore_file_in_place(
 def _restore_times(files: FileHelper, name: str, restored: os.stat_result, original: os.stat_result) -> bool:
     """Set the snapshot's times on the closed, restored file, then confirm they held.
 
-    The times go through ``files`` (no-follow, relative to the anchored
-    parent) while a fresh descriptor confirms ``name`` still names the
-    restored file; on Windows that descriptor also keeps it from being
-    renamed or replaced until the times are set.
+    A fresh descriptor confirms ``name`` still names the restored file, and
+    the times are set through it, so a file renamed over the path meanwhile
+    is not touched. Windows has no descriptor form of ``os.utime``, so there
+    they go through ``files`` by path, while that descriptor keeps the file
+    from being renamed or replaced.
     """
     times = (original.st_atime_ns, original.st_mtime_ns)
     try:
@@ -651,7 +664,10 @@ def _restore_times(files: FileHelper, name: str, restored: os.stat_result, origi
             if not os.path.samestat(current, restored):
                 return False
             if (current.st_atime_ns, current.st_mtime_ns) != times:
-                files.utime(name, ns=times)
+                if os.name == "nt":
+                    files.utime(name, ns=times)
+                else:
+                    futime(descriptor, ns=times)
         final = files.stat(name)
     except (OSError, FileHelperError):
         return False
@@ -661,9 +677,36 @@ def _restore_times(files: FileHelper, name: str, restored: os.stat_result, origi
 def _copy_descriptor(source: int, destination: int) -> None:
     """Copy the rest of ``source`` to ``destination`` through their descriptors."""
     while content := os.read(source, 65536):
-        view = memoryview(content)
-        while view:
-            view = view[os.write(destination, view):]
+        _write_descriptor(destination, content)
+
+
+def _write_descriptor(destination: int, content: bytes) -> None:
+    view = memoryview(content)
+    while view:
+        view = view[os.write(destination, view):]
+
+
+def _copy_xattrs(source: int, destination: int) -> None:
+    """Copy restorable attributes between descriptors, skipping what the destination refuses.
+
+    The refusals ``shutil.copystat`` ignores are ignored here too; the
+    captured values are kept in memory and in the sidecar regardless.
+    """
+    ignored = _XATTRS_UNSUPPORTED | {errno.EPERM, errno.ENODATA, errno.EINVAL}
+    try:
+        attributes = _restorable_xattrs(source)
+    except OSError as exc:
+        if exc.errno in ignored:
+            return
+        raise
+    # The access ACL last: it sets the mode bits, and a read-only one would
+    # refuse the user attributes still to come.
+    for name, value in sorted(attributes.items(), key=lambda item: item[0] == _ACCESS_ACL):
+        try:
+            os.setxattr(destination, name, value)
+        except OSError as exc:
+            if exc.errno not in ignored:
+                raise
 
 
 def _restore_metadata(
@@ -990,7 +1033,7 @@ def _journalled(
                         "timestamps, extended attributes or file flags may differ from the originals. "
                         f"Recovery snapshots retained at {escape(str(backup))}"
                     )
-            except (OSError, installer.IntegrationInstallError) as restore_error:
+            except (OSError, FileHelperError, installer.IntegrationInstallError) as restore_error:
                 outcome["retained"] = True
                 if isinstance(operation_error, typer.Exit) and operation_error.__context__ is not None:
                     # A command that reports its own failure exits; name the cause.
