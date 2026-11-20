@@ -75,15 +75,19 @@ def _restorable_xattrs(target: Path | int, journal: Any = None) -> dict[str, byt
         if not name.startswith("user.") and name != _ACCESS_ACL:
             continue
         try:
-            attributes[name] = os.getxattr(target, name, **follow)
+            value = os.getxattr(target, name, **follow)
         except OSError as exc:
             if exc.errno != errno.ENODATA:
                 raise
-    if journal is not None:
-        size = sum(len(name) + len(value) for name, value in attributes.items())
-        if size > _MAX_BACKUP_BYTES - journal.backup_bytes:
-            raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
-        journal.backup_bytes += size
+            continue
+        if journal is not None:
+            # Charged as each value is read, so the budget stops collection
+            # before the rest are held in memory.
+            size = len(name) + len(value)
+            if size > _MAX_BACKUP_BYTES - journal.backup_bytes:
+                raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
+            journal.backup_bytes += size
+        attributes[name] = value
     return attributes
 
 
@@ -231,7 +235,9 @@ class _FileJournal:
         self.unverified_files: dict[Path, tuple[int, int]] = {}
         # Each such file's restorable extended attributes, read when it was
         # snapshotted; None when they could not be read or the os module has
-        # no extended-attribute API (CPython has one on Linux only).
+        # no extended-attribute API (CPython has one on Linux only). A
+        # non-empty set is also written beside the snapshot
+        # (``_persist_xattrs``), so a retained snapshot keeps it.
         self.snapshotted_xattrs: dict[Path, dict[str, bytes] | None] = {}
         # Each such file's BSD file flags (macOS and the BSDs), or None.
         self.snapshotted_flags: dict[Path, int | None] = {}
@@ -291,6 +297,30 @@ class _FileJournal:
             shutil.copystat(source, destination, follow_symlinks=False)
         else:
             raise installer.IntegrationInstallError(f"Unsupported integration output: {source}")
+
+    def _snapshot_with_headroom(self, path: Path, saved: Path) -> None:
+        """Snapshot ``path``, giving up its pin if the copy runs out of descriptors.
+
+        Pins count against the open-file limit, so a process already near it
+        can find no slot left for the copy. Then this pin is released, no more
+        are taken, and the copy is retried from the path; the file falls back
+        to being recreated on rollback, like any file without a pin.
+        """
+        entries, used = self.backup_entries, self.backup_bytes
+        try:
+            self._snapshot(path, saved)
+        except OSError as exc:
+            if exc.errno not in (errno.EMFILE, errno.ENFILE) or path not in self.pinned_files:
+                raise
+            self._unpin(path)
+            self.pin_limit = len(self.pinned_files)
+            self.backup_entries, self.backup_bytes = entries, used
+            with FileHelper(saved.parent) as files:
+                try:
+                    files.delete(saved.name)
+                except FileNotFoundError:
+                    pass
+            self._snapshot(path, saved)
 
     def _snapshot_pinned(self, pinned: int, destination: Path) -> None:
         """Copy a pinned file to ``destination`` through its pin, as ``shutil.copy2`` would.
@@ -511,7 +541,7 @@ class _FileJournal:
                     if restorable and os.name != "nt":
                         self._pin(path, entry)
                     try:
-                        self._snapshot(path, saved)
+                        self._snapshot_with_headroom(path, saved)
                         if stat.S_ISREG(entry.st_mode):
                             attributes = self._read_xattrs(path) if restorable else None
                             after = _entry_state(path)
@@ -787,6 +817,15 @@ def _still_has_identity(path: Path, identity: tuple[int, int] | None) -> bool:
         return False
 
 
+def _snapshot_index(journal: _FileJournal, paths: list[Path]) -> str:
+    """Name the ``writes/<index>`` snapshot of each of ``paths`` that has one."""
+    named = [
+        f"{journal.changes[path][0].relative_to(journal.backup).as_posix()} is {path}"
+        for path in paths if path in journal.changes and journal.changes[path][0] is not None
+    ]
+    return f" ({'; '.join(named)})" if named else ""
+
+
 def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
     conflicts = []
     for path, (saved, written_identity) in reversed(tuple(journal.changes.items())):
@@ -1025,6 +1064,7 @@ def _journalled(
                     console.print(
                         "[yellow]Warning:[/yellow] Preserved concurrent edits or incomplete writes to "
                         f"{escape(str(conflicts))}. Recovery snapshots retained at {escape(str(backup))}"
+                        f"{escape(_snapshot_index(journal, conflicts))}"
                     )
                 if incomplete:
                     console.print(
@@ -1032,6 +1072,7 @@ def _journalled(
                         f"{escape(str(incomplete))}: their contents, ownership, links, permissions, "
                         "timestamps, extended attributes or file flags may differ from the originals. "
                         f"Recovery snapshots retained at {escape(str(backup))}"
+                        f"{escape(_snapshot_index(journal, incomplete))}"
                     )
             except (OSError, FileHelperError, installer.IntegrationInstallError) as restore_error:
                 outcome["retained"] = True

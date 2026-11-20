@@ -338,7 +338,22 @@ generated artifacts. Initial inventories retain only names and filesystem
 metadata; they do not copy agent trees, user data, or the installed package
 store. Content snapshots are created lazily before the first observed mutation,
 with an aggregate limit of 128 MiB of file content and 4,096 entries per
-transaction. Exceeding either limit fails before the affected write or removal.
+transaction. Captured extended-attribute bytes count toward the same budget.
+Exceeding either limit fails before the affected write or removal.
+A regular file the operation rewrites in place is restored in place: rollback
+writes the snapshot's bytes back through the same file, so it keeps its owner,
+hard links and Windows ACL, and sets back its mode, times, user extended
+attributes and POSIX access ACL. Outside Windows each such file is pinned by a
+read-only descriptor, up to a quarter of the open-file limit (at most 1,024),
+so its inode cannot be reused by a replacement; a file without a pin, one the
+operation replaced or removed, and a directory are recreated from their
+snapshots instead. A file edited in place while it is snapshotted fails the
+write. Rollback keeps as a conflict a file whose contents, mode, mtime or
+attributes differ from what the operation left, or that is replaced while
+rollback works on it. A file whose bytes come back without all of its metadata
+is reported as incomplete. Either way the snapshots are retained, with captured
+attributes beside each snapshot as `<snapshot>.xattrs.json`, and the warning
+names the snapshot of each affected path.
 Preset and extension package installation/replacement, configuration rescue
 directories, and project extension configuration participate in the journal.
 Package replacements keep one bounded directory snapshot rather than duplicate

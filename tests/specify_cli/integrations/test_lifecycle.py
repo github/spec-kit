@@ -1372,3 +1372,66 @@ def test_builtin_journal_recreates_a_replaced_pinned_file_with_its_flags(tmp_pat
 
     assert target.read_text(encoding="utf-8") == "original\n"
     assert target.stat().st_flags & stat.UF_HIDDEN
+
+
+@pytest.mark.skipif(not _PINS_FILES, reason="Windows files are never pinned")
+def test_builtin_journal_gives_up_a_pin_when_the_snapshot_runs_out_of_descriptors(tmp_path, monkeypatch, capsys):
+    """A copy that hits the open-file limit is retried without the pin, and no more files are pinned."""
+    import errno
+
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    backups = _record_rollback_backups(monkeypatch)
+    project = tmp_path / "plain"
+    targets = [project / ".specify" / "templates" / f"{name}.md" for name in ("plan", "spec")]
+    targets[0].parent.mkdir(parents=True)
+    for target in targets:
+        target.write_text("original\n", encoding="utf-8")
+    real_snapshot_pinned = _lifecycle._FileJournal._snapshot_pinned
+    attempts = []
+
+    def exhausted(self, pinned, destination):
+        attempts.append(destination)
+        if len(attempts) == 1:
+            destination.write_bytes(b"partial")
+            raise OSError(errno.EMFILE, "Too many open files")
+        return real_snapshot_pinned(self, pinned, destination)
+
+    monkeypatch.setattr(_lifecycle._FileJournal, "_snapshot_pinned", exhausted)
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            for target in targets:
+                write_text(target, "generated\n")
+            raise OSError("disk full")
+
+    # Only the first snapshot was attempted through a pin; the second file was never pinned.
+    assert len(attempts) == 1
+    assert all(target.read_text(encoding="utf-8") == "original\n" for target in targets)
+    warning = " ".join(capsys.readouterr().out.split())
+    assert _INCOMPLETE_WARNING in warning
+    # The warning names each affected path's snapshot.
+    assert "writes/0 is" in warning
+    shutil.rmtree(backups[0])
+
+
+def test_restorable_xattrs_stops_reading_once_the_budget_is_spent(monkeypatch):
+    """The snapshot budget is charged per attribute, so the rest are never read into memory."""
+    import types
+
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations.installer import IntegrationInstallError
+
+    names = [f"user.a{index}" for index in range(10)]
+    read = []
+
+    def getxattr(target, name, **kwargs):
+        read.append(name)
+        return b"x" * 1024
+
+    monkeypatch.setattr(_lifecycle.os, "listxattr", lambda target, **kwargs: names, raising=False)
+    monkeypatch.setattr(_lifecycle.os, "getxattr", getxattr, raising=False)
+    journal = types.SimpleNamespace(backup_bytes=_lifecycle._MAX_BACKUP_BYTES - 2048)
+    with pytest.raises(IntegrationInstallError, match="budget exceeded"):
+        _lifecycle._restorable_xattrs(3, journal)
+    assert len(read) == 2
