@@ -3496,6 +3496,36 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         finally:
             os.umask(old_umask)
 
+    _posix_bits = pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+
+    @pytest.mark.parametrize(
+        "scenario,args",
+        [
+            ("test_remove_sole_base_preset_retires_stale_composed_skill", ()),
+            ("test_remove_base_keeps_survivor_alias_both_layers_declare", ()),
+            pytest.param(
+                "test_alias_refresh_preserves_existing_output_mode", (),
+                marks=_posix_bits,
+            ),
+            pytest.param(
+                "test_private_skill_stays_private_when_next_winner_takes_over",
+                (False,),
+                marks=_posix_bits,
+            ),
+        ],
+        ids=["retire-skill", "survivor-alias", "refresh-mode", "next-winner-mode"],
+    )
+    def test_reconciliation_under_a_relative_project_root(
+        self, project_dir, temp_dir, monkeypatch, scenario, args
+    ):
+        """FileHelper reads a relative path against its own root, not the
+        working directory. A manager created with a relative project root
+        must still find the skills it reads before removing, keeping or
+        rewriting them: each scenario covers one of those reads."""
+        monkeypatch.chdir(project_dir.parent)
+
+        getattr(self, scenario)(Path(project_dir.name), temp_dir, *args)
+
     def test_alias_refresh_rewrites_the_same_file(self, project_dir, temp_dir):
         """The alias is refreshed in place, as command registration always
         wrote it: the same inode keeps its owner, ACL and mode."""

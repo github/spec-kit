@@ -362,8 +362,10 @@ def _write_shared_text(
         from .file_helper import FileHelper
 
         _ensure_safe_shared_destination(project_path, dest)
+        # FileHelper reads a relative path against its root, so hand it the
+        # path below the project root: the two may both be relative.
         with FileHelper(project_path) as files:
-            existing_mode = files.file_mode(dest)
+            existing_mode = files.file_mode(_shared_relative_path(project_path, dest))
         mode = new_file_mode if existing_mode is None else existing_mode
     _write_shared_bytes(project_path, dest, content.encode("utf-8"), mode=mode)
 

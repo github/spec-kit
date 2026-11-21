@@ -1092,8 +1092,11 @@ class _PresetSkillMethods:
             ):
                 return False
             try:
+                # FileHelper reads a relative path against its root, so
+                # name the file from the skills directory, not from a
+                # project root that may itself be relative.
                 with FileHelper(skills_dir) as files:
-                    content = files.read_text(skill_dir / "SKILL.md")
+                    content = files.read_text(Path(skill_dir.name) / "SKILL.md")
             except (OSError, ValueError):
                 # Missing, unreadable, not a regular file or not UTF-8.
                 return False
@@ -1304,8 +1307,9 @@ class _PresetSkillMethods:
             ):
                 continue
             try:
+                # Named from the helper's root: see _drop_survivor_owned_aliases.
                 with FileHelper(skills_dir) as files:
-                    content = files.read_text(skill_file)
+                    content = files.read_text(Path(name) / "SKILL.md")
             except (OSError, ValueError):
                 # Missing, unreadable, not a regular file or not UTF-8.
                 continue
@@ -1932,7 +1936,7 @@ class _PresetSkillMethods:
                 skill_file = skills_dir / name / "SKILL.md"
                 try:
                     with FileHelper(skills_dir) as files:
-                        mode = files.file_mode(skill_file)
+                        mode = files.file_mode(Path(name) / "SKILL.md")
                 except (OSError, ValueError):
                     # Unreadable, or not a regular file reached without links.
                     continue

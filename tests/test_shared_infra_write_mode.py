@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -72,6 +73,26 @@ def test_new_file_takes_the_mode_of_the_file_it_stands_in_for(tmp_path, umask, m
     assert _mode(new_file) == 0o600
     assert _mode(existing) == 0o640
     assert existing.read_text(encoding="utf-8") == "new\n"
+
+
+def test_existing_file_keeps_its_bits_under_a_relative_project_root(
+    tmp_path, umask, monkeypatch
+):
+    """The existing bits are read below the project root, not below the
+    working directory joined with a relative root a second time."""
+    project = tmp_path / "project"
+    project.mkdir()
+    existing = project / "existing.md"
+    existing.write_text("old\n", encoding="utf-8")
+    existing.chmod(0o600)
+    monkeypatch.chdir(tmp_path)
+
+    _write_shared_text(
+        Path("project"), Path("project") / "existing.md", "new\n", preserve_mode=True
+    )
+
+    assert existing.read_text(encoding="utf-8") == "new\n"
+    assert _mode(existing) == 0o600
 
 
 def test_preserve_mode_does_not_read_or_write_through_a_link(tmp_path):
