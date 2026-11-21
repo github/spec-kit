@@ -602,6 +602,59 @@ class TestPresetAdd:
         assert f"{label}:" in result.output
         assert "bad [red]preset[/red]" in result.output
 
+    @pytest.mark.parametrize("name", ["Lean Kit [beta]", "Lean [/] Kit"])
+    def test_preset_add_success_escapes_manifest_name(
+        self, project_dir, pack_dir, valid_pack_data, name
+    ):
+        """The installed preset's name is printed literally, not parsed as markup."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        valid_pack_data["preset"]["name"] = name
+        (pack_dir / "preset.yml").write_text(
+            yaml.safe_dump(valid_pack_data), encoding="utf-8"
+        )
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["preset", "add", "--dev", str(pack_dir)], catch_exceptions=True
+            )
+
+        assert result.exit_code == 0, result.output
+        assert f"Preset '{name}' v1.0.0 installed" in strip_ansi(result.output)
+
+    def test_preset_add_catalog_status_escapes_pack_name(self, project_dir):
+        """A catalog entry's name is printed literally before downloading."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        catalog_data = {
+            "test-pack": {
+                "name": "Lean [/] Kit",
+                "version": "1.0.0",
+                "download_url": "https://example.com/test-pack.zip",
+            }
+        }
+
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch.object(PresetCatalog, "_get_merged_packs", return_value=catalog_data),
+            patch.object(PresetCatalog, "download_pack", side_effect=PresetError("offline")),
+        ):
+            result = CliRunner().invoke(
+                app, ["preset", "add", "test-pack"], catch_exceptions=True
+            )
+
+        assert result.exit_code == 1, result.output
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Installing preset Lean [/] Kit..." in strip_ansi(result.output)
+
     def test_preset_add_from_url_redirect_error_describes_disallowed_url(
         self, project_dir, monkeypatch, capsys
     ):
