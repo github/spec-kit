@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import threading
+import urllib.request
 import zipfile
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -157,6 +158,16 @@ def server(tmp_path, monkeypatch, tls_certificate):
     result = SimpleNamespace(
         root=downloads, url=f"https://127.0.0.1:{http.server_port}", requests=requests,
     )
+    from specify_cli.authentication import http as authentication_http
+
+    original_open_url = authentication_http.open_url
+
+    def open_loopback_url(url, *args, **kwargs):
+        if url.startswith(f"{result.url}/"):
+            kwargs["timeout"] = max(kwargs["timeout"], 60)
+        return original_open_url(url, *args, **kwargs)
+
+    monkeypatch.setattr(authentication_http, "open_url", open_loopback_url)
     try:
         yield result
     finally:
@@ -184,6 +195,24 @@ def test_catalog_server_explicitly_requires_tls12(request, monkeypatch):
     context, version = configured[0]
     assert version == ssl.TLSVersion.TLSv1_2
     assert context.minimum_version > ssl.TLSVersion.TLSv1_1
+
+
+def test_loopback_catalog_survives_short_handshake_window(tmp_path, server, monkeypatch):
+    original_open = urllib.request.OpenerDirector.open
+
+    def require_handshake_window(opener, fullurl, *args, **kwargs):
+        if fullurl.full_url.startswith(f"{server.url}/") and kwargs["timeout"] < 60:
+            raise TimeoutError("The handshake operation timed out")
+        return original_open(opener, fullurl, *args, **kwargs)
+
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", require_handshake_window)
+    publish(server)
+    project = catalog_project(tmp_path, server)
+
+    install(project)
+
+    assert read_records(project)[KEY]["version"] == "1.0.0"
+    assert "/catalog.json" in server.requests
 
 
 def publish(server, *, metadata=None, code=None, version="1.0.0", members=None, archive="zip"):
