@@ -285,7 +285,7 @@ def extension_add(
 
                         # Download extension archive (use the resolved catalog ID).
                         extension_id = ext_info['id']
-                        console.print(f"Downloading {_escape_markup(str(ext_info['name']))} v{_escape_markup(str(ext_info.get('version', 'unknown')))}...")
+                        console.print(f"Downloading {_escape_markup(str(ext_info.get('name', extension_id)))} v{_escape_markup(str(ext_info.get('version', 'unknown')))}...")
                         archive_path = (
                             catalog.download_extension_info(ext_info)
                             if version is not None
