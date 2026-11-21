@@ -194,7 +194,7 @@ def preset_add(
                 dev_path, speckit_version, priority
             )
             console.print(
-                f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})"
+                f"[green]✓[/green] Preset '{_escape_markup(str(manifest.name))}' v{_escape_markup(str(manifest.version))} installed (priority {priority})"
             )
 
         elif from_url:
@@ -309,7 +309,7 @@ def preset_add(
                 )
 
             console.print(
-                f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})"
+                f"[green]✓[/green] Preset '{_escape_markup(str(manifest.name))}' v{_escape_markup(str(manifest.version))} installed (priority {priority})"
             )
 
         elif preset_id:
@@ -321,7 +321,7 @@ def preset_add(
                     bundled_path, speckit_version, priority
                 )
                 console.print(
-                    f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})"
+                    f"[green]✓[/green] Preset '{_escape_markup(str(manifest.name))}' v{_escape_markup(str(manifest.version))} installed (priority {priority})"
                 )
             else:
                 catalog = PresetCatalog(project_root)
@@ -368,7 +368,7 @@ def preset_add(
                                 packaged, speckit_version, priority
                             )
                             console.print(
-                                f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})"
+                                f"[green]✓[/green] Preset '{_escape_markup(str(manifest.name))}' v{_escape_markup(str(manifest.version))} installed (priority {priority})"
                             )
                             _commands._warn_unmet_extension_dependencies(manager, manifest)
                             return
@@ -396,7 +396,7 @@ def preset_add(
                     raise typer.Exit(1)
 
                 console.print(
-                    f"Installing preset [cyan]{pack_info.get('name', preset_id)}[/cyan]..."
+                    f"Installing preset [cyan]{_escape_markup(str(pack_info.get('name', preset_id)))}[/cyan]..."
                 )
 
                 try:
@@ -417,7 +417,7 @@ def preset_add(
                         ),
                     )
                     console.print(
-                        f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})"
+                        f"[green]✓[/green] Preset '{_escape_markup(str(manifest.name))}' v{_escape_markup(str(manifest.version))} installed (priority {priority})"
                     )
                 finally:
                     if "archive_path" in locals() and archive_path.exists():
