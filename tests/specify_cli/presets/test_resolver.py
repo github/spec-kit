@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from specify_cli.agents import CommandRegistrar
 from specify_cli.extensions import ExtensionRegistry
 from specify_cli.presets import (
     PresetManager,
@@ -124,6 +125,168 @@ def test_hidden_invalid_section_presets_do_not_block_replace(tmp_path, kind, win
 
 class TestPresetResolver:
     """Test PresetResolver priority stack."""
+
+    @pytest.mark.parametrize(
+        "reference", ["require('./lib/helper.cjs')", "require.resolve('./lib/helper.cjs')"]
+    )
+    def test_extension_script_rewrite_keeps_commonjs_paths_unencoded(
+        self, tmp_path, reference
+    ):
+        project = tmp_path / "project#1"
+        extension_dir = project / ".specify" / "extensions" / "example"
+        script_dir = extension_dir / "scripts"
+        (script_dir / "lib").mkdir(parents=True)
+        source_path = script_dir / "adapter.cjs"
+
+        result = CommandRegistrar.rewrite_extension_paths(
+            f"{reference};\n",
+            "example",
+            extension_dir,
+            source_path=source_path,
+            relative_to=tmp_path / "output",
+        )
+
+        assert "%23" not in result
+        assert "../project#1/.specify/extensions/example/scripts/lib/helper.cjs" in result
+
+    def test_extension_script_rewrite_skips_unreferenced_directories(
+        self, tmp_path, monkeypatch
+    ):
+        extension_dir = tmp_path / "extension"
+        (extension_dir / "lib").mkdir(parents=True)
+        monkeypatch.setattr(
+            "specify_cli.agents.os.path.relpath",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                AssertionError("no relative path is needed for an unreferenced dir")
+            ),
+        )
+
+        result = CommandRegistrar.rewrite_extension_paths(
+            "export default true;\n",
+            "example",
+            extension_dir,
+            relative_to=tmp_path / "other-drive-output",
+        )
+
+        assert result == "export default true;\n"
+
+    def test_extension_script_rewrite_handles_cross_drive_reference(
+        self, tmp_path, monkeypatch
+    ):
+        extension_dir = tmp_path / "extension"
+        (extension_dir / "lib").mkdir(parents=True)
+        monkeypatch.setattr(
+            "specify_cli.agents.os.path.relpath",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                ValueError("different drives")
+            ),
+        )
+
+        result = CommandRegistrar.rewrite_extension_paths(
+            "import 'lib/helper.mjs';\n",
+            "example",
+            extension_dir,
+            relative_to=tmp_path / "output",
+        )
+
+        assert f"{(extension_dir / 'lib').as_uri()}/helper.mjs" in result
+
+    def test_extension_script_rewrite_keeps_command_adjacent_references(self, tmp_path):
+        extension_dir = tmp_path / "extension"
+        command_lib = extension_dir / "commands" / "lib"
+        command_lib.mkdir(parents=True)
+        source_path = extension_dir / "commands" / "demo.md"
+
+        result = CommandRegistrar.rewrite_extension_paths(
+            "Read ./lib/reference.md\n",
+            "example",
+            extension_dir,
+            source_path=source_path,
+        )
+
+        assert result == "Read ./lib/reference.md\n"
+
+    def test_extension_script_rewrite_keeps_shell_paths_unencoded(self, tmp_path):
+        project = tmp_path / "project#1"
+        extension_dir = project / ".specify" / "extensions" / "example"
+        script_dir = extension_dir / "scripts"
+        (script_dir / "lib").mkdir(parents=True)
+        source_path = script_dir / "run.sh"
+        output_dir = tmp_path / "generated"
+
+        result = CommandRegistrar.rewrite_extension_paths(
+            ". './lib/helper.sh'\n",
+            "example",
+            extension_dir,
+            source_path=source_path,
+            relative_to=output_dir,
+        )
+
+        assert "%23" not in result
+        assert (
+            "../project#1/.specify/extensions/example/scripts/lib/helper.sh" in result
+        )
+
+    def test_extension_script_rewrite_prefixes_dot_leading_output_paths(self, tmp_path):
+        extension_dir = tmp_path / ".specify" / "extensions" / "example"
+        script_dir = extension_dir / "scripts"
+        (script_dir / "lib").mkdir(parents=True)
+        source_path = script_dir / "run.mjs"
+
+        result = CommandRegistrar.rewrite_extension_paths(
+            "import './lib/helper.mjs';\n",
+            "example",
+            extension_dir,
+            source_path=source_path,
+            relative_to=tmp_path,
+        )
+
+        assert (
+            "import './.specify/extensions/example/scripts/lib/helper.mjs';" in result
+        )
+
+    def test_script_composition_uses_runtime_selected_core_base(
+        self, project_dir, tmp_path, valid_pack_data, monkeypatch
+    ):
+        base = tmp_path / "selected" / "bash" / "setup-plan.sh"
+        base.parent.mkdir(parents=True)
+        base.write_text("echo selected runtime\n", encoding="utf-8")
+        monkeypatch.setattr(
+            "specify_cli.artifacts.catalog._selected_core_script_paths",
+            lambda _project_root: {"setup-plan": base},
+        )
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {
+            **valid_pack_data["preset"],
+            "id": "setup-plan-wrapper",
+            "name": "Setup Plan Wrapper",
+        }
+        pack_data["provides"] = {
+            "templates": [
+                {
+                    "type": "script",
+                    "name": "setup-plan",
+                    "file": "scripts/setup-plan.sh",
+                    "strategy": "wrap",
+                }
+            ]
+        }
+        pack_dir = tmp_path / "setup-plan-wrapper"
+        (pack_dir / "scripts").mkdir(parents=True)
+        (pack_dir / "preset.yml").write_text(yaml.safe_dump(pack_data))
+        (pack_dir / "scripts/setup-plan.sh").write_text(
+            "echo wrapper\n$CORE_SCRIPT\n", encoding="utf-8"
+        )
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.0")
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("setup-plan", "script")
+        content = resolver.resolve_content("setup-plan", "script")
+
+        assert layers[1]["path"] == base
+        assert content is not None
+        assert "echo wrapper" in content
+        assert "echo selected runtime" in content
 
     def test_resolve_core_template(self, project_dir):
         """Test resolving a core template."""
@@ -1190,6 +1353,37 @@ class TestWrapStrategy:
         assert with_source is not None
         assert with_source["path"] == str(script_dir / "collect.sh")
         assert with_source["source"] == "extension:collectext2 (unregistered)"
+
+    def test_runtime_selected_core_script_resolve_and_source_parity(self, project_dir):
+        options = project_dir / ".specify" / "init-options.json"
+        options.parent.mkdir(parents=True, exist_ok=True)
+        options.write_text('{"script": "py"}', encoding="utf-8")
+
+        resolver = PresetResolver(project_dir)
+
+        resolved = resolver.resolve("setup-plan", "script")
+        assert resolved is not None
+        assert resolved.name == "setup_plan.py"
+
+        with_source = resolver.resolve_with_source("setup-plan", "script")
+        assert with_source is not None
+        assert with_source["path"] == str(resolved)
+        assert with_source["source"] == "core"
+
+    def test_installed_core_script_overrides_bundled_runtime_script(self, project_dir):
+        options = project_dir / ".specify" / "init-options.json"
+        options.parent.mkdir(parents=True, exist_ok=True)
+        options.write_text('{"script": "py"}', encoding="utf-8")
+        installed_scripts = project_dir / ".specify" / "scripts" / "python"
+        installed_scripts.mkdir(parents=True, exist_ok=True)
+        custom_script = installed_scripts / "setup_plan.py"
+        custom_script.write_text('print("custom setup")\n', encoding="utf-8")
+
+        resolved = PresetResolver(project_dir).resolve("setup-plan", "script")
+
+        assert resolved is not None
+        assert resolved.resolve() == custom_script.resolve()
+        assert resolved.read_text(encoding="utf-8") == 'print("custom setup")\n'
 
 
 class TestResolveContent:

@@ -346,6 +346,14 @@ class PresetResolver:
             if core.exists():
                 return core
 
+            # Match artifact inventory and composition resolution: built-in
+            # command scripts depend on the project's selected runtime.
+            from ..artifacts.catalog import _selected_core_script_paths
+
+            selected = _selected_core_script_paths(self.project_root)
+            if template_name in selected:
+                return selected[template_name]
+
         # Priority 5: Bundled core_pack (wheel install) or repo-root templates
         # (source-checkout / editable install).  This is the canonical home for
         # speckit's built-in command/template files and must always be checked
@@ -728,6 +736,14 @@ class PresetResolver:
         if stem and stem != template_name:
             names.append(stem)
 
+        if template_type == "script":
+            from ..artifacts.catalog import _selected_core_script_paths
+
+            selected = _selected_core_script_paths(self.project_root)
+            for name in names:
+                if name in selected:
+                    return selected[name]
+
         core_pack = _locate_core_pack()
         if core_pack is not None:
             for name in names:
@@ -760,6 +776,8 @@ class PresetResolver:
         self,
         template_name: str,
         template_type: str = "template",
+        *,
+        relative_import_base: Path | None = None,
     ) -> Optional[str]:
         """Resolve a template name and return composed content.
 
@@ -824,7 +842,15 @@ class PresetResolver:
                 from ..agents import CommandRegistrar
 
                 text = CommandRegistrar.rewrite_extension_paths(
-                    text, extension_id, extension_dir
+                    text,
+                    extension_id,
+                    extension_dir,
+                    source_path=layer["path"],
+                    relative_to=(
+                        relative_import_base
+                        if template_type == "script"
+                        else None
+                    ),
                 )
             return text
 

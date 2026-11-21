@@ -12,6 +12,7 @@ import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
+from urllib.parse import quote
 
 import yaml
 
@@ -235,7 +236,12 @@ class CommandRegistrar:
 
     @staticmethod
     def rewrite_extension_paths(
-        text: str, extension_id: str, extension_dir: Path
+        text: str,
+        extension_id: str,
+        extension_dir: Path,
+        *,
+        source_path: Path | None = None,
+        relative_to: Path | None = None,
     ) -> str:
         """Rewrite extension-relative paths to their installed locations.
 
@@ -255,28 +261,89 @@ class CommandRegistrar:
 
         skip = {"commands", ".git", "specs"}
         try:
-            subdirs = [
+            subdirs = {
                 entry.name
                 for entry in extension_dir.iterdir()
                 if entry.is_dir()
                 and entry.name not in skip
                 and not entry.name.startswith(".")
-            ]
+            }
         except OSError:
-            return text
+            subdirs = set()
+        # Script dependencies are relative to the script file, not the extension
+        # root. Only materialization relocates those references; command and
+        # template bodies keep their existing extension-root rewrite rules.
+        if source_path is not None and relative_to is not None:
+            try:
+                subdirs.update(
+                    entry.name
+                    for entry in source_path.parent.iterdir()
+                    if entry.is_dir()
+                    and entry.name not in skip
+                    and not entry.name.startswith(".")
+                )
+            except OSError:
+                pass
 
-        for subdir in subdirs:
+        for subdir in sorted(subdirs):
             # Only rewrite relative references (subdir/... or ./subdir/...);
             # absolute paths like /subdir/... keep their meaning. Use a
             # callable replacement: subdir/extension_id come from the
             # filesystem and could contain backslashes or "\1"-like
             # sequences, which would corrupt a string replacement template.
-            replacement = f".specify/extensions/{extension_id}/{subdir}/"
-            text = re.sub(
-                r'(^|[\s`"\'(])(?:\./)?' + re.escape(subdir) + "/",
-                lambda m: m.group(1) + replacement,
-                text,
+            pattern = re.compile(
+                r'(^|[\s`"\'(])(?P<dot>\./)?' + re.escape(subdir) + "/"
             )
+            if not pattern.search(text):
+                continue
+
+            def _replacement(match: re.Match) -> str:
+                target_dir = (extension_dir / subdir).resolve()
+                if (
+                    match.group("dot")
+                    and source_path is not None
+                    and relative_to is not None
+                    and (source_path.parent / subdir).is_dir()
+                ):
+                    target_dir = (source_path.parent / subdir).resolve()
+                if relative_to is None:
+                    replacement = f".specify/extensions/{extension_id}/{subdir}/"
+                else:
+                    require_reference = bool(
+                        re.search(
+                            r"\brequire(?:\.resolve)?\s*\(\s*$",
+                            text[: match.start()],
+                        )
+                    )
+                    module_specifier = (
+                        not require_reference
+                        and (
+                            source_path is None
+                            or source_path.suffix.lower()
+                            in {".cjs", ".js", ".mjs"}
+                        )
+                    )
+                    try:
+                        replacement = os.path.relpath(
+                            target_dir, start=relative_to.resolve()
+                        ).replace(os.sep, "/")
+                    except ValueError:
+                        replacement = (
+                            target_dir.as_uri() if module_specifier else str(target_dir)
+                        )
+                    if module_specifier:
+                        if not replacement.startswith(("./", "../", "/", "file:")):
+                            replacement = f"./{replacement}"
+                    elif not os.path.isabs(replacement) and not replacement.startswith(
+                        ("./", "../")
+                    ):
+                        replacement = f"./{replacement}"
+                    if module_specifier and not replacement.startswith("file:"):
+                        replacement = quote(replacement, safe="/-._~")
+                    replacement = f"{replacement}/"
+                return match.group(1) + replacement
+
+            text = pattern.sub(_replacement, text)
         return text
 
     def render_markdown_command(
