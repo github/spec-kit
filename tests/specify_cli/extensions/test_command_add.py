@@ -435,6 +435,39 @@ class TestExtensionAddCLI:
         assert result.exit_code == 0, result.output
         assert captured["catalog_name"] == "extension-catalog"
 
+    def test_catalog_add_without_entry_name_uses_id(self, tmp_path):
+        """A catalog entry missing 'name' installs, like search/info show it (#5308)."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        (project_dir / ".specify").mkdir(parents=True)
+        archive = tmp_path / "extension.zip"
+        archive.write_bytes(b"archive")
+        manifest = SimpleNamespace(
+            id="catalog-extension",
+            name="Catalog Extension",
+            version="1.0.0",
+            description="catalog extension",
+            warnings=[],
+            commands=[],
+        )
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                 "id": "catalog-extension",
+                 "version": "1.0.0",
+                 "_install_allowed": True,
+                 "_catalog_name": "extension-catalog",
+             }), \
+             patch.object(ExtensionCatalog, "download_extension", return_value=archive), \
+             patch.object(ExtensionManager, "install_from_zip", return_value=manifest), \
+             patch("specify_cli.extensions._commands._refresh_events_and_warn"):
+            result = CliRunner().invoke(app, ["extension", "add", "catalog-extension"])
+
+        assert result.exit_code == 0, result.output
+        assert "Downloading catalog-extension v1.0.0" in result.output
+
     def test_add_discovery_only_error_suggests_resolved_id(self, tmp_path):
         """The not-installable error must suggest a copy-pasteable command using
         the resolved catalog ID, not a display name that may contain spaces."""
