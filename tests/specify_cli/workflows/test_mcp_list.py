@@ -37,9 +37,11 @@ def test_actual_discovery_schema_annotations_and_collision(tmp_path):
     server = MCPServer(name="test")
     _mcp.register(server, launch_directory=tmp_path)
     tools = _run(server.list_tools())
-    assert len(tools) == 1
+    assert [tool.name for tool in tools] == [
+        "specify_workflow_list",
+        "specify_workflow_catalog_list",
+    ]
     tool = tools[0]
-    assert tool.name == "specify_workflow_list"
     assert (
         tool.input_schema["properties"]
         == mcp_list.WorkflowListToolInput.model_json_schema()["properties"]
@@ -73,7 +75,7 @@ def test_actual_discovery_schema_annotations_and_collision(tmp_path):
     assert tool.annotations.open_world_hint is False
     with pytest.raises(ValueError, match="collision"):
         _mcp.register(server, launch_directory=tmp_path)
-    assert len(_run(server.list_tools())) == 1
+    assert len(_run(server.list_tools())) == 2
 
 
 def test_shared_operation_used_by_both_adapters(tmp_path, monkeypatch):

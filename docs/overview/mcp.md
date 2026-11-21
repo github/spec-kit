@@ -26,6 +26,7 @@ read-only, local-only (no network access), and reject unexpected arguments.
 | `specify_artifact_list` | Return one paginated page of a project's artifact inventory (`command`, `template`, `script`, `hook`) |
 | `specify_artifact_info` | Return one artifact and its complete composition stack |
 | `specify_workflow_list` | List installed workflows and skipped-entry warnings in registry order |
+| `specify_workflow_catalog_list` | List active workflow catalog sources in priority order |
 
 The artifact tools take an optional absolute `project_directory`; it defaults
 to the directory the server was launched from.
@@ -92,6 +93,35 @@ the registry is still parsed in full before the entry limit is applied.
 Operation outcomes exceeding the requested entry limit, or claiming truncation
 without filling that limit, are rejected as `invalid_operation_result`. The
 output schema also caps `items` at 1000.
+
+## Workflow catalog list
+
+`specify_workflow_catalog_list` accepts an optional absolute
+`project_directory` (default: the server launch directory) and `limit` (1–1000,
+default 100). It resolves the same catalog stack as
+`specify workflow catalog list`: the `SPECKIT_WORKFLOW_CATALOG_URL` override, the
+project's `.specify/workflow-catalogs.yml`, the user's
+`~/.specify/workflow-catalogs.yml`, then the built-in defaults. The override and
+the user config come from the server process, not the selected project. The tool
+never fetches catalogs or writes caches.
+
+The result has `items` in priority order and a `truncated` boolean. Each item has
+`name`, `url`, `priority`, `install_allowed`, and nullable `description`.
+`truncated: true` indicates omitted sources; increase `limit` to retrieve more, up
+to 1000. There is no continuation cursor.
+
+Returned URLs contain only the scheme, host, port, and path. Userinfo, query
+strings, and fragments are removed because they can carry credentials, so a
+returned URL may not be fetchable as is, and a secret placed in the URL path is
+not detected. The CLI still prints URLs as configured.
+
+Expected errors are `invalid_project_directory`, `not_a_spec_kit_project`,
+`unsafe_workflow_storage` (including a project catalog config symlink that the
+project's `allow_symlinks` policy denies), and
+`invalid_catalog_config`. Error messages never quote configured values.
+Unexpected failures use sanitized `internal_error`; invalid operation outcomes use
+`invalid_operation_result`. Responses exceeding 1 MiB produce a retryable
+`response_too_large` error instead of partial success; retry with a smaller limit.
 
 ## Input validation errors
 
