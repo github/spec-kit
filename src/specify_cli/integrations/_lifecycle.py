@@ -52,9 +52,15 @@ def lifecycle_success(message: str) -> None:
 
 
 def initial_directory_state(path: Path) -> tuple[bool, list[Path]] | None:
-    """Init validation sees the directory before the lifecycle lock created it."""
+    """Init validation sees the directory before the lifecycle lock created it.
+
+    The lifecycle records the target as spelled (``parent/../proj``) while
+    init later works with the resolved path, so compare resolved forms.
+    """
     state = _init_directory.get()
-    if state is not None and state[0] == path:
+    if state is None:
+        return None
+    if state[0] == path or state[0].resolve() == path.resolve():
         return state[1], state[2]
     return None
 
