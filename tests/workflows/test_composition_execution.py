@@ -24,6 +24,178 @@ def definition(name, steps, **fields):
     )
 
 
+@pytest.fixture
+def init_home(monkeypatch, tmp_path_factory):
+    from tests.test_workflows import _isolate_init_home
+
+    _isolate_init_home(monkeypatch, tmp_path_factory)
+
+
+def test_init_step_fan_out_keeps_targets_and_streams_isolated(tmp_path, monkeypatch, init_home):
+    import os
+    import sys
+    from tests.test_workflows import _assert_init_scaffold, _gate_init_launch
+
+    root, launch = tmp_path / "root", tmp_path / "launch"
+    root.mkdir()
+    launch.mkdir()
+    monkeypatch.chdir(launch)
+    streams = (sys.stdin, sys.stdout, sys.stderr)
+    barrier = threading.Barrier(2, timeout=30)
+    _gate_init_launch(monkeypatch, lambda argv: barrier.wait())
+    workflow = definition("init-fan", [{
+        "id": "spread", "type": "fan-out", "items": ["alpha", "beta"], "max_concurrency": 2,
+        "step": {"id": "bootstrap", "type": "init", "project": "{{ item }}", "script": "sh"},
+    }])
+    engine = WorkflowEngine(root)
+    assert engine.validate(workflow) == []
+    try:
+        state = engine.execute(workflow)
+        final_cwd = os.getcwd()
+    finally:
+        barrier.abort()
+        os.chdir(launch)  # execute joins its fan-out workers before returning.
+    assert state.status == RunStatus.COMPLETED, state.error
+    saved = RunState.load(state.run_id, root)
+    assert saved.step_results == state.step_results
+    results = saved.step_results["spread"]["output"]["results"]
+    assert [result["project"] for result in results] == ["alpha", "beta"]
+    for result in results:
+        _assert_init_scaffold(root / result["project"])
+        assert result["exit_code"] == 0
+        assert result["stderr"] == ""
+        assert not (launch / result["project"]).exists()
+    assert final_cwd == str(launch)
+    assert (sys.stdin, sys.stdout, sys.stderr) == streams
+
+
+def test_init_step_does_not_capture_concurrent_observer(tmp_path, monkeypatch, init_home, capsys):
+    import contextlib
+    import os
+    import subprocess
+    import sys
+    from tests.test_workflows import _assert_init_scaffold
+    from specify_cli.workflows.step import init
+
+    root, launch = tmp_path / "root", tmp_path / "launch"
+    root.mkdir()
+    launch.mkdir()
+    (launch / "sentinel").write_text("ambient", encoding="utf-8")
+    (root / "sentinel").write_text("wrong root", encoding="utf-8")
+    monkeypatch.chdir(launch)
+    streams = (sys.stdin, sys.stdout, sys.stderr)
+    active, observed = threading.Event(), threading.Event()
+    readings = []
+
+    def wait_for_observer():
+        active.set()
+        assert observed.wait(30), "Observer did not finish"
+
+    if hasattr(init, "subprocess"):
+        communicate = subprocess.Popen.communicate
+
+        def wait(self, *args, **kwargs):
+            if "init" in self.args:
+                wait_for_observer()
+            return communicate(self, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess.Popen, "communicate", wait)
+    else:
+        from typer.testing import CliRunner
+
+        isolation = CliRunner.isolation
+
+        @contextlib.contextmanager
+        def isolated(self, *args, **kwargs):
+            with isolation(self, *args, **kwargs) as value:
+                wait_for_observer()  # Legacy streams have already been replaced.
+                yield value
+
+        monkeypatch.setattr(CliRunner, "isolation", isolated)
+
+    class Observer(StepBase):
+        type_key = "init-observer"
+
+        def execute(self, config, context):
+            try:
+                assert active.wait(30), "Init did not reach its real boundary"
+                from pathlib import Path
+
+                readings.append(Path("sentinel").read_text(encoding="utf-8"))
+                readings.append((sys.stdin, sys.stdout, sys.stderr))
+                print("observer-out-token")
+                print("observer-err-token", file=sys.stderr)
+                return StepResult(StepStatus.COMPLETED)
+            finally:
+                observed.set()
+
+    monkeypatch.setitem(STEP_REGISTRY, "init-observer", Observer())
+    workflow = definition("observe-init", [{
+        "id": "spread", "type": "fan-out", "items": [True, False], "max_concurrency": 2,
+        "step": {"id": "route", "type": "if", "condition": "{{ item }}", "then": [
+            {"id": "bootstrap", "type": "init", "project": "demo", "script": "sh"},
+        ], "else": [{"id": "observe", "type": "init-observer"}]},
+    }])
+    engine = WorkflowEngine(root)
+    assert engine.validate(workflow) == []
+    try:
+        state = engine.execute(workflow)
+        final_cwd = os.getcwd()
+    finally:
+        observed.set()
+        os.chdir(launch)
+    captured = capsys.readouterr()
+    assert state.status == RunStatus.COMPLETED, state.error
+    assert readings == ["ambient", streams]
+    assert "observer-out-token" in captured.out
+    assert "observer-err-token" in captured.err
+    persisted = RunState.load(state.run_id, root)
+    assert "observer-out-token" not in json.dumps(persisted.execution)
+    assert "observer-err-token" not in json.dumps(persisted.execution)
+    _assert_init_scaffold(root / "demo")
+    assert final_cwd == str(launch)
+    assert (sys.stdin, sys.stdout, sys.stderr) == streams
+
+
+def test_init_step_resume_preserves_target_and_completed_replay(tmp_path, monkeypatch, init_home, probe):
+    from tests.test_workflows import _assert_init_scaffold
+    from specify_cli.workflows.step.init import InitStep
+
+    root, launch = tmp_path / "root", tmp_path / "launch"
+    root.mkdir()
+    launch.mkdir()
+    (root / "keep").write_bytes(b"keep")
+    monkeypatch.chdir(launch)
+    workflow = definition("resume-init", [
+        {"id": "bootstrap", "type": "init", "here": True, "script": "sh", "force": "{{ inputs.force }}"},
+        {"id": "wait", "type": "probe", "await": True},
+    ], inputs={"force": {"type": "boolean", "default": False},
+               "approve": {"type": "boolean", "default": False}})
+    engine = WorkflowEngine(root)
+    assert engine.validate(workflow) == []
+    failed = engine.execute(workflow)
+    assert failed.status == RunStatus.FAILED
+    assert "force: true" in failed.error
+    saved = RunState.load(failed.run_id, root)
+    assert saved.step_results["bootstrap"]["status"] == "failed"
+    paused = WorkflowEngine(root).resume(saved.run_id, {"force": True})
+    assert paused.status == RunStatus.PAUSED, paused.error
+    _assert_init_scaffold(root)
+    assert (root / "keep").read_bytes() == b"keep"
+    files = [root / ".specify/init-options.json", root / ".github/skills/speckit-specify/SKILL.md"]
+    before = [(path.read_bytes(), path.stat().st_mtime_ns) for path in files]
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("Completed init must be replayed without executing")
+
+    monkeypatch.setattr(InitStep, "execute", unexpected)
+    complete = WorkflowEngine(root).resume(paused.run_id, {"approve": True})
+    assert complete.status == RunStatus.COMPLETED, complete.error
+    assert [(path.read_bytes(), path.stat().st_mtime_ns) for path in files] == before
+    assert RunState.load(complete.run_id, root).step_results["bootstrap"] == paused.step_results["bootstrap"]
+    assert not (launch / ".specify").exists()
+
+
 def install(root, child, enabled=True):
     from specify_cli.workflows.catalog import WorkflowRegistry
 

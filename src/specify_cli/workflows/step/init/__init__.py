@@ -2,13 +2,16 @@
 
 Runs the same scaffolding as ``specify init`` so a workflow can create
 (or merge into) a project before driving the rest of the spec-driven
-process.  The step invokes the ``init`` command in-process and captures
-its exit code and output.
+process.  The step invokes the ``init`` command in an isolated child
+process and captures its exit code and output.
 """
 
 from __future__ import annotations
 
 import os
+from pathlib import Path
+import subprocess
+import sys
 from typing import Any
 
 from specify_cli._agent_config import (
@@ -26,6 +29,15 @@ VALID_SCRIPT_TYPES = tuple(SCRIPT_TYPE_CHOICES.keys())
 #: that ``here: true`` works without requiring ``force: true`` when the
 #: only pre-existing content is engine run-state.
 _ENGINE_OWNED_DIRS = {".specify"}
+
+# Pin the child to this package, independent of its cwd and PATH. The source
+# parent travels as argv data, never as interpolated Python or shell source.
+_INIT_BOOTSTRAP = (
+    "import sys; "
+    "sys.path.insert(0, sys.argv.pop(1)); "
+    "sys.argv[0] = 'specify'; "
+    "from specify_cli import main; main()"
+)
 
 
 class InitStep(StepBase):
@@ -76,6 +88,12 @@ class InitStep(StepBase):
     type_key = "init"
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
+        # Capture one absolute base for preflight and execution. Joining a
+        # relative root preserves traversal/symlink spelling for CLI validation.
+        base = os.fspath(context.project_root) if context.project_root else os.getcwd()
+        if not os.path.isabs(base):
+            base = os.path.join(os.getcwd(), base)
+
         project = self._resolve(config.get("project"), context)
         here = self._resolve_bool(config.get("here"), context)
 
@@ -116,6 +134,9 @@ class InitStep(StepBase):
             # No explicit target → initialize the current directory.
             argv.append(".")
 
+        # Enforce the unattended contract independently of stdin's TTY status.
+        argv.append("--non-interactive")
+
         # Build the full argv (except --force, which may be set implicitly
         # below) so early-return outputs always reflect the complete command.
         if integration:
@@ -138,7 +159,6 @@ class InitStep(StepBase):
         # --force so init can proceed unattended.
         targets_current_dir = here or not project or str(project) == "."
         if targets_current_dir and not force:
-            base = context.project_root or os.getcwd()
             has_engine_dirs = False
             try:
                 with os.scandir(base) as it:
@@ -209,7 +229,7 @@ class InitStep(StepBase):
         if force:
             argv.append("--force")
 
-        exit_code, stdout, stderr = self._run_init(argv, context)
+        exit_code, stdout, stderr = self._run_init(argv, base)
 
         output: dict[str, Any] = {
             "argv": argv,
@@ -254,77 +274,62 @@ class InitStep(StepBase):
         return bool(resolved)
 
     @staticmethod
-    def _run_init(
-        argv: list[str], context: StepContext
-    ) -> tuple[int, str, str]:
-        """Invoke ``specify init`` in-process and capture exit code/output.
+    def _run_init(argv: list[str], base: str) -> tuple[int, str, str]:
+        """Run the real CLI without changing parent cwd, streams or registries."""
+        import specify_cli
 
-        Runs with the working directory set to ``context.project_root`` so
-        that ``--here`` and relative project paths target the right place.
-        """
-        from typer.testing import CliRunner
-
-        from specify_cli import app
-
-        runner = CliRunner()
-
-        prev_cwd = os.getcwd()
-        if context.project_root:
-            try:
-                os.chdir(context.project_root)
-            except OSError as exc:
-                return (1, "", f"Cannot enter project root: {exc}")
+        child_env = os.environ.copy()
+        # -P omits the unsafe cwd entry but still honors PYTHONPATH. Drop it
+        # before startup can import project-controlled sitecustomize code;
+        # bootstrap source pinning happens too late to protect that boundary.
+        child_env.pop("PYTHONPATH", None)
+        child_env["PYTHONIOENCODING"] = "utf-8"
         try:
-            result = runner.invoke(app, argv, catch_exceptions=True)
-        finally:
-            try:
-                os.chdir(prev_cwd)
-            except OSError:
-                # Best-effort cleanup: avoid masking the init command result
-                # if restoring the previous working directory fails.
-                pass
+            source = getattr(specify_cli, "__file__", None)
+            source_error = (
+                "Cannot identify an absolute file location for loaded specify_cli; "
+                "use a file-backed installation with absolute module metadata."
+            )
+            if not isinstance(source, str) or not source:
+                raise ValueError(source_error)
+            if not Path(source).is_absolute():
+                # A relative __file__ cannot be anchored to the current cwd:
+                # it may have changed since import. Only matching metadata from
+                # this same loaded module can supply the original absolute pin.
+                spec = getattr(specify_cli, "__spec__", None)
+                origin = getattr(spec, "origin", None)
+                if (
+                    Path(source).drive or Path(source).root
+                    or getattr(spec, "name", None) != specify_cli.__name__
+                    or not getattr(spec, "has_location", False)
+                    or not isinstance(origin, str) or not Path(origin).is_absolute()
+                    or not origin.endswith(os.sep + source)
+                ):
+                    raise ValueError(source_error)
+                source = origin
+            # Preserve the loaded package tree, including symlink/.. spelling.
+            # Resolving the initializer leaf can select a different package.
+            package_parent = os.path.dirname(os.path.dirname(source))
+            result = subprocess.run(
+                [sys.executable, "-P", "-c", _INIT_BOOTSTRAP, package_parent, *argv],
+                cwd=base,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                encoding="utf-8",
+                env=child_env,
+                check=False,
+            )
+        except (OSError, ValueError) as exc:
+            return (1, "", f"Cannot run specify init in project root {base!r}: {exc}")
 
-        stdout = result.output or ""
-        # click >= 8.2 captures stderr separately; older versions mix it into
-        # stdout and raise when ``result.stderr`` is accessed.
-        try:
-            stderr = result.stderr or ""
-        except (ValueError, AttributeError):
-            # Older Click: stderr is mixed into stdout.  On failure, treat
-            # stdout as stderr so workflows can consistently read
-            # steps.<id>.output.stderr for error details.
-            stderr = stdout if result.exit_code != 0 else ""
-
-        # Record the exception only for an UNEXPECTED crash. ``typer.Exit(n)``
-        # -- how ``specify init`` reports every ordinary failure -- surfaces
-        # through ``CliRunner`` as ``result.exception = SystemExit(n)``, so this
-        # branch used to fire on routine errors too. ``init`` prints its
-        # diagnostics through Rich to stdout, leaving ``result.stderr`` empty,
-        # so the synthesized "SystemExit: 1" became the whole of ``stderr`` and
-        # preempted ``execute``'s ``stderr.strip() or stdout.strip()`` fallback.
-        # Every failing init step then reported ``error: 'SystemExit: 1'`` while
-        # init's real message -- e.g. the list of valid integrations for a
-        # typo'd ``integration:`` -- sat unread in stdout.
-        if (
-            result.exit_code != 0
-            and result.exception is not None
-            and not isinstance(result.exception, SystemExit)
-        ):
-            detail = f"{type(result.exception).__name__}: {result.exception}"
-            stderr = f"{stderr}\n{detail}".strip() if stderr else detail
-        elif result.exit_code != 0 and not stderr.strip():
-            # Ordinary failure with no real stderr: under click >= 8.2 the
-            # streams are separate and ``init`` prints its diagnostics through
-            # Rich to stdout, so ``result.stderr`` is genuinely empty. Merely
-            # dropping the synthesized "SystemExit: 1" would leave
-            # ``steps.<id>.output.stderr`` empty -- still no diagnostic for a
-            # downstream step to read, and still contrary to the contract above
-            # ("treat stdout as stderr so workflows can consistently read
-            # steps.<id>.output.stderr for error details"). Carry the captured
-            # output across, matching what the older-Click branch already does.
+        stdout = result.stdout or ""
+        stderr = result.stderr or ""
+        if result.returncode != 0 and not stderr.strip():
+            # Ordinary init failures print Rich diagnostics to stdout. Keep
+            # output.stderr useful to downstream steps without inventing a
+            # SystemExit diagnostic or replacing a real child traceback.
             stderr = stdout.strip()
-
-        return (result.exit_code, stdout, stderr)
+        return (result.returncode, stdout, stderr)
 
     def validate(self, config: dict[str, Any]) -> list[str]:
         errors = super().validate(config)
