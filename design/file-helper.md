@@ -401,9 +401,11 @@ descriptor-relative or change their documented concurrency limitations.
   swapped in between that check and the change is followed. Windows sets the
   read-only attribute by path after pinning the parent hierarchy, without
   following a leaf reparse point on Python 3.13 and later. Both methods also
-  accept the root itself; outside Windows, `chmod` changes the root through a
-  no-follow directory descriptor that must still be the root the helper was
-  built on, so a root renamed and replaced since construction is refused.
+  accept the root itself; outside Windows, `chmod` changes the root through the
+  search-only (or `O_PATH`) descriptor pinned at construction, so like native
+  `chmod` it needs no read or search access to the root. It acts only while the
+  root's path still names that directory, so a root renamed and replaced since
+  construction is refused.
   Callers that hold a descriptor should prefer `os.fchmod`.
 - `rewrite_descriptor(fd, content)` (static) replaces the whole content of a
   descriptor returned by `open_rewrite`: it seeks to offset 0, writes every

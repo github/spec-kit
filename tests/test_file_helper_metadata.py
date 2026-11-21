@@ -161,6 +161,21 @@ def test_utime_and_chmod_accept_the_root(tmp_path):
         assert stat.S_IMODE(tmp_path.stat().st_mode) == 0o750
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+@pytest.mark.parametrize("locked", [0o300, 0o200, 0o000])
+def test_chmod_restores_a_root_it_cannot_read(tmp_path, locked):
+    root = tmp_path / "root"
+    root.mkdir()
+    try:
+        with FileHelper(root) as files:
+            files.chmod(".", locked)
+            assert stat.S_IMODE(root.stat().st_mode) == locked
+            files.chmod(".", 0o700)
+        assert stat.S_IMODE(root.stat().st_mode) == 0o700
+    finally:
+        root.chmod(0o700)
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks and modes")
 @pytest.mark.parametrize("replacement", ["symlink", "directory"])
 def test_chmod_of_a_replaced_root_changes_nothing(tmp_path, monkeypatch, replacement):

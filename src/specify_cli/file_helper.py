@@ -1003,8 +1003,9 @@ class FileHelper:
         Where the platform has no no-follow ``fchmodat`` (Linux), the leaf is
         checked with a no-follow stat relative to the anchored parent first and a
         link is refused; a link swapped in between that check and the change is
-        followed. The root itself is changed through a no-follow descriptor
-        that must still be the root the helper was built on. Windows pins the
+        followed. The root itself is changed through the descriptor pinned at
+        construction, without read access, and only while its path still names
+        the root the helper was built on. Windows pins the
         parent hierarchy and sets the mode by path,
         which only toggles the read-only attribute, without following a leaf
         reparse point where Python supports that (3.13 and later). Prefer
@@ -1015,17 +1016,7 @@ class FileHelper:
             if os.name == "nt":
                 os.chmod(destination, mode, **_NO_FOLLOW_CHMOD)
                 return
-            # Through a no-follow descriptor checked against the root this
-            # helper was built on, so a root renamed and replaced by a link
-            # (or another directory) since then is refused, never changed.
-            flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-            descriptor = os.open(destination, flags | getattr(os, "O_CLOEXEC", 0))
-            try:
-                if not os.path.samestat(self._root_stat, os.fstat(descriptor)):
-                    raise FileHelperError(f"Established root changed: {self.root}")
-                os.fchmod(descriptor, mode)
-            finally:
-                os.close(descriptor)
+            self._chmod_root(mode)
             return
         if os.name == "nt":
             with self._windows_parents(destination):
@@ -1041,6 +1032,33 @@ class FileHelper:
             if stat.S_ISLNK(os.stat(destination.name, dir_fd=directory, follow_symlinks=False).st_mode):
                 raise SymlinkDeniedError(f"Refusing to change the mode of a link: {destination}")
             os.chmod(destination.name, mode, dir_fd=directory)
+
+    def _chmod_root(self, mode: int) -> None:
+        """Change the established root's mode without needing to read it.
+
+        A root renamed and replaced by a link or another directory since the
+        helper was built is refused, never changed. The change goes through the
+        root descriptor pinned at construction (search-only or ``O_PATH``), so
+        like native ``chmod`` it needs no read or search access to the root.
+        """
+        self._require_open()
+        if not os.path.samestat(self._root_stat, os.lstat(self._canonical_root)):
+            raise FileHelperError(f"Established root changed: {self.root}")
+        with ExitStack() as resources:
+            descriptor = self._root_anchor
+            if not isinstance(descriptor, int):
+                descriptor = os.open(self._canonical_root, self._directory_flags())
+                resources.callback(os.close, descriptor)
+                if not os.path.samestat(self._root_stat, os.fstat(descriptor)):
+                    raise FileHelperError(f"Established root changed: {self.root}")
+            try:
+                os.fchmod(descriptor, mode)
+            except OSError as exc:
+                # Linux refuses fchmod on an O_PATH descriptor; its /proc entry
+                # names the same directory, as glibc's own fchmodat fallback uses.
+                if exc.errno != errno.EBADF or not sys.platform.startswith("linux"):
+                    raise
+                os.chmod(f"/proc/self/fd/{descriptor}", mode)
 
     @contextmanager
     def _windows_parents(self, destination: Path) -> Iterator[None]:
