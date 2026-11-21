@@ -860,13 +860,41 @@ class ExtensionRegistry:
         return False
 
     def _save(self):
-        """Save registry to disk."""
+        """Save registry to disk.
+
+        The JSON goes to a temporary file that then replaces the registry, so
+        a write that fails part-way (disk full, interrupted process) leaves
+        the previous registry intact. Truncating the registry in place would
+        leave a partial file that ``_load()`` treats as corrupt and empty.
+        """
         from ..integrations._file_changes import after_file_change, before_file_change
 
         before_file_change(self.registry_path)
         self.extensions_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.registry_path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+        try:
+            existing_mode: int | None = stat.S_IMODE(self.registry_path.stat().st_mode)
+        except OSError:
+            existing_mode = None
+        # Create with 0666 so the umask decides a new registry's mode, as the
+        # previous open(..., "w") did; mkstemp would always produce 0600.
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        while True:
+            temp_path = self.extensions_dir / (
+                f"{self.REGISTRY_FILE}.{os.urandom(8).hex()}.tmp"
+            )
+            try:
+                fd = os.open(temp_path, flags, 0o666)
+                break
+            except FileExistsError:
+                continue
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=2)
+            if existing_mode is not None:
+                temp_path.chmod(existing_mode)
+            os.replace(temp_path, self.registry_path)
+        finally:
+            temp_path.unlink(missing_ok=True)
         after_file_change(self.registry_path)
 
     def add(self, extension_id: str, metadata: dict):
