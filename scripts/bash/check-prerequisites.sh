@@ -149,8 +149,9 @@ if [[ ! -f "$IMPL_PLAN" ]]; then
 fi
 
 _plan_grep_status=0
-LC_ALL=C grep -q '[^[:space:]]' "$IMPL_PLAN" || _plan_grep_status=$?
+file_has_non_whitespace "$IMPL_PLAN" || _plan_grep_status=$?
 if [[ "$_plan_grep_status" -gt 1 ]]; then
+    echo "ERROR: Failed to read $IMPL_PLAN" >&2
     exit "$_plan_grep_status"
 fi
 if [[ "$_plan_grep_status" -eq 1 ]]; then

@@ -695,7 +695,16 @@ def test_python_negative_errors_are_stderr_only(
 )
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
 @pytest.mark.parametrize(
-    "plan_state", ["missing", "empty", "nonempty", "whitespace", "crlf_whitespace"]
+    "plan_state",
+    [
+        "missing",
+        "empty",
+        "nonempty",
+        "whitespace",
+        "crlf_whitespace",
+        "unicode_nbsp_em_space",
+        "unicode_ideographic_nnbsp",
+    ],
 )
 def test_plan_prerequisite_diagnostics(
     tmp_path: Path, port: str, json_mode: bool, plan_state: str
@@ -714,6 +723,8 @@ def test_plan_prerequisite_diagnostics(
         "nonempty": b"# Plan\n",
         "whitespace": b" \t\n",
         "crlf_whitespace": b"\r\n  \t \r\n",
+        "unicode_nbsp_em_space": "\u00a0\u2003\n".encode("utf-8"),
+        "unicode_ideographic_nnbsp": "\u3000\r\n\u202f\t".encode("utf-8"),
     }
     if plan_state != "missing":
         plan.write_bytes(bodies[plan_state])
@@ -726,7 +737,7 @@ def test_plan_prerequisite_diagnostics(
 
     result = _run(command, repo)
 
-    if plan_state in {"missing", "empty", "whitespace", "crlf_whitespace"}:
+    if plan_state != "nonempty":
         assert result.returncode == 1
         assert result.stdout == ""
         lines = result.stderr.replace("\\", "/").splitlines()
@@ -749,6 +760,163 @@ def test_plan_prerequisite_diagnostics(
     else:
         assert plan.read_bytes() == bodies[plan_state]
         assert plan.stat().st_mtime_ns == before
+
+
+@requires_bash
+def test_bash_rejects_unicode_whitespace_plan_without_python(
+    prereq_repo: Path, tmp_path: Path
+) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    body = "\u00a0\u2003\u3000\r\n".encode("utf-8")
+    plan = feature / "plan.md"
+    plan.write_bytes(body)
+    stub_dir = tmp_path / "stubbin"
+    stub_dir.mkdir()
+    for name in ("python3", "python", "py"):
+        stub = stub_dir / name
+        stub.write_text("#!/bin/sh\nexit 49\n", encoding="utf-8")
+        stub.chmod(0o755)
+    env = _clean_env()
+    env["PATH"] = f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"
+
+    result = _run(_bash_cmd(prereq_repo, "--json"), prereq_repo, env=env)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    lines = result.stderr.replace("\\", "/").splitlines()
+    assert lines[0].startswith("ERROR: plan.md is empty in ")
+    assert lines[0].endswith("/specs/001-my-feature")
+    assert plan.read_bytes() == body
+
+
+@pytest.mark.parametrize(
+    "port",
+    [
+        pytest.param("bash", marks=requires_bash),
+        pytest.param(
+            "powershell",
+            marks=pytest.mark.skipif(
+                not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+            ),
+        ),
+        pytest.param("python"),
+    ],
+)
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+def test_plan_prerequisite_read_error_fails_explicitly(
+    tmp_path: Path, port: str, json_mode: bool
+) -> None:
+    repo = tmp_path / "proj"
+    repo.mkdir()
+    _git_init(repo)
+    (repo / ".specify").mkdir()
+    _install_scripts(repo)
+    _write_feature_json(repo)
+    feature = repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    body = b"# Existing non-empty plan\n"
+    plan = feature / "plan.md"
+    plan.write_bytes(body)
+    before = plan.stat().st_mtime_ns
+
+    def _lock_windows_file(handle: object, mode_attr: str, length: int) -> None:
+        msvcrt = __import__("msvcrt")
+        msvcrt.locking(handle.fileno(), getattr(msvcrt, mode_attr), length)  # type: ignore[attr-defined]
+
+    lock_handle = None
+    unreadable_by_chmod = False
+    try:
+        if sys.platform == "win32":
+            lock_handle = plan.open("r+b")
+            _lock_windows_file(lock_handle, "LK_NBLCK", len(body))
+        else:
+            plan.chmod(0)
+            unreadable_by_chmod = True
+            try:
+                plan.read_bytes()
+            except PermissionError:
+                pass
+            else:
+                plan.chmod(0o600)
+                unreadable_by_chmod = False
+                pytest.skip("chmod 0 does not restrict reads for current user")
+
+        if port == "powershell":
+            command = _ps_cmd(repo, *(("-Json",) if json_mode else ()))
+        else:
+            command_fn = _bash_cmd if port == "bash" else _py_cmd
+            command = command_fn(repo, *(("--json",) if json_mode else ()))
+
+        result = _run(command, repo)
+    finally:
+        if lock_handle is not None:
+            try:
+                lock_handle.seek(0)
+                _lock_windows_file(lock_handle, "LK_UNLCK", len(body))
+            finally:
+                lock_handle.close()
+        if unreadable_by_chmod:
+            plan.chmod(0o600)
+
+    if port == "bash":
+        assert result.returncode > 1, result.stderr
+    else:
+        assert result.returncode == 1, result.stderr
+    assert "ERROR: Failed to read " in result.stderr
+    assert result.stdout == ""
+    assert "plan.md is empty" not in result.stderr
+    assert "plan.md not found" not in result.stderr
+    assert plan.read_bytes() == body
+    assert plan.stat().st_mtime_ns == before
+
+
+@requires_bash
+def test_bash_plan_prerequisite_propagates_grep_read_error(
+    prereq_repo: Path, tmp_path: Path
+) -> None:
+    real_grep = shutil.which("grep")
+    assert real_grep is not None
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    body = b"# Existing non-empty plan\n"
+    plan = feature / "plan.md"
+    plan.write_bytes(body)
+    before = plan.stat().st_mtime_ns
+
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    grep_shim = shim_dir / "grep"
+    grep_path = str(real_grep).replace("'", "'\\''")
+    grep_shim.write_text(
+        "#!/bin/sh\n"
+        "for arg in \"$@\"; do\n"
+        "  case \"$arg\" in\n"
+        "    */specs/001-my-feature/plan.md)\n"
+        "      echo \"grep: $arg: Input/output error\" >&2\n"
+        "      exit 2\n"
+        "      ;;\n"
+        "  esac\n"
+        "done\n"
+        f"exec '{grep_path}' \"$@\"\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    grep_shim.chmod(0o755)
+    env = _clean_env()
+    env["PATH"] = f"{shim_dir}{os.pathsep}{env.get('PATH', '')}"
+
+    result = _run(_bash_cmd(prereq_repo, "--json"), prereq_repo, env=env)
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "Input/output error" in result.stderr
+    assert "ERROR: Failed to read " in result.stderr
+    assert "plan.md is empty" not in result.stderr
+    assert plan.read_bytes() == body
+    assert plan.stat().st_mtime_ns == before
 
 
 def test_python_branch_falls_back_to_feature_dir_basename(prereq_repo: Path) -> None:

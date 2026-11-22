@@ -405,6 +405,31 @@ json_escape() {
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
+# Return 0 if $1 contains non-whitespace content, 1 if empty/whitespace-only
+# (matching Python/.NET UTF-8 Unicode whitespace), or >1 on read/I/O error.
+file_has_non_whitespace() {
+    local file="$1" _status=0 _ws_sed _tmp_in _tmp_out _rem_len
+    LC_ALL=C grep -q '[!-~]' "$file" || _status=$?
+    if [ "$_status" -eq 0 ] || [ "$_status" -gt 1 ]; then
+        return "$_status"
+    fi
+    [ -s "$file" ] || return 1
+    _tmp_in=$(mktemp) || return 2
+    _tmp_out=$(mktemp) || { rm -f "$_tmp_in"; return 2; }
+    if ! { cat "$file" && printf '\n'; } > "$_tmp_in"; then
+        rm -f "$_tmp_in" "$_tmp_out"
+        return 2
+    fi
+    _ws_sed=$(printf 's/\xc2\x85//g; s/\xc2\xa0//g; s/\xe1\x9a\x80//g; s/\xe2\x80\x80//g; s/\xe2\x80\x81//g; s/\xe2\x80\x82//g; s/\xe2\x80\x83//g; s/\xe2\x80\x84//g; s/\xe2\x80\x85//g; s/\xe2\x80\x86//g; s/\xe2\x80\x87//g; s/\xe2\x80\x88//g; s/\xe2\x80\x89//g; s/\xe2\x80\x8a//g; s/\xe2\x80\xa8//g; s/\xe2\x80\xa9//g; s/\xe2\x80\xaf//g; s/\xe2\x81\x9f//g; s/\xe3\x80\x80//g')
+    if ! LC_ALL=C sed "$_ws_sed" "$_tmp_in" > "$_tmp_out"; then
+        rm -f "$_tmp_in" "$_tmp_out"
+        return 2
+    fi
+    _rem_len=$(LC_ALL=C tr -d '[:space:]' < "$_tmp_out" | wc -c | tr -d '[:space:]') || { rm -f "$_tmp_in" "$_tmp_out"; return 2; }
+    rm -f "$_tmp_in" "$_tmp_out"
+    [ "${_rem_len:-0}" -gt 0 ]
+}
+
 _python3_command() {
     # SPECKIT_PYTHON_EXECUTABLE is the canonical override; SPECKIT_PYTHON is
     # kept as a deprecated fallback (still used by update-agent-context.sh).

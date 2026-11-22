@@ -47,7 +47,7 @@ else
     trap 'rm -f "$template_file"' EXIT
     if resolve_template_content "plan-template" "$REPO_ROOT" > "$template_file"; then
         _template_grep_status=0
-        LC_ALL=C grep -q '[^[:space:]]' "$template_file" || _template_grep_status=$?
+        file_has_non_whitespace "$template_file" || _template_grep_status=$?
         if [[ "$_template_grep_status" -gt 1 ]]; then
             exit "$_template_grep_status"
         fi
