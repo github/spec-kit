@@ -15,6 +15,7 @@ import os
 import re
 import tempfile
 import threading
+import time
 import uuid
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -30,6 +31,11 @@ from ..integration_state import (
 from ..integrations.base import DISPATCH_SETTINGS, dispatch_setting_value_error
 from .base import RunStatus, StepContext
 
+# Waits (seconds) between retries of ``os.replace`` in
+# ``RunState._atomic_write_json`` when Windows reports a sharing violation.
+# Four retries after the first attempt, about 1.5 s in total. Elsewhere a
+# PermissionError from os.replace is not transient, so it is not retried.
+_REPLACE_RETRY_DELAYS = (0.1, 0.2, 0.4, 0.8) if os.name == "nt" else ()
 
 # -- Safe parsing ---------------------------------------------------------
 
@@ -883,7 +889,18 @@ class RunState:
                 fd, "w", encoding="utf-8", errors="backslashreplace"
             ) as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-            os.replace(tmp, path)
+            # On Windows, os.replace raises PermissionError while another
+            # handle (a reader, indexer or antivirus scanner) holds *path*
+            # open. Retry that case briefly; any other error, or a lock that
+            # outlasts the retries, propagates unchanged.
+            for delay in _REPLACE_RETRY_DELAYS:
+                try:
+                    os.replace(tmp, path)
+                    break
+                except PermissionError:
+                    time.sleep(delay)
+            else:
+                os.replace(tmp, path)
         except BaseException:
             try:
                 os.unlink(tmp)
