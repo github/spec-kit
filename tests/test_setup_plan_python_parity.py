@@ -97,20 +97,24 @@ def test_powershell_json_preserves_non_ascii_feature_on_legacy_stdout(repo: Path
 
 @pytest.mark.parametrize("port", PORTS)
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
-@pytest.mark.parametrize("template_state", ["missing", "empty", "empty_override"])
+@pytest.mark.parametrize(
+    "template_state",
+    ["missing", "empty", "empty_override", "whitespace", "whitespace_override"],
+)
 def test_plan_template_failure_and_retry(
     tmp_path: Path, port: str, json_mode: bool, template_state: str
 ) -> None:
     repo = _setup_repo(tmp_path, template=False)
     template = repo / ".specify" / "templates" / "plan-template.md"
     if template_state != "missing":
+        content = b"\n   \t\r\n" if "whitespace" in template_state else b""
         template.parent.mkdir(parents=True)
-        template.write_bytes(b"")
-        if template_state == "empty_override":
+        template.write_bytes(content)
+        if template_state.endswith("_override"):
             template.write_bytes(TEMPLATE_BODY.encode("utf-8"))
             template = template.parent / "overrides" / template.name
             template.parent.mkdir()
-            template.write_bytes(b"")
+            template.write_bytes(content)
     plan = repo / "specs" / "001-my-feature" / "plan.md"
 
     result = run(_command(repo, port, json_mode), repo)
@@ -141,7 +145,9 @@ def test_plan_template_failure_and_retry(
 @pytest.mark.parametrize("port", PORTS)
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
 @pytest.mark.parametrize("template_state", ["missing", "empty", "valid"])
-@pytest.mark.parametrize("body", [b"", b"# Existing plan\n"], ids=["empty", "nonempty"])
+@pytest.mark.parametrize(
+    "body", [b"", b" \t\r\n", b"# Existing plan\n"], ids=["empty", "whitespace", "nonempty"]
+)
 def test_existing_plan_is_preserved(
     tmp_path: Path, port: str, json_mode: bool, template_state: str, body: bytes
 ) -> None:
@@ -168,16 +174,26 @@ def test_existing_plan_is_preserved(
 
 @pytest.mark.parametrize("port", PORTS)
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
-def test_whitespace_plan_template_is_not_empty(
-    repo: Path, port: str, json_mode: bool
+@pytest.mark.parametrize(
+    "body",
+    [b" \t\n\n", b"\r\n  \t \r\n"],
+    ids=["lf_whitespace", "crlf_whitespace"],
+)
+def test_whitespace_plan_template_is_rejected(
+    repo: Path, port: str, json_mode: bool, body: bytes
 ) -> None:
-    body = b" \t\n\n"
     (repo / ".specify" / "templates" / "plan-template.md").write_bytes(body)
+    plan = repo / "specs" / "001-my-feature" / "plan.md"
 
     result = run(_command(repo, port, json_mode), repo)
 
-    assert result.returncode == 0, result.stderr
-    assert (repo / "specs" / "001-my-feature" / "plan.md").read_bytes() == body
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == (
+        "ERROR: Plan template is empty; no new plan.md was created.\n"
+        "Restore a valid plan template and rerun plan setup.\n"
+    )
+    assert not plan.exists()
 
 
 @requires_bash

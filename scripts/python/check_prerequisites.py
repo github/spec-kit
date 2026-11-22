@@ -237,7 +237,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    if paths.impl_plan.stat().st_size == 0:
+    try:
+        plan_content = paths.impl_plan.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        print(f"ERROR: Failed to read {paths.impl_plan}: {exc}", file=sys.stderr)
+        return 1
+    if not plan_content.strip():
         print(f"ERROR: plan.md is empty in {paths.feature_dir}", file=sys.stderr)
         print(
             "Populate it, or remove the empty file and rerun "
