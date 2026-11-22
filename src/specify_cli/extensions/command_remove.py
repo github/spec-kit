@@ -57,8 +57,11 @@ def extension_remove(
         console.print(f"   • {cmd_count} command{'s' if cmd_count != 1 else ''} per agent")
         if skill_count:
             console.print(f"   • {skill_count} agent skill(s)")
-        console.print(f"   • Extension directory: .specify/extensions/{safe_extension_id}/")
-        if not keep_config:
+        if keep_config:
+            console.print(f"   • Non-config files in .specify/extensions/{safe_extension_id}/")
+            console.print(f"\nConfig files will stay in .specify/extensions/{safe_extension_id}/")
+        else:
+            console.print(f"   • Extension directory: .specify/extensions/{safe_extension_id}/")
             console.print("   • Config files (will be backed up)")
         console.print()
 
