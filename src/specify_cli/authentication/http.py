@@ -263,8 +263,8 @@ def open_url(
         try:
             return opener.open(req, timeout=timeout)
         except urllib.error.HTTPError as exc:
+            exc.close()
             if exc.code in (401, 403):
-                exc.close()
                 continue  # try next entry
             raise
 
@@ -273,4 +273,8 @@ def open_url(
     # No auth is attached on this path, so the handler's host list is empty:
     # here it runs redirect validation only, not auth stripping.
     opener = urllib.request.build_opener(_StripAuthOnRedirect((), redirect_validator))
-    return opener.open(req, timeout=timeout)
+    try:
+        return opener.open(req, timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        raise

@@ -1587,6 +1587,25 @@ class TestAuthenticatedHttpNegative:
         from specify_cli.authentication import http as _mod
         monkeypatch.setattr(_mod, "_config_override", entries)
 
+    @pytest.mark.parametrize("authenticated", [False, True])
+    def test_http_error_closes_response_body(self, monkeypatch, authenticated):
+        import urllib.error
+        from unittest.mock import patch
+        from specify_cli.authentication.http import open_url
+
+        entries = [_github_entry(token="tok")] if authenticated else []
+        self._set_config(monkeypatch, entries)
+        body = io.BytesIO(b"server error")
+        error = urllib.error.HTTPError("url", 500, "ISE", {}, body)
+        with patch("specify_cli.authentication.http.urllib.request.build_opener") as build_opener:
+            build_opener.return_value.open.side_effect = error
+            with pytest.raises(urllib.error.HTTPError) as raised:
+                open_url("https://github.com/org/repo")
+
+        assert raised.value is error
+        assert body.closed
+        build_opener.return_value.open.assert_called_once()
+
     def test_500_raises_immediately(self, monkeypatch):
         import urllib.error
         from unittest.mock import MagicMock, patch
