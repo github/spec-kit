@@ -108,6 +108,10 @@ class _PresetSkillMethods:
         target_agent: Optional[str] = None,
         new_file_modes: Optional[Dict[Path, int]] = None,
         removed_alias_outputs: Optional[Dict[Path, Set[str]]] = None,
+        disabled_composer_deps: Optional[Set[tuple[str, Path, str]]] = None,
+        owner_restores: Optional[
+            Dict[tuple[Path, Optional[str], str], Dict[str, List[str]]]
+        ] = None,
     ) -> Set[str]:
         """Re-register skills for commands whose winning layer changed.
 
@@ -225,6 +229,18 @@ class _PresetSkillMethods:
         core_ext_skills = [s for s in non_preset_skills if s[2]["source"] != "project override"]
         override_skills = [s for s in non_preset_skills if s[2]["source"] == "project override"]
 
+        # A destination or skill output that cannot be written must not leave
+        # the others stale: isolate failures per skill output and continue
+        # processing the remaining commands, directories, owners, and aliases,
+        # then raise the first failure so the caller still warns about it.
+        failures: List[Exception] = []
+
+        def attempt(step: Callable[..., None], *args: Any, **kwargs: Any) -> None:
+            try:
+                step(*args, **kwargs)
+            except Exception as exc:
+                failures.append(exc)
+
         def apply_to_dir(
             skills_dir: Path,
             dir_agent: Optional[str],
@@ -245,9 +261,10 @@ class _PresetSkillMethods:
                 for candidate in self._skill_names_for_command(cmd_name)
                 if candidate in dir_managed_names
             ]
-            if dir_core_ext_names:
-                self._unregister_skills_in_dir(
-                    dir_core_ext_names,
+            for core_skill_name in dict.fromkeys(dir_core_ext_names):
+                attempt(
+                    self._unregister_skills_in_dir,
+                    [core_skill_name],
                     skills_dir,
                     dir_agent,
                     restore_from_bundled_core=True,
@@ -354,15 +371,16 @@ class _PresetSkillMethods:
                 stale_cmds = [cmd for cmd in dir_cmds if cmd in unresolvable_cmds]
                 if stale_cmds:
                     for cmd in stale_cmds:
-                        self._remove_owned_skills(
-                            skills_dir,
-                            cmd,
-                            [
-                                name
-                                for name in self._skill_names_for_command(cmd)
-                                if name in dir_managed_names
-                            ],
-                        )
+                        for name in dict.fromkeys(
+                            self._skill_names_for_command(cmd)
+                        ):
+                            if name in dir_managed_names:
+                                attempt(
+                                    self._remove_owned_skills,
+                                    skills_dir,
+                                    cmd,
+                                    [name],
+                                )
                     dir_cmds = [cmd for cmd in dir_cmds if cmd not in unresolvable_cmds]
                 if not dir_cmds:
                     continue
@@ -374,64 +392,83 @@ class _PresetSkillMethods:
                     manifest = PresetManifest(manifest_path)
                 except PresetValidationError:
                     continue
-                cmds_set = set(dir_cmds)
-                filtered_manifest = self._FilteredManifest(manifest, cmds_set)
-                # Not dead code: _register_skills only *overwrites* skill
-                # subdirectories that already exist (plus brand-new ones for
-                # the active ai_skills agent). For a restore into a
-                # historical directory, _unregister_skills has just deleted
-                # the retiring preset's subdirectory, so pre-create the
-                # tracked (dir_managed_names) subdirectories here — under
-                # the same symlink guard — or the surviving preset's
-                # override would be silently skipped (#2948).
-                for cmd_name in dir_cmds:
-                    for skill_name in self._skill_names_for_command(cmd_name):
-                        if skill_name not in dir_managed_names:
-                            continue
+
+                def reconcile_one_skill(
+                    cmd_name: str,
+                    skill_name: str,
+                    *,
+                    _manifest: PresetManifest = manifest,
+                    _pack_dir: Path = pack_dir,
+                    _pack_id: str = pack_id,
+                ) -> None:
+                    # Not dead code: _register_skills only *overwrites* skill
+                    # subdirectories that already exist (plus brand-new ones
+                    # for the active ai_skills agent). For a restore into a
+                    # historical directory, _unregister_skills has just deleted
+                    # the retiring preset's subdirectory, so pre-create the
+                    # tracked (dir_managed_names) subdirectories here — under
+                    # the same symlink guard — or the surviving preset's
+                    # override would be silently skipped (#2948).
+                    if skill_name in dir_managed_names:
                         skill_subdir = skills_dir / skill_name
                         if not self._validate_skill_subdir(
                             skill_subdir,
                             create=True,
                             skills_root=skills_dir,
                         ):
-                            continue
-                if is_active:
-                    # Preserve exact prior behaviour for the currently
-                    # active directory (including the ability to create
-                    # brand-new skill subdirectories when ai_skills is on).
-                    written = self._register_skills(
-                        filtered_manifest, pack_dir, only_skill_names=managed_names,
-                        new_file_modes=new_file_modes,
+                            return
+                    filtered_manifest = self._FilteredManifest(
+                        _manifest, {cmd_name}
                     )
-                else:
-                    written = self._register_skills(
-                        filtered_manifest, pack_dir,
-                        target_dir=skills_dir, target_agent=dir_agent or "",
-                        only_skill_names=managed_names,
-                        new_file_modes=new_file_modes,
-                    )
-                if target_agent is None:
-                    written_names = {
-                        name
-                        for names in written.values()
-                        for name in names
-                    }
-                else:
-                    written_names = set(written.get(target_agent, []))
+                    if is_active:
+                        # Preserve exact prior behaviour for the currently
+                        # active directory (including the ability to create
+                        # brand-new skill subdirectories when ai_skills is on).
+                        written = self._register_skills(
+                            filtered_manifest,
+                            _pack_dir,
+                            only_skill_names={skill_name},
+                            new_file_modes=new_file_modes,
+                        )
+                    else:
+                        written = self._register_skills(
+                            filtered_manifest,
+                            _pack_dir,
+                            target_dir=skills_dir,
+                            target_agent=dir_agent or "",
+                            only_skill_names={skill_name},
+                            new_file_modes=new_file_modes,
+                        )
+                    if target_agent is None:
+                        written_names = {
+                            name
+                            for names in written.values()
+                            for name in names
+                        }
+                    else:
+                        written_names = set(written.get(target_agent, []))
+                    if skill_name in written_names:
+                        reconciled_skill_commands.add(cmd_name)
+                    # The winning preset may not have previously written to
+                    # this directory's agent (most notably a historical agent
+                    # reconciliation just restored content into via
+                    # extra_skills_dirs). If that write isn't merged back into
+                    # the preset's own registered_skills, its registry entry
+                    # silently lies about which directories it owns and a
+                    # later removal of this same preset orphans the directory
+                    # reconciliation just wrote to on its behalf (#2948).
+                    self._merge_pack_registered_skills(_pack_id, written)
+
                 for cmd_name in dir_cmds:
-                    if written_names.intersection(
+                    for skill_name in dict.fromkeys(
                         self._skill_names_for_command(cmd_name)
                     ):
-                        reconciled_skill_commands.add(cmd_name)
-                # The winning preset may not have previously written to
-                # this directory's agent (most notably a historical agent
-                # reconciliation just restored content into via
-                # extra_skills_dirs). If that write isn't merged back into
-                # the preset's own registered_skills, its registry entry
-                # silently lies about which directories it owns and a
-                # later removal of this same preset orphans the directory
-                # reconciliation just wrote to on its behalf (#2948).
-                self._merge_pack_registered_skills(pack_id, written)
+                        if (
+                            managed_names is not None
+                            and skill_name not in managed_names
+                        ):
+                            continue
+                        attempt(reconcile_one_skill, cmd_name, skill_name)
 
         extra_dirs = dict(extra_skills_dirs or {})
         # {(skills_dir, agent, owner_id): {cmd_name: [skill_name, ...]}}
@@ -491,23 +528,14 @@ class _PresetSkillMethods:
                     and not collides_with_other_cmd
                 ):
                     prior_agent, prior_names = extra_dirs.get(skills_dir, (agent, []))
+                    chosen_agent = agent if agent == active_ai else prior_agent
                     extra_dirs[skills_dir] = (
-                        prior_agent, list(dict.fromkeys([*prior_names, name]))
+                        chosen_agent, list(dict.fromkeys([*prior_names, name]))
                     )
                     continue
                 owner_refreshes.setdefault(
                     (skills_dir, agent, owner_id), {}
                 ).setdefault(cmd_name, []).append(name)
-        # A destination that cannot be written must not leave the others
-        # stale: finish the remaining directories and the alias pass, then
-        # raise the first failure so the caller still warns about it.
-        failures: List[Exception] = []
-
-        def attempt(step: Callable[..., None], *args: Any, **kwargs: Any) -> None:
-            try:
-                step(*args, **kwargs)
-            except Exception as exc:
-                failures.append(exc)
 
         if active_skills_dir:
             active_provenance = extra_dirs.get(active_skills_dir)
@@ -540,20 +568,55 @@ class _PresetSkillMethods:
             agent: Optional[str],
             owner_id: str,
             owned: Dict[str, List[str]],
+            *,
+            create_missing_dirs: bool = False,
         ) -> None:
             owner_dir = self.presets_dir / owner_id
             try:
                 manifest = PresetManifest(owner_dir / "preset.yml")
             except PresetValidationError:
                 return
-            overrides: Dict[str, str] = {}
-            for cmd_name, names in owned.items():
-                layers = cmd_layers[cmd_name]
-                owner_idx = next(
-                    idx
-                    for idx, layer in enumerate(layers)
-                    if layer["path"].is_relative_to(owner_dir)
+
+            def write_owner_skill(
+                cmd_name: str, skill_name: str, composed_content: str
+            ) -> None:
+                if create_missing_dirs:
+                    if not self._validate_skill_subdir(
+                        skills_dir / skill_name,
+                        create=True,
+                        skills_root=skills_dir,
+                    ):
+                        return
+                written = self._register_skills(
+                    self._FilteredManifest(manifest, {cmd_name}),
+                    owner_dir,
+                    target_dir=skills_dir,
+                    target_agent=agent or "",
+                    only_skill_names={skill_name},
+                    content_overrides={cmd_name: composed_content},
+                    new_file_modes=new_file_modes,
                 )
+                if target_agent is None or agent == target_agent:
+                    written_names = {
+                        n for names in written.values() for n in names
+                    }
+                    if skill_name in written_names:
+                        reconciled_skill_commands.add(cmd_name)
+
+            for cmd_name, names in owned.items():
+                layers = cmd_layers.get(cmd_name)
+                if layers is None:
+                    layers = resolver.collect_all_layers(cmd_name, "command")
+                owner_idx = next(
+                    (
+                        idx
+                        for idx, layer in enumerate(layers)
+                        if layer["path"].is_relative_to(owner_dir)
+                    ),
+                    None,
+                )
+                if owner_idx is None:
+                    continue
                 owner_layers = self._layers_registered_in(
                     layers[owner_idx:], skills_dir, active_ai, active_skills_dir,
                     cmd_name,
@@ -562,36 +625,32 @@ class _PresetSkillMethods:
                     cmd_name, "command", layers=owner_layers
                 )
                 if composed is not None:
-                    overrides[cmd_name] = composed
+                    for skill_name in dict.fromkeys(names):
+                        attempt(write_owner_skill, cmd_name, skill_name, composed)
                 elif all(layer["strategy"] != "replace" for layer in owner_layers):
                     # Nothing left under the owner to compose onto.
-                    self._remove_owned_skills(skills_dir, cmd_name, names)
+                    for skill_name in dict.fromkeys(names):
+                        attempt(
+                            self._remove_owned_skills,
+                            skills_dir,
+                            cmd_name,
+                            [skill_name],
+                        )
                 # Otherwise a surviving layer is unreadable: keep the
                 # existing output rather than deleting it.
-            if not overrides:
-                return
-            written = self._register_skills(
-                self._FilteredManifest(manifest, set(overrides)),
-                owner_dir,
-                target_dir=skills_dir,
-                target_agent=agent or "",
-                only_skill_names={
-                    name
-                    for cmd_name in overrides
-                    for name in owned[cmd_name]
-                },
-                content_overrides=overrides,
-            )
-            if target_agent is None or agent == target_agent:
-                written_names = {n for names in written.values() for n in names}
-                reconciled_skill_commands.update(
-                    cmd_name
-                    for cmd_name, names in owned.items()
-                    if written_names.intersection(names)
-                )
 
         for (skills_dir, agent, owner_id), owned in owner_refreshes.items():
             attempt(refresh_owner, skills_dir, agent, owner_id, owned)
+
+        for (skills_dir, agent, owner_id), owned in (owner_restores or {}).items():
+            attempt(
+                refresh_owner,
+                skills_dir,
+                agent,
+                owner_id,
+                owned,
+                create_missing_dirs=True,
+            )
 
         combined_removed_outputs: Dict[Path, Set[str]] = {
             skills_dir: set(names)
@@ -613,6 +672,7 @@ class _PresetSkillMethods:
             removal_pass=extra_skills_dirs is not None,
             removed_alias_outputs=combined_removed_outputs or None,
             new_file_modes=new_file_modes,
+            disabled_composer_deps=disabled_composer_deps,
         )
 
         if failures:
@@ -630,6 +690,8 @@ class _PresetSkillMethods:
         pack_id: str,
         source_rel: str,
         version: Optional[str],
+        *,
+        primary_command: Optional[str] = None,
     ) -> str:
         """Render a native-skill alias ``SKILL.md`` for an explicit output dir."""
         from ..integrations import get_integration
@@ -637,7 +699,7 @@ class _PresetSkillMethods:
         frontmatter, body = registrar.parse_frontmatter(raw_content)
         if frontmatter.get("strategy") == "wrap":
             body, core_frontmatter = _substitute_core_template(
-                body, alias, self.project_root, registrar
+                body, primary_command or alias, self.project_root, registrar
             )
             frontmatter = dict(frontmatter)
             for key in ("scripts", "agent_scripts"):
@@ -687,6 +749,7 @@ class _PresetSkillMethods:
         removal_pass: bool = False,
         removed_alias_outputs: Optional[Dict[Path, Set[str]]] = None,
         new_file_modes: Optional[Dict[Path, int]] = None,
+        disabled_composer_deps: Optional[Set[tuple[str, Path, str]]] = None,
     ) -> None:
         """Re-render, retire or restore native-skill aliases of composed commands.
 
@@ -829,19 +892,20 @@ class _PresetSkillMethods:
                         group["aliases"].append(name)
             return groups
 
+        active_native_dir = self._active_native_skills_dir(
+            active_ai, active_skills_dir, registrar.AGENT_CONFIGS
+        )
+
         def pick_renderer_agent(skills_dir: Path, agents: List[str]) -> str:
-            active_config = (
-                registrar.AGENT_CONFIGS.get(active_ai)
-                if isinstance(active_ai, str)
-                else None
-            )
             return (
                 active_ai
-                if active_ai in agents
-                or (
-                    skills_dir == active_skills_dir
-                    and active_config is not None
-                    and active_config.get("extension") == "/SKILL.md"
+                if active_ai
+                and (
+                    active_ai in agents
+                    or (
+                        active_native_dir is not None
+                        and skills_dir == active_native_dir
+                    )
                 )
                 else sorted(agents)[0]
             )
@@ -1022,6 +1086,7 @@ class _PresetSkillMethods:
                                     pack_id,
                                     raw_rel,
                                     manifest.version,
+                                    primary_command=primary,
                                 )
                                 _write_shared_text(
                                     skills_dir,
@@ -1154,6 +1219,7 @@ class _PresetSkillMethods:
                                     pack_id,
                                     f".composed/{primary}.md",
                                     manifest.version,
+                                    primary_command=primary,
                                 )
                                 _write_shared_text(
                                     skills_dir,
@@ -1207,6 +1273,12 @@ class _PresetSkillMethods:
                     for alias in group["aliases"]:
                         tmpl = alias_to_tmpl.get(alias)
                         if tmpl is None:
+                            continue
+                        if (
+                            disabled_composer_deps is not None
+                            and (pack_id, skills_dir, tmpl["name"])
+                            not in disabled_composer_deps
+                        ):
                             continue
                         modern_skill_name = registrar._compute_output_name(
                             agent, alias, agent_config
@@ -1439,6 +1511,249 @@ class _PresetSkillMethods:
             for tmpl in manifest.templates
         )
 
+    def _active_native_skills_dir(
+        self,
+        active_ai: Optional[str],
+        active_skills_dir: Optional[Path],
+        agent_configs: Dict[str, Any],
+    ) -> Optional[Path]:
+        """Return the active agent's skills directory when it is a native skill agent.
+
+        Native skill agents (``extension == "/SKILL.md"``) always render into
+        their skills directory even when ``ai_skills`` is false or absent, so
+        renderer tie-breaks must resolve their directory independently of the
+        optional ``ai_skills`` flag.
+        """
+        if not isinstance(active_ai, str) or not active_ai:
+            return None
+        config = agent_configs.get(active_ai)
+        if not config or config.get("extension") != "/SKILL.md":
+            return None
+        if active_skills_dir is not None:
+            return active_skills_dir
+        return self._safe_skills_dir_for_agent(active_ai)
+
+    def _collect_disabled_composer_dependencies(
+        self,
+        pack_id: str,
+        removed_cmd_names: Optional[Set[str]] = None,
+    ) -> Set[tuple[str, Path, str]]:
+        """Capture ``(disabled_pack_id, skills_dir, cmd_name)`` pairs that depend on ``pack_id``.
+
+        Must run while ``pack_id`` is still in the registry and on disk. A
+        disabled composing preset depends on ``pack_id`` for ``cmd_name`` in
+        ``skills_dir`` only when:
+        - ``pack_id`` has lower priority (sits below the composer),
+        - ``pack_id`` actually supplies a command layer for ``cmd_name`` in
+          ``skills_dir``, and
+        - no enabled ``replace`` layer registered in ``skills_dir`` sits
+          strictly between the disabled composer and ``pack_id``.
+        """
+        from .. import load_init_options
+
+        all_presets = list(self.registry.list_by_priority(include_disabled=True))
+        priority_rank = {pid: idx for idx, (pid, _meta) in enumerate(all_presets)}
+        pack_rank = priority_rank.get(pack_id)
+        if pack_rank is None:
+            return set()
+        disabled_presets = [
+            (pid, meta)
+            for pid, meta in all_presets
+            if pid != pack_id
+            and isinstance(meta, dict)
+            and not meta.get("enabled", True)
+        ]
+        if not disabled_presets:
+            return set()
+
+        try:
+            registrar = self._command_registrar()
+        except ImportError:
+            return set()
+        registrar._ensure_configs()
+
+        resolver = PresetResolver(self.project_root)
+        pack_dir = self.presets_dir / pack_id
+        pack_manifest = self._safe_get_manifest(resolver, pack_dir)
+        pack_meta = self.registry.get(pack_id)
+        pack_enabled = (
+            bool(pack_meta.get("enabled", True))
+            if isinstance(pack_meta, dict)
+            else False
+        )
+        if pack_manifest is not None:
+            pack_primary_cmds = {
+                tmpl["name"]
+                for tmpl in pack_manifest.templates
+                if tmpl.get("type") == "command"
+                and isinstance(tmpl.get("name"), str)
+            }
+        elif removed_cmd_names is not None:
+            pack_primary_cmds = set(removed_cmd_names)
+        else:
+            pack_primary_cmds = set()
+            if isinstance(pack_meta, dict):
+                reg_cmds = pack_meta.get("registered_commands")
+                if isinstance(reg_cmds, dict):
+                    for names in reg_cmds.values():
+                        if isinstance(names, list):
+                            pack_primary_cmds.update(
+                                n for n in names if isinstance(n, str)
+                            )
+        if removed_cmd_names is not None:
+            pack_primary_cmds &= removed_cmd_names
+        if not pack_primary_cmds:
+            return set()
+
+        init_opts = load_init_options(self.project_root)
+        active_ai = init_opts.get("ai") if isinstance(init_opts, dict) else None
+        if not isinstance(active_ai, str) or not active_ai:
+            active_ai = None
+        active_skills_dir = self._get_skills_dir()
+
+        def resolve_dir(agent_name: str, native_skill_agent: bool) -> Optional[Path]:
+            if agent_name == active_ai:
+                return (
+                    active_skills_dir
+                    if active_skills_dir is not None or not native_skill_agent
+                    else self._safe_skills_dir_for_agent(agent_name)
+                )
+            return self._safe_skills_dir_for_agent(agent_name)
+
+        enabled_layers_cache: Dict[str, Optional[List[Dict[str, Any]]]] = {}
+
+        def get_enabled_layers(cmd_name: str) -> Optional[List[Dict[str, Any]]]:
+            if cmd_name not in enabled_layers_cache:
+                try:
+                    enabled_layers_cache[cmd_name] = resolver.collect_all_layers(
+                        cmd_name, "command"
+                    )
+                except PresetValidationError:
+                    enabled_layers_cache[cmd_name] = None
+            return enabled_layers_cache[cmd_name]
+
+        def pack_contributes_to(
+            other_id: str, cmd_name: str, skills_dir: Path
+        ) -> bool:
+            if cmd_name not in pack_primary_cmds:
+                return False
+            other_rank = priority_rank.get(other_id)
+            if other_rank is None or pack_rank <= other_rank:
+                return False
+            enabled_layers = get_enabled_layers(cmd_name)
+            if enabled_layers is None:
+                return True
+            dir_layers = self._layers_registered_in(
+                enabled_layers, skills_dir, active_ai, active_skills_dir, cmd_name
+            )
+            if pack_enabled:
+                if not any(
+                    layer["path"].is_relative_to(pack_dir)
+                    for layer in dir_layers
+                ):
+                    return False
+            else:
+                synthetic_layer = [
+                    {
+                        "path": pack_dir / "commands" / f"{cmd_name}.md",
+                        "source": pack_id,
+                        "strategy": "replace",
+                    }
+                ]
+                if not self._layers_registered_in(
+                    synthetic_layer,
+                    skills_dir,
+                    active_ai,
+                    active_skills_dir,
+                    cmd_name,
+                ):
+                    return False
+            for layer in dir_layers:
+                if layer["strategy"] != "replace":
+                    continue
+                try:
+                    rel = layer["path"].relative_to(self.presets_dir)
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if not rel.parts:
+                    continue
+                mid_rank = priority_rank.get(rel.parts[0])
+                if mid_rank is not None and other_rank < mid_rank < pack_rank:
+                    return False
+            return True
+
+        deps: Set[tuple[str, Path, str]] = set()
+        for other_id, meta in disabled_presets:
+            other_manifest = self._safe_get_manifest(
+                resolver, self.presets_dir / other_id
+            )
+            if other_manifest is None:
+                continue
+            composing_templates = [
+                tmpl
+                for tmpl in other_manifest.templates
+                if tmpl.get("type") == "command"
+                and isinstance(tmpl.get("name"), str)
+                and tmpl.get("strategy", "replace") != "replace"
+            ]
+            if not composing_templates:
+                continue
+            candidates: Set[tuple[Path, str]] = set()
+            reg_skills = meta.get("registered_skills")
+            if isinstance(reg_skills, list):
+                reg_skills = self._infer_legacy_skill_provenance(
+                    [n for n in reg_skills if isinstance(n, str)],
+                    other_id,
+                    active_ai or "",
+                )
+            if isinstance(reg_skills, dict):
+                for other_agent, other_skills in reg_skills.items():
+                    if not isinstance(other_agent, str) or not isinstance(
+                        other_skills, list
+                    ):
+                        continue
+                    other_cfg = registrar.AGENT_CONFIGS.get(other_agent)
+                    other_native = bool(
+                        other_cfg and other_cfg.get("extension") == "/SKILL.md"
+                    )
+                    other_dir = resolve_dir(other_agent, other_native)
+                    if other_dir is None:
+                        continue
+                    for skill_name in other_skills:
+                        if not isinstance(skill_name, str):
+                            continue
+                        for tmpl in composing_templates:
+                            if skill_name in self._skill_names_for_command(
+                                tmpl["name"]
+                            ):
+                                candidates.add((other_dir, tmpl["name"]))
+            reg_cmds = meta.get("registered_commands")
+            if isinstance(reg_cmds, dict):
+                for other_agent, other_cmds in reg_cmds.items():
+                    if not isinstance(other_agent, str) or not isinstance(
+                        other_cmds, list
+                    ):
+                        continue
+                    other_cfg = registrar.AGENT_CONFIGS.get(other_agent)
+                    if not other_cfg or other_cfg.get("extension") != "/SKILL.md":
+                        continue
+                    other_dir = resolve_dir(other_agent, True)
+                    if other_dir is None:
+                        continue
+                    for other_cmd in other_cmds:
+                        if not isinstance(other_cmd, str):
+                            continue
+                        for tmpl in composing_templates:
+                            if (
+                                tmpl["name"] == other_cmd
+                                or other_cmd in (tmpl.get("aliases") or [])
+                            ):
+                                candidates.add((other_dir, tmpl["name"]))
+            for other_dir, cmd_name in candidates:
+                if pack_contributes_to(other_id, cmd_name, other_dir):
+                    deps.add((other_id, other_dir, cmd_name))
+        return deps
+
     def _drop_survivor_owned_aliases(
         self,
         pack_id: str,
@@ -1447,6 +1762,10 @@ class _PresetSkillMethods:
         deleted_outputs: Optional[Dict[Path, Set[str]]] = None,
         retired_modes: Optional[Dict[Path, int]] = None,
         removed_cmd_names: Optional[Set[str]] = None,
+        disabled_composer_deps: Optional[Set[tuple[str, Path, str]]] = None,
+        restored_primary_owners: Optional[
+            Dict[tuple[Path, Optional[str], str], Dict[str, List[str]]]
+        ] = None,
     ) -> Dict[str, List[str]]:
         """Clean retiring native-skill outputs per spelling without harming survivors.
 
@@ -1482,9 +1801,18 @@ class _PresetSkillMethods:
         except ImportError:
             return registered_commands
         registrar._ensure_configs()
-        all_others = [pid for pid in self.registry.list() if pid != pack_id]
+        all_others = [
+            pid
+            for pid, _meta in self.registry.list_by_priority(include_disabled=True)
+            if pid != pack_id
+        ]
         if not all_others:
             return registered_commands
+
+        if disabled_composer_deps is None:
+            disabled_composer_deps = self._collect_disabled_composer_dependencies(
+                pack_id, removed_cmd_names
+            )
 
         resolver = PresetResolver(self.project_root)
         retiring_manifest = self._safe_get_manifest(
@@ -1495,6 +1823,14 @@ class _PresetSkillMethods:
         if not isinstance(active_ai, str) or not active_ai:
             active_ai = None
         active_skills_dir = self._get_skills_dir()
+        active_native_dir = self._active_native_skills_dir(
+            active_ai, active_skills_dir, registrar.AGENT_CONFIGS
+        )
+        effective_active_dir = (
+            active_skills_dir
+            if active_skills_dir is not None
+            else active_native_dir
+        )
 
         def resolve_dir(agent_name: str, native_skill_agent: bool) -> Optional[Path]:
             if agent_name == active_ai:
@@ -1505,11 +1841,22 @@ class _PresetSkillMethods:
                 )
             return self._safe_skills_dir_for_agent(agent_name)
 
-        # {(skills_dir, candidate_name): [(other_id, enabled, dependent_composer, markers_or_none)]}
+        # {(skills_dir, candidate_name): [(other_id, enabled, dependent_composer, markers_or_none, other_agent, primary_cmd_or_none)]}
         survivor_entries: Dict[
             tuple[Path, str],
-            List[tuple[str, bool, bool, Optional[Set[str]]]],
+            List[
+                tuple[
+                    str,
+                    bool,
+                    bool,
+                    Optional[Set[str]],
+                    str,
+                    Optional[str],
+                ]
+            ],
         ] = {}
+        # {(other_id, skills_dir): [agent_name, ...]} for renderer tie-breaking
+        survivor_dir_agents: Dict[tuple[str, Path], List[str]] = {}
         for other in all_others:
             meta = self.registry.get(other)
             if not isinstance(meta, dict):
@@ -1548,6 +1895,11 @@ class _PresetSkillMethods:
                     other_dir = resolve_dir(other_agent, other_native)
                     if other_dir is None:
                         continue
+                    agents_in_dir = survivor_dir_agents.setdefault(
+                        (other, other_dir), []
+                    )
+                    if other_agent not in agents_in_dir:
+                        agents_in_dir.append(other_agent)
                     for skill_name in other_skills:
                         if not isinstance(skill_name, str):
                             continue
@@ -1558,22 +1910,30 @@ class _PresetSkillMethods:
                             in self._skill_names_for_command(tmpl["name"])
                         ]
                         dependent = (
-                            bool(matching)
+                            not enabled
+                            and bool(matching)
                             and all(
                                 tmpl.get("strategy", "replace") != "replace"
+                                and (other, other_dir, tmpl["name"])
+                                in disabled_composer_deps
                                 for tmpl in matching
                             )
-                            and (
-                                removed_cmd_names is None
-                                or all(
-                                    tmpl["name"] in removed_cmd_names
-                                    for tmpl in matching
-                                )
-                            )
+                        )
+                        primary_cmd = (
+                            matching[0]["name"] if len(matching) == 1 else None
                         )
                         survivor_entries.setdefault(
                             (other_dir, skill_name), []
-                        ).append((other, enabled, dependent, {f"preset:{other}"}))
+                        ).append(
+                            (
+                                other,
+                                enabled,
+                                dependent,
+                                {f"preset:{other}"},
+                                other_agent,
+                                primary_cmd,
+                            )
+                        )
             reg_cmds = meta.get("registered_commands")
             if isinstance(reg_cmds, dict):
                 for other_agent, other_cmds in reg_cmds.items():
@@ -1587,6 +1947,11 @@ class _PresetSkillMethods:
                     other_dir = resolve_dir(other_agent, True)
                     if other_dir is None:
                         continue
+                    agents_in_dir = survivor_dir_agents.setdefault(
+                        (other, other_dir), []
+                    )
+                    if other_agent not in agents_in_dir:
+                        agents_in_dir.append(other_agent)
                     for other_cmd in other_cmds:
                         if not isinstance(other_cmd, str):
                             continue
@@ -1602,7 +1967,9 @@ class _PresetSkillMethods:
                             for cand in other_outs:
                                 survivor_entries.setdefault(
                                     (other_dir, cand), []
-                                ).append((other, enabled, False, None))
+                                ).append(
+                                    (other, enabled, False, None, other_agent, None)
+                                )
                             continue
                         matching = [
                             tmpl
@@ -1620,6 +1987,8 @@ class _PresetSkillMethods:
                                         enabled,
                                         False,
                                         {f"{other}:.composed/{other_cmd}.md"},
+                                        other_agent,
+                                        None,
                                     )
                                 )
                             continue
@@ -1628,19 +1997,32 @@ class _PresetSkillMethods:
                             if isinstance(tmpl.get("file"), str):
                                 markers.add(f"{other}:{tmpl['file']}")
                             dependent = (
-                                tmpl.get("strategy", "replace") != "replace"
-                                and (
-                                    removed_cmd_names is None
-                                    or tmpl["name"] in removed_cmd_names
-                                )
+                                not enabled
+                                and tmpl.get("strategy", "replace") != "replace"
+                                and (other, other_dir, tmpl["name"])
+                                in disabled_composer_deps
+                            )
+                            primary_cmd = (
+                                tmpl["name"] if other_cmd == tmpl["name"] else None
                             )
                             for cand in other_outs:
                                 survivor_entries.setdefault(
                                     (other_dir, cand), []
-                                ).append((other, enabled, dependent, markers))
+                                ).append(
+                                    (
+                                        other,
+                                        enabled,
+                                        dependent,
+                                        markers,
+                                        other_agent,
+                                        primary_cmd,
+                                    )
+                                )
+
+        retiring_skill_marker = f"preset:{pack_id}"
 
         def retiring_sources_for(cmd_name: str) -> Set[str]:
-            sources = {f"preset:{pack_id}"}
+            sources = {retiring_skill_marker}
             if retiring_manifest is None:
                 sources.add(f"{pack_id}:.composed/{cmd_name}.md")
                 return sources
@@ -1683,28 +2065,64 @@ class _PresetSkillMethods:
 
         def classify_survivor(
             skills_dir: Path, candidate: str, source: Optional[str]
-        ) -> tuple[bool, bool, bool]:
-            """Return ``(enabled_owner, disabled_independent, disabled_dependent)``."""
+        ) -> tuple[bool, bool, bool, List[tuple[str, str]]]:
+            """Return ``(enabled_owner, disabled_independent, disabled_dependent, colliding_primaries)``."""
             if not isinstance(source, str):
-                return False, False, False
+                return False, False, False, []
             entries = survivor_entries.get((skills_dir, candidate), ())
             enabled_owner = False
             disabled_independent = False
             disabled_dependent = False
-            for other, enabled, dependent, markers in entries:
+            colliding_primaries: List[tuple[str, str]] = []
+            for (
+                other,
+                enabled,
+                dependent,
+                markers,
+                _other_agent,
+                primary_cmd,
+            ) in entries:
                 if markers is None:
-                    matched = source.startswith(f"{other}:")
+                    # Exclude the retiring pack's explicit skill marker so a
+                    # survivor named ``preset`` with a missing/invalid manifest
+                    # cannot claim ``preset:<retiring-id>`` via prefix match.
+                    matched = (
+                        source.startswith(f"{other}:")
+                        and source != retiring_skill_marker
+                    )
                 else:
                     matched = source in markers
                 if not matched:
                     continue
                 if enabled:
                     enabled_owner = True
+                    if (
+                        primary_cmd is not None
+                        and (other, primary_cmd) not in colliding_primaries
+                    ):
+                        colliding_primaries.append((other, primary_cmd))
                 elif dependent:
                     disabled_dependent = True
                 else:
                     disabled_independent = True
-            return enabled_owner, disabled_independent, disabled_dependent
+            return (
+                enabled_owner,
+                disabled_independent,
+                disabled_dependent,
+                colliding_primaries,
+            )
+
+        def pick_survivor_renderer(other_id: str, skills_dir: Path) -> Optional[str]:
+            agents = survivor_dir_agents.get((other_id, skills_dir), [])
+            if active_ai and (
+                active_ai in agents
+                or (
+                    effective_active_dir is not None
+                    and skills_dir == effective_active_dir
+                )
+            ):
+                return active_ai
+            return sorted(agents)[0] if agents else None
 
         result: Dict[str, List[str]] = {}
         for agent, names in registered_commands.items():
@@ -1736,9 +2154,12 @@ class _PresetSkillMethods:
                     src, mode = read_source_and_mode(
                         skills_dir, skills_dir / candidate
                     )
-                    enabled_own, disabled_indep, disabled_dep = classify_survivor(
-                        skills_dir, candidate, src
-                    )
+                    (
+                        enabled_own,
+                        disabled_indep,
+                        disabled_dep,
+                        colliding_primaries,
+                    ) = classify_survivor(skills_dir, candidate, src)
                     retiring_own = (
                         isinstance(src, str) and src in retiring_sources
                     )
@@ -1757,6 +2178,7 @@ class _PresetSkillMethods:
                             disabled_indep,
                             disabled_dep,
                             retiring_own,
+                            colliding_primaries,
                         )
                     )
                 if not any_survivor_registered and not any_handled:
@@ -1769,8 +2191,15 @@ class _PresetSkillMethods:
                     disabled_indep,
                     disabled_dep,
                     retiring_own,
+                    colliding_primaries,
                 ) in inspected:
-                    if enabled_own or disabled_indep:
+                    # An exact marker collision (e.g. a survivor named ``preset``
+                    # whose source file is literally ``<retiring-id>`` matching
+                    # ``preset:<retiring-id>``) is ambiguous: unlink the file
+                    # and let reconciliation restore the registered survivor
+                    # from its own command instead of keeping possibly removed
+                    # instructions on disk.
+                    if (enabled_own or disabled_indep) and not retiring_own:
                         continue
                     if not (disabled_dep or retiring_own):
                         continue
@@ -1789,6 +2218,19 @@ class _PresetSkillMethods:
                         deleted_outputs.setdefault(skills_dir, set()).add(
                             candidate
                         )
+                    if (
+                        enabled_own
+                        and retiring_own
+                        and colliding_primaries
+                        and restored_primary_owners is not None
+                    ):
+                        other_id, primary_cmd = colliding_primaries[0]
+                        renderer = pick_survivor_renderer(other_id, skills_dir)
+                        restored_names = restored_primary_owners.setdefault(
+                            (skills_dir, renderer, other_id), {}
+                        ).setdefault(primary_cmd, [])
+                        if candidate not in restored_names:
+                            restored_names.append(candidate)
             if kept:
                 result[agent] = kept
         return result
@@ -1883,6 +2325,14 @@ class _PresetSkillMethods:
         """
         registrar = self._command_registrar()
         registrar._ensure_configs()
+        active_native_dir = self._active_native_skills_dir(
+            active_ai, active_skills_dir, registrar.AGENT_CONFIGS
+        )
+        effective_active_dir = (
+            active_skills_dir
+            if active_skills_dir is not None
+            else active_native_dir
+        )
         resolver = PresetResolver(self.project_root)
         affected: Dict[str, List[str]] = {}
         for cmd_name in command_names:
@@ -1934,15 +2384,29 @@ class _PresetSkillMethods:
                             continue
                         if from_commands:
                             # Only a primary command: aliases are reconciled
-                            # by ``_reconcile_preset_aliases``.
+                            # by ``_reconcile_preset_aliases``. Probe both the
+                            # modern output name and the supported legacy dotted
+                            # spelling so a legacy primary skill left behind
+                            # after a failed skills phase is still reconciled.
                             output = registrar._compute_output_name(
                                 agent, name, agent_config
                             )
                             if name not in affected.get(output, ()):
                                 continue
-                            name = output
-                        if name in affected and name not in group["names"]:
-                            group["names"].append(name)
+                            candidates = [output]
+                            if (
+                                output != name
+                                and registrar._is_safe_command_name(name)
+                            ):
+                                candidates.append(name)
+                        else:
+                            candidates = [name]
+                        for candidate in candidates:
+                            if (
+                                candidate in affected
+                                and candidate not in group["names"]
+                            ):
+                                group["names"].append(candidate)
             manifest = self._safe_get_manifest(resolver, self.presets_dir / pack_id)
             if manifest is None:
                 continue
@@ -1951,7 +2415,13 @@ class _PresetSkillMethods:
                 agent = (
                     active_ai
                     if active_ai
-                    and (active_ai in agents or skills_dir == active_skills_dir)
+                    and (
+                        active_ai in agents
+                        or (
+                            effective_active_dir is not None
+                            and skills_dir == effective_active_dir
+                        )
+                    )
                     else sorted(agents)[0]
                 )
                 for name in group["names"]:
@@ -2858,11 +3328,36 @@ class _PresetSkillMethods:
                     ):
                         group["names"].append(name)
 
+            active_skills_dir = self._get_skills_dir()
+            try:
+                registrar = self._command_registrar()
+                registrar._ensure_configs()
+                agent_configs = registrar.AGENT_CONFIGS
+            except ImportError:
+                agent_configs = {}
+            active_native_dir = self._active_native_skills_dir(
+                active_agent, active_skills_dir, agent_configs
+            )
+            effective_active_dir = (
+                active_skills_dir
+                if active_skills_dir is not None
+                else active_native_dir
+            )
+
             restored: Dict[Path, tuple[Optional[str], List[str]]] = {}
             for skills_dir, group in groups.items():
                 agents = group["agents"]
                 renderer_agent = (
-                    active_agent if active_agent in agents else sorted(agents)[0]
+                    active_agent
+                    if active_agent
+                    and (
+                        active_agent in agents
+                        or (
+                            effective_active_dir is not None
+                            and skills_dir == effective_active_dir
+                        )
+                    )
+                    else sorted(agents)[0]
                 )
                 mutated_names = self._unregister_skills_in_dir(
                     group["names"],

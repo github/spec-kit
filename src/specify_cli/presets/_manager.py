@@ -896,8 +896,20 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                         )
                 registered_commands = commands_to_unregister
 
+        # Capture which disabled composing presets actually depended on the
+        # departing pack before its directory and registry record are removed,
+        # so neither command cleanup nor post-removal alias reconciliation
+        # retires a disabled composer's valid alias when the removed preset was
+        # above it or hidden below an intervening replace base.
+        disabled_composer_deps = self._collect_disabled_composer_dependencies(
+            pack_id, removed_cmd_names
+        )
+
         # Unregister non-skill command files from AI agents.
         deleted_alias_outputs: Dict[Path, Set[str]] = {}
+        restored_primary_owners: Dict[
+            tuple[Path, Optional[str], str], Dict[str, List[str]]
+        ] = {}
         if registered_commands:
             registered_commands = self._drop_survivor_owned_aliases(
                 pack_id,
@@ -905,6 +917,8 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 deleted_outputs=deleted_alias_outputs,
                 retired_modes=retired_skill_modes,
                 removed_cmd_names=removed_cmd_names,
+                disabled_composer_deps=disabled_composer_deps,
+                restored_primary_owners=restored_primary_owners,
             )
         if registered_commands:
             self._unregister_commands(registered_commands)
@@ -926,6 +940,8 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                     extra_skills_dirs=affected_skill_dirs,
                     new_file_modes=retired_skill_modes,
                     removed_alias_outputs=deleted_alias_outputs,
+                    disabled_composer_deps=disabled_composer_deps,
+                    owner_restores=restored_primary_owners or None,
                 )
             except Exception as exc:
                 import warnings
