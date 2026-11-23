@@ -2474,10 +2474,12 @@ class TestCliCredentialSubprocessEncoding:
         fake_az.write_text(
             "import json, sys\n"
             "payload = {\n"
-            "    'accessToken': 'ado-utf8-token',\n"
+            "    'accessToken': '  ado-utf8-token  ',\n"
             "    'subscription': '\\u540e\\u53f0\\u4fe1\\u606f \\u2014 \\u201cEast\\u201d',\n"
             "}\n"
-            "sys.stdout.buffer.write(json.dumps(payload, ensure_ascii=False).encode('utf-8'))\n",
+            "sys.stdout.buffer.write(\n"
+            "    json.dumps(payload, ensure_ascii=False).encode('utf-8') + b'\\r\\n'\n"
+            ")\n",
             encoding="utf-8",
         )
         executable = os.path.join(os.path.abspath(os.sep), "opt", "az", "az")
@@ -2559,6 +2561,31 @@ class TestCliCredentialSubprocessEncoding:
         _, thread_errors = inspect_state()
 
         assert req.get_header("Authorization") == "Bearer fallback-token"
+        assert thread_errors == []
+
+    def test_github_cli_real_subprocess_decodes_trims_and_caches_token_bytes(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.authentication import github as gh_mod
+
+        fake_gh = tmp_path / "good_gh.py"
+        fake_gh.write_text(
+            "import sys\n"
+            "sys.stdout.buffer.write(b'  gho_test_token_123  \\r\\n')\n",
+            encoding="utf-8",
+        )
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+        inspect_state = self._install_cp1252_cli_shim(
+            monkeypatch, gh_mod, executable, fake_gh
+        )
+        provider = GitHubAuth()
+        entry = _github_cli_entry()
+
+        assert provider.resolve_token(entry) == "gho_test_token_123"
+        assert provider.resolve_token(entry) == "gho_test_token_123"
+
+        calls, thread_errors = inspect_state()
+        assert calls == 1
         assert thread_errors == []
 
     @pytest.mark.parametrize(
