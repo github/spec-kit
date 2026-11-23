@@ -246,9 +246,23 @@ returned.
 
 Executable scripts cannot use this strategy. It is not a general Markdown
 editor. Runtime template helpers use the same section semantics as the CLI;
-command materialization remains the CLI's responsibility. Keep the managed
-companion Python helper installed alongside each script variant. Manifest-based
-shell composition already requires Python 3 and PyYAML.
+command materialization remains the CLI's responsibility.
+
+### Runtime template resolution
+
+When a project is initialized or refreshed, Specify prepares validated data from
+installed preset manifests for the Bash, PowerShell, and Python template
+resolvers. These generated scripts need Python 3.11+ on the machine where they
+run. PyYAML stays in the Specify CLI environment. The Bash and PowerShell
+resolvers can use `SPECKIT_PYTHON_EXECUTABLE` if the required interpreter is
+not on `PATH`. Keep the managed Python helper alongside each generated
+script variant.
+
+Adding or updating a preset refreshes its template data. If a resolver reports
+missing or stale data, restore any missing preset files and run
+`specify integration upgrade` in the project. Upgrading the CLI by itself
+leaves an existing project's installed scripts in place. Older scripts continue
+to need PyYAML to resolve preset templates until the project is refreshed.
 
 ## Command and skill lifecycle
 

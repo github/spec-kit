@@ -1,10 +1,12 @@
-"""Bounded Markdown section replacement, also shipped with standalone helpers."""
+"""Preset Markdown template helpers shared by the CLI and standalone scripts."""
 
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
+import sys
 import unicodedata
 from pathlib import Path
 from typing import TypedDict
@@ -53,6 +55,76 @@ def validate_section_selector(strategy: str, selector: object, *, present: bool)
             "replace-section selector must be a non-empty lowercase anchor "
             "(letters, numbers, hyphens, underscores; no leading #)"
         )
+
+
+def _validate_template_entries(entries: object) -> list[dict[str, str]]:
+    if not isinstance(entries, list):
+        raise ValueError("manifest templates must be a list")
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("manifest template entries must be mappings")
+        if "type" not in entry or "name" not in entry or "file" not in entry:
+            raise ValueError("manifest template entry missing type, name, or file")
+        for field in ("type", "name", "file"):
+            if not isinstance(entry[field], str):
+                raise ValueError(f"manifest template {field} must be a string")
+        if entry["type"] not in ("template", "command", "script"):
+            raise ValueError(f"invalid manifest template type '{entry['type']}'")
+        strategy = entry.get("strategy", "replace")
+        if not isinstance(strategy, str):
+            raise ValueError("manifest template strategy must be a string")
+        strategy = strategy.lower()
+        if strategy not in ("replace", "prepend", "append", "wrap", "replace-section"):
+            raise ValueError(f"invalid manifest template strategy '{strategy}'")
+        if entry["type"] == "script" and strategy not in ("replace", "wrap"):
+            raise ValueError(f"invalid manifest script strategy '{strategy}'")
+        validate_section_selector(strategy, entry.get("selector"), present="selector" in entry)
+    return entries
+
+
+def legacy_preset_template_entries(manifest: object) -> list[dict[str, str]]:
+    """Validate template entries from a legacy installed YAML manifest."""
+    if not isinstance(manifest, dict):
+        raise ValueError("manifest root must be a mapping")
+    if "provides" not in manifest:
+        raise ValueError("manifest missing provides section")
+    provides = manifest["provides"]
+    if not isinstance(provides, dict):
+        raise ValueError("manifest provides must be a mapping")
+    if "templates" not in provides:
+        raise ValueError("manifest provides missing templates")
+    templates = _validate_template_entries(provides["templates"])
+    if not templates:
+        raise ValueError("manifest must provide at least one template")
+    return templates
+
+
+def preset_template_projection(
+    manifest: Path, metadata: dict[str, object] | None = None,
+) -> list[dict[str, str]]:
+    """Read the installed template fields and verify their YAML source is current."""
+    if sys.version_info < (3, 11):
+        raise ValueError("Preset template resolution requires Python 3.11+ on the execution host")
+    remedy = "Restore any missing preset files, then run 'specify integration upgrade'."
+    if metadata is None:
+        registry = manifest.parent.parent / ".registry"
+        try:
+            metadata = json.loads(registry.read_text(encoding="utf-8"))["presets"][manifest.parent.name]
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise ValueError(f"Preset template data is missing. {remedy}") from exc
+    if not isinstance(metadata, dict):
+        raise ValueError(f"Preset template data is missing. {remedy}")
+    entries = metadata.get("template_entries")
+    if metadata.get("template_projection_version") != 1 or not isinstance(entries, list):
+        raise ValueError(f"Preset template data is missing or unsupported. {remedy}")
+    try:
+        with manifest.open("rb") as source:
+            digest = hashlib.file_digest(source, "sha256").hexdigest()
+    except OSError as exc:
+        raise ValueError(f"Preset template manifest is unavailable. {remedy}") from exc
+    if metadata.get("manifest_hash") != f"sha256:{digest}":
+        raise ValueError(f"Preset template data is stale. {remedy}")
+    return _validate_template_entries(entries)
 
 
 _CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)(.*?)(?<!`)\1(?!`)")
@@ -194,9 +266,37 @@ def replace_section(
     return content[:body_start] + replacement + content[body_end:]
 
 
+def _print_preset_template(manifest: Path, name: str, projected: bool, error_file: Path) -> int:
+    if not projected:
+        try:
+            import yaml
+        except ImportError:
+            return 2
+    try:
+        if projected:
+            templates = preset_template_projection(manifest)
+        else:
+            templates = legacy_preset_template_entries(yaml.safe_load(manifest.read_text(encoding="utf-8")))
+        for entry in templates:
+            if entry["name"] == name and entry["type"] == "template":
+                selector = base64.b64encode(entry.get("selector", "").encode("utf-8")).decode("ascii")
+                filename = base64.b64encode(entry["file"].encode("utf-8")).decode("ascii")
+                print("found", entry.get("strategy", "replace"), filename, selector, sep="\t")
+                return 0
+        print("absent\treplace\t")
+    except Exception as exc:
+        # Keep diagnostics independent of the native pipe's console encoding.
+        error_file.write_text(f"manifest_invalid: {exc}", encoding="utf-8")
+        return 3
+    return 0
+
+
 def _main() -> int:
     import argparse
-    import sys
+
+    if sys.argv[1:2] == ["--preset-template"]:
+        manifest, name, mode, error_file = sys.argv[2:]
+        return _print_preset_template(Path(manifest), name, mode == "projection", Path(error_file))
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("selector")

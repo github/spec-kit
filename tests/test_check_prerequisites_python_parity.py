@@ -15,15 +15,12 @@ from tests.conftest import requires_bash
 from tests.parity_helpers import (
     clean_env,
     install_composition_stack,
+    install_scripts,
     ps_legacy_stdout_cmd,
     run,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
-CHECK_PREREQS_SH = PROJECT_ROOT / "scripts" / "bash" / "check-prerequisites.sh"
-COMMON_PS = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
-CHECK_PREREQS_PS = PROJECT_ROOT / "scripts" / "powershell" / "check-prerequisites.ps1"
 COMMON_PY = PROJECT_ROOT / "scripts" / "python" / "common.py"
 CHECK_PREREQS_PY = PROJECT_ROOT / "scripts" / "python" / "check_prerequisites.py"
 
@@ -31,23 +28,6 @@ HAS_PWSH = shutil.which("pwsh") is not None
 _WINDOWS_POWERSHELL = (
     shutil.which("powershell.exe") or shutil.which("powershell")
 ) if os.name == "nt" else None
-
-
-def _install_scripts(repo: Path) -> None:
-    bash_dir = repo / ".specify" / "scripts" / "bash"
-    bash_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy(COMMON_SH, bash_dir / "common.sh")
-    shutil.copy(CHECK_PREREQS_SH, bash_dir / "check-prerequisites.sh")
-
-    ps_dir = repo / ".specify" / "scripts" / "powershell"
-    ps_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy(COMMON_PS, ps_dir / "common.ps1")
-    shutil.copy(CHECK_PREREQS_PS, ps_dir / "check-prerequisites.ps1")
-
-    py_dir = repo / ".specify" / "scripts" / "python"
-    py_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy(COMMON_PY, py_dir / "common.py")
-    shutil.copy(CHECK_PREREQS_PY, py_dir / "check_prerequisites.py")
 
 
 def _write_feature_json(
@@ -83,7 +63,7 @@ def prereq_repo(tmp_path: Path) -> Path:
     repo.mkdir()
     _git_init(repo)
     (repo / ".specify").mkdir()
-    _install_scripts(repo)
+    install_scripts(repo, "check-prerequisites")
     return repo
 
 
@@ -663,7 +643,7 @@ def test_python_negative_errors_are_stderr_only(
     repo.mkdir()
     _git_init(repo)
     (repo / ".specify").mkdir()
-    _install_scripts(repo)
+    install_scripts(repo, "check-prerequisites")
 
     if expected in {"plan.md not found", "tasks.md not found"}:
         feat = repo / "specs" / "001-my-feature"
@@ -702,7 +682,7 @@ def test_plan_prerequisite_diagnostics(
     repo.mkdir()
     _git_init(repo)
     (repo / ".specify").mkdir()
-    _install_scripts(repo)
+    install_scripts(repo, "check-prerequisites")
     _write_feature_json(repo)
     feature = repo / "specs" / "001-my-feature"
     feature.mkdir(parents=True)

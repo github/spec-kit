@@ -334,12 +334,15 @@ function Format-SpecKitCommand {
 # Find a usable Python 3 executable (python3, python, or py -3).
 # Returns the command/arguments as an array, or $null if none found.
 function Get-Python3Command {
+    param([switch]$Stdlib)
+
     # SPECKIT_PYTHON_EXECUTABLE is the canonical override; SPECKIT_PYTHON is
     # kept as a deprecated fallback (still used by update-agent-context.sh).
     $override = if ($env:SPECKIT_PYTHON_EXECUTABLE) { $env:SPECKIT_PYTHON_EXECUTABLE } else { $env:SPECKIT_PYTHON }
     if ($override -and (Get-Command $override -ErrorAction SilentlyContinue)) {
         $ver = & $override --version 2>&1
         if ($ver -match 'Python 3') {
+            if ($Stdlib) { return @($override) }
             & $override -c 'import yaml' *> $null
             if ($LASTEXITCODE -eq 0) { return @($override) }
         }
@@ -621,7 +624,7 @@ function Resolve-TemplateContent {
                 ForEach-Object { $_.Name }
         }
 
-        $pyCmd = @(Get-Python3Command)
+        $pyCmd = @(Get-Python3Command -Stdlib)
         foreach ($presetId in $sortedPresets) {
                 # Read strategy and file path from preset manifest
                 $strategy = 'replace'
@@ -629,97 +632,49 @@ function Resolve-TemplateContent {
                 $manifestFilePath = ''
                 $manifestDeclared = $false
                 $manifest = Join-Path $presetsDir "$presetId/preset.yml"
-                if ((Test-Path -LiteralPath $manifest) -and -not $pyCmd) {
-                    throw "Python 3 and PyYAML are required to resolve preset template composition"
+                $projected = $false
+                if ($registryParsed -and $presetsProperty) {
+                    $metadata = $presets.PSObject.Properties[$presetId].Value
+                    $projected = [bool](
+                        $metadata.PSObject.Properties['template_projection_version'] -or
+                        $metadata.PSObject.Properties['template_entries']
+                    )
                 }
-                if (Test-Path -LiteralPath $manifest) {
+                if ($projected -or (Test-Path -LiteralPath $manifest)) {
+                    $manifestPython = $pyCmd
+                    if (-not $projected) { $manifestPython = @(Get-Python3Command) }
+                    if (-not $manifestPython) {
+                        if ($projected) { throw "Preset template resolution requires Python 3.11+ on the execution host" }
+                        throw "Python 3 and PyYAML are required to resolve preset template composition"
+                    }
                     try {
-                        # Use Python to parse YAML manifest for strategy and file path
-                        $pyArgs = if ($pyCmd.Count -gt 1) { $pyCmd[1..($pyCmd.Count-1)] } else { @() }
+                        # Pass file arguments directly so Windows batch launchers can forward them.
+                        $pyArgs = if ($manifestPython.Count -gt 1) { $manifestPython[1..($manifestPython.Count-1)] } else { @() }
                         $pyStderrFile = [System.IO.Path]::GetTempFileName()
+                        $mode = if ($projected) { 'projection' } else { 'legacy' }
                         $savedErrorActionPreference = $ErrorActionPreference
                         try {
                             $ErrorActionPreference = 'Continue'
-                            $stratResult = & $pyCmd[0] @pyArgs -c @"
-import sys, base64
-try:
-    import yaml
-except ImportError:
-    sys.exit(2)
-try:
-    with open(sys.argv[1], encoding='utf-8') as f:
-        data = yaml.safe_load(f)
-    if not isinstance(data, dict):
-        raise ValueError('manifest root must be a mapping')
-    if 'provides' not in data:
-        raise ValueError('manifest missing provides section')
-    provides = data['provides']
-    if not isinstance(provides, dict):
-        raise ValueError('manifest provides must be a mapping')
-    if 'templates' not in provides:
-        raise ValueError('manifest provides missing templates')
-    templates = provides['templates']
-    if not isinstance(templates, list):
-        raise ValueError('manifest templates must be a list')
-    if not templates:
-        raise ValueError('manifest must provide at least one template')
-    valid_types = ('template', 'command', 'script')
-    valid_strategies = ('replace', 'prepend', 'append', 'wrap', 'replace-section')
-    for t in templates:
-        if not isinstance(t, dict):
-            raise ValueError('manifest template entries must be mappings')
-        if 'type' not in t or 'name' not in t or 'file' not in t:
-            raise ValueError('manifest template entry missing type, name, or file')
-        for field in ('type', 'name', 'file'):
-            if not isinstance(t[field], str):
-                raise ValueError('manifest template ' + field + ' must be a string')
-        if t['type'] not in valid_types:
-            raise ValueError('invalid manifest template type')
-        strategy = t.get('strategy', 'replace')
-        if not isinstance(strategy, str):
-            raise ValueError('manifest template strategy must be a string')
-        strategy = strategy.lower()
-        if strategy not in valid_strategies:
-            raise ValueError('invalid manifest template strategy')
-        if t['type'] == 'script' and strategy not in ('replace', 'wrap'):
-            raise ValueError('invalid manifest script strategy')
-        if strategy == 'replace-section' or 'selector' in t:
-            import runpy
-            engine = runpy.run_path(sys.argv[3])
-            engine['validate_section_selector'](strategy, t.get('selector'), present='selector' in t)
-    for t in templates:
-        if t.get('name') == sys.argv[2] and t.get('type', 'template') == 'template':
-            file_value = base64.b64encode(t.get('file', '').encode('utf-8')).decode('ascii')
-            strategy = t.get('strategy', 'replace')
-            selector = base64.b64encode(t.get('selector', '').encode('utf-8')).decode('ascii')
-            print('found\t' + strategy + '\t' + file_value + '\t' + selector)
-            sys.exit(0)
-    print('absent\treplace\t')
-except Exception as exc:
-    with open(sys.argv[4], 'w', encoding='utf-8') as err_out:
-        err_out.write(f'manifest_invalid: {exc}')
-    sys.exit(3)
-"@ $manifest $TemplateName $sectionEngine $pyStderrFile 2>$null
+                            $stratResult = & $manifestPython[0] @pyArgs $sectionEngine --preset-template $manifest $TemplateName $mode $pyStderrFile 2>$null
                         } finally {
                             $ErrorActionPreference = $savedErrorActionPreference
                         }
                         if ($LASTEXITCODE -ne 0) {
                             if ($LASTEXITCODE -eq 2) {
-                                throw "PyYAML is required to resolve preset template composition"
+                                throw "PyYAML is required to resolve preset template composition for a legacy project. Run 'specify integration upgrade' to refresh installed preset template data."
                             }
                             $detail = [System.IO.File]::ReadAllText($pyStderrFile, [System.Text.Encoding]::UTF8)
                             if (-not $detail) { $detail = "python exited with code $LASTEXITCODE" }
                             throw "Invalid preset manifest ${manifest}: $detail"
                         }
-                        if ($stratResult) {
-                            $parts = $stratResult.Trim() -split "`t", 4
-                            $manifestDeclared = $parts[0] -eq 'found'
-                            $strategy = $parts[1].ToLowerInvariant()
-                            if ($parts.Count -gt 2 -and $parts[2]) {
-                                $manifestFilePath = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[2]))
-                            }
-                            if ($parts.Count -gt 3) { $selector = $parts[3] }
+                        if (-not $stratResult) { throw "Python did not return preset template data for $manifest" }
+                        $parts = $stratResult.Trim() -split "`t", 4
+                        $manifestDeclared = $parts[0] -eq 'found'
+                        $strategy = $parts[1].ToLowerInvariant()
+                        if ($parts.Count -gt 2 -and $parts[2]) {
+                            $manifestFilePath = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[2]))
                         }
+                        if ($parts.Count -gt 3) { $selector = $parts[3] }
                         Remove-Item -LiteralPath $pyStderrFile -Force -ErrorAction SilentlyContinue
                     } catch {
                         if ($pyStderrFile) { Remove-Item -LiteralPath $pyStderrFile -Force -ErrorAction SilentlyContinue }
