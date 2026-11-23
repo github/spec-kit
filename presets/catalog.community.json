@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-19T00:00:00Z",
+  "updated_at": "2026-11-22T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -851,13 +851,14 @@
     "parallel-autonomous-run-governance": {
       "name": "Parallel Autonomous Run Governance",
       "id": "parallel-autonomous-run-governance",
-      "version": "0.2.6",
+      "version": "0.2.13",
       "description": "Coordinates isolated autonomous campaigns and optionally gates worker scheduling on a current campaign intake review.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/archive/refs/tags/v0.2.6.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/archive/refs/tags/v0.2.13.zip",
+      "sha256": "aa841ce098ea93848e54446dd649bd747ef2f79ab98b4103efee5f71b68ab743",
       "homepage": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/blob/v0.2.6/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/blob/v0.2.13/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -871,11 +872,11 @@
         "parallel",
         "autonomous",
         "governance",
-        "orchestration",
-        "model-routing"
+        "evidence",
+        "permissions"
       ],
       "created_at": "2026-07-22T00:00:00Z",
-      "updated_at": "2026-08-24T00:00:00Z"
+      "updated_at": "2026-11-22T00:00:00Z"
     },
     "pirate": {
       "name": "Pirate Speak (Full)",
