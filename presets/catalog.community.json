@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-22T00:00:00Z",
+  "updated_at": "2026-11-23T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -906,14 +906,14 @@
     "project-statistics-governance": {
       "name": "Project Statistics Governance",
       "id": "project-statistics-governance",
-      "version": "0.1.0",
+      "version": "0.1.4",
       "description": "Reproducible Git-bound project transparency with offline measurements, explicit write authority and opt-in reference estimates; no AI productivity claims.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-project-statistics-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-project-statistics-governance/archive/refs/tags/v0.1.0.zip",
-      "sha256": "d8ad7d5eef920f50b629121b64ba8123c22ec4f6dadd14da5cd826d1c50f420a",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-project-statistics-governance/archive/refs/tags/v0.1.4.zip",
+      "sha256": "18abd7ec4a6b410e8e99c8783c401634b4b50684c07302bb7590b4a9830401db",
       "homepage": "https://github.com/hindermath/spec-kit-preset-project-statistics-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-project-statistics-governance/blob/main/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-project-statistics-governance/blob/v0.1.4/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.12.8"
@@ -921,7 +921,7 @@
       "provides": {
         "templates": 4,
         "commands": 3,
-        "scripts": 2
+        "scripts": 4
       },
       "tags": [
         "project-statistics",
@@ -930,7 +930,7 @@
         "accessibility"
       ],
       "created_at": "2026-09-23T00:00:00Z",
-      "updated_at": "2026-09-23T00:00:00Z"
+      "updated_at": "2026-11-23T00:00:00Z"
     },
     "screenwriting": {
       "name": "Screenwriting",
