@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import threading
+import urllib.request
 import zipfile
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -157,6 +158,19 @@ def server(tmp_path, monkeypatch, tls_certificate):
     result = SimpleNamespace(
         root=downloads, url=f"https://127.0.0.1:{http.server_port}", requests=requests,
     )
+    from specify_cli.authentication import http as authentication_http
+
+    original_open_url = authentication_http.open_url
+
+    def open_loopback_url(url, timeout=10, extra_headers=None, redirect_validator=None):
+        if url.startswith(f"{result.url}/"):
+            timeout = max(timeout, 60)
+        return original_open_url(
+            url, timeout=timeout, extra_headers=extra_headers,
+            redirect_validator=redirect_validator,
+        )
+
+    monkeypatch.setattr(authentication_http, "open_url", open_loopback_url)
     try:
         yield result
     finally:
@@ -184,6 +198,53 @@ def test_catalog_server_explicitly_requires_tls12(request, monkeypatch):
     context, version = configured[0]
     assert version == ssl.TLSVersion.TLSv1_2
     assert context.minimum_version > ssl.TLSVersion.TLSv1_1
+
+
+def test_loopback_catalog_survives_short_handshake_window(tmp_path, server, monkeypatch):
+    original_open = urllib.request.OpenerDirector.open
+
+    def require_handshake_window(opener, fullurl, *args, **kwargs):
+        if fullurl.full_url.startswith(f"{server.url}/") and kwargs["timeout"] < 60:
+            raise TimeoutError("The handshake operation timed out")
+        return original_open(opener, fullurl, *args, **kwargs)
+
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", require_handshake_window)
+    publish(server)
+    project = catalog_project(tmp_path, server)
+
+    install(project)
+
+    assert read_records(project)[KEY]["version"] == "1.0.0"
+    assert "/catalog.json" in server.requests
+
+
+def test_loopback_timeout_preserves_open_url_call_forms_and_other_hosts(server, monkeypatch):
+    from specify_cli.authentication import http as authentication_http
+
+    observed = []
+
+    def record_open(opener, request, *, timeout):
+        observed.append((request.full_url, timeout))
+        return object()
+
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", record_open)
+    fixture_url = f"{server.url}/catalog.json"
+    other_port = "https://127.0.0.1:1/catalog.json"
+    remote_url = "https://example.com/catalog.json"
+
+    authentication_http.open_url(fixture_url)
+    authentication_http.open_url(fixture_url, 10)
+    authentication_http.open_url(fixture_url, timeout=90)
+    authentication_http.open_url(other_port, 10)
+    authentication_http.open_url(remote_url, timeout=5)
+
+    assert observed == [
+        (fixture_url, 60),
+        (fixture_url, 60),
+        (fixture_url, 90),
+        (other_port, 10),
+        (remote_url, 5),
+    ]
 
 
 def publish(server, *, metadata=None, code=None, version="1.0.0", members=None, archive="zip"):
