@@ -1914,3 +1914,139 @@ def test_all_variants_fail_for_malformed_preset_manifest(
 
     assert all(result.returncode != 0 for result in results)
     assert all(result.stdout == "" for result in results)
+
+
+def _powershell_executables() -> list[str]:
+    executables: list[str] = []
+    if HAS_POWERSHELL:
+        first = ps_cmd(Path("."), SCRIPT)[0]
+        executables.append(first)
+    if WINDOWS_POWERSHELL and all(
+        os.path.normcase(WINDOWS_POWERSHELL) != os.path.normcase(shutil.which(exe) or exe)
+        for exe in executables
+    ):
+        executables.append(WINDOWS_POWERSHELL)
+    return executables
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="PowerShell unavailable")
+@pytest.mark.parametrize(
+    "relative_file",
+    ["templates/café.md", "templates/custom-功能.md"],
+    ids=["latin1_accent", "cjk"],
+)
+def test_powershell_resolves_non_ascii_manifest_template_path(
+    tmp_path: Path, relative_file: str
+) -> None:
+    from specify_cli.presets import PresetResolver
+
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    core_dir = repo / ".specify" / "templates"
+    core_dir.mkdir(parents=True)
+    (core_dir / f"{TEMPLATE}.md").write_bytes(b"# Core\n")
+
+    presets = repo / ".specify" / "presets"
+    preset = presets / "unicode-pack"
+    candidate = preset / relative_file
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_bytes(b"# Preset\n")
+    (preset / "preset.yml").write_bytes(
+        (
+            "schema_version: '1.0'\n"
+            "preset:\n"
+            "  id: unicode-pack\n"
+            "  name: Unicode Pack\n"
+            "  version: 1.0.0\n"
+            "  description: Non-ASCII file path\n"
+            "requires:\n"
+            "  speckit_version: '>=0.1.0'\n"
+            "provides:\n"
+            "  templates:\n"
+            "    - type: template\n"
+            f"      name: {TEMPLATE}\n"
+            f"      file: {relative_file}\n"
+        ).encode("utf-8")
+    )
+    (presets / ".registry").write_bytes(
+        b'{"presets":{"unicode-pack":{"enabled":true,"priority":1}}}\n'
+    )
+
+    assert PresetResolver(repo).resolve_content(TEMPLATE) == "# Preset\n"
+
+    env = dict(os.environ)
+    for key in list(env):
+        if key.startswith("SPECIFY_"):
+            env.pop(key)
+    env.pop("PYTHONPATH", None)
+    env.pop("SPECKIT_PYTHON", None)
+    env["SPECKIT_PYTHON_EXECUTABLE"] = sys.executable
+    if os.name == "nt":
+        env["PYTHONUTF8"] = "0"
+        env["PYTHONIOENCODING"] = "cp1252"
+    else:
+        env["PYTHONIOENCODING"] = "ascii"
+
+    py_result = run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env)
+    assert py_result.returncode == 0, py_result.stderr
+    assert json_stdout(py_result)["TEMPLATE_CONTENT"] == "# Preset\n"
+
+    for ps_exe in _powershell_executables():
+        command = ps_cmd(repo, SCRIPT, TEMPLATE, "-Json")
+        command[0] = ps_exe
+        ps_result = run(command, repo, env)
+        assert ps_result.returncode == 0, ps_result.stderr
+        assert json_stdout(ps_result)["TEMPLATE_CONTENT"] == "# Preset\n"
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="PowerShell unavailable")
+def test_powershell_reports_missing_pyyaml_and_invalid_manifest_path(
+    tmp_path: Path,
+) -> None:
+    repo, _ = _setup_repo(tmp_path)
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    base_env = dict(os.environ)
+    for key in list(base_env):
+        if key.startswith("SPECIFY_"):
+            base_env.pop(key)
+    base_env.pop("PYTHONPATH", None)
+    base_env.pop("SPECKIT_PYTHON_EXECUTABLE", None)
+    base_env.pop("SPECKIT_PYTHON", None)
+
+    blocker = tmp_path / "blocker"
+    blocker.mkdir()
+    (blocker / "yaml.py").write_text(
+        "raise ImportError('simulated missing PyYAML')\n",
+        encoding="utf-8",
+    )
+    no_yaml_env = dict(
+        base_env,
+        PYTHONPATH=str(blocker),
+        PATH=f"{no_yaml_exe.parent}{os.pathsep}{base_env.get('PATH', '')}",
+    )
+
+    for ps_exe in _powershell_executables():
+        command = ps_cmd(repo, SCRIPT, TEMPLATE, "-Json")
+        command[0] = ps_exe
+        missing_yaml = run(command, repo, no_yaml_env)
+        assert missing_yaml.returncode != 0
+        assert missing_yaml.stdout == ""
+        assert (
+            "PyYAML is required to resolve preset template composition"
+            in missing_yaml.stderr
+        )
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text("not_a_mapping\n", encoding="utf-8")
+    valid_py_env = dict(base_env, SPECKIT_PYTHON_EXECUTABLE=sys.executable)
+
+    for ps_exe in _powershell_executables():
+        command = ps_cmd(repo, SCRIPT, TEMPLATE, "-Json")
+        command[0] = ps_exe
+        invalid_manifest = run(command, repo, valid_py_env)
+        assert invalid_manifest.returncode != 0
+        assert invalid_manifest.stdout == ""
+        assert "Invalid preset manifest" in invalid_manifest.stderr
+        assert "preset.yml" in invalid_manifest.stderr
+        assert "manifest root must be a mapping" in invalid_manifest.stderr
