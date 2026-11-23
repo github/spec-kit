@@ -6878,6 +6878,38 @@
       "created_at": "2026-08-25T00:00:00Z",
       "updated_at": "2026-08-25T00:00:00Z"
     },
+    "task-consolidation": {
+      "name": "Task Consolidation",
+      "id": "task-consolidation",
+      "description": "Merges related Spec Kit tasks to reduce duplicate work and handoffs during implementation while preserving requirements, tests, and progress.",
+      "author": "Adam Bogdan Boczek",
+      "version": "0.6.0",
+      "download_url": "https://github.com/grafvonb/spec-kit-extension-task-consolidation/archive/refs/tags/v0.6.0.zip",
+      "sha256": "8d2f2a77ed5be904810b4585fc9e43df41f17123cf93b95699756395746a314b",
+      "repository": "https://github.com/grafvonb/spec-kit-extension-task-consolidation",
+      "homepage": "https://github.com/grafvonb/spec-kit-extension-task-consolidation",
+      "documentation": "https://github.com/grafvonb/spec-kit-extension-task-consolidation/blob/v0.6.0/README.md",
+      "changelog": "",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.2.1"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "tasks",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-23T00:00:00Z",
+      "updated_at": "2026-11-23T00:00:00Z"
+    },
     "tasks-to-project": {
       "name": "Tasks to GitHub Project",
       "id": "tasks-to-project",
