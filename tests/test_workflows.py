@@ -1802,35 +1802,139 @@ class TestExpressions:
         ) is True
 
     def test_number_literal_forms(self):
-        """Every number form the former engine read through ``int()``/``float()``.
-
-        A ``.`` makes a float (exponents need one too, as before); a sign and
-        digit-group underscores are allowed.
-        """
+        """Integer, decimal, and exponent-form numeric literals evaluate with
+        matching Python types; signs and digit-group underscores are allowed."""
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
-        ctx = StepContext(inputs={"ratio": 0.7})
+        ctx = StepContext(inputs={"ratio": 0.7, "n": 5})
         for text, expected in [
             ("5", 5), ("-5", -5), ("+5", 5), ("1_000", 1000),
             ("0.5", 0.5), (".5", 0.5), ("-.5", -0.5), ("5.", 5.0),
             ("1.5e3", 1500.0), (".5E-1", 0.05), ("1_000.5", 1000.5),
+            ("1e3", 1000.0), ("1E3", 1000.0), ("+1e3", 1000.0),
+            ("-2e+3", -2000.0), ("5e-2", 0.05), ("1_000e2", 100000.0),
         ]:
             result = evaluate_expression("{{ " + text + " }}", ctx)
             assert result == expected and type(result) is type(expected), text
         assert evaluate_expression("{{ inputs.ratio > .5 }}", ctx) is True
-        assert evaluate_expression("{{ [.5, +1] }}", ctx) == [0.5, 1]
+        assert evaluate_expression("{{ inputs.n < 1e3 }}", ctx) is True
+        assert evaluate_expression("{{ [.5, +1, 1e3] }}", ctx) == [0.5, 1, 1000.0]
 
     def test_malformed_number_literals_are_refused(self):
-        """Forms ``int()``/``float()`` refuse (or, for ``1e3``, the former engine
-        never read as a number) do not lex as one either."""
+        """Malformed numeric literals (including incomplete or malformed
+        exponents) raise ``ValueError`` instead of falling through."""
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
-        for text in ("1__0", "1_", "1e3", "5..", "."):
+        for text in (
+            "1__0", "1_", "5..", ".",
+            "1e", "1E", "1e+", "1e-", "1e3e4", "1e3.5", "1e_3", "1_e3", "1e3_",
+        ):
             with pytest.raises(ValueError, match="invalid expression"):
                 evaluate_expression("{{ " + text + " }}", StepContext(inputs={}))
+
+    def test_exponent_numeric_string_coercion_in_comparisons(self):
+        """Exponent-form numeric strings coerce in ordering and equality
+        comparisons just like workflow input coercion, while non-finite and
+        non-numeric strings stay strings."""
+        from specify_cli.workflows.base import StepContext
+        from specify_cli.workflows.engine import WorkflowEngine
+        from specify_cli.workflows.expressions import (
+            evaluate_condition,
+            evaluate_expression,
+        )
+
+        ctx = StepContext(
+            inputs={
+                "s": "1e3",
+                "upper": "2E3",
+                "small": "5e-2",
+                "neg": "-1e2",
+                "inf_str": "inf",
+                "ninf_str": "-inf",
+                "infinity_str": "Infinity",
+                "nan_str": "nan",
+                "overflow_str": "1e400",
+                "overflow_dot": "1.0e400",
+                "bad_exp": "1e",
+            }
+        )
+        assert WorkflowEngine._coerce_input("x", "1e3", {"type": "number"}) == 1000
+        assert evaluate_condition("{{ inputs.s > 100 }}", ctx) is True
+        assert evaluate_condition("{{ inputs.s == 1000 }}", ctx) is True
+        assert evaluate_condition("{{ inputs.s == 1e3 }}", ctx) is True
+        assert evaluate_condition("{{ inputs.s == '1000' }}", ctx) is True
+        assert evaluate_condition("{{ inputs.upper > '900' }}", ctx) is True
+        assert evaluate_condition("{{ inputs.small < 0.1 }}", ctx) is True
+        assert evaluate_condition("{{ inputs.neg < 0 }}", ctx) is True
+        assert evaluate_condition("{{ inputs.s != 1000 }}", ctx) is False
+        # Non-finite strings and malformed exponents must not coerce to float.
+        assert evaluate_condition("{{ inputs.inf_str > 100 }}", ctx) is False
+        assert evaluate_condition("{{ inputs.ninf_str < 0 }}", ctx) is False
+        assert evaluate_condition("{{ inputs.infinity_str > 0 }}", ctx) is False
+        assert evaluate_condition("{{ inputs.nan_str == inputs.nan_str }}", ctx) is True
+        assert evaluate_condition("{{ inputs.overflow_str > 100 }}", ctx) is False
+        assert evaluate_condition("{{ inputs.overflow_dot > 100 }}", ctx) is False
+        assert evaluate_condition("{{ inputs.bad_exp > 0 }}", ctx) is False
+        assert evaluate_expression("{{ inputs.s == 'abc' }}", ctx) is False
+
+    def test_chained_list_indexing_and_unsupported_index_syntax(self):
+        """Chained list indices resolve across nested lists and dot segments;
+        missing/non-list indices yield None while invalid index syntax raises."""
+        import pytest
+        from specify_cli.workflows.base import StepContext
+        from specify_cli.workflows.expressions import (
+            evaluate_condition,
+            evaluate_expression,
+        )
+
+        ctx = StepContext(
+            inputs={"name": "it's", "a": "x", "b": True},
+            steps={
+                "plan": {
+                    "output": {
+                        "matrix": [["a", "b"], ["c", "d"]],
+                        "cube": [[[{"label": "ok"}]]],
+                    }
+                }
+            },
+            item=[["first", "second"], ["third", "fourth"]],
+        )
+        assert evaluate_expression("{{ steps.plan.output.matrix[0][1] }}", ctx) == "b"
+        assert evaluate_expression("{{ steps.plan.output.matrix[-1][-2] }}", ctx) == "c"
+        assert (
+            evaluate_expression("{{ steps.plan.output.cube[0][0][0].label }}", ctx)
+            == "ok"
+        )
+        assert evaluate_expression("{{ item[0][1] }}", ctx) == "second"
+        assert evaluate_expression("{{ item[-1][0] }}", ctx) == "third"
+        # Out-of-range and non-list targets are missing data, not syntax errors.
+        assert evaluate_expression("{{ steps.plan.output.matrix[0][9] }}", ctx) is None
+        assert evaluate_expression("{{ steps.plan.output.matrix[9][0] }}", ctx) is None
+        assert evaluate_expression("{{ steps.plan.output.matrix[0][1][0] }}", ctx) is None
+        # Malformed index syntax and digit-/keyword-led indexing raise.
+        for bad in (
+            "steps.plan.output.matrix[0][]",
+            "steps.plan.output.matrix[0][a]",
+            "steps.plan.output.matrix[0][1.5]",
+            "1[0]",
+            "and[0]",
+            "or[0]",
+            "in[0]",
+            r"'it\'s'",
+            r"inputs.name == 'it\'s'",
+        ):
+            with pytest.raises(ValueError, match="invalid expression"):
+                evaluate_expression("{{ " + bad + " }}", ctx)
+        # `not` before a list literal without a space negates the list literal
+        # rather than lexing as a path named `not[0]`.
+        assert evaluate_expression("{{ not[0] }}", ctx) is False
+        assert evaluate_expression("{{ not[] }}", ctx) is True
+        # Word operators adjacent to quotes still parse and evaluate cleanly.
+        assert evaluate_condition("{{ inputs.a=='x'and inputs.b }}", ctx) is True
+        assert evaluate_condition("{{ 'x'in inputs.a }}", ctx) is True
 
     def test_integer_conversion_error_is_reported_as_invalid_expression(self):
         """The integer conversion limit is reported as an expression error."""
