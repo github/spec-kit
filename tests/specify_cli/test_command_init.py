@@ -179,6 +179,37 @@ def test_reinit_keeps_other_installed_integrations(tmp_path, monkeypatch, select
     assert result.exit_code == 0, result.output
 
 
+def test_reinit_stores_only_the_options_passed_to_it(tmp_path, monkeypatch):
+    """Re-init replaces the selected integration's options and keeps the others'."""
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    args = ["--script", "sh", "--ignore-agent-tools", "--non-interactive"]
+    result = runner.invoke(app, ["init", "fresh", "--integration", "claude", *args])
+    assert result.exit_code == 0, result.output
+    fresh = json.loads((tmp_path / "fresh/.specify/integration.json").read_text(encoding="utf-8"))
+    result = runner.invoke(app, [
+        "init", "project", "--integration", "claude",
+        "--integration-options=--no-model-invocation", *args,
+    ])
+    assert result.exit_code == 0, result.output
+    project = tmp_path / "project"
+    monkeypatch.chdir(project)
+    result = runner.invoke(app, [
+        "integration", "install", "codex", "--script", "ps", "--integration-options=--skills",
+    ])
+    assert result.exit_code == 0, result.output
+    state_path = project / ".specify/integration.json"
+    before = json.loads(state_path.read_text(encoding="utf-8"))
+    assert before["integration_settings"]["claude"]["parsed_options"] == {"no_model_invocation": True}
+
+    result = runner.invoke(app, ["init", "--here", "--force", "--integration", "claude", *args])
+
+    assert result.exit_code == 0, result.output
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["integration_settings"]["claude"] == fresh["integration_settings"]["claude"]
+    assert state["integration_settings"]["codex"] == before["integration_settings"]["codex"]
+
+
 @pytest.mark.parametrize("name", ["proj [v2]", "my[bold]app"])
 def test_next_steps_cd_shows_the_real_project_name(tmp_path: Path, name: str):
     """The `cd` line must name the directory that was actually created."""

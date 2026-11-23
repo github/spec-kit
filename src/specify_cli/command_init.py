@@ -409,6 +409,7 @@ def register(app: typer.Typer) -> None:
         )
         from .integration_state import (
             installed_integration_keys,
+            integration_settings as _stored_integration_settings,
             try_read_integration_json,
         )
         from .integrations._commands import (
@@ -714,10 +715,15 @@ def register(app: typer.Typer) -> None:
 
                 tracker.start("integration")
                 # Re-init keeps the other installed integrations and their
-                # settings; only the selected one is refreshed.
+                # settings; the selected one stores only the options passed here.
                 current, _state_error = try_read_integration_json(project_path)
                 current = current or {}
                 installed_keys = installed_integration_keys(current)
+                other_settings = {
+                    key: setting
+                    for key, setting in _stored_integration_settings(current).items()
+                    if key != resolved_integration.key
+                }
                 if resolved_integration.key not in installed_keys:
                     installed_keys.append(resolved_integration.key)
                 manifest = IntegrationManifest(
@@ -774,7 +780,7 @@ def register(app: typer.Typer) -> None:
                     )
                     manifest.save()
                     integration_settings = _with_integration_setting(
-                        current,
+                        {"integration_settings": other_settings},
                         resolved_integration.key,
                         resolved_integration,
                         script_type=selected_script,
