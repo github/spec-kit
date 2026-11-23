@@ -10,6 +10,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
+from ..file_helper import FileHelper, FileHelperError
 from ..markdown_sections import validate_section_selector
 
 class PresetError(Exception):
@@ -76,7 +77,8 @@ class PresetManifest:
     def _load_yaml(self, path: Path) -> dict:
         """Load YAML file safely."""
         try:
-            content = path.read_bytes()
+            with FileHelper(path.parent, allow_symlinks=True) as files:
+                content = files.read_bytes(path.name)
             data = yaml.safe_load(content.decode("utf-8"))
         except yaml.YAMLError as e:
             raise PresetValidationError(f"Invalid YAML in {path}: {e}")
@@ -86,7 +88,7 @@ class PresetManifest:
             raise PresetValidationError(
                 f"Manifest is not valid UTF-8: {path} ({e.reason} at byte {e.start})"
             )
-        except OSError as e:
+        except (OSError, FileHelperError) as e:
             raise PresetValidationError(f"Could not read manifest {path}: {e}")
         self._parsed_hash = f"sha256:{hashlib.sha256(content).hexdigest()}"
         if data is None:

@@ -409,18 +409,22 @@ _python3_command() {
     # SPECKIT_PYTHON_EXECUTABLE is the canonical override; SPECKIT_PYTHON is
     # kept as a deprecated fallback (still used by update-agent-context.sh).
     local override="${SPECKIT_PYTHON_EXECUTABLE:-${SPECKIT_PYTHON:-}}"
+    local probe='import sys; raise SystemExit(sys.version_info.major != 3)'
+    if [[ "${1:-}" == stdlib ]]; then
+        probe='import sys; raise SystemExit(sys.version_info < (3, 11))'
+    fi
     if [[ -n "$override" ]] && command -v "$override" >/dev/null 2>&1 &&
-        "$override" -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1 &&
+        "$override" -c "$probe" >/dev/null 2>&1 &&
         { [[ "${1:-}" == stdlib ]] || "$override" -c 'import yaml' >/dev/null 2>&1; }; then
         printf '%s\n' "$override"
     elif command -v python3 >/dev/null 2>&1 &&
-        python3 -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+        python3 -c "$probe" >/dev/null 2>&1; then
         printf '%s\n' "python3"
     elif command -v python >/dev/null 2>&1 &&
-        python -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+        python -c "$probe" >/dev/null 2>&1; then
         printf '%s\n' "python"
     elif command -v py >/dev/null 2>&1 &&
-        py -3 -c 'import sys' >/dev/null 2>&1; then
+        py -3 -c "$probe" >/dev/null 2>&1; then
         printf '%s\n' "py" "-3"
     else
         return 1
@@ -433,7 +437,7 @@ _sorted_extension_ids() {
     local _python_cmd_line
     while IFS= read -r _python_cmd_line; do
         python_cmd+=("$_python_cmd_line")
-    done < <(_python3_command)
+    done < <(_python3_command stdlib)
     if [ "${#python_cmd[@]}" -gt 0 ]; then
         local py_stderr sorted_ids
         py_stderr=$(mktemp)
@@ -654,45 +658,37 @@ resolve_template_content() {
     # Priority 2: Installed presets (sorted by priority from .registry)
     local presets_dir="$repo_root/.specify/presets"
     if [ -d "$presets_dir" ]; then
-        local registry_file="$presets_dir/.registry"
-        local sorted_presets=""
-        local registry_parsed=false
+        local sorted_presets="" required='__SPECKIT_REQUIRE_PRESET_PROJECTION__'
         local -a python_cmd=()
         local _python_cmd_line
         while IFS= read -r _python_cmd_line; do
             python_cmd+=("$_python_cmd_line")
         done < <(_python3_command stdlib)
-        if [ -f "$registry_file" ] && [ "${#python_cmd[@]}" -gt 0 ]; then
-            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "${python_cmd[@]}" -c "
-import json, re, sys, os
+        if [ "${#python_cmd[@]}" -gt 0 ]; then
+            if ! sorted_presets=$("${python_cmd[@]}" -c "
+import runpy, sys
+from pathlib import Path
+engine = runpy.run_path(sys.argv[1])
 try:
-    with open(os.environ['SPECKIT_REGISTRY'], encoding='utf-8') as f:
-        data = json.load(f)
-    presets = data.get('presets', {})
-    def priority(meta):
-        if not isinstance(meta, dict) or isinstance(meta.get('priority'), bool):
-            return 10
-        try:
-            value = int(meta.get('priority', 10))
-            return value if value >= 1 else 10
-        except (TypeError, ValueError, OverflowError):
-            return 10
-    for pid, meta in sorted(presets.items(), key=lambda x: (priority(x[1]), x[0])):
-        if isinstance(meta, dict) and bool(meta.get('enabled', True)) and re.fullmatch(r'[a-z0-9-]+', pid):
-            projected = 'template_projection_version' in meta or 'template_entries' in meta
-            print(pid + '\t' + str(int(projected)))
-except Exception:
-    sys.exit(1)
-" 2>/dev/null); then
-                registry_parsed=true
+    rows = engine['preset_registry_rows'](Path(sys.argv[2]), sys.argv[3] == '1')
+except (OSError, ValueError) as exc:
+    sys.exit(str(exc))
+for pid, meta in rows:
+    projected = 'template_projection_version' in meta or 'template_entries' in meta
+    print(pid + '\t' + str(int(projected)))
+" "$section_engine" "$presets_dir" "$required"); then
+                return 2
             fi
-        fi
-        if [ "$registry_parsed" = false ]; then
+        else
             for preset in "$presets_dir"/*/; do
                 [ -d "$preset" ] || continue
-                local fallback_id
-                fallback_id=$(basename "$preset")
+                local fallback_id="${preset%/}"
+                fallback_id="${fallback_id##*/}"
                 case "$fallback_id" in *[!a-z0-9-]*) continue ;; esac
+                if [ "$required" = 1 ] && [ -f "$preset/preset.yml" ]; then
+                    echo "Error: Preset template resolution requires Python 3.11+ on the execution host" >&2
+                    return 2
+                fi
                 sorted_presets+="${sorted_presets:+$'\n'}$fallback_id"
             done
         fi
@@ -705,6 +701,7 @@ except Exception:
                 local manifest_file=""
                 local manifest="$presets_dir/$preset_id/preset.yml"
                 local manifest_declared=false
+                if [ "$required" = 1 ] && [ -f "$manifest" ]; then projected=1; fi
                 if [ "$projected" = 1 ] || [ -f "$manifest" ]; then
                     local -a manifest_python=()
                     if [ "$projected" = 1 ]; then

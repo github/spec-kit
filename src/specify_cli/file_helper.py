@@ -382,9 +382,11 @@ class FileHelper:
             )
 
     @staticmethod
-    def _require_file(path: Path) -> None:
-        if not stat.S_ISREG(path.stat().st_mode):
+    def _require_file(path: Path) -> int:
+        mode = path.stat().st_mode
+        if not stat.S_ISREG(mode):
             raise UnsupportedPathError(f"Expected a regular file: {path}")
+        return stat.S_IMODE(mode)
 
     @staticmethod
     def _require_directory(path: Path) -> None:
@@ -592,11 +594,13 @@ class FileHelper:
     ) -> None:
         self.create_bytes(path, content.encode(encoding), mode=mode)
 
-    def write_bytes(self, path: Path | str, content: bytes, *, mode: int = 0o644) -> None:
-        """Atomically create/replace a file, preserving any allowed leaf link."""
+    def write_bytes(self, path: Path | str, content: bytes, *, mode: int | None = 0o644) -> None:
+        """Atomic write with allowed links and mode preservation for None."""
         destination = self._path(path, allow_missing=True)
         if destination.exists():
-            self._require_file(destination)
+            current_mode = self._require_file(destination)
+            mode = current_mode if mode is None else mode
+        mode = 0o644 if mode is None else mode
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         flags |= getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
         with ExitStack() as staging:
@@ -638,7 +642,7 @@ class FileHelper:
             except FileExistsError:
                 continue
             except OSError as exc:
-                # The Windows CRT can report an overlong path as ENOENT.
+                # Windows reports some long paths as ENOENT.
                 length_error = exc.errno == errno.ENAMETOOLONG or (
                     os.name == "nt" and exc.errno == errno.ENOENT
                 )
@@ -648,9 +652,8 @@ class FileHelper:
                     if extended_parent is not None or not destination.parent.is_dir():
                         raise
                     parent_info = destination.parent.stat()
-                    # Keep file-only ACL inheritance and avoid requiring directory creation rights.
                     extended_parent = _windows_extended_path(destination.parent)
-                    # The extended spelling bypasses Win32 name normalization.
+                    # Extended paths bypass Win32 normalization.
                     if not os.path.samestat(parent_info, extended_parent.stat()):
                         raise FileHelperError(
                             f"Extended staging path does not match destination parent: {destination.parent}"
@@ -662,8 +665,7 @@ class FileHelper:
         else:
             raise FileExistsError(errno.EEXIST, "Could not allocate a staging file", str(destination))
 
-        # A parent-relative sibling keeps direct inheritance and avoids the
-        # absolute path limit without shrinking the name to the leaf budget.
+        # Stage relative to the parent beyond PATH_MAX.
         parent = staging.enter_context(self._posix_directory(
             destination.parent, unsupported_message="Directory-relative staging is unsupported",
         ))

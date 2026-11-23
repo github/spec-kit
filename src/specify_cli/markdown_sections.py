@@ -99,6 +99,50 @@ def legacy_preset_template_entries(manifest: object) -> list[dict[str, str]]:
     return templates
 
 
+PRESET_REGISTRY_REMEDY = "Restore the preset registry or reinstall the presets."
+
+
+def preset_registry_rows(directory: Path, required: bool) -> list[tuple[str, dict]]:
+    """List enabled presets in order, preserving directory fallback for legacy copies."""
+    def safe_id(name: str) -> bool:
+        return re.fullmatch(r"[a-z0-9-]+", name) is not None
+
+    def priority(meta: dict) -> int:
+        value = meta.get("priority")
+        try:
+            number = 10 if isinstance(value, bool) else int(value)
+        except (TypeError, ValueError, OverflowError):
+            return 10
+        return number if number >= 1 else 10
+
+    try:
+        paths = [path for path in directory.iterdir() if safe_id(path.name) and path.is_dir()]
+    except FileNotFoundError:
+        return []
+    manifests = [path.name for path in paths if required and (path / "preset.yml").is_file()]
+    registry = directory / ".registry"
+    try:
+        data = json.loads(registry.read_text(encoding="utf-8"))
+        presets = data.get("presets", {}) if isinstance(data, dict) else None
+        if not isinstance(presets, dict) or (required and "presets" not in data):
+            raise ValueError("invalid presets mapping")
+        if any(not isinstance(presets.get(name), dict) for name in manifests):
+            raise ValueError("missing installed preset entry")
+    except FileNotFoundError as exc:
+        if manifests:
+            raise ValueError(f"Preset registry is missing. {PRESET_REGISTRY_REMEDY}") from exc
+    except (OSError, ValueError) as exc:
+        if required:
+            raise ValueError(f"Preset registry is unreadable or incomplete. {PRESET_REGISTRY_REMEDY}") from exc
+    else:
+        return sorted(
+            [(pid, meta) for pid, meta in presets.items()
+             if safe_id(pid) and isinstance(meta, dict) and bool(meta.get("enabled", True))],
+            key=lambda row: (priority(row[1]), row[0]),
+        )
+    return sorted((path.name, {}) for path in paths)
+
+
 def preset_template_projection(
     manifest: Path, metadata: dict[str, object] | None = None,
 ) -> list[dict[str, str]]:

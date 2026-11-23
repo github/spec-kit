@@ -213,40 +213,16 @@ def _normalize_priority(value: object) -> int:
     return priority if priority >= 1 else 10
 
 
+_PROJECTION_REQUIRED = "__SPECKIT_REQUIRE_PRESET_PROJECTION__" == "1"
+
+
 def _sorted_presets(presets_dir: Path) -> list[tuple[str, dict[str, object]]]:
-    registry = presets_dir / ".registry"
-    if registry.is_file():
-        # Invalid JSON or registry shapes fall back to the directory scan below.
-        try:
-            data = json.loads(registry.read_text(encoding="utf-8"))
-            presets = data.get("presets", {})
-            return [
-                (pid, meta)
-                for pid, meta in sorted(
-                    presets.items(),
-                    key=lambda kv: (
-                        _normalize_priority(kv[1].get("priority"))
-                        if isinstance(kv[1], dict)
-                        else 10,
-                        kv[0],
-                    ),
-                )
-                if (
-                    _is_safe_component(pid)
-                    and isinstance(meta, dict)
-                    and bool(meta.get("enabled", True))
-                )
-            ]
-        except Exception:
-            pass
-    try:
-        return sorted(
-            (p.name, {})
-            for p in presets_dir.iterdir()
-            if p.is_dir() and _is_safe_component(p.name)
-        )
-    except OSError:
+    if not presets_dir.is_dir():
         return []
+    try:
+        return _section_engine().preset_registry_rows(presets_dir, _PROJECTION_REQUIRED)
+    except (OSError, ValueError) as exc:
+        raise TemplateResolutionError(str(exc)) from exc
 
 
 def _sorted_extension_ids(extensions_dir: Path) -> list[str]:
@@ -564,7 +540,8 @@ def _preset_template_layer(
     """Return the preset template path and composition strategy."""
     manifest_path = preset_dir / "preset.yml"
     try:
-        if metadata and ("template_projection_version" in metadata or "template_entries" in metadata):
+        projected = metadata and ("template_projection_version" in metadata or "template_entries" in metadata)
+        if projected or (_PROJECTION_REQUIRED and manifest_path.is_file()):
             templates = _section_engine().preset_template_projection(manifest_path, metadata)
         else:
             templates = _legacy_template_entries(manifest_path) if manifest_path.is_file() else []

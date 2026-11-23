@@ -14,6 +14,8 @@ LOW_LEVEL_BOUNDARY_ALLOWLIST = {
     "src/specify_cli/file_helper.py",
     "src/specify_cli/_file_handles.py",
     "src/specify_cli/_file_policy.py",
+    # Also vendored as a standalone execution-host script.
+    "src/specify_cli/markdown_sections.py",
 }
 
 DIRECT_PATH_AND_FILE_METHODS = {

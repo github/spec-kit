@@ -260,9 +260,11 @@ script variant.
 
 Adding or updating a preset refreshes its template data. If a resolver reports
 missing or stale data, restore any missing preset files and run
-`specify integration upgrade` in the project. Upgrading the CLI by itself
-leaves an existing project's installed scripts in place. Older scripts continue
-to need PyYAML to resolve preset templates until the project is refreshed.
+`specify integration upgrade` in the project. If the preset registry is lost or
+unreadable, restore it from a backup or reinstall the presets before upgrading.
+Upgrading the CLI by itself leaves an existing project's installed scripts in
+place. Older scripts continue to need PyYAML to resolve preset templates until
+the project is refreshed.
 
 ## Command and skill lifecycle
 

@@ -282,10 +282,11 @@ descriptor-relative or change their documented concurrency limitations.
   do not require subdirectory creation.
   On POSIX, the initial mode is restricted to the requested owner read/write
   bits and filtered by the process umask. After writing, the supplied mode is
-  applied with `chmod` using the platform's supported semantics. Metadata and
-  hard-link identity are not preserved. Atomic means same-filesystem
-  replacement with `os.replace`, not crash durability or protection from
-  concurrent path changes.
+  applied with `chmod` using the platform's supported semantics. For a byte
+  write, `mode=None` keeps the existing permissions or uses `0o644` for a
+  new file. Other metadata and hard-link identity are not preserved. Atomic
+  means same-filesystem replacement with `os.replace`, not crash durability
+  or protection from concurrent path changes.
 - `overwrite_text(path, content, encoding="utf-8")` is a **non-atomic** text
   upsert with existing parents, used for configuration compatibility. It uses
   the same accessed-path/link/containment checks as other operations, follows
@@ -500,8 +501,10 @@ locally traceable `pathlib` receivers; method names alone do not establish
 filesystem I/O.
 This is not runtime enforcement or whole-program type inference.
 
-Only three modules are exempt: `file_helper.py` implements the primitives,
-`_file_handles.py` provides native filesystem operations, `_file_policy.py`
-establishes trusted roots and bootstraps policy. The deny-mode policy for
+The guard exempts four modules. `file_helper.py` implements the primitives,
+`_file_handles.py` provides native filesystem operations, and `_file_policy.py`
+establishes trusted roots and bootstraps policy. `markdown_sections.py` also
+ships as a standalone project script for template resolution without an
+installed CLI. The deny-mode policy for
 `integration_state.py` does not exempt it from this guard. Existing direct calls
 elsewhere are not exempt when their call sites change.

@@ -406,6 +406,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         # Validate before remove() changes registry/agent artifacts or deleting
         # an unregistered destination left behind by an earlier installation.
         ignore_fn = load_install_ignore(source_dir, ".presetignore", PresetValidationError)
+        manifest_retained = not (ignore_fn and ignore_fn(str(source_dir), ["preset.yml"]))
         before_file_change(dest_dir, removal=True)
         try:
             if installed:
@@ -418,16 +419,10 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
 
         # Pre-register the preset so that composition resolution can see it
         # in the priority stack when resolving composed command content.
-        normalized_catalog_name = (
-            catalog_name.strip() if isinstance(catalog_name, str) else ""
-        )
-        source = (
-            {"kind": "catalog", "catalog": normalized_catalog_name}
-            if normalized_catalog_name
-            else "local"
-        )
+        catalog_name = catalog_name.strip() if isinstance(catalog_name, str) else ""
+        source = {"kind": "catalog", "catalog": catalog_name} if catalog_name else "local"
         self.registry.add_installed(
-            manifest, priority, source, manifest_retained=(dest_dir / "preset.yml").is_file(),
+            manifest, priority, source, manifest_retained=manifest_retained,
         )
 
         registered_commands: Dict[str, List[str]] = {}

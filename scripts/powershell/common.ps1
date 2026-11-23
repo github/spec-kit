@@ -339,10 +339,22 @@ function Get-Python3Command {
     # SPECKIT_PYTHON_EXECUTABLE is the canonical override; SPECKIT_PYTHON is
     # kept as a deprecated fallback (still used by update-agent-context.sh).
     $override = if ($env:SPECKIT_PYTHON_EXECUTABLE) { $env:SPECKIT_PYTHON_EXECUTABLE } else { $env:SPECKIT_PYTHON }
+    if ($Stdlib) {
+        foreach ($entry in (@($override), @('python3'), @('python'), @('py', '-3'))) {
+            $name = $entry[0]
+            if (-not $name -or -not (Get-Command $name -ErrorAction SilentlyContinue)) { continue }
+            $launcherArgs = @($entry | Select-Object -Skip 1)
+            try { $version = & $name @launcherArgs --version 2>&1 }
+            catch { continue }
+            if ($LASTEXITCODE -eq 0 -and "$version" -match '^Python 3\.(\d+)' -and [int]$Matches[1] -ge 11) {
+                return $entry
+            }
+        }
+        return $null
+    }
     if ($override -and (Get-Command $override -ErrorAction SilentlyContinue)) {
         $ver = & $override --version 2>&1
         if ($ver -match 'Python 3') {
-            if ($Stdlib) { return @($override) }
             & $override -c 'import yaml' *> $null
             if ($LASTEXITCODE -eq 0) { return @($override) }
         }
@@ -435,6 +447,55 @@ function Get-SortedExtensionIds {
     return $ranked | Sort-Object Priority, Id | ForEach-Object { $_.Id }
 }
 
+function Read-PresetRegistry {
+    param([string]$Directory)
+    $required = '__SPECKIT_REQUIRE_PRESET_PROJECTION__' -eq '1'
+    $path = Join-Path $Directory '.registry'
+    $presets = $null
+    if (Test-Path -LiteralPath $path) {
+        try {
+            $json = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
+            if ($required -and $json -notmatch '^\s*\{') { throw 'Expected a JSON object' }
+            $data = $json | ConvertFrom-Json
+            $property = $data.PSObject.Properties['presets']
+            if ($null -eq $data -or $data -isnot [PSCustomObject] -or
+                ($property -and ($null -eq $property.Value -or $property.Value -isnot [PSCustomObject]))) {
+                throw 'Invalid presets mapping'
+            }
+            if ($property) { $presets = $property.Value }
+            elseif (-not $required) { $presets = [PSCustomObject]@{} }
+            else { throw 'Missing presets mapping' }
+        } catch {
+            if ($required) { throw 'Preset registry is unreadable. Restore the preset registry or reinstall the presets.' }
+        }
+    }
+    if ($required) {
+        foreach ($preset in Get-ChildItem -LiteralPath $Directory -Directory) {
+            if ($preset.Name -cmatch '^[a-z0-9-]+$' -and
+                (Test-Path -LiteralPath (Join-Path $preset.FullName 'preset.yml') -PathType Leaf) -and
+                ($null -eq $presets -or $presets.PSObject.Properties[$preset.Name].Value -isnot [PSCustomObject])) {
+                throw 'Preset registry is missing an installed preset. Restore the preset registry or reinstall the presets.'
+            }
+        }
+    }
+    return $presets
+}
+
+function Get-EnabledPresetIds {
+    param($Presets)
+    @($Presets.PSObject.Properties) |
+        Where-Object { $_.Name -cmatch '^[a-z0-9-]+$' -and $_.Value -is [PSCustomObject] } |
+        Where-Object {
+            $enabled = $_.Value.PSObject.Properties['enabled']
+            -not $enabled -or [bool]$enabled.Value
+        } |
+        Sort-Object @{ Expression = {
+            $priority = $_.Value.PSObject.Properties['priority']
+            Get-NormalizedPriority -Value $priority.Value
+        } }, @{ Expression = { $_.Name } } |
+        ForEach-Object { $_.Name }
+}
+
 # Resolve a template name to a file path using the priority stack:
 #   1. .specify/templates/overrides/
 #   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)
@@ -457,49 +518,9 @@ function Resolve-Template {
     # Priority 2: Installed presets (sorted by priority from .registry)
     $presetsDir = Join-Path $RepoRoot '.specify/presets'
     if (Test-Path -LiteralPath $presetsDir) {
-        $registryFile = Join-Path $presetsDir '.registry'
-        $sortedPresets = @()
-        $registryParsed = $false
-        if (Test-Path -LiteralPath $registryFile) {
-            try {
-                $registryData = [System.IO.File]::ReadAllText($registryFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
-                if ($null -eq $registryData -or $registryData -isnot [PSCustomObject]) {
-                    throw 'Registry root must be an object'
-                }
-                $presetsProperty = $registryData.PSObject.Properties['presets']
-                if ($presetsProperty) {
-                    $presets = $presetsProperty.Value
-                    if ($null -eq $presets -or $presets -isnot [PSCustomObject]) {
-                        throw 'Registry presets must be an object'
-                    }
-                    $presetEntries = @($presets.PSObject.Properties)
-                    $priorityFor = {
-                        param($Entry)
-                        if ($Entry.Value -is [PSCustomObject]) {
-                            $priorityProperty = $Entry.Value.PSObject.Properties['priority']
-                            if ($priorityProperty) {
-                                return Get-NormalizedPriority -Value $priorityProperty.Value
-                            }
-                        }
-                        return 10
-                    }
-                    $sortedPresets = $presetEntries |
-                        Where-Object { $_.Value -is [PSCustomObject] } |
-                        Where-Object {
-                            $enabled = $_.Value.PSObject.Properties['enabled']
-                            -not $enabled -or [bool]$enabled.Value
-                        } |
-                        Where-Object { $_.Name -cmatch '^[a-z0-9-]+$' } |
-                        Sort-Object @{ Expression = { & $priorityFor $_ } }, @{ Expression = { $_.Name } } |
-                        ForEach-Object { $_.Name }
-                }
-                $registryParsed = $true
-            } catch {
-                $registryParsed = $false
-            }
-        }
-
-        if ($registryParsed) {
+        $presets = Read-PresetRegistry $presetsDir
+        if ($null -ne $presets) {
+            $sortedPresets = Get-EnabledPresetIds $presets
             foreach ($presetId in $sortedPresets) {
                 $candidate = Join-Path $presetsDir "$presetId/templates/$TemplateName.md"
                 if (Test-Path -LiteralPath $candidate) { return $candidate }
@@ -575,49 +596,11 @@ function Resolve-TemplateContent {
     # Priority 2: Installed presets (sorted by priority from .registry)
     $presetsDir = Join-Path $RepoRoot '.specify/presets'
     if (Test-Path -LiteralPath $presetsDir) {
-        $registryFile = Join-Path $presetsDir '.registry'
-        $sortedPresets = @()
-        $registryParsed = $false
-        if (Test-Path -LiteralPath $registryFile) {
-            try {
-                $registryData = [System.IO.File]::ReadAllText($registryFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
-                if ($null -eq $registryData -or $registryData -isnot [PSCustomObject]) {
-                    throw 'Registry root must be an object'
-                }
-                $presetsProperty = $registryData.PSObject.Properties['presets']
-                if ($presetsProperty) {
-                    $presets = $presetsProperty.Value
-                    if ($null -eq $presets -or $presets -isnot [PSCustomObject]) {
-                        throw 'Registry presets must be an object'
-                    }
-                    $presetEntries = @($presets.PSObject.Properties)
-                    $priorityFor = {
-                        param($Entry)
-                        if ($Entry.Value -is [PSCustomObject]) {
-                            $priorityProperty = $Entry.Value.PSObject.Properties['priority']
-                            if ($priorityProperty) {
-                                return Get-NormalizedPriority -Value $priorityProperty.Value
-                            }
-                        }
-                        return 10
-                    }
-                    $sortedPresets = $presetEntries |
-                        Where-Object { $_.Value -is [PSCustomObject] } |
-                        Where-Object {
-                            $enabled = $_.Value.PSObject.Properties['enabled']
-                            -not $enabled -or [bool]$enabled.Value
-                        } |
-                        Where-Object { $_.Name -cmatch '^[a-z0-9-]+$' } |
-                        Sort-Object @{ Expression = { & $priorityFor $_ } }, @{ Expression = { $_.Name } } |
-                        ForEach-Object { $_.Name }
-                }
-                $registryParsed = $true
-            } catch {
-                $registryParsed = $false
-            }
-        }
-
-        if (-not $registryParsed) {
+        $required = '__SPECKIT_REQUIRE_PRESET_PROJECTION__' -eq '1'
+        $presets = Read-PresetRegistry $presetsDir
+        if ($null -ne $presets) {
+            $sortedPresets = Get-EnabledPresetIds $presets
+        } else {
             $sortedPresets = Get-ChildItem -LiteralPath $presetsDir -Directory -ErrorAction SilentlyContinue |
                 Where-Object { $_.Name -cmatch '^[a-z0-9-]+$' } |
                 Sort-Object Name |
@@ -632,8 +615,8 @@ function Resolve-TemplateContent {
                 $manifestFilePath = ''
                 $manifestDeclared = $false
                 $manifest = Join-Path $presetsDir "$presetId/preset.yml"
-                $projected = $false
-                if ($registryParsed -and $presetsProperty) {
+                $projected = $required -and (Test-Path -LiteralPath $manifest -PathType Leaf)
+                if (-not $projected -and $null -ne $presets) {
                     $metadata = $presets.PSObject.Properties[$presetId].Value
                     $projected = [bool](
                         $metadata.PSObject.Properties['template_projection_version'] -or

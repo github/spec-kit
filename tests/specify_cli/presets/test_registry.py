@@ -2,7 +2,58 @@
 
 import pytest
 
-from specify_cli.presets import PresetRegistry
+from specify_cli.presets import PresetRegistry, PresetValidationError
+
+
+@pytest.mark.parametrize(
+    "case,error",
+    [
+        ("invalid-yaml", "Invalid YAML"),
+        ("different-id", "must declare id 'z-invalid'"),
+        ("missing-manifest", "Manifest not found"),
+        ("missing-registry", "reinstall"),
+        ("invalid-registry", "reinstall"),
+    ],
+)
+def test_refresh_preserves_registry_when_a_preset_cannot_be_projected(tmp_path, case, error):
+    presets = tmp_path / ".specify/presets"
+    registry = PresetRegistry(presets)
+    for name in ("a-valid", "z-invalid"):
+        directory = presets / name
+        directory.mkdir(parents=True)
+        (directory / "preset.yml").write_text(
+            f"""schema_version: "1.0"
+preset: {{id: {name}, name: Test, version: "1.0.0", description: Preset}}
+requires: {{speckit_version: ">=1"}}
+provides:
+  templates:
+    - {{type: template, name: plan-template, file: plan.md}}
+""",
+            encoding="utf-8",
+        )
+        registry.add(name, {"priority": 7, "enabled": False})
+
+    broken = presets / "z-invalid/preset.yml"
+    if case == "invalid-yaml":
+        broken.write_text("preset: [", encoding="utf-8")
+    elif case == "different-id":
+        broken.write_text(
+            broken.read_text(encoding="utf-8").replace("id: z-invalid", "id: wrong"),
+            encoding="utf-8",
+        )
+    elif case == "missing-manifest":
+        registry.update("z-invalid", {"template_projection_version": 1})
+        broken.unlink()
+    elif case == "missing-registry":
+        registry.registry_path.unlink()
+    else:
+        registry.registry_path.write_bytes(b"{")
+
+    path = registry.registry_path
+    before = path.read_bytes() if path.is_file() else None
+    with pytest.raises(PresetValidationError, match=error):
+        PresetRegistry.refresh_template_projections(tmp_path)
+    assert (path.read_bytes() if path.is_file() else None) == before
 
 
 class TestPresetRegistry:

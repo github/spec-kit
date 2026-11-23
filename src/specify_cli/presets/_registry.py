@@ -3,12 +3,13 @@
 import copy
 import json
 import re
-import stat
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from ..extensions import normalize_priority
+from ..file_helper import FileHelper
+from ..markdown_sections import PRESET_REGISTRY_REMEDY
 from ._manifest import PresetManifest, PresetValidationError
 
 
@@ -133,31 +134,63 @@ class PresetRegistry:
             "registered_skills": {},
         })
 
-    def refresh_template_projections(self, project_root: Path) -> None:
+    @classmethod
+    def refresh_template_projections(cls, project_root: Path) -> None:
         """Rebuild runtime template data from the installed preset manifests."""
-        updated = {}
-        for pack_id, entry in self.list().items():
-            if not re.fullmatch(r"[a-z0-9-]+", pack_id):
-                continue
-            path = self.packs_dir / pack_id / "preset.yml"
-            if not path.is_file() and "template_projection_version" not in entry:
-                continue  # A legacy directory can contain only convention-named templates.
-            manifest = PresetManifest(path)
-            if manifest.id != pack_id:
-                raise PresetValidationError(f"Preset manifest {path} must declare id '{pack_id}'")
-            refreshed = {**entry, **_template_metadata(manifest)}
-            if refreshed != entry:
-                updated[pack_id] = refreshed
-        if updated:
-            from ..shared_infra import _write_shared_bytes
+        packs_dir = project_root / ".specify" / "presets"
+        registry_path = packs_dir / cls.REGISTRY_FILE
+        try:
+            files = FileHelper(project_root)
+        except FileNotFoundError:
+            return
+        with files:
+            try:
+                candidates = files.iterdir(
+                    packs_dir, select=lambda name: bool(re.fullmatch(r"[a-z0-9-]+", name)),
+                )
+            except FileNotFoundError:
+                return
+            manifests = set()
+            for candidate in candidates:
+                try:
+                    files.read_bytes(candidate / "preset.yml")
+                except (FileNotFoundError, NotADirectoryError):
+                    continue
+                manifests.add(candidate.name)
+            try:
+                data = json.loads(files.read_text(registry_path))
+            except FileNotFoundError as exc:
+                if manifests:
+                    raise PresetValidationError(f"Preset registry is missing. {PRESET_REGISTRY_REMEDY}") from exc
+                return
+            except (OSError, ValueError) as exc:
+                raise PresetValidationError(f"Preset registry is unreadable. {PRESET_REGISTRY_REMEDY}") from exc
 
-            self.data["presets"].update(updated)
-            _write_shared_bytes(
-                project_root,
-                self.registry_path,
-                json.dumps(self.data, indent=2).encode("utf-8"),
-                mode=stat.S_IMODE(self.registry_path.stat().st_mode),
-            )
+            entries = data.get("presets") if isinstance(data, dict) else None
+            if (
+                not isinstance(entries, dict)
+                or any(not isinstance(entry, dict) for entry in entries.values())
+                or manifests.difference(entries)
+            ):
+                raise PresetValidationError(f"Preset registry is incomplete. {PRESET_REGISTRY_REMEDY}")
+
+            updated = {}
+            for pack_id, entry in entries.items():
+                if not re.fullmatch(r"[a-z0-9-]+", pack_id):
+                    continue
+                if pack_id not in manifests and not {"template_projection_version", "template_entries"} & entry.keys():
+                    continue  # Convention-named presets do not require a manifest.
+                path = packs_dir / pack_id / "preset.yml"
+                manifest = PresetManifest(path)
+                if manifest.id != pack_id:
+                    raise PresetValidationError(f"Preset manifest {path} must declare id '{pack_id}'")
+                updated[pack_id] = {**entry, **_template_metadata(manifest)}
+            if any(entry != entries[pack_id] for pack_id, entry in updated.items()):
+                from ..integrations._file_changes import changing_file
+
+                entries.update(updated)
+                with changing_file(registry_path):
+                    files.write_bytes(registry_path, json.dumps(data, indent=2).encode("utf-8"), mode=None)
 
     def update(self, pack_id: str, updates: dict):
         """Update preset metadata in registry.
