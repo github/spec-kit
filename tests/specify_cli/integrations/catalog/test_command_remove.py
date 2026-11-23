@@ -10,6 +10,23 @@ import pytest  # noqa: F401
 from tests.specify_cli.integrations._catalog_helpers import IntegrationCatalogCliTestBase
 
 class TestIntegrationCatalogRemove(IntegrationCatalogCliTestBase):
+    def test_catalog_remove_refuses_environment_override(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        config = project / ".specify" / "integration-catalogs.yml"
+        config.write_text(
+            "catalogs:\n  - name: project\n    url: https://project.example.com/catalog.json\n"
+        )
+        before = config.read_bytes()
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CATALOG_URL", "https://env.example.com/catalog.json"
+        )
+
+        result = self._invoke(["integration", "catalog", "remove", "0"], project)
+
+        assert result.exit_code == 1
+        assert "SPECKIT_INTEGRATION_CATALOG_URL" in result.output
+        assert config.read_bytes() == before
+
     def test_catalog_remove_out_of_range(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         # Need a config file for remove to attempt an index lookup
