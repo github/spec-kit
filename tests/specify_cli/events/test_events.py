@@ -643,6 +643,7 @@ class TestCopilotJsonWriting:
 
         events = {
             "session_start": [{"command": "speckit.agent-context.update", "timeout": 60}],
+            "user_prompt_submit": [{"command": "speckit.agent-context.update"}],
         }
         install_integration_events(integration, tmp_path, manifest, events)
 
@@ -674,6 +675,10 @@ class TestCopilotJsonWriting:
         # R2: native timeout gets the buffer (60 + 5 = 65) so the agent's
         # outer cap fires after the dispatcher's inner subprocess timeout.
         assert entry["timeoutSec"] == 65
+        prompt = data["hooks"]["userPromptSubmitted"][0]
+        for shell in ("bash", "powershell"):
+            assert shlex.split(entry[shell])[-2:] == ["60", "additionalContext"]
+            assert shlex.split(prompt[shell])[-2:] == ["60", "suppress"]
 
 
 # -- Cursor hooks.json version + matcher grouping (#7, S3) -------------------
@@ -901,7 +906,6 @@ class TestContextInjectionEnvelopes:
         from specify_cli.events import _dispatcher_command, _context_envelope_for
         from specify_cli.integrations.gemini import GeminiIntegration
         from specify_cli.integrations.qwen import QwenIntegration
-        from specify_cli.integrations.copilot import CopilotIntegration
         from specify_cli.integrations.cursor_agent import CursorAgentIntegration
         from specify_cli.integrations.claude import ClaudeIntegration
         from specify_cli.integrations.codex import CodexIntegration
@@ -931,14 +935,6 @@ class TestContextInjectionEnvelopes:
         assert cmd_qwen_start.endswith(" 60 hookSpecificOutput SessionStart")
         cmd_qwen_prompt = _dispatcher_command(qwen, Path("/proj"), "speckit.prompt", "user_prompt_submit")
         assert cmd_qwen_prompt.endswith(" 60 hookSpecificOutput UserPromptSubmit")
-
-        copilot = CopilotIntegration()
-        assert _context_envelope_for(copilot, "session_start") == "additionalContext"
-        assert _context_envelope_for(copilot, "user_prompt_submit") == "additionalContext"
-        cmd_copilot_start = _dispatcher_command(copilot, Path("/proj"), "speckit.boot", "session_start")
-        assert cmd_copilot_start.endswith(" 60 additionalContext")
-        cmd_copilot_prompt = _dispatcher_command(copilot, Path("/proj"), "speckit.prompt", "user_prompt_submit")
-        assert cmd_copilot_prompt.endswith(" 60 additionalContext")
 
         cursor = CursorAgentIntegration()
         assert _context_envelope_for(cursor, "session_start") == "additional_context"
