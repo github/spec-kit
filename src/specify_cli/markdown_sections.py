@@ -266,9 +266,37 @@ def replace_section(
     return content[:body_start] + replacement + content[body_end:]
 
 
+def _print_preset_template(manifest: Path, name: str, projected: bool) -> int:
+    if not projected:
+        try:
+            import yaml
+        except ImportError:
+            print("yaml_missing", file=sys.stderr)
+            return 2
+    try:
+        if projected:
+            templates = preset_template_projection(manifest)
+        else:
+            templates = legacy_preset_template_entries(yaml.safe_load(manifest.read_text(encoding="utf-8")))
+        for entry in templates:
+            if entry["name"] == name and entry["type"] == "template":
+                selector = base64.b64encode(entry.get("selector", "").encode("utf-8")).decode("ascii")
+                print("found", entry.get("strategy", "replace"), entry["file"], selector, sep="\t")
+                return 0
+        print("absent\treplace\t")
+    except Exception as exc:
+        # PowerShell 5.1 can turn native stderr into a terminating error.
+        print(f"manifest_invalid: {exc}", file=sys.stdout if projected else sys.stderr)
+        return 3
+    return 0
+
+
 def _main() -> int:
     import argparse
-    import sys
+
+    if sys.argv[1:2] == ["--preset-template"]:
+        manifest, name, mode = sys.argv[2:]
+        return _print_preset_template(Path(manifest), name, mode == "projection")
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("selector")

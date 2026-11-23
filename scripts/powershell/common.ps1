@@ -648,42 +648,11 @@ function Resolve-TemplateContent {
                         throw "Python 3 and PyYAML are required to resolve preset template composition"
                     }
                     try {
-                        # Parse the registry projection or read the legacy YAML.
+                        # Pass file arguments directly so Windows batch launchers can forward them.
                         $pyArgs = if ($manifestPython.Count -gt 1) { $manifestPython[1..($manifestPython.Count-1)] } else { @() }
                         $pyStderrFile = [System.IO.Path]::GetTempFileName()
-                        $stratResult = & $manifestPython[0] @pyArgs -c @"
-import sys, base64, runpy
-from pathlib import Path
-
-manifest = Path(sys.argv[1])
-projected = sys.argv[4] == 'True'
-if not projected:
-    try:
-        import yaml
-    except ImportError:
-        print('yaml_missing', file=sys.stderr)
-        sys.exit(2)
-try:
-    engine = runpy.run_path(sys.argv[3])
-    if projected:
-        templates = engine['preset_template_projection'](manifest)
-    else:
-        data = yaml.safe_load(manifest.read_text(encoding='utf-8'))
-        templates = engine['legacy_preset_template_entries'](data)
-    for t in templates:
-        if t.get('name') == sys.argv[2] and t.get('type', 'template') == 'template':
-            file_value = t.get('file', '')
-            strategy = t.get('strategy', 'replace')
-            selector = base64.b64encode(t.get('selector', '').encode('utf-8')).decode('ascii')
-            print('found\t' + strategy + '\t' + file_value + '\t' + selector)
-            sys.exit(0)
-    print('absent\treplace\t')
-except Exception as exc:
-    # Windows PowerShell 5.1 can raise a NativeCommandError for stderr
-    # before the wrapper can report the inner process's projection error.
-    print(f'manifest_invalid: {exc}', file=sys.stdout if projected else sys.stderr)
-    sys.exit(3)
-"@ $manifest $TemplateName $sectionEngine "$projected" 2>$pyStderrFile
+                        $mode = if ($projected) { 'projection' } else { 'legacy' }
+                        $stratResult = & $manifestPython[0] @pyArgs $sectionEngine --preset-template $manifest $TemplateName $mode 2>$pyStderrFile
                         if ($LASTEXITCODE -ne 0) {
                             if ($LASTEXITCODE -eq 2) {
                                 throw "PyYAML is required to resolve preset template composition for a legacy project. Run 'specify integration upgrade' to refresh installed preset template data."
@@ -694,14 +663,13 @@ except Exception as exc:
                                 [System.IO.File]::ReadAllText($pyStderrFile, [System.Text.Encoding]::UTF8)
                             }
                             throw "Invalid preset manifest ${manifest}: $detail"
-        }
-                        if ($stratResult) {
-                            $parts = $stratResult.Trim() -split "`t", 4
-                            $manifestDeclared = $parts[0] -eq 'found'
-                            $strategy = $parts[1].ToLowerInvariant()
-                            if ($parts.Count -gt 2 -and $parts[2]) { $manifestFilePath = $parts[2] }
-                            if ($parts.Count -gt 3) { $selector = $parts[3] }
                         }
+                        if (-not $stratResult) { throw "Python did not return preset template data for $manifest" }
+                        $parts = $stratResult.Trim() -split "`t", 4
+                        $manifestDeclared = $parts[0] -eq 'found'
+                        $strategy = $parts[1].ToLowerInvariant()
+                        if ($parts.Count -gt 2 -and $parts[2]) { $manifestFilePath = $parts[2] }
+                        if ($parts.Count -gt 3) { $selector = $parts[3] }
                         Remove-Item -LiteralPath $pyStderrFile -Force -ErrorAction SilentlyContinue
                     } catch {
                         if ($pyStderrFile) { Remove-Item -LiteralPath $pyStderrFile -Force -ErrorAction SilentlyContinue }
