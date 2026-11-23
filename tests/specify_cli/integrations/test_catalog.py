@@ -982,6 +982,25 @@ class TestCatalogSourceManagement:
         )
         assert [e["name"] for e in data["catalogs"]] == ["b"]
 
+    def test_remove_catalog_refuses_inactive_project_sources(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://a.example.com/catalog.json", name="a")
+        cat.add_catalog("https://b.example.com/catalog.json", name="b")
+        config = tmp_path / ".specify" / "integration-catalogs.yml"
+        before = config.read_bytes()
+
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CATALOG_URL", " https://env.example.com/catalog.json "
+        )
+        with pytest.raises(IntegrationValidationError, match="SPECKIT_INTEGRATION_CATALOG_URL"):
+            cat.remove_catalog(0)
+        assert config.read_bytes() == before
+
+        monkeypatch.setenv("SPECKIT_INTEGRATION_CATALOG_URL", " \t ")
+        assert cat.remove_catalog(0) == "a"
+        assert [e["name"] for e in yaml.safe_load(config.read_text())["catalogs"]] == ["b"]
+
     def test_remove_catalog_index_out_of_range(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
         cat = IntegrationCatalog(tmp_path)
