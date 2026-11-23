@@ -27,28 +27,30 @@ def _read_text(data: bytes, encoding: str) -> str:
 
 
 def _decode_output(data: bytes, encoding: str) -> str:
-    """Decode captured output with *encoding*, as ``text=True`` would.
+    """Decode captured output as UTF-8, falling back to the locale encoding.
 
-    In Python's UTF-8 mode (``PYTHONUTF8=1``, and the default from Python 3.15)
-    the preferred encoding is always UTF-8, but cmd.exe and other native
-    programs still write in the locale code page, e.g. cp936 on Chinese
-    Windows. If the output is not valid in *encoding*, retry with the locale
-    encoding that ``text=True`` used outside UTF-8 mode.
+    Try strict UTF-8 first so CLIs that write UTF-8 (including ``specify``,
+    ``git``, ``gh``, and UTF-8 scripts) decode cleanly even outside Python's
+    UTF-8 mode on legacy code pages, then retry with any distinct preferred or
+    system locale encoding for native tools that emit the legacy code page.
     """
     try:
-        return _read_text(data, encoding)
+        return _read_text(data, "utf-8")
     except UnicodeDecodeError as exc:
-        fallback = locale.getencoding()
-        try:
-            same = codecs.lookup(fallback).name == codecs.lookup(encoding).name
-        except LookupError:
-            same = True
-        if same:
-            raise
-        try:
-            return _read_text(data, fallback)
-        except UnicodeDecodeError:
-            raise exc from None
+        seen = {codecs.lookup("utf-8").name}
+        for fallback in (encoding, locale.getencoding()):
+            try:
+                canonical = codecs.lookup(fallback).name
+            except LookupError:
+                continue
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            try:
+                return _read_text(data, fallback)
+            except UnicodeDecodeError:
+                continue
+        raise exc from None
 
 
 class ShellStep(StepBase):
@@ -127,7 +129,7 @@ class ShellStep(StepBase):
             )
             # Decode in this thread so malformed output becomes a step
             # failure on Windows too, where subprocess uses reader threads.
-            # Preserve text=True's locale encoding and universal newlines.
+            # Try UTF-8 with locale fallback and preserve universal newlines.
             output = {"exit_code": proc.returncode, "stdout": "", "stderr": ""}
             encoding = locale.getpreferredencoding(False)
             decode_errors = []
