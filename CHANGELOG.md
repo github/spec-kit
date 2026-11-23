@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.4.4] - 2026-11-23
+
+### Changed
+
+- Update T-Shirt Sizing Gate to v0.2.1 (#5529)
+- Exit non-zero from integration upgrade when no integration is installed (#5526)
+- fix: prevent integration catalog removal under environment override (#5525)
+- Update Parallel Autonomous Run Governance preset to v0.2.13 (#5519)
+- fix(extensions): clarify the remove prompt when keeping config (#5518)
+- fix: close HTTP error responses in open_url (#5516) (#5517)
+- fix(presets): escape preset names in add status lines (#5511)
+- fix(extensions): fall back to the ID when add sees no name (#5510)
+- fix(powershell): preserve non-ASCII preset paths and manifest diagnostics in Resolve-TemplateContent (#5502)
+- fix(git): handle UTF-8 git output and narrow stderr pipes in remaining Python helpers (#5506)
+- fix(self): decode installer registry and verification subprocess output as UTF-8 (#5504)
+- fix: preserve FileHelper atomic writes for long names and strict modes (#5498)
+- Add ghp-lifecycle to community catalog (#5443)
+- fix(extensions): describe extension list options accurately (#5496)
+- Add Deliberate extension to community catalog (#5497)
+- refactor: use FileHelper for project root discovery (#5494)
+- chore: add FileHelper migration primitives and guard (#5484)
+- [bug-fix] Fix resume-stuck-running: persist resume state before log writes (#5492)
+- Add Spec Review Layout preset to community catalog (#5490)
+- chore: release 1.4.3, begin 1.4.4.dev0 development (#5491)
+
 ## [1.4.3] - 2026-11-19
 
 ### Changed
