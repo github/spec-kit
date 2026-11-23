@@ -4,9 +4,11 @@
 explicitly established root. Project-command boundaries now validate persisted
 policy, and init-options bootstrap I/O uses the helper. Other existing command
 filesystem operations are **not yet migrated**: loading policy alone does not
-enforce symlink behavior on those operations. Shared infrastructure, registration,
-managed storage, catalogs, scripts and runtime operations retain their existing
-behavior until their dependent migration stages.
+enforce symlink behavior on those operations. Shared infrastructure uses the
+helper for atomic script, template, and managed `.gitignore` content writes;
+other shared infrastructure operations, registration, managed storage, catalogs,
+scripts and runtime operations retain their existing behavior until their
+dependent migration stages.
 
 Only `specify init --allow-symlinks` exposes the setting; init defaults to deny
 and persists the literal JSON boolean `allow_symlinks` in
@@ -462,10 +464,11 @@ can redirect those opens; they do not have the read path's parent-relative
 handle protection.
 The helper does not constrain subprocesses or third-party code.
 
-Existing safe-write mechanisms informed this helper, but existing shared
-infrastructure warning/skip behavior and development-mode link creation are
-unchanged. Migrate one owned operation boundary at a time, carrying original
-paths and an explicit root/policy into the helper before any early resolution.
+Shared infrastructure content writes always use deny mode. The caller retains
+its destination preflight, warning/skip decisions, script modes, and file-change
+hooks. Development-mode link creation is unchanged. Migrate one owned operation
+boundary at a time, carrying original paths and an explicit root/policy into
+the helper before any early resolution.
 Linked command directories and development-mode registration remain dependent
 stages. Tree copying is deferred: install callers must retain selection of
 included entries and establish separate trusted source and destination
