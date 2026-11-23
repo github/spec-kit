@@ -162,10 +162,13 @@ def server(tmp_path, monkeypatch, tls_certificate):
 
     original_open_url = authentication_http.open_url
 
-    def open_loopback_url(url, *args, **kwargs):
+    def open_loopback_url(url, timeout=10, extra_headers=None, redirect_validator=None):
         if url.startswith(f"{result.url}/"):
-            kwargs["timeout"] = max(kwargs["timeout"], 60)
-        return original_open_url(url, *args, **kwargs)
+            timeout = max(timeout, 60)
+        return original_open_url(
+            url, timeout=timeout, extra_headers=extra_headers,
+            redirect_validator=redirect_validator,
+        )
 
     monkeypatch.setattr(authentication_http, "open_url", open_loopback_url)
     try:
@@ -213,6 +216,35 @@ def test_loopback_catalog_survives_short_handshake_window(tmp_path, server, monk
 
     assert read_records(project)[KEY]["version"] == "1.0.0"
     assert "/catalog.json" in server.requests
+
+
+def test_loopback_timeout_preserves_open_url_call_forms_and_other_hosts(server, monkeypatch):
+    from specify_cli.authentication import http as authentication_http
+
+    observed = []
+
+    def record_open(opener, request, *, timeout):
+        observed.append((request.full_url, timeout))
+        return object()
+
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", record_open)
+    fixture_url = f"{server.url}/catalog.json"
+    other_port = "https://127.0.0.1:1/catalog.json"
+    remote_url = "https://example.com/catalog.json"
+
+    authentication_http.open_url(fixture_url)
+    authentication_http.open_url(fixture_url, 10)
+    authentication_http.open_url(fixture_url, timeout=90)
+    authentication_http.open_url(other_port, 10)
+    authentication_http.open_url(remote_url, timeout=5)
+
+    assert observed == [
+        (fixture_url, 60),
+        (fixture_url, 60),
+        (fixture_url, 90),
+        (other_port, 10),
+        (remote_url, 5),
+    ]
 
 
 def publish(server, *, metadata=None, code=None, version="1.0.0", members=None, archive="zip"):
