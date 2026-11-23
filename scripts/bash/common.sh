@@ -685,8 +685,9 @@ for pid, meta in rows:
                 local fallback_id="${preset%/}"
                 fallback_id="${fallback_id##*/}"
                 case "$fallback_id" in *[!a-z0-9-]*) continue ;; esac
-                if [ "$required" = 1 ] && [ -f "$preset/preset.yml" ]; then
-                    echo "Error: Preset template resolution requires Python 3.11+ on the execution host" >&2
+                if [ "$required" = 1 ] &&
+                    { [ -e "$presets_dir/.registry" ] || [ -L "$presets_dir/.registry" ] || [ -f "$preset/preset.yml" ]; }; then
+                    echo "Error: Install Python 3.11+ or set SPECKIT_PYTHON_EXECUTABLE to resolve preset templates" >&2
                     return 2
                 fi
                 sorted_presets+="${sorted_presets:+$'\n'}$fallback_id"
@@ -715,11 +716,9 @@ for pid, meta in rows:
                         echo "Error: Python 3 and PyYAML are required to resolve preset template composition" >&2
                         return 2
                     fi
-                    local result
-                    local py_stderr
-                    local parse_status
+                    local result py_stderr
                     py_stderr=$(mktemp)
-                    if result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" SPECKIT_SECTION_ENGINE="$section_engine" SPECKIT_PROJECTED="$projected" "${manifest_python[@]}" -c "
+                    if result=$(PYTHONIOENCODING=utf-8 SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" SPECKIT_SECTION_ENGINE="$section_engine" SPECKIT_PROJECTED="$projected" "${manifest_python[@]}" -c "
 import os, sys, base64, runpy
 from pathlib import Path
 
@@ -741,7 +740,7 @@ try:
     for t in templates:
         if t.get('name') == os.environ['SPECKIT_TMPL'] and t.get('type', 'template') == 'template':
             file_value = t.get('file', '')
-            strategy = t.get('strategy', 'replace')
+            strategy = t.get('strategy', 'replace').lower()
             selector = base64.b64encode(t.get('selector', '').encode('utf-8')).decode('ascii')
             print('found\t' + strategy + '\t' + file_value + '\t' + selector)
             sys.exit(0)
@@ -750,12 +749,13 @@ except Exception as exc:
     print(f'manifest_invalid: {exc}', file=sys.stderr)
     sys.exit(3)
 " 2>"$py_stderr"); then
-                        parse_status=0
+                        if [ -n "$result" ]; then
+                            local declaration
+                            IFS=$'\t' read -r declaration strategy manifest_file selector <<< "$result"
+                            [ "$declaration" = "found" ] && manifest_declared=true
+                        fi
                     else
-                        parse_status=$?
-                    fi
-                    if [ "$parse_status" -ne 0 ]; then
-                        if [ "$parse_status" -eq 2 ]; then
+                        if [ "$?" -eq 2 ]; then
                             echo "Error: PyYAML is required to resolve preset template composition for a legacy project. Run 'specify integration upgrade' to refresh installed preset template data." >&2
                         else
                             echo "Error: invalid preset manifest $manifest" >&2
@@ -763,12 +763,6 @@ except Exception as exc:
                         fi
                         rm -f "$py_stderr"
                         return 2
-                    fi
-                    if [ -n "$result" ]; then
-                        local declaration
-                        IFS=$'\t' read -r declaration strategy manifest_file selector <<< "$result"
-                        [ "$declaration" = "found" ] && manifest_declared=true
-                        strategy=$(printf '%s' "$strategy" | tr '[:upper:]' '[:lower:]')
                     fi
                     rm -f "$py_stderr"
                 fi

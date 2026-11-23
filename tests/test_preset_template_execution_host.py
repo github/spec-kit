@@ -19,6 +19,7 @@ from tests.parity_helpers import (
     _bash_posix_path,
     bash_cmd,
     clean_env,
+    install_composition_stack,
     install_scripts,
     json_stdout,
     make_repo,
@@ -30,6 +31,83 @@ from tests.parity_helpers import (
 )
 
 SCRIPT = "resolve-template"
+
+
+def test_python_resolver_reports_inaccessible_preset_template(tmp_path: Path) -> None:
+    project = make_repo(tmp_path)
+    install_scripts(project, SCRIPT)
+    install_composition_stack(project, "plan-template", "# Core\n")
+    inaccessible = project / ".specify/presets/wrap-pack/templates/plan-template.md"
+    command = py_cmd(project, SCRIPT, "plan-template", "--json")
+    result = run(command[:1] + ["-c", """
+import runpy
+import sys
+from pathlib import Path
+
+inaccessible = Path(sys.argv[1]).resolve()
+is_file = Path.is_file
+
+def check(path):
+    if path == inaccessible:
+        raise PermissionError("preset template access denied")
+    return is_file(path)
+
+Path.is_file = check
+sys.argv = sys.argv[2:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+""", str(inaccessible)] + command[1:], project, timeout=30)
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.startswith("ERROR:")
+    assert "preset template access denied" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def _without_python(tmp_path: Path) -> dict[str, str]:
+    utilities = tmp_path / "utilities"
+    utilities.mkdir()
+    for name in ("cat", "dirname", "mktemp", "rm", "sort", "tr"):
+        location = shutil.which(name)
+        assert location, name
+        (utilities / name).symlink_to(location)
+    return dict(clean_env(), PATH=str(utilities))
+
+
+@pytest.mark.skipif(os.name == "nt" or not HAS_BASH, reason="requires a POSIX Bash PATH")
+def test_generated_bash_resolver_does_not_ignore_the_registry_without_python(tmp_path: Path) -> None:
+    specify = [sys.executable, "-c", "from specify_cli import main; main()"]
+    initialized = run(specify + [
+        "init", "project", "--integration", "copilot", "--script", "sh",
+        "--non-interactive", "--ignore-agent-tools",
+    ], tmp_path, timeout=60)
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+    project = tmp_path / "project"
+    env = _without_python(tmp_path)
+    bash = shutil.which("bash")
+    assert bash
+    command = [bash, *bash_cmd(project, SCRIPT, "plan-template", "--json")[1:]]
+
+    core = (project / ".specify/templates/plan-template.md").read_bytes().decode("utf-8")
+    empty = run(command, project, env, timeout=30)
+    assert empty.returncode == 0, empty.stderr
+    assert json_stdout(empty)["TEMPLATE_CONTENT"] == core
+
+    presets = project / ".specify/presets"
+    template = presets / "team/templates/plan-template.md"
+    template.parent.mkdir(parents=True)
+    template.write_bytes(b"# Convention only\n")
+    fallback = run(command, project, env, timeout=30)
+    assert fallback.returncode == 0, fallback.stderr
+    assert json_stdout(fallback)["TEMPLATE_CONTENT"] == "# Convention only\n"
+
+    (presets / ".registry").write_text(
+        '{"presets":{"team":{"enabled":false,"priority":1}}}', encoding="utf-8",
+    )
+    disabled = run(command, project, env, timeout=30)
+    assert disabled.returncode != 0
+    assert disabled.stdout == ""
+    assert "Python 3.11+" in disabled.stderr
+    assert "SPECKIT_PYTHON_EXECUTABLE" in disabled.stderr
 
 
 def _older_python_launcher(tmp_path: Path, route: str) -> str:
@@ -81,13 +159,7 @@ def test_extension_registry_can_use_only_the_stdlib_override(tmp_path: Path) -> 
         encoding="utf-8",
     )
     runtime = make_yaml_less_venv(tmp_path / "runtime")
-    utilities = tmp_path / "utilities"
-    utilities.mkdir()
-    for name in ("cat", "dirname", "mktemp", "rm", "sort", "tr"):
-        location = shutil.which(name)
-        assert location, name
-        (utilities / name).symlink_to(location)
-    env = dict(clean_env(), PATH=str(utilities), SPECKIT_PYTHON_EXECUTABLE=str(runtime))
+    env = dict(_without_python(tmp_path), SPECKIT_PYTHON_EXECUTABLE=str(runtime))
     command = bash_cmd(project, SCRIPT, "plan-template", "--json")
     bash = shutil.which("bash")
     assert bash
@@ -141,11 +213,11 @@ def test_installed_preset_resolves_on_an_execution_host_without_pyyaml(
     shim = make_python3_path_shim(tmp_path / "execution path", execution_python)
     env = clean_env()
     env["PATH"] = f"{shim}{os.pathsep}{env['PATH']}"
+    env["PYTHONIOENCODING"] = "ascii"
     template = "plan-template"
     if route == "bash":
         command = bash_cmd(project, SCRIPT, template, "--json")
     elif route in ("powershell", "windows-powershell"):
-        env["PYTHONIOENCODING"] = "ascii"
         command = ps_cmd(project, SCRIPT, template, "-Json")
         if route == "windows-powershell":
             command[0] = WINDOWS_POWERSHELL

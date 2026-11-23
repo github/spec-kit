@@ -537,7 +537,7 @@ def _legacy_template_entries(manifest_path: Path) -> list[dict[str, str]]:
 def _preset_template_layer(
     preset_dir: Path, template_name: str, metadata: dict[str, object] | None = None,
 ) -> tuple[Path, str, str | None, str] | None:
-    """Return the preset template path and composition strategy."""
+    """Resolve one preset template layer."""
     manifest_path = preset_dir / "preset.yml"
     try:
         projected = metadata and ("template_projection_version" in metadata or "template_entries" in metadata)
@@ -560,7 +560,7 @@ def _preset_template_layer(
             if not candidate.is_file():
                 return None
             return candidate, strategy.lower(), entry.get("selector"), preset_dir.name
-    except ValueError as exc:
+    except (OSError, ValueError) as exc:
         raise TemplateResolutionError(
             f"Failed to parse preset manifest {manifest_path}: {exc}"
         ) from exc

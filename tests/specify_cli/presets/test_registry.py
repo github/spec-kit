@@ -1,7 +1,13 @@
 """Tests for preset registry persistence and priority in specify_cli.presets._registry."""
 
+import hashlib
+import os
+import stat
+
 import pytest
 
+from specify_cli.file_helper import SymlinkDeniedError
+from specify_cli.integrations._file_changes import file_change_observer
 from specify_cli.presets import PresetRegistry, PresetValidationError
 
 
@@ -54,6 +60,75 @@ provides:
     with pytest.raises(PresetValidationError, match=error):
         PresetRegistry.refresh_template_projections(tmp_path)
     assert (path.read_bytes() if path.is_file() else None) == before
+
+
+@pytest.mark.parametrize("link_kind", ["preset directory", "manifest"])
+def test_refresh_honors_contained_preset_links(tmp_path, link_kind):
+    presets = tmp_path / ".specify/presets"
+    registry = PresetRegistry(presets)
+    registry.add("linked", {"priority": 7, "enabled": True})
+    source = tmp_path / "manifest-source"
+    source.mkdir()
+    manifest = source / "preset.yml"
+    content = b"""schema_version: "1.0"
+preset: {id: linked, name: Test, version: "1.0.0", description: Preset}
+requires: {speckit_version: ">=1"}
+provides:
+  templates:
+    - {type: template, name: plan-template, file: plan.md}
+"""
+    manifest.write_bytes(content)
+    assert manifest.resolve().is_relative_to(tmp_path.resolve())
+    link = presets / "linked"
+    try:
+        if link_kind == "preset directory":
+            link.symlink_to(source, target_is_directory=True)
+        else:
+            link.mkdir()
+            link /= "preset.yml"
+            link.symlink_to(manifest)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    with pytest.raises(SymlinkDeniedError):
+        PresetRegistry.refresh_template_projections(tmp_path)
+    options = tmp_path / ".specify/init-options.json"
+    options.write_text('{"allow_symlinks":true}', encoding="utf-8")
+    if os.name != "nt":
+        registry.registry_path.chmod(0o600)
+    changes = []
+    token = file_change_observer.set(lambda path, before, removal: changes.append((path, before, removal)))
+    try:
+        PresetRegistry.refresh_template_projections(tmp_path)
+    finally:
+        file_change_observer.reset(token)
+
+    updated = PresetRegistry(presets).get("linked")
+    assert updated["manifest_hash"] == f"sha256:{hashlib.sha256(content).hexdigest()}"
+    assert updated["template_entries"][0]["name"] == "plan-template"
+    assert updated["priority"] == 7
+    assert changes == [(registry.registry_path, True, False), (registry.registry_path, False, False)]
+    if os.name != "nt":
+        assert stat.S_IMODE(registry.registry_path.stat().st_mode) == 0o600
+    assert link.is_symlink()
+    assert manifest.read_bytes() == content
+
+    if link_kind == "manifest":
+        output = source / "registry.json"
+        registry.registry_path.rename(output)
+        registry.registry_path.symlink_to(output)
+        before = output.read_bytes()
+        manifest.write_bytes(content.replace(b"description: Preset", b"description: Changed"))
+        with pytest.raises(ValueError, match="symlinked"):
+            PresetRegistry.refresh_template_projections(tmp_path)
+        assert registry.registry_path.is_symlink()
+        assert output.read_bytes() == before
+
+
+def test_refresh_skips_a_missing_project_root(tmp_path):
+    project = tmp_path / "missing"
+    PresetRegistry.refresh_template_projections(project)
+    assert not project.exists()
 
 
 class TestPresetRegistry:

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .._file_policy import ProjectPolicyError, project_files
 from ..extensions import normalize_priority
 from ..file_helper import FileHelper
 from ..markdown_sections import PRESET_REGISTRY_REMEDY
@@ -140,9 +141,11 @@ class PresetRegistry:
         packs_dir = project_root / ".specify" / "presets"
         registry_path = packs_dir / cls.REGISTRY_FILE
         try:
-            files = FileHelper(project_root)
-        except FileNotFoundError:
-            return
+            files = project_files(project_root)
+        except ProjectPolicyError as exc:
+            if isinstance(exc.__cause__, FileNotFoundError):
+                return
+            raise
         with files:
             try:
                 candidates = files.iterdir(
@@ -150,13 +153,12 @@ class PresetRegistry:
                 )
             except FileNotFoundError:
                 return
-            manifests = set()
+            manifests = {}
             for candidate in candidates:
                 try:
-                    files.read_bytes(candidate / "preset.yml")
+                    manifests[candidate.name] = files.read_bytes(candidate / "preset.yml")
                 except (FileNotFoundError, NotADirectoryError):
                     continue
-                manifests.add(candidate.name)
             try:
                 data = json.loads(files.read_text(registry_path))
             except FileNotFoundError as exc:
@@ -170,7 +172,7 @@ class PresetRegistry:
             if (
                 not isinstance(entries, dict)
                 or any(not isinstance(entry, dict) for entry in entries.values())
-                or manifests.difference(entries)
+                or manifests.keys() - entries.keys()
             ):
                 raise PresetValidationError(f"Preset registry is incomplete. {PRESET_REGISTRY_REMEDY}")
 
@@ -178,19 +180,24 @@ class PresetRegistry:
             for pack_id, entry in entries.items():
                 if not re.fullmatch(r"[a-z0-9-]+", pack_id):
                     continue
-                if pack_id not in manifests and not {"template_projection_version", "template_entries"} & entry.keys():
-                    continue  # Convention-named presets do not require a manifest.
                 path = packs_dir / pack_id / "preset.yml"
-                manifest = PresetManifest(path)
+                if pack_id not in manifests:
+                    if {"template_projection_version", "template_entries"} & entry.keys():
+                        raise PresetValidationError(f"Manifest not found: {path}")
+                    continue  # Convention-named presets do not require a manifest.
+                manifest = PresetManifest(path, manifest_bytes=manifests[pack_id])
                 if manifest.id != pack_id:
                     raise PresetValidationError(f"Preset manifest {path} must declare id '{pack_id}'")
                 updated[pack_id] = {**entry, **_template_metadata(manifest)}
             if any(entry != entries[pack_id] for pack_id, entry in updated.items()):
                 from ..integrations._file_changes import changing_file
+                from ..shared_infra import _ensure_safe_shared_destination
 
                 entries.update(updated)
-                with changing_file(registry_path):
-                    files.write_bytes(registry_path, json.dumps(data, indent=2).encode("utf-8"), mode=None)
+                # Managed registry writes retain the journal's non-link boundary.
+                _ensure_safe_shared_destination(project_root, registry_path)
+                with FileHelper(project_root) as writer, changing_file(registry_path):
+                    writer.write_bytes(registry_path, json.dumps(data, indent=2).encode("utf-8"), mode=None)
 
     def update(self, pack_id: str, updates: dict):
         """Update preset metadata in registry.
