@@ -142,6 +142,43 @@ def test_reinit_preserves_feature_numbering(tmp_path: Path, monkeypatch, numberi
     assert updated["here"] is True
 
 
+@pytest.mark.parametrize("selected", ["claude", "codex", "gemini"])
+def test_reinit_keeps_other_installed_integrations(tmp_path, monkeypatch, selected):
+    """The upgrade-guide fallback must keep the other installed integrations."""
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    args = ["--script", "sh", "--ignore-agent-tools", "--non-interactive"]
+    result = runner.invoke(app, ["init", "project", "--integration", "claude", *args])
+    assert result.exit_code == 0, result.output
+    project = tmp_path / "project"
+    monkeypatch.chdir(project)
+    result = runner.invoke(app, ["integration", "install", "codex", "--script", "ps"])
+    assert result.exit_code == 0, result.output
+    state_path = project / ".specify/integration.json"
+    before_state = json.loads(state_path.read_text(encoding="utf-8"))
+    retained = "claude" if selected == "codex" else "codex"
+    manifest_path = project / f".specify/integrations/{retained}.manifest.json"
+    before = {manifest_path: manifest_path.read_bytes()}
+    for relative in json.loads(before[manifest_path])["files"]:
+        path = project / relative
+        before[path] = path.read_bytes()
+
+    result = runner.invoke(app, ["init", "--here", "--force", "--integration", selected, *args])
+
+    assert result.exit_code == 0, result.output
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    expected = ["claude", "codex"] + (["gemini"] if selected == "gemini" else [])
+    assert state["installed_integrations"] == expected
+    assert state["default_integration"] == selected
+    assert state["integration_settings"][retained] == before_state["integration_settings"][retained]
+    assert all(path.read_bytes() == content for path, content in before.items())
+    result = runner.invoke(app, ["integration", "status", "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["installed_integrations"] == expected
+    result = runner.invoke(app, ["integration", "upgrade", retained])
+    assert result.exit_code == 0, result.output
+
+
 @pytest.mark.parametrize("name", ["proj [v2]", "my[bold]app"])
 def test_next_steps_cd_shows_the_real_project_name(tmp_path: Path, name: str):
     """The `cd` line must name the directory that was actually created."""
