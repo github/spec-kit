@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import re
+import stat
+from pathlib import Path
+from typing import Literal
 
 import typer
 from rich.markup import escape as _escape_markup
@@ -17,14 +21,28 @@ def preset_resolve(
     template_name: str = typer.Argument(
         ..., help="Template name to resolve (e.g., spec-template)"
     ),
+    kind: Literal["command", "script", "template"] | None = typer.Option(
+        None,
+        "--kind",
+        help="Artifact kind (defaults to command for dotted names, template otherwise)",
+    ),
+    output: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--output",
+        help=(
+            "Write the effective script to this path "
+            "(required to materialize composition)"
+        ),
+    ),
 ):
-    """Show which template will be resolved for a given name."""
+    """Show which artifact wins, or materialize an effective script."""
     from .. import _require_specify_project
     from . import PresetResolver
 
-    is_command = "." in template_name
+    template_type = kind or ("command" if "." in template_name else "template")
+    is_command = template_type == "command"
     valid_name = (
-        re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+", template_name)
+        re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)*", template_name)
         if is_command
         else re.fullmatch(r"[a-z0-9-]+", template_name)
     )
@@ -37,9 +55,86 @@ def preset_resolve(
         )
         raise typer.Exit(1)
 
+    if output is not None and template_type != "script":
+        console.print("[red]Error:[/red] --output can only be used with --kind script")
+        raise typer.Exit(1)
+
     project_root = _require_specify_project()
     resolver = PresetResolver(project_root)
-    template_type = "command" if is_command else "template"
+
+    if output is not None:
+        output_path = output.expanduser()
+        if not output_path.is_absolute():
+            output_path = Path.cwd() / output_path
+        output_path = output_path.resolve()
+        layers = resolver.collect_all_layers(template_name, "script")
+        base_index = next(
+            (
+                index
+                for index, layer in enumerate(layers)
+                if layer["strategy"] == "replace"
+            ),
+            None,
+        )
+        contributing_layers = (
+            layers[: base_index + 1] if base_index is not None else layers
+        )
+        for layer in contributing_layers:
+            source_path = Path(layer["path"])
+            try:
+                aliases_source = output_path == source_path.resolve() or (
+                    output_path.exists() and os.path.samefile(output_path, source_path)
+                )
+            except OSError:
+                aliases_source = output_path == source_path.resolve()
+            if aliases_source:
+                console.print(
+                    "[red]Error:[/red] --output must not overwrite a contributing script"
+                )
+                raise typer.Exit(1)
+        try:
+            content = resolver.resolve_content(
+                template_name,
+                "script",
+                relative_import_base=output_path.parent,
+            )
+        except Exception as exc:
+            console.print(
+                f"[red]Error:[/red] Could not resolve script: "
+                f"{_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1) from exc
+        if content is None:
+            console.print(
+                f"[yellow]{_escape_markup(str(template_name))}[/yellow]: "
+                "not found or cannot be composed"
+            )
+            raise typer.Exit(1)
+
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(content, encoding="utf-8")
+            execute_bits = 0
+            for layer in contributing_layers:
+                source_mode = Path(layer["path"]).stat().st_mode
+                execute_bits |= stat.S_IMODE(source_mode) & 0o111
+            if execute_bits:
+                output_path.chmod(
+                    stat.S_IMODE(output_path.stat().st_mode) | execute_bits
+                )
+        except OSError as exc:
+            console.print(
+                f"[red]Error:[/red] Could not write script to "
+                f"{_escape_markup(str(output_path))}: {_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1) from exc
+
+        console.print(
+            f"  [bold]{_escape_markup(str(template_name))}[/bold]: "
+            f"{_escape_markup(str(output_path))}"
+        )
+        console.print("    [dim](effective script written to --output path)[/dim]")
+        return
 
     try:
         layers = resolver.collect_all_layers(template_name, template_type)
@@ -85,6 +180,12 @@ def preset_resolve(
                 console.print(
                     "    [dim]Final output is composed from multiple preset layers; the path above is the highest-priority contributing layer.[/dim]"
                 )
+                if template_type == "script":
+                    console.print(
+                        "    [dim]Use --output PATH to write the effective composed "
+                        "script. Relative imports in the output resolve from that "
+                        "file's directory.[/dim]"
+                    )
             console.print("\n  [bold]Composition chain:[/bold]")
             # Compute the effective base: first replace layer scanning from
             # highest priority (matching resolve_content top-down logic).

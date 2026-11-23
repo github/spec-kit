@@ -73,6 +73,72 @@ def _resolve_script_reference(script_root: Path, token: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def _selected_core_script_paths(project_root: Path) -> dict[str, Path]:
+    """Return built-in scripts selected by the project's runtime policy."""
+    from .._init_options import load_init_options
+    from ..agents import CommandRegistrar
+    from ..integrations.base import IntegrationBase
+
+    command_dirs = tuple(
+        directory
+        for directory in (
+            _project_core_asset_root(project_root, "commands"),
+            _locate_shared_asset_dir("commands"),
+        )
+        if directory is not None
+    )
+    script_dirs = tuple(
+        directory
+        for directory in (
+            project_root / ".specify" / "scripts",
+            _project_core_asset_root(project_root, "scripts"),
+            _locate_shared_asset_dir("scripts"),
+        )
+        if directory is not None
+    )
+    requested = load_init_options(project_root).get("script")
+    selected: dict[str, Path] = {}
+
+    for command_dir in command_dirs:
+        for template_path in sorted(command_dir.glob("*.md"), key=lambda p: p.name):
+            try:
+                content = template_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            frontmatter, _body = CommandRegistrar.parse_frontmatter(content)
+            scripts = frontmatter.get("scripts", {})
+            if not isinstance(scripts, dict):
+                continue
+            script_commands = {
+                key: value
+                for key, value in scripts.items()
+                if isinstance(key, str) and isinstance(value, str) and value.strip()
+            }
+            if not script_commands:
+                continue
+            try:
+                variant = IntegrationBase.select_script_variant(
+                    requested, script_commands
+                )
+                tokens = shlex.split(script_commands[variant], posix=True)
+            except (KeyError, ValueError):
+                continue
+            if not tokens:
+                continue
+
+            path = None
+            for script_dir in script_dirs:
+                path = _resolve_script_reference(script_dir, tokens[0])
+                if path is not None:
+                    break
+            if path is None:
+                continue
+            name = path.stem.replace("_", "-") if variant == "py" else path.stem
+            selected.setdefault(name, path)
+
+    return selected
+
+
 def _locate_shared_asset_dir(subdir: str) -> Path | None:
     """Locate a core asset directory without changing shared asset behavior."""
     if subdir not in {"commands", "scripts", "templates"}:
@@ -1031,67 +1097,7 @@ class ArtifactCatalog:
 
     def _selected_core_script_paths(self) -> dict[str, Path]:
         """Return built-in scripts selected by the project's existing runtime policy."""
-        from .._init_options import load_init_options
-        from ..agents import CommandRegistrar
-        from ..integrations.base import IntegrationBase
-
-        command_dirs = tuple(
-            directory
-            for directory in (
-                _project_core_asset_root(self.project_root, "commands"),
-                _locate_shared_asset_dir("commands"),
-            )
-            if directory is not None
-        )
-        script_dirs = tuple(
-            directory
-            for directory in (
-                _project_core_asset_root(self.project_root, "scripts"),
-                _locate_shared_asset_dir("scripts"),
-            )
-            if directory is not None
-        )
-        requested = load_init_options(self.project_root).get("script")
-        selected: dict[str, Path] = {}
-
-        for command_dir in command_dirs:
-            for template_path in sorted(command_dir.glob("*.md"), key=lambda p: p.name):
-                try:
-                    content = template_path.read_text(encoding="utf-8")
-                except (OSError, UnicodeDecodeError):
-                    continue
-                frontmatter, _body = CommandRegistrar.parse_frontmatter(content)
-                scripts = frontmatter.get("scripts", {})
-                if not isinstance(scripts, dict):
-                    continue
-                script_commands = {
-                    key: value
-                    for key, value in scripts.items()
-                    if isinstance(key, str) and isinstance(value, str) and value.strip()
-                }
-                if not script_commands:
-                    continue
-                try:
-                    variant = IntegrationBase.select_script_variant(
-                        requested, script_commands
-                    )
-                    tokens = shlex.split(script_commands[variant], posix=True)
-                except (KeyError, ValueError):
-                    continue
-                if not tokens:
-                    continue
-
-                path = None
-                for script_dir in script_dirs:
-                    path = _resolve_script_reference(script_dir, tokens[0])
-                    if path is not None:
-                        break
-                if path is None:
-                    continue
-                name = path.stem.replace("_", "-") if variant == "py" else path.stem
-                selected.setdefault(name, path)
-
-        return selected
+        return _selected_core_script_paths(self.project_root)
 
     def _describe_layer(
         self,
