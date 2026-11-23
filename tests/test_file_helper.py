@@ -3442,6 +3442,695 @@ def test_atomic_failure_cleans_temp_and_preserves_target(root, monkeypatch):
     assert list(root.iterdir()) == [root / "file"]
 
 
+def test_atomic_fdopen_failure_closes_stage_and_preserves_target(root, monkeypatch):
+    destination = root / "file"
+    destination.write_bytes(b"old")
+    stage_fds = []
+
+    def fail(fd, *args, **kwargs):
+        os.fstat(fd)
+        stage_fds.append(fd)
+        raise OSError("fdopen failed")
+
+    monkeypatch.setattr(os, "fdopen", fail)
+    with FileHelper(root) as files, pytest.raises(OSError, match="fdopen failed"):
+        files.write_bytes(destination, b"new")
+    assert len(stage_fds) == 1
+    with pytest.raises(OSError) as exc:
+        os.fstat(stage_fds[0])
+    assert exc.value.errno == errno.EBADF
+    assert destination.read_bytes() == b"old"
+    assert list(root.iterdir()) == [destination]
+
+
+def test_atomic_writable_stage_cleanup_propagates_unlink_failure(root, monkeypatch):
+    destination = root / "file"
+    destination.write_bytes(b"old")
+    error = PermissionError(errno.EACCES, "unlink denied")
+    chmod = Path.chmod
+    modes = []
+    failed_unlinks = []
+
+    def replace_fails(source, target):
+        assert source.stat().st_mode & stat.S_IWRITE
+        raise OSError("replacement failed")
+
+    def unlink_fails(path, *, missing_ok=False):
+        failed_unlinks.append(path)
+        raise error
+
+    def observe_chmod(path, mode):
+        modes.append(mode)
+        chmod(path, mode)
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "replace": replace_fails}))
+        model.setattr(Path, "chmod", observe_chmod)
+        model.setattr(Path, "unlink", unlink_fails)
+        with pytest.raises(PermissionError) as exc:
+            files.write_bytes(destination, b"new")
+    assert exc.value is error
+    assert modes == [0o644]
+    assert len(failed_unlinks) == 1
+    assert destination.read_bytes() == b"old"
+    assert set(root.iterdir()) == {destination, failed_unlinks[0]}
+    failed_unlinks[0].unlink()
+
+
+def _near_limit_parent(root, leaf_budget):
+    parent = root.resolve()
+    path_max = os.pathconf(parent, "PC_PATH_MAX")
+    name_max = os.pathconf(parent, "PC_NAME_MAX")
+    if path_max < 0 or name_max < 0 or path_max - len(os.fsencode(parent)) < 22:
+        pytest.skip("No usable native path-length limit")
+    # Reserve the leaf budget plus the separator and NUL.
+    while (remaining := path_max - leaf_budget - 2 - len(os.fsencode(parent))) > 0:
+        component_size = min(name_max, remaining - 1)
+        if remaining - component_size == 2:
+            component_size -= 1
+        parent /= "x" * component_size
+        parent.mkdir()
+    return parent
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")
+@pytest.mark.parametrize("leaf_budget", [1, 16])
+def test_atomic_write_near_native_path_limit(root, monkeypatch, leaf_budget):
+    parent = _near_limit_parent(root, leaf_budget)
+    destination = parent / "f"
+    path_max = os.pathconf(parent, "PC_PATH_MAX")
+    assert len(os.fsencode(destination)) == path_max - leaf_budget
+    destination.write_bytes(b"probe")
+    destination.unlink()
+    monkeypatch.setattr(file_helper.secrets, "token_hex", lambda _: "2" * 16)
+    previous = os.umask(0o700)
+    try:
+        with FileHelper(root) as files:
+            for content in (b"first", b"second"):
+                files.write_bytes(destination, content, mode=0o640)
+                assert destination.read_bytes() == content
+                assert stat.S_IMODE(destination.stat().st_mode) == 0o640
+                assert list(parent.iterdir()) == [destination]
+    finally:
+        os.umask(previous)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")
+def test_atomic_near_limit_writes_do_not_move_each_others_payload(root, monkeypatch):
+    parent = _near_limit_parent(root, 1)
+    first, second = parent / "a", parent / "2"
+    fdopen = os.fdopen
+    interleaved = False
+
+    def interleave(fd, *args, **kwargs):
+        nonlocal interleaved
+        if not interleaved:
+            interleaved = True
+            with FileHelper(root) as other:
+                other.write_bytes(second, b"second")
+        return fdopen(fd, *args, **kwargs)
+
+    monkeypatch.setattr(file_helper.secrets, "token_hex", lambda _: ("3" if interleaved else "2") * 16)
+    monkeypatch.setattr(os, "fdopen", interleave)
+    with FileHelper(root) as files:
+        files.write_bytes(first, b"first")
+    assert first.read_bytes() == b"first"
+    assert second.read_bytes() == b"second"
+    assert set(parent.iterdir()) == {first, second}
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")
+def test_atomic_near_limit_write_ignores_occupied_short_names(root, monkeypatch):
+    parent = _near_limit_parent(root, 1)
+    occupied = {parent / name for name in "0123456789abcdef"}
+    for path in occupied:
+        path.write_bytes(b"keep")
+    target = parent / "x"
+    monkeypatch.setattr(file_helper.secrets, "token_hex", lambda _: "2" * 16)
+    with FileHelper(root) as files:
+        files.write_bytes(target, b"new")
+    assert all(path.read_bytes() == b"keep" for path in occupied)
+    assert target.read_bytes() == b"new"
+    assert set(parent.iterdir()) == occupied | {target}
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")
+@pytest.mark.parametrize("exhausted", [False, True])
+def test_atomic_near_limit_stage_collisions_preserve_existing_files(root, monkeypatch, exhausted):
+    parent = _near_limit_parent(root, 14)
+    occupied = parent / ("." + "a" * 13)
+    occupied.write_bytes(b"keep")
+    destination = parent / "f"
+    destination.write_bytes(b"old")
+    attempts = []
+
+    def token_hex(size):
+        attempts.append(size)
+        digit = "a" if exhausted or len(attempts) <= 2 else "b"
+        return digit * (size * 2)
+
+    monkeypatch.setattr(file_helper.secrets, "token_hex", token_hex)
+    with FileHelper(root) as files:
+        if exhausted:
+            with pytest.raises(FileExistsError) as exc:
+                files.write_bytes(destination, b"new")
+            assert exc.value.errno == errno.EEXIST
+            assert destination.read_bytes() == b"old"
+            assert attempts == [8] + [7] * 10
+        else:
+            files.write_bytes(destination, b"new")
+            assert destination.read_bytes() == b"new"
+            assert attempts == [8, 7, 7]
+    assert occupied.read_bytes() == b"keep"
+    assert set(parent.iterdir()) == {destination, occupied}
+
+
+def test_atomic_windows_failed_cleanup_restores_readonly_stage(root, monkeypatch):
+    destination = root / "file"
+    error = PermissionError(errno.EACCES, "retry unlink denied")
+    stages = []
+
+    def replace_fails(source, target):
+        raise OSError("replacement failed")
+
+    def unlink_fails(path, *, missing_ok=False):
+        stages.append(path)
+        if len(stages) == 1:
+            assert not path.stat().st_mode & stat.S_IWRITE
+            raise PermissionError(errno.EACCES, "read-only")
+        assert path.stat().st_mode & stat.S_IWRITE
+        raise error
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "replace": replace_fails}))
+        model.setattr(Path, "unlink", unlink_fails)
+        with pytest.raises(PermissionError) as exc:
+            files.write_bytes(destination, b"new", mode=0o400)
+    assert exc.value is error
+    assert len(stages) == 2 and stages[0] == stages[1]
+    try:
+        assert not stages[0].stat().st_mode & stat.S_IWRITE
+        assert stages[0].read_bytes() == b"new"
+        assert not destination.exists()
+    finally:
+        stages[0].chmod(0o600)
+        stages[0].unlink()
+
+
+def test_atomic_windows_length_retry_uses_only_file_creation(root, monkeypatch):
+    destination = root / "file"
+    parent = root.resolve()
+    attempted = []
+
+    def open_with_limit(path, flags, mode):
+        attempted.append(path)
+        if len(attempted) == 1:
+            raise FileNotFoundError(errno.ENOENT, "modeled Windows CRT path limit")
+        assert path.parent == parent
+        assert flags & os.O_EXCL
+        return os.open(path, flags, mode)
+
+    def deny_mkdir(*args, **kwargs):
+        raise PermissionError(errno.EACCES, "parent allows only file creation")
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "open": open_with_limit}))
+        model.setattr(Path, "mkdir", deny_mkdir)
+        model.setattr(file_helper, "_windows_extended_path", lambda path: path)
+        files.write_bytes(destination, b"new")
+    assert len(attempted) == 2
+    assert destination.read_bytes() == b"new"
+    assert list(root.iterdir()) == [destination]
+
+
+def test_atomic_windows_length_retry_rejects_different_parent(root, monkeypatch):
+    destination = root / "file"
+    destination.write_bytes(b"old")
+    other_parent = root / "other"
+    other_parent.mkdir()
+    attempts = []
+
+    def open_stage(path, flags, mode):
+        attempts.append(path)
+        if len(attempts) == 1:
+            raise OSError(errno.ENAMETOOLONG, "modeled path limit")
+        return os.open(path, flags, mode)
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "open": open_stage}))
+        model.setattr(file_helper, "_windows_extended_path", lambda _: other_parent)
+        with pytest.raises(FileHelperError, match="does not match destination parent"):
+            files.write_bytes(destination, b"new")
+    assert len(attempts) == 1
+    assert destination.read_bytes() == b"old"
+    assert set(root.iterdir()) == {destination, other_parent}
+    assert not list(other_parent.iterdir())
+
+
+def test_atomic_windows_length_retry_rechecks_destination_before_replace(root, link, monkeypatch):
+    destination = root / "file"
+    target = root / "target"
+    target.write_bytes(b"keep")
+    attempts = []
+    chmod = Path.chmod
+
+    def open_stage(path, flags, mode):
+        attempts.append(path)
+        if len(attempts) == 1:
+            raise OSError(errno.ENAMETOOLONG, "modeled path limit")
+        return os.open(path, flags, mode)
+
+    def change_destination(path, mode):
+        chmod(path, mode)
+        link(destination, target)
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "open": open_stage}))
+        model.setattr(file_helper, "_windows_extended_path", lambda path: path)
+        model.setattr(Path, "chmod", change_destination)
+        with pytest.raises(SymlinkDeniedError):
+            files.write_bytes(destination, b"new")
+    assert len(attempts) == 2
+    assert destination.is_symlink()
+    assert target.read_bytes() == b"keep"
+    assert set(root.iterdir()) == {destination, target}
+
+
+@pytest.mark.parametrize(("source", "expected"), [
+    (r"C:\project\dir", r"\\?\C:\project\dir"),
+    (r"\\server\share\dir", r"\\?\UNC\server\share\dir"),
+    (r"\\?\C:\project\dir", r"\\?\C:\project\dir"),
+    (r"\\?\UNC\server\share\dir", r"\\?\UNC\server\share\dir"),
+])
+def test_windows_extended_atomic_path(source, expected):
+    assert str(file_helper._windows_extended_path(PureWindowsPath(source))) == expected
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows staging and ACLs required")
+def test_atomic_windows_extended_staging_inherits_parent_acl(root, monkeypatch):
+    parent = root.resolve()
+    destination = parent / "file"
+    acl = parent.parent / "acl.txt"
+    run = subprocess.run
+    # File-only, non-propagating deny for a principal outside the runner's token.
+    run(["icacls", str(parent), "/deny", "*S-1-5-32-546:(OI)(IO)(NP)(RD)"], check=True, capture_output=True)
+    user = run(["whoami"], check=True, capture_output=True, text=True).stdout.strip()
+    run(["icacls", str(parent), "/deny", f"{user}:(AD)"], check=True, capture_output=True)
+    with pytest.raises(PermissionError):
+        (parent / "blocked-directory").mkdir()
+    probe = parent / "allowed-file"
+    probe.write_bytes(b"probe")
+    probe.unlink()
+    real_open = os.open
+    real_replace = os.replace
+    stages = []
+
+    def open_stage(path, flags, mode):
+        if not str(path).startswith("\\\\?\\"):
+            raise FileNotFoundError(errno.ENOENT, "forced CRT length error")
+        assert path.parent == file_helper._windows_extended_path(parent)
+        stages.append(path)
+        return real_open(path, flags, mode)
+
+    def fail(source, target):
+        assert source == stages[-1] and target == destination
+        raise PermissionError(errno.EACCES, "replacement denied")
+
+    def replace(source, target):
+        assert source == stages[-1] and str(target) == str(destination)
+        real_replace(source, target)
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        windows_os = SimpleNamespace(**{**vars(os), "open": open_stage, "replace": replace})
+        model.setattr(file_helper, "os", windows_os)
+        files.write_bytes(destination, b"first")
+        assert destination.read_bytes() == b"first"
+        files.write_bytes(destination, b"second")
+        assert destination.read_bytes() == b"second"
+        model.setattr(windows_os, "replace", fail)
+        with pytest.raises(PermissionError, match="replacement denied"):
+            files.write_bytes(destination, b"rejected", mode=0o400)
+        model.setattr(windows_os, "replace", real_replace)
+    assert len(stages) == 3
+    assert list(parent.iterdir()) == [destination]
+    assert destination.read_bytes() == b"second"
+    run(["icacls", str(destination), "/save", str(acl)], check=True, capture_output=True)
+    sddl = acl.read_text(encoding="utf-16-le")
+    aces = (part.split(")", 1)[0] for part in sddl.split("(")[1:])
+    assert any(
+        ace.startswith("D;") and ace.endswith((";;;BG", ";;;S-1-5-32-546"))
+        for ace in aces
+    )
+
+
+@pytest.mark.parametrize(("name", "code"), [
+    ("file", errno.EACCES),
+    ("x" * 22, errno.ENAMETOOLONG),
+    ("missing/file", errno.ENOENT),
+])
+def test_atomic_staging_nonretryable_error_is_preserved(root, monkeypatch, name, code):
+    destination = root / name
+    error = OSError(code, "staging denied")
+    attempts = []
+    keep = root / "keep"
+    keep.write_bytes(b"old")
+
+    def reject(path, flags, mode):
+        attempts.append(path)
+        raise error
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "open": reject}))
+        with pytest.raises(OSError) as exc:
+            files.write_bytes(destination, b"new")
+    assert exc.value is error
+    assert exc.value.errno == code
+    assert len(attempts) == 1
+    assert not destination.exists()
+    assert list(root.iterdir()) == [keep]
+    assert keep.read_bytes() == b"old"
+
+
+@pytest.mark.parametrize("code", [errno.ENAMETOOLONG, errno.ENOENT])
+def test_atomic_windows_failed_length_retry_is_preserved(root, monkeypatch, code):
+    destination = root / "file"
+    destination.write_bytes(b"old")
+    initial = OSError(errno.ENAMETOOLONG, "regular path exceeds limit")
+    error = OSError(code, "extended path still exceeds limit")
+    attempts = []
+
+    def reject(path, flags, mode):
+        attempts.append(path)
+        raise initial if len(attempts) == 1 else error
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{**vars(os), "name": "nt", "open": reject}))
+        model.setattr(file_helper, "_windows_extended_path", lambda path: path)
+        with pytest.raises(OSError) as exc:
+            files.write_bytes(destination, b"new")
+    assert exc.value is error
+    assert exc.value.errno == code
+    assert len(attempts) == 2
+    assert destination.read_bytes() == b"old"
+    assert list(root.iterdir()) == [destination]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative staging required")
+def test_atomic_staging_respects_posix_minimum_name_max(root, monkeypatch):
+    destination = root / ("." + "2" * 13)
+    tokens = iter(["1" * 16, "2" * 16, "3" * 16])
+    real_open = os.open
+
+    def check(path):
+        if len(os.fsencode(Path(path).name)) > 14:
+            raise OSError(errno.ENAMETOOLONG, "modeled NAME_MAX")
+
+    def open_checked(path, flags, *args, **kwargs):
+        check(path)
+        if flags & os.O_CREAT and kwargs.get("dir_fd") is not None:
+            assert os.path.samestat(os.fstat(kwargs["dir_fd"]), root.stat())
+            assert Path(path).name != destination.name
+            assert flags & os.O_EXCL
+        return real_open(path, flags, *args, **kwargs)
+
+    def forbid_mkdir(*args, **kwargs):
+        raise PermissionError(errno.EACCES, "parent allows only file creation")
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        # FileHelper's resolved root name also has to fit the modeled limit.
+        model.setattr(file_helper, "os", SimpleNamespace(**{
+            **vars(os), "open": open_checked, "mkdir": forbid_mkdir,
+            "supports_dir_fd": os.supports_dir_fd | {forbid_mkdir},
+        }))
+        model.setattr(file_helper.secrets, "token_hex", lambda _: next(tokens))
+        files.write_bytes(destination, b"new")
+    assert destination.read_bytes() == b"new"
+    assert list(root.iterdir()) == [destination]
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Native macOS ACL inheritance required")
+def test_atomic_near_limit_inherits_file_only_parent_acl(root):
+    parent = _near_limit_parent(root, 1)
+    destination = parent / "f"
+    marker = "group:everyone deny writeextattr,file_inherit,limit_inherit,only_inherit"
+    subprocess.run(["/bin/chmod", "+a", marker, str(parent)], check=True, capture_output=True)
+    with FileHelper(root) as files:
+        files.write_bytes(destination, b"new")
+    acl = subprocess.run(
+        ["/bin/ls", "-led", str(destination)], check=True, capture_output=True, text=True,
+    ).stdout
+    assert "group:everyone inherited deny writeextattr" in acl
+    assert destination.read_bytes() == b"new"
+    assert list(parent.iterdir()) == [destination]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor-relative staging required")
+@pytest.mark.parametrize(("capability", "code"), [
+    ("supports_dir_fd", errno.ENAMETOOLONG),
+    ("O_NOFOLLOW", errno.ENOTSUP),
+    ("O_DIRECTORY", errno.ENOTSUP),
+])
+def test_atomic_near_limit_missing_capability_preserves_destination(root, monkeypatch, capability, code):
+    parent = _near_limit_parent(root, 1)
+    destination = parent / "f"
+    destination.write_bytes(b"old")
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{
+            **vars(os), capability: set() if capability == "supports_dir_fd" else 0,
+        }))
+        with pytest.raises(OSError) as exc:
+            files.write_bytes(destination, b"new")
+    assert exc.value.errno == code
+    assert destination.read_bytes() == b"old"
+    assert list(parent.iterdir()) == [destination]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory modes required")
+@pytest.mark.parametrize("mask", [0o077, 0o700, 0o777])
+def test_atomic_near_limit_inherits_parent_group_and_applies_mode(root, mask):
+    parent = _near_limit_parent(root, 1)
+    destination = parent / "f"
+    parent.chmod(0o2700)
+    previous = os.umask(mask)
+    try:
+        with FileHelper(root) as files:
+            files.write_bytes(destination, b"new", mode=0o640)
+    finally:
+        os.umask(previous)
+    assert destination.stat().st_gid == parent.stat().st_gid
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o640
+    assert destination.read_bytes() == b"new"
+    assert list(parent.iterdir()) == [destination]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH_MAX required")
+@pytest.mark.parametrize("fail_at", ["open", "replace"])
+def test_atomic_near_limit_staging_failure_cleans_sibling(root, monkeypatch, fail_at):
+    parent = _near_limit_parent(root, 1)
+    destination = parent / "f"
+    destination.write_bytes(b"old")
+    error = OSError(errno.ENAMETOOLONG if fail_at == "open" else errno.EACCES, "staging failed")
+    stage_attempts = []
+
+    def observe_open(path, flags, *args, **kwargs):
+        if flags & os.O_CREAT:
+            stage_attempts.append(path)
+            if fail_at == "open" and kwargs.get("dir_fd") is not None:
+                raise error
+        return os.open(path, flags, *args, **kwargs)
+
+    def observe_replace(source, target, *, src_dir_fd):
+        assert fail_at == "replace"
+        assert stat.S_ISREG(os.stat(source, dir_fd=src_dir_fd).st_mode)
+        raise error
+
+    with FileHelper(root) as files, monkeypatch.context() as model:
+        model.setattr(file_helper, "os", SimpleNamespace(**{
+            **vars(os), "open": observe_open, "replace": observe_replace,
+        }))
+        with pytest.raises(OSError) as exc:
+            files.write_bytes(destination, b"new")
+    assert exc.value is error
+    assert exc.value.errno == error.errno
+    assert len(stage_attempts) == 2
+    assert not stage_attempts[-1].is_absolute()
+    assert destination.read_bytes() == b"old"
+    assert list(parent.iterdir()) == [destination]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows path length depends on host configuration")
+def test_atomic_write_creates_and_replaces_long_component(root, monkeypatch):
+    destination = root / ("x" * 252 + ".sh")
+    try:
+        destination.touch()
+    except OSError as exc:
+        if exc.errno == errno.ENAMETOOLONG:
+            pytest.skip("Filesystem does not support a 255-byte component")
+        raise
+    destination.unlink()
+    replace = os.replace
+    old_content = None
+
+    def observe(source, target):
+        assert source.parent == target.parent == destination.parent
+        assert source != target == destination
+        assert (target.read_bytes() if target.exists() else None) == old_content
+        replace(source, target)
+
+    monkeypatch.setattr(os, "replace", observe)
+    with FileHelper(root) as files:
+        for content in (b"first", b"second"):
+            files.write_bytes(destination, content)
+            assert destination.read_bytes() == content
+            assert list(root.iterdir()) == [destination]
+            old_content = content
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows path handling required")
+@pytest.mark.parametrize("case", ["long-component", "near-limit-parent"])
+def test_atomic_windows_create_and_replace_at_path_limits(root, case):
+    parent = root.resolve()
+    if case == "long-component":
+        name = "x" * 252 + ".sh"
+    else:
+        # Leave room to create the directory under legacy MAX_PATH, but not
+        # for the 21-character staging leaf (without long-path support).
+        units = len(str(parent).encode("utf-16-le")) // 2
+        while units < 245:
+            size = min(64, 246 - units)
+            parent /= "d" * size
+            units += size + 1
+        name = "f"
+    destination = parent / name
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+        # Native rename to the long path is part of the capability probe.
+        destination.touch()
+        probe = parent / "p"
+        probe.write_bytes(b"replacement probe")
+        os.replace(probe, destination)
+    except OSError as exc:
+        # The CRT may map a too-long path to ENOENT even with an existing parent.
+        crt_limit = (
+            exc.errno == errno.ENOENT and exc.filename == str(destination)
+            and len(str(destination).encode("utf-16-le")) // 2 >= 260 and parent.is_dir()
+        )
+        if crt_limit or exc.errno == errno.ENAMETOOLONG or getattr(exc, "winerror", None) == 206:
+            pytest.skip(f"Direct create/replace probe hit the host path limit: {exc}")
+        raise
+    destination.unlink()
+
+    with FileHelper(root) as files:
+        for content in (b"first", b"second"):
+            files.write_bytes(destination, content)
+            assert destination.read_bytes() == content
+            assert list(parent.iterdir()) == [destination]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits required")
+@pytest.mark.parametrize(("mode", "staging_mode"), [(0o400, 0o400), (0o755, 0o600)])
+def test_atomic_write_staging_mode_and_exact_final_mode(root, monkeypatch, mode, staging_mode):
+    fdopen = os.fdopen
+    observed_modes = []
+
+    def observe(fd, *args, **kwargs):
+        observed_modes.append(stat.S_IMODE(os.fstat(fd).st_mode))
+        return fdopen(fd, *args, **kwargs)
+
+    monkeypatch.setattr(os, "fdopen", observe)
+    previous = os.umask(0o077)
+    try:
+        with FileHelper(root) as files:
+            files.write_bytes("file", b"new", mode=mode)
+    finally:
+        os.umask(previous)
+    assert observed_modes == [staging_mode]
+    assert stat.S_IMODE((root / "file").stat().st_mode) == mode
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows read-only semantics required")
+def test_atomic_write_windows_readonly_mode_and_cleanup(root, monkeypatch):
+    fdopen = os.fdopen
+    replace = os.replace
+    observed_modes = []
+
+    def observe(fd, *args, **kwargs):
+        observed_modes.append(os.fstat(fd).st_mode & stat.S_IWRITE)
+        return fdopen(fd, *args, **kwargs)
+
+    def fail(source, target):
+        assert not source.stat().st_mode & stat.S_IWRITE
+        raise PermissionError("replacement denied")
+
+    monkeypatch.setattr(os, "fdopen", observe)
+    monkeypatch.setattr(os, "replace", fail)
+    with FileHelper(root) as files:
+        with pytest.raises(PermissionError, match="replacement denied"):
+            files.write_bytes("file", b"new", mode=0o400)
+        assert not list(root.iterdir())
+        monkeypatch.setattr(os, "replace", replace)
+        files.write_bytes("file", b"new", mode=0o400)
+    target = root / "file"
+    try:
+        assert not target.stat().st_mode & stat.S_IWRITE
+        assert target.read_bytes() == b"new"
+        assert observed_modes == [0, 0]
+    finally:
+        target.chmod(0o600)
+
+
+def test_atomic_write_retries_staging_collisions_without_touching_entries(root, monkeypatch):
+    existing = root / ".0000000000000000.tmp"
+    existing.write_bytes(b"keep")
+    destination = root / ".1111111111111111.tmp"
+    tokens = iter(["0" * 16, "1" * 16, "2" * 16])
+    replace = os.replace
+
+    def observe(source, target):
+        assert not target.exists()
+        replace(source, target)
+
+    monkeypatch.setattr(file_helper.secrets, "token_hex", lambda _: next(tokens))
+    monkeypatch.setattr(os, "replace", observe)
+    with FileHelper(root) as files:
+        files.write_bytes(destination, b"new")
+    assert existing.read_bytes() == b"keep"
+    assert destination.read_bytes() == b"new"
+    assert set(root.iterdir()) == {destination, existing}
+
+
+def test_atomic_write_collision_exhaustion_preserves_entries(root, monkeypatch):
+    existing = root / ".0000000000000000.tmp"
+    existing.write_bytes(b"keep")
+    destination = root / "file"
+    destination.write_bytes(b"old")
+    monkeypatch.setattr(file_helper.secrets, "token_hex", lambda _: "0" * 16)
+    with FileHelper(root) as files, pytest.raises(FileExistsError) as exc:
+        files.write_bytes(destination, b"new")
+    assert exc.value.errno == errno.EEXIST
+    assert existing.read_bytes() == b"keep"
+    assert destination.read_bytes() == b"old"
+    assert set(root.iterdir()) == {destination, existing}
+
+
+def test_atomic_write_deny_revalidates_destination_and_cleans_stage(root, link, monkeypatch):
+    target = root / "target"
+    target.write_bytes(b"old")
+    destination = root / "destination"
+    chmod = Path.chmod
+
+    def insert_link(path, mode, **kwargs):
+        chmod(path, mode, **kwargs)
+        link(destination, target)
+
+    monkeypatch.setattr(Path, "chmod", insert_link)
+    with FileHelper(root) as files, pytest.raises(SymlinkDeniedError):
+        files.write_bytes(destination, b"new")
+    assert destination.is_symlink()
+    assert target.read_bytes() == b"old"
+    assert set(root.iterdir()) == {destination, target}
+
+
 def test_native_permission_failure_is_not_suppressed(root, monkeypatch):
     files = FileHelper(root)
 

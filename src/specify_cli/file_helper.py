@@ -3,6 +3,7 @@
 import codecs
 import errno
 import os
+import secrets
 import stat
 import sys
 import tempfile
@@ -41,6 +42,15 @@ def _strip_extended_length_prefix(path: _PathType) -> _PathType:
     if raw.startswith("\\\\?\\"):
         return type(path)(raw[len("\\\\?\\"):])
     return path
+
+
+def _windows_extended_path(path: _PathType) -> _PathType:
+    raw = str(path)
+    if raw.startswith("\\\\?\\"):
+        return path
+    if raw.startswith("\\\\"):
+        return type(path)("\\\\?\\UNC\\" + raw[2:])
+    return type(path)("\\\\?\\" + raw)
 
 
 class FileHelperError(ValueError):
@@ -587,17 +597,112 @@ class FileHelper:
         destination = self._path(path, allow_missing=True)
         if destination.exists():
             self._require_file(destination)
-        fd, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
-        temporary_path = Path(temporary)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        flags |= getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        with ExitStack() as staging:
+            fd, stage, parent_fd = self._open_atomic_stage(destination, flags, mode, staging)
+            published = False
+            try:
+                try:
+                    with os.fdopen(fd, "wb", closefd=False) as stream:
+                        stream.write(content)
+                    if parent_fd is not None:
+                        os.fchmod(fd, mode)
+                finally:
+                    os.close(fd)
+                if parent_fd is None:
+                    stage.chmod(mode)
+                if self._path(path, allow_missing=True) != destination:
+                    raise FileHelperError(f"Destination changed during write: {path}")
+                if parent_fd is None:
+                    os.replace(stage, destination)
+                else:
+                    os.replace(stage, destination, src_dir_fd=parent_fd)
+                published = True
+            finally:
+                if not published:
+                    self._unlink_atomic_stage(stage, parent_fd)
+
+    def _open_atomic_stage(
+        self, destination: Path, flags: int, mode: int, staging: ExitStack,
+    ) -> tuple[int, Path, int | None]:
+        mode &= 0o600
+        extended_parent = None
+        for _ in range(10):
+            name = f".{secrets.token_hex(8)}.tmp"
+            if name == destination.name.rstrip(" .").casefold():
+                continue
+            stage = (extended_parent or destination.parent) / name
+            try:
+                return os.open(stage, flags, mode), stage, None
+            except FileExistsError:
+                continue
+            except OSError as exc:
+                # The Windows CRT can report an overlong path as ENOENT.
+                length_error = exc.errno == errno.ENAMETOOLONG or (
+                    os.name == "nt" and exc.errno == errno.ENOENT
+                )
+                if not length_error or len(name) <= len(destination.name):
+                    raise
+                if os.name == "nt":
+                    if extended_parent is not None or not destination.parent.is_dir():
+                        raise
+                    parent_info = destination.parent.stat()
+                    # Keep file-only ACL inheritance and avoid requiring directory creation rights.
+                    extended_parent = _windows_extended_path(destination.parent)
+                    # The extended spelling bypasses Win32 name normalization.
+                    if not os.path.samestat(parent_info, extended_parent.stat()):
+                        raise FileHelperError(
+                            f"Extended staging path does not match destination parent: {destination.parent}"
+                        )
+                    continue
+                if not {os.rename, os.unlink} <= os.supports_dir_fd:
+                    raise
+            break
+        else:
+            raise FileExistsError(errno.EEXIST, "Could not allocate a staging file", str(destination))
+
+        # A parent-relative sibling keeps direct inheritance and avoids the
+        # absolute path limit without shrinking the name to the leaf budget.
+        parent = staging.enter_context(self._posix_directory(
+            destination.parent, unsupported_message="Directory-relative staging is unsupported",
+        ))
+        for _ in range(10):
+            name = "." + secrets.token_hex(7)[:13]  # POSIX minimum NAME_MAX is 14.
+            if name == destination.name.rstrip(" .").casefold():
+                continue
+            stage = Path(name)
+            try:
+                return os.open(stage, flags, mode, dir_fd=parent), stage, parent
+            except FileExistsError:
+                continue
+        raise FileExistsError(errno.EEXIST, "Could not allocate a staging file", str(destination))
+
+    @staticmethod
+    def _unlink_atomic_stage(stage: Path, parent: int | None) -> None:
+        if parent is not None:
+            try:
+                os.unlink(stage, dir_fd=parent)
+            except FileNotFoundError:
+                pass
+            return
         try:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(content)
-            temporary_path.chmod(mode)
-            if self._path(path, allow_missing=True) != destination:
-                raise FileHelperError(f"Destination changed during write: {path}")
-            os.replace(temporary_path, destination)
-        finally:
-            temporary_path.unlink(missing_ok=True)
+            stage.unlink(missing_ok=True)
+        except PermissionError:
+            if os.name != "nt":
+                raise
+            mode = stat.S_IMODE(stage.stat().st_mode)
+            if mode & stat.S_IWRITE:
+                raise
+            stage.chmod(mode | stat.S_IWRITE)
+            try:
+                stage.unlink(missing_ok=True)
+            except OSError as exc:
+                try:
+                    stage.chmod(mode)
+                except OSError as restore_error:
+                    exc.add_note(f"Could not restore atomic stage permissions: {restore_error}")
+                raise
 
     def write_text(
         self, path: Path | str, content: str, *, encoding: str = "utf-8", mode: int = 0o644
