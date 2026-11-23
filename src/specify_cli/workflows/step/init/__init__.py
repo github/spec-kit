@@ -8,6 +8,7 @@ process and captures its exit code and output.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -32,12 +33,62 @@ _ENGINE_OWNED_DIRS = {".specify"}
 
 # Pin the child to this package, independent of its cwd and PATH. The source
 # parent travels as argv data, never as interpolated Python or shell source.
-_INIT_BOOTSTRAP = (
-    "import sys; "
-    "sys.path.insert(0, sys.argv.pop(1)); "
-    "sys.argv[0] = 'specify'; "
-    "from specify_cli import main; main()"
-)
+_INIT_BOOTSTRAP = """
+import json
+from pathlib import Path
+import sys
+
+source = sys.argv.pop(1)
+dependencies = json.loads(sys.argv.pop(1))
+package = Path(source) / 'specify_cli'
+
+def validate_packages():
+    # These stdlib identity checks must precede imports from Specify, including
+    # FileHelper. Compare directories, never the resolved initializer leaf:
+    # distinct package trees can share an initializer through a symlink.
+    for name, module in tuple(sys.modules.items()):
+        if name != 'specify_cli' and not name.startswith('specify_cli.'):
+            continue
+        try:
+            spec = getattr(module, '__spec__', None)
+            if spec is None or spec.name != name or not spec.has_location:
+                raise ValueError('missing file-backed module spec')
+            is_package = spec.submodule_search_locations is not None
+            parts = name.split('.')[1:]
+            expected = package.joinpath(*(parts if is_package else parts[:-1]))
+            for location in (getattr(module, '__file__', None), spec.origin):
+                if not isinstance(location, str) or not Path(location).is_absolute():
+                    raise ValueError('missing absolute module location')
+                if not Path(location).parent.samefile(expected):
+                    raise ValueError('module directory differs')
+            paths = getattr(module, '__path__', None)
+            if is_package:
+                if not paths or not spec.submodule_search_locations:
+                    raise ValueError('missing package search locations')
+                for location in [*paths, *spec.submodule_search_locations]:
+                    if not isinstance(location, str) or not Path(location).is_absolute():
+                        raise ValueError('missing absolute package directory')
+                    if not Path(location).samefile(expected):
+                        raise ValueError('package search directory differs')
+            elif paths is not None or name == 'specify_cli':
+                raise ValueError('inconsistent package metadata')
+        except (OSError, TypeError, ValueError) as exc:
+            raise SystemExit(f'Cannot use {name}: expected package tree {package!s}: {exc}')
+
+validate_packages()
+base = Path.cwd()
+target = base if sys.argv[2] == '--here' else base / sys.argv[2]
+excluded = (base.resolve(), target.resolve())
+# Startup has finished. Restore caller-approved dependencies without running
+# .pth/customize code, and exclude target trees even through directory aliases.
+dependencies = [path for path in dependencies
+                if not any(Path(path).resolve().is_relative_to(root) for root in excluded)]
+sys.path[:0] = [source, *dependencies]
+sys.argv[0] = 'specify'
+from specify_cli import main
+validate_packages()
+main()
+"""
 
 
 class InitStep(StepBase):
@@ -279,12 +330,46 @@ class InitStep(StepBase):
         import specify_cli
 
         child_env = os.environ.copy()
+        flags = ["-P"]
+        if sys.flags.isolated:
+            flags.append("-I")
+        else:
+            if sys.flags.ignore_environment:
+                flags.append("-E")
+            if sys.flags.no_user_site:
+                flags.append("-s")
+        if sys.flags.no_site:
+            flags.append("-S")
+        if sys.dont_write_bytecode:
+            flags.append("-B")
+
+        # Only the intersection of explicit absolute environment entries and
+        # active parent search paths is eligible, in parent search order. These
+        # snapshots are caller configuration, not proof of original startup cwd.
+        dependencies = []
+        if not sys.flags.ignore_environment:
+            # CPython normalizes PYTHONPATH at startup. Compare lexical keys,
+            # but retain active spellings: resolving paths could change which
+            # directory a symlink/parent-component path actually loads from.
+            configured = {os.path.normpath(path) for path in child_env.get("PYTHONPATH", "").split(os.pathsep)
+                          if path and Path(path).is_absolute()}
+            dependencies = [path for path in sys.path
+                            if isinstance(path, str) and Path(path).is_absolute()
+                            and os.path.normpath(path) in configured]
+        else:
+            # site can read this environment value itself, even under -E.
+            child_env.pop("PYTHONUSERBASE", None)
         # -P omits the unsafe cwd entry but still honors PYTHONPATH. Drop it
         # before startup can import project-controlled sitecustomize code;
         # bootstrap source pinning happens too late to protect that boundary.
         child_env.pop("PYTHONPATH", None)
         child_env["PYTHONIOENCODING"] = "utf-8"
         try:
+            userbase = child_env.get("PYTHONUSERBASE")
+            if (userbase and not Path(userbase).is_absolute()
+                    and not sys.flags.no_user_site and not sys.flags.no_site
+                    and not child_env.get("PYTHONNOUSERSITE")):
+                raise ValueError("PYTHONUSERBASE must be absolute or unset when user-site startup is enabled.")
             source = getattr(specify_cli, "__file__", None)
             source_error = (
                 "Cannot identify an absolute file location for loaded specify_cli; "
@@ -311,11 +396,12 @@ class InitStep(StepBase):
             # Resolving the initializer leaf can select a different package.
             package_parent = os.path.dirname(os.path.dirname(source))
             result = subprocess.run(
-                [sys.executable, "-P", "-c", _INIT_BOOTSTRAP, package_parent, *argv],
+                [sys.executable, *flags, "-c", _INIT_BOOTSTRAP, package_parent, json.dumps(dependencies), *argv],
                 cwd=base,
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 encoding="utf-8",
+                errors="replace",
                 env=child_env,
                 check=False,
             )

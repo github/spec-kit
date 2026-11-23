@@ -3620,7 +3620,434 @@ class TestInitStep:
 
     @pytest.fixture(autouse=True)
     def isolated_home(self, monkeypatch, tmp_path_factory):
+        import subprocess
+
         _isolate_init_home(monkeypatch, tmp_path_factory)
+        original = subprocess.run
+
+        def bounded_run(*args, **kwargs):
+            kwargs.setdefault("timeout", 60)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", bounded_run)
+
+    @staticmethod
+    def _parent(tmp_path, *, flags=(), env=None, setup="", python=None, source=None, config=None):
+        """Reach production in a real flagged parent and observe its actual child."""
+        import subprocess
+        import textwrap
+        import specify_cli
+
+        root = tmp_path / "root"
+        root.mkdir(exist_ok=True)
+        record = tmp_path / "child.json"
+        observer = textwrap.dedent("""
+            import atexit, json, sys
+            def record_child():
+                data = {'flags': {key: getattr(sys.flags, key) for key in
+                        ('isolated', 'ignore_environment', 'no_user_site', 'no_site', 'dont_write_bytecode')},
+                        'path': sys.path, 'site_enabled': getattr(sys.modules.get('site'), 'ENABLE_USER_SITE', None)}
+                with open(RECORD, 'w', encoding='utf-8') as stream:
+                    json.dump(data, stream)
+            atexit.register(record_child)
+        """).replace("RECORD", repr(str(record)))
+        caller = textwrap.dedent(r"""
+            import json, os, subprocess, sys
+            from pathlib import Path
+            data = json.loads(sys.argv[1])
+            sys.path.insert(0, data['source'])
+            from specify_cli.workflows.base import StepContext
+            from specify_cli.workflows.step.init import InitStep
+            from specify_cli.integrations import INTEGRATION_REGISTRY
+            from specify_cli.workflows import STEP_REGISTRY
+            exec(data['setup'])
+            original = subprocess.run
+            launches = []
+            def run(args, **kwargs):
+                if '-c' in args:
+                    index = args.index('-c') + 1
+                    launches.append(args)
+                    args = [*args[:index], data['observer'] + '\n' + args[index], *args[index+1:]]
+                kwargs['timeout'] = 60
+                return original(args, **kwargs)
+            subprocess.run = run
+            before = (os.getcwd(), dict(os.environ), list(sys.path), sys.stdin, sys.stdout, sys.stderr,
+                      dict(INTEGRATION_REGISTRY), dict(STEP_REGISTRY))
+            result = InitStep().execute(data['config'], StepContext(project_root=data['root']))
+            assert before == (os.getcwd(), dict(os.environ), list(sys.path), sys.stdin, sys.stdout, sys.stderr,
+                              dict(INTEGRATION_REGISTRY), dict(STEP_REGISTRY))
+            print('INIT_RESULT=' + json.dumps({'status': result.status.value, 'output': result.output,
+                  'error': result.error, 'launches': len(launches), 'parent_path': before[2],
+                  'dependencies': json.loads(launches[0][launches[0].index('-c') + 3])
+                  if launches else []}))
+        """)
+        data = {"source": str(source or Path(specify_cli.__file__).parent.parent),
+                "root": str(root), "observer": observer, "setup": setup,
+                "config": config or {"id": "init", "project": "demo", "script": "py"}}
+        result = subprocess.run(
+            [python or sys.executable, "-B", *flags, "-c", caller, json.dumps(data)],
+            env=env, cwd=tmp_path, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, timeout=60,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        lines = [line for line in result.stdout.splitlines() if line.startswith("INIT_RESULT=")]
+        assert len(lines) == 1, result.stdout + result.stderr  # Parent reached InitStep.
+        return json.loads(lines[0].removeprefix("INIT_RESULT=")), (
+            json.loads(record.read_text(encoding="utf-8")) if record.exists() else None
+        )
+
+    @staticmethod
+    def _user_site(tmp_path, env):
+        import subprocess
+
+        probe = subprocess.run(
+            [sys._base_executable, "-B", "-P", "-c",
+             "import site; print(site.getusersitepackages())"],
+            env=env, cwd=tmp_path, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, timeout=60, check=True,
+        )
+        directory = Path(probe.stdout.strip())
+        if not directory.is_absolute():
+            directory = tmp_path / directory
+        assert directory.is_relative_to(tmp_path)
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory
+
+    @pytest.mark.parametrize("mode", ["relative", "relative-chdir", "absolute", "default", "empty", "disabled"])
+    def test_review_userbase_startup(self, tmp_path, mode):
+        import site
+        import specify_cli
+
+        source = str(Path(specify_cli.__file__).parent.parent)
+        env = os.environ.copy()
+        env.pop("PYTHONNOUSERSITE", None)
+        env["HOME"] = env["USERPROFILE"] = str(tmp_path / "home")
+        env["PYTHONPATH"] = os.pathsep.join([source, *site.getsitepackages()])
+        env.pop("PYTHONUSERBASE", None)
+        if mode != "default":
+            env["PYTHONUSERBASE"] = {"absolute": str(tmp_path / "userbase"), "empty": ""}.get(mode, "userbase")
+        root = tmp_path / "root"
+        root.mkdir()
+        marker = tmp_path / "user-startup"
+        # Relative user-base is harmless at parent startup, dangerous after cwd changes.
+        site_root = root if mode in {"relative", "relative-chdir", "disabled"} else tmp_path
+        user_site = self._user_site(site_root, env)
+        (user_site / "paths.pth").write_text("\n".join([source, *site.getsitepackages()]) + "\n", encoding="utf-8")
+        (user_site / "usercustomize.py").write_text(
+            f"import os\nif os.environ.get('INIT_CHILD_MODE') == 'userbase':\n"
+            f"    open({str(marker)!r}, 'w').write('child startup')\n", encoding="utf-8",
+        )
+        # Both .pth and usercustomize are genuine startup entry points.
+        pth_marker = tmp_path / "pth-startup"
+        (user_site / "marker.pth").write_text(
+            f"import os; os.environ.get('INIT_CHILD_MODE') == 'userbase' and open({str(pth_marker)!r}, 'w').write('pth')\n",
+            encoding="utf-8",
+        )
+        setup = "os.environ['INIT_CHILD_MODE'] = 'userbase'\n"
+        if mode == "relative-chdir":
+            moved = tmp_path / "moved"
+            moved.mkdir()
+            setup += f"os.chdir({str(moved)!r})\n"
+        result, child = self._parent(tmp_path, python=sys._base_executable, env=env,
+                                     flags=("-s",) if mode == "disabled" else (), setup=setup)
+        if mode.startswith("relative"):
+            assert result["status"] == "failed", result
+            assert "PYTHONUSERBASE" in result["error"] and "absolute" in result["error"]
+            assert result["launches"] == 0 and child is None
+            assert not marker.exists() and not pth_marker.exists()
+            assert not (root / "demo").exists()
+        else:
+            assert result["status"] == "completed", result
+            _assert_init_scaffold(root / "demo", "py")
+            assert marker.exists() == (mode != "disabled")
+            assert pth_marker.exists() == (mode != "disabled")
+
+    @pytest.mark.parametrize("flags", [(), ("-I",), ("-E",), ("-s",), ("-S",), ("-E", "-s"), ("-S", "-s")])
+    def test_review_actual_parent_flags(self, tmp_path, flags):
+        import site
+        import specify_cli
+
+        env = os.environ.copy()
+        env.pop("PYTHONNOUSERSITE", None)
+        source = str(Path(specify_cli.__file__).parent.parent)
+        env["PYTHONPATH"] = os.pathsep.join([source, *site.getsitepackages()])
+        env["PYTHONUSERBASE"] = str(tmp_path / "userbase")
+        user_site = self._user_site(tmp_path, env)
+        marker = tmp_path / "site-reactivated"
+        (user_site / "marker.pth").write_text(
+            f"import os; os.environ.get('INIT_CHILD_MODE') == 'flags' and open({str(marker)!r}, 'w').write('site')\n",
+            encoding="utf-8",
+        )
+        (user_site / "paths.pth").write_text("\n".join([source, *site.getsitepackages()]) + "\n", encoding="utf-8")
+        # No-site parents explicitly receive their dependencies through PYTHONPATH.
+        python = sys._base_executable if "-S" in flags or flags == ("-s",) else sys.executable
+        result, child = self._parent(tmp_path, flags=flags, env=env, python=python,
+                                     setup="os.environ['INIT_CHILD_MODE'] = 'flags'")
+        assert result["status"] == "completed", result
+        _assert_init_scaffold(tmp_path / "root/demo", "py")
+        assert child["flags"] == {
+            "isolated": int("-I" in flags), "ignore_environment": int("-I" in flags or "-E" in flags),
+            "no_user_site": int("-I" in flags or "-s" in flags), "no_site": int("-S" in flags),
+            "dont_write_bytecode": 1,
+        }
+        if "-S" in flags:
+            assert child["site_enabled"] is None
+        assert not marker.exists()
+
+    @pytest.mark.parametrize("spelling", ["plain", "trailing", "repeated", "dot", "parent"])
+    def test_review_normalized_pythonpath_startup(self, tmp_path, spelling):
+        import specify_cli
+        import typer
+
+        source = str(Path(specify_cli.__file__).parent.parent)
+        # Derive the borrowed interpreter's actual dependency directory without
+        # assuming a Unix venv layout (or discovering site paths under -S).
+        dependency = str(Path(typer.__file__).parent.parent)
+        assert Path(dependency).is_absolute() and Path(dependency).is_dir()
+        parent, name = os.path.split(dependency)
+        configured_dependency = {
+            "plain": dependency,
+            "trailing": dependency + os.sep,
+            "repeated": parent + os.sep * 2 + name,
+            "dot": dependency + os.sep + ".",
+            "parent": dependency + os.sep + ".." + os.sep + name,
+        }[spelling]
+        startup = tmp_path / "startup"
+        startup.mkdir()
+        marker = tmp_path / "site-reactivated"
+        (startup / "sitecustomize.py").write_text(
+            f"from pathlib import Path; Path({str(marker)!r}).write_text('startup')\n",
+            encoding="utf-8",
+        )
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join([configured_dependency, str(startup), source])
+        env["PYTHONUSERBASE"] = str(tmp_path / "userbase")
+        env.pop("PYTHONNOUSERSITE", None)
+        result, child = self._parent(tmp_path, flags=("-S",), env=env)
+        assert result["status"] == "completed", result
+        assert result["launches"] == 1
+        _assert_init_scaffold(tmp_path / "root/demo", "py")
+        eligible = {os.path.normpath(path) for path in (dependency, str(startup), source)}
+        active = [path for path in result["parent_path"]
+                  if os.path.isabs(path) and os.path.normpath(path) in eligible]
+        assert dependency in active  # The real -S parent loaded its dependencies.
+        assert result["dependencies"] == active  # Actual spelling, duplicates and order.
+        assert child["path"][:1 + len(active)] == [source, *active]
+        assert child["flags"] == {
+            "isolated": 0, "ignore_environment": 0, "no_user_site": 0,
+            "no_site": 1, "dont_write_bytecode": 1,
+        }
+        assert child["site_enabled"] is None
+        assert not marker.exists()
+
+    @pytest.mark.parametrize("cache", [
+        "foreign-root", "foreign-submodule", "matching", "alias", "shared-initializer",
+        "wrong-path", "wrong-origin", "missing-file",
+    ])
+    def test_review_startup_cached_package_tree(self, tmp_path, cache):
+        import site
+        import specify_cli
+
+        source = Path(specify_cli.__file__).parent.parent
+        tree_a = tmp_path / "a/src"
+        tree_b = tmp_path / "b/src"
+        for tree in (tree_a, tree_b):
+            shutil.copytree(source / "specify_cli", tree / "specify_cli", ignore=shutil.ignore_patterns("__pycache__"))
+            for asset in ("templates", "scripts", "presets", "workflows", "extensions"):
+                (tree.parent / asset).symlink_to(source.parent / asset, target_is_directory=True)
+        selected = tree_b if cache in {"foreign-root", "shared-initializer"} else tree_a
+        if cache == "alias":
+            selected = tmp_path / "alias"
+            selected.symlink_to(tree_a, target_is_directory=True)
+            for asset in ("templates", "scripts", "presets", "workflows", "extensions"):
+                (selected.parent / asset).symlink_to(source.parent / asset, target_is_directory=True)
+        if cache == "shared-initializer":
+            (tree_b / "specify_cli/__init__.py").unlink()
+            (tree_b / "specify_cli/__init__.py").symlink_to(tree_a / "specify_cli/__init__.py")
+        env = os.environ.copy()
+        env.pop("PYTHONNOUSERSITE", None)
+        env["PYTHONUSERBASE"] = str(tmp_path / "userbase")
+        env["PYTHONPATH"] = str(tree_a)
+        user_site = self._user_site(tmp_path, env)
+        (user_site / "paths.pth").write_text("\n".join([str(selected), *site.getsitepackages()]) + "\n", encoding="utf-8")
+        main_marker = tmp_path / "main-called"
+        startup_marker = tmp_path / "cached-child"
+        startup = (
+            "import os, sys, specify_cli\n"
+            "if os.environ.get('INIT_CHILD_MODE') == 'cache':\n"
+            f"    open({str(startup_marker)!r}, 'w').write(specify_cli.__file__)\n"
+            "    original_main = specify_cli.main\n"
+            "    def observed_main():\n"
+            f"        open({str(main_marker)!r}, 'w').write('main')\n"
+            "        original_main()\n"
+            "    specify_cli.main = observed_main\n"
+        )
+        if cache == "foreign-submodule":
+            startup += (
+                "    import importlib.util\n"
+                f"    spec = importlib.util.spec_from_file_location('specify_cli.command_init', {str(tree_b / 'specify_cli/command_init.py')!r})\n"
+                "    module = importlib.util.module_from_spec(spec)\n"
+                "    spec.loader.exec_module(module)\n"
+                "    sys.modules[spec.name] = module\n"
+            )
+        elif cache == "wrong-path":
+            startup += f"    specify_cli.__path__ = [{str(tree_b / 'specify_cli')!r}]\n"
+        elif cache == "wrong-origin":
+            startup += f"    specify_cli.__spec__.origin = {str(tree_b / 'specify_cli/__init__.py')!r}\n"
+        elif cache == "missing-file":
+            startup += "    specify_cli.__file__ = None\n"
+        (user_site / "usercustomize.py").write_text(startup, encoding="utf-8")
+        result, _ = self._parent(tmp_path, python=sys._base_executable, env=env, source=tree_a,
+                                  setup="os.environ['INIT_CHILD_MODE'] = 'cache'")
+        assert startup_marker.exists(), result
+        if cache in {"matching", "alias"}:
+            assert result["status"] == "completed", result
+            assert main_marker.exists()
+            _assert_init_scaffold(tmp_path / "root/demo", "py")
+        else:
+            assert result["status"] == "failed", result
+            name = "specify_cli.command_init" if cache == "foreign-submodule" else "specify_cli"
+            assert name in result["error"] and "package tree" in result["error"]
+            assert not main_marker.exists()
+            assert not (tmp_path / "root/demo").exists()
+
+    @pytest.mark.parametrize("mode", [
+        "dependency", "dependency-chdir", "dependency-env-only", "dependency-path-only",
+        "dependency-relative", "dependency-empty", "dependency-target", "dependency-target-alias",
+        "dependency-outside-target",
+        "dependency-isolated", "dependency-ignore-env", "bytes-success", "bytes-failure",
+    ])
+    def test_review_trusted_adapter_child_io(self, tmp_path, monkeypatch, tmp_path_factory, mode):
+        from tests.specify_cli.integrations import test_installed_adapters as adapters
+
+        certificate = adapters.tls_certificate.__wrapped__(tmp_path_factory)
+        fixture = adapters.server.__wrapped__(tmp_path, monkeypatch, certificate)
+        server = next(fixture)
+        marker = tmp_path / "adapter-child"
+        dependency = tmp_path / "dependencies"
+        dependency.mkdir()
+        (dependency / "init_only_dependency.py").write_text("VALUE = 'dependency imported'\n", encoding="utf-8")
+        callback = (
+            "            import init_only_dependency\n"
+            "            (project_root / 'dependency-result').write_text(init_only_dependency.VALUE)\n"
+            if mode.startswith("dependency") else
+            "            os.write(1, b'raw-out-\\xff\\n')\n"
+            "            os.write(2, b'raw-err-\\xfe\\n')\n"
+            + ("            raise SystemExit(23)\n" if mode == "bytes-failure" else "")
+        )
+        body = (
+            "    def setup(self, project_root, manifest, **kwargs):\n"
+            "        import os\n"
+            f"        if os.environ.get('INIT_CHILD_MODE') == {mode!r}:\n"
+            f"            open({str(marker)!r}, 'w').write(str(os.getpid()))\n"
+            + callback + "        return super().setup(project_root, manifest, **kwargs)\n"
+        )
+        try:
+            monkeypatch.setenv("INIT_CHILD_MODE", "false")
+            adapters.publish(server, code=adapters.implementation(body=body))
+            project = adapters.catalog_project(tmp_path, server)
+            adapters.install(project)
+            assert not marker.exists() and not (project / "dependency-result").exists()
+            adapters.unload_installed_integrations()
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(dependency)
+            setup = f"os.environ['INIT_CHILD_MODE'] = {mode!r}\ndata['root'] = {str(project)!r}\n"
+            flags = ()
+            if mode == "dependency-chdir":
+                setup += f"os.chdir({str(project)!r})\n"
+            elif mode == "dependency-env-only":
+                setup += f"sys.path.remove({str(dependency)!r})\n"
+            elif mode == "dependency-path-only":
+                setup += "os.environ.pop('PYTHONPATH')\n"
+            elif mode == "dependency-relative":
+                env["PYTHONPATH"] = "dependencies"
+            elif mode == "dependency-empty":
+                env["PYTHONPATH"] = ""
+                setup += f"sys.path.insert(0, {str(dependency)!r})\n"
+            elif mode in {"dependency-target", "dependency-target-alias", "dependency-outside-target"}:
+                target_dependency = project / "dependencies"
+                shutil.copytree(dependency, target_dependency)
+                dependency = target_dependency
+                if mode.endswith("alias"):
+                    dependency = tmp_path / "alias"
+                    dependency.symlink_to(target_dependency, target_is_directory=True)
+                env["PYTHONPATH"] = str(dependency)
+            elif mode in {"dependency-isolated", "dependency-ignore-env"}:
+                flags = ("-I",) if mode.endswith("isolated") else ("-E",)
+                # Even deliberate parent search configuration cannot override -E/-I.
+                setup += f"sys.path.insert(0, {str(dependency)!r})\n"
+            startup_marker = tmp_path / "dependency-startup"
+            (dependency / "sitecustomize.py").write_text(
+                f"import os\nif os.environ.get('INIT_CHILD_MODE') == {mode!r}:\n"
+                f"    open({str(startup_marker)!r}, 'w').write('startup')\n", encoding="utf-8",
+            )
+            config = {"id": "init", "here": True, "force": True, "integration": adapters.KEY, "script": "py"}
+            if mode == "dependency-outside-target":
+                setup += f"data['root'] = {str(tmp_path / 'root')!r}\n"
+                config.pop("here")
+                config["project"] = str(project)
+            result, child = self._parent(
+                tmp_path, env=env, flags=flags, setup=setup,
+                config=config,
+            )
+            assert marker.exists() and marker.read_text() != str(os.getpid())
+            assert not startup_marker.exists()
+            assert child is not None
+            if mode in {"dependency", "dependency-chdir"}:
+                assert result["status"] == "completed", result
+                assert (project / "dependency-result").read_text() == "dependency imported"
+                assert str(dependency) in child["path"]
+                assert child["path"].index(str(dependency)) > 0  # Source pin comes first.
+            elif mode.startswith("dependency"):
+                assert result["status"] == "failed", result
+                assert "init_only_dependency" in result["error"]
+                assert str(dependency) not in child["path"]
+                assert not (project / "dependency-result").exists()
+            else:
+                # The adapter lifecycle wraps SystemExit as a CLI failure (1).
+                # Both streams must still survive, unlike a synthetic decode failure.
+                assert result["output"]["exit_code"] == (1 if mode == "bytes-failure" else 0), result
+                assert "raw-out-\ufffd" in result["output"]["stdout"]
+                assert "raw-err-\ufffd" in result["output"]["stderr"]
+                assert result["status"] == ("failed" if mode == "bytes-failure" else "completed")
+            if mode in {"dependency", "dependency-chdir", "bytes-success"}:
+                assert (project / ".sample-agent/skills/speckit-specify/SKILL.md").is_file()
+                assert (project / ".specify/memory/constitution.md").is_file()
+            assert adapters.KEY not in adapters.INTEGRATION_REGISTRY
+        finally:
+            adapters.unload_installed_integrations()
+            fixture.close()
+
+    def test_review_pin_assertion_through_symlink_checkout(self, tmp_path):
+        import subprocess
+        import specify_cli
+
+        source = Path(specify_cli.__file__).parent.parent
+        alias = tmp_path / "alias"
+        try:
+            alias.symlink_to(source, target_is_directory=True)
+            for asset in ("templates", "scripts", "presets", "workflows", "extensions"):
+                (alias.parent / asset).symlink_to(source.parent / asset, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"Directory symlinks unavailable: {exc}")
+        # Exercise the actual pin assertion with a package imported through an alias.
+        code = (
+            "import sys; from pathlib import Path; "
+            "sys.path[:0] = sys.argv[1:3]; "
+            "import pytest, specify_cli; "
+            "from tests.test_workflows import TestInitStep; "
+            "patch = pytest.MonkeyPatch(); "
+            "TestInitStep().test_pins_interpreter_source_and_child_environment(Path(sys.argv[3]), patch); "
+            "patch.undo()"
+        )
+        run_root = tmp_path / "run"
+        run_root.mkdir()
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", code, str(alias), str(source.parent), str(run_root)],
+            cwd=tmp_path, env=os.environ.copy(), stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, timeout=60,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
 
     @pytest.mark.parametrize("separate_roots", [False, True])
     def test_relative_projects_survive_interleaved_init(self, tmp_path, monkeypatch, separate_roots):
@@ -4018,10 +4445,11 @@ class TestInitStep:
             launches = []
             def run(args, **kwargs):
                 assert args[0] == sys.executable
-                assert args[1:4] == ['-P', '-c', _INIT_BOOTSTRAP]
+                index = args.index('-c') + 1
+                assert '-P' in args[1:index] and args[index] == _INIT_BOOTSTRAP
                 launches.append(args)
                 # Keep the complete production bootstrap and actual CLI entry.
-                args = [*args[:3], sys.argv[3] + '\\n' + args[3], *args[4:]]
+                args = [*args[:index], sys.argv[3] + '\\n' + args[index], *args[index+1:]]
                 return original(args, **kwargs)
             subprocess.run = run
             state = (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
@@ -4035,7 +4463,8 @@ class TestInitStep:
             assert len(launches) == 1
             with open(sys.argv[4], 'w', encoding='utf-8') as stream:
                 json.dump({'pid': os.getpid(), 'executable': sys.executable, 'files': files,
-                           'package_path': package_path, 'source_argv': launches[0][4]}, stream)
+                           'package_path': package_path,
+                           'source_argv': launches[0][launches[0].index('-c') + 2]}, stream)
         """)
         env = os.environ.copy()
         env.pop("PYTHONPATH", None)
@@ -4138,6 +4567,7 @@ class TestInitStep:
         def run(args, **kwargs):
             if "init" in args:
                 launches.append((args, kwargs))
+            kwargs.setdefault("timeout", 60)
             return original(args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", run)
@@ -4150,8 +4580,11 @@ class TestInitStep:
         assert len(launches) == 1
         args, options = launches[0]
         assert args[0] == sys.executable
-        assert args[1:3] == ["-P", "-c"]
-        assert args[4] == str(Path(specify_cli.__file__).resolve().parent.parent)
+        index = args.index("-c")
+        assert "-P" in args[1:index]
+        pin = Path(args[index + 2])
+        assert pin.is_absolute()
+        assert (pin / "specify_cli").samefile(Path(specify_cli.__file__).parent)
         assert options["cwd"] == str(root)
         assert options["stdin"] == subprocess.DEVNULL
         assert options["capture_output"] is True and options["check"] is False
