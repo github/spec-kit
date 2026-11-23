@@ -677,7 +677,7 @@ class _PresetSkillMethods:
                     continue
                 skills_dir = (
                     active_skills_dir
-                    if agent == active_ai
+                    if agent == active_ai and active_skills_dir is not None
                     else self._safe_skills_dir_for_agent(agent)
                 )
                 if skills_dir is None:
@@ -735,12 +735,13 @@ class _PresetSkillMethods:
                     else:
                         if not self._validate_skill_subdir(
                             skill_dir, create=False, skills_root=skills_dir
-                        ) or not skill_file.is_file():
+                        ):
                             continue
                         try:
-                            content = skill_file.read_text(encoding="utf-8")
+                            with FileHelper(skills_dir) as files:
+                                content = files.read_text(Path(skill_name) / "SKILL.md")
                             hard_linked = skill_file.stat().st_nlink > 1
-                        except (OSError, UnicodeDecodeError):
+                        except (OSError, ValueError):
                             continue
                         metadata = registrar.parse_frontmatter(content)[0].get("metadata")
                         source = (
@@ -754,10 +755,10 @@ class _PresetSkillMethods:
                         if source == f"{pack_id}:{tmpl.get('file')}":
                             # The raw marker names a file, not a command.
                             # Other commands of the preset can render this
-                            # alias from the same file: registration writes
-                            # them in manifest order, so the file belongs
-                            # to the last one, and one that replaces is
-                            # complete without a base.
+                            # skill (as primary or alias) from the same file:
+                            # registration writes them in manifest order, so
+                            # the file belongs to the last one, and one that
+                            # replaces is complete without a base.
                             position = templates.index(tmpl)
                             twins = [
                                 (idx, other)
@@ -765,7 +766,20 @@ class _PresetSkillMethods:
                                 if other is not tmpl
                                 and other.get("type") == "command"
                                 and other.get("file") == tmpl.get("file")
-                                and alias in (other.get("aliases") or [])
+                                and any(
+                                    isinstance(candidate, str)
+                                    and (
+                                        candidate == alias
+                                        or registrar._compute_output_name(
+                                            agent, candidate, agent_config
+                                        )
+                                        == skill_name
+                                    )
+                                    for candidate in (
+                                        other.get("name"),
+                                        *(other.get("aliases") or []),
+                                    )
+                                )
                             ]
                             if any(idx > position for idx, _ in twins):
                                 continue
@@ -959,11 +973,14 @@ class _PresetSkillMethods:
         def resolves_here(agent: Any) -> bool:
             if not isinstance(agent, str):
                 return False
-            agent_dir = (
-                active_skills_dir
-                if agent == active_ai
-                else self._safe_skills_dir_for_agent(agent)
-            )
+            if agent == active_ai:
+                agent_dir = (
+                    active_skills_dir
+                    if active_skills_dir is not None or not writes_skills(agent)
+                    else self._safe_skills_dir_for_agent(agent)
+                )
+            else:
+                agent_dir = self._safe_skills_dir_for_agent(agent)
             return agent_dir is not None and agent_dir == skills_dir
 
         def is_registered(pack_id: str) -> bool:
@@ -1086,11 +1103,33 @@ class _PresetSkillMethods:
         if not survivors:
             return registered_commands
 
-        def survivor_owned(skills_dir: Path, skill_dir: Path) -> bool:
+        retiring_manifest = PresetResolver(self.project_root)._get_manifest(
+            self.presets_dir / pack_id
+        )
+
+        def retiring_sources_for(cmd_name: str) -> Set[str]:
+            sources = {f"preset:{pack_id}"}
+            if retiring_manifest is None:
+                sources.add(f"{pack_id}:.composed/{cmd_name}.md")
+                return sources
+            for tmpl in retiring_manifest.templates:
+                if tmpl.get("type") != "command":
+                    continue
+                primary = tmpl.get("name")
+                aliases = tmpl.get("aliases") or []
+                if primary != cmd_name and cmd_name not in aliases:
+                    continue
+                if isinstance(primary, str):
+                    sources.add(f"{pack_id}:.composed/{primary}.md")
+                if isinstance(tmpl.get("file"), str):
+                    sources.add(f"{pack_id}:{tmpl['file']}")
+            return sources
+
+        def read_source(skills_dir: Path, skill_dir: Path) -> Optional[str]:
             if not self._validate_skill_subdir(
                 skill_dir, create=False, skills_root=skills_dir
             ):
-                return False
+                return None
             try:
                 # FileHelper reads a relative path against its root, so
                 # name the file from the skills directory, not from a
@@ -1098,10 +1137,13 @@ class _PresetSkillMethods:
                 with FileHelper(skills_dir) as files:
                     content = files.read_text(Path(skill_dir.name) / "SKILL.md")
             except (OSError, ValueError):
-                # Missing, unreadable, not a regular file or not UTF-8.
-                return False
+                # Missing, unreadable, symlinked, not a regular file or not UTF-8.
+                return None
             metadata = registrar.parse_frontmatter(content)[0].get("metadata")
             source = metadata.get("source") if isinstance(metadata, dict) else None
+            return source if isinstance(source, str) else None
+
+        def is_survivor_owned(source: Optional[str]) -> bool:
             return (
                 isinstance(source, str)
                 and source != f"preset:{pack_id}"
@@ -1131,20 +1173,19 @@ class _PresetSkillMethods:
                 outputs = [output]
                 if output != name and registrar._is_safe_command_name(name):
                     outputs.append(name)
-                owned = [
-                    survivor_owned(skills_dir, skills_dir / candidate)
+                sources = [
+                    read_source(skills_dir, skills_dir / candidate)
                     for candidate in outputs
                 ]
+                owned = [is_survivor_owned(src) for src in sources]
                 if not any(owned):
                     kept.append(name)
                     continue
-                for candidate, is_owned in zip(outputs, owned):
-                    skill_dir = skills_dir / candidate
-                    if is_owned or not self._validate_skill_subdir(
-                        skill_dir, create=False, skills_root=skills_dir
-                    ):
+                retiring_sources = retiring_sources_for(name)
+                for candidate, src, is_owned in zip(outputs, sources, owned):
+                    if is_owned or not (isinstance(src, str) and src in retiring_sources):
                         continue
-                    skill_file = skill_dir / "SKILL.md"
+                    skill_file = skills_dir / candidate / "SKILL.md"
                     unlink_in_directory(
                         skill_file,
                         root=self.project_root if skill_file.is_relative_to(self.project_root) else skills_dir,
@@ -1192,9 +1233,11 @@ class _PresetSkillMethods:
             if not isinstance(meta, dict):
                 continue
             recorded = meta.get("registered_skills")
-            if isinstance(recorded, list) and active_ai:
+            if isinstance(recorded, list):
                 recorded = self._infer_legacy_skill_provenance(
-                    [n for n in recorded if isinstance(n, str)], pack_id, active_ai
+                    [n for n in recorded if isinstance(n, str)],
+                    pack_id,
+                    active_ai or "",
                 )
             recorded_commands = meta.get("registered_commands")
             groups: Dict[Path, Dict[str, List[str]]] = {}
@@ -1206,15 +1249,19 @@ class _PresetSkillMethods:
                     if not isinstance(agent, str) or not isinstance(names, list):
                         continue
                     agent_config = registrar.AGENT_CONFIGS.get(agent)
-                    if from_commands and not (
+                    native_skill_agent = bool(
                         agent_config and agent_config.get("extension") == "/SKILL.md"
-                    ):
-                        continue
-                    skills_dir = (
-                        active_skills_dir
-                        if agent == active_ai
-                        else self._safe_skills_dir_for_agent(agent)
                     )
+                    if from_commands and not native_skill_agent:
+                        continue
+                    if agent == active_ai:
+                        skills_dir = (
+                            active_skills_dir
+                            if active_skills_dir is not None or not native_skill_agent
+                            else self._safe_skills_dir_for_agent(agent)
+                        )
+                    else:
+                        skills_dir = self._safe_skills_dir_for_agent(agent)
                     if skills_dir is None:
                         continue
                     group = groups.setdefault(skills_dir, {"agents": [], "names": []})
@@ -1253,14 +1300,15 @@ class _PresetSkillMethods:
                     else sorted(agents)[0]
                 )
                 for name in group["names"]:
-                    skill_file = skills_dir / name / "SKILL.md"
+                    skill_dir = skills_dir / name
                     if not self._validate_skill_subdir(
-                        skill_file.parent, create=False, skills_root=skills_dir
-                    ) or not skill_file.is_file():
+                        skill_dir, create=False, skills_root=skills_dir
+                    ):
                         continue
                     try:
-                        content = skill_file.read_text(encoding="utf-8")
-                    except (OSError, UnicodeDecodeError):
+                        with FileHelper(skills_dir) as files:
+                            content = files.read_text(Path(name) / "SKILL.md")
+                    except (OSError, ValueError):
                         continue
                     metadata = registrar.parse_frontmatter(content)[0].get("metadata")
                     source = metadata.get("source") if isinstance(metadata, dict) else None
@@ -1276,30 +1324,71 @@ class _PresetSkillMethods:
     ) -> None:
         """Delete ``cmd_name``'s preset-rendered skills among ``skill_names`` (journaled).
 
-        A skill is one when its ``SKILL.md`` source marker says an installed
-        preset rendered this command into it: ``preset:<id>`` (skill
-        registration) or ``<id>:<file>`` with that preset's own file for the
-        command, raw or composed (command registration for native skill
-        agents). Anything else is left untouched, including another
-        command's alias that happens to use this skill's name.
+        A skill is removed only when its ``SKILL.md`` source marker
+        unambiguously proves an installed preset rendered ``cmd_name`` into
+        that output directory: ``<id>:.composed/<cmd_name>.md`` (which names
+        the command explicitly), ``preset:<id>`` (when the preset supplies
+        ``cmd_name`` and no other command of the preset maps to the same skill
+        directory), or ``<id>:<file>`` (when no other command's primary name
+        or alias in the preset shares that file and output directory).
+        Anything else or any ambiguous ownership is preserved.
         """
         from ..integrations._file_changes import unlink_in_directory
 
         registrar = self._command_registrar()
         resolver = PresetResolver(self.project_root)
-        owned_sources: Set[str] = set()
+        target_names = list(dict.fromkeys(skill_names))
+        cmd_skill_names = set(self._skill_names_for_command(cmd_name))
+        owned_sources_by_name: Dict[str, Set[str]] = {
+            name: set() for name in target_names
+        }
         for pack_id in self.registry.list():
-            owned_sources.add(f"preset:{pack_id}")
-            owned_sources.add(f"{pack_id}:.composed/{cmd_name}.md")
             manifest = resolver._get_manifest(self.presets_dir / pack_id)
-            for tmpl in manifest.templates if manifest else []:
-                if (
-                    tmpl.get("type") == "command"
-                    and tmpl.get("name") == cmd_name
-                    and isinstance(tmpl.get("file"), str)
+            if not manifest:
+                continue
+            cmd_templates = [
+                tmpl
+                for tmpl in manifest.templates
+                if tmpl.get("type") == "command"
+                and isinstance(tmpl.get("name"), str)
+            ]
+            matching = [tmpl for tmpl in cmd_templates if tmpl["name"] == cmd_name]
+            if not matching:
+                continue
+            other_templates = [
+                tmpl for tmpl in cmd_templates if tmpl["name"] != cmd_name
+            ]
+            for name in target_names:
+                if name not in cmd_skill_names:
+                    continue
+                sources = owned_sources_by_name[name]
+                sources.add(f"{pack_id}:.composed/{cmd_name}.md")
+                if not any(
+                    name in self._skill_names_for_command(other["name"])
+                    for other in other_templates
                 ):
-                    owned_sources.add(f"{pack_id}:{tmpl['file']}")
-        for name in dict.fromkeys(skill_names):
+                    sources.add(f"preset:{pack_id}")
+                for tmpl in matching:
+                    file_rel = tmpl.get("file")
+                    if not isinstance(file_rel, str):
+                        continue
+                    if not any(
+                        other.get("file") == file_rel
+                        and any(
+                            isinstance(candidate, str)
+                            and name in self._skill_names_for_command(candidate)
+                            for candidate in (
+                                other["name"],
+                                *(other.get("aliases") or []),
+                            )
+                        )
+                        for other in other_templates
+                    ):
+                        sources.add(f"{pack_id}:{file_rel}")
+        for name in target_names:
+            owned_sources = owned_sources_by_name[name]
+            if not owned_sources:
+                continue
             skill_dir = skills_dir / name
             skill_file = skill_dir / "SKILL.md"
             if not self._validate_skill_subdir(
@@ -1622,15 +1711,21 @@ class _PresetSkillMethods:
         for cmd_tmpl in command_templates:
             cmd_name = cmd_tmpl["name"]
             cmd_file_rel = cmd_tmpl["file"]
-            source_file = preset_dir / cmd_file_rel
-            if not source_file.exists():
-                continue
-
-            # Use composed content if available (written by _register_commands
-            # for commands with non-replace strategies), otherwise the original.
-            composed_file = preset_dir / ".composed" / f"{cmd_name}.md"
-            if composed_file.exists():
-                source_file = composed_file
+            override = (content_overrides or {}).get(cmd_name)
+            source_rel = Path(cmd_file_rel)
+            if override is None:
+                with FileHelper(preset_dir) as files:
+                    if files.file_mode(source_rel) is None:
+                        continue
+                    # Use composed content if available (written by
+                    # _register_commands for commands with non-replace
+                    # strategies), otherwise the original.
+                    composed_rel = Path(".composed") / f"{cmd_name}.md"
+                    try:
+                        if files.file_mode(composed_rel) is not None:
+                            source_rel = composed_rel
+                    except (FileNotFoundError, NotADirectoryError):
+                        pass
 
             # Derive the short command name (e.g. "specify" from "speckit.specify")
             raw_short_name = cmd_name
@@ -1659,11 +1754,13 @@ class _PresetSkillMethods:
             if not target_skill_names:
                 continue
 
-            # Parse the command file
-            content = source_file.read_text(encoding="utf-8")
-            override = (content_overrides or {}).get(cmd_name)
+            # Parse the command file (skip obsolete .composed cache when
+            # caller already supplied the resolved composition).
             if override is not None:
                 content = override
+            else:
+                with FileHelper(preset_dir) as files:
+                    content = files.read_text(source_rel)
             frontmatter, body = registrar.parse_frontmatter(content)
 
             # A composition-strategy command (wrap/prepend/append) needs a
@@ -1850,12 +1947,10 @@ class _PresetSkillMethods:
                     skill_subdir, create=False, skills_root=resolved_dir
                 ):
                     continue
-                skill_file = skill_subdir / "SKILL.md"
-                if not skill_file.is_file():
-                    continue
                 try:
-                    content = skill_file.read_text(encoding="utf-8")
-                except (OSError, UnicodeDecodeError):
+                    with FileHelper(resolved_dir) as files:
+                        content = files.read_text(Path(name) / "SKILL.md")
+                except (OSError, ValueError):
                     continue
                 frontmatter, _ = registrar.parse_frontmatter(content)
                 skill_metadata = frontmatter.get("metadata")

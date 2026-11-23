@@ -1493,7 +1493,7 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         )
 
     def test_partial_skill_install_failure_rolls_back_persisted_writes(
-        self, project_dir, temp_dir, monkeypatch
+        self, project_dir, temp_dir
     ):
         """Install rollback must reload partial skill ownership before removal."""
         self._write_init_options(project_dir, ai="copilot", ai_skills=True)
@@ -1504,18 +1504,7 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             ["speckit.specify", "speckit.plan"],
         )
         manager = PresetManager(project_dir)
-        original_read_text = Path.read_text
-
-        def fail_plan_source(path, *args, **kwargs):
-            if (
-                path.name == "speckit.plan.md"
-                and path.parent.name == "commands"
-                and "partial-install-failure-preset" in path.parts
-            ):
-                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid")
-            return original_read_text(path, *args, **kwargs)
-
-        monkeypatch.setattr(Path, "read_text", fail_plan_source)
+        (preset_dir / "commands" / "speckit.plan.md").write_bytes(b"\xff")
         with pytest.raises(UnicodeDecodeError):
             manager.install_from_directory(preset_dir, "0.1.5")
 
@@ -1532,7 +1521,7 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert (
             not skill_file.exists()
             or "preset:partial-install-failure-preset"
-            not in original_read_text(skill_file, encoding="utf-8")
+            not in skill_file.read_text(encoding="utf-8")
         ), "rollback must not orphan a skill written before the later failure"
 
 
