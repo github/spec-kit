@@ -96,6 +96,31 @@ def test_retire_skill_resources_preserves_unreadable_copies(tmp_path, monkeypatc
     assert key in hashes["project"]
 
 
+def test_retire_skill_resources_preserves_symlink_replaced_copies(tmp_path):
+    """A copy replaced with a link is kept with its record unless forced (#5366)."""
+    skills = tmp_path / ".claude/skills"
+    name = "speckit-ext-run"
+    copy = put(skills / name / "guide.md")
+    key = copy.relative_to(tmp_path).as_posix()
+    hashes = {"project": {key: _sha256(copy)}}
+    expected = {"project": dict(hashes["project"])}
+    shared = put(tmp_path / "docs/shared-guide.md", "shared guide")
+    copy.unlink()
+    link(copy, shared)
+
+    with pytest.warns(UserWarning, match="Preserved unverifiable resource"):
+        retire_skill_resources(
+            tmp_path, "ext", hashes, {name}, skills_dir=skills, preserve_modified=True,
+        )
+    assert copy.is_symlink()
+    assert hashes == expected
+
+    retire_skill_resources(tmp_path, "ext", hashes, {name}, skills_dir=skills)
+    assert not copy.is_symlink()
+    assert hashes == {}
+    assert shared.read_text(encoding="utf-8") == "shared guide"
+
+
 def link(path: Path, target: Path, *, directory: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:

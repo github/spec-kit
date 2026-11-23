@@ -551,7 +551,9 @@ def retire_skill_resources(
                 try:
                     path = _validate_record_path(Path(key), trusted)
                 except (ValueError, OSError):
-                    # Existing removal safeguards report unsafe paths.
+                    # A linked or unsafe path can't be compared with its record.
+                    warnings.warn(f"Preserved unverifiable resource {key}", stacklevel=2)
+                    selected.pop(key)
                     continue
                 try:
                     if not path.is_file() or _sha256(path) == digest:
