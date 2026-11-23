@@ -646,7 +646,6 @@ class TestGitHubAuth:
         run.assert_called_once_with(
             [executable, "auth", "token", "--hostname", "github.com"],
             capture_output=True,
-            text=True,
             timeout=10,
             check=False,
             shell=False,
@@ -1698,7 +1697,6 @@ class TestGitHubCliAuthenticatedHttp:
         run.assert_called_once_with(
             [executable, "auth", "token", "--hostname", "github.com"],
             capture_output=True,
-            text=True,
             timeout=10,
             check=False,
             shell=False,
@@ -2455,3 +2453,254 @@ class TestGithubProviderHosts:
             AuthConfigEntry(hosts=("github.com",), provider="github", auth="bearer", token="t"),
         ])
         assert github_provider_hosts() == ("ghes.example", "github.com")
+
+
+class TestCliCredentialSubprocessEncoding:
+    @staticmethod
+    def _install_cp1252_cli_shim(monkeypatch, module, which_path: str, script):
+        import subprocess
+        import sys
+        import threading
+
+        real_run = subprocess.run
+        calls = 0
+        thread_errors: list[BaseException] = []
+
+        def record_thread_error(args):
+            if args.exc_value is not None:
+                thread_errors.append(args.exc_value)
+
+        def run_with_cp1252_default(argv, **kwargs):
+            nonlocal calls
+            calls += 1
+            if (
+                kwargs.get("text") or kwargs.get("universal_newlines")
+            ) and kwargs.get("encoding") is None:
+                kwargs = {**kwargs, "encoding": "cp1252"}
+            return real_run([sys.executable, str(script), *argv[1:]], **kwargs)
+
+        monkeypatch.setattr(threading, "excepthook", record_thread_error)
+        monkeypatch.setattr(module.shutil, "which", lambda _name: which_path)
+        monkeypatch.setattr(module.subprocess, "run", run_with_cp1252_default)
+        return lambda: (calls, thread_errors)
+
+    def test_azure_cli_real_subprocess_decodes_utf8_json_under_cp1252(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.authentication import azure_devops as ado_mod
+
+        fake_az = tmp_path / "fake_az.py"
+        fake_az.write_text(
+            "import json, sys\n"
+            "payload = {\n"
+            "    'accessToken': '  ado-utf8-token  ',\n"
+            "    'subscription': '\\u540e\\u53f0\\u4fe1\\u606f \\u2014 \\u201cEast\\u201d',\n"
+            "}\n"
+            "sys.stdout.buffer.write(\n"
+            "    json.dumps(payload, ensure_ascii=False).encode('utf-8') + b'\\r\\n'\n"
+            ")\n",
+            encoding="utf-8",
+        )
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "az", "az")
+        inspect_state = self._install_cp1252_cli_shim(
+            monkeypatch, ado_mod, executable, fake_az
+        )
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli"
+        )
+
+        token = AzureDevOpsAuth().resolve_token(entry)
+        calls, thread_errors = inspect_state()
+
+        assert token == "ado-utf8-token"
+        assert calls == 1
+        assert thread_errors == []
+
+    @pytest.mark.parametrize(
+        "raw_stdout",
+        [b"\x81\xff", b'{"accessToken": "secret\xff"}'],
+        ids=["cp1252-undefined-byte", "invalid-utf8-json-string"],
+    )
+    def test_azure_cli_real_subprocess_invalid_utf8_returns_none(
+        self, tmp_path, monkeypatch, raw_stdout
+    ):
+        from specify_cli.authentication import azure_devops as ado_mod
+
+        fake_az = tmp_path / "bad_az.py"
+        fake_az.write_text(
+            f"import sys\nsys.stdout.buffer.write({raw_stdout!r})\n",
+            encoding="utf-8",
+        )
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "az", "az")
+        inspect_state = self._install_cp1252_cli_shim(
+            monkeypatch, ado_mod, executable, fake_az
+        )
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli"
+        )
+
+        assert AzureDevOpsAuth().resolve_token(entry) is None
+        _, thread_errors = inspect_state()
+        assert thread_errors == []
+
+    def test_build_request_falls_through_when_azure_cli_returns_invalid_utf8(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.authentication import azure_devops as ado_mod
+        from specify_cli.authentication import http as http_mod
+
+        fake_az = tmp_path / "bad_az.py"
+        fake_az.write_text(
+            "import sys\nsys.stdout.buffer.write(b'\\x81\\xff')\n",
+            encoding="utf-8",
+        )
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "az", "az")
+        inspect_state = self._install_cp1252_cli_shim(
+            monkeypatch, ado_mod, executable, fake_az
+        )
+        monkeypatch.setattr(
+            http_mod,
+            "_config_override",
+            [
+                AuthConfigEntry(
+                    hosts=("dev.azure.com",),
+                    provider="azure-devops",
+                    auth="azure-cli",
+                ),
+                AuthConfigEntry(
+                    hosts=("dev.azure.com",),
+                    provider="azure-devops",
+                    auth="bearer",
+                    token="fallback-token",
+                ),
+            ],
+        )
+
+        req = http_mod.build_request("https://dev.azure.com/org/proj")
+        _, thread_errors = inspect_state()
+
+        assert req.get_header("Authorization") == "Bearer fallback-token"
+        assert thread_errors == []
+
+    def test_github_cli_real_subprocess_decodes_trims_and_caches_token_bytes(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.authentication import github as gh_mod
+
+        fake_gh = tmp_path / "good_gh.py"
+        fake_gh.write_text(
+            "import sys\n"
+            "sys.stdout.buffer.write(b'  gho_test_token_123  \\r\\n')\n",
+            encoding="utf-8",
+        )
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+        inspect_state = self._install_cp1252_cli_shim(
+            monkeypatch, gh_mod, executable, fake_gh
+        )
+        provider = GitHubAuth()
+        entry = _github_cli_entry()
+
+        assert provider.resolve_token(entry) == "gho_test_token_123"
+        assert provider.resolve_token(entry) == "gho_test_token_123"
+
+        calls, thread_errors = inspect_state()
+        assert calls == 1
+        assert thread_errors == []
+
+    @pytest.mark.parametrize(
+        "raw_stdout",
+        [b"secret\x81\xff\n", b"secret\xff\n"],
+        ids=["cp1252-undefined-byte", "latin-high-byte"],
+    )
+    def test_github_cli_real_subprocess_invalid_utf8_caches_sanitized_failure(
+        self, tmp_path, monkeypatch, raw_stdout
+    ):
+        from specify_cli.authentication import github as gh_mod
+
+        fake_gh = tmp_path / "bad_gh.py"
+        fake_gh.write_text(
+            f"import sys\nsys.stdout.buffer.write({raw_stdout!r})\n",
+            encoding="utf-8",
+        )
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+        inspect_state = self._install_cp1252_cli_shim(
+            monkeypatch, gh_mod, executable, fake_gh
+        )
+        provider = GitHubAuth()
+
+        for _ in range(2):
+            with pytest.raises(
+                GitHubCliAuthError, match="could not provide a token"
+            ) as exc_info:
+                provider.resolve_token(_github_cli_entry())
+            assert "secret" not in str(exc_info.value)
+
+        calls, thread_errors = inspect_state()
+        assert calls == 1
+        assert thread_errors == []
+
+    def test_github_cli_real_subprocess_utf8_non_ascii_token_raises_malformed_token(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.authentication import github as gh_mod
+
+        fake_gh = tmp_path / "malformed_gh.py"
+        fake_gh.write_text(
+            "import sys\n"
+            "sys.stdout.buffer.write(' synthetic_credential\\u201dextra\\n'.encode('utf-8'))\n",
+            encoding="utf-8",
+        )
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+        inspect_state = self._install_cp1252_cli_shim(
+            monkeypatch, gh_mod, executable, fake_gh
+        )
+        provider = GitHubAuth()
+
+        for _ in range(2):
+            with pytest.raises(
+                GitHubCliAuthError, match="malformed token"
+            ) as exc_info:
+                provider.resolve_token(_github_cli_entry())
+            assert "synthetic_credential" not in str(exc_info.value)
+            assert "extra" not in str(exc_info.value)
+
+        calls, thread_errors = inspect_state()
+        assert calls == 1
+        assert thread_errors == []
+
+    def test_cli_providers_nonzero_exit_with_utf8_stderr_do_not_fail_decoding(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.authentication import azure_devops as ado_mod
+        from specify_cli.authentication import github as gh_mod
+
+        failing_cli = tmp_path / "failing_cli.py"
+        failing_cli.write_text(
+            "import sys\n"
+            "sys.stderr.buffer.write('error: \\u201cgithub.com\\u201d (\\u540e\\u53f0)\\n'.encode('utf-8'))\n"
+            "raise SystemExit(1)\n",
+            encoding="utf-8",
+        )
+        gh_exe = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+        inspect_gh = self._install_cp1252_cli_shim(
+            monkeypatch, gh_mod, gh_exe, failing_cli
+        )
+
+        with pytest.raises(
+            GitHubCliAuthError, match="gh auth login --hostname github.com"
+        ):
+            GitHubAuth().resolve_token(_github_cli_entry())
+        _, gh_thread_errors = inspect_gh()
+        assert gh_thread_errors == []
+
+        az_exe = os.path.join(os.path.abspath(os.sep), "opt", "az", "az")
+        inspect_az = self._install_cp1252_cli_shim(
+            monkeypatch, ado_mod, az_exe, failing_cli
+        )
+        ado_entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli"
+        )
+
+        assert AzureDevOpsAuth().resolve_token(ado_entry) is None
+        _, az_thread_errors = inspect_az()
+        assert az_thread_errors == []

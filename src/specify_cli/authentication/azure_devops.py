@@ -101,13 +101,17 @@ class AzureDevOpsAuth(AuthProvider):
                     "json",
                 ],
                 capture_output=True,
-                text=True,
                 timeout=30,
                 check=False,
             )
             if result.returncode != 0:
                 return None
-            payload = _json.loads(result.stdout)
+            stdout = result.stdout
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8")
+            elif not isinstance(stdout, str):
+                return None
+            payload = _json.loads(stdout)
             return _extract_token(payload, "accessToken")
         except (
             OSError,
@@ -116,10 +120,6 @@ class AzureDevOpsAuth(AuthProvider):
             UnicodeDecodeError,
             KeyError,
         ):
-            # UnicodeDecodeError: text=True decodes az stdout with the locale
-            # encoding, which raises (not a JSONDecodeError) if the output isn't
-            # decodable — this helper's contract is to return None on any
-            # failure, never to propagate.
             return None
 
     @staticmethod
