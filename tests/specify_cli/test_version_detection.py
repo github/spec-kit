@@ -1347,3 +1347,142 @@ class TestDryRunPipx:
         assert result.exit_code == 0
         assert "Detected install method: pipx" in strip_ansi(result.output)
         assert mock_run.call_count == 0
+
+
+class TestTier3SubprocessEncoding:
+    @staticmethod
+    def _install_cp1252_runner(monkeypatch, script_by_tool: dict[str, Path]) -> list[BaseException]:
+        import threading
+
+        real_run = subprocess.run
+        thread_errors: list[BaseException] = []
+        old_hook = threading.excepthook
+
+        def capture_hook(args):
+            thread_errors.append(args.exc_value)
+
+        monkeypatch.setattr(threading, "excepthook", capture_hook)
+
+        def run_with_cp1252(argv, *args, **kwargs):
+            tool = Path(argv[0]).stem.lower()
+            helper = script_by_tool[tool]
+            if (
+                kwargs.get("text") or kwargs.get("universal_newlines")
+            ) and kwargs.get("encoding") is None:
+                kwargs = {**kwargs, "encoding": "cp1252"}
+            return real_run([sys.executable, str(helper), *argv[1:]], *args, **kwargs)
+
+        assert old_hook is not None
+        monkeypatch.setattr("specify_cli._version.subprocess.run", run_with_cp1252)
+        return thread_errors
+
+    def test_tier3_uv_tool_list_decodes_utf8_paths_under_cp1252(
+        self, monkeypatch, tmp_path
+    ):
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.chdir(cwd)
+        monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
+
+        tools_dir = tmp_path / "tools"
+        tools_dir.mkdir()
+        fake_uv_bin = tools_dir / ("uv.exe" if os.name == "nt" else "uv")
+        fake_uv_bin.write_bytes(b"stub")
+        fake_uv_bin.chmod(0o755)
+
+        fake_uv_py = tmp_path / "fake_uv.py"
+        fake_uv_py.write_text(
+            "import sys\n"
+            "out = 'other-tool v1.0.0 (C:\\\\Users\\\\\\u540e\\u53f0\\\\tool)\\nspecify-cli v0.7.6\\n'\n"
+            "sys.stdout.buffer.write(out.encode('utf-8'))\n",
+            encoding="utf-8",
+        )
+        thread_errors = self._install_cp1252_runner(monkeypatch, {"uv": fake_uv_py})
+
+        with patch(
+            "specify_cli._version.shutil.which",
+            side_effect=lambda name: str(fake_uv_bin) if name == "uv" else None,
+        ), patch("specify_cli._version._editable_marker_seen", return_value=False):
+            method, signals = _detect_install_method(include_signals=True)
+
+        assert method == _InstallMethod.UV_TOOL
+        assert signals.matched_tier == 3
+        assert thread_errors == []
+
+    def test_tier3_pipx_list_json_decodes_utf8_paths_under_cp1252(
+        self, monkeypatch, tmp_path
+    ):
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.chdir(cwd)
+        monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
+
+        tools_dir = tmp_path / "tools"
+        tools_dir.mkdir()
+        fake_pipx_bin = tools_dir / ("pipx.exe" if os.name == "nt" else "pipx")
+        fake_pipx_bin.write_bytes(b"stub")
+        fake_pipx_bin.chmod(0o755)
+
+        fake_pipx_py = tmp_path / "fake_pipx.py"
+        fake_pipx_py.write_text(
+            "import json, sys\n"
+            "payload = {\n"
+            "    'venvs': {\n"
+            "        'specify-cli': {\n"
+            "            'metadata': {\n"
+            "                'app_paths': ['C:\\\\Users\\\\\\u540e\\u53f0\\\\.local\\\\bin\\\\specify.exe'],\n"
+            "                'note': '\\u201cquoted\\u201d',\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "sys.stdout.buffer.write(json.dumps(payload, ensure_ascii=False).encode('utf-8'))\n",
+            encoding="utf-8",
+        )
+        thread_errors = self._install_cp1252_runner(monkeypatch, {"pipx": fake_pipx_py})
+
+        with patch(
+            "specify_cli._version.shutil.which",
+            side_effect=lambda name: str(fake_pipx_bin) if name == "pipx" else None,
+        ), patch("specify_cli._version._editable_marker_seen", return_value=False):
+            method, signals = _detect_install_method(include_signals=True)
+
+        assert method == _InstallMethod.PIPX
+        assert signals.matched_tier == 3
+        assert thread_errors == []
+
+    def test_tier3_malformed_non_utf8_registry_output_falls_back_cleanly(
+        self, monkeypatch, tmp_path
+    ):
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.chdir(cwd)
+        monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
+
+        tools_dir = tmp_path / "tools"
+        tools_dir.mkdir()
+        bins: dict[str, Path] = {}
+        scripts: dict[str, Path] = {}
+        for name in ("uv", "pipx"):
+            b = tools_dir / (f"{name}.exe" if os.name == "nt" else name)
+            b.write_bytes(b"stub")
+            b.chmod(0o755)
+            bins[name] = b
+            s = tmp_path / f"bad_{name}.py"
+            s.write_text(
+                "import sys\nsys.stdout.buffer.write(b'\\x81\\xff\\x90')\n",
+                encoding="utf-8",
+            )
+            scripts[name] = s
+
+        thread_errors = self._install_cp1252_runner(monkeypatch, scripts)
+
+        with patch(
+            "specify_cli._version.shutil.which",
+            side_effect=lambda name: str(bins[name]) if name in bins else None,
+        ), patch("specify_cli._version._editable_marker_seen", return_value=False):
+            method, signals = _detect_install_method(include_signals=True)
+
+        assert thread_errors == []
+        assert method == _InstallMethod.UNSUPPORTED
+        assert signals.matched_tier is None
