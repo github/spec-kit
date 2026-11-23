@@ -573,3 +573,137 @@ class TestCancelCaptures:
             pass
         result = run_captured(_python("print('ok')"), timeout=30)
         assert result == CapturedProcess(exit_code=0, stdout="ok\n", stderr="")
+
+
+class TestDispatchCommandSubprocessEncoding:
+    @staticmethod
+    def _install_narrow_runner(
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        default_encoding: str = "cp1252",
+        helper_argv: list[str] | None = None,
+    ) -> list[BaseException]:
+        real_run = subprocess.run
+        thread_errors: list[BaseException] = []
+        monkeypatch.setattr(
+            threading, "excepthook", lambda args: thread_errors.append(args.exc_value)
+        )
+
+        def run_with_narrow_default(argv, *args, **kwargs):
+            if (
+                kwargs.get("text") or kwargs.get("universal_newlines")
+            ) and kwargs.get("encoding") is None:
+                kwargs = {**kwargs, "encoding": default_encoding}
+            cmd = [*helper_argv, *argv[1:]] if helper_argv is not None else argv
+            return real_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", run_with_narrow_default)
+        return thread_errors
+
+    def test_base_dispatch_decodes_utf8_stdout_and_stderr_under_cp1252(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        expected_out = '{"note": "\u201cok\u201d \u540e\u53f0 \u2713 \U0001f3af"}\n'
+        expected_err = "warn: caf\u00e9 \u201d \u540e\u53f0\n"
+        impl = get_integration("claude")
+        monkeypatch.setattr(
+            type(impl),
+            "build_exec_args",
+            lambda self, prompt, **kwargs: _python(
+                "import sys\n"
+                f"sys.stdout.buffer.write({expected_out!r}.encode('utf-8'))\n"
+                f"sys.stderr.buffer.write({expected_err!r}.encode('utf-8'))\n"
+            ),
+        )
+        thread_errors = self._install_narrow_runner(
+            monkeypatch, default_encoding="cp1252"
+        )
+
+        result = impl.dispatch_command("speckit.plan", stream=False, timeout=30)
+
+        assert thread_errors == []
+        assert result == {
+            "exit_code": 0,
+            "stdout": expected_out,
+            "stderr": expected_err,
+        }
+
+    def test_base_dispatch_replaces_invalid_utf8_bytes_on_nonzero_exit(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        impl = get_integration("claude")
+        monkeypatch.setattr(
+            type(impl),
+            "build_exec_args",
+            lambda self, prompt, **kwargs: _python(
+                "import sys\n"
+                "sys.stdout.buffer.write(b'out:\\x81\\xff\\x90\\n')\n"
+                "sys.stderr.buffer.write(b'err:\\x9d\\xfe\\n')\n"
+                "sys.exit(2)\n"
+            ),
+        )
+        thread_errors = self._install_narrow_runner(
+            monkeypatch, default_encoding="ascii"
+        )
+
+        result = impl.dispatch_command("speckit.plan", stream=False, timeout=30)
+
+        assert thread_errors == []
+        assert result["exit_code"] == 2
+        assert result["stdout"] == "out:\ufffd\ufffd\ufffd\n"
+        assert result["stderr"] == "err:\ufffd\ufffd\n"
+
+    def test_copilot_dispatch_decodes_utf8_stdout_and_stderr_under_cp1252(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ):
+        expected_out = '{"note": "\u201cok\u201d \u540e\u53f0 \u2713 \U0001f3af"}\n'
+        expected_err = "warn: caf\u00e9 \u201d \u540e\u53f0\n"
+        helper = tmp_path / "fake_copilot.py"
+        helper.write_text(
+            "import sys\n"
+            f"sys.stdout.buffer.write({expected_out!r}.encode('utf-8'))\n"
+            f"sys.stderr.buffer.write({expected_err!r}.encode('utf-8'))\n",
+            encoding="utf-8",
+        )
+        thread_errors = self._install_narrow_runner(
+            monkeypatch,
+            default_encoding="cp1252",
+            helper_argv=[sys.executable, "-u", str(helper)],
+        )
+
+        result = get_integration("copilot").dispatch_command(
+            "speckit.plan", stream=False, timeout=30
+        )
+
+        assert thread_errors == []
+        assert result == {
+            "exit_code": 0,
+            "stdout": expected_out,
+            "stderr": expected_err,
+        }
+
+    def test_copilot_dispatch_replaces_invalid_utf8_bytes_on_nonzero_exit(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ):
+        helper = tmp_path / "bad_copilot.py"
+        helper.write_text(
+            "import sys\n"
+            "sys.stdout.buffer.write(b'out:\\x81\\xff\\x90\\n')\n"
+            "sys.stderr.buffer.write(b'err:\\x9d\\xfe\\n')\n"
+            "sys.exit(3)\n",
+            encoding="utf-8",
+        )
+        thread_errors = self._install_narrow_runner(
+            monkeypatch,
+            default_encoding="ascii",
+            helper_argv=[sys.executable, "-u", str(helper)],
+        )
+
+        result = get_integration("copilot").dispatch_command(
+            "speckit.plan", stream=False, timeout=30
+        )
+
+        assert thread_errors == []
+        assert result["exit_code"] == 3
+        assert result["stdout"] == "out:\ufffd\ufffd\ufffd\n"
+        assert result["stderr"] == "err:\ufffd\ufffd\n"
