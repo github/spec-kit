@@ -52,8 +52,9 @@ def integration_upgrade(
 
     if key is None:
         if not installed_key:
-            console.print("[yellow]No integration is currently installed.[/yellow]")
-            raise typer.Exit(0)
+            console.print("[red]Error:[/red] No integration is currently installed.")
+            console.print("Install one with: [cyan]specify integration install <key>[/cyan]")
+            raise typer.Exit(1)
         key = installed_key
 
     if key not in installed_keys:
