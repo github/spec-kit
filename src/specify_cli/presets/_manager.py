@@ -897,9 +897,14 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 registered_commands = commands_to_unregister
 
         # Unregister non-skill command files from AI agents.
+        deleted_alias_outputs: Dict[Path, Set[str]] = {}
         if registered_commands:
             registered_commands = self._drop_survivor_owned_aliases(
-                pack_id, registered_commands
+                pack_id,
+                registered_commands,
+                deleted_outputs=deleted_alias_outputs,
+                retired_modes=retired_skill_modes,
+                removed_cmd_names=removed_cmd_names,
             )
         if registered_commands:
             self._unregister_commands(registered_commands)
@@ -920,6 +925,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                     list(removed_cmd_names),
                     extra_skills_dirs=affected_skill_dirs,
                     new_file_modes=retired_skill_modes,
+                    removed_alias_outputs=deleted_alias_outputs,
                 )
             except Exception as exc:
                 import warnings
