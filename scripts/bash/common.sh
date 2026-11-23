@@ -411,7 +411,7 @@ _python3_command() {
     local override="${SPECKIT_PYTHON_EXECUTABLE:-${SPECKIT_PYTHON:-}}"
     if [[ -n "$override" ]] && command -v "$override" >/dev/null 2>&1 &&
         "$override" -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1 &&
-        "$override" -c 'import yaml' >/dev/null 2>&1; then
+        { [[ "${1:-}" == stdlib ]] || "$override" -c 'import yaml' >/dev/null 2>&1; }; then
         printf '%s\n' "$override"
     elif command -v python3 >/dev/null 2>&1 &&
         python3 -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
@@ -661,7 +661,7 @@ resolve_template_content() {
         local _python_cmd_line
         while IFS= read -r _python_cmd_line; do
             python_cmd+=("$_python_cmd_line")
-        done < <(_python3_command)
+        done < <(_python3_command stdlib)
         if [ -f "$registry_file" ] && [ "${#python_cmd[@]}" -gt 0 ]; then
             if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "${python_cmd[@]}" -c "
 import json, re, sys, os
@@ -679,7 +679,8 @@ try:
             return 10
     for pid, meta in sorted(presets.items(), key=lambda x: (priority(x[1]), x[0])):
         if isinstance(meta, dict) and bool(meta.get('enabled', True)) and re.fullmatch(r'[a-z0-9-]+', pid):
-            print(pid)
+            projected = 'template_projection_version' in meta or 'template_entries' in meta
+            print(pid + '\t' + str(int(projected)))
 except Exception:
     sys.exit(1)
 " 2>/dev/null); then
@@ -697,14 +698,23 @@ except Exception:
         fi
 
         if [ -n "$sorted_presets" ]; then
-            while IFS= read -r preset_id; do
+            local preset_id projected
+            while IFS=$'\t' read -r preset_id projected; do
                 local strategy="replace"
                 local selector=""
                 local manifest_file=""
                 local manifest="$presets_dir/$preset_id/preset.yml"
                 local manifest_declared=false
-                if [ -f "$manifest" ]; then
-                    if [ "${#python_cmd[@]}" -eq 0 ]; then
+                if [ "$projected" = 1 ] || [ -f "$manifest" ]; then
+                    local -a manifest_python=()
+                    if [ "$projected" = 1 ]; then
+                        manifest_python=("${python_cmd[@]}")
+                    else
+                        while IFS= read -r _python_cmd_line; do
+                            manifest_python+=("$_python_cmd_line")
+                        done < <(_python3_command)
+                    fi
+                    if [ "${#manifest_python[@]}" -eq 0 ]; then
                         echo "Error: Python 3 and PyYAML are required to resolve preset template composition" >&2
                         return 2
                     fi
@@ -712,54 +722,25 @@ except Exception:
                     local py_stderr
                     local parse_status
                     py_stderr=$(mktemp)
-                    if result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" SPECKIT_SECTION_ENGINE="$section_engine" "${python_cmd[@]}" -c "
-import sys, os, base64
+                    if result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" SPECKIT_SECTION_ENGINE="$section_engine" SPECKIT_PROJECTED="$projected" "${manifest_python[@]}" -c "
+import os, sys, base64, runpy
+from pathlib import Path
+
+manifest = Path(os.environ['SPECKIT_MANIFEST'])
+projected = os.environ['SPECKIT_PROJECTED'] == '1'
+if not projected:
+    try:
+        import yaml
+    except ImportError:
+        print('yaml_missing', file=sys.stderr)
+        sys.exit(2)
 try:
-    import yaml
-except ImportError:
-    print('yaml_missing', file=sys.stderr)
-    sys.exit(2)
-try:
-    with open(os.environ['SPECKIT_MANIFEST'], encoding='utf-8') as f:
-        data = yaml.safe_load(f)
-    if not isinstance(data, dict):
-        raise ValueError('manifest root must be a mapping')
-    if 'provides' not in data:
-        raise ValueError('manifest missing provides section')
-    provides = data['provides']
-    if not isinstance(provides, dict):
-        raise ValueError('manifest provides must be a mapping')
-    if 'templates' not in provides:
-        raise ValueError('manifest provides missing templates')
-    templates = provides['templates']
-    if not isinstance(templates, list):
-        raise ValueError('manifest templates must be a list')
-    if not templates:
-        raise ValueError('manifest must provide at least one template')
-    valid_types = ('template', 'command', 'script')
-    valid_strategies = ('replace', 'prepend', 'append', 'wrap', 'replace-section')
-    for t in templates:
-        if not isinstance(t, dict):
-            raise ValueError('manifest template entries must be mappings')
-        if 'type' not in t or 'name' not in t or 'file' not in t:
-            raise ValueError('manifest template entry missing type, name, or file')
-        for field in ('type', 'name', 'file'):
-            if not isinstance(t[field], str):
-                raise ValueError('manifest template ' + field + ' must be a string')
-        if t['type'] not in valid_types:
-            raise ValueError('invalid manifest template type')
-        strategy = t.get('strategy', 'replace')
-        if not isinstance(strategy, str):
-            raise ValueError('manifest template strategy must be a string')
-        strategy = strategy.lower()
-        if strategy not in valid_strategies:
-            raise ValueError('invalid manifest template strategy')
-        if t['type'] == 'script' and strategy not in ('replace', 'wrap'):
-            raise ValueError('invalid manifest script strategy')
-        if strategy == 'replace-section' or 'selector' in t:
-            import runpy
-            engine = runpy.run_path(os.environ['SPECKIT_SECTION_ENGINE'])
-            engine['validate_section_selector'](strategy, t.get('selector'), present='selector' in t)
+    engine = runpy.run_path(os.environ['SPECKIT_SECTION_ENGINE'])
+    if projected:
+        templates = engine['preset_template_projection'](manifest)
+    else:
+        data = yaml.safe_load(manifest.read_text(encoding='utf-8'))
+        templates = engine['legacy_preset_template_entries'](data)
     for t in templates:
         if t.get('name') == os.environ['SPECKIT_TMPL'] and t.get('type', 'template') == 'template':
             file_value = t.get('file', '')
@@ -778,7 +759,7 @@ except Exception as exc:
                     fi
                     if [ "$parse_status" -ne 0 ]; then
                         if [ "$parse_status" -eq 2 ]; then
-                            echo "Error: PyYAML is required to resolve preset template composition" >&2
+                            echo "Error: PyYAML is required to resolve preset template composition for a legacy project. Run 'specify integration upgrade' to refresh installed preset template data." >&2
                         else
                             echo "Error: invalid preset manifest $manifest" >&2
                             cat "$py_stderr" >&2

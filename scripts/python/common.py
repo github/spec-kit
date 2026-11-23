@@ -213,7 +213,7 @@ def _normalize_priority(value: object) -> int:
     return priority if priority >= 1 else 10
 
 
-def _sorted_preset_ids(presets_dir: Path) -> list[str]:
+def _sorted_presets(presets_dir: Path) -> list[tuple[str, dict[str, object]]]:
     registry = presets_dir / ".registry"
     if registry.is_file():
         # Invalid JSON or registry shapes fall back to the directory scan below.
@@ -221,7 +221,7 @@ def _sorted_preset_ids(presets_dir: Path) -> list[str]:
             data = json.loads(registry.read_text(encoding="utf-8"))
             presets = data.get("presets", {})
             return [
-                pid
+                (pid, meta)
                 for pid, meta in sorted(
                     presets.items(),
                     key=lambda kv: (
@@ -241,7 +241,7 @@ def _sorted_preset_ids(presets_dir: Path) -> list[str]:
             pass
     try:
         return sorted(
-            p.name
+            (p.name, {})
             for p in presets_dir.iterdir()
             if p.is_dir() and _is_safe_component(p.name)
         )
@@ -335,7 +335,7 @@ def resolve_template(template_name: str, repo_root: Path) -> Path | None:
 
     presets_dir = repo_root / ".specify" / "presets"
     if presets_dir.is_dir():
-        for preset_id in _sorted_preset_ids(presets_dir):
+        for preset_id, _ in _sorted_presets(presets_dir):
             candidate = _conventional_template(
                 presets_dir / preset_id, template_name
             )
@@ -360,13 +360,6 @@ class TemplateResolutionError(RuntimeError):
     """Raised when template layers exist but cannot be composed safely."""
 
 
-# Mirror the canonical PresetManifest contract (see src/specify_cli/presets)
-# so runtime resolution rejects the same structurally malformed manifests.
-_VALID_TEMPLATE_TYPES = ("template", "command", "script")
-_VALID_TEMPLATE_STRATEGIES = ("replace", "prepend", "append", "wrap", "replace-section")
-_VALID_SCRIPT_STRATEGIES = ("replace", "wrap")
-
-
 @lru_cache(maxsize=1)
 def _section_engine() -> ModuleType:
     path = Path(__file__).with_name("markdown_sections.py")
@@ -381,33 +374,6 @@ def _section_engine() -> ModuleType:
     except OSError as exc:
         raise TemplateResolutionError(f"Could not load section engine: {path}: {exc}") from exc
     return module
-
-
-def _validate_manifest_template_entry(entry: object) -> None:
-    """Validate a single manifest template entry against the canonical rules."""
-    if not isinstance(entry, dict):
-        raise ValueError("manifest template entries must be mappings")
-    if "type" not in entry or "name" not in entry or "file" not in entry:
-        raise ValueError("manifest template entry missing type, name, or file")
-    for field in ("type", "name", "file"):
-        if not isinstance(entry[field], str):
-            raise ValueError(f"manifest template {field} must be a string")
-    if entry["type"] not in _VALID_TEMPLATE_TYPES:
-        raise ValueError(f"invalid manifest template type '{entry['type']}'")
-    strategy = entry.get("strategy", "replace")
-    if not isinstance(strategy, str):
-        raise ValueError("manifest template strategy must be a string")
-    strategy = strategy.lower()
-    if strategy not in _VALID_TEMPLATE_STRATEGIES:
-        raise ValueError(f"invalid manifest template strategy '{strategy}'")
-    if entry["type"] == "script" and strategy not in _VALID_SCRIPT_STRATEGIES:
-        raise ValueError(
-            f"invalid manifest script strategy '{strategy}'"
-        )
-    if strategy == "replace-section" or "selector" in entry:
-        _section_engine().validate_section_selector(
-            strategy, entry.get("selector"), present="selector" in entry,
-        )
 
 
 class _DelegatedYAMLError(Exception):
@@ -575,40 +541,33 @@ def _import_yaml() -> object | None:
     return _DelegatedYAML(python_override)
 
 
-def _preset_template_layer(
-    preset_dir: Path, template_name: str
-) -> tuple[Path, str, str | None, str] | None:
-    """Return the preset template path and composition strategy."""
-    manifest_path = preset_dir / "preset.yml"
-    conventional = _conventional_template(preset_dir, template_name)
-
-    if not manifest_path.is_file():
-        return (conventional, "replace", None, preset_dir.name) if conventional is not None else None
-
+def _legacy_template_entries(manifest_path: Path) -> list[dict[str, str]]:
     yaml = _import_yaml()
     if yaml is None:
         raise TemplateResolutionError(
-            "PyYAML is required to resolve preset template composition"
+            "PyYAML is required to resolve preset template composition for a legacy project. "
+            "Run 'specify integration upgrade' to refresh installed preset template data."
         )
 
     try:
         manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-        if not isinstance(manifest, dict):
-            raise ValueError("manifest root must be a mapping")
-        if "provides" not in manifest:
-            raise ValueError("manifest missing provides section")
-        provides = manifest["provides"]
-        if not isinstance(provides, dict):
-            raise ValueError("manifest provides must be a mapping")
-        if "templates" not in provides:
-            raise ValueError("manifest provides missing templates")
-        templates = provides["templates"]
-        if not isinstance(templates, list):
-            raise ValueError("manifest templates must be a list")
-        if not templates:
-            raise ValueError("manifest must provide at least one template")
-        for entry in templates:
-            _validate_manifest_template_entry(entry)
+        return _section_engine().legacy_preset_template_entries(manifest)
+    except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
+        raise TemplateResolutionError(
+            f"Failed to parse preset manifest {manifest_path}: {exc}"
+        ) from exc
+
+
+def _preset_template_layer(
+    preset_dir: Path, template_name: str, metadata: dict[str, object] | None = None,
+) -> tuple[Path, str, str | None, str] | None:
+    """Return the preset template path and composition strategy."""
+    manifest_path = preset_dir / "preset.yml"
+    try:
+        if metadata and ("template_projection_version" in metadata or "template_entries" in metadata):
+            templates = _section_engine().preset_template_projection(manifest_path, metadata)
+        else:
+            templates = _legacy_template_entries(manifest_path) if manifest_path.is_file() else []
         for entry in templates:
             if (
                 entry.get("name") != template_name
@@ -624,11 +583,12 @@ def _preset_template_layer(
             if not candidate.is_file():
                 return None
             return candidate, strategy.lower(), entry.get("selector"), preset_dir.name
-    except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
+    except ValueError as exc:
         raise TemplateResolutionError(
             f"Failed to parse preset manifest {manifest_path}: {exc}"
         ) from exc
 
+    conventional = _conventional_template(preset_dir, template_name)
     return (conventional, "replace", None, preset_dir.name) if conventional is not None else None
 
 
@@ -685,8 +645,8 @@ def resolve_template_content(template_name: str, repo_root: Path) -> str | None:
         return compose_from_base()
 
     presets_dir = repo_root / ".specify" / "presets"
-    for preset_id in _sorted_preset_ids(presets_dir):
-        layer = _preset_template_layer(presets_dir / preset_id, template_name)
+    for preset_id, metadata in _sorted_presets(presets_dir):
+        layer = _preset_template_layer(presets_dir / preset_id, template_name, metadata)
         if layer is not None:
             layers.append(layer)
             if layer[1] == "replace":

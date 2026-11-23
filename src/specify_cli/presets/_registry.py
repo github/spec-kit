@@ -2,11 +2,27 @@
 
 import copy
 import json
+import re
+import stat
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from ..extensions import normalize_priority
+from ._manifest import PresetManifest, PresetValidationError
+
+
+def _template_metadata(manifest: PresetManifest) -> dict:
+    """Project only the validated fields needed by generated resolvers."""
+    return {
+        "manifest_hash": manifest._parsed_hash,
+        "template_projection_version": 1,
+        "template_entries": [
+            {key: entry[key] for key in ("type", "name", "file", "strategy", "selector") if key in entry}
+            for entry in manifest.templates
+            if entry["type"] == "template"
+        ],
+    }
 
 
 class PresetRegistry:
@@ -92,6 +108,56 @@ class PresetRegistry:
         if pack_id in packs:
             del packs[pack_id]
             self._save()
+
+    def add_installed(
+        self,
+        manifest: PresetManifest,
+        priority: int,
+        source: str | dict[str, str],
+        *,
+        manifest_retained: bool,
+    ) -> None:
+        """Record a verified installation and its runtime template fields."""
+        template_metadata = (
+            _template_metadata(manifest)
+            if manifest_retained
+            else {"manifest_hash": manifest._parsed_hash}
+        )
+        self.add(manifest.id, {
+            "version": manifest.version,
+            "source": source,
+            **template_metadata,
+            "enabled": True,
+            "priority": priority,
+            "registered_commands": {},
+            "registered_skills": {},
+        })
+
+    def refresh_template_projections(self, project_root: Path) -> None:
+        """Rebuild runtime template data from the installed preset manifests."""
+        updated = {}
+        for pack_id, entry in self.list().items():
+            if not re.fullmatch(r"[a-z0-9-]+", pack_id):
+                continue
+            path = self.packs_dir / pack_id / "preset.yml"
+            if not path.is_file() and "template_projection_version" not in entry:
+                continue  # A legacy directory can contain only convention-named templates.
+            manifest = PresetManifest(path)
+            if manifest.id != pack_id:
+                raise PresetValidationError(f"Preset manifest {path} must declare id '{pack_id}'")
+            refreshed = {**entry, **_template_metadata(manifest)}
+            if refreshed != entry:
+                updated[pack_id] = refreshed
+        if updated:
+            from ..shared_infra import _write_shared_bytes
+
+            self.data["presets"].update(updated)
+            _write_shared_bytes(
+                project_root,
+                self.registry_path,
+                json.dumps(self.data, indent=2).encode("utf-8"),
+                mode=stat.S_IMODE(self.registry_path.stat().st_mode),
+            )
 
     def update(self, pack_id: str, updates: dict):
         """Update preset metadata in registry.

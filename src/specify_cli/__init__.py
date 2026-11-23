@@ -173,6 +173,16 @@ def _install_shared_infra(
 
     Returns ``True`` on success.
     """
+    if force or refresh_managed:
+        from .presets._manifest import PresetValidationError
+        from .presets._registry import PresetRegistry
+
+        try:
+            registry = PresetRegistry(project_path / ".specify" / "presets")
+            registry.refresh_template_projections(project_path)
+        except PresetValidationError as exc:
+            raise ValueError(f"Could not refresh preset template data: {exc}") from exc
+
     return _install_shared_infra_impl(
         project_path,
         script_type,

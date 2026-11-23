@@ -426,15 +426,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             if normalized_catalog_name
             else "local"
         )
-        self.registry.add(manifest.id, {
-            "version": manifest.version,
-            "source": source,
-            "manifest_hash": manifest.get_hash(),
-            "enabled": True,
-            "priority": priority,
-            "registered_commands": {},
-            "registered_skills": {},
-        })
+        self.registry.add_installed(
+            manifest, priority, source, manifest_retained=(dest_dir / "preset.yml").is_file(),
+        )
 
         registered_commands: Dict[str, List[str]] = {}
         registered_skills: Dict[str, List[str]] = {}

@@ -76,8 +76,8 @@ class PresetManifest:
     def _load_yaml(self, path: Path) -> dict:
         """Load YAML file safely."""
         try:
-            with open(path, 'r', encoding='utf-8') as f:
-                data = yaml.safe_load(f)
+            content = path.read_bytes()
+            data = yaml.safe_load(content.decode("utf-8"))
         except yaml.YAMLError as e:
             raise PresetValidationError(f"Invalid YAML in {path}: {e}")
         except FileNotFoundError:
@@ -88,6 +88,7 @@ class PresetManifest:
             )
         except OSError as e:
             raise PresetValidationError(f"Could not read manifest {path}: {e}")
+        self._parsed_hash = f"sha256:{hashlib.sha256(content).hexdigest()}"
         if data is None:
             return {}
         if not isinstance(data, dict):

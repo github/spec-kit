@@ -141,6 +141,10 @@ specify integration upgrade <key>
 
 Replace `<key>` with an installed integration key such as `copilot`, `claude`, or `codex`. In projects with multiple installed integrations, run the command once per installed key.
 
+Upgrading the active integration refreshes shared scripts and rebuilds
+[installed preset template data](presets/api.md#runtime-template-resolution)
+for the execution host.
+
 **Example:**
 
 ```bash
