@@ -255,7 +255,8 @@ installed preset manifests for the Bash, PowerShell, and Python template
 resolvers. These generated scripts need Python 3.11+ on the machine where they
 run. PyYAML stays in the Specify CLI environment. The Bash and PowerShell
 resolvers can use `SPECKIT_PYTHON_EXECUTABLE` if the required interpreter is
-not on `PATH`.
+not on `PATH`. Keep the managed Python helper alongside each generated
+script variant.
 
 Adding or updating a preset refreshes its template data. If a resolver reports
 missing or stale data, restore any missing preset files and run
