@@ -1955,6 +1955,30 @@ class TestExpressions:
         finally:
             sys.set_int_max_str_digits(previous_limit)
 
+    def test_overlong_integer_string_does_not_fallback_to_float(self):
+        """Integer strings exceeding Python's digit limit stay strings instead
+        of silently rounding through ``float()`` during comparison."""
+        import sys
+
+        from specify_cli.workflows.base import StepContext
+        from specify_cli.workflows.expressions import evaluate_condition
+        from specify_cli.workflows.expressions.operators import _coerce_number
+
+        previous_limit = sys.get_int_max_str_digits()
+        limit = sys.int_info.str_digits_check_threshold
+        overlong = "0" * (limit + 1) + "9007199254740993"
+        try:
+            sys.set_int_max_str_digits(limit)
+            assert _coerce_number(overlong) == overlong
+            assert isinstance(_coerce_number(overlong), str)
+            ctx = StepContext(inputs={"huge": overlong})
+            assert evaluate_condition("{{ inputs.huge == 9007199254740992 }}", ctx) is False
+            assert evaluate_condition("{{ inputs.huge == 9007199254740993 }}", ctx) is False
+            assert evaluate_condition("{{ inputs.huge > 0 }}", ctx) is False
+            assert evaluate_condition("{{ inputs.huge == inputs.huge }}", ctx) is True
+        finally:
+            sys.set_int_max_str_digits(previous_limit)
+
     def test_not_on_the_right_of_a_comparison(self):
         """``a == not b`` compares against the negation, as before."""
         import pytest

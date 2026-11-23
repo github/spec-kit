@@ -17,7 +17,10 @@ def _coerce_number(value: Any) -> Any:
             return int(value)
         except ValueError:
             pass
-        if any(ch.isdigit() for ch in value):
+        if (
+            ("." in value or "e" in value or "E" in value)
+            and any(ch.isdigit() for ch in value)
+        ):
             try:
                 parsed = float(value)
             except ValueError:
