@@ -101,7 +101,7 @@ def load_json(path: Path) -> Any:
     if not path.exists():
         raise BundlerError(f"File not found: {path}")
     try:
-        with path.open("r", encoding="utf-8") as handle:
+        with path.open("r", encoding="utf-8-sig") as handle:
             return json.load(handle)
     # JSONDecodeError stays FIRST: it and UnicodeDecodeError are sibling
     # ValueError subclasses (neither subsumes the other), so malformed-but-
@@ -128,7 +128,7 @@ def loads_json(text: str, *, origin: str = "<string>") -> Any:
         return result
 
     try:
-        return json.loads(text, object_pairs_hook=unique_object)
+        return json.loads(text.removeprefix("\ufeff"), object_pairs_hook=unique_object)
     except json.JSONDecodeError as exc:
         raise BundlerError(f"Invalid JSON from {origin}: {exc}") from exc
 
