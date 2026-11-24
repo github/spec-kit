@@ -1066,7 +1066,9 @@ def test_builtin_journal_refuses_a_file_edited_in_place_while_it_is_snapshotted(
     project = tmp_path / "plain"
     target = project / ".specify" / "templates" / "plan.md"
     target.parent.mkdir(parents=True)
-    target.write_text("original\n", encoding="utf-8")
+    # Bytes, so the same-size edit matches on Windows too, where text mode
+    # would write a carriage return.
+    target.write_bytes(b"original\n")
     os.utime(target, ns=(1_000_000_000, 1_000_000_000))
     real_snapshot = _lifecycle._FileJournal._snapshot
 
@@ -1084,8 +1086,8 @@ def test_builtin_journal_refuses_a_file_edited_in_place_while_it_is_snapshotted(
         with _lifecycle.builtin_journal(project, "claude", {}):
             write_text(target, "generated\n")
 
-    edited = "original\nuser edit\n" if edit == "append" else "ORIGINAL\n"
-    assert target.read_text(encoding="utf-8") == edited
+    edited = b"original\nuser edit\n" if edit == "append" else b"ORIGINAL\n"
+    assert target.read_bytes() == edited
 
 
 @pytest.mark.skipif(not _PINS_FILES, reason="Windows files cannot be replaced while open")
@@ -1536,7 +1538,8 @@ def test_builtin_journal_keeps_an_in_place_edit_made_just_before_the_restore_ope
     def edit_then_open(self, path):
         if Path(self.root) / path == target and not edited:
             with target.open("r+b") as stream:  # same inode
-                stream.write(b"EDITED!!!\n")
+                # Over "generated" only, leaving the line ending Windows text mode wrote.
+                stream.write(b"EDITED!!!")
             os.utime(target, ns=(3_000_000_000, 3_000_000_000))
             edited.append(path)
         with real_open_rewrite(self, path) as descriptor:
@@ -1549,7 +1552,7 @@ def test_builtin_journal_keeps_an_in_place_edit_made_just_before_the_restore_ope
             raise OSError("disk full")
 
     assert edited
-    assert target.read_bytes() == b"EDITED!!!\n"
+    assert target.read_text(encoding="utf-8") == "EDITED!!!\n"
     assert "Preserved concurrent edits" in " ".join(capsys.readouterr().out.split())
     for backup in backups:
         shutil.rmtree(backup)
