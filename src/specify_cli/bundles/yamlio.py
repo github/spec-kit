@@ -102,13 +102,7 @@ def load_json(path: Path) -> Any:
         raise BundlerError(f"File not found: {path}")
     try:
         with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-    # JSONDecodeError stays FIRST: it and UnicodeDecodeError are sibling
-    # ValueError subclasses (neither subsumes the other), so malformed-but-
-    # decodable JSON keeps its more specific "Invalid JSON" message while a
-    # decode failure falls through to the read-error clause below.
-    except json.JSONDecodeError as exc:
-        raise BundlerError(f"Invalid JSON in {path}: {exc}") from exc
+            return loads_json(handle.read(), origin=str(path))
     except (OSError, UnicodeError) as exc:
         # See load_yaml: a non-UTF-8 file raises UnicodeDecodeError, which is
         # not an OSError, and previously escaped as a raw traceback.
@@ -117,6 +111,8 @@ def load_json(path: Path) -> Any:
 
 def loads_json(text: str, *, origin: str = "<string>") -> Any:
     """Parse JSON from a string (used for catalog payloads fetched as text)."""
+    if text.startswith("\ufeff"):
+        text = text[1:]
     def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for key, value in pairs:
