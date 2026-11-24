@@ -501,6 +501,7 @@ def _authorized_prefixes(
 def retire_skill_resources(
     project_root: Path, ext_id: str, hashes: dict, skill_names: set[str],
     *, skills_dir: Path | None = None, extra_roots: Iterable[Path] = (),
+    preserve_modified: bool = False,
 ) -> None:
     """Remove recorded resources for these skill names and forget their keys.
 
@@ -513,6 +514,9 @@ def retire_skill_resources(
     larger boundary and is only cleaned under the skills directories of agents
     that declare ``registrar_config["home_scoped"]``, as their ``SKILL.md``
     cleanup does; other records are left untouched.
+
+    Unforced integration switches keep edited copies and their ownership
+    records so switching back cannot overwrite the user's edits (#5366).
     """
     import warnings
 
@@ -542,6 +546,23 @@ def retire_skill_resources(
                 for prefix in prefixes
             )
         }
+        if preserve_modified:
+            for key, digest in list(selected.items()):
+                try:
+                    path = _validate_record_path(Path(key), trusted)
+                except (ValueError, OSError):
+                    # A linked or unsafe path can't be compared with its record.
+                    warnings.warn(f"Preserved unverifiable resource {key}", stacklevel=2)
+                    selected.pop(key)
+                    continue
+                try:
+                    if not path.is_file() or _sha256(path) == digest:
+                        continue
+                    warnings.warn(f"Preserved modified resource {key}", stacklevel=2)
+                except OSError:
+                    # A copy that can't be read can't be shown to be unmodified.
+                    warnings.warn(f"Preserved unreadable resource {key}", stacklevel=2)
+                selected.pop(key)
         if not selected:
             continue
         skill_dirs = [trusted / Path(*prefix) for prefix in prefixes]

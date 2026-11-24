@@ -459,17 +459,18 @@ def _unregister_extensions_for_agent(
     agent_key: str,
     *,
     continuing: str,
+    preserve_modified: bool = False,
 ) -> None:
     """Best-effort removal of ``agent_key``'s extension artifacts.
 
     Used by ``switch`` when uninstalling the previous integration so its
     extension command/skill files don't linger as orphans in the old agent's
-    directory.
+    directory. Unforced switches preserve edited native skill resources (#5366).
     """
     _best_effort_extension_op(
         project_root,
         agent_key,
-        lambda mgr, key: mgr.unregister_agent_artifacts(key),
+        lambda mgr, key: mgr.unregister_agent_artifacts(key, preserve_modified=preserve_modified),
         phase="clean up extension artifacts for",
         continuing=continuing,
     )
