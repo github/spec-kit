@@ -17,6 +17,7 @@ from typing import Any
 
 import yaml
 
+from ..file_helper import FileHelper, FileHelperError
 from . import BundlerError
 
 
@@ -101,15 +102,15 @@ def load_json(path: Path) -> Any:
     if not path.exists():
         raise BundlerError(f"File not found: {path}")
     try:
-        with path.open("r", encoding="utf-8-sig") as handle:
-            return json.load(handle)
+        with FileHelper(path.parent, allow_symlinks=True) as files:
+            return json.loads(files.read_text(path.name, encoding="utf-8-sig"))
     # JSONDecodeError stays FIRST: it and UnicodeDecodeError are sibling
     # ValueError subclasses (neither subsumes the other), so malformed-but-
     # decodable JSON keeps its more specific "Invalid JSON" message while a
     # decode failure falls through to the read-error clause below.
     except json.JSONDecodeError as exc:
         raise BundlerError(f"Invalid JSON in {path}: {exc}") from exc
-    except (OSError, UnicodeError) as exc:
+    except (OSError, UnicodeError, FileHelperError) as exc:
         # See load_yaml: a non-UTF-8 file raises UnicodeDecodeError, which is
         # not an OSError, and previously escaped as a raw traceback.
         raise BundlerError(f"Could not read {path}: {exc}") from exc
