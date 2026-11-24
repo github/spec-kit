@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .file_helper import FileHelper, SymlinkDeniedError
 from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest
 
@@ -351,18 +352,14 @@ def _write_shared_bytes(
     mode: int = 0o644,
 ) -> None:
     _ensure_safe_shared_destination(project_path, dest)
-    from .integrations._file_changes import (
-        after_file_change,
-        atomic_write_bytes,
-        before_file_change,
-    )
+    from .integrations._file_changes import changing_file
 
-    before_file_change(dest)
-    atomic_write_bytes(
-        dest, content, mode, exact=True,
-        before_replace=lambda: _ensure_safe_shared_destination(project_path, dest),
-    )
-    after_file_change(dest)
+    # Shared infrastructure refuses links even in projects that opt in elsewhere.
+    with FileHelper(project_path) as files, changing_file(dest):
+        try:
+            files.write_bytes(_shared_relative_path(project_path, dest), content, mode=mode)
+        except SymlinkDeniedError as exc:
+            raise SymlinkedSharedPathError(str(exc)) from exc
 
 
 _BASH_FORMAT_COMMAND_RE = re.compile(
