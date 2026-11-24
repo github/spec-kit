@@ -521,6 +521,7 @@ class PresetResolver:
 
         Returns layers from highest priority (checked first) to lowest priority.
         Each layer is a dict with 'path', 'source', and 'strategy' keys.
+        Preset layers also include 'preset_id'.
 
         Args:
             template_name: Template name (e.g., "spec-template")
@@ -634,7 +635,8 @@ class PresetResolver:
                         "path": candidate,
                         "source": f"{pack_id} v{version}",
                         "strategy": strategy,
-                        **({"selector": entry["selector"], "preset_id": pack_id}
+                        "preset_id": pack_id,
+                        **({"selector": entry["selector"]}
                            if strategy == "replace-section" and entry else {}),
                     })
 

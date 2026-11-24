@@ -68,6 +68,15 @@ def preset_resolve(
             f"{_escape_markup(str(display_layer['source']))})[/dim]"
         )
 
+        if display_layer["source"] == "project override":
+            hidden_presets = [
+                f"{layer['preset_id']} ({layer['strategy']})"
+                for layer in layers[1:]
+                if "preset_id" in layer
+            ]
+            if hidden_presets:
+                typer.echo(f"Project override hides preset layers: {', '.join(hidden_presets)}.", err=True)
+
         has_composition = layers[0]["strategy"] != "replace" and any(
             layer["strategy"] != "replace" for layer in layers
         )
