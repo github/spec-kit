@@ -402,3 +402,74 @@ def test_url_install_open_error_surfaces_as_controlled_exit(
     assert result.exit_code == 1
     assert "Could not safely create download file" in result.output
     install_spy.assert_not_called()
+
+
+def test_url_install_tolerates_fs_rejecting_writes_to_unlinked_file(
+    project_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Filesystems such as gocryptfs (FUSE) fail with ``ENOENT`` when flushing
+    to an already-unlinked inode; the install must still succeed from the
+    in-memory archive instead of aborting."""
+    captured: dict[str, object] = {}
+
+    class FakeResponse(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class UnlinkedInodeFile(io.FileIO):
+        def write(self, data):
+            raise FileNotFoundError(2, "No such file or directory")
+
+    real_fdopen = os.fdopen
+
+    def fake_fdopen(fd, mode="r", *args, **kwargs):
+        if mode == "w+b":
+            return UnlinkedInodeFile(fd, "r+")
+        return real_fdopen(fd, mode, *args, **kwargs)
+
+    def fake_install(
+        self,
+        zip_path: Path,
+        speckit_version: str,
+        priority: int = 10,
+        force: bool = False,
+        *,
+        archive_file=None,
+    ):
+        captured["bytes"] = archive_file.read()
+        return SimpleNamespace(
+            id="test-ext",
+            name="Test Extension",
+            version="1.0.0",
+            description="",
+            warnings=[],
+            commands=[],
+        )
+
+    monkeypatch.setattr(os, "fdopen", fake_fdopen)
+    monkeypatch.setattr(typer, "confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "_open_url",
+        lambda *args, **kwargs: FakeResponse(_MINIMAL_ZIP_BYTES),
+    )
+    monkeypatch.setattr(ExtensionManager, "install_from_zip", fake_install)
+    monkeypatch.setattr(_commands, "_refresh_events_and_warn", lambda root: None)
+    monkeypatch.setattr(_commands, "load_init_options", lambda root: {})
+
+    result = runner.invoke(
+        app,
+        [
+            "extension",
+            "add",
+            "test-ext",
+            "--from",
+            "https://example.com/test-ext.zip",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["bytes"] == _MINIMAL_ZIP_BYTES
