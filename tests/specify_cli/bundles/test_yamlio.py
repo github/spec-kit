@@ -64,6 +64,21 @@ def test_load_json_accepts_single_utf8_bom(tmp_path: Path):
     assert load_json(path) == {"name": "café", "note": "\ufeff"}
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        '\ufeff\ufeff{"name": 1}',
+        ' \ufeff{"name": 1}',
+        '\ufeff{"name": ',
+    ],
+)
+def test_load_json_bom_does_not_hide_invalid_json(tmp_path: Path, text: str):
+    path = tmp_path / "records.json"
+    path.write_bytes(text.encode("utf-8"))
+    with pytest.raises(BundlerError, match="Invalid JSON"):
+        load_json(path)
+
+
 def test_loads_json_accepts_single_leading_bom():
     assert loads_json('\ufeff{"name": "café", "note": "\ufeff"}') == {
         "name": "café",
