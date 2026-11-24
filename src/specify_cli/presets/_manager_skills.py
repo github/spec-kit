@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import get_invocation_prefix
 from .._utils import dump_frontmatter
+from ..file_helper import FileHelper
+from ..integrations._file_changes import unlink_in_directory
 from ..integrations.base import IntegrationBase
 from ..integrations._registration import project_registration
 from ._manager_commands import _substitute_core_template
@@ -150,6 +152,10 @@ class _PresetSkillMethods:
         # directory-independent, so it's computed once and then applied to
         # every affected directory below.
         preset_cmds: Dict[str, List[str]] = {}
+        composed_winners: Dict[str, str] = {}
+        # Composing winners whose stack no longer has a base (resolution
+        # returns None): their .composed cache and skill are stale.
+        unresolved_winners: Dict[str, str] = {}
         non_preset_skills: List[tuple] = []
         managed_skill_names: set = set()
         reconciled_skill_commands: set[str] = set()
@@ -194,6 +200,17 @@ class _PresetSkillMethods:
                 pack_dir = self.presets_dir / pack_id
                 if top_path.is_relative_to(pack_dir):
                     preset_cmds.setdefault(pack_id, []).append(cmd_name)
+                    if layers[0]["strategy"] != "replace":
+                        if resolver.resolve_content(cmd_name, "command") is None:
+                            # Nothing left to compose onto: drop the stale
+                            # cache so it can't be rendered back into a skill.
+                            unresolved_winners[cmd_name] = pack_id
+                            unlink_in_directory(
+                                pack_dir / ".composed" / f"{cmd_name}.md",
+                                root=self.project_root,
+                            )
+                        else:
+                            composed_winners[cmd_name] = pack_id
                     found_preset = True
                     break
             if not found_preset:
@@ -361,7 +378,12 @@ class _PresetSkillMethods:
                     # Preserve exact prior behaviour for the currently
                     # active directory (including the ability to create
                     # brand-new skill subdirectories when ai_skills is on).
-                    written = self._register_skills(filtered_manifest, pack_dir)
+                    # On removal, write only the skill names this directory
+                    # may manage, so a user-owned modern/legacy sibling of a
+                    # recomposed skill is left alone.
+                    written = self._register_skills(
+                        filtered_manifest, pack_dir, only_skill_names=managed_names,
+                    )
                 else:
                     written = self._register_skills(
                         filtered_manifest, pack_dir,
@@ -393,16 +415,40 @@ class _PresetSkillMethods:
         extra_dirs = extra_skills_dirs or {}
         if active_skills_dir:
             active_provenance = extra_dirs.get(active_skills_dir)
-            if extra_skills_dirs is None or active_provenance:
+            active_names: Optional[Set[str]] = None
+            if extra_skills_dirs is not None:
+                # Removal restores only skills the removed preset still owned,
+                # but a surviving preset composing over a removed lower layer
+                # owns its skill: recompose it while it keeps that marker.
+                active_names = set(active_provenance[1]) if active_provenance else set()
+                active_names |= self._skills_owned_by_preset(
+                    active_skills_dir, composed_winners
+                )
+                # Command-file agents unregister an uncomposable command;
+                # retire its skill too while it still carries the marker.
+                for stale_skill in self._skills_owned_by_preset(
+                    active_skills_dir, unresolved_winners
+                ):
+                    stale_dir = active_skills_dir / stale_skill
+                    if self._validate_skill_subdir(
+                        stale_dir, create=False, skills_root=active_skills_dir
+                    ):
+                        # Only the generated file: anything else the user
+                        # keeps in the directory stays.
+                        unlink_in_directory(
+                            stale_dir / "SKILL.md",
+                            root=(
+                                self.project_root
+                                if stale_dir.is_relative_to(self.project_root)
+                                else active_skills_dir
+                            ),
+                        )
+            if active_names is None or active_names:
                 apply_to_dir(
                     active_skills_dir,
                     active_ai,
                     is_active=True,
-                    managed_names=(
-                        set(active_provenance[1])
-                        if active_provenance
-                        else None
-                    ),
+                    managed_names=active_names,
                 )
 
         for extra_dir, (extra_agent, extra_names) in extra_dirs.items():
@@ -416,6 +462,33 @@ class _PresetSkillMethods:
             )
 
         return reconciled_skill_commands
+
+    def _skills_owned_by_preset(
+        self, skills_dir: Path, owners: Dict[str, str]
+    ) -> Set[str]:
+        """Return skills in ``skills_dir`` whose source marker names their preset.
+
+        ``owners`` maps command names to the expected owning preset id.
+        """
+        registrar = self._command_registrar()
+        owned: Set[str] = set()
+        for cmd_name, pack_id in owners.items():
+            for skill_name in self._skill_names_for_command(cmd_name):
+                if not self._validate_skill_subdir(
+                    skills_dir / skill_name, create=False, skills_root=skills_dir
+                ):
+                    continue
+                try:
+                    # Named from the helper's root, which may be relative.
+                    with FileHelper(skills_dir) as files:
+                        content = files.read_text(Path(skill_name) / "SKILL.md")
+                except (OSError, ValueError):
+                    # Missing, unreadable, not a regular file or not UTF-8.
+                    continue
+                metadata = registrar.parse_frontmatter(content)[0].get("metadata")
+                if isinstance(metadata, dict) and metadata.get("source") == f"preset:{pack_id}":
+                    owned.add(skill_name)
+        return owned
 
     def _resolve_agent_skills_dir(self, agent_name: str) -> Path:
         """Resolve the real skill output directory for an integration."""
@@ -627,6 +700,7 @@ class _PresetSkillMethods:
         *,
         target_dir: Optional[Path] = None,
         target_agent: Optional[str] = None,
+        only_skill_names: Optional[Set[str]] = None,
     ) -> Dict[str, List[str]]:
         """Generate SKILL.md files for preset command overrides.
 
@@ -652,6 +726,9 @@ class _PresetSkillMethods:
                 subdirectories are never created for a non-active,
                 explicitly targeted directory (that creation path is only
                 meaningful for the currently active agent).
+            only_skill_names: When given, write only these skill
+                directory names; any other existing modern or legacy
+                skill for the same command is left untouched.
 
         Returns:
             ``{agent_name: [skill_name, ...]}`` for the single active
@@ -737,6 +814,10 @@ class _PresetSkillMethods:
                 missing_skill_dir = skills_dir / skill_name
                 if not missing_skill_dir.exists():
                     target_skill_names.append(skill_name)
+            if only_skill_names is not None:
+                target_skill_names = [
+                    name for name in target_skill_names if name in only_skill_names
+                ]
             if not target_skill_names:
                 continue
 
