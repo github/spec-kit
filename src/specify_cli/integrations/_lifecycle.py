@@ -243,6 +243,9 @@ class _FileJournal:
         self.snapshotted_flags: dict[Path, int | None] = {}
         # Files whose bytes rollback restored without all of their metadata.
         self.incomplete_restores: list[Path] = []
+        # Attributes a pinned snapshot captured, charged to the budget, for
+        # ``observe`` to keep rather than read (and charge) a second time.
+        self.pinned_xattrs: dict[Path, dict[str, bytes] | None] = {}
         # The mode, mtime and restorable extended attributes (None when not
         # read) each regular file had after the operation last wrote it, so
         # rollback can tell a later metadata-only edit from the operation's.
@@ -284,7 +287,7 @@ class _FileJournal:
                 self._snapshot(child, destination / child.name)
             shutil.copystat(source, destination, follow_symlinks=False)
         elif stat.S_ISREG(mode) and source in self.pinned_files and source not in self.changes:
-            self._snapshot_pinned(self.pinned_files[source], destination)
+            self.pinned_xattrs[source] = self._snapshot_pinned(self.pinned_files[source], destination)
         elif stat.S_ISREG(mode):
             if source.stat().st_size > _MAX_BACKUP_BYTES - self.backup_bytes:
                 raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
@@ -313,6 +316,7 @@ class _FileJournal:
             if exc.errno not in (errno.EMFILE, errno.ENFILE) or path not in self.pinned_files:
                 raise
             self._unpin(path)
+            self.pinned_xattrs.pop(path, None)
             self.pin_limit = len(self.pinned_files)
             self.backup_entries, self.backup_bytes = entries, used
             with FileHelper(saved.parent) as files:
@@ -322,13 +326,15 @@ class _FileJournal:
                     pass
             self._snapshot(path, saved)
 
-    def _snapshot_pinned(self, pinned: int, destination: Path) -> None:
+    def _snapshot_pinned(self, pinned: int, destination: Path) -> dict[str, bytes] | None:
         """Copy a pinned file to ``destination`` through its pin, as ``shutil.copy2`` would.
 
         Bytes stream through ``os.pread``, which leaves the pin's own offset
         alone. Restorable extended attributes, times, mode and BSD flags follow,
         each set as best effort where the temporary filesystem refuses it,
-        like ``shutil.copystat``.
+        like ``shutil.copystat``. The attributes are read once, charged to the
+        snapshot budget as they are read, and returned as the file's capture
+        (None if they cannot be read).
         """
         original = os.fstat(pinned)
         if original.st_size > _MAX_BACKUP_BYTES - self.backup_bytes:
@@ -343,8 +349,9 @@ class _FileJournal:
                         raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
                     _write_descriptor(outgoing, content)
                     offset += len(content)
-                if _HAS_XATTRS:
-                    _copy_xattrs(pinned, outgoing)
+                attributes = self._read_xattrs(pinned)
+                if attributes:
+                    _copy_xattrs(attributes, outgoing)
                 futime(outgoing, ns=(original.st_atime_ns, original.st_mtime_ns))
                 os.fchmod(outgoing, stat.S_IMODE(original.st_mode))
         flags = getattr(original, "st_flags", 0)
@@ -354,6 +361,7 @@ class _FileJournal:
             except OSError as exc:
                 if exc.errno not in _XATTRS_UNSUPPORTED:
                     raise
+        return attributes
 
     @staticmethod
     def _persist_xattrs(path: Path, saved: Path, attributes: dict[str, bytes] | None) -> None:
@@ -443,7 +451,7 @@ class _FileJournal:
             except OSError:
                 pass
 
-    def _read_xattrs(self, path: Path) -> dict[str, bytes] | None:
+    def _read_xattrs(self, path: Path | int) -> dict[str, bytes] | None:
         """Read a file's restorable extended attributes, or None if they cannot be read.
 
         Kept in memory rather than relying on the copy ``shutil.copystat()``
@@ -559,7 +567,12 @@ class _FileJournal:
                     try:
                         self._snapshot_with_headroom(path, saved)
                         if stat.S_ISREG(entry.st_mode):
-                            attributes = self._read_xattrs(path) if restorable else None
+                            if not restorable:
+                                attributes = None
+                            elif path in self.pinned_xattrs:
+                                attributes = self.pinned_xattrs.pop(path)
+                            else:
+                                attributes = self._read_xattrs(path)
                             after = _entry_state(path)
                             if after[1:3] != (entry.st_dev, entry.st_ino):
                                 self._unpin(path)
@@ -574,6 +587,7 @@ class _FileJournal:
                                 self._remember_original(path, entry, attributes)
                     except BaseException:
                         self._unpin(path)
+                        self.pinned_xattrs.pop(path, None)
                         raise
             else:
                 if not any(path == scope or scope in path.parents for scope in self.paths):
@@ -668,9 +682,18 @@ def _restore_file_in_place(
                 return "untouched"
             opened = os.fstat(descriptor)
             # The whole entry, not just its identity: an in-place edit between
-            # the stat above and this open keeps the inode.
-            if checked is not None and _stat_state(opened) != checked:
-                return "modified"
+            # the stat above and this open keeps the inode. Compared through a
+            # second path stat of the opened file, since a handle's stat is not
+            # a path stat on every platform: on Windows ``fstat`` reports the
+            # metadata-change time as ``st_ctime`` and a path stat the creation
+            # time.
+            if checked is not None:
+                try:
+                    again = files.stat(path.name)
+                except (OSError, FileHelperError):
+                    return "modified"
+                if not os.path.samestat(again, opened) or _stat_state(again) != checked:
+                    return "modified"
             if not is_original(opened):
                 return "untouched"
             # Open the snapshot before truncating: one this process cannot read
@@ -739,19 +762,13 @@ def _write_descriptor(destination: int, content: bytes) -> None:
         view = view[os.write(destination, view):]
 
 
-def _copy_xattrs(source: int, destination: int) -> None:
-    """Copy restorable attributes between descriptors, skipping what the destination refuses.
+def _copy_xattrs(attributes: dict[str, bytes], destination: int) -> None:
+    """Set captured attributes on a snapshot descriptor, skipping what it refuses.
 
     The refusals ``shutil.copystat`` ignores are ignored here too; the
     captured values are kept in memory and in the sidecar regardless.
     """
     ignored = _XATTRS_UNSUPPORTED | {errno.EPERM, errno.ENODATA, errno.EINVAL}
-    try:
-        attributes = _restorable_xattrs(source)
-    except OSError as exc:
-        if exc.errno in ignored:
-            return
-        raise
     # The access ACL last: it sets the mode bits, and a read-only one would
     # refuse the user attributes still to come.
     for name, value in sorted(attributes.items(), key=lambda item: item[0] == _ACCESS_ACL):
@@ -941,8 +958,10 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
             else:
                 shutil.copy2(saved, path)
                 attributes = journal.snapshotted_xattrs.get(path)
+                # An empty set is restored too: it removes attributes the
+                # recreated file inherited, such as a default ACL's access ACL.
                 if (
-                    attributes and not _recreated_xattrs_restored(path, attributes)
+                    attributes is not None and not _recreated_xattrs_restored(path, attributes)
                     and path not in journal.incomplete_restores
                 ):
                     # The sidecar is then the only copy, so it is retained.

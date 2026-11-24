@@ -1226,13 +1226,22 @@ def _fake_xattrs(monkeypatch, target, attributes):
     """Report ``attributes`` on ``target`` and none elsewhere, with or without an os xattr API."""
     from specify_cli.integrations import _lifecycle
 
+    original = target.stat()
+
     def restorable(path, journal=None):
+        # The target by path, or through a descriptor still on its original
+        # inode, as a pinned snapshot reads it.
         if isinstance(path, Path) and path == target:
+            return dict(attributes)
+        if isinstance(path, int) and os.path.samestat(os.fstat(path), original):
             return dict(attributes)
         return {}
 
     monkeypatch.setattr(_lifecycle, "_HAS_XATTRS", True)
     monkeypatch.setattr(_lifecycle, "_restorable_xattrs", restorable)
+    # Setting them on the snapshot copy is a no-op: its filesystem keeps none.
+    monkeypatch.setattr(os, "setxattr", lambda *args, **kwargs: None, raising=False)
+    monkeypatch.setattr(os, "removexattr", lambda *args, **kwargs: None, raising=False)
 
 
 def test_builtin_journal_persists_captured_attributes_beside_the_snapshot(tmp_path, monkeypatch):
@@ -1566,7 +1575,9 @@ def test_builtin_journal_sets_captured_attributes_on_a_recreated_file(tmp_path, 
     def setxattr(descriptor, name, value, *args, **kwargs):
         if refused:
             raise OSError(1, "Operation not permitted")
-        set_attributes.append((name, value))
+        # Only what is set on the file at the target, not on its snapshot copy.
+        if os.path.samestat(os.fstat(descriptor), target.stat()):
+            set_attributes.append((name, value))
 
     monkeypatch.setattr(os, "setxattr", setxattr, raising=False)
     monkeypatch.setattr(os, "removexattr", lambda *args, **kwargs: None, raising=False)
@@ -1627,3 +1638,131 @@ def test_pin_limit_assumes_256_descriptors_when_the_limit_is_unknown(monkeypatch
 
         monkeypatch.setattr(resource, "getrlimit", fail)
     assert _lifecycle._pin_limit() == 64
+
+
+def test_builtin_journal_restores_an_empty_attribute_set_on_a_recreated_file(tmp_path, monkeypatch, capsys):
+    """A file recreated from its snapshot loses attributes it inherited when the original had none."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import after_file_change, before_file_change
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    original = target.stat()
+    inherited = {"system.posix_acl_access": b"default-acl"}
+    removed = []
+
+    def restorable(subject, journal=None):
+        # The original file has no attributes; any other file in its
+        # directory inherits the default ACL's access ACL.
+        entry = os.fstat(subject) if isinstance(subject, int) else os.lstat(subject)
+        if os.path.samestat(entry, original) or not stat.S_ISREG(entry.st_mode):
+            return {}
+        if isinstance(subject, int) and "system.posix_acl_access" in removed:
+            return {}
+        return dict(inherited)
+
+    monkeypatch.setattr(_lifecycle, "_HAS_XATTRS", True)
+    monkeypatch.setattr(_lifecycle, "_restorable_xattrs", restorable)
+    monkeypatch.setattr(_lifecycle.os, "setxattr", lambda *args, **kwargs: None, raising=False)
+    monkeypatch.setattr(
+        _lifecycle.os, "removexattr", lambda target, name, **kwargs: removed.append(name), raising=False,
+    )
+    replacement = target.with_name("replacement.md")
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            before_file_change(target)
+            replacement.write_text("generated\n", encoding="utf-8")
+            os.replace(replacement, target)
+            after_file_change(target)
+            raise OSError("disk full")
+
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert removed == ["system.posix_acl_access"]
+    assert "Recovery snapshots retained" not in capsys.readouterr().out
+
+
+@pytest.mark.skipif(not _PINS_FILES, reason="Windows files are never pinned")
+def test_builtin_journal_charges_a_pinned_snapshot_s_attributes_as_they_are_read(tmp_path, monkeypatch):
+    """A pinned file's attributes stop being read once the snapshot budget is spent."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+    from specify_cli.integrations.installer import IntegrationInstallError
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    names = [f"user.a{index}" for index in range(10)]
+    read = []
+
+    def listxattr(subject, **kwargs):
+        return names if isinstance(subject, int) or Path(subject) == target else []
+
+    def getxattr(subject, name, **kwargs):
+        read.append(name)
+        return b"x" * 1024
+
+    monkeypatch.setattr(_lifecycle, "_HAS_XATTRS", True)
+    monkeypatch.setattr(_lifecycle, "_MAX_BACKUP_BYTES", 4096)
+    monkeypatch.setattr(_lifecycle.os, "listxattr", listxattr, raising=False)
+    monkeypatch.setattr(_lifecycle.os, "getxattr", getxattr, raising=False)
+    monkeypatch.setattr(_lifecycle.os, "setxattr", lambda *args, **kwargs: None, raising=False)
+    monkeypatch.setattr(_lifecycle.os, "removexattr", lambda *args, **kwargs: None, raising=False)
+    snapshotted = []
+    real_snapshot_pinned = _lifecycle._FileJournal._snapshot_pinned
+
+    def through_pin(self, pinned, destination):
+        snapshotted.append(destination)
+        return real_snapshot_pinned(self, pinned, destination)
+
+    monkeypatch.setattr(_lifecycle._FileJournal, "_snapshot_pinned", through_pin)
+    with pytest.raises(IntegrationInstallError, match="budget exceeded"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+
+    assert len(snapshotted) == 1
+    # 4096 bytes less the file's own fit three 1 KiB values; the fourth is refused.
+    assert len(read) == 4
+    assert target.read_text(encoding="utf-8") == "original\n"
+
+
+def test_builtin_journal_restores_in_place_when_a_handle_stat_reports_another_ctime(tmp_path, monkeypatch, capsys):
+    """A descriptor's ``st_ctime`` differing from a path stat's (Windows) is not taken for an edit."""
+    from specify_cli.integrations import _lifecycle
+    from specify_cli.integrations._file_changes import write_text
+
+    project = tmp_path / "plain"
+    target = project / ".specify" / "templates" / "plan.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    real_fstat = os.fstat
+
+    def handle_fstat(descriptor):
+        # On Windows a handle's stat reports the metadata-change time as
+        # st_ctime, while a path stat reports the creation time.
+        entry = real_fstat(descriptor)
+        if not stat.S_ISREG(entry.st_mode):
+            return entry
+        fields = list(entry)
+        fields[9] += 1
+        positional = {"st_mode", "st_ino", "st_dev", "st_nlink", "st_uid", "st_gid", "st_size"}
+        extra = {
+            name: getattr(entry, name) for name in dir(entry)
+            if name.startswith("st_") and name not in positional
+        }
+        extra.update({"st_ctime_ns": entry.st_ctime_ns + 1_000_000_000, "st_ctime": entry.st_ctime + 1})
+        return os.stat_result(fields[:10], extra)
+
+    with pytest.raises(OSError, match="disk full"):
+        with _lifecycle.builtin_journal(project, "claude", {}):
+            write_text(target, "generated\n")
+            identity = (target.stat().st_dev, target.stat().st_ino)
+            monkeypatch.setattr(_lifecycle.os, "fstat", handle_fstat)
+            raise OSError("disk full")
+
+    monkeypatch.undo()
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert (target.stat().st_dev, target.stat().st_ino) == identity
+    assert "Recovery snapshots retained" not in capsys.readouterr().out
