@@ -19,6 +19,7 @@ from specify_cli._agent_config import (
     SCRIPT_TYPE_CHOICES,
     resolve_default_init_integration,
 )
+from specify_cli.integrations._capture import UNLIMITED_CAPTURE, run_captured
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
 
@@ -76,19 +77,45 @@ def validate_packages():
             raise SystemExit(f'Cannot use {name}: expected package tree {package!s}: {exc}')
 
 validate_packages()
-base = Path.cwd()
-target = base if sys.argv[2] == '--here' else base / sys.argv[2]
-excluded = (base.resolve(), target.resolve())
-# Startup has finished. Restore caller-approved dependencies without running
-# .pth/customize code, and exclude target trees even through directory aliases.
-dependencies = [path for path in dependencies
-                if not any(Path(path).resolve().is_relative_to(root) for root in excluded)]
+# Startup has finished. Restore approved dependencies by direct insertion:
+# their location does not authorize startup hooks or change package identity.
 sys.path[:0] = [source, *dependencies]
 sys.argv[0] = 'specify'
 from specify_cli import main
 validate_packages()
 main()
 """
+
+
+def _windows_default_user_base(child_env: dict[str, str]) -> str:
+    """Mirror site's joinuser(base, 'Python') using the copied environment.
+
+    ntpath expands only an initial ~ or ~user, after joining. In particular,
+    the separator following ~ can make a drive-only home absolute; joining
+    'Python' directly to a drive-only APPDATA does not do that.
+    """
+    path = os.path.join(child_env.get("APPDATA") or "~", "Python")
+    if not path.startswith("~"):
+        return path
+    end = 1
+    while end < len(path) and path[end] not in "\\/":
+        end += 1
+    if "USERPROFILE" in child_env:
+        home = child_env["USERPROFILE"]
+    elif "HOMEPATH" not in child_env:
+        return path
+    else:
+        home = os.path.join(child_env.get("HOMEDRIVE", ""), child_env["HOMEPATH"])
+    if end != 1:
+        target_user = path[1:end]
+        current_user = child_env.get("USERNAME")
+        if target_user != current_user:
+            # Match ntpath's guarded sibling-profile guess, including its
+            # case-sensitive comparison. Unknown ~user stays unresolved.
+            if current_user != os.path.basename(home):
+                return path
+            home = os.path.join(os.path.dirname(home), target_user)
+    return home + path[end:]
 
 
 class InitStep(StepBase):
@@ -329,6 +356,10 @@ class InitStep(StepBase):
         """Run the real CLI without changing parent cwd, streams or registries."""
         import specify_cli
 
+        try:
+            parent_cwd = os.getcwd()
+        except OSError as exc:
+            return (1, "", f"Cannot run specify init in project root {base!r}: {exc}")
         child_env = os.environ.copy()
         flags = ["-P"]
         if sys.flags.isolated:
@@ -343,33 +374,65 @@ class InitStep(StepBase):
         if sys.dont_write_bytecode:
             flags.append("-B")
 
-        # Only the intersection of explicit absolute environment entries and
-        # active parent search paths is eligible, in parent search order. These
-        # snapshots are caller configuration, not proof of original startup cwd.
+        # Match explicit configuration to active absolute parent entries. A
+        # relative entry is eligible only when this cwd anchors it to an active
+        # match; after chdir, never guess the original anchor from path suffixes.
+        # Keep active spellings, order and duplicates, including symlink/.. paths.
         dependencies = []
         if not sys.flags.ignore_environment:
-            # CPython normalizes PYTHONPATH at startup. Compare lexical keys,
-            # but retain active spellings: resolving paths could change which
-            # directory a symlink/parent-component path actually loads from.
-            configured = {os.path.normpath(path) for path in child_env.get("PYTHONPATH", "").split(os.pathsep)
-                          if path and Path(path).is_absolute()}
+            configured = {
+                os.path.normpath(path if Path(path).is_absolute()
+                                 else os.path.join(parent_cwd, path))
+                for path in child_env.get("PYTHONPATH", "").split(os.pathsep)
+                if path
+            }
             dependencies = [path for path in sys.path
                             if isinstance(path, str) and Path(path).is_absolute()
                             and os.path.normpath(path) in configured]
-        else:
-            # site can read this environment value itself, even under -E.
-            child_env.pop("PYTHONUSERBASE", None)
         # -P omits the unsafe cwd entry but still honors PYTHONPATH. Drop it
         # before startup can import project-controlled sitecustomize code;
         # bootstrap source pinning happens too late to protect that boundary.
         child_env.pop("PYTHONPATH", None)
         child_env["PYTHONIOENCODING"] = "utf-8"
         try:
-            userbase = child_env.get("PYTHONUSERBASE")
-            if (userbase and not Path(userbase).is_absolute()
-                    and not sys.flags.no_user_site and not sys.flags.no_site
-                    and not child_env.get("PYTHONNOUSERSITE")):
-                raise ValueError("PYTHONUSERBASE must be absolute or unset when user-site startup is enabled.")
+            # getpath partitions PYTHONHOME at the first platform separator;
+            # empty fields keep CPython's own fallback behavior. -E/-I ignore it.
+            if not sys.flags.ignore_environment:
+                home = child_env.get("PYTHONHOME", "")
+                prefix, _, exec_prefix = home.partition(os.pathsep)
+                if any(field and not Path(field).is_absolute()
+                       for field in (prefix, exec_prefix)):
+                    raise ValueError("PYTHONHOME prefix and exec-prefix must be absolute or empty.")
+
+            # site may disable user sites implicitly (notably in a venv), and
+            # reads PYTHONUSERBASE itself even under -E. Do not consult cached
+            # USER_BASE: the inherited environment may have changed since import.
+            site = sys.modules.get("site")
+            user_site_enabled = (
+                not sys.flags.no_user_site and not sys.flags.no_site
+                and getattr(site, "ENABLE_USER_SITE", None) is not False
+                and (sys.flags.ignore_environment or not child_env.get("PYTHONNOUSERSITE"))
+            )
+            if user_site_enabled:
+                userbase = child_env.get("PYTHONUSERBASE")
+                setting = "PYTHONUSERBASE"
+                if not userbase:
+                    if os.name == "nt":
+                        setting = "APPDATA or USERPROFILE"
+                        userbase = _windows_default_user_base(child_env)
+                    else:
+                        setting = "HOME"
+                        if "HOME" in child_env:
+                            userbase = child_env["HOME"].rstrip(os.sep) or os.sep
+                        else:
+                            import pwd
+
+                            try:
+                                userbase = pwd.getpwuid(os.getuid()).pw_dir
+                            except KeyError:
+                                userbase = "~"
+                if not Path(userbase).is_absolute():
+                    raise ValueError(f"{setting} must select an absolute user base when user-site startup is enabled.")
             source = getattr(specify_cli, "__file__", None)
             source_error = (
                 "Cannot identify an absolute file location for loaded specify_cli; "
@@ -395,27 +458,31 @@ class InitStep(StepBase):
             # Preserve the loaded package tree, including symlink/.. spelling.
             # Resolving the initializer leaf can select a different package.
             package_parent = os.path.dirname(os.path.dirname(source))
-            result = subprocess.run(
+            result = run_captured(
                 [sys.executable, *flags, "-c", _INIT_BOOTSTRAP, package_parent, json.dumps(dependencies), *argv],
                 cwd=base,
                 stdin=subprocess.DEVNULL,
-                capture_output=True,
-                encoding="utf-8",
-                errors="replace",
+                max_bytes=UNLIMITED_CAPTURE,
+                post_exit_drain_timeout=2.0,
                 env=child_env,
-                check=False,
             )
         except (OSError, ValueError) as exc:
             return (1, "", f"Cannot run specify init in project root {base!r}: {exc}")
 
         stdout = result.stdout or ""
         stderr = result.stderr or ""
-        if result.returncode != 0 and not stderr.strip():
+        if result.timed_out:
+            stderr = (stderr.rstrip() + "\n" if stderr else "") + (
+                "specify init exited but its output pipes remained open; "
+                "a descendant may still be running. Stop the helper or close "
+                "its inherited stdout/stderr pipes."
+            )
+        if result.exit_code != 0 and not stderr.strip():
             # Ordinary init failures print Rich diagnostics to stdout. Keep
             # output.stderr useful to downstream steps without inventing a
             # SystemExit diagnostic or replacing a real child traceback.
             stderr = stdout.strip()
-        return (result.returncode, stdout, stderr)
+        return (result.exit_code, stdout, stderr)
 
     def validate(self, config: dict[str, Any]) -> list[str]:
         errors = super().validate(config)

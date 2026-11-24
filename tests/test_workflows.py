@@ -3549,7 +3549,7 @@ def _force_gate_stdin(monkeypatch, *, tty: bool):
 def _isolate_init_home(monkeypatch, tmp_path_factory):
     """Keep child-process auth, trust and catalog state in fixture-owned homes."""
     home = tmp_path_factory.mktemp("init-home")
-    for key in ("HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"):
+    for key in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"):
         monkeypatch.setenv(key, str(home))
     for key in ("SPECKIT_INTEGRATION_DEFAULT", "SPECKIT_INTEGRATION_CATALOG_URL"):
         monkeypatch.delenv(key, raising=False)
@@ -3559,7 +3559,15 @@ def _gate_init_launch(monkeypatch, before):
     """Gate the real CLI boundary on both sides of the cwd-isolation fix."""
     from specify_cli.workflows.step import init
 
-    if hasattr(init, "subprocess"):
+    if hasattr(init, "run_captured"):
+        original = init.run_captured
+
+        def run(args, **kwargs):
+            before(args[args.index("init"):])
+            return original(args, **kwargs)
+
+        monkeypatch.setattr(init, "run_captured", run)
+    elif hasattr(init, "subprocess"):
         original = init.subprocess.run
 
         def run(args, **kwargs):
@@ -3621,15 +3629,23 @@ class TestInitStep:
     @pytest.fixture(autouse=True)
     def isolated_home(self, monkeypatch, tmp_path_factory):
         import subprocess
+        from specify_cli.workflows.step import init
 
         _isolate_init_home(monkeypatch, tmp_path_factory)
         original = subprocess.run
+        capture = init.run_captured
 
         def bounded_run(*args, **kwargs):
             kwargs.setdefault("timeout", 60)
             return original(*args, **kwargs)
 
+        def bounded_capture(*args, **kwargs):
+            # Harness guard only; production init has no overall runtime limit.
+            kwargs.setdefault("timeout", 45)
+            return capture(*args, **kwargs)
+
         monkeypatch.setattr(subprocess, "run", bounded_run)
+        monkeypatch.setattr(init, "run_captured", bounded_capture)
 
     @staticmethod
     def _parent(tmp_path, *, flags=(), env=None, setup="", python=None, source=None, config=None):
@@ -3661,16 +3677,19 @@ class TestInitStep:
             from specify_cli.integrations import INTEGRATION_REGISTRY
             from specify_cli.workflows import STEP_REGISTRY
             exec(data['setup'])
-            original = subprocess.run
+            from specify_cli.workflows.step import init as init_module
+            owner = init_module if hasattr(init_module, 'run_captured') else subprocess
+            method = 'run_captured' if owner is init_module else 'run'
+            original = getattr(owner, method)
             launches = []
             def run(args, **kwargs):
                 if '-c' in args:
                     index = args.index('-c') + 1
                     launches.append(args)
                     args = [*args[:index], data['observer'] + '\n' + args[index], *args[index+1:]]
-                kwargs['timeout'] = 60
+                kwargs['timeout'] = 45
                 return original(args, **kwargs)
-            subprocess.run = run
+            setattr(owner, method, run)
             before = (os.getcwd(), dict(os.environ), list(sys.path), sys.stdin, sys.stdout, sys.stderr,
                       dict(INTEGRATION_REGISTRY), dict(STEP_REGISTRY))
             result = InitStep().execute(data['config'], StepContext(project_root=data['root']))
@@ -3721,7 +3740,7 @@ class TestInitStep:
         source = str(Path(specify_cli.__file__).parent.parent)
         env = os.environ.copy()
         env.pop("PYTHONNOUSERSITE", None)
-        env["HOME"] = env["USERPROFILE"] = str(tmp_path / "home")
+        env["HOME"] = env["USERPROFILE"] = env["APPDATA"] = str(tmp_path / "home")
         env["PYTHONPATH"] = os.pathsep.join([source, *site.getsitepackages()])
         env.pop("PYTHONUSERBASE", None)
         if mode != "default":
@@ -3761,6 +3780,235 @@ class TestInitStep:
             _assert_init_scaffold(root / "demo", "py")
             assert marker.exists() == (mode != "disabled")
             assert pth_marker.exists() == (mode != "disabled")
+
+    @pytest.mark.parametrize("kind", ["home", "appdata", "pythonhome-prefix", "pythonhome-exec", "pythonhome-tail"])
+    def test_effective_relative_startup_rejected_before_hooks(self, tmp_path, kind):
+        import site
+        import specify_cli
+
+        if kind == "appdata" and os.name != "nt":
+            pytest.skip("APPDATA selects the native Windows user base")
+        if kind == "home" and os.name == "nt":
+            pytest.skip("POSIX HOME expansion")
+        env = os.environ.copy()
+        env.pop("PYTHONNOUSERSITE", None)
+        env.pop("PYTHONUSERBASE", None)
+        env["PYTHONPATH"] = os.pathsep.join([str(Path(specify_cli.__file__).parent.parent), *site.getsitepackages()])
+        root = tmp_path / "root"
+        root.mkdir()
+        probe_env = dict(env)
+        variable = "APPDATA" if kind == "appdata" else "HOME"
+        probe_env[variable] = "relative-home"
+        user_site = self._user_site(root, probe_env)
+        marker = tmp_path / "startup-ran"
+        hook = f"import os; os.environ.get('INIT_UNSAFE') and open({str(marker)!r}, 'w').write('unsafe')\n"
+        (user_site / "unsafe.pth").write_text(hook, encoding="utf-8")
+        (user_site / "usercustomize.py").write_text(hook, encoding="utf-8")
+        setup = "os.environ['INIT_UNSAFE'] = '1'\n"
+        if kind.startswith("pythonhome"):
+            home = {"pythonhome-prefix": "relative-home" + os.pathsep + sys.base_prefix,
+                    "pythonhome-exec": sys.base_prefix + os.pathsep + "relative-home",
+                    # The second field includes the remaining separators.
+                    "pythonhome-tail": sys.base_prefix + os.pathsep + "relative" + os.pathsep + sys.base_prefix}[kind]
+            setup += f"os.environ['PYTHONHOME'] = {home!r}\n"
+            variable = "PYTHONHOME"
+        else:
+            setup += f"os.environ[{variable!r}] = 'relative-home'\n"
+        result, child = self._parent(tmp_path, python=sys._base_executable, env=env, setup=setup)
+        assert result["status"] == "failed", result
+        assert variable in result["error"] and "absolute" in result["error"]
+        assert result["launches"] == 0 and child is None
+        assert not marker.exists() and not (root / "demo").exists()
+
+    def test_implicit_venv_disabled_user_site_allows_relative_base(self, tmp_path):
+        env = os.environ.copy()
+        env.pop("PYTHONNOUSERSITE", None)
+        result, child = self._parent(tmp_path, env=env, setup="os.environ['PYTHONUSERBASE'] = 'relative-base'")
+        assert result["status"] == "completed", result
+        assert child["site_enabled"] is False
+        _assert_init_scaffold(tmp_path / "root/demo", "py")
+
+    @pytest.mark.parametrize("relative", [False, True])
+    def test_ignore_environment_preserves_site_userbase_semantics(self, tmp_path, relative):
+        import site
+        import specify_cli
+
+        env = os.environ.copy()
+        env.pop("PYTHONNOUSERSITE", None)
+        env["PYTHONUSERBASE"] = str(tmp_path / "userbase")
+        user_site = self._user_site(tmp_path, env)
+        (user_site / "paths.pth").write_text(
+            "\n".join([str(Path(specify_cli.__file__).parent.parent), *site.getsitepackages()]) + "\n",
+            encoding="utf-8",
+        )
+        marker = tmp_path / "child-site"
+        hook = f"import os; os.environ.get('INIT_MARK') and open({str(marker)!r}, 'w').write('site')\n"
+        (user_site / "marker.pth").write_text(hook, encoding="utf-8")
+        (user_site / "usercustomize.py").write_text(hook, encoding="utf-8")
+        setup = "os.environ['INIT_MARK'] = '1'\n"
+        if relative:
+            setup += "os.environ['PYTHONUSERBASE'] = 'relative-base'\nos.environ['PYTHONNOUSERSITE'] = '1'\n"
+        result, child = self._parent(tmp_path, python=sys._base_executable, flags=("-E",), env=env, setup=setup)
+        if relative:
+            assert result["status"] == "failed", result
+            assert "PYTHONUSERBASE" in result["error"] and result["launches"] == 0
+            assert not marker.exists() and child is None
+        else:
+            assert result["status"] == "completed", result
+            assert marker.exists() and child["site_enabled"] is True
+            _assert_init_scaffold(tmp_path / "root/demo", "py")
+
+    @pytest.mark.parametrize("form", ["single", "pair", "empty-prefix", "empty-exec", "empty-both", "first-separator"])
+    def test_absolute_pythonhome_fields_remain_available(self, tmp_path, form):
+        value = {"single": sys.base_prefix, "pair": sys.base_prefix + os.pathsep + sys.base_exec_prefix,
+                 "empty-prefix": os.pathsep + sys.base_exec_prefix, "empty-exec": sys.base_prefix + os.pathsep,
+                 "empty-both": os.pathsep,
+                 "first-separator": sys.base_prefix + os.pathsep + sys.base_exec_prefix + os.pathsep + 'suffix'}[form]
+        # Use a real exec-prefix directory containing a separator. CPython
+        # partitions only once; later separators belong to that directory name.
+        if form == "first-separator":
+            exec_prefix = tmp_path / ("exec" + os.pathsep + "suffix")
+            try:
+                exec_prefix.symlink_to(sys.base_exec_prefix, target_is_directory=True)
+            except OSError as exc:
+                pytest.skip(f"Directory symlinks unavailable: {exc}")
+            value = sys.base_prefix + os.pathsep + str(exec_prefix)
+        import typer
+        import specify_cli
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join([str(Path(specify_cli.__file__).parent.parent), str(Path(typer.__file__).parent.parent)])
+        result, _ = self._parent(tmp_path, flags=("-S",), env=env,
+                                  setup=f"os.environ['PYTHONHOME'] = {value!r}")
+        assert result["status"] == "completed", result
+        _assert_init_scaffold(tmp_path / "root/demo", "py")
+
+    @pytest.mark.parametrize("flags", [("-E",), ("-I",)])
+    def test_ignored_relative_pythonhome_does_not_change_startup(self, tmp_path, flags):
+        result, child = self._parent(tmp_path, flags=flags,
+            setup="os.environ['PYTHONHOME'] = 'relative-home'\nos.environ['PYTHONUSERBASE'] = 'relative-base'")
+        assert result["status"] == "completed", result
+        assert child["flags"]["ignore_environment"] == 1
+        _assert_init_scaffold(tmp_path / "root/demo", "py")
+
+    @pytest.mark.parametrize("settings,effective", [
+        ({"APPDATA": r"~\Roaming", "USERPROFILE": r"C:\fixture-profiles\current"}, r"C:\fixture-profiles\current\Roaming\Python"),
+        ({"HOMEDRIVE": "C:", "HOMEPATH": ""}, r"C:\Python"),
+        ({"APPDATA": "", "HOMEDRIVE": "C:", "HOMEPATH": ""}, r"C:\Python"),
+        ({"USERPROFILE": "C:"}, r"C:\Python"),
+        ({"APPDATA": r"~/Roaming", "USERPROFILE": r"C:\fixture-profiles\current"}, r"C:\fixture-profiles\current/Roaming\Python"),
+        ({"APPDATA": r"C:\fixture-roaming", "USERPROFILE": "relative"}, r"C:\fixture-roaming\Python"),
+        ({"USERPROFILE": r"C:\fixture-profiles\current", "HOMEDRIVE": "D:", "HOMEPATH": r"\ignored"}, r"C:\fixture-profiles\current\Python"),
+        ({"HOMEDRIVE": "C:", "HOMEPATH": r"\fixture-profiles\current", "HOME": "ignored"}, r"C:\fixture-profiles\current\Python"),
+        ({"HOMEDRIVE": "C:", "HOMEPATH": r"D:\fixture-profiles\current"}, r"D:\fixture-profiles\current\Python"),
+        ({"APPDATA": r"~current\Roaming", "USERNAME": "current", "USERPROFILE": r"C:\custom-profile"}, r"C:\custom-profile\Roaming\Python"),
+        ({"APPDATA": r"~other\Roaming", "USERNAME": "current", "USERPROFILE": r"C:\fixture-profiles\current"}, r"C:\fixture-profiles\other\Roaming\Python"),
+        ({"APPDATA": r"~other\Roaming", "USERNAME": "current", "USERPROFILE": r"C:\custom-profile"}, r"~other\Roaming\Python"),
+        ({"APPDATA": r"~current\Roaming", "USERPROFILE": r"C:\fixture-profiles\current"}, r"~current\Roaming\Python"),
+        ({"APPDATA": r"~other\Roaming", "USERNAME": "current", "USERPROFILE": r"C:\fixture-profiles\Current"}, r"~other\Roaming\Python"),
+        ({"APPDATA": r"~other\Roaming", "USERNAME": "current", "USERPROFILE": "C:current"}, r"C:other\Roaming\Python"),
+        ({"APPDATA": r"~D:other\Roaming", "USERNAME": "current", "USERPROFILE": r"C:\fixture-profiles\current"}, r"D:other\Roaming\Python"),
+        ({"APPDATA": "C:", "USERPROFILE": r"C:\fixture-profiles\current"}, "C:Python"),
+        ({"APPDATA": "relative", "USERPROFILE": r"C:\fixture-profiles\current"}, r"relative\Python"),
+        ({"APPDATA": r"\root-relative", "USERPROFILE": r"C:\fixture-profiles\current"}, r"\root-relative\Python"),
+        ({"APPDATA": r"~\Roaming", "USERPROFILE": "C:relative"}, r"C:relative\Roaming\Python"),
+        ({"APPDATA": r"~\Roaming", "USERPROFILE": r"\root-relative"}, r"\root-relative\Roaming\Python"),
+        ({"USERPROFILE": "", "HOMEDRIVE": "C:", "HOMEPATH": r"\ignored"}, r"\Python"),
+        ({"HOMEDRIVE": "", "HOMEPATH": ""}, r"\Python"),
+        ({"HOMEDRIVE": "C:", "HOMEPATH": "relative"}, r"C:relative\Python"),
+        ({"HOMEPATH": r"\root-relative"}, r"\root-relative\Python"),
+        ({"HOME": r"C:\ignored-home"}, r"~\Python"),
+        ({"HOMEDRIVE": "C:"}, r"~\Python"),
+        ({}, r"~\Python"),
+        ({"PYTHONUSERBASE": "", "APPDATA": r"~\Roaming", "USERPROFILE": r"C:\fixture-profiles\current"}, r"C:\fixture-profiles\current\Roaming\Python"),
+        ({"PYTHONUSERBASE": r"C:\explicit", "APPDATA": "relative"}, r"C:\explicit"),
+        ({"PYTHONUSERBASE": r"~\Roaming", "USERPROFILE": r"C:\fixture-profiles\current"}, r"~\Roaming"),
+        ({"PYTHONUSERBASE": "C:", "USERPROFILE": r"C:\fixture-profiles\current"}, "C:"),
+        ({"PYTHONUSERBASE": r"\explicit-root", "USERPROFILE": r"C:\fixture-profiles\current"}, r"\explicit-root"),
+    ])
+    def test_windows_effective_default_userbase_parsing(self, monkeypatch, settings, effective):
+        """Exact imported production method under a Windows model, not native startup.
+
+        All profile strings are synthetic. The launch stub never creates a
+        Windows directory, including the drive-root fallback C:\\Python.
+        """
+        import ntpath
+        from pathlib import PureWindowsPath
+        from types import SimpleNamespace
+        import specify_cli
+        from specify_cli.integrations._capture import CapturedProcess
+        from specify_cli.workflows.step import init
+
+        real_state = (os.name, os.path, os.pathsep, dict(os.environ), sys.flags)
+        environment = dict(settings)
+        monkeypatch.setattr(init, "os", SimpleNamespace(
+            name="nt", path=ntpath, pathsep=";", sep="\\", environ=environment,
+            getcwd=lambda: r"C:\fixture-controller",
+        ))
+        monkeypatch.setattr(init, "Path", PureWindowsPath)
+        monkeypatch.setattr(init, "sys", SimpleNamespace(
+            flags=SimpleNamespace(isolated=0, ignore_environment=0, no_user_site=0, no_site=0),
+            modules={"site": SimpleNamespace(ENABLE_USER_SITE=True)}, path=[],
+            dont_write_bytecode=True, executable=r"C:\fixture-python.exe",
+        ))
+        monkeypatch.setattr(specify_cli, "__file__", r"C:\fixture-spec-kit\src\specify_cli\__init__.py")
+        selected = []
+        if hasattr(init, "_windows_default_user_base"):
+            select = init._windows_default_user_base
+
+            def observe(env):
+                value = select(env)
+                selected.append(value)
+                return value
+
+            monkeypatch.setattr(init, "_windows_default_user_base", observe)
+        launches = []
+
+        def launch(args, **kwargs):
+            launches.append((args, kwargs))
+            assert args[args.index("-c") + 1] == init._INIT_BOOTSTRAP
+            return CapturedProcess(0, "fixture-launch", "")
+
+        monkeypatch.setattr(init, "run_captured", launch)
+        result = init.InitStep._run_init(["init", "demo"], r"C:\fixture-controller")
+        allowed = PureWindowsPath(effective).is_absolute()
+        if allowed:
+            assert result == (0, "fixture-launch", ""), (settings, effective, result)
+            assert len(launches) == 1
+            assert launches[0][1]["env"] == {**settings, "PYTHONIOENCODING": "utf-8"}
+            assert launches[0][1]["env"] is not environment
+        else:
+            assert result[0] == 1 and "absolute" in result[2], (settings, effective, result)
+            assert launches == []
+        if hasattr(init, "_windows_default_user_base"):
+            assert selected == ([] if settings.get("PYTHONUSERBASE") else [effective])
+        assert environment == settings
+        assert real_state == (os.name, os.path, os.pathsep, dict(os.environ), sys.flags)
+
+    @pytest.mark.parametrize("variable,value", [
+        ("PYTHONUSERBASE", r"C:relative"), ("PYTHONUSERBASE", r"\relative"),
+        ("PYTHONHOME", r"C:relative;D:\absolute"), ("PYTHONHOME", r"C:\absolute;\relative"),
+    ])
+    def test_windows_relative_startup_path_parsing(self, tmp_path, monkeypatch, variable, value):
+        """Parsing coverage only; actual Windows startup requires native CI."""
+        from pathlib import PureWindowsPath
+        from types import SimpleNamespace
+        from specify_cli.workflows.step import init
+
+        monkeypatch.setattr(init, "Path", PureWindowsPath)
+        monkeypatch.setattr(init.os, "pathsep", ";")
+        monkeypatch.setattr(init, "sys", SimpleNamespace(
+            flags=SimpleNamespace(isolated=0, ignore_environment=0, no_user_site=0, no_site=0),
+            modules={"site": SimpleNamespace(ENABLE_USER_SITE=True)}, path=[], dont_write_bytecode=True,
+        ))
+        monkeypatch.setenv("PYTHONPATH", "")
+        monkeypatch.delenv("PYTHONNOUSERSITE", raising=False)
+        monkeypatch.delenv("PYTHONHOME", raising=False)
+        monkeypatch.setenv("PYTHONUSERBASE", r"C:\absolute")
+        monkeypatch.setenv(variable, value)
+        monkeypatch.setattr(init, "run_captured", lambda *a, **k: pytest.fail("must reject before launch"))
+        code, stdout, stderr = init.InitStep._run_init(["init", "demo"], str(tmp_path))
+        assert code == 1 and stdout == ""
+        assert variable in stderr and "absolute" in stderr
 
     @pytest.mark.parametrize("flags", [(), ("-I",), ("-E",), ("-s",), ("-S",), ("-E", "-s"), ("-S", "-s")])
     def test_review_actual_parent_flags(self, tmp_path, flags):
@@ -3854,16 +4102,28 @@ class TestInitStep:
         for tree in (tree_a, tree_b):
             shutil.copytree(source / "specify_cli", tree / "specify_cli", ignore=shutil.ignore_patterns("__pycache__"))
             for asset in ("templates", "scripts", "presets", "workflows", "extensions"):
-                (tree.parent / asset).symlink_to(source.parent / asset, target_is_directory=True)
+                try:
+                    (tree.parent / asset).symlink_to(source.parent / asset, target_is_directory=True)
+                except OSError as exc:
+                    pytest.skip(f"Directory symlinks unavailable: {exc}")
         selected = tree_b if cache in {"foreign-root", "shared-initializer"} else tree_a
         if cache == "alias":
             selected = tmp_path / "alias"
-            selected.symlink_to(tree_a, target_is_directory=True)
+            try:
+                selected.symlink_to(tree_a, target_is_directory=True)
+            except OSError as exc:
+                pytest.skip(f"Directory symlinks unavailable: {exc}")
             for asset in ("templates", "scripts", "presets", "workflows", "extensions"):
-                (selected.parent / asset).symlink_to(source.parent / asset, target_is_directory=True)
+                try:
+                    (selected.parent / asset).symlink_to(source.parent / asset, target_is_directory=True)
+                except OSError as exc:
+                    pytest.skip(f"Directory symlinks unavailable: {exc}")
         if cache == "shared-initializer":
             (tree_b / "specify_cli/__init__.py").unlink()
-            (tree_b / "specify_cli/__init__.py").symlink_to(tree_a / "specify_cli/__init__.py")
+            try:
+                (tree_b / "specify_cli/__init__.py").symlink_to(tree_a / "specify_cli/__init__.py")
+            except OSError as exc:
+                pytest.skip(f"File symlinks unavailable: {exc}")
         env = os.environ.copy()
         env.pop("PYTHONNOUSERSITE", None)
         env["PYTHONUSERBASE"] = str(tmp_path / "userbase")
@@ -3914,7 +4174,7 @@ class TestInitStep:
     @pytest.mark.parametrize("mode", [
         "dependency", "dependency-chdir", "dependency-env-only", "dependency-path-only",
         "dependency-relative", "dependency-empty", "dependency-target", "dependency-target-alias",
-        "dependency-outside-target",
+        "dependency-outside-target", "dependency-relative-chdir", "dependency-relative-unmatched",
         "dependency-isolated", "dependency-ignore-env", "bytes-success", "bytes-failure",
     ])
     def test_review_trusted_adapter_child_io(self, tmp_path, monkeypatch, tmp_path_factory, mode):
@@ -3959,8 +4219,12 @@ class TestInitStep:
                 setup += f"sys.path.remove({str(dependency)!r})\n"
             elif mode == "dependency-path-only":
                 setup += "os.environ.pop('PYTHONPATH')\n"
-            elif mode == "dependency-relative":
+            elif mode.startswith("dependency-relative"):
                 env["PYTHONPATH"] = "dependencies"
+                if mode.endswith("chdir"):
+                    setup += f"os.chdir({str(project)!r})\n"
+                elif mode.endswith("unmatched"):
+                    setup += f"sys.path.remove({str(dependency)!r})\n"
             elif mode == "dependency-empty":
                 env["PYTHONPATH"] = ""
                 setup += f"sys.path.insert(0, {str(dependency)!r})\n"
@@ -3970,7 +4234,10 @@ class TestInitStep:
                 dependency = target_dependency
                 if mode.endswith("alias"):
                     dependency = tmp_path / "alias"
-                    dependency.symlink_to(target_dependency, target_is_directory=True)
+                    try:
+                        dependency.symlink_to(target_dependency, target_is_directory=True)
+                    except OSError as exc:
+                        pytest.skip(f"Directory symlinks unavailable: {exc}")
                 env["PYTHONPATH"] = str(dependency)
             elif mode in {"dependency-isolated", "dependency-ignore-env"}:
                 flags = ("-I",) if mode.endswith("isolated") else ("-E",)
@@ -3993,7 +4260,8 @@ class TestInitStep:
             assert marker.exists() and marker.read_text() != str(os.getpid())
             assert not startup_marker.exists()
             assert child is not None
-            if mode in {"dependency", "dependency-chdir"}:
+            if mode in {"dependency", "dependency-chdir", "dependency-relative", "dependency-target",
+                        "dependency-target-alias", "dependency-outside-target"}:
                 assert result["status"] == "completed", result
                 assert (project / "dependency-result").read_text() == "dependency imported"
                 assert str(dependency) in child["path"]
@@ -4015,6 +4283,117 @@ class TestInitStep:
                 assert (project / ".specify/memory/constitution.md").is_file()
             assert adapters.KEY not in adapters.INTEGRATION_REGISTRY
         finally:
+            adapters.unload_installed_integrations()
+            fixture.close()
+
+    @pytest.mark.parametrize("mode", ["exit", "cancel", "cancel-start", "detached"])
+    def test_real_adapter_capture_lifecycle(self, tmp_path, monkeypatch, tmp_path_factory, mode):
+        from concurrent.futures import ThreadPoolExecutor
+        import signal
+        import subprocess
+        import time
+        from specify_cli.integrations._capture import cancel_captures
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.init import InitStep
+        from tests.specify_cli.integrations import test_installed_adapters as adapters
+
+        if mode == "detached" and os.name == "nt":
+            pytest.skip("POSIX detached session boundary")
+        certificate = adapters.tls_certificate.__wrapped__(tmp_path_factory)
+        fixture = adapters.server.__wrapped__(tmp_path, monkeypatch, certificate)
+        server = next(fixture)
+        pid_file = tmp_path / "descendant.pid"
+        heartbeat = tmp_path / "heartbeat"
+        ready = tmp_path / "adapter-ready"
+        body = (
+            "    def setup(self, project_root, manifest, **kwargs):\n"
+            "        import os, subprocess, sys, time\n"
+            "        if os.environ.get('INIT_LIFECYCLE'):\n"
+            f"            code = \"import time; from pathlib import Path; p = Path({str(heartbeat)!r}); exec('while True: p.write_text(str(time.time())); time.sleep(0.05)')\"\n"
+            f"            child = subprocess.Popen([sys.executable, '-c', code], start_new_session={mode == 'detached'!r})\n"
+            f"            open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
+            f"            while not os.path.exists({str(heartbeat)!r}): time.sleep(0.02)\n"
+            "            print('adapter-child-ready', flush=True)\n"
+            f"            open({str(ready)!r}, 'w').write('ready')\n"
+            + ("            time.sleep(60)\n" if mode == "cancel" else "")
+            + "        return super().setup(project_root, manifest, **kwargs)\n"
+        )
+        launches = []
+        original = subprocess.Popen
+
+        class ObservedPopen(original):
+            def __init__(self, args, **kwargs):
+                super().__init__(args, **kwargs)
+                if 'init' in args:
+                    launches.append(self)
+
+        pool = ThreadPoolExecutor(max_workers=1)
+        future = None
+        try:
+            adapters.publish(server, code=adapters.implementation(body=body))
+            project = adapters.catalog_project(tmp_path, server)
+            adapters.install(project)
+            adapters.unload_installed_integrations()
+            monkeypatch.setenv("INIT_LIFECYCLE", "1")
+            monkeypatch.setattr(subprocess, "Popen", ObservedPopen)
+            config = {"id": "init", "here": True, "force": True, "integration": adapters.KEY, "script": "py"}
+            def launch():
+                return InitStep().execute(config, StepContext(project_root=str(project)))
+            started = time.monotonic()
+            if mode == "cancel-start":
+                with cancel_captures():
+                    future = pool.submit(launch)
+                    deadline = time.monotonic() + 8
+                    while not future.done() and time.monotonic() < deadline:
+                        time.sleep(0.02)
+            else:
+                future = pool.submit(launch)
+                deadline = time.monotonic() + 15
+                while not ready.exists() and not future.done() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                assert ready.exists(), future.result() if future.done() else 'adapter did not start'
+                if mode == "cancel":
+                    with cancel_captures():
+                        deadline = time.monotonic() + 8
+                        while not future.done() and time.monotonic() < deadline:
+                            time.sleep(0.02)
+                else:
+                    deadline = time.monotonic() + 8
+                    while not future.done() and time.monotonic() < deadline:
+                        time.sleep(0.02)
+            assert future.done(), "InitStep capture ignored cancellation/post-exit drain boundary"
+            result = future.result()
+            assert time.monotonic() - started < 20
+            assert result.status == StepStatus.FAILED, result
+            assert result.output['exit_code'] == (130 if mode.startswith('cancel') else -1)
+            if mode != 'cancel-start':
+                assert 'adapter-child-ready' in result.output['stdout']
+            if mode in {'exit', 'detached'}:
+                assert 'pipes' in result.error and 'descendant' in result.error
+                assert (project / '.sample-agent/skills/speckit-specify/SKILL.md').is_file()
+            if heartbeat.exists() and mode != 'detached':
+                before = heartbeat.read_bytes()
+                time.sleep(0.2)
+                assert heartbeat.read_bytes() == before
+            if mode == 'detached':
+                # The escaped process remains alive; only capture return is bounded.
+                before = heartbeat.read_bytes()
+                time.sleep(0.2)
+                assert heartbeat.read_bytes() != before
+        finally:
+            # Only fixture-created process identities; never kill the runner's group.
+            if pid_file.exists():
+                try:
+                    os.kill(int(pid_file.read_text()), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            for proc in launches:
+                if proc.poll() is None:
+                    proc.kill()
+                proc.wait(timeout=5)
+            if future is not None:
+                future.result(timeout=10)
+            pool.shutdown(wait=True)
             adapters.unload_installed_integrations()
             fixture.close()
 
@@ -4441,7 +4820,10 @@ class TestInitStep:
             os.chdir(sys.argv[2])
             os.environ['PYTHONPATH'] = os.getcwd()
             os.environ['PATH'] = sys.argv[6] + os.pathsep + os.environ.get('PATH', '')
-            original = subprocess.run
+            from specify_cli.workflows.step import init as init_module
+            owner = init_module if hasattr(init_module, 'run_captured') else subprocess
+            method = 'run_captured' if owner is init_module else 'run'
+            original = getattr(owner, method)
             launches = []
             def run(args, **kwargs):
                 assert args[0] == sys.executable
@@ -4450,8 +4832,9 @@ class TestInitStep:
                 launches.append(args)
                 # Keep the complete production bootstrap and actual CLI entry.
                 args = [*args[:index], sys.argv[3] + '\\n' + args[index], *args[index+1:]]
+                kwargs['timeout'] = 45
                 return original(args, **kwargs)
-            subprocess.run = run
+            setattr(owner, method, run)
             state = (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
             registries = (dict(INTEGRATION_REGISTRY), dict(STEP_REGISTRY))
             context = StepContext(project_root=os.getcwd())
@@ -4496,6 +4879,7 @@ class TestInitStep:
         "mismatched-file", "drive-relative", "rooted-only",
     ])
     def test_ambiguous_loaded_source_fails_before_launch(self, tmp_path, monkeypatch, metadata):
+        from specify_cli.integrations._capture import CapturedProcess
         from importlib.machinery import ModuleSpec
         from pathlib import PureWindowsPath
         import specify_cli
@@ -4529,9 +4913,9 @@ class TestInitStep:
 
         def run(*args, **kwargs):
             launches.append(args)
-            return init.subprocess.CompletedProcess(args, 0, "", "")
+            return CapturedProcess(0, "", "")
 
-        monkeypatch.setattr(init.subprocess, "run", run)
+        monkeypatch.setattr(init, "run_captured", run)
         context = StepContext(project_root=str(tmp_path))
         state = (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
         result = init.InitStep().execute({"id": "init", "project": "demo"}, context)
@@ -4561,16 +4945,16 @@ class TestInitStep:
             path.chmod(0o755)
         monkeypatch.setenv("PATH", str(decoy) + os.pathsep + os.environ.get("PATH", ""))
         monkeypatch.setenv("PYTHONPATH", str(root))
-        original = subprocess.run
+        original = init.run_captured
         launches = []
 
         def run(args, **kwargs):
             if "init" in args:
-                launches.append((args, kwargs))
+                launches.append((args, dict(kwargs)))
             kwargs.setdefault("timeout", 60)
             return original(args, **kwargs)
 
-        monkeypatch.setattr(subprocess, "run", run)
+        monkeypatch.setattr(init, "run_captured", run)
         environment = dict(os.environ)
         result = init.InitStep().execute(
             {"id": "init", "project": "demo", "script": "py"}, StepContext(project_root=str(root))
@@ -4587,8 +4971,9 @@ class TestInitStep:
         assert (pin / "specify_cli").samefile(Path(specify_cli.__file__).parent)
         assert options["cwd"] == str(root)
         assert options["stdin"] == subprocess.DEVNULL
-        assert options["capture_output"] is True and options["check"] is False
-        assert options["encoding"] == "utf-8"
+        assert options["max_bytes"] == -1
+        assert options["post_exit_drain_timeout"] == 2.0
+        assert "timeout" not in options
         assert options["env"] is not os.environ
         assert "PYTHONPATH" not in options["env"]
         assert options["env"]["PYTHONIOENCODING"] == "utf-8"
@@ -4602,11 +4987,12 @@ class TestInitStep:
         ("", "", ""), ("", "Traceback\nRuntimeError: boom inside init", "Traceback\nRuntimeError: boom inside init"),
     ])
     def test_child_failure_streams(self, tmp_path, monkeypatch, stdout, stderr, expected):
-        import subprocess
+        from specify_cli.integrations._capture import CapturedProcess
         from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step import init
         from specify_cli.workflows.step.init import InitStep
 
-        monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 3, stdout, stderr))
+        monkeypatch.setattr(init, "run_captured", lambda *a, **k: CapturedProcess(3, stdout, stderr))
         result = InitStep().execute({"id": "init", "project": "demo"}, StepContext(project_root=str(tmp_path)))
         assert result.status == StepStatus.FAILED
         assert result.output["stdout"] == stdout
@@ -4615,14 +5001,14 @@ class TestInitStep:
 
     @pytest.mark.parametrize("base_name", ["plain", "back\\slash"])
     def test_launch_failure_is_actionable(self, tmp_path, monkeypatch, base_name):
-        import subprocess
         from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step import init
         from specify_cli.workflows.step.init import InitStep
 
         def fail(*args, **kwargs):
             raise OSError("fixture launch denied")
 
-        monkeypatch.setattr(subprocess, "run", fail)
+        monkeypatch.setattr(init, "run_captured", fail)
         base = tmp_path / base_name
         base.mkdir(parents=True)
         state = (os.getcwd(), sys.stdin, sys.stdout, sys.stderr, dict(os.environ))
@@ -4858,16 +5244,16 @@ class TestInitStep:
 
     def test_unexpected_crash_still_reports_its_exception(self, monkeypatch, tmp_path):
         """Preserve exception details emitted by an unexpectedly failing child."""
-        import subprocess
+        from specify_cli.workflows.step import init
         from specify_cli.workflows.step.init import InitStep
-        original = subprocess.run
+        original = init.run_captured
 
         def crash(args, **kwargs):
             return original(
                 [sys.executable, "-P", "-c", "raise RuntimeError('boom inside init')"], **kwargs
             )
 
-        monkeypatch.setattr(subprocess, "run", crash)
+        monkeypatch.setattr(init, "run_captured", crash)
         _code, _stdout, stderr = InitStep()._run_init(
             ["init", "demo"], str(tmp_path)
         )

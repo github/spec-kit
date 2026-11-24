@@ -69,13 +69,56 @@ def test_init_step_fan_out_keeps_targets_and_streams_isolated(tmp_path, monkeypa
     assert (sys.stdin, sys.stdout, sys.stderr) == streams
 
 
+def test_controller_initializes_distinct_projects_before_each_downstream_step(tmp_path, monkeypatch, init_home):
+    """One controller, one init per project, then project-specific local work."""
+    import sys
+    from tests.test_workflows import _assert_init_scaffold, _gate_init_launch
+
+    root = tmp_path / "controller"
+    root.mkdir()
+    downstream = tmp_path / "downstream.py"
+    downstream.write_text(
+        "import json, os; from pathlib import Path\n"
+        "project = Path(os.environ['PROJECT_PATH'])\n"
+        "assert (project / '.specify/init-options.json').is_file()\n"
+        "assert (project / '.specify/memory/constitution.md').is_file()\n"
+        "(project / 'downstream.json').write_text(json.dumps({'project': str(project)}))\n",
+        encoding="utf-8",
+    )
+    barrier = threading.Barrier(2, timeout=30)
+    launches = []
+
+    def before(argv):
+        launches.append(argv[1])
+        barrier.wait()
+
+    _gate_init_launch(monkeypatch, before)
+    workflow = definition("multi-project-bootstrap", [{
+        "id": "projects", "type": "fan-out", "items": ["alpha", "beta"], "max_concurrency": 2,
+        "step": {"id": "per-project", "type": "if", "condition": "{{ item }}", "then": [
+            {"id": "bootstrap", "type": "init", "project": "{{ item }}", "script": "py"},
+            {"id": "downstream", "type": "shell", "run": f'"{sys.executable}" "{downstream}"',
+             "env": {"PROJECT_PATH": "{{ steps.bootstrap.output.project }}"}},
+        ]},
+    }])
+    engine = WorkflowEngine(root)
+    assert engine.validate(workflow) == []
+    try:
+        state = engine.execute(workflow)
+    finally:
+        barrier.abort()
+    assert state.status == RunStatus.COMPLETED, state.error
+    assert sorted(launches) == ["alpha", "beta"]
+    for name in ("alpha", "beta"):
+        _assert_init_scaffold(root / name, "py")
+        assert json.loads((root / name / "downstream.json").read_text()) == {"project": name}
+
+
 def test_init_step_does_not_capture_concurrent_observer(tmp_path, monkeypatch, init_home, capsys):
-    import contextlib
     import os
     import subprocess
     import sys
     from tests.test_workflows import _assert_init_scaffold
-    from specify_cli.workflows.step import init
 
     root, launch = tmp_path / "root", tmp_path / "launch"
     root.mkdir()
@@ -91,27 +134,14 @@ def test_init_step_does_not_capture_concurrent_observer(tmp_path, monkeypatch, i
         active.set()
         assert observed.wait(30), "Observer did not finish"
 
-    if hasattr(init, "subprocess"):
-        communicate = subprocess.Popen.communicate
+    wait = subprocess.Popen.wait
 
-        def wait(self, *args, **kwargs):
-            if "init" in self.args:
-                wait_for_observer()
-            return communicate(self, *args, **kwargs)
+    def observe_wait(self, *args, **kwargs):
+        if "init" in self.args:
+            wait_for_observer()
+        return wait(self, *args, **kwargs)
 
-        monkeypatch.setattr(subprocess.Popen, "communicate", wait)
-    else:
-        from typer.testing import CliRunner
-
-        isolation = CliRunner.isolation
-
-        @contextlib.contextmanager
-        def isolated(self, *args, **kwargs):
-            with isolation(self, *args, **kwargs) as value:
-                wait_for_observer()  # Legacy streams have already been replaced.
-                yield value
-
-        monkeypatch.setattr(CliRunner, "isolation", isolated)
+    monkeypatch.setattr(subprocess.Popen, "wait", observe_wait)
 
     class Observer(StepBase):
         type_key = "init-observer"

@@ -9,12 +9,13 @@ fixed UTF-8 decoding, and whatever was read before a timeout or interruption.
 from __future__ import annotations
 
 import codecs
+import math
 import os
 import signal
 import subprocess
 import threading
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -76,10 +77,13 @@ class _Sink:
         self._limit = limit
         self._data = bytearray()
         self._truncated = False
+        self._closed = False
         self._lock = threading.Lock()
 
     def feed(self, chunk: bytes) -> None:
         with self._lock:
+            if self._closed:
+                return
             if self._limit != UNLIMITED_CAPTURE:
                 room = self._limit - len(self._data)
                 if len(chunk) > room:
@@ -87,19 +91,53 @@ class _Sink:
                     chunk = chunk[:room]
             self._data += chunk
 
+    def freeze(self) -> None:
+        """Stop retaining output, including from an abandoned default reader."""
+        with self._lock:
+            self._closed = True
+
     def snapshot(self) -> tuple[bytes, bool]:
         with self._lock:
             return bytes(self._data), self._truncated
 
 
-def _drain(pipe: Any, sink: _Sink) -> None:
+def _drain(pipe: Any, sink: _Sink, stop: threading.Event | None = None) -> None:
     """Read *pipe* to end-of-file, including past the sink's limit.
 
     Reading continues after the cap so the process never blocks writing to a
     full pipe; the sink discards what it does not retain.
     """
     try:
-        while chunk := pipe.read1(_READ_CHUNK_BYTES):
+        poller = None
+        if stop is not None and os.name != "nt":
+            import select
+
+            poller = select.poll()
+            poller.register(pipe, select.POLLIN)
+        while stop is None or not stop.is_set():
+            if stop is not None:
+                # Opt-in bounded draining must also stop its readers. Poll the
+                # OS pipe without holding BufferedReader's lock in a blocking
+                # read, so cleanup never closes a pipe from another thread.
+                if os.name == "nt":
+                    import ctypes
+                    import msvcrt
+                    from ctypes import wintypes
+
+                    available = wintypes.DWORD()
+                    if not _windows().PeekNamedPipe(
+                        msvcrt.get_osfhandle(pipe.fileno()), None, 0, None,
+                        ctypes.byref(available), None,
+                    ):
+                        break  # EOF/broken pipe.
+                    if not available.value:
+                        stop.wait(_JOIN_POLL_SECONDS)
+                        continue
+                elif not poller.poll(_JOIN_POLL_SECONDS * 1000):
+                    continue
+            chunk = pipe.read1(_READ_CHUNK_BYTES)
+            if not chunk:
+                break
             sink.feed(chunk)
     except (OSError, ValueError):
         pass
@@ -161,7 +199,7 @@ class _ProcessTree:
     directly: the interrupt is handled here, by killing the group or job.
     """
 
-    def __init__(self, args: Sequence[str], cwd: str | None) -> None:
+    def __init__(self, args: Sequence[str], cwd: str | None, **options: Any) -> None:
         isolation: dict[str, Any] = (
             {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | _CREATE_SUSPENDED}
             if os.name == "nt"
@@ -172,6 +210,7 @@ class _ProcessTree:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=cwd,
+            **options,
             **isolation,
         )
         self._job: Any = None
@@ -312,6 +351,11 @@ def _windows() -> Any:
 
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         signatures = {
+            "PeekNamedPipe": (
+                (wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD,
+                 ctypes.POINTER(wintypes.DWORD), ctypes.POINTER(wintypes.DWORD),
+                 ctypes.POINTER(wintypes.DWORD)), wintypes.BOOL,
+            ),
             "CreateJobObjectW": ((wintypes.LPVOID, wintypes.LPCWSTR), wintypes.HANDLE),
             "AssignProcessToJobObject": (
                 (wintypes.HANDLE, wintypes.HANDLE),
@@ -439,6 +483,9 @@ def run_captured(
     cwd: str | None = None,
     timeout: float | None = None,
     max_bytes: int = DEFAULT_CAPTURE_MAX_BYTES,
+    env: Mapping[str, str] | None = None,
+    stdin: Any = None,
+    post_exit_drain_timeout: float | None = None,
 ) -> CapturedProcess:
     """Run *args* and capture stdout and stderr, each capped at *max_bytes*.
 
@@ -448,25 +495,47 @@ def run_captured(
     instead of being raised, after the process's group (POSIX) or job
     (Windows) is killed; a descendant that left it is not killed. ``OSError``
     from starting the process propagates.
+
+    *env* and *stdin* follow Popen's inherited defaults. Opting into a finite
+    *post_exit_drain_timeout* bounds reader waiting after the direct child exits,
+    even without an overall timeout. Expiry is reported as a timeout. It also
+    enables stoppable pipe readers; escaped descendants may remain running.
     """
     if not capture_max_bytes_is_valid(max_bytes):
         raise ValueError(
             f"max_bytes must be a positive integer or -1, got {max_bytes!r}."
         )
 
+    if post_exit_drain_timeout is not None:
+        try:
+            valid = (not isinstance(post_exit_drain_timeout, bool)
+                     and isinstance(post_exit_drain_timeout, (int, float))
+                     and math.isfinite(post_exit_drain_timeout)
+                     and post_exit_drain_timeout > 0)
+        except OverflowError:
+            valid = False
+        if not valid:
+            raise ValueError("post_exit_drain_timeout must be a finite positive number or None.")
+
     tree: _ProcessTree | None = None
     sinks = (_Sink(max_bytes), _Sink(max_bytes))
     readers: list[threading.Thread] = []
+    stop = threading.Event() if post_exit_drain_timeout is not None else None
     deadline = None if timeout is None else time.monotonic() + timeout
     timed_out = interrupted = False
     try:
         try:
             with _deferred_interrupt() as pending_interrupt:
-                tree = _ProcessTree(args, cwd)
+                options = {}
+                if env is not None:
+                    options["env"] = env
+                if stdin is not None:
+                    options["stdin"] = stdin
+                tree = _ProcessTree(args, cwd, **options)
                 _register(tree)
                 for pipe, sink in zip((tree.proc.stdout, tree.proc.stderr), sinks):
                     reader = threading.Thread(
-                        target=_drain, args=(pipe, sink), daemon=True
+                        target=_drain, args=(pipe, sink, stop), daemon=True
                     )
                     reader.start()
                     readers.append(reader)
@@ -483,7 +552,11 @@ def run_captured(
                 # end-of-file.
                 # cancel_captures() kills the CLI, but a detached helper can
                 # still hold the pipes, so this wait also stops on it.
-                timed_out = not _join(readers, deadline, lambda: tree.interrupted)
+                drain_deadline = deadline
+                if post_exit_drain_timeout is not None:
+                    post_exit = time.monotonic() + post_exit_drain_timeout
+                    drain_deadline = post_exit if deadline is None else min(deadline, post_exit)
+                timed_out = not _join(readers, drain_deadline, lambda: tree.interrupted)
         except KeyboardInterrupt:
             interrupted = True
             if tree is None:
@@ -511,6 +584,11 @@ def run_captured(
             for pipe in (tree.proc.stdout, tree.proc.stderr)[len(readers) :]:
                 pipe.close()
     finally:
+        for sink in sinks:
+            sink.freeze()
+        if stop is not None:
+            stop.set()
+            _join(readers, time.monotonic() + _JOIN_POLL_SECONDS * 3)
         if tree is not None:
             _unregister(tree)
             tree.close()

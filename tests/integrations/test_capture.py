@@ -63,6 +63,101 @@ def _assert_stopped(heartbeat) -> None:
 
 
 class TestRunCaptured:
+    @pytest.mark.parametrize("value", [0, -1, True, "1", float("inf"), float("nan"), 10**400])
+    def test_invalid_post_exit_bound_rejected_before_launch(self, value, monkeypatch):
+        monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("must not launch"))
+        with pytest.raises(ValueError, match="finite positive"):
+            run_captured(_python("pass"), post_exit_drain_timeout=value)
+
+    def test_opt_in_env_and_stdin_forwarding(self, tmp_path):
+        with (tmp_path / "input").open("w+b") as stream:
+            stream.write(b"input bytes")
+            stream.seek(0)
+            result = run_captured(
+                _python("import os, sys; print(os.environ['CAPTURE_VALUE']); print(sys.stdin.read())"),
+                env={**os.environ, "CAPTURE_VALUE": "child-only"}, stdin=stream,
+            )
+        assert result.stdout == "child-only\ninput bytes\n"
+        assert result.exit_code == 0
+        assert "CAPTURE_VALUE" not in os.environ
+        result = run_captured(_python("import sys; print(repr(sys.stdin.read()))"), stdin=subprocess.DEVNULL)
+        assert result.stdout == "''\n"
+
+    def test_opt_in_post_exit_bound_kills_inherited_pipe_holder(self, tmp_path):
+        heartbeat = tmp_path / "heartbeat"
+        started = time.monotonic()
+        result = run_captured(_spawn_descendant(heartbeat, ""), post_exit_drain_timeout=0.2)
+        assert time.monotonic() - started < 10
+        assert result.timed_out and result.exit_code == -1
+        assert result.stdout == "started\n"
+        _assert_stopped(heartbeat)
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor allocation")
+    def test_opt_in_readers_support_large_pipe_descriptors(self, monkeypatch):
+        import fcntl
+        import resource
+
+        if resource.getrlimit(resource.RLIMIT_NOFILE)[0] < 1100:
+            pytest.skip("Requires descriptor limit >= 1100")
+
+        class HighDescriptorPopen(subprocess.Popen):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                for name in ("stdout", "stderr"):
+                    pipe = getattr(self, name)
+                    descriptor = fcntl.fcntl(pipe.fileno(), fcntl.F_DUPFD, 1024)
+                    pipe.close()
+                    setattr(self, name, os.fdopen(descriptor, "rb"))
+
+        monkeypatch.setattr(subprocess, "Popen", HighDescriptorPopen)
+        result = run_captured(_python("import sys; print('out'); print('err', file=sys.stderr)"),
+                              post_exit_drain_timeout=0.2)
+        assert result == CapturedProcess(0, "out\n", "err\n")
+
+    def test_post_exit_bound_does_not_limit_child_runtime(self):
+        result = run_captured(_python("import time; time.sleep(0.3); print('done')"),
+                              post_exit_drain_timeout=0.05)
+        assert result == CapturedProcess(0, "done\n", "")
+
+    def test_default_drain_still_waits_for_complete_output(self):
+        result = run_captured(_python(
+            "import subprocess, sys; subprocess.Popen([sys.executable, '-c', "
+            "\"import time; time.sleep(0.3); print('late')\"]); print('early')"
+        ))
+        assert result.exit_code == 0 and not result.timed_out
+        assert set(result.stdout.splitlines()) == {"early", "late"}
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX detached session boundary")
+    def test_opt_in_bound_stops_detached_readers_and_retention(self, tmp_path, monkeypatch):
+        pid_file = tmp_path / "detached.pid"
+        sinks = []
+        original = _capture._Sink
+
+        class ObservedSink(original):
+            def __init__(self, *args):
+                super().__init__(*args)
+                sinks.append(self)
+
+        monkeypatch.setattr(_capture, "_Sink", ObservedSink)
+        try:
+            result = run_captured(_python(
+                "import subprocess, sys; p = subprocess.Popen([sys.executable, '-u', '-c', "
+                "\"import time; exec('while True: print(\\\"late\\\"); time.sleep(0.01)')\"], start_new_session=True); "
+                "open(sys.argv[1], 'w').write(str(p.pid)); print('parent')", str(pid_file)),
+                max_bytes=-1, post_exit_drain_timeout=0.2,
+            )
+            assert result.timed_out and 'parent' in result.stdout
+            sizes = [len(sink.snapshot()[0]) for sink in sinks]
+            time.sleep(0.3)
+            assert sizes == [len(sink.snapshot()[0]) for sink in sinks]
+            assert not [t for t in threading.enumerate() if t.name.endswith('(_drain)')]
+        finally:
+            if pid_file.exists():
+                try:
+                    os.kill(int(pid_file.read_text()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
     def test_captures_both_streams_and_exit_code(self):
         result = run_captured(
             _python(
