@@ -74,11 +74,14 @@ def _run_py(
         cwd / ".specify" / "extensions" / "git" / "scripts" / "python" / PY_SCRIPTS[script_name]
     )
     env = {**os.environ, **_GIT_ENV, **(env_extra or {})}
+    # The twin writes stderr in the console code page unless PYTHONIOENCODING
+    # overrides it; replace undecodable bytes rather than losing the stream.
     return subprocess.run(
         [sys.executable, str(script), *args],
         cwd=run_cwd or cwd,
         capture_output=True,
         text=True,
+        errors="replace",
         env=env,
     )
 
@@ -93,7 +96,9 @@ def _twin_projects(tmp_path: Path, *, git: bool = True) -> tuple[Path, Path]:
 def _branch_state(project: Path) -> tuple[str, str]:
     return tuple(
         subprocess.run(
-            ["git", *args], cwd=project, check=True, capture_output=True, text=True,
+            # git prints ref names as UTF-8 regardless of the locale.
+            ["git", *args], cwd=project, check=True, capture_output=True,
+            text=True, encoding="utf-8",
         ).stdout.strip()
         for args in (("symbolic-ref", "--short", "HEAD"), ("for-each-ref",))
     )
@@ -119,6 +124,24 @@ def _assert_parity(
             py_stderr = _without_persist_hint(py_stderr)
             bash_stderr = _without_persist_hint(bash_stderr)
         assert py_stderr == bash_stderr
+
+
+def _assert_json_parity(
+    bash_result: subprocess.CompletedProcess,
+    py_result: subprocess.CompletedProcess,
+    *,
+    stderr: bool = True,
+) -> dict:
+    """Parity for -Json output that may contain non-ASCII branch names.
+
+    jq writes raw UTF-8 while the Python twin escapes non-ASCII as \\uXXXX so
+    its output survives legacy code-page pipes (#5474), so compare the
+    decoded payloads rather than the raw text.
+    """
+    _assert_parity(bash_result, py_result, stdout=False, stderr=stderr)
+    payload = json.loads(bash_result.stdout)
+    assert json.loads(py_result.stdout) == payload
+    return payload
 
 
 def _without_persist_hint(stderr: str) -> str:
@@ -251,7 +274,7 @@ class TestCreateFeatureBranchParity:
             "create-new-feature-branch", py_proj,
             "--json", "--dry-run", description,
         )
-        _assert_parity(b, p)
+        _assert_json_parity(b, p)
 
         if not HAS_PWSH:
             pytest.skip("pwsh not available")
@@ -303,10 +326,10 @@ class TestCreateFeatureBranchParity:
     ):
         """The created git branch must not depend on the caller's locale.
 
-        The bash twin sanitizes with sed 's/[^a-z0-9]/-/g'. Under a locale whose
-        a-z range is collation-ordered that class keeps accented lowercase
-        letters, so bash checked out 001-ajouter-réservation-hôtelière where
-        the Python twin checks out 001-ajouter-servation-teli.
+        Under a locale whose a-z range is collation-ordered, a sed [^a-z0-9]
+        class keeps accented lowercase letters, so the twins used to disagree.
+        Branch names now keep Unicode letters (#5553), and both twins must
+        produce the same Unicode name regardless of the collation locale.
         """
         locale_name = collation_range_locale()
         if locale_name is None:
@@ -322,14 +345,16 @@ class TestCreateFeatureBranchParity:
             "create-new-feature-branch", py_proj,
             "--json", "--dry-run", description, env_extra=env_extra,
         )
-        _assert_parity(b, p)
-        branch = json.loads(b.stdout)["BRANCH_NAME"]
-        assert branch.isascii(), branch
+        branch = _assert_json_parity(b, p)["BRANCH_NAME"]
+        assert branch == {
+            "Añadir autenticación de usuario": "001-añadir-autenticación-usuario",
+            "Ajouter la réservation hôtelière": "001-ajouter-réservation-hôtelière",
+        }[description]
 
         # The run above reaches generate_branch_name. --short-name reaches
-        # clean_branch_name, a separate function carrying its own LC_ALL=C, so
-        # exercise the accented value through both: neither copy can then
-        # regress on its own without a failure here.
+        # clean_branch_name, a separate code path, so exercise the accented
+        # value through both: neither can then regress on its own without a
+        # failure here.
         sn_bash_proj, sn_py_proj = _twin_projects(tmp_path / "short")
         sb = _run_bash(
             "create-new-feature-branch.sh", sn_bash_proj,
@@ -341,9 +366,11 @@ class TestCreateFeatureBranchParity:
             "--json", "--dry-run", "--short-name", description, "desc",
             env_extra=env_extra,
         )
-        _assert_parity(sb, sp)
-        short_branch = json.loads(sb.stdout)["BRANCH_NAME"]
-        assert short_branch.isascii(), short_branch
+        short_branch = _assert_json_parity(sb, sp)["BRANCH_NAME"]
+        assert short_branch == {
+            "Añadir autenticación de usuario": "001-añadir-autenticación-de-usuario",
+            "Ajouter la réservation hôtelière": "001-ajouter-la-réservation-hôtelière",
+        }[description]
 
     @pytest.mark.parametrize("short_name", ["-n", "-e", "-E"], ids=["n", "e", "E"])
     def test_dash_prefixed_short_name(self, tmp_path: Path, short_name: str):
@@ -362,6 +389,115 @@ class TestCreateFeatureBranchParity:
         _assert_parity(b, p)
         expected = f"001-{short_name.lstrip('-').lower()}"
         assert json.loads(b.stdout)["BRANCH_NAME"] == expected
+
+    @pytest.mark.parametrize(
+        ("args", "expected"),
+        [
+            (("添加待办事项",), "001-添加待办事项"),
+            (("支持 OAuth2 登录",), "001-支持-oauth2-登录"),
+            (("Add API for 用户 DB",), "001-api-用户-db"),
+            (("Ünïcödé café",), "001-Ünïcödé-café"),
+            (("--short-name", "待办 事项!", "x"), "001-待办-事项"),
+        ],
+        ids=["cjk_only", "cjk_mixed", "cjk_acronyms", "accented", "cjk_short_name"],
+    )
+    def test_unicode_branch_names_match_core_policy(
+        self, tmp_path: Path, args: tuple[str, ...], expected: str
+    ):
+        """Non-Latin descriptions keep their words, as in the core scripts.
+
+        The extension used [^a-z0-9], so a CJK-only description became the
+        suffix-less branch 001- while the core script created
+        specs/001-添加待办事项/ (#5553).
+        """
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, "--json", "--dry-run", *args)
+        p = _run_py("create-new-feature-branch", py_proj, "--json", "--dry-run", *args)
+        assert _assert_json_parity(b, p)["BRANCH_NAME"] == expected
+
+    def test_unicode_branch_is_created_and_checked_out(self, tmp_path: Path):
+        """A real run checks out the Unicode branch instead of 001-."""
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, "--json", "添加待办事项")
+        p = _run_py("create-new-feature-branch", py_proj, "--json", "添加待办事项")
+        assert _assert_json_parity(b, p, stderr=False)["BRANCH_NAME"] == "001-添加待办事项"
+        assert _branch_state(bash_proj) == _branch_state(py_proj)
+        assert _branch_state(bash_proj)[0] == "001-添加待办事项"
+
+    def test_author_and_app_tokens_stay_ascii(self, tmp_path: Path):
+        """Only the {slug} keeps Unicode; {author}/{app} cleaning is unchanged.
+
+        Both twins run in a project directory named "Café 应用" so {app} is
+        derived from a non-ASCII name, as {author} is from git user.name.
+        """
+        bash_proj = _setup_py_project(tmp_path / "bash" / "Café 应用")
+        py_proj = _setup_py_project(tmp_path / "py" / "Café 应用")
+        for proj in (bash_proj, py_proj):
+            _write_config(proj, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+            subprocess.run(
+                ["git", "config", "user.name", "Zoë 测试"], cwd=proj, check=True
+            )
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, "--json", "--dry-run", "添加待办")
+        p = _run_py("create-new-feature-branch", py_proj, "--json", "--dry-run", "添加待办")
+        assert _assert_json_parity(b, p)["BRANCH_NAME"] == "zo/caf/001-添加待办"
+
+    @pytest.mark.parametrize("layout", ["core_common", "git_common_only", "stale_core_common"])
+    def test_unicode_branch_name_finds_python_without_core_helper(
+        self, tmp_path: Path, layout: str
+    ):
+        """Unicode naming must not depend on core common.sh's _python3_command.
+
+        The script falls back to git-common.sh when core is missing, and an
+        older core common.sh may lack _python3_command; both must still find a
+        system Python rather than failing with "Python 3 is required".
+        """
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        common_sh = bash_proj / "scripts" / "bash" / "common.sh"
+        if layout == "git_common_only":
+            common_sh.unlink()
+        elif layout == "stale_core_common":
+            text = common_sh.read_text(encoding="utf-8")
+            common_sh.write_text(
+                text.replace("_python3_command()", "_removed_python3_command()"),
+                encoding="utf-8",
+                newline="\n",
+            )
+        env_extra = {"SPECKIT_PYTHON_EXECUTABLE": "", "SPECKIT_PYTHON": ""}
+        args = ("--json", "--dry-run", "Add résumé support")
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, *args, env_extra=env_extra)
+        p = _run_py("create-new-feature-branch", py_proj, *args, env_extra=env_extra)
+        assert _assert_json_parity(b, p, stderr=False)["BRANCH_NAME"] == "001-résumé-support"
+
+    @pytest.mark.parametrize(
+        ("short_name", "expected_suffix"),
+        [
+            ("汉" * 100, "汉" * 80),
+            ("𠀀" * 70, "𠀀" * 60),
+            ("a" + "𠀀" * 70, "a" + "𠀀" * 59),
+        ],
+        ids=["bmp", "astral", "astral_after_ascii"],
+    )
+    def test_unicode_branch_name_truncates_on_character_boundary(
+        self, tmp_path: Path, short_name: str, expected_suffix: str
+    ):
+        """Truncation to 244 bytes must never split a multi-byte character.
+
+        MSYS/Cygwin bash has a 16-bit wchar_t, so a locale-aware ${var%?}
+        removed half of a surrogate pair once an odd-length ASCII prefix put
+        the astral characters out of step (astral_after_ascii).
+        """
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        args = ("--json", "--dry-run", "--short-name", short_name, "x")
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, *args)
+        p = _run_py("create-new-feature-branch", py_proj, *args)
+        # The truncation warning quotes the non-ASCII name; the Python twin
+        # writes it in the console code page, so check its presence rather
+        # than comparing the raw stderr text across twins.
+        branch = _assert_json_parity(b, p, stderr=False)["BRANCH_NAME"]
+        assert branch == f"001-{expected_suffix}"
+        assert len(branch.encode("utf-8")) <= 244
+        for result in (b, p):
+            assert "244-byte limit" in result.stderr
 
     def test_numbering_from_specs_and_branches(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)

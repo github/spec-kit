@@ -323,7 +323,31 @@ def check_existing_branches(
 # ── Branch naming ────────────────────────────────────────────────────────────
 
 
+_ASCII_LOWER = str.maketrans(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"
+)
+
+
+def unicode_words(name: str, separator: str) -> str:
+    """Keep Unicode letters and decimal digits; replace everything else.
+
+    Mirrors the core create_new_feature.py naming policy (UTF-8 feature
+    names, #4574): only ASCII letters are lowercased, so no Unicode case
+    folding can make the twins disagree.
+    """
+    return "".join(
+        char if char.isalpha() or char.isdecimal() else separator
+        for char in name.translate(_ASCII_LOWER)
+    )
+
+
 def clean_branch_name(name: str) -> str:
+    name = re.sub(r"-+", "-", unicode_words(name, "-"))
+    return name.strip("-")
+
+
+def clean_ascii_token(name: str) -> str:
+    """ASCII-only cleaning for the {author} and {app} template tokens."""
     name = re.sub(r"[^a-z0-9]", "-", name.lower())
     name = re.sub(r"-+", "-", name)
     return name.strip("-")
@@ -331,13 +355,14 @@ def clean_branch_name(name: str) -> str:
 
 def generate_branch_name(description: str) -> str:
     """Generate a branch suffix from the description with stop word filtering."""
-    clean_name = re.sub(r"[^a-z0-9]", " ", description.lower())
+    clean_name = unicode_words(description, " ")
 
     meaningful_words = []
     for word in clean_name.split():
         if word in STOP_WORDS:
             continue
-        if len(word) >= 3:
+        # Keep non-ASCII words even when short (CJK words are often 2 chars).
+        if len(word) >= 3 or not word.isascii():
             meaningful_words.append(word)
         # Keep short words only when they appear uppercased in the original
         # description (acronyms like "API" or "DB"). The boundaries are spelled
@@ -360,7 +385,7 @@ def generate_branch_name(description: str) -> str:
 
 
 def branch_token(value: str, fallback: str) -> str:
-    cleaned = clean_branch_name(value)
+    cleaned = clean_ascii_token(value)
     return cleaned if cleaned else fallback
 
 
