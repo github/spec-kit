@@ -1022,6 +1022,67 @@ class TestCodexNoModelInvocationOwnership:
             self._setup(tmp_path)
 
     @pytest.mark.parametrize(
+        ("content", "message"),
+        [
+            (b"interface:\n  display_name: {en: Plan}\n", "'interface.display_name' must be text, got dict"),
+            (b"interface:\n  icon_small: [a.png]\n", "'interface.icon_small' must be text, got list"),
+            (
+                b"dependencies:\n  tools:\n  - type: mcp\n    value: [docs]\n",
+                r"'dependencies.tools\[0\].value' must be text, got list",
+            ),
+            (
+                b"dependencies:\n  tools:\n  - oauth:\n      callbackPort: 65536\n",
+                r"'dependencies.tools\[0\].oauth.callbackPort' must be between 0 and 65535, got 65536",
+            ),
+            (
+                b"dependencies:\n  tools:\n  - oauth:\n      callback_port: -1\n",
+                r"'dependencies.tools\[0\].oauth.callback_port' must be between 0 and 65535, got -1",
+            ),
+            (
+                b"dependencies:\n  tools:\n  - oauth:\n      callbackPort: '8080'\n",
+                r"'dependencies.tools\[0\].oauth.callbackPort' must be an integer port, got str",
+            ),
+            (
+                b"dependencies:\n  tools:\n  - oauth:\n      callbackPort: true\n",
+                r"'dependencies.tools\[0\].oauth.callbackPort' must be an integer port, got bool",
+            ),
+            (
+                b"dependencies:\n  tools:\n  - oauth:\n      callbackPort: 80.5\n",
+                r"'dependencies.tools\[0\].oauth.callbackPort' must be an integer port, got float",
+            ),
+            (
+                b"dependencies:\n  tools:\n  - oauth:\n      callbackPort: 1\n      callback_port: 2\n",
+                r"'dependencies.tools\[0\].oauth' must not set both callbackPort and callback_port",
+            ),
+        ],
+        ids=["display-name-mapping", "icon-list", "tool-value-list", "port-too-high", "port-negative",
+             "port-string", "port-bool", "port-float", "port-both-spellings"],
+    )
+    def test_metadata_codex_cannot_read_aborts_without_overwriting(self, tmp_path, content, message):
+        # Codex rejects the whole file for any of these, opt-out policy included.
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match=f"Codex would ignore this file.*{message}"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+        assert self._other_policies(tmp_path) == []
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            b"interface:\n  display_name: 5\n  short_description: true\n  brand_color: ~\n",
+            b"dependencies:\n  tools:\n  - oauth:\n      callbackPort: 0\n",
+            b"dependencies:\n  tools:\n  - oauth:\n      callback_port: 65535\n",
+            b"dependencies:\n  tools:\n  - oauth:\n      callbackPort: 0x1F90\n",
+            b"dependencies:\n  tools:\n  - oauth:\n      callbackPort: null\n",
+        ],
+        ids=["scalar-text", "port-zero", "port-max-snake-case", "port-hex", "port-null"],
+    )
+    def test_metadata_codex_reads_is_accepted(self, tmp_path, content):
+        path = self._seed(tmp_path, content)
+        self._setup(tmp_path)
+        assert self._yaml(path)["policy"]["allow_implicit_invocation"] is False
+
+    @pytest.mark.parametrize(
         ("content", "field"),
         [
             (b"dependencies:\n  tools: null\n", "dependencies.tools"),
@@ -1867,9 +1928,13 @@ class TestCodexNoModelInvocationOwnership:
     def test_merging_a_mapping_that_overrides_its_own_merge_is_not_a_collision(
         self, tmp_path, content
     ):
+        import yaml
+        from specify_cli.integrations.codex._openai_yaml import Yaml12Loader
+
         path = self._seed(tmp_path, content)
         self._setup(tmp_path)
-        assert self._yaml(path)["custom"] == {"k": 2}
+        # Read as Codex does: PyYAML 6.0.4's own merge drops the override.
+        assert yaml.load(path.read_text(encoding="utf-8"), Loader=Yaml12Loader)["custom"] == {"k": 2}
 
     @pytest.mark.parametrize(
         "content",
