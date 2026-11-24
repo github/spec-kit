@@ -285,7 +285,9 @@ class TestPresetResolve:
 
         assert result.exit_code == 0, (result.output, result.exception)
         output = " ".join(strip_ansi(result.output).split())
-        assert "page-adapter.mjs" in output, output
+        # Rich may line-wrap a long path, so remove all whitespace for path assertions.
+        path_output = "".join(output.split())
+        assert "page-adapter.mjs" in path_output, output
         assert "not found" not in output
 
     def test_resolve_prefers_template_over_higher_priority_script(
@@ -363,5 +365,7 @@ class TestPresetResolve:
 
         assert result.exit_code == 0, (result.output, result.exception)
         output = " ".join(strip_ansi(result.output).split())
-        assert "shared-asset.md" in output, output
-        assert "shared-asset.mjs" not in output, output
+        # Rich may line-wrap a long path, so remove all whitespace for path assertions.
+        path_output = "".join(output.split())
+        assert "shared-asset.md" in path_output, output
+        assert "shared-asset.mjs" not in path_output, output
