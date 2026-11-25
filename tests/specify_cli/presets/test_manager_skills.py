@@ -2082,6 +2082,108 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert "Base preset body" not in content
         assert "Appended body" in content
 
+    @pytest.mark.parametrize(
+        "corrupt_target",
+        ["core_base", "composing_layer", "base_oserror"],
+    )
+    def test_remove_preset_preserves_outputs_when_surviving_layer_unreadable(
+        self, project_dir, temp_dir, monkeypatch, corrupt_target
+    ):
+        """An unreadable surviving base or composing layer must not cause
+        removal of another preset to delete the survivor's cache or SKILL.md."""
+        if corrupt_target == "composing_layer":
+            manager, skill_file = self._install_composed_specify_stack(
+                project_dir,
+                temp_dir,
+                [
+                    ("base-preset", "Base preset body", "replace", 10),
+                    ("middle-preset", "Middle body", "append", 7),
+                    ("top-preset", "Top body", "append", 5),
+                ],
+            )
+            winner_id = "top-preset"
+            removed_id = "middle-preset"
+            unreadable_path = (
+                manager.presets_dir / winner_id / "commands" / "speckit.specify.md"
+            )
+        else:
+            manager, skill_file = self._install_composed_specify_stack(
+                project_dir,
+                temp_dir,
+                [
+                    ("base-preset", "Base preset body", "replace", 10),
+                    ("append-preset", "Appended body", "append", 5),
+                ],
+            )
+            winner_id = "append-preset"
+            removed_id = "base-preset"
+            unreadable_path = (
+                project_dir / ".specify" / "templates" / "commands" / "specify.md"
+            )
+
+        cache = manager.presets_dir / winner_id / ".composed" / "speckit.specify.md"
+        original_skill = skill_file.read_text(encoding="utf-8")
+        original_cache = cache.read_text(encoding="utf-8")
+
+        if corrupt_target == "base_oserror":
+            original_read_text = Path.read_text
+
+            def failing_read_text(self_path, *args, **kwargs):
+                if self_path == unreadable_path:
+                    raise PermissionError(13, "Permission denied")
+                return original_read_text(self_path, *args, **kwargs)
+
+            monkeypatch.setattr(Path, "read_text", failing_read_text)
+        else:
+            unreadable_path.write_bytes(
+                b"---\ndescription: \xff\xfe invalid utf-8\n---\n\nUnreadable\n"
+            )
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove(removed_id) is True
+
+        monkeypatch.undo()
+
+        assert skill_file.read_text(encoding="utf-8") == original_skill
+        assert cache.read_text(encoding="utf-8") == original_cache
+
+    def test_remove_override_preset_skips_reconciliation_for_unreadable_composing_stack(
+        self, project_dir, temp_dir
+    ):
+        """Removing a higher-priority replace preset over an unreadable
+        composing stack must preserve the survivor's cache and skip
+        reconciling its unreadable stack into the restored skill."""
+        manager, skill_file = self._install_composed_specify_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 20),
+                ("append-preset", "Appended body", "append", 10),
+                ("override-preset", "Override body", "replace", 5),
+            ],
+        )
+        cache = manager.presets_dir / "append-preset" / ".composed" / "speckit.specify.md"
+        original_cache = cache.read_text(encoding="utf-8")
+        assert "Override body" in skill_file.read_text(encoding="utf-8")
+
+        (
+            manager.presets_dir / "append-preset" / "commands" / "speckit.specify.md"
+        ).write_bytes(
+            b"---\ndescription: \xff\xfe invalid utf-8\n---\n\nAppended\n"
+        )
+
+        with pytest.warns(UserWarning, match="no base layer") as caught:
+            assert manager.remove("override-preset") is True
+
+        assert all(
+            "Post-removal reconciliation failed" not in str(w.message)
+            for w in caught
+        )
+        assert cache.read_text(encoding="utf-8") == original_cache
+        restored = skill_file.read_text(encoding="utf-8")
+        assert "Core specify body" in restored
+        assert "Base preset body" not in restored
+
     def test_shared_skills_dir_restored_once_using_active_agent(
         self, project_dir, temp_dir
     ):

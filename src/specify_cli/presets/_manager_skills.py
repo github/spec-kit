@@ -153,8 +153,8 @@ class _PresetSkillMethods:
         # every affected directory below.
         preset_cmds: Dict[str, List[str]] = {}
         composed_winners: Dict[str, str] = {}
-        # Composing winners whose stack no longer has a base (resolution
-        # returns None): their .composed cache and skill are stale.
+        # Composing winners whose stack no longer has a replace base:
+        # their .composed cache and skill are stale.
         unresolved_winners: Dict[str, str] = {}
         non_preset_skills: List[tuple] = []
         managed_skill_names: set = set()
@@ -199,18 +199,27 @@ class _PresetSkillMethods:
             for pack_id, _meta in presets_by_priority:
                 pack_dir = self.presets_dir / pack_id
                 if top_path.is_relative_to(pack_dir):
-                    preset_cmds.setdefault(pack_id, []).append(cmd_name)
                     if layers[0]["strategy"] != "replace":
                         if resolver.resolve_content(cmd_name, "command") is None:
-                            # Nothing left to compose onto: drop the stale
-                            # cache so it can't be rendered back into a skill.
-                            unresolved_winners[cmd_name] = pack_id
-                            unlink_in_directory(
-                                pack_dir / ".composed" / f"{cmd_name}.md",
-                                root=self.project_root,
-                            )
+                            if not any(
+                                layer["strategy"] == "replace"
+                                for layer in layers
+                            ):
+                                # Nothing left to compose onto: drop the stale
+                                # cache so it can't be rendered back into a skill.
+                                unresolved_winners[cmd_name] = pack_id
+                                unlink_in_directory(
+                                    pack_dir / ".composed" / f"{cmd_name}.md",
+                                    root=self.project_root,
+                                )
+                            # Otherwise a replace base still exists, so resolution
+                            # failed because a surviving layer could not be read
+                            # or decoded: skip reconciliation and keep outputs.
                         else:
+                            preset_cmds.setdefault(pack_id, []).append(cmd_name)
                             composed_winners[cmd_name] = pack_id
+                    else:
+                        preset_cmds.setdefault(pack_id, []).append(cmd_name)
                     found_preset = True
                     break
             if not found_preset:
