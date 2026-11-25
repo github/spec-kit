@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-28T16:20:28Z",
+  "updated_at": "2026-11-06T05:14:41Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json",
   "extensions": {
     "agent-context": {
@@ -36,7 +36,7 @@
     "bug": {
       "name": "Bug Triage Workflow",
       "id": "bug",
-      "version": "1.0.2",
+      "version": "1.0.4",
       "description": "Assess, fix, and validate bug reports against the codebase with per-bug reports stored under .specify/bugs/<slug>/",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
