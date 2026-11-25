@@ -197,6 +197,11 @@ non-empty. This command does not offer a script-type selector.
 Shows the highest-priority layer's path and source. If output is composed,
 it also shows the contributing composition chain, starting at its effective
 base. The displayed path is not a file containing the final composed output.
+
+A project-local override replaces the file and hides all preset layers for
+that name. When it hides any preset layers, `resolve` lists those presets
+and their strategies on stderr.
+
 Invalid composition produces a warning; a missing name is reported as not
 found. For all artifact kinds and hidden layers, use the separate
 [artifact reference](../overview/artifacts.md).

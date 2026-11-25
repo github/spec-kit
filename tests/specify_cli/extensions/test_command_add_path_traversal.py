@@ -5,9 +5,11 @@ The primary command tests live in ``test_command_add.py``.
 
 from __future__ import annotations
 
+import errno
 import io
 import os
 import shutil
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -402,3 +404,156 @@ def test_url_install_open_error_surfaces_as_controlled_exit(
     assert result.exit_code == 1
     assert "Could not safely create download file" in result.output
     install_spy.assert_not_called()
+
+
+class _FakeResponse(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _UnlinkedInodeFile(io.BufferedRandom):
+    """Buffered stream whose flushes fail like gocryptfs does on an unlinked
+    inode; ``close()`` flushes too, so it fails as well."""
+
+    def flush(self):
+        raise FileNotFoundError(2, "No such file or directory")
+
+
+def _fd_is_closed(fd: int) -> bool:
+    try:
+        os.fstat(fd)
+    except OSError:
+        return True
+    return False
+
+
+def _invoke_url_install():
+    return runner.invoke(
+        app,
+        [
+            "extension",
+            "add",
+            "test-ext",
+            "--from",
+            "https://example.com/test-ext.zip",
+        ],
+    )
+
+
+def _patch_fdopen(monkeypatch: pytest.MonkeyPatch, failure: str, opened: dict) -> None:
+    """Make the transient download file fail on ``fdopen`` or on flush."""
+    real_fdopen = os.fdopen
+
+    def fake_fdopen(fd, mode="r", *args, **kwargs):
+        if mode != "w+b":
+            return real_fdopen(fd, mode, *args, **kwargs)
+        opened["fd"] = fd
+        if failure == "fdopen":
+            raise OSError(errno.EIO, "fdopen failed")
+        opened["stream"] = _UnlinkedInodeFile(io.FileIO(fd, "r+"))
+        return opened["stream"]
+
+    monkeypatch.setattr(os, "fdopen", fake_fdopen)
+
+
+@pytest.mark.parametrize("failure", ["fdopen", "flush"])
+def test_url_install_tolerates_fs_rejecting_writes_to_unlinked_file(
+    project_dir: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """Filesystems such as gocryptfs (FUSE) fail with ``ENOENT`` when flushing
+    to an already-unlinked inode; the install must still succeed from the
+    in-memory archive instead of aborting, without leaking the descriptor."""
+    opened: dict[str, object] = {}
+    captured: dict[str, object] = {}
+
+    def fake_install(
+        self,
+        zip_path: Path,
+        speckit_version: str,
+        priority: int = 10,
+        force: bool = False,
+        *,
+        archive_file=None,
+    ):
+        captured["fd_closed"] = _fd_is_closed(opened["fd"])
+        stream = opened.get("stream")
+        captured["stream_closed"] = stream is None or stream.closed
+        captured["bytes"] = archive_file.read()
+        return SimpleNamespace(
+            id="test-ext",
+            name="Test Extension",
+            version="1.0.0",
+            description="",
+            warnings=[],
+            commands=[],
+        )
+
+    _patch_fdopen(monkeypatch, failure, opened)
+    monkeypatch.setattr(typer, "confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "_open_url",
+        lambda *args, **kwargs: _FakeResponse(_MINIMAL_ZIP_BYTES),
+    )
+    monkeypatch.setattr(ExtensionManager, "install_from_zip", fake_install)
+    monkeypatch.setattr(_commands, "_refresh_events_and_warn", lambda root: None)
+    monkeypatch.setattr(_commands, "load_init_options", lambda root: {})
+
+    result = _invoke_url_install()
+
+    assert result.exit_code == 0, result.output
+    assert captured == {
+        "fd_closed": True,
+        "stream_closed": True,
+        "bytes": _MINIMAL_ZIP_BYTES,
+    }
+
+
+def _zip_directory(source: Path, extra: dict[str, str] | None = None) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for path in sorted(source.rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(source).as_posix())
+        for name, content in (extra or {}).items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize("unsafe", [False, True], ids=["valid", "path-traversal"])
+def test_url_install_fallback_uses_real_manager(
+    project_dir: Path,
+    extension_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    unsafe: bool,
+) -> None:
+    """The in-memory fallback archive goes through the real installer: a valid
+    extension installs and an unsafe archive is still rejected."""
+    extra = {"../escaped.txt": "pwned"} if unsafe else None
+    archive_bytes = _zip_directory(extension_dir, extra)
+
+    _patch_fdopen(monkeypatch, "flush", {})
+    monkeypatch.setattr(typer, "confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "_open_url",
+        lambda *args, **kwargs: _FakeResponse(archive_bytes),
+    )
+    monkeypatch.setattr(_commands, "_refresh_events_and_warn", lambda root: None)
+    monkeypatch.setattr(_commands, "load_init_options", lambda root: {})
+
+    result = _invoke_url_install()
+
+    installed = project_dir / ".specify" / "extensions" / "test-ext"
+    if unsafe:
+        assert result.exit_code == 1, result.output
+        assert "Unsafe path" in result.output
+        assert not installed.exists()
+        assert not (project_dir / ".specify" / "extensions" / "escaped.txt").exists()
+    else:
+        assert result.exit_code == 0, result.output
+        assert (installed / "extension.yml").is_file()
+        assert (installed / "commands" / "hello.md").is_file()

@@ -14,6 +14,15 @@ import sys
 from pathlib import Path
 
 
+def _err(message: str) -> None:
+    try:
+        print(message, file=sys.stderr)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stderr, "encoding", None) or "ascii"
+        safe = message.encode(encoding, errors="backslashreplace").decode(encoding)
+        print(safe, file=sys.stderr)
+
+
 def has_git(repo_root: Path | None = None) -> bool:
     """Check if we have git available at the repo root."""
     root = Path(repo_root) if repo_root is not None else Path.cwd()
@@ -26,6 +35,8 @@ def has_git(repo_root: Path | None = None) -> bool:
         ["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     return result.returncode == 0
 
@@ -50,10 +61,7 @@ def check_feature_branch(raw: str, has_git_repo: bool) -> bool:
     prefixes. Logic aligned with the bash/PowerShell twins.
     """
     if not has_git_repo:
-        print(
-            "[specify] Warning: Git repository not detected; skipped branch validation",
-            file=sys.stderr,
-        )
+        _err("[specify] Warning: Git repository not detected; skipped branch validation")
         return True
 
     branch = effective_branch_name(raw)
@@ -69,12 +77,11 @@ def check_feature_branch(raw: str, has_git_repo: bool) -> bool:
     is_timestamp = bool(re.match(r"^[0-9]{8}-[0-9]{6}-", feature_segment))
 
     if not is_sequential and not is_timestamp:
-        print(f"ERROR: Not on a feature branch. Current branch: {raw}", file=sys.stderr)
-        print(
+        _err(f"ERROR: Not on a feature branch. Current branch: {raw}")
+        _err(
             "Feature branches should be named like: 001-feature-name, "
             "1234-feature-name, 20260319-143022-feature-name, or "
-            "<prefix>/001-feature-name",
-            file=sys.stderr,
+            "<prefix>/001-feature-name"
         )
         return False
 

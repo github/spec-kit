@@ -15,10 +15,10 @@ from ._manifest import PresetSectionValidationError
 @preset_app.command("resolve")
 def preset_resolve(
     template_name: str = typer.Argument(
-        ..., help="Template name to resolve (e.g., spec-template)"
+        ..., help="Artifact name to resolve (command, template, or script)"
     ),
 ):
-    """Show which template will be resolved for a given name."""
+    """Show which command, template or script will be resolved for a given name."""
     from .. import _require_specify_project
     from . import PresetResolver
 
@@ -43,6 +43,13 @@ def preset_resolve(
 
     try:
         layers = resolver.collect_all_layers(template_name, template_type)
+        if not layers and not is_command:
+            # A preset may register an executable artifact as a script (e.g. a
+            # .mjs adapter). Commands and templates win first, so a shared name
+            # keeps its current meaning; scripts are the fallback.
+            layers = resolver.collect_all_layers(template_name, "script")
+            if layers:
+                template_type = "script"
     except PresetSectionValidationError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc
@@ -60,6 +67,15 @@ def preset_resolve(
             f"    [dim](top layer from: "
             f"{_escape_markup(str(display_layer['source']))})[/dim]"
         )
+
+        if display_layer["source"] == "project override":
+            hidden_presets = [
+                f"{layer['preset_id']} ({layer['strategy']})"
+                for layer in layers[1:]
+                if "preset_id" in layer
+            ]
+            if hidden_presets:
+                typer.echo(f"Project override hides preset layers: {', '.join(hidden_presets)}.", err=True)
 
         has_composition = layers[0]["strategy"] != "replace" and any(
             layer["strategy"] != "replace" for layer in layers
@@ -125,5 +141,5 @@ def preset_resolve(
         else:
             console.print(f"  [yellow]{safe_template_name}[/yellow]: not found")
             console.print(
-                "    [dim]No template with this name exists in the resolution stack[/dim]"
+                "    [dim]No command, template or script with this name exists in the resolution stack[/dim]"
             )

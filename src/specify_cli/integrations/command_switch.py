@@ -218,6 +218,7 @@ def integration_switch(
         _unregister_extensions_for_agent(
             project_root,
             installed_key,
+            preserve_modified=not force,
             continuing="Continuing with integration switch; old extension artifacts may need manual cleanup.",
         )
 

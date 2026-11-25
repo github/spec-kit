@@ -106,6 +106,10 @@ Native events use `.github/hooks/speckit.json`.
 `--integration-options="--events false"` disables Spec Kit event handlers.
 See [runtime events](cli.md#runtime-events).
 
+A `session_start` handler can supply model context through its stdout.
+Spec Kit runs `user_prompt_submit` handlers with stdout suppressed because
+Copilot discards command-hook output for `userPromptSubmitted`.
+
 Workflow steps require Copilot CLI separately from the IDE setup. In skills
 mode, command steps pass `/speckit-<command>` in the prompt. In commands mode,
 they select `--agent speckit.<command>` and pass the user's arguments as the

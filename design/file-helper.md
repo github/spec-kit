@@ -4,9 +4,11 @@
 explicitly established root. Project-command boundaries now validate persisted
 policy, and init-options bootstrap I/O uses the helper. Other existing command
 filesystem operations are **not yet migrated**: loading policy alone does not
-enforce symlink behavior on those operations. Shared infrastructure, registration,
-managed storage, catalogs, scripts and runtime operations retain their existing
-behavior until their dependent migration stages.
+enforce symlink behavior on those operations. Shared infrastructure uses the
+helper for atomic script, template, and managed `.gitignore` content writes;
+other shared infrastructure operations, registration, managed storage, catalogs,
+scripts and runtime operations retain their existing behavior until their
+dependent migration stages.
 
 Only `specify init --allow-symlinks` exposes the setting; init defaults to deny
 and persists the literal JSON boolean `allow_symlinks` in
@@ -81,9 +83,11 @@ This guarantee does not cover unmigrated consumers such as
 `bundles.project.active_integration`, whose containment-checked reads can still
 follow contained state-file links.
 
-Existing Path-returning resolvers preflight policy without changing their return
-type or domain constructors. They do not implicitly equip unmigrated domain
-consumers with an operation helper. Failures are translated into existing
+The shared CLI resolver and bundle ancestor search use a deny-mode FileHelper
+probe for the `.specify` marker. Their Path-returning resolvers preflight
+policy without changing their return type or domain constructors. They do not
+implicitly equip unmigrated domain consumers with an operation helper. Failures
+are translated into existing
 command diagnostics, with a single `{"error": "..."}` on stderr and empty
 stdout for JSON policy failures; artifact/list surfaces preserve their error
 envelope contracts. Artifact list/info validate their explicit project roots in
@@ -224,6 +228,10 @@ descriptor-relative or change their documented concurrency limitations.
   `with FileHelper(...) as files:` closes on both success and failure. Operations
   on an explicitly closed helper raise `FileHelperError`.
 - `mkdir(path, parents=False, exist_ok=False)` creates directories.
+- `directory_exists(path)` checks for a directory under the helper's link
+  policy. A missing path returns false; regular and special files raise
+  `NotADirectoryError`. Denied links and unsupported reparse points retain
+  their policy errors rather than appearing absent.
 - `iterdir(path, select=None)` enumerates the selected directory's immediate
   entries in deterministic name order. The optional caller-supplied predicate
   receives each bare name before its entry is inspected. Only included entries
@@ -274,9 +282,18 @@ descriptor-relative or change their documented concurrency limitations.
   fail explicitly rather than falling back to unanchored creation.
 - `write_bytes(path, content, mode=0o644)` / `write_text(...)` atomically
   create or update files with existing parents. Text variants also accept
-  `encoding="utf-8"`. Replacement files use the supplied mode; metadata and
-  hard-link identity are not preserved. Atomic means same-directory
-  `os.replace`, not crash durability.
+  `encoding="utf-8"`. A short, exclusively created sibling stages the write.
+  If the staging path exceeds a path limit, POSIX retries with a random sibling
+  opened relative to the parent directory where supported. Windows retries
+  with an extended path only if it identifies the validated parent. Both keep
+  the stage directly in the destination directory for normal inheritance and
+  do not require subdirectory creation.
+  On POSIX, the initial mode is restricted to the requested owner read/write
+  bits and filtered by the process umask. After writing, the supplied mode is
+  applied with `chmod` using the platform's supported semantics. Metadata and
+  hard-link identity are not preserved. Atomic means same-filesystem
+  replacement with `os.replace`, not crash durability or protection from
+  concurrent path changes.
 - `overwrite_text(path, content, encoding="utf-8")` is a **non-atomic** text
   upsert with existing parents, used for configuration compatibility. It uses
   the same accessed-path/link/containment checks as other operations, follows
@@ -453,10 +470,11 @@ can redirect those opens; they do not have the read path's parent-relative
 handle protection.
 The helper does not constrain subprocesses or third-party code.
 
-Existing safe-write mechanisms informed this helper, but existing shared
-infrastructure warning/skip behavior and development-mode link creation are
-unchanged. Migrate one owned operation boundary at a time, carrying original
-paths and an explicit root/policy into the helper before any early resolution.
+Shared infrastructure content writes always use deny mode. The caller retains
+its destination preflight, warning/skip decisions, script modes, and file-change
+hooks. Development-mode link creation is unchanged. Migrate one owned operation
+boundary at a time, carrying original paths and an explicit root/policy into
+the helper before any early resolution.
 Linked command directories and development-mode registration remain dependent
 stages. Tree copying is deferred: install callers must retain selection of
 included entries and establish separate trusted source and destination

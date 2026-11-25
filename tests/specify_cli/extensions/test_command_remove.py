@@ -66,6 +66,25 @@ class TestExtensionRemoveCLI:
 
         assert "2 commands" in result.output
 
+    def test_keep_config_confirmation_describes_config_preservation(self, tmp_path, extension_dir):
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        self._install_ext(project_dir, extension_dir)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "remove", "test-ext", "--keep-config"],
+                input="n\n",
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Config files will stay in .specify/extensions/test-ext/" in result.output
+        assert "Extension directory: .specify/extensions/test-ext/" not in result.output
+
     def test_remove_output_escapes_extension_id_markup(self, tmp_path):
         """Removal paths and reinstall hints must not parse extension IDs as markup."""
         from typer.testing import CliRunner

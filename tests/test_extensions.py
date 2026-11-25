@@ -3467,6 +3467,60 @@ $ARGUMENTS
         assert frontmatter == {}
         assert body == content
 
+    @pytest.mark.parametrize(
+        ("content", "expected_frontmatter", "expected_body"),
+        [
+            (
+                "\ufeff---\ndescription: Test command\n---\n\n# Command body\n",
+                {"description": "Test command"},
+                "# Command body",
+            ),
+            (
+                "\ufeff---\r\ndescription: Test command\r\n---\r\n\r\n# Command body\r\n",
+                {"description": "Test command"},
+                "# Command body",
+            ),
+            (
+                "\ufeff# Just a command\n$ARGUMENTS",
+                {},
+                "\ufeff# Just a command\n$ARGUMENTS",
+            ),
+            (
+                "\ufeff\ufeff---\ndescription: Test command\n---\n\n# Command body\n",
+                {},
+                "\ufeff\ufeff---\ndescription: Test command\n---\n\n# Command body\n",
+            ),
+            (
+                "\ufeff---\ndescription: Test command\n",
+                {},
+                "\ufeff---\ndescription: Test command\n",
+            ),
+            (
+                "# Command body\n\ufeffKeep this marker",
+                {},
+                "# Command body\n\ufeffKeep this marker",
+            ),
+        ],
+        ids=(
+            "lf",
+            "crlf",
+            "bom-without-frontmatter",
+            "double-bom",
+            "bom-unterminated-frontmatter",
+            "non-leading-bom",
+        ),
+    )
+    def test_parse_frontmatter_handles_leading_bom(
+        self, content, expected_frontmatter, expected_body
+    ):
+        """Strip one leading BOM only when YAML frontmatter follows it."""
+        registrar = CommandRegistrar()
+
+        frontmatter, body = registrar.parse_frontmatter(content)
+
+        assert frontmatter == expected_frontmatter
+        assert body == expected_body
+
     def test_parse_frontmatter_non_mapping_returns_empty_dict(self):
         """Non-mapping YAML frontmatter should not crash downstream renderers."""
         content = """---
@@ -3832,6 +3886,49 @@ Real body starts here.
         assert parsed["description"] == "first line\nsecond line\n"
 
     @pytest.mark.parametrize(
+        ("body", "expected_form"),
+        [
+            pytest.param("Do work", 'prompt = """\n', id="single-line"),
+            pytest.param("", 'prompt = """\n', id="empty"),
+            pytest.param("Do work\n", 'prompt = """\n', id="trailing-newline"),
+            pytest.param(
+                "\nleading newline", 'prompt = """\n', id="leading-newline"
+            ),
+            pytest.param('ends with quote"', '\\\n"""', id="trailing-quote"),
+            pytest.param(
+                'ends with two quotes""', '\\\n"""', id="trailing-two-quotes"
+            ),
+            pytest.param("first line\nsecond line", 'prompt = """\n', id="multiline"),
+            pytest.param(
+                r"a body with a \ backslash", "prompt = '''\n", id="literal"
+            ),
+            pytest.param(
+                "a \\ body ending with '",
+                'prompt = "',
+                id="literal-trailing-quote",
+            ),
+            pytest.param(
+                'contains """ and ends with \'',
+                'prompt = "',
+                id="triple-double-trailing-quote",
+            ),
+        ],
+    )
+    def test_render_toml_command_round_trips_prompt_exactly(
+        self, body, expected_form
+    ):
+        """Every TOML prompt form must round-trip an LF body exactly."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        output = registrar.render_toml_command(
+            {"description": "x"}, body, "extension:test-ext"
+        )
+
+        assert expected_form in output
+        assert tomllib.loads(output)["prompt"] == body
+
+    @pytest.mark.parametrize(
         ("description", "expected"),
         [
             (None, ""),                    # "description:" with no value
@@ -3896,7 +3993,7 @@ Real body starts here.
             "extension:test-ext",
         )
         parsed = tomllib.loads(output)  # must not raise
-        assert parsed["prompt"].strip() == r"Run C:\Users\dev\tool.exe then report."
+        assert parsed["prompt"] == r"Run C:\Users\dev\tool.exe then report."
 
     def test_render_toml_command_handles_trailing_backslash(self):
         """A body ending in a backslash must round-trip without corruption."""
@@ -3909,7 +4006,7 @@ Real body starts here.
             "extension:test-ext",
         )
         parsed = tomllib.loads(output)
-        assert parsed["prompt"].strip() == "path ends with sep\\"
+        assert parsed["prompt"] == "path ends with sep\\"
 
     def test_render_toml_command_backslash_with_both_triple_quotes_escapes(self):
         """Body with a backslash and both triple-quote styles → escaped basic string."""
@@ -3947,6 +4044,44 @@ Real body starts here.
         content = cmd_file.read_text()
         assert "description: Test hello command" in content
         assert "test-ext" in content
+
+    def test_register_commands_handles_bom_prefixed_frontmatter(
+        self, extension_dir, project_dir
+    ):
+        """A BOM-prefixed command keeps its metadata when registered."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        source_file = extension_dir / "commands" / "hello.md"
+        source_file.write_text(
+            "\ufeff---\ndescription: BOM command\n---\n\n# Command body\n",
+            encoding="utf-8",
+        )
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = AgentCommandRegistrar()
+
+        registered = registrar.register_commands(
+            "claude",
+            manifest.commands,
+            manifest.id,
+            extension_dir,
+            project_dir,
+            extension_id=manifest.id,
+            author=manifest.data["extension"].get("author"),
+            version=manifest.version,
+        )
+
+        assert registered == ["speckit.test-ext.hello"]
+        output_file = (
+            project_dir
+            / ".claude"
+            / "skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        output = output_file.read_text(encoding="utf-8")
+        rendered_frontmatter, _ = registrar.parse_frontmatter(output)
+        assert rendered_frontmatter["description"] == "BOM command"
+        assert "\ufeff" not in output
 
     def test_command_with_aliases(self, project_dir, temp_dir):
         """Test registering a command with aliases."""

@@ -183,13 +183,11 @@ class CopilotIntegration(IntegrationBase):
     }
     events_config_file = ".github/hooks/speckit.json"
     events_format = "copilot-json"
-    # Copilot sessionStart and userPromptSubmitted inject a top-level
-    # additionalContext field into the model-facing prompt (C13). Non-JSON
-    # stdout is discarded harmlessly by Copilot on other events, so no other
-    # event needs an envelope.
+    # Copilot consumes additionalContext from sessionStart and drops command
+    # hook output from userPromptSubmitted.
     events_context_envelope = {
         "session_start": "additionalContext",
-        "user_prompt_submit": "additionalContext",
+        "user_prompt_submit": "suppress",
     }
 
     # Mutable flag set by setup() — indicates the active scaffolding mode.
@@ -556,6 +554,8 @@ class CopilotIntegration(IntegrationBase):
             cli_args,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             cwd=cwd,
             timeout=timeout,
         )

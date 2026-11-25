@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import threading
+import urllib.request
 import zipfile
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -157,6 +158,19 @@ def server(tmp_path, monkeypatch, tls_certificate):
     result = SimpleNamespace(
         root=downloads, url=f"https://127.0.0.1:{http.server_port}", requests=requests,
     )
+    from specify_cli.authentication import http as authentication_http
+
+    original_open_url = authentication_http.open_url
+
+    def open_loopback_url(url, timeout=10, extra_headers=None, redirect_validator=None):
+        if url.startswith(f"{result.url}/"):
+            timeout = max(timeout, 60)
+        return original_open_url(
+            url, timeout=timeout, extra_headers=extra_headers,
+            redirect_validator=redirect_validator,
+        )
+
+    monkeypatch.setattr(authentication_http, "open_url", open_loopback_url)
     try:
         yield result
     finally:
@@ -184,6 +198,53 @@ def test_catalog_server_explicitly_requires_tls12(request, monkeypatch):
     context, version = configured[0]
     assert version == ssl.TLSVersion.TLSv1_2
     assert context.minimum_version > ssl.TLSVersion.TLSv1_1
+
+
+def test_loopback_catalog_survives_short_handshake_window(tmp_path, server, monkeypatch):
+    original_open = urllib.request.OpenerDirector.open
+
+    def require_handshake_window(opener, fullurl, *args, **kwargs):
+        if fullurl.full_url.startswith(f"{server.url}/") and kwargs["timeout"] < 60:
+            raise TimeoutError("The handshake operation timed out")
+        return original_open(opener, fullurl, *args, **kwargs)
+
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", require_handshake_window)
+    publish(server)
+    project = catalog_project(tmp_path, server)
+
+    install(project)
+
+    assert read_records(project)[KEY]["version"] == "1.0.0"
+    assert "/catalog.json" in server.requests
+
+
+def test_loopback_timeout_preserves_open_url_call_forms_and_other_hosts(server, monkeypatch):
+    from specify_cli.authentication import http as authentication_http
+
+    observed = []
+
+    def record_open(opener, request, *, timeout):
+        observed.append((request.full_url, timeout))
+        return object()
+
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", record_open)
+    fixture_url = f"{server.url}/catalog.json"
+    other_port = "https://127.0.0.1:1/catalog.json"
+    remote_url = "https://example.com/catalog.json"
+
+    authentication_http.open_url(fixture_url)
+    authentication_http.open_url(fixture_url, 10)
+    authentication_http.open_url(fixture_url, timeout=90)
+    authentication_http.open_url(other_port, 10)
+    authentication_http.open_url(remote_url, timeout=5)
+
+    assert observed == [
+        (fixture_url, 60),
+        (fixture_url, 60),
+        (fixture_url, 90),
+        (other_port, 10),
+        (remote_url, 5),
+    ]
 
 
 def publish(server, *, metadata=None, code=None, version="1.0.0", members=None, archive="zip"):
@@ -1696,6 +1757,67 @@ def test_new_project_init_from_catalog_environment(tmp_path, server, monkeypatch
     assert result.exit_code == 0, result.output
     assert (project / ".sample-agent/skills/speckit-plan/SKILL.md").is_file()
     assert KEY in read_records(project)
+
+
+def adapter_files(project):
+    package = f".specify/integrations/packages/{KEY}/"
+    return {
+        path: content for path, content in snapshot(project).items()
+        if path.startswith((".sample-agent/", package))
+        or path in {f".specify/integrations/{KEY}.manifest.json", ".specify/integrations/packages.json"}
+    }
+
+
+def reinit_default_beside_adapter(tmp_path, server):
+    """Install Claude (default) and the external adapter, then re-init Claude."""
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    assert run(project, ["integration", "install", "claude"]).exit_code == 0
+    install(project)
+    before = adapter_files(project)
+    setting = json.loads((project / ".specify/integration.json").read_text())["integration_settings"][KEY]
+    reinit = run(project, [
+        "init", "--here", "--force", "--non-interactive", "--ignore-agent-tools",
+        "--integration", "claude", "--script", "py",
+    ])
+    assert reinit.exit_code == 0, reinit.output
+    return project, before, setting
+
+
+def test_reinit_keeps_installed_external_adapter(tmp_path, server):
+    project, before, setting = reinit_default_beside_adapter(tmp_path, server)
+    state = json.loads((project / ".specify/integration.json").read_text())
+    assert state["installed_integrations"] == ["claude", KEY]
+    assert state["default_integration"] == "claude"
+    assert state["integration_settings"][KEY] == setting
+    assert KEY in read_records(project)
+    assert adapter_files(project) == before
+
+
+def test_reinit_keeps_external_adapter_upgradeable_and_uninstallable(tmp_path, server):
+    project, _, _ = reinit_default_beside_adapter(tmp_path, server)
+    publish(server, version="2.0.0")
+    upgraded = run(project, ["integration", "upgrade", KEY, "--trust-integration"])
+    assert upgraded.exit_code == 0, upgraded.output
+    assert read_records(project)[KEY]["version"] == "2.0.0"
+    removed = run(project, ["integration", "uninstall", KEY])
+    assert removed.exit_code == 0, removed.output
+    assert adapter_files(project) == {}
+    state = json.loads((project / ".specify/integration.json").read_text())
+    assert state["installed_integrations"] == ["claude"]
+    assert KEY not in INTEGRATION_REGISTRY
+
+
+def test_uninstalling_reinitialized_default_falls_back_to_external_adapter(tmp_path, server):
+    project, _, _ = reinit_default_beside_adapter(tmp_path, server)
+    removed = run(project, ["integration", "uninstall", "claude"])
+    assert removed.exit_code == 0, removed.output
+    state = json.loads((project / ".specify/integration.json").read_text())
+    assert state["installed_integrations"] == [KEY]
+    assert state["integration"] == state["default_integration"] == KEY
+    assert not (project / ".claude/skills/speckit-plan/SKILL.md").exists()
+    assert (project / ".sample-agent/skills/speckit-plan/SKILL.md").is_file()
+    assert KEY in read_records(project) and KEY in INTEGRATION_REGISTRY
 
 
 @pytest.mark.parametrize("damaged_uninstall", [False, True])

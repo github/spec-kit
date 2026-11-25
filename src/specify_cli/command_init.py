@@ -407,6 +407,11 @@ def register(app: typer.Typer) -> None:
             invoke_prefix_for_integration as _invoke_prefix_for_integration,
             with_integration_setting as _with_integration_setting,
         )
+        from .integration_state import (
+            installed_integration_keys,
+            integration_settings as _stored_integration_settings,
+            try_read_integration_json,
+        )
         from .integrations._commands import (
             _parse_integration_options,
             _write_integration_json,
@@ -709,6 +714,18 @@ def register(app: typer.Typer) -> None:
                 from .integrations.manifest import IntegrationManifest
 
                 tracker.start("integration")
+                # Re-init keeps the other installed integrations and their
+                # settings; the selected one stores only the options passed here.
+                current, _state_error = try_read_integration_json(project_path)
+                current = current or {}
+                installed_keys = installed_integration_keys(current)
+                other_settings = {
+                    key: setting
+                    for key, setting in _stored_integration_settings(current).items()
+                    if key != resolved_integration.key
+                }
+                if resolved_integration.key not in installed_keys:
+                    installed_keys.append(resolved_integration.key)
                 manifest = IntegrationManifest(
                     resolved_integration.key,
                     project_path,
@@ -763,7 +780,7 @@ def register(app: typer.Typer) -> None:
                     )
                     manifest.save()
                     integration_settings = _with_integration_setting(
-                        {},
+                        {"integration_settings": other_settings},
                         resolved_integration.key,
                         resolved_integration,
                         script_type=selected_script,
@@ -774,7 +791,7 @@ def register(app: typer.Typer) -> None:
                     _write_integration_json(
                         project_path,
                         resolved_integration.key,
-                        [resolved_integration.key],
+                        installed_keys,
                         integration_settings,
                     )
 

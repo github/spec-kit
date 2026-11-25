@@ -1846,8 +1846,69 @@ class TestIntegrationUpgradeBasic:
             result = runner.invoke(app, ["integration", "upgrade"])
         finally:
             os.chdir(old)
-        assert result.exit_code == 0
+        assert result.exit_code == 1
         assert "No integration is currently installed" in result.output
+        assert "specify integration install" in result.output
+
+    @pytest.mark.parametrize(
+        "state_payload",
+        [
+            {},
+            {"installed_integrations": []},
+            {"integration": None, "installed_integrations": []},
+        ],
+    )
+    def test_upgrade_no_integration_installed_empty_state(self, tmp_path, state_payload):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        runner = CliRunner()
+        project = tmp_path / "proj"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        (specify_dir / "integration.json").write_text(
+            json.dumps(state_payload), encoding="utf-8"
+        )
+        old = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["integration", "upgrade"])
+        finally:
+            os.chdir(old)
+        assert result.exit_code == 1
+        assert "No integration is currently installed" in result.output
+        assert "specify integration install" in result.output
+
+    def test_upgrade_no_integration_installed_force_still_fails(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        runner = CliRunner()
+        project = tmp_path / "proj"
+        (project / ".specify").mkdir(parents=True)
+        old = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["integration", "upgrade", "--force"])
+        finally:
+            os.chdir(old)
+        assert result.exit_code == 1
+        assert "No integration is currently installed" in result.output
+
+    def test_upgrade_after_uninstalling_last_integration_fails(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        runner = CliRunner()
+        project = self._init_project(tmp_path, "copilot")
+        old = os.getcwd()
+        try:
+            os.chdir(project)
+            uninstall_result = runner.invoke(app, ["integration", "uninstall"])
+            assert uninstall_result.exit_code == 0, uninstall_result.output
+            result = runner.invoke(app, ["integration", "upgrade"])
+        finally:
+            os.chdir(old)
+        assert result.exit_code == 1
+        assert "No integration is currently installed" in result.output
+        assert "specify integration install" in result.output
 
     def test_upgrade_succeeds(self, tmp_path):
         from typer.testing import CliRunner

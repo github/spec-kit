@@ -699,6 +699,12 @@ class IntegrationCatalog(CatalogStackBase):
 
         Returns the removed catalog's name.
         """
+        if os.environ.get("SPECKIT_INTEGRATION_CATALOG_URL", "").strip():
+            raise IntegrationValidationError(
+                "The active catalog comes from SPECKIT_INTEGRATION_CATALOG_URL. "
+                "Unset that variable to remove a project catalog source."
+            )
+
         config_path = self.project_root / ".specify" / self.CONFIG_FILENAME
         if not config_path.exists():
             raise IntegrationValidationError("No catalog config file found.")

@@ -3869,6 +3869,7 @@ class ExtensionManager:
         *,
         enabled_only: bool = False,
         commands_only: bool = False,
+        preserve_modified: bool = False,
     ) -> None:
         """Remove extension files registered for a specific agent.
 
@@ -3884,6 +3885,9 @@ class ExtensionManager:
         Set ``commands_only=True`` for command-directory reconciliation where
         skill artifacts are outside the target agent's lifecycle and must not
         be touched.
+
+        Set ``preserve_modified=True`` for an unforced integration switch to
+        keep edited native skill resources and their hashes (#5366).
 
         Skips cleanup when *agent_name* is not a supported agent to avoid
         losing registry entries while leaving orphaned files on disk.
@@ -3925,6 +3929,7 @@ class ExtensionManager:
                 retire_skill_resources(
                     self.project_root, ext_id, resource_hashes, skill_names,
                     skills_dir=native_dir,
+                    preserve_modified=preserve_modified,
                 )
             if not commands_only:
                 owned_skills = set(self._valid_name_list(metadata.get("registered_skills", [])))
@@ -3935,6 +3940,7 @@ class ExtensionManager:
                         self._historical_generic_roots(metadata, owned_skills)
                         if agent_name == "generic" else ()
                     ),
+                    preserve_modified=preserve_modified,
                 )
             if resource_hashes != metadata.get("skill_resource_hashes", {}):
                 updates["skill_resource_hashes"] = resource_hashes

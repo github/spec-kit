@@ -172,5 +172,16 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _configure_utf8_streams() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="backslashreplace")
+            except (AttributeError, OSError, ValueError):
+                pass
+
+
 if __name__ == "__main__":
+    _configure_utf8_streams()
     raise SystemExit(main())

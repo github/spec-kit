@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .file_helper import FileHelper, SymlinkDeniedError
 from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest
 
@@ -377,28 +378,27 @@ def _write_shared_bytes(
     *,
     mode: int | None = 0o644,
 ) -> None:
-    """Atomically replace ``dest`` with ``content`` (see ``atomic_write_bytes``).
+    """Atomically replace ``dest`` with ``content`` (see ``FileHelper.write_bytes``).
 
-    ``mode`` is the exact permission bits of the result. ``None`` leaves
-    them to the process umask: the file is created with 0666, so the kernel
-    applies the umask, and no mode is set afterwards.
+    ``mode`` is the exact permission bits of the result. ``None`` gives the
+    bits an ordinary create would: 0666 narrowed by the process umask.
     """
     _ensure_safe_shared_destination(project_path, dest)
-    from .integrations._file_changes import (
-        after_file_change,
-        atomic_write_bytes,
-        before_file_change,
-    )
+    from .integrations._file_changes import changing_file
 
-    before_file_change(dest)
-    atomic_write_bytes(
-        dest,
-        content,
-        0o666 if mode is None else mode,
-        exact=mode is not None,
-        before_replace=lambda: _ensure_safe_shared_destination(project_path, dest),
-    )
-    after_file_change(dest)
+    if mode is None:
+        # FileHelper sets exact bits, so apply the umask here. Python has no
+        # read-only umask query; set it and put it straight back.
+        umask = os.umask(0o022)
+        os.umask(umask)
+        mode = 0o666 & ~umask
+
+    # Shared infrastructure refuses links even in projects that opt in elsewhere.
+    with FileHelper(project_path) as files, changing_file(dest):
+        try:
+            files.write_bytes(_shared_relative_path(project_path, dest), content, mode=mode)
+        except SymlinkDeniedError as exc:
+            raise SymlinkedSharedPathError(str(exc)) from exc
 
 
 _BASH_FORMAT_COMMAND_RE = re.compile(

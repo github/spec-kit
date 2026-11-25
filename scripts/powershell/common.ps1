@@ -637,12 +637,14 @@ function Resolve-TemplateContent {
                         # Use Python to parse YAML manifest for strategy and file path
                         $pyArgs = if ($pyCmd.Count -gt 1) { $pyCmd[1..($pyCmd.Count-1)] } else { @() }
                         $pyStderrFile = [System.IO.Path]::GetTempFileName()
-                        $stratResult = & $pyCmd[0] @pyArgs -c @"
+                        $savedErrorActionPreference = $ErrorActionPreference
+                        try {
+                            $ErrorActionPreference = 'Continue'
+                            $stratResult = & $pyCmd[0] @pyArgs -c @"
 import sys, base64
 try:
     import yaml
 except ImportError:
-    print('yaml_missing', file=sys.stderr)
     sys.exit(2)
 try:
     with open(sys.argv[1], encoding='utf-8') as f:
@@ -687,28 +689,35 @@ try:
             engine['validate_section_selector'](strategy, t.get('selector'), present='selector' in t)
     for t in templates:
         if t.get('name') == sys.argv[2] and t.get('type', 'template') == 'template':
-            file_value = t.get('file', '')
+            file_value = base64.b64encode(t.get('file', '').encode('utf-8')).decode('ascii')
             strategy = t.get('strategy', 'replace')
             selector = base64.b64encode(t.get('selector', '').encode('utf-8')).decode('ascii')
             print('found\t' + strategy + '\t' + file_value + '\t' + selector)
             sys.exit(0)
     print('absent\treplace\t')
 except Exception as exc:
-    print(f'manifest_invalid: {exc}', file=sys.stderr)
+    with open(sys.argv[4], 'w', encoding='utf-8') as err_out:
+        err_out.write(f'manifest_invalid: {exc}')
     sys.exit(3)
-"@ $manifest $TemplateName $sectionEngine 2>$pyStderrFile
+"@ $manifest $TemplateName $sectionEngine $pyStderrFile 2>$null
+                        } finally {
+                            $ErrorActionPreference = $savedErrorActionPreference
+                        }
                         if ($LASTEXITCODE -ne 0) {
                             if ($LASTEXITCODE -eq 2) {
                                 throw "PyYAML is required to resolve preset template composition"
                             }
                             $detail = [System.IO.File]::ReadAllText($pyStderrFile, [System.Text.Encoding]::UTF8)
+                            if (-not $detail) { $detail = "python exited with code $LASTEXITCODE" }
                             throw "Invalid preset manifest ${manifest}: $detail"
-        }
+                        }
                         if ($stratResult) {
                             $parts = $stratResult.Trim() -split "`t", 4
                             $manifestDeclared = $parts[0] -eq 'found'
                             $strategy = $parts[1].ToLowerInvariant()
-                            if ($parts.Count -gt 2 -and $parts[2]) { $manifestFilePath = $parts[2] }
+                            if ($parts.Count -gt 2 -and $parts[2]) {
+                                $manifestFilePath = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[2]))
+                            }
                             if ($parts.Count -gt 3) { $selector = $parts[3] }
                         }
                         Remove-Item -LiteralPath $pyStderrFile -Force -ErrorAction SilentlyContinue

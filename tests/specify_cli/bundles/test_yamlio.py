@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from specify_cli.bundler import BundlerError
-from specify_cli.bundles.yamlio import dump_yaml, load_json, load_yaml
+from specify_cli.bundles.yamlio import dump_yaml, load_json, load_yaml, loads_json
 
 
 def test_dump_yaml_preserves_unicode(tmp_path: Path):
@@ -56,3 +56,58 @@ def test_load_json_malformed_still_reports_invalid_json(tmp_path: Path):
     path.write_text('{"bundles": [', encoding="utf-8")
     with pytest.raises(BundlerError, match="Invalid JSON"):
         load_json(path)
+
+
+def test_load_json_accepts_single_utf8_bom(tmp_path: Path):
+    path = tmp_path / "records.json"
+    path.write_bytes(b"\xef\xbb\xbf" + '{"name": "café", "note": "\ufeff"}'.encode())
+    assert load_json(path) == {"name": "café", "note": "\ufeff"}
+
+
+def test_load_json_reads_symlinked_file_outside_parent(tmp_path: Path):
+    target = tmp_path / "records.json"
+    target.write_text('{"name": "café"}', encoding="utf-8")
+    link_dir = tmp_path / "links"
+    link_dir.mkdir()
+    link = link_dir / "records.json"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot create symlink: {exc}")
+    assert load_json(link) == {"name": "café"}
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '\ufeff\ufeff{"name": 1}',
+        ' \ufeff{"name": 1}',
+        '\ufeff{"name": ',
+    ],
+)
+def test_load_json_bom_does_not_hide_invalid_json(tmp_path: Path, text: str):
+    path = tmp_path / "records.json"
+    path.write_bytes(text.encode("utf-8"))
+    with pytest.raises(BundlerError, match="Invalid JSON"):
+        load_json(path)
+
+
+def test_loads_json_accepts_single_leading_bom():
+    assert loads_json('\ufeff{"name": "café", "note": "\ufeff"}') == {
+        "name": "café",
+        "note": "\ufeff",
+    }
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '\ufeff\ufeff{"name": 1}',
+        ' \ufeff{"name": 1}',
+        '\ufeff{"name": ',
+        '\ufeff{"name": 1, "name": 2}',
+    ],
+)
+def test_loads_json_bom_does_not_hide_invalid_json(text: str):
+    with pytest.raises(BundlerError, match="Invalid JSON"):
+        loads_json(text)
