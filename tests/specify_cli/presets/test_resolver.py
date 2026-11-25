@@ -2082,7 +2082,7 @@ def _create_pack(temp_dir, valid_pack_data, pack_id, content,
     elif template_type == "command":
         subdir = pack_dir / "commands"
         subdir.mkdir(exist_ok=True)
-        (subdir / f"{template_name}.md").write_text(content)
+        (subdir / f"{template_name}.md").write_text(content, encoding="utf-8")
     else:
         subdir = pack_dir / "templates"
         subdir.mkdir(exist_ok=True)
