@@ -2,6 +2,27 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.4.5-autopilot.1] - 2026-11-25
+
+> **Experimental.** Fork pre-release on top of `1.4.5.dev0`. The autopilot's interfaces, file formats and defaults may change without notice. Its tests have run against a minimal pytest stand-in only, not the project's full CI environment, and it has not yet been run against a real agent CLI.
+
+### Added
+
+- Autopilot extension (`extensions/autopilot`): autonomous Spec-Driven Development run as a development team. The chat agent is the team lead, each epic gets an unattended developer pipe, and the user is the product owner.
+  - `/speckit.autopilot.setup`: installs the workflows, fills the verification gate from `AGENTS.md` and CI, proves it green on the base commit, and commits the setup.
+  - `/speckit.autopilot.run`: preflight, epic planning, and the plan/handbook approval gate in chat; then a detached unattended drive, product-owner questions, the final-merge gate and landing. Re-running continues an interrupted run, and `stop` halts new pipes.
+  - `/speckit.autopilot.status` and `/speckit.autopilot.recover`: read-only run reporting, and human-in-the-loop diagnosis, fix, reset and resume of failed or escalated epics.
+  - `/speckit.autopilot.epics`, `/speckit.autopilot.lead` and `/speckit.autopilot.review`: the epic DAG plus team handbook (`program.md`); answers to developers' questions; and an independent, read-only reviewer that returns a JSON verdict.
+- Deterministic engine (`scripts/python/autopilot.py`, stdlib-only Python 3.11+).
+  - Epic DAG validation, with dependencies added automatically between epics that touch overlapping files, and pre-assigned `specs/NNN-slug` directories and branches.
+  - An event-driven scheduler that gives each epic its own git worktree, merges one epic at a time into an integration branch with re-verification after each merge, and escalates conflicts instead of force-resolving them.
+  - Caps on iterations, wall time, agent calls and parallelism, a stop request, a run lock and detached runs.
+- Janitor gate. A pipe exits only when the project checks pass, every task is checked off, there are no clarification markers, and every acceptance scenario ID (`NNN-USx-ASy`) is traced to a test. Failures and blocking review findings are appended to `tasks.md` as tasks. Repeated identical failures escalate.
+- Team context for every developer step: the lead's handbook, a generated onboarding brief (what is already built, parallel teammates, dependents, owned files) and a program-wide decision log.
+- Question channel. Developers ask instead of guessing costly things, the lead answers from program context, and answers become shared decisions. Product decisions pause only the asking developer and go to the product owner.
+- Workflows `autopilot-epic` (one headless pipe, phases `full`/`design`/`build`) and `autopilot` (headless conductor with verdict inputs for both gates), plus the `autopilot` bundle and catalog entries.
+- Documentation: [Autopilot (autonomous SDD)](docs/reference/agentic-autopilot.md).
+
 ## [1.4.4] - 2026-11-23
 
 ### Changed

@@ -46,6 +46,28 @@
       },
       "tags": ["assessment", "discovery", "triage", "product"],
       "verified": true
+    },
+    "autopilot": {
+      "id": "autopilot",
+      "name": "Autopilot",
+      "version": "1.0.0",
+      "role": "developer",
+      "description": "Autonomous spec-driven development: a conductor plans epics from requirements, parallel pipes in git worktrees loop until a deterministic gate and an independent reviewer pass, and epics merge one at a time behind human gates.",
+      "author": "GitHub",
+      "license": "MIT",
+      "download_url": "https://raw.githubusercontent.com/github/spec-kit/main/bundles/autopilot/bundle.yml",
+      "repository": "https://github.com/github/spec-kit",
+      "requires": {
+        "speckit_version": ">=0.15.1"
+      },
+      "provides": {
+        "extensions": 1,
+        "presets": 0,
+        "steps": 0,
+        "workflows": 2
+      },
+      "tags": ["autonomous", "orchestration", "quality-gate", "workflow"],
+      "verified": true
     }
   }
 }

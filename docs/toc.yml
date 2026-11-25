@@ -34,6 +34,8 @@
       href: guides/assessment.md
     - name: Idea Assessment Command Reference
       href: reference/agentic-assessment.md
+    - name: Autopilot (Autonomous SDD)
+      href: reference/agentic-autopilot.md
     - name: Upgrade
       href: upgrade.md
     - name: Install uv

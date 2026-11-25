@@ -1,0 +1,69 @@
+# Spec Kit autopilot configuration
+# Installed at .specify/extensions/autopilot/autopilot-config.yml.
+# Run /speckit.autopilot.setup to fill gate.checks from AGENTS.md and prove the
+# gate is green before the first unattended run.
+
+gate:
+  # Project commands that must all exit 0 for an epic to leave its loop.
+  # Run from the repository (worktree) root. Empty `run` entries are skipped;
+  # preflight refuses to start while no check has a command.
+  checks:
+    - name: test
+      run: ""
+    - name: lint
+      run: ""
+    - name: types
+      run: ""
+  check_timeout_seconds: 1800
+  # Every task in tasks.md must be checked off (so the last converge pass
+  # appended nothing).
+  require_tasks_complete: true
+  # An independent reviewer agent must pass the diff against spec.md.
+  require_review: true
+  acceptance:
+    # Every acceptance scenario (NNN-USx-ASy) must appear in a test file.
+    required: true
+    test_globs: ["tests/**", "test/**", "spec/**", "**/__tests__/**", "**/*_test.*", "**/*.test.*", "**/*.spec.*", "**/test_*.*"]
+    # Optional: run each scenario's tests on its own. {tag} -> 003-US1-AS2,
+    # {tag_underscore} -> 003_us1_as2. Example: "uv run pytest -q -k {tag_underscore}"
+    scenario_command: ""
+
+pipe:
+  # Hard cap on implement -> converge -> gate -> review iterations per epic.
+  max_iterations: 5
+  # Escalate to a human when the same failure repeats this many times in a row.
+  stuck_after: 2
+  # Wall-clock limit for one epic's workflow run.
+  timeout_minutes: 120
+  # Re-launches after an infrastructure failure (agent CLI crash, not a gate failure).
+  max_attempts: 1
+  # Questions one developer may ask the team lead before the epic counts as
+  # under-specified and goes to a human.
+  max_questions: 8
+
+run:
+  max_parallel: 2
+  # No new pipe starts after this many minutes; running pipes finish.
+  timeout_minutes: 480
+  # Cost ceiling: estimated agent invocations for the whole run. A pipe reserves
+  # its worst case (5 + 4 x pipe.max_iterations, including team-lead consults)
+  # before it starts.
+  max_agent_calls: 200
+  # Empty: the branch checked out when the plan is checked.
+  base_branch: ""
+  integration_branch: "autopilot/integration"
+  branch_prefix: "autopilot/"
+  # Empty: <repo-parent>/<repo-name>.worktrees/autopilot
+  worktree_root: ""
+  specify_command: "specify"
+  # Shell command run once in each new worktree, e.g. "npm ci" or "uv sync".
+  setup: ""
+  # Integration key for pipes; empty uses the project's integration.
+  integration: ""
+  # Optional different model for the reviewer agent.
+  reviewer_model: ""
+  # Optional model for the team lead answering developers' questions
+  # (a stronger model than the developers' is a good choice).
+  lead_model: ""
+  # Untracked or ignored paths copied into each worktree when missing there.
+  sync_paths: [".specify", ".claude", ".github/agents", ".github/prompts", ".github/skills", ".gemini", ".codex", ".opencode", ".agents", ".cursor", ".windsurf", ".kiro"]

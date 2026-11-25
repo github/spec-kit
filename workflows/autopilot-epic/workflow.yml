@@ -1,0 +1,214 @@
+schema_version: "1.0"
+workflow:
+  id: "autopilot-epic"
+  name: "Autopilot Epic Pipe"
+  version: "1.0.0"
+  author: "GitHub"
+  description: "One developer's epic, unattended: specify → plan → tasks, then implement → converge → gate → independent review until the deterministic gate passes, asking the team lead whenever a guess would be costly"
+
+requires:
+  # Gate show_file and shell output_format require CLI 0.15.1 or later.
+  speckit_version: ">=0.15.1"
+  integrations:
+    # Advisory, non-exhaustive: any integration with CLI dispatch that provides
+    # the core commands and the autopilot extension's commands works.
+    any:
+      - "claude"
+      - "copilot"
+      - "codex"
+      - "gemini"
+      - "opencode"
+
+# The autopilot scheduler runs this workflow inside each epic's git worktree
+# with SPECIFY_FEATURE_DIRECTORY pre-assigned and the team context in
+# .specify/autopilot/context/. Every agent step is told to read that context
+# first and to ask the team lead (a question file) instead of guessing costly
+# things. After specify, after design and in every build iteration a
+# consult -> lead -> record trio files the questions, has the lead answer them
+# and publishes the answers as team decisions.
+#
+# It also runs on its own in the current checkout for a single feature:
+#   specify workflow run autopilot-epic --input brief="Add CSV export to reports"
+inputs:
+  brief:
+    type: string
+    required: true
+    prompt: "Feature (epic) description"
+  phase:
+    type: string
+    default: "full"
+    # full: start with specify. design: spec.md exists, start with plan.
+    # build: spec, plan and tasks exist, start with the build loop.
+    enum: ["full", "design", "build"]
+  integration:
+    type: string
+    default: "auto"
+    prompt: "Integration to use (e.g. claude, copilot; 'auto' uses the project's initialized integration)"
+  reviewer_model:
+    type: string
+    default: ""
+    prompt: "Optional model for the independent reviewer (empty uses the integration default)"
+  lead_model:
+    type: string
+    default: ""
+    prompt: "Optional model for the team lead answering questions (empty uses the integration default)"
+
+steps:
+  # ── Spec ────────────────────────────────────────────────────────────────────
+  - id: define
+    type: if
+    condition: "{{ inputs.phase == 'full' }}"
+    then:
+      - id: specify
+        command: speckit.specify
+        integration: "{{ inputs.integration }}"
+        input:
+          args: |-
+            {{ inputs.brief }}
+
+            TEAM CONTEXT: you are a developer on a team, working unattended. First read .specify/autopilot/context/epic-context.md, program.md and decisions.md (when present): the spec must fit the program's architecture, conventions, contracts and decisions. Every user story needs numbered acceptance scenarios under "**Acceptance Scenarios**:" in Given/When/Then form; they become the tests the gate requires. Where the requirements leave something open, choose the reasonable interpretation and record it under Assumptions; only where a wrong guess would be costly, leave a [NEEDS CLARIFICATION: <specific question>] marker, and the team lead will answer it. Nobody reads chat. If the git extension's feature-branch hook runs, the feature branch already exists and is checked out (GIT_BRANCH_NAME is set): reuse it with --allow-existing-branch.
+
+  - id: spec-consult
+    type: shell
+    strict: true
+    output_format: json
+    run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py consult --stage spec"
+
+  - id: spec-ask
+    type: if
+    condition: "{{ steps.spec-consult.output.data.open > 0 }}"
+    then:
+      - id: spec-lead
+        command: speckit.autopilot.lead
+        integration: "{{ inputs.integration }}"
+        model: "{{ inputs.lead_model }}"
+        input:
+          args: "{{ steps.spec-consult.output.data.lead_args }}"
+
+  - id: spec-record
+    type: shell
+    strict: true
+    output_format: json
+    run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py record --stage spec"
+
+  - id: check-spec
+    type: shell
+    strict: true
+    output_format: json
+    run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py check-spec"
+
+  # ── Design ──────────────────────────────────────────────────────────────────
+  - id: design
+    type: if
+    condition: "{{ inputs.phase != 'build' }}"
+    then:
+      - id: plan
+        command: speckit.plan
+        integration: "{{ inputs.integration }}"
+        input:
+          args: "TEAM CONTEXT: you are a developer on a team, working unattended. First read .specify/autopilot/context/epic-context.md, program.md and decisions.md: use the architecture, stack, conventions and contracts they define and the code your dependencies already built; stay within your epic's files and do not redesign what parallel teammates own. Record decisions and assumptions in research.md. For a costly-to-guess design question, write a question file for the team lead as epic-context.md explains, and plan around it. Nobody reads chat."
+      - id: tasks
+        command: speckit.tasks
+        integration: "{{ inputs.integration }}"
+        input:
+          args: "TEAM CONTEXT: read .specify/autopilot/context/epic-context.md and decisions.md first. Tests are required: generate test tasks for every acceptance scenario. {{ steps.check-spec.output.data.tag_hint }}"
+
+  - id: design-consult
+    type: shell
+    strict: true
+    output_format: json
+    run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py consult --stage design"
+
+  - id: design-ask
+    type: if
+    condition: "{{ steps.design-consult.output.data.open > 0 }}"
+    then:
+      - id: design-lead
+        command: speckit.autopilot.lead
+        integration: "{{ inputs.integration }}"
+        model: "{{ inputs.lead_model }}"
+        input:
+          args: "{{ steps.design-consult.output.data.lead_args }}"
+
+  - id: design-record
+    type: shell
+    strict: true
+    output_format: json
+    run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py record --stage design"
+
+  # ── Build ───────────────────────────────────────────────────────────────────
+  - id: build-when-ready
+    type: if
+    # A question for the product owner pauses this developer before building.
+    condition: "{{ not steps.design-record.output.data.finished }}"
+    then:
+      - id: build
+        type: do-while
+        # Literal safety ceiling; the gate enforces pipe.max_iterations from the
+        # autopilot config and ends the loop through decide.finished.
+        max_iterations: 25
+        condition: "{{ not steps.decide.output.data.finished }}"
+        steps:
+          - id: implement
+            command: speckit.implement
+            integration: "{{ inputs.integration }}"
+            input:
+              args: "TEAM CONTEXT: you are a developer on a team, working unattended; checklists were reviewed before this run. First read .specify/autopilot/context/epic-context.md, program.md and decisions.md and follow them; Team Decisions tasks carry the lead's answers to your questions. Complete every unchecked task in tasks.md, including Convergence, Team Decisions and Autopilot Remediation phases. Run the project's tests as you go and mark a task [X] only when it is done and verified. Never weaken, skip or delete a test to make it pass. Every acceptance test must keep its scenario ID (NNN-USx-ASy) in its name or a comment. Stay within your epic's files. When a wrong guess would be costly (a contract another epic uses, the data model, public behavior, security), write a question file for the team lead as epic-context.md explains, leave that task unchecked and continue with the rest. Never ask in chat."
+
+          - id: converge
+            command: speckit.converge
+            integration: "{{ inputs.integration }}"
+
+          - id: consult
+            type: shell
+            strict: true
+            output_format: json
+            run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py consult --stage build"
+
+          - id: ask
+            type: if
+            condition: "{{ steps.consult.output.data.open > 0 }}"
+            then:
+              - id: lead
+                command: speckit.autopilot.lead
+                integration: "{{ inputs.integration }}"
+                model: "{{ inputs.lead_model }}"
+                input:
+                  args: "{{ steps.consult.output.data.lead_args }}"
+
+          - id: record
+            type: shell
+            strict: true
+            output_format: json
+            run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py record --stage build"
+
+          - id: gate
+            type: shell
+            strict: true
+            output_format: json
+            # Each check has its own gate.check_timeout_seconds; this only bounds the whole gate.
+            timeout: 86400
+            run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py gate"
+
+          - id: review-when-green
+            type: if
+            condition: "{{ steps.gate.output.data.checks_passed and not steps.gate.output.data.finished }}"
+            then:
+              - id: review
+                command: speckit.autopilot.review
+                integration: "{{ inputs.integration }}"
+                model: "{{ inputs.reviewer_model }}"
+                input:
+                  args: "{{ steps.gate.output.data.review_args }}"
+
+          - id: decide
+            type: shell
+            strict: true
+            output_format: json
+            run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py decide"
+
+  - id: result
+    type: shell
+    strict: true
+    output_format: json
+    run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py pipe-result"

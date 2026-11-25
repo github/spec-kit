@@ -1,0 +1,27 @@
+schema_version: "1.0"
+
+bundle:
+  id: "autopilot"
+  name: "Autopilot"
+  version: "1.0.0"
+  role: "developer"
+  description: "Autonomous spec-driven development: a conductor plans epics from requirements, parallel pipes in git worktrees loop until a deterministic gate and an independent reviewer pass, and epics merge one at a time behind human gates on the plan and the final merge."
+  author: "GitHub"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.15.1"
+  tools: []
+  mcp: []
+
+provides:
+  extensions:
+    - id: "autopilot"
+      version: "1.0.0"
+  workflows:
+    - id: "autopilot-epic"
+      version: "1.0.0"
+    - id: "autopilot"
+      version: "1.0.0"
+
+tags: ["autonomous", "orchestration", "quality-gate", "workflow"]

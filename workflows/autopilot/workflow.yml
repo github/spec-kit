@@ -1,0 +1,100 @@
+schema_version: "1.0"
+workflow:
+  id: "autopilot"
+  name: "Autopilot Conductor"
+  version: "1.0.0"
+  author: "GitHub"
+  description: "Plans epics from requirements, then runs them unattended as parallel autopilot-epic pipes in git worktrees, merging each into an integration branch; human gates on the epic plan and the final merge"
+
+requires:
+  # Gate verdict inputs and show_file require CLI 0.15.1 or later.
+  speckit_version: ">=0.15.1"
+  integrations:
+    any:
+      - "claude"
+      - "copilot"
+      - "codex"
+      - "gemini"
+      - "opencode"
+
+inputs:
+  requirements:
+    type: string
+    default: "docs/requirements"
+    prompt: "Requirements location (file or directory)"
+  integration:
+    type: string
+    default: "auto"
+    prompt: "Integration for the conductor and the pipes ('auto' uses the project's initialized integration)"
+  autopilot_review_epics_verdict:
+    type: string
+    default: ""
+  autopilot_review_land_verdict:
+    type: string
+    default: ""
+
+steps:
+  # Deterministic preconditions: git, a clean tree, a configured gate that is
+  # already green on the base commit, the epic workflow installed.
+  - id: preflight
+    type: shell
+    strict: true
+    output_format: json
+    timeout: 86400
+    env:
+      AUTOPILOT_REQUIREMENTS: "{{ inputs.requirements }}"
+    run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py preflight --baseline"
+
+  # The conductor plans once. Everything after the approval gate is plain code.
+  - id: plan-epics
+    command: speckit.autopilot.epics
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.requirements }}"
+
+  - id: check-plan
+    type: shell
+    strict: true
+    output_format: json
+    run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py plan-check"
+
+  - id: review-epics
+    type: gate
+    verdict_input: autopilot_review_epics_verdict
+    message: "Review the epic DAG (.specify/autopilot/dag.md and epics.md). Approving starts unattended pipes."
+    show_file: ".specify/autopilot/dag.md"
+    options: [approve, reject]
+    on_reject: abort
+
+  # Event-driven DAG scheduler: worktree per epic, parallel pipes up to
+  # run.max_parallel, merge one epic at a time with re-verification, caps on
+  # iterations, wall time and agent calls. Re-running the workflow (or
+  # `autopilot.py drive`) resumes from .specify/autopilot/state.json.
+  - id: drive
+    type: shell
+    strict: true
+    output_format: json
+    timeout: 604800
+    env:
+      AUTOPILOT_INTEGRATION: "{{ inputs.integration }}"
+    run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py drive"
+
+  - id: report
+    type: shell
+    strict: true
+    output_format: json
+    run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py report"
+
+  - id: review-land
+    type: gate
+    verdict_input: autopilot_review_land_verdict
+    message: "Review the run report (.specify/autopilot/report.md) and the integration branch. Approving merges it into the base branch."
+    show_file: ".specify/autopilot/report.md"
+    options: [approve, reject]
+    on_reject: abort
+
+  - id: land
+    type: shell
+    strict: true
+    output_format: json
+    run: "python3 .specify/extensions/autopilot/scripts/python/autopilot.py land"

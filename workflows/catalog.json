@@ -32,6 +32,26 @@
       "url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/assess/workflow.yml",
       "tags": ["assessment", "discovery", "triage", "product"],
       "bundled": true
+    },
+    "autopilot-epic": {
+      "id": "autopilot-epic",
+      "name": "Autopilot Epic Pipe",
+      "description": "One epic, unattended: specify → plan → tasks, then implement → converge → gate → independent review until the deterministic gate passes or a cap is hit",
+      "author": "GitHub",
+      "version": "1.0.0",
+      "url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/autopilot-epic/workflow.yml",
+      "tags": ["autonomous", "quality-gate", "sdd"],
+      "bundled": true
+    },
+    "autopilot": {
+      "id": "autopilot",
+      "name": "Autopilot Conductor",
+      "description": "Plans epics from requirements, then runs them unattended as parallel autopilot-epic pipes in git worktrees, merging each into an integration branch; human gates on the epic plan and the final merge",
+      "author": "GitHub",
+      "version": "1.0.0",
+      "url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/autopilot/workflow.yml",
+      "tags": ["autonomous", "orchestration", "worktree", "sdd"],
+      "bundled": true
     }
   }
 }

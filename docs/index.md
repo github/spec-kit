@@ -22,9 +22,10 @@ Spec Kit gives your coding agent structured processes that keep intent and evide
 | Build a feature or application | [Spec-Driven Development](quickstart.md) | A specification carried through planning, implementation, and convergence | [Agentic SDD](reference/agentic-sdd.md) |
 | Diagnose and repair broken behavior | [Bug fixing](guides/bugfix.md) | An assessed cause, scoped fix, and recorded verification | [Agentic Bug Fix](reference/agentic-bugfix.md) |
 | Decide whether an idea deserves investment | [Idea assessment](guides/assessment.md) | An evidence-backed go, clarify, or stop decision | [Agentic Idea Assessment](reference/agentic-assessment.md) |
+| Build from requirements unattended | [Autopilot](reference/agentic-autopilot.md) | Epics planned as a DAG, built by parallel gated pipes, merged behind two human gates | [Autopilot](reference/agentic-autopilot.md) |
 
 These are independent entry points, not mandatory phases. SDD ships in core.
-Bug fixing and assessment are bundled, opt-in extensions. Assessment can stand
+Bug fixing, assessment and the autopilot are bundled, opt-in extensions. Assessment can stand
 alone; a decision to proceed does not automatically start implementation.
 
 See [how the Spec Kit project runs its agentic SDLC](guides/agentic-sdlc.md)

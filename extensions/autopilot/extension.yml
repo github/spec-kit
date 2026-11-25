@@ -1,0 +1,55 @@
+schema_version: "1.0"
+
+extension:
+  id: autopilot
+  name: "Autopilot"
+  version: "1.0.0"
+  description: "Autonomous SDD: a conductor plans epics as a DAG from requirements; parallel pipes in git worktrees run specify → plan → tasks → implement → converge until a deterministic gate and an independent reviewer pass; epics merge one at a time behind human gates on the plan and the final merge"
+  author: spec-kit-core
+  repository: https://github.com/github/spec-kit
+  license: MIT
+
+requires:
+  speckit_version: ">=0.15.1"
+  tools:
+    - name: git
+      required: true
+    - name: python3
+      required: true
+
+provides:
+  commands:
+    - name: speckit.autopilot.setup
+      file: commands/speckit.autopilot.setup.md
+      description: "Prepare the project: install the workflows, configure the verification gate from its own commands, prove it is green"
+    - name: speckit.autopilot.run
+      file: commands/speckit.autopilot.run.md
+      description: "Conductor: plan epics, hold the plan and final-merge gates in chat, and run the gated pipes unattended between them"
+    - name: speckit.autopilot.status
+      file: commands/speckit.autopilot.status.md
+      description: "Report the run's stage, each epic's progress, and why any epic failed or needs a human (read-only)"
+    - name: speckit.autopilot.recover
+      file: commands/speckit.autopilot.recover.md
+      description: "Diagnose failed or escalated epics, fix them with the user's approval, reset them and resume the run"
+    - name: speckit.autopilot.epics
+      file: commands/speckit.autopilot.epics.md
+      description: "Conductor: plan epics from the requirements as a dependency DAG for parallel pipes"
+    - name: speckit.autopilot.lead
+      file: commands/speckit.autopilot.lead.md
+      description: "Team lead: answer developers' questions from the requirements, handbook and decisions, or hand product questions to the product owner"
+    - name: speckit.autopilot.review
+      file: commands/speckit.autopilot.review.md
+      description: "Independent reviewer: judge an epic's diff against its spec and write a JSON verdict, without editing code"
+
+  config:
+    - name: "autopilot-config.yml"
+      template: "config-template.yml"
+      description: "Autopilot gate checks, caps and scheduler settings"
+      required: false
+
+tags:
+  - "autonomous"
+  - "orchestration"
+  - "quality-gate"
+  - "worktree"
+  - "workflow"

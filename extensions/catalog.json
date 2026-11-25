@@ -33,6 +33,22 @@
         "workflow"
       ]
     },
+    "autopilot": {
+      "name": "Autopilot",
+      "id": "autopilot",
+      "version": "1.0.0",
+      "description": "Autonomous SDD: a conductor plans epics as a DAG from requirements; parallel pipes in git worktrees run specify \u2192 plan \u2192 tasks \u2192 implement \u2192 converge until a deterministic gate and an independent reviewer pass; epics merge one at a time behind human gates on the plan and the final merge",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "bundled": true,
+      "tags": [
+        "autonomous",
+        "orchestration",
+        "quality-gate",
+        "worktree",
+        "workflow"
+      ]
+    },
     "bug": {
       "name": "Bug Triage Workflow",
       "id": "bug",
