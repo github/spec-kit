@@ -8,6 +8,7 @@ working. Cohesive private phases use ``_command_<name>_*.py`` modules.
 from __future__ import annotations
 
 import errno
+import io
 import os
 import stat
 from pathlib import Path
@@ -235,10 +236,22 @@ def install_extension_from_url(
             download_file.write(archive_data)
             download_file.flush()
             download_file.seek(0)
-        except OSError as exc:
-            raise ExtensionError(
-                f"Could not safely write download file: {exc}"
-            ) from exc
+        except OSError:
+            # Some filesystems (e.g. gocryptfs/FUSE) reject writes to an
+            # already-unlinked inode. The archive is fully buffered in memory
+            # (bounded by ``read_response_limited``), so consume it from there.
+            if download_file is not None:
+                try:
+                    download_file.close()
+                except OSError:
+                    pass
+            elif download_fd >= 0:
+                try:
+                    os.close(download_fd)
+                except OSError:
+                    pass
+                download_fd = -1
+            download_file = io.BytesIO(archive_data)
 
         format_source = (
             final_url
