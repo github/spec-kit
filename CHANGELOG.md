@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.4.5] - 2026-11-25
+
+### Changed
+
+- fix(extensions): keep TOML command prompts identical to the body (#5570)
+- fix(scripts): reconfigure setup_plan.py streams as UTF-8 (#5569)
+- Update SpecKit Grill Me extension to v1.0.3 (#5565)
+- fix(extensions): parse command frontmatter after a UTF-8 BOM (#5562)
+- fix(extensions): fall back to in-memory archive when the unlinked download file can't be written (#5561)
+- fix(presets): report preset layers hidden by project overrides (#5560)
+- fix: accept UTF-8 BOM in bundler JSON readers (#5557)
+- fix(extensions): keep edited skill resources on an unforced integration switch (#5495)
+- fix(integrations): decode captured dispatch_command output as UTF-8 (#5535)
+- chore: migrate shared infrastructure writes to FileHelper (#5543)
+- fix(presets): resolve script artifacts through the CLI (#5415)
+- fix(scripts): reconfigure stdout and stderr as UTF-8 in setup_tasks.py (#5555)
+- docs: add spec-visualizer to community friends (#5549)
+- [Copilot Dreaming] Avoid rejecting valid extension IDs with digits (#5548)
+- fix(copilot): suppress discarded prompt hook output (#5547)
+- fix(scripts): emit raw UTF-8 bytes without newline mangling in resolve_template.py (#5539)
+- fix(auth): decode az and gh CLI credentials as UTF-8 in caller thread (#5500)
+- fix: allow more time for loopback TLS in integration tests (#5513)
+- Add Task Consolidation extension to community catalog (#5530)
+- chore: release 1.4.4, begin 1.4.5.dev0 development (#5537)
+
 ## [1.4.4] - 2026-11-23
 
 ### Changed
