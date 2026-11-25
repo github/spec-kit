@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-16T00:00:00Z",
+  "updated_at": "2026-11-23T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/bundles/catalog.community.json",
   "bundles": {
     "ado": {
@@ -70,6 +70,29 @@
         "workflows": 1
       },
       "tags": ["github-projects", "workflow", "governance"],
+      "verified": false
+    },
+    "jira-lifecycle": {
+      "name": "Spec Kit lifecycle for Jira",
+      "id": "jira-lifecycle",
+      "version": "0.1.0",
+      "role": "developer",
+      "description": "A Jira story to Done through Spec Kit, with a human sign-off before every Jira or PR write.",
+      "author": "praveenlavu",
+      "license": "MIT",
+      "download_url": "https://github.com/praveenlavu/spec-kit-jira/releases/download/v0.1.0/jira-lifecycle-bundle-0.1.0.zip",
+      "sha256": "91d68c0502f262aaa20eb6f3323a7189c81d0c6e486872a53a8d1f7d1ca8b323",
+      "repository": "https://github.com/praveenlavu/spec-kit-jira",
+      "requires": {
+        "speckit_version": ">=1.2.1"
+      },
+      "provides": {
+        "extensions": 1,
+        "presets": 0,
+        "steps": 0,
+        "workflows": 1
+      },
+      "tags": ["jira", "issue-tracking", "hitl", "workflow", "governance"],
       "verified": false
     },
     "sicario-spec": {

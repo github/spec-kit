@@ -13,6 +13,7 @@ Accepted community bundle entries are published in [`bundles/catalog.community.j
 | SicarioSpec Security & Governance Bundle | Secure-by-default governance bundle for GitHub Spec Kit. Enforces data classification, threat modeling, and code-owned verification gates. | `security-engineer` | 1 extension, 11 presets | Documented | [sicario-spec](https://github.com/dfirs1car1o/sicario-spec) |
 | Spec Kit for Azure DevOps | The ado extension plus the ado-lifecycle workflow: an ADO story to Done with a human gate on every board or PR change. | `developer` | 1 extension, 1 workflow | Documented | [spec-kit-ado](https://github.com/praveenlavu/spec-kit-ado) |
 | Spec Kit for GitHub Projects | The ghp extension and the ghp-lifecycle workflow together: GitHub issue to Done through Spec Kit, with a human sign-off before every write. | `developer` | 1 extension, 1 workflow | Documented | [spec-kit-ghp](https://github.com/praveenlavu/spec-kit-ghp) |
+| Spec Kit lifecycle for Jira | A Jira story to Done through Spec Kit, with a human sign-off before every Jira or PR write. | `developer` | 1 extension, 1 workflow | Documented | [spec-kit-jira](https://github.com/praveenlavu/spec-kit-jira) |
 | SpecAssay | Durable-ID promotion for stock Spec Kit: templates, Gate 2 refusal, and trace-manifest emission. | `developer` | 1 extension, 1 preset | Documented | [specassay](https://github.com/rdryfoos/specassay) |
 
 ## See also
