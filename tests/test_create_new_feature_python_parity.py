@@ -75,14 +75,8 @@ def repo_pair(tmp_path: Path) -> tuple[Path, Path]:
         pytest.param("bash", marks=requires_bash),
         "python",
         pytest.param(
-            "pwsh",
-            marks=pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available"),
-        ),
-        pytest.param(
-            "windows-powershell-5.1",
-            marks=pytest.mark.skipif(
-                not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
-            ),
+            "powershell",
+            marks=pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available"),
         ),
     ],
 )
@@ -209,8 +203,14 @@ def test_unicode_number_categories_match(
         pytest.param("bash", marks=requires_bash),
         "python",
         pytest.param(
-            "powershell",
-            marks=pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available"),
+            "pwsh",
+            marks=pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available"),
+        ),
+        pytest.param(
+            "windows-powershell-5.1",
+            marks=pytest.mark.skipif(
+                not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
+            ),
         ),
     ],
 )
