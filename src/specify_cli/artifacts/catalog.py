@@ -11,8 +11,12 @@ artifact command modules should not import the private helpers.
 
 from __future__ import annotations
 
+import ast
+import inspect
+import io
 import re
 import shlex
+import tokenize
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Literal
@@ -139,7 +143,56 @@ def _extract_frontmatter_description(text: str) -> str:
     return value if isinstance(value, str) else ""
 
 
-def _extract_script_description(text: str) -> str:
+def _normalize_python_string(literal: str) -> str | None:
+    """Keep string values while avoiding compiler warnings for legacy escapes."""
+    prefix = re.match(r"[^\"']*", literal).group().lower()
+    if prefix not in {"", "r", "u"}:
+        return None
+    if prefix != "r":
+
+        def escape(match: re.Match[str]) -> str:
+            value = match.group()
+            if value[1] in "01234567":
+                number = int(value[1:], 8)
+                return f"\\U{number:08x}" if number > 0o377 else value
+            if value[1] in "\\\"'abfnrtv\n\rxuUN":
+                return value
+            return "\\" + value
+
+        literal = re.sub(r"\\(?:[0-7]{1,3}|[\s\S])", escape, literal)
+    return literal
+
+
+def _leading_python_docstring(text: str) -> str | None:
+    """Read only the leading string expression, independent of later grammar."""
+    expression = []
+    depth = 0
+    for token in tokenize.generate_tokens(io.StringIO(text).readline):
+        if token.type in {tokenize.COMMENT, tokenize.NL}:
+            continue
+        if token.type == tokenize.STRING:
+            literal = _normalize_python_string(token.string)
+            if literal is None:
+                return None
+            expression.append(literal)
+        elif token.type == tokenize.OP and token.string in {"(", ")"}:
+            depth += 1 if token.string == "(" else -1
+            if depth < 0:
+                return None
+            expression.append(token.string)
+        elif token.type in {tokenize.NEWLINE, tokenize.ENDMARKER} or (
+            token.type == tokenize.OP and token.string == ";" and not depth
+        ):
+            if not expression or depth:
+                return None
+            value = ast.literal_eval(" ".join(expression))
+            return inspect.cleandoc(value) if isinstance(value, str) else None
+        else:
+            return None
+    return None
+
+
+def _extract_script_description(text: str, *, is_python: bool = False) -> str:
     """Return the first docstring/comment line of a script, else ``""``.
 
     Supports the three script runtimes Spec Kit ships:
@@ -152,11 +205,27 @@ def _extract_script_description(text: str) -> str:
 
     Anything unrecognized yields the empty string.
     """
-    py_match = re.match(r'^(?:#![^\n]*\n)?\s*(?:"""|\'\'\')(.*?)(?:"""|\'\'\')', text, re.DOTALL)
-    if py_match:
-        first = py_match.group(1).strip().splitlines()
-        if first:
-            return first[0].strip()
+    if is_python:
+        try:
+            description = _leading_python_docstring(text)
+        except (
+            SyntaxError,
+            ValueError,
+            RecursionError,
+            MemoryError,
+            tokenize.TokenError,
+        ):
+            description = None
+        if description and description.strip():
+            return description.strip().splitlines()[0].strip()
+    else:
+        py_match = re.match(
+            r'^(?:#![^\n]*\n)?\s*(?:"""|\'\'\')(.*?)(?:"""|\'\'\')', text, re.DOTALL
+        )
+        if py_match:
+            first = py_match.group(1).strip().splitlines()
+            if first:
+                return first[0].strip()
 
     ps_block = re.match(r'^(?:<#\s*(.*?)#>)', text, re.DOTALL)
     if ps_block:
@@ -186,7 +255,7 @@ def _describe_artifact_file(path: Path, kind: ArtifactKind) -> str:
     except (OSError, UnicodeDecodeError):
         return ""
     if kind == "script":
-        return _extract_script_description(text)
+        return _extract_script_description(text, is_python=path.suffix == ".py")
     return _extract_frontmatter_description(text)
 
 
