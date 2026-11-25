@@ -22,6 +22,7 @@ from specify_cli.artifacts import (
     HookArtifact,
     NotASpecKitProjectError,
 )
+from specify_cli.artifacts.catalog import _describe_artifact_file
 from specify_cli.artifacts.resolution import _preset_display_name
 from specify_cli.extensions import CORE_COMMAND_NAMES, ExtensionRegistry
 from specify_cli.presets import PresetRegistry, PresetResolver
@@ -1457,6 +1458,107 @@ class TestConventionDiscovery:
         assert rows["command:speckit.constitution"] == "Override description"
         assert rows["script:local-script"] == "Override script description"
 
+    @pytest.mark.parametrize(
+        (
+            "core_path",
+            "override_path",
+            "artifact_id",
+            "core_content",
+            "override_content",
+        ),
+        [
+            pytest.param(
+                "commands/speckit.constitution.md",
+                "speckit.constitution.md",
+                "command:speckit.constitution",
+                "---\ndescription: Core description\n---\n",
+                "\ufeff---\ndescription: Override description\n---\n",
+                id="command-lf",
+            ),
+            pytest.param(
+                "commands/speckit.constitution.md",
+                "speckit.constitution.md",
+                "command:speckit.constitution",
+                "---\ndescription: Core description\n---\n",
+                "\ufeff---\r\ndescription: Override description\r\n---\r\n",
+                id="command-crlf",
+            ),
+            pytest.param(
+                "scripts/local-script.sh",
+                "scripts/local-script.sh",
+                "script:local-script",
+                "# Core description\n",
+                "\ufeff# Override description\n",
+                id="shell-comment",
+            ),
+        ],
+    )
+    def test_bom_project_override_reports_its_own_description(
+        self,
+        spec_kit_project: Path,
+        core_path: str,
+        override_path: str,
+        artifact_id: str,
+        core_content: str,
+        override_content: str,
+    ):
+        templates = spec_kit_project / ".specify" / "templates"
+        core = templates / core_path
+        core.parent.mkdir(parents=True, exist_ok=True)
+        core.write_text(core_content, encoding="utf-8")
+        override = templates / "overrides" / override_path
+        override.parent.mkdir(parents=True, exist_ok=True)
+        override.write_text(override_content, encoding="utf-8")
+
+        rows = {
+            row.id: row.description
+            for row in ArtifactCatalog(spec_kit_project).list_artifacts()
+        }
+
+        assert rows[artifact_id] == "Override description"
+
+    @pytest.mark.parametrize("with_bom", [False, True], ids=["plain", "bom"])
+    @pytest.mark.parametrize(
+        ("suffix", "kind", "content", "expected"),
+        [
+            pytest.param(
+                ".ps1",
+                "script",
+                "<#\nPS description\n#>\n",
+                "PS description",
+                id="powershell-block",
+            ),
+            pytest.param(
+                ".py",
+                "script",
+                '"""Python description\nMore details.\n"""\n',
+                "Python description",
+                id="python-docstring",
+            ),
+            pytest.param(
+                ".md",
+                "template",
+                "---\ndescription: Template description\n---\nbody\n",
+                "Template description",
+                id="template-frontmatter",
+            ),
+        ],
+    )
+    def test_describe_artifact_file_handles_optional_bom(
+        self,
+        tmp_path: Path,
+        with_bom: bool,
+        suffix: str,
+        kind: ArtifactKind,
+        content: str,
+        expected: str,
+    ):
+        path = tmp_path / f"artifact{suffix}"
+        prefix = "\ufeff" if with_bom else ""
+        path.write_text(prefix + content, encoding="utf-8")
+
+        assert _describe_artifact_file(path, kind) == expected
+
     def test_project_override_without_metadata_falls_back(self, spec_kit_project: Path):
         """A metadata-free override still reports the hidden layer's description."""
         commands_dir = spec_kit_project / ".specify" / "templates" / "commands"
@@ -1470,6 +1572,27 @@ class TestConventionDiscovery:
 
         catalog = ArtifactCatalog(spec_kit_project)
         rows = {row.id: row.description for row in catalog.list_artifacts()}
+        assert rows["command:speckit.constitution"] == "Core description"
+
+    def test_bom_project_override_without_metadata_falls_back(
+        self, spec_kit_project: Path
+    ):
+        commands_dir = spec_kit_project / ".specify" / "templates" / "commands"
+        commands_dir.mkdir(parents=True)
+        (commands_dir / "speckit.constitution.md").write_text(
+            "---\ndescription: Core description\n---\n", encoding="utf-8"
+        )
+        overrides = spec_kit_project / ".specify" / "templates" / "overrides"
+        overrides.mkdir(parents=True)
+        (overrides / "speckit.constitution.md").write_text(
+            "\ufeffbody\n", encoding="utf-8"
+        )
+
+        rows = {
+            row.id: row.description
+            for row in ArtifactCatalog(spec_kit_project).list_artifacts()
+        }
+
         assert rows["command:speckit.constitution"] == "Core description"
 
     def test_project_override_describes_both_backed_kinds(self, spec_kit_project: Path):
