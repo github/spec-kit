@@ -771,7 +771,8 @@ def test_the_probe_reports_what_the_evaluator_reports():
         # _resolve_dot_path keys on [w-]+, so a key literally named "2bad" resolves.
         ("inputs.2bad", False),
         ("inputs.tags[foo]", True),
-        ("inputs.matrix[0][1]", True),
+        ("inputs.matrix[0][1]", False),
+        ("inputs.matrix[0][foo]", True),
         # Round 7: an operand one level down, which the single-term gate never saw.
         ("inputs.a === inputs.b", True),
         ("bogus", True),
@@ -827,12 +828,13 @@ def test_filter_wiring_errors_are_still_rejections(condition):
         ("42", True),
         ("3.14", True),
         ("-7", True),
-        # `1e3` has no "." so the evaluator calls int() on it, which fails; it then
-        # falls through to a path lookup and resolves to None. The gate used to
-        # decide this for itself with a float() test that accepted `1e3`, and the
-        # correction turned a truthy condition false. Now the evaluator reaches the
-        # dot-path resolution with `1e3` and reports it, so the two cannot disagree.
-        ("1e3", False),
+        ("1e3", True),
+        ("1e", False),
+        ("steps.plan.output.matrix[0][1]", True),
+        ("item[0][1]", True),
+        ("inputs[0][1]", False),
+        ("1[0]", False),
+        ("and[0]", False),
         ("'one'", True),
         ('"one"', True),
         # Two literals, not one: the evaluator requires the opening quote's match to
@@ -857,11 +859,15 @@ def test_literal_handling_comes_from_the_evaluator(condition, resolvable):
 @pytest.mark.parametrize(
     "condition",
     [
-        # `_build_namespace` hands back mappings, so an indexed root always resolves
-        # to None however the index is written.
+        # `_build_namespace` hands back mappings, so an indexed mapping root
+        # never resolves to a list (single indexing yields None; chained
+        # indexing raises TypeError).
         "inputs[0]",
+        "inputs[0][1]",
         "steps[1]",
-        "1e3",
+        "1e",
+        "1[0]",
+        "and[0]",
         "'a' 'b'",
     ],
 )
@@ -983,6 +989,25 @@ def test_indexing_an_always_mapping_root_still_loses_the_correction(condition):
     ctx = StepContext(inputs={"a": 1}, item=["x", "y"])
     assert CORRECTION_OFFERED not in format_condition_remediation(condition)
     assert evaluate_condition("{{ " + condition + " }}", ctx) is False
+
+
+@pytest.mark.parametrize(
+    "condition", ["inputs[0][1]", "steps[1][0]", "fan_in[0][0]", "context[0][0]"]
+)
+def test_chained_indexing_an_always_mapping_root_loses_correction_and_raises(condition):
+    """Chained indexing on an always-mapping root withholds correction and raises TypeError."""
+    ctx = StepContext(inputs={"a": 1}, item=[["x", "y"]])
+    assert CORRECTION_OFFERED not in format_condition_remediation(condition)
+    with pytest.raises(TypeError, match="chained indexing requires a list"):
+        evaluate_condition("{{ " + condition + " }}", ctx)
+
+
+@pytest.mark.parametrize("condition", ["item[0][1] == 'y'", "item[-1][-2] == 'x'"])
+def test_chained_indexed_item_root_keeps_the_correction(condition):
+    """Chained indexing on a nested list ``item`` keeps the correction and evaluates."""
+    ctx = StepContext(inputs={"a": 1}, item=[["x", "y"]])
+    assert CORRECTION_OFFERED in format_condition_remediation(condition)
+    assert evaluate_condition("{{ " + condition + " }}", ctx) is True
 
 
 # --- what the leaf walk rests on ----------------------------------------------

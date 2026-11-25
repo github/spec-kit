@@ -16,7 +16,8 @@ from typing import Any
 # against it, and the condition gate below reuses it rather than describing the
 # same shape a second time, so widening what indexing accepts cannot leave the
 # evaluator and the gate disagreeing.
-_INDEXED_SEGMENT = re.compile(r"^([\w-]+)\[(-?\d+)\]$")
+_INDEXED_SEGMENT = re.compile(r"^([\w-]+)((?:\[-?\d+\])+)$")
+_INDEX_BRACKET = re.compile(r"\[([^\]]+)\]")
 
 _PLAIN_SEGMENT = re.compile(r"^[\w-]+$")
 
@@ -24,30 +25,57 @@ _PLAIN_SEGMENT = re.compile(r"^[\w-]+$")
 def _resolve_dot_path(obj: Any, path: str) -> Any:
     """Resolve a dotted path like ``steps.specify.output.file`` against *obj*.
 
-    Supports dict key access and list indexing, including the negative form
-    Python and Jinja2 both accept (e.g., ``task_list[0]``, ``task_list[-1]``).
+    Supports dict key access and single or chained list indexing, including the
+    negative form Python and Jinja2 both accept (e.g., ``task_list[0]``,
+    ``task_list[-1]``, ``matrix[0][1]``).
+
+    For chained indexing (two or more bracketed indices on one segment),
+    invalid access raises ``IndexError`` for out-of-range list indices and
+    ``TypeError`` when the target is not a list, rather than silently
+    returning ``None``.
     """
     parts = path.split(".")
     current = obj
     for part in parts:
-        # Handle list indexing: name[0], name[-1]
+        # Handle single or chained list indexing: name[0], name[-1], matrix[0][1]
         idx_match = _INDEXED_SEGMENT.match(part)
         if idx_match:
-            key, idx = idx_match.group(1), int(idx_match.group(2))
+            key = idx_match.group(1)
             if isinstance(current, dict):
                 current = current.get(key)
             else:
-                return None
-            if isinstance(current, list) and -len(current) <= idx < len(current):
-                current = current[idx]
-            else:
-                return None
+                current = None
+            raw_indices = idx_match.group(2)
+            indices = (
+                _INDEX_BRACKET.findall(raw_indices)
+                if raw_indices.startswith("[")
+                else [raw_indices]
+            )
+            chained = len(indices) > 1
+            for raw_idx in indices:
+                idx = int(raw_idx)
+                if not isinstance(current, list):
+                    if chained:
+                        raise TypeError(
+                            f"cannot index {type(current).__name__} in '{path}': "
+                            "chained indexing requires a list"
+                        )
+                    current = None
+                    break
+                if -len(current) <= idx < len(current):
+                    current = current[idx]
+                elif chained:
+                    raise IndexError(
+                        f"list index {idx} out of range in '{path}' "
+                        f"(length {len(current)})"
+                    )
+                else:
+                    current = None
+                    break
         elif isinstance(current, dict):
             current = current.get(part)
         else:
-            return None
-        if current is None:
-            return None
+            current = None
     return current
 
 

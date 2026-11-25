@@ -86,13 +86,14 @@ def _path_terminal_pattern(plain_pattern: str, indexed_pattern: str) -> str:
     """The ``PATH`` regex, built from the namespace's own segment definitions.
 
     ``_PLAIN_SEGMENT`` (``^[\\w-]+$``) and ``_INDEXED_SEGMENT``
-    (``^([\\w-]+)\\[(-?\\d+)\\]$``) are stripped of their anchors and combined:
-    every segment is a plain or an indexed one. The *first* segment excludes a
-    leading digit (so ``123`` keeps lexing as a number) and the reserved word
-    operators (``and``, ``or``, ``not``, ``in``, so they never lex as a path
-    where an operand is expected); that is the only difference from the
-    namespace pattern, and it is why this derivation reads the pattern instead
-    of re-describing the shape.
+    (``^([\\w-]+)((?:\\[-?\\d+\\])+)$``) are stripped of their anchors and
+    combined: every segment is a plain or an indexed one. The *first* segment
+    excludes a leading digit or hyphen (so ``123`` keeps lexing as a number
+    and ``1[0]`` does not silently resolve as a path) and the reserved word
+    operators (``and``, ``or``, ``not``, ``in``, so neither ``and`` nor
+    ``and[0]`` ever lexes as a path where an operand is expected); that is the
+    only difference from the namespace pattern, and it is why this derivation
+    reads the pattern instead of re-describing the shape.
 
     ``_INDEXED_SEGMENT`` is read through ``namespace`` at call time, so the
     parser cache below rebuilds when it is widened -- the drift guard
@@ -101,7 +102,7 @@ def _path_terminal_pattern(plain_pattern: str, indexed_pattern: str) -> str:
     plain = plain_pattern.strip("^$")
     indexed = indexed_pattern.strip("^$")
     later = f"(?:{indexed}|{plain})"
-    first = f"(?:{indexed}|(?!(?:and|or|not|in)(?![\\w-]))[^\\W\\d]{plain[:-1]}*)"
+    first = f"(?!(?:and|or|not|in)(?![\\w-]))(?=[^\\W\\d])(?:{indexed}|{plain})"
     return f"{first}(?:\\.{later})*"
 
 
@@ -157,7 +158,7 @@ OR.2: /(?<![\w-])or(?![\w-])/
 FILTER_NAME: /[A-Za-z_][\w-]*/
 PATH: /""" + path_pattern + r"""/
 STRING: /'[^']*'/ | /"[^"]*"/
-NUMBER: /[+-]?(?:(?:\d(?:_?\d)*\.(?:\d(?:_?\d)*)?|\.\d(?:_?\d)*)(?:[eE][+-]?\d(?:_?\d)*)?|\d(?:_?\d)*)/
+NUMBER: /[+-]?(?:(?:\d(?:_?\d)*\.(?:\d(?:_?\d)*)?|\.\d(?:_?\d)*)|\d(?:_?\d)*)(?:[eE][+-]?\d(?:_?\d)*)?/
 %import common.WS
 %ignore WS
 """
@@ -201,7 +202,9 @@ class _BuildAst(Transformer_NonRecursive):
 
     def number(self, token: Token) -> tuple[str, Any]:
         text = str(token)
-        return ("lit", float(text) if "." in text else int(text))
+        if "." in text or "e" in text or "E" in text:
+            return ("lit", float(text))
+        return ("lit", int(text))
 
     def path(self, token: Token) -> tuple[str, str]:
         return ("path", str(token))
