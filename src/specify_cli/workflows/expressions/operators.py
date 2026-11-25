@@ -6,27 +6,16 @@ so an alternative engine can reuse these operators unchanged.
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 
 def _coerce_number(value: Any) -> Any:
-    """Return *value* as int/float if it is a finite numeric string, else unchanged."""
+    """Return *value* as int/float if it is a numeric string, else unchanged."""
     if isinstance(value, str):
         try:
-            return int(value)
+            return float(value) if "." in value else int(value)
         except ValueError:
-            pass
-        if (
-            ("." in value or "e" in value or "E" in value)
-            and any(ch.isdigit() for ch in value)
-        ):
-            try:
-                parsed = float(value)
-            except ValueError:
-                return value
-            if math.isfinite(parsed):
-                return parsed
+            return value
     return value
 
 

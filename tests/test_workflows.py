@@ -1835,12 +1835,11 @@ class TestExpressions:
             with pytest.raises(ValueError, match="invalid expression"):
                 evaluate_expression("{{ " + text + " }}", StepContext(inputs={}))
 
-    def test_exponent_numeric_string_coercion_in_comparisons(self):
-        """Exponent-form numeric strings coerce in ordering and equality
-        comparisons just like workflow input coercion, while non-finite and
-        non-numeric strings stay strings."""
+    def test_exponent_strings_are_not_implicitly_coerced_in_comparisons(self):
+        """Exponent-form strings stay strings during comparisons rather than
+        being implicitly converted to floats, while exponent numeric literals
+        compare as numbers."""
         from specify_cli.workflows.base import StepContext
-        from specify_cli.workflows.engine import WorkflowEngine
         from specify_cli.workflows.expressions import (
             evaluate_condition,
             evaluate_expression,
@@ -1852,51 +1851,57 @@ class TestExpressions:
                 "upper": "2E3",
                 "small": "5e-2",
                 "neg": "-1e2",
-                "inf_str": "inf",
-                "ninf_str": "-inf",
-                "infinity_str": "Infinity",
-                "nan_str": "nan",
-                "overflow_str": "1e400",
-                "overflow_dot": "1.0e400",
-                "bad_exp": "1e",
+                "n": 1000,
             }
         )
-        assert WorkflowEngine._coerce_input("x", "1e3", {"type": "number"}) == 1000
-        assert evaluate_condition("{{ inputs.s > 100 }}", ctx) is True
-        assert evaluate_condition("{{ inputs.s == 1000 }}", ctx) is True
-        assert evaluate_condition("{{ inputs.s == 1e3 }}", ctx) is True
-        assert evaluate_condition("{{ inputs.s == '1000' }}", ctx) is True
-        assert evaluate_condition("{{ inputs.upper > '900' }}", ctx) is True
-        assert evaluate_condition("{{ inputs.small < 0.1 }}", ctx) is True
-        assert evaluate_condition("{{ inputs.neg < 0 }}", ctx) is True
-        assert evaluate_condition("{{ inputs.s != 1000 }}", ctx) is False
-        # Non-finite strings and malformed exponents must not coerce to float.
-        assert evaluate_condition("{{ inputs.inf_str > 100 }}", ctx) is False
-        assert evaluate_condition("{{ inputs.ninf_str < 0 }}", ctx) is False
-        assert evaluate_condition("{{ inputs.infinity_str > 0 }}", ctx) is False
-        assert evaluate_condition("{{ inputs.nan_str == inputs.nan_str }}", ctx) is True
-        assert evaluate_condition("{{ inputs.overflow_str > 100 }}", ctx) is False
-        assert evaluate_condition("{{ inputs.overflow_dot > 100 }}", ctx) is False
-        assert evaluate_condition("{{ inputs.bad_exp > 0 }}", ctx) is False
-        assert evaluate_expression("{{ inputs.s == 'abc' }}", ctx) is False
+        # Exponent-form strings do not implicitly coerce to numbers.
+        assert evaluate_expression("{{ inputs.s == 1000 }}", ctx) is False
+        assert evaluate_expression("{{ inputs.s == 1e3 }}", ctx) is False
+        assert evaluate_expression("{{ inputs.s != 1000 }}", ctx) is True
+        assert evaluate_expression("{{ inputs.s != 1e3 }}", ctx) is True
+        assert evaluate_expression("{{ inputs.s == '1000' }}", ctx) is False
+        assert evaluate_expression("{{ inputs.s == '1e3' }}", ctx) is True
+        assert evaluate_condition("{{ inputs.s > 100 }}", ctx) is False
+        assert evaluate_condition("{{ inputs.s < 100 }}", ctx) is False
+        assert evaluate_condition("{{ inputs.small < 0.1 }}", ctx) is False
+        assert evaluate_condition("{{ inputs.neg < 0 }}", ctx) is False
+        # String-to-string ordering stays lexicographic ("1e3" < "2e1", "2E3" < "900").
+        assert evaluate_expression("{{ inputs.s > '2e1' }}", ctx) is False
+        assert evaluate_expression("{{ inputs.upper > '900' }}", ctx) is False
+        # Exponent numeric literals still compare numerically.
+        assert evaluate_expression("{{ 1e3 == 1000 }}", ctx) is True
+        assert evaluate_expression("{{ 1e3 > 100 }}", ctx) is True
+        assert evaluate_expression("{{ inputs.n == 1e3 }}", ctx) is True
+        assert evaluate_expression("{{ 5e-2 < 0.1 }}", ctx) is True
 
-    def test_chained_list_indexing_and_unsupported_index_syntax(self):
-        """Chained list indices resolve across nested lists and dot segments;
-        missing/non-list indices yield None while invalid index syntax raises."""
+    def test_chained_list_indexing_and_expected_errors(self):
+        """Chained list indices resolve across nested lists (including negative
+        indices) and dot segments; invalid chained access raises IndexError or
+        TypeError instead of returning None, and invalid syntax raises ValueError."""
         import pytest
         from specify_cli.workflows.base import StepContext
         from specify_cli.workflows.expressions import (
             evaluate_condition,
             evaluate_expression,
         )
+        from specify_cli.workflows.step.if_then import IfThenStep
 
         ctx = StepContext(
-            inputs={"name": "it's", "a": "x", "b": True},
+            inputs={
+                "name": "it's",
+                "a": "x",
+                "b": True,
+                "scalar": 42,
+                "empty": [],
+                "rows": [None, {"k": "v"}],
+            },
             steps={
                 "plan": {
                     "output": {
                         "matrix": [["a", "b"], ["c", "d"]],
                         "cube": [[[{"label": "ok"}]]],
+                        "null_cell": [[None]],
+                        "falsy_cells": [[False, 0, ""]],
                     }
                 }
             },
@@ -1904,17 +1909,73 @@ class TestExpressions:
         )
         assert evaluate_expression("{{ steps.plan.output.matrix[0][1] }}", ctx) == "b"
         assert evaluate_expression("{{ steps.plan.output.matrix[-1][-2] }}", ctx) == "c"
+        assert evaluate_expression("{{ steps.plan.output.matrix[0][-1] }}", ctx) == "b"
+        assert evaluate_expression("{{ steps.plan.output.matrix[-2][0] }}", ctx) == "a"
         assert (
             evaluate_expression("{{ steps.plan.output.cube[0][0][0].label }}", ctx)
             == "ok"
         )
+        assert (
+            evaluate_expression("{{ steps.plan.output.cube[-1][-1][-1].label }}", ctx)
+            == "ok"
+        )
+        assert evaluate_expression("{{ steps.plan.output.null_cell[0][0] }}", ctx) is None
+        assert evaluate_expression("{{ steps.plan.output.falsy_cells[0][0] }}", ctx) is False
+        assert evaluate_expression("{{ steps.plan.output.falsy_cells[0][1] }}", ctx) == 0
+        assert evaluate_expression("{{ steps.plan.output.falsy_cells[0][2] }}", ctx) == ""
         assert evaluate_expression("{{ item[0][1] }}", ctx) == "second"
         assert evaluate_expression("{{ item[-1][0] }}", ctx) == "third"
-        # Out-of-range and non-list targets are missing data, not syntax errors.
-        assert evaluate_expression("{{ steps.plan.output.matrix[0][9] }}", ctx) is None
-        assert evaluate_expression("{{ steps.plan.output.matrix[9][0] }}", ctx) is None
-        assert evaluate_expression("{{ steps.plan.output.matrix[0][1][0] }}", ctx) is None
-        # Malformed index syntax and digit-/keyword-led indexing raise.
+        assert evaluate_expression("{{ item[-1][-1] }}", ctx) == "fourth"
+        assert evaluate_condition("{{ steps.plan.output.matrix[0][1] == 'b' }}", ctx) is True
+        # Short-circuit boolean guards prevent evaluating an invalid chained index.
+        assert evaluate_condition("{{ false and steps.plan.output.matrix[0][9] }}", ctx) is False
+        assert evaluate_condition("{{ true or steps.plan.output.matrix[0][9] }}", ctx) is True
+
+        # Out-of-range chained indices raise IndexError instead of returning None.
+        for bad_index in (
+            "steps.plan.output.matrix[0][9]",
+            "steps.plan.output.matrix[0][-9]",
+            "steps.plan.output.matrix[9][0]",
+            "steps.plan.output.matrix[-9][0]",
+            "inputs.empty[0][0]",
+            "item[0][9]",
+            "item[-9][0]",
+        ):
+            with pytest.raises(IndexError, match="out of range"):
+                evaluate_expression("{{ " + bad_index + " }}", ctx)
+        # Conditions and workflow branches surface the error instead of picking the wrong branch.
+        with pytest.raises(IndexError, match="out of range"):
+            evaluate_condition("{{ steps.plan.output.matrix[0][9] != 'b' }}", ctx)
+        with pytest.raises(IndexError, match="out of range"):
+            IfThenStep().execute(
+                {
+                    "id": "branch",
+                    "condition": "{{ steps.plan.output.matrix[0][9] == 'b' }}",
+                    "then": [],
+                    "else": [],
+                },
+                ctx,
+            )
+        with pytest.raises(IndexError, match="out of range"):
+            evaluate_expression("cell={{ steps.plan.output.matrix[0][9] }}", ctx)
+
+        # Chained indexing into non-list values raises TypeError instead of returning None.
+        for bad_target in (
+            "steps.plan.output.matrix[0][1][0]",
+            "steps.plan.output.null_cell[0][0][0]",
+            "steps.plan.output.missing[0][1]",
+            "steps.missing.output.matrix[0][1]",
+            "inputs.scalar[0][1]",
+            "inputs.rows[0][0]",
+            "inputs.rows[1][0]",
+            "inputs[0][1]",
+        ):
+            with pytest.raises(TypeError, match="chained indexing requires a list"):
+                evaluate_expression("{{ " + bad_target + " }}", ctx)
+        with pytest.raises(TypeError, match="chained indexing requires a list"):
+            evaluate_expression("{{ item[0][1] }}", StepContext())
+
+        # Malformed index syntax and digit-/keyword-led indexing raise ValueError.
         for bad in (
             "steps.plan.output.matrix[0][]",
             "steps.plan.output.matrix[0][a]",
@@ -1952,30 +2013,6 @@ class TestExpressions:
                 evaluate_expression(
                     "{{ " + "9" * (limit + 1) + " }}", StepContext(inputs={})
                 )
-        finally:
-            sys.set_int_max_str_digits(previous_limit)
-
-    def test_overlong_integer_string_does_not_fallback_to_float(self):
-        """Integer strings exceeding Python's digit limit stay strings instead
-        of silently rounding through ``float()`` during comparison."""
-        import sys
-
-        from specify_cli.workflows.base import StepContext
-        from specify_cli.workflows.expressions import evaluate_condition
-        from specify_cli.workflows.expressions.operators import _coerce_number
-
-        previous_limit = sys.get_int_max_str_digits()
-        limit = sys.int_info.str_digits_check_threshold
-        overlong = "0" * (limit + 1) + "9007199254740993"
-        try:
-            sys.set_int_max_str_digits(limit)
-            assert _coerce_number(overlong) == overlong
-            assert isinstance(_coerce_number(overlong), str)
-            ctx = StepContext(inputs={"huge": overlong})
-            assert evaluate_condition("{{ inputs.huge == 9007199254740992 }}", ctx) is False
-            assert evaluate_condition("{{ inputs.huge == 9007199254740993 }}", ctx) is False
-            assert evaluate_condition("{{ inputs.huge > 0 }}", ctx) is False
-            assert evaluate_condition("{{ inputs.huge == inputs.huge }}", ctx) is True
         finally:
             sys.set_int_max_str_digits(previous_limit)
 

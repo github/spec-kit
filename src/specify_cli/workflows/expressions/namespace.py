@@ -28,6 +28,11 @@ def _resolve_dot_path(obj: Any, path: str) -> Any:
     Supports dict key access and single or chained list indexing, including the
     negative form Python and Jinja2 both accept (e.g., ``task_list[0]``,
     ``task_list[-1]``, ``matrix[0][1]``).
+
+    For chained indexing (two or more bracketed indices on one segment),
+    invalid access raises ``IndexError`` for out-of-range list indices and
+    ``TypeError`` when the target is not a list, rather than silently
+    returning ``None``.
     """
     parts = path.split(".")
     current = obj
@@ -39,25 +44,38 @@ def _resolve_dot_path(obj: Any, path: str) -> Any:
             if isinstance(current, dict):
                 current = current.get(key)
             else:
-                return None
+                current = None
             raw_indices = idx_match.group(2)
             indices = (
                 _INDEX_BRACKET.findall(raw_indices)
                 if raw_indices.startswith("[")
                 else [raw_indices]
             )
+            chained = len(indices) > 1
             for raw_idx in indices:
                 idx = int(raw_idx)
-                if isinstance(current, list) and -len(current) <= idx < len(current):
+                if not isinstance(current, list):
+                    if chained:
+                        raise TypeError(
+                            f"cannot index {type(current).__name__} in '{path}': "
+                            "chained indexing requires a list"
+                        )
+                    current = None
+                    break
+                if -len(current) <= idx < len(current):
                     current = current[idx]
+                elif chained:
+                    raise IndexError(
+                        f"list index {idx} out of range in '{path}' "
+                        f"(length {len(current)})"
+                    )
                 else:
-                    return None
+                    current = None
+                    break
         elif isinstance(current, dict):
             current = current.get(part)
         else:
-            return None
-        if current is None:
-            return None
+            current = None
     return current
 
 

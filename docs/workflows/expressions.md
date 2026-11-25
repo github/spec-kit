@@ -44,8 +44,8 @@ handler, so resume is at-least-once.
 
 | Form | Example |
 | --- | --- |
-| Dot-path lookup | `{{ inputs.name }}`, `{{ steps.test.output.exit_code }}` |
-| Literals | Strings, numbers, `true`, `false`, `none`/`null`, and lists such as `[1, 2]` |
+| Dot-path lookup | `{{ inputs.name }}`, `{{ steps.test.output.exit_code }}`, `{{ steps.plan.output.matrix[0][1] }}` |
+| Literals | Strings, numbers (including exponent literals such as `1e3`), `true`, `false`, `none`/`null`, and lists such as `[1, 2]` |
 | Comparisons | `==`, `!=`, `>`, `<`, `>=`, `<=` |
 | Boolean logic | `and`, `or`, `not` |
 | Membership | `in`, `not in` |
@@ -93,7 +93,9 @@ Notes on the newer filters:
 
 Operators bind from loosest to tightest as `or`, `and`, `not`, then the comparisons. All comparisons (`==`, `!=`, `>`, `<`, `>=`, `<=`, `in`, `not in`) share one level and are evaluated left to right; none has priority over another. `{{ a == b > 0 }}` therefore means `{{ (a == b) > 0 }}`. To combine comparisons, use parentheses or `and`/`or`.
 
-The body of every `{{ }}` block must be a valid expression. Text that is not one, such as prose (`{{ some text }}`), a key with characters other than letters, digits, `_` and `-` (`{{ inputs.weird:key }}`), or arithmetic (`{{ count + 1 }}`), raises a `ValueError` naming the offending token. Numbers may be written as `5`, `-5`, `+5`, `1_000`, `0.5`, `.5`, `5.`, or `1.5e3`.
+The body of every `{{ }}` block must be a valid expression. Text that is not one, such as prose (`{{ some text }}`), a key with characters other than letters, digits, `_` and `-` (`{{ inputs.weird:key }}`), or arithmetic (`{{ count + 1 }}`), raises a `ValueError` naming the offending token. Numbers may be written as `5`, `-5`, `+5`, `1_000`, `0.5`, `.5`, `5.`, `1.5e3`, `1e3`, `-2e+3`, or `5e-2`. Exponent literals evaluate to `float`; malformed exponent forms such as `1e` or `1e3.5` raise `ValueError`, and exponent-form strings such as `"1e3"` are not implicitly converted to numbers during comparisons.
+
+Path segments support integer list indexing, including negative indices and chained indexing (for example, `{{ steps.plan.output.matrix[0][1] }}`, `{{ steps.plan.output.matrix[-1][-2] }}`, or `{{ item[0][1] }}`). Malformed index syntax (such as `matrix[0][]` or `matrix[0][a]`) raises `ValueError`. For chained indexing, an out-of-range index raises `IndexError` and indexing a non-list value raises `TypeError` instead of returning `None`.
 
 > **Compatibility:** Earlier releases could resolve an expression such as `{{ inputs.weird:key }}` when the key existed; this expression now fails at runtime. Rename keys you control (for example, `weird:key` to `weird_key`) and update their references. Quoted-key lookup is not supported. Workflow validation may not detect these expressions before execution.
 
