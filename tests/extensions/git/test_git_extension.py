@@ -2406,6 +2406,31 @@ class TestPowerShellUtf8Inputs:
         assert branch == f"001-{expected_suffix}"
         assert len(branch.encode("utf-8")) <= 244
 
+    @pytest.mark.parametrize(
+        ("short_name", "expected"),
+        [
+            ("x²", "001-x"),
+            ("xⅫ", "001-x"),
+            ("x٥", "001-x٥"),
+            ("x𝟘", "001-x𝟘"),
+        ],
+        ids=["superscript_number", "roman_numeral", "decimal_digit", "supplementary_decimal"],
+    )
+    def test_unicode_number_categories_match(
+        self, tmp_path: Path, exe: str, short_name: str, expected: str
+    ):
+        """Only decimal digits (Nd) are kept, including outside the BMP (x𝟘)."""
+        project = _setup_project(tmp_path)
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", short_name, "x",
+            exe=exe,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout)["BRANCH_NAME"] == expected
+
     def test_create_branch_without_words_does_not_throw(self, tmp_path: Path, exe: str):
         """Punctuation-only input still reaches the fallback; @() keeps it safe."""
         project = _setup_project(tmp_path)

@@ -415,6 +415,26 @@ class TestCreateFeatureBranchParity:
         p = _run_py("create-new-feature-branch", py_proj, "--json", "--dry-run", *args)
         assert _assert_json_parity(b, p)["BRANCH_NAME"] == expected
 
+    @pytest.mark.parametrize(
+        ("short_name", "expected"),
+        [
+            ("x²", "001-x"),
+            ("xⅫ", "001-x"),
+            ("x٥", "001-x٥"),
+            ("x𝟘", "001-x𝟘"),
+        ],
+        ids=["superscript_number", "roman_numeral", "decimal_digit", "supplementary_decimal"],
+    )
+    def test_unicode_number_categories_match(
+        self, tmp_path: Path, short_name: str, expected: str
+    ):
+        """Only decimal digits (Nd) are kept, as in core; other numbers are separators."""
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        args = ("--json", "--dry-run", "--short-name", short_name, "x")
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, *args)
+        p = _run_py("create-new-feature-branch", py_proj, *args)
+        assert _assert_json_parity(b, p)["BRANCH_NAME"] == expected
+
     def test_unicode_branch_is_created_and_checked_out(self, tmp_path: Path):
         """A real run checks out the Unicode branch instead of 001-."""
         bash_proj, py_proj = _twin_projects(tmp_path)
