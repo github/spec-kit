@@ -4506,6 +4506,42 @@
       "created_at": "2026-06-01T00:00:00Z",
       "updated_at": "2026-06-01T00:00:00Z"
     },
+    "multirepo": {
+      "name": "Multirepo Workspace Orchestration",
+      "id": "multirepo",
+      "description": "Orchestrate spec-driven implementation across a workspace: a central specs repository dispatches implementation to member repositories",
+      "author": "Joao Victor",
+      "version": "1.0.0",
+      "download_url": "https://github.com/joaopaschuino/speckit-multirepo/archive/refs/tags/v1.0.0.zip",
+      "sha256": "aaf600a909ab7ff89675d33b24b9e2ba8106b82feddbde37d3a063e25cd2615c",
+      "repository": "https://github.com/joaopaschuino/speckit-multirepo",
+      "homepage": "https://github.com/joaopaschuino/speckit-multirepo",
+      "documentation": "https://github.com/joaopaschuino/speckit-multirepo/blob/main/README.md",
+      "changelog": "https://github.com/joaopaschuino/speckit-multirepo/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 1
+      },
+      "tags": [
+        "multirepo",
+        "orchestration",
+        "workspace",
+        "specs",
+        "spec-driven-development",
+        "dependency-graph"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-11-25T00:00:00Z",
+      "updated_at": "2026-11-25T00:00:00Z"
+    },
     "okf": {
       "name": "OKF Knowledge Bundle Generator",
       "id": "okf",
