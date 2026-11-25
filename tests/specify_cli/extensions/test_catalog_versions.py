@@ -235,6 +235,86 @@ def test_malformed_history_is_rejected(tmp_path, monkeypatch, bad_history):
         catalog.get_extension_info("demo-history", "0.4.12")
 
 
+def _entry_with_release_url(download_url: str) -> dict:
+    return {
+        "id": "demo-history",
+        "name": "Demo History",
+        "version": "0.5.1",
+        "download_url": "https://example.com/demo-0.5.1.zip",
+        "sha256": "a" * 64,
+        "_catalog_name": "trusted",
+        "_install_allowed": True,
+        "releases": {
+            "0.4.12": {"download_url": download_url, "sha256": "b" * 64},
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "download_url",
+    [
+        "http://example.com/a.zip",
+        "http://localhost.example.com/a.zip",
+        "ftp://example.com/a.zip",
+        "file:///tmp/a.zip",
+        "https:///a.zip",
+    ],
+)
+def test_historical_release_rejects_unsafe_download_url(
+    tmp_path, monkeypatch, download_url
+):
+    catalog = _catalog(monkeypatch, tmp_path, _entry_with_release_url(download_url))
+
+    with pytest.raises(ExtensionError, match="has an invalid download_url"):
+        catalog.get_extension_info("demo-history", "0.4.12")
+    with pytest.raises(ExtensionError, match="has an invalid download_url"):
+        catalog.get_extension_versions("demo-history")
+
+
+@pytest.mark.parametrize(
+    "download_url",
+    [
+        "https://example.com/a.zip",
+        "http://localhost:8000/a.zip",
+        "http://127.0.0.1/a.zip",
+        "http://[::1]/a.zip",
+    ],
+)
+def test_historical_release_accepts_https_or_loopback_http(
+    tmp_path, monkeypatch, download_url
+):
+    catalog = _catalog(monkeypatch, tmp_path, _entry_with_release_url(download_url))
+
+    selected = catalog.get_extension_info("demo-history", "0.4.12")
+
+    assert selected["version"] == "0.4.12"
+    assert selected["download_url"] == download_url
+
+
+@pytest.mark.parametrize("download_url", ["", "   "])
+def test_blank_historical_download_url_still_reports_missing(
+    tmp_path, monkeypatch, download_url
+):
+    catalog = _catalog(monkeypatch, tmp_path, _entry_with_release_url(download_url))
+
+    with pytest.raises(ExtensionError, match="needs a download_url"):
+        catalog.get_extension_info("demo-history", "0.4.12")
+
+
+def test_extension_info_reports_unsafe_historical_download_url(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    _catalog(monkeypatch, project, _entry_with_release_url("http://example.com/a.zip"))
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(
+        app, ["extension", "info", "demo-history", "--versions"]
+    )
+
+    assert result.exit_code != 0
+    assert "has an invalid download_url" in " ".join(result.output.split())
+
+
 def test_selected_release_download_uses_its_url_without_relookup(tmp_path, monkeypatch):
     archive = _archive(tmp_path, "0.4.12")
     entry = _entry(archive)
