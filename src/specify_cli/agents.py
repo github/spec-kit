@@ -347,13 +347,15 @@ class CommandRegistrar:
         if self._has_illegal_toml_control(body):
             toml_lines.append(f"prompt = {self._render_basic_toml_string(body)}")
         elif '"""' not in body and "\\" not in body:
-            toml_lines.append('prompt = """')
-            toml_lines.append(body)
-            toml_lines.append('"""')
+            if body.endswith('"'):
+                toml_lines.append('prompt = """\n' + body + '\\\n"""')
+            else:
+                toml_lines.append('prompt = """\n' + body + '"""')
         elif "'''" not in body:
-            toml_lines.append("prompt = '''")
-            toml_lines.append(body)
-            toml_lines.append("'''")
+            if body.endswith("'"):
+                toml_lines.append(f"prompt = {self._render_basic_toml_string(body)}")
+            else:
+                toml_lines.append("prompt = '''\n" + body + "'''")
         else:
             toml_lines.append(f"prompt = {self._render_basic_toml_string(body)}")
 

@@ -3886,6 +3886,49 @@ Real body starts here.
         assert parsed["description"] == "first line\nsecond line\n"
 
     @pytest.mark.parametrize(
+        ("body", "expected_form"),
+        [
+            pytest.param("Do work", 'prompt = """\n', id="single-line"),
+            pytest.param("", 'prompt = """\n', id="empty"),
+            pytest.param("Do work\n", 'prompt = """\n', id="trailing-newline"),
+            pytest.param(
+                "\nleading newline", 'prompt = """\n', id="leading-newline"
+            ),
+            pytest.param('ends with quote"', '\\\n"""', id="trailing-quote"),
+            pytest.param(
+                'ends with two quotes""', '\\\n"""', id="trailing-two-quotes"
+            ),
+            pytest.param("first line\nsecond line", 'prompt = """\n', id="multiline"),
+            pytest.param(
+                r"a body with a \ backslash", "prompt = '''\n", id="literal"
+            ),
+            pytest.param(
+                "a \\ body ending with '",
+                'prompt = "',
+                id="literal-trailing-quote",
+            ),
+            pytest.param(
+                'contains """ and ends with \'',
+                'prompt = "',
+                id="triple-double-trailing-quote",
+            ),
+        ],
+    )
+    def test_render_toml_command_round_trips_prompt_exactly(
+        self, body, expected_form
+    ):
+        """Every TOML prompt form must round-trip an LF body exactly."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        output = registrar.render_toml_command(
+            {"description": "x"}, body, "extension:test-ext"
+        )
+
+        assert expected_form in output
+        assert tomllib.loads(output)["prompt"] == body
+
+    @pytest.mark.parametrize(
         ("description", "expected"),
         [
             (None, ""),                    # "description:" with no value
@@ -3950,7 +3993,7 @@ Real body starts here.
             "extension:test-ext",
         )
         parsed = tomllib.loads(output)  # must not raise
-        assert parsed["prompt"].strip() == r"Run C:\Users\dev\tool.exe then report."
+        assert parsed["prompt"] == r"Run C:\Users\dev\tool.exe then report."
 
     def test_render_toml_command_handles_trailing_backslash(self):
         """A body ending in a backslash must round-trip without corruption."""
@@ -3963,7 +4006,7 @@ Real body starts here.
             "extension:test-ext",
         )
         parsed = tomllib.loads(output)
-        assert parsed["prompt"].strip() == "path ends with sep\\"
+        assert parsed["prompt"] == "path ends with sep\\"
 
     def test_render_toml_command_backslash_with_both_triple_quotes_escapes(self):
         """Body with a backslash and both triple-quote styles → escaped basic string."""
