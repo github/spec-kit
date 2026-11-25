@@ -15,7 +15,8 @@
     <a href="./README.md">English</a> ·
     <strong>简体中文</strong> ·
     <a href="./README.ja.md">日本語</a> ·
-    <a href="./README.ko.md">한국어</a>
+    <a href="./README.ko.md">한국어</a> ·
+    <a href="./README.fr.md">Français</a>
 </p>
 
 Spec Kit 是一个开源工具套件，为 AI 编码助手提供结构化流程、可复用模板和有据可查的成果。

@@ -15,7 +15,8 @@
     <a href="./README.md">English</a> ·
     <a href="./README.zh-CN.md">简体中文</a> ·
     <a href="./README.ja.md">日本語</a> ·
-    <strong>한국어</strong>
+    <strong>한국어</strong> ·
+    <a href="./README.fr.md">Français</a>
 </p>
 
 Spec Kit은 AI 코딩 에이전트에게 체계적인 프로세스, 재사용 가능한 템플릿, 문서로 남는 결과물을

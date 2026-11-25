@@ -15,7 +15,8 @@
     <strong>English</strong> ·
     <a href="./README.zh-CN.md">简体中文</a> ·
     <a href="./README.ja.md">日本語</a> ·
-    <a href="./README.ko.md">한국어</a>
+    <a href="./README.ko.md">한국어</a> ·
+    <a href="./README.fr.md">Français</a>
 </p>
 
 Spec Kit is an open source toolkit that gives AI coding agents structured
