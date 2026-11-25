@@ -13,6 +13,7 @@ from specify_cli.presets import (
     PresetResolver,
     PresetValidationError,
 )
+from specify_cli.presets._manifest import PresetSectionValidationError
 from tests.specify_cli.presets._helpers import (
     CORE_TEMPLATE_NAMES,
     install_self_test_preset,
@@ -1669,6 +1670,135 @@ class TestResolveContent:
         assert "Preset body content" in content
         # Core frontmatter should NOT appear in the body
         assert content.count("---") == 2  # only one frontmatter block (opening + closing)
+
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+    def test_resolve_content_legacy_bom_frontmatter_strategy(
+        self, project_dir, temp_dir, valid_pack_data, newline
+    ):
+        """A frontmatter strategy after a UTF-8 BOM is still honoured."""
+        commands_dir = project_dir / ".specify" / "templates" / "commands"
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        (commands_dir / "bom-legacy.md").write_text(
+            "Core body content\n", encoding="utf-8"
+        )
+        preset_content = (
+            "\ufeff---\ndescription: BOM preset\nstrategy: append\n---\n"
+            "Appended body content\n"
+        ).replace("\n", newline)
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "bom-legacy-pack",
+            preset_content,
+            template_type="command",
+            template_name="speckit.bom-legacy",
+        )
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("speckit.bom-legacy", "command")
+        content = resolver.resolve_content("speckit.bom-legacy", "command")
+
+        assert layers[0]["strategy"] == "append"
+        assert content is not None
+        assert "Core body content" in content
+        assert "Appended body content" in content
+
+    def test_resolve_content_strips_bom_frontmatter_from_composed_command(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A BOM-prefixed layer's frontmatter must not leak into the body."""
+        commands_dir = project_dir / ".specify" / "templates" / "commands"
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        (commands_dir / "bom-compose.md").write_text(
+            "---\ndescription: Core command\n---\nCore body content\n",
+            encoding="utf-8",
+        )
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "bom-compose-pack",
+            "\ufeff---\ndescription: BOM preset\nstrategy: append\n---\n"
+            "Appended body content\n",
+            strategy="append",
+            template_type="command",
+            template_name="speckit.bom-compose",
+        )
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+
+        content = PresetResolver(project_dir).resolve_content(
+            "speckit.bom-compose", "command"
+        )
+
+        assert content is not None
+        assert "\ufeff" not in content
+        assert "strategy: append" not in content
+        assert "Appended body content" in content
+        frontmatter = yaml.safe_load(content.split("---", 2)[1])
+        assert frontmatter == {"description": "BOM preset"}
+
+    @pytest.mark.parametrize(
+        "preset_content",
+        [
+            "\ufeffPlain appended content\n",
+            "\ufeff---\ndescription: Unterminated frontmatter\nAppended body content\n",
+        ],
+        ids=["no-frontmatter", "unterminated-frontmatter"],
+    )
+    def test_resolve_content_keeps_bom_without_complete_frontmatter(
+        self, project_dir, temp_dir, valid_pack_data, preset_content
+    ):
+        """Without complete frontmatter the layer is appended unchanged."""
+        commands_dir = project_dir / ".specify" / "templates" / "commands"
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        core_content = "Core body content\n"
+        (commands_dir / "bom-guard.md").write_text(
+            core_content, encoding="utf-8"
+        )
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "bom-guard-pack",
+            preset_content,
+            strategy="append",
+            template_type="command",
+            template_name="speckit.bom-guard",
+        )
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+
+        content = PresetResolver(project_dir).resolve_content(
+            "speckit.bom-guard", "command"
+        )
+
+        # No complete frontmatter means content stays unchanged, matching #5562.
+        assert content == core_content + "\n\n" + preset_content
+
+    @pytest.mark.parametrize("prefix", ["", "\ufeff"], ids=["plain", "bom"])
+    def test_legacy_frontmatter_replace_section_requires_manifest_declaration(
+        self, project_dir, valid_pack_data, prefix
+    ):
+        """replace-section in command frontmatter is rejected, BOM or not."""
+        presets_dir = project_dir / ".specify" / "presets"
+        presets_dir.mkdir(parents=True)
+        _create_pack(
+            presets_dir,
+            valid_pack_data,
+            "replace-section-pack",
+            prefix + "---\nstrategy: replace-section\n---\nReplacement body\n",
+            template_type="command",
+            template_name="speckit.replace-section",
+        )
+        PresetRegistry(presets_dir).add(
+            "replace-section-pack", {"version": "1.0.0", "priority": 10}
+        )
+
+        with pytest.raises(
+            PresetSectionValidationError,
+            match="Declare replace-section and selector",
+        ):
+            PresetResolver(project_dir).collect_all_layers(
+                "speckit.replace-section", "command"
+            )
 
     def test_resolve_content_blank_line_separator(self, project_dir, temp_dir, valid_pack_data):
         """Test that prepend/append use blank line separator."""
