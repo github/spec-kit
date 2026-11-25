@@ -11,6 +11,8 @@ discovery continues using the fetched catalog.
 
 > **A project's `.specify/workflow-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before running a workflow from an unfamiliar project, run `specify workflow catalog list` (and `specify workflow step catalog list` for the step catalogs its steps can pull in) — a project supplying that config is not evidence its workflows or steps were vetted. Maintainers do not audit workflow code; review both `run` and `env` in its shell steps yourself, including strict steps (see [Reviewing shell execution](../workflow-steps/types.md#reviewing-shell-execution) and [Who maintains workflows?](overview.md#who-maintains-workflows)).
 
+`specify workflow catalog list` applies the project's symlink policy to `.specify/workflow-catalogs.yml`: it refuses a symlinked config unless `allow_symlinks` is `true` in `.specify/init-options.json`, and even then it only follows links to regular files inside the project. Other commands, including `search`, `add`, and `catalog remove`, do not apply this check and still read through the link. If `catalog list` refuses the config, it can't show the sources or the indexes `catalog remove` expects, so inspect the link and its target yourself before running those commands.
+
 ## Discovery and trust
 
 Workflow catalogs advertise `workflow.yml` files or complete packages. Built-in sources include `default` (installation allowed) and `community` (discovery-only). Users must vet sources before installation and use; maintainers do not audit or endorse component code.
