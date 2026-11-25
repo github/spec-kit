@@ -208,6 +208,11 @@ function Get-FeaturePathsEnv {
             if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
                 $featureDir = Join-Path $repoRoot $featureDir
             }
+            if (-not (Test-Path -LiteralPath $featureDir -PathType Container)) {
+                [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json points to an existing directory.")
+                if ($ReturnNullOnError) { return $null }
+                exit 1
+            }
         } else {
             [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory.")
             if ($ReturnNullOnError) { return $null }

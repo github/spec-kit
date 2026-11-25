@@ -205,6 +205,10 @@ get_feature_paths() {
             feature_dir="$_fd"
             # Normalize relative paths to absolute under repo root
             [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
+            if [[ ! -d "$feature_dir" ]]; then
+                echo "ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json points to an existing directory." >&2
+                return 1
+            fi
         else
             echo "ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory." >&2
             return 1

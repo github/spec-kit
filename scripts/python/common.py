@@ -168,6 +168,13 @@ def get_feature_paths(
         feature_dir = Path(stored)
         if not feature_dir.is_absolute():
             feature_dir = repo_root / feature_dir
+        if not feature_dir.is_dir():
+            print(
+                "ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY "
+                "or ensure .specify/feature.json points to an existing directory.",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
     else:
         print(
             "ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY "
