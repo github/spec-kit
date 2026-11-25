@@ -9,14 +9,9 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import requires_bash
+from tests.parity_helpers import install_scripts
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
-SETUP_TASKS_SH = PROJECT_ROOT / "scripts" / "bash" / "setup-tasks.sh"
-CHECK_PREREQ_SH = PROJECT_ROOT / "scripts" / "bash" / "check-prerequisites.sh"
-COMMON_PS = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
-SETUP_TASKS_PS = PROJECT_ROOT / "scripts" / "powershell" / "setup-tasks.ps1"
-CHECK_PREREQ_PS = PROJECT_ROOT / "scripts" / "powershell" / "check-prerequisites.ps1"
 TASKS_TEMPLATE = PROJECT_ROOT / "templates" / "tasks-template.md"
 
 HAS_PWSH = shutil.which("pwsh") is not None
@@ -26,22 +21,6 @@ _WINDOWS_POWERSHELL = (shutil.which("powershell.exe") or shutil.which("powershel
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _install_bash_scripts(repo: Path) -> None:
-    d = repo / ".specify" / "scripts" / "bash"
-    d.mkdir(parents=True, exist_ok=True)
-    shutil.copy(COMMON_SH, d / "common.sh")
-    shutil.copy(SETUP_TASKS_SH, d / "setup-tasks.sh")
-    shutil.copy(CHECK_PREREQ_SH, d / "check-prerequisites.sh")
-
-
-def _install_ps_scripts(repo: Path) -> None:
-    d = repo / ".specify" / "scripts" / "powershell"
-    d.mkdir(parents=True, exist_ok=True)
-    shutil.copy(COMMON_PS, d / "common.ps1")
-    shutil.copy(SETUP_TASKS_PS, d / "setup-tasks.ps1")
-    shutil.copy(CHECK_PREREQ_PS, d / "check-prerequisites.ps1")
-
 
 def _install_core_tasks_template(repo: Path) -> None:
     """Copy the real tasks-template.md into the core template location."""
@@ -206,8 +185,8 @@ def tasks_repo(tmp_path: Path) -> Path:
 
     (repo / ".specify").mkdir()
     _install_core_tasks_template(repo)
-    _install_bash_scripts(repo)
-    _install_ps_scripts(repo)
+    install_scripts(repo, "setup-tasks")
+    install_scripts(repo, "check-prerequisites")
     return repo
 
 

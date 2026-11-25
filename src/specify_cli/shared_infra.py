@@ -594,6 +594,12 @@ def install_shared_infra(
     if scripts_src.is_dir():
         dest_scripts = project_path / ".specify" / "scripts"
         if _ensure_or_bucket_dir(dest_scripts):
+            from .presets._registry import PresetRegistry, PresetValidationError
+
+            try:
+                PresetRegistry.refresh_template_projections(project_path)
+            except PresetValidationError as exc:
+                raise ValueError(f"Could not refresh preset template data: {exc}") from exc
             for variant_dir in variant_dirs:
                 variant_src = scripts_src / variant_dir
                 if not variant_src.is_dir():
@@ -632,13 +638,7 @@ def install_shared_infra(
                             preserved_user_files.append(rel)
                         else:
                             skipped_files.append(rel)
-                            # Record the existing-on-disk file in the manifest so a
-                            # fresh manifest run against an already-populated
-                            # ``.specify/`` tree does not silently drop it (#2107).
-                            # ``prior_hashes`` is the function-scope snapshot taken
-                            # at entry, so this membership check is O(1) and avoids
-                            # the repeated ``dict(self._files)`` copy that
-                            # ``manifest.files`` performs on every access.
+                            # Keep pre-existing files in new manifests (#2107).
                             if dst_path.is_file() and rel not in prior_hashes:
                                 try:
                                     manifest.record_existing(rel, recovered=True)
@@ -660,7 +660,7 @@ def install_shared_infra(
                     content = _resolve_dynamic_command_refs(
                         content, invoke_separator, invoke_prefix
                     )
-                    data = content.encode("utf-8")
+                    data = content.replace("__SPECKIT_REQUIRE_PRESET_PROJECTION__", "1").encode("utf-8")
                     planned_copies.append(
                         (dst_path, rel, data, _shared_script_mode(src_path, data))
                     )

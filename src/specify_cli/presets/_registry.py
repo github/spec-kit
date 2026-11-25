@@ -2,11 +2,29 @@
 
 import copy
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .._file_policy import ProjectPolicyError, project_files
 from ..extensions import normalize_priority
+from ..file_helper import FileHelper
+from ..markdown_sections import PRESET_REGISTRY_REMEDY
+from ._manifest import PresetManifest, PresetValidationError
+
+
+def _template_metadata(manifest: PresetManifest) -> dict:
+    """Project only the validated fields needed by generated resolvers."""
+    return {
+        "manifest_hash": manifest._parsed_hash,
+        "template_projection_version": 1,
+        "template_entries": [
+            {key: entry[key] for key in ("type", "name", "file", "strategy", "selector") if key in entry}
+            for entry in manifest.templates
+            if entry["type"] == "template"
+        ],
+    }
 
 
 class PresetRegistry:
@@ -92,6 +110,94 @@ class PresetRegistry:
         if pack_id in packs:
             del packs[pack_id]
             self._save()
+
+    def add_installed(
+        self,
+        manifest: PresetManifest,
+        priority: int,
+        source: str | dict[str, str],
+        *,
+        manifest_retained: bool,
+    ) -> None:
+        """Record a verified installation and its runtime template fields."""
+        template_metadata = (
+            _template_metadata(manifest)
+            if manifest_retained
+            else {"manifest_hash": manifest._parsed_hash}
+        )
+        self.add(manifest.id, {
+            "version": manifest.version,
+            "source": source,
+            **template_metadata,
+            "enabled": True,
+            "priority": priority,
+            "registered_commands": {},
+            "registered_skills": {},
+        })
+
+    @classmethod
+    def refresh_template_projections(cls, project_root: Path) -> None:
+        """Rebuild runtime template data from the installed preset manifests."""
+        packs_dir = project_root / ".specify" / "presets"
+        registry_path = packs_dir / cls.REGISTRY_FILE
+        try:
+            files = project_files(project_root)
+        except ProjectPolicyError as exc:
+            if isinstance(exc.__cause__, FileNotFoundError):
+                return
+            raise
+        with files:
+            try:
+                candidates = files.iterdir(
+                    packs_dir, select=lambda name: bool(re.fullmatch(r"[a-z0-9-]+", name)),
+                )
+            except FileNotFoundError:
+                return
+            manifests = {}
+            for candidate in candidates:
+                try:
+                    manifests[candidate.name] = files.read_bytes(candidate / "preset.yml")
+                except (FileNotFoundError, NotADirectoryError):
+                    continue
+            try:
+                data = json.loads(files.read_text(registry_path))
+            except FileNotFoundError as exc:
+                if manifests:
+                    raise PresetValidationError(f"Preset registry is missing. {PRESET_REGISTRY_REMEDY}") from exc
+                return
+            except (OSError, ValueError) as exc:
+                raise PresetValidationError(f"Preset registry is unreadable. {PRESET_REGISTRY_REMEDY}") from exc
+
+            entries = data.get("presets") if isinstance(data, dict) else None
+            if (
+                not isinstance(entries, dict)
+                or any(not isinstance(entry, dict) for entry in entries.values())
+                or manifests.keys() - entries.keys()
+            ):
+                raise PresetValidationError(f"Preset registry is incomplete. {PRESET_REGISTRY_REMEDY}")
+
+            updated = {}
+            for pack_id, entry in entries.items():
+                if not re.fullmatch(r"[a-z0-9-]+", pack_id):
+                    continue
+                path = packs_dir / pack_id / "preset.yml"
+                if pack_id not in manifests:
+                    if {"template_projection_version", "template_entries"} & entry.keys():
+                        raise PresetValidationError(f"Manifest not found: {path}")
+                    continue  # Convention-named presets do not require a manifest.
+                manifest = PresetManifest(path, manifest_bytes=manifests[pack_id])
+                if manifest.id != pack_id:
+                    raise PresetValidationError(f"Preset manifest {path} must declare id '{pack_id}'")
+                updated[pack_id] = {**entry, **_template_metadata(manifest)}
+            if any(entry != entries[pack_id] for pack_id, entry in updated.items()):
+                from ..integrations._file_changes import changing_file
+                from ..shared_infra import _ensure_safe_shared_destination
+
+                entries.update(updated)
+                # Managed registry writes retain the journal's non-link boundary.
+                _ensure_safe_shared_destination(project_root, registry_path)
+                with FileHelper(project_root) as writer, changing_file(registry_path):
+                    writer.write_bytes(registry_path, json.dumps(data, indent=2).encode("utf-8"), mode=None)
 
     def update(self, pack_id: str, updates: dict):
         """Update preset metadata in registry.

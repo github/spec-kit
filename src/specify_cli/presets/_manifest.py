@@ -10,6 +10,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
+from ..file_helper import FileHelper, FileHelperError
 from ..markdown_sections import validate_section_selector
 
 class PresetError(Exception):
@@ -43,17 +44,18 @@ class PresetManifest:
     SCHEMA_VERSION = "1.0"
     REQUIRED_FIELDS = ["schema_version", "preset", "requires", "provides"]
 
-    def __init__(self, manifest_path: Path):
+    def __init__(self, manifest_path: Path, *, manifest_bytes: bytes | None = None):
         """Load and validate preset manifest.
 
         Args:
             manifest_path: Path to preset.yml file
+            manifest_bytes: Bytes already read by the operation's filesystem owner
 
         Raises:
             PresetValidationError: If manifest is invalid
         """
         self.path = manifest_path
-        self.data = self._load_yaml(manifest_path)
+        self.data = self._load_yaml(manifest_path, manifest_bytes)
         provides = self.data.get("provides")
         entries = provides.get("templates") if isinstance(provides, dict) else None
         section_metadata = isinstance(entries, list) and any(
@@ -73,11 +75,13 @@ class PresetManifest:
                 raise PresetSectionValidationError(str(exc)) from exc
             raise
 
-    def _load_yaml(self, path: Path) -> dict:
+    def _load_yaml(self, path: Path, content: bytes | None) -> dict:
         """Load YAML file safely."""
         try:
-            with open(path, 'r', encoding='utf-8') as f:
-                data = yaml.safe_load(f)
+            if content is None:
+                with FileHelper(path.parent, allow_symlinks=True) as files:
+                    content = files.read_bytes(path.name)
+            data = yaml.safe_load(content.decode("utf-8"))
         except yaml.YAMLError as e:
             raise PresetValidationError(f"Invalid YAML in {path}: {e}")
         except FileNotFoundError:
@@ -86,8 +90,9 @@ class PresetManifest:
             raise PresetValidationError(
                 f"Manifest is not valid UTF-8: {path} ({e.reason} at byte {e.start})"
             )
-        except OSError as e:
+        except (OSError, FileHelperError) as e:
             raise PresetValidationError(f"Could not read manifest {path}: {e}")
+        self._parsed_hash = f"sha256:{hashlib.sha256(content).hexdigest()}"
         if data is None:
             return {}
         if not isinstance(data, dict):

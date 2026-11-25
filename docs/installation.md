@@ -105,6 +105,12 @@ specify init <project_name> --script ps
 specify init <project_name> --script py
 ```
 
+When the agent runs project scripts on another machine, install Python 3.11+
+on that machine too. Initializing or refreshing a project with the CLI prepares
+the template data needed by its generated scripts. See
+[preset template resolution](presets/api.md#runtime-template-resolution)
+for the execution-host requirements.
+
 ### CI and AI Agent Harnesses
 
 For environments without a keyboard, or a PTY that cannot send arrow keys, pass
