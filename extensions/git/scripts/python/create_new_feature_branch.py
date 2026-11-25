@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -86,8 +87,9 @@ def _persist_hint(var_name: str, value: str) -> str:
     if os.name == "nt":
         escaped_value = value.replace("'", "''")
         return f"$env:{var_name} = '{escaped_value}'"
-    escaped_value = re.sub(r"([^\w@%+=:,./-])", r"\\\1", value)
-    return f"export {var_name}={escaped_value}"
+    # shlex.quote matches the bash twin's shell_quote byte for byte, as in
+    # core create_new_feature.py.
+    return f"export {var_name}={shlex.quote(value)}"
 
 
 def _int64_from_digits(value: str) -> int | None:

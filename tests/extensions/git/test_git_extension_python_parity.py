@@ -441,6 +441,83 @@ class TestCreateFeatureBranchParity:
         p = _run_py("create-new-feature-branch", py_proj, "--json", "--dry-run", "添加待办")
         assert _assert_json_parity(b, p)["BRANCH_NAME"] == "zo/caf/001-添加待办"
 
+    @pytest.mark.parametrize(
+        "args",
+        [("添加待办事项",), ("--short-name", "待办", "Add todo")],
+        ids=["description", "short_name"],
+    )
+    def test_unicode_name_without_python_fails_cleanly(
+        self, tmp_path: Path, args: tuple[str, ...]
+    ):
+        """Without Python 3, a Unicode name fails before touching git; ASCII still works."""
+        project = _setup_py_project(tmp_path / "proj")
+        shim_dir = tmp_path / "bin"
+        shim_dir.mkdir()
+        for name in ("python3", "python", "py"):
+            shim = shim_dir / name
+            shim.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8", newline="\n")
+            shim.chmod(0o755)
+        env_extra = {
+            "PATH": f"{shim_dir}{os.pathsep}{os.environ['PATH']}",
+            "SPECKIT_PYTHON_EXECUTABLE": "",
+            "SPECKIT_PYTHON": "",
+        }
+        refs_before = _branch_state(project)
+
+        ascii_result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "Add user authentication", env_extra=env_extra,
+        )
+        assert ascii_result.returncode == 0, ascii_result.stderr
+        assert json.loads(ascii_result.stdout)["BRANCH_NAME"] == "001-user-authentication"
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project, "--json", *args, env_extra=env_extra,
+        )
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert "Error: Python 3 is required to create a Unicode branch name" in result.stderr
+        assert _branch_state(project) == refs_before
+
+    @pytest.mark.parametrize("locale_name", ["C", "POSIX"])
+    def test_unicode_name_under_explicit_non_utf8_lc_all_fails_cleanly(
+        self, tmp_path: Path, locale_name: str
+    ):
+        """An explicit non-UTF-8 LC_ALL is honored, not overridden, as in core."""
+        project = _setup_py_project(tmp_path / "proj")
+        env_extra = {"LC_ALL": locale_name, "LANG": "C.UTF-8"}
+        refs_before = _branch_state(project)
+
+        ascii_result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "Add user authentication", env_extra=env_extra,
+        )
+        assert ascii_result.returncode == 0, ascii_result.stderr
+        assert json.loads(ascii_result.stdout)["BRANCH_NAME"] == "001-user-authentication"
+
+        for args in (("添加待办事项",), ("--short-name", "待办", "Add todo")):
+            result = _run_bash(
+                "create-new-feature-branch.sh", project, "--json", *args, env_extra=env_extra,
+            )
+            assert result.returncode == 1
+            assert result.stdout == ""
+            assert "A UTF-8 locale is required" in result.stderr
+            assert f"LC_ALL={locale_name}" in result.stderr
+            assert _branch_state(project) == refs_before
+
+    def test_persist_hint_is_utf8_without_a_utf8_locale(self, tmp_path: Path):
+        """The persist hint quotes like shlex.quote instead of printf %q.
+
+        printf %q escapes each non-ASCII byte as $'\\ooo' outside a UTF-8
+        locale (the macOS default), which made the hint invalid UTF-8.
+        """
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        env_extra = {"LC_ALL": "", "LC_CTYPE": "", "LANG": ""}
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, "--json", "添加待办事项", env_extra=env_extra)
+        p = _run_py("create-new-feature-branch", py_proj, "--json", "添加待办事项", env_extra=env_extra)
+        assert _assert_json_parity(b, p, stderr=False)["BRANCH_NAME"] == "001-添加待办事项"
+        assert "# To persist: export SPECIFY_FEATURE='001-添加待办事项'" in b.stderr
+
     @pytest.mark.parametrize("layout", ["core_common", "git_common_only", "stale_core_common"])
     def test_unicode_branch_name_finds_python_without_core_helper(
         self, tmp_path: Path, layout: str

@@ -627,6 +627,19 @@ fi
 MAX_BRANCH_LENGTH=244
 _byte_length() { printf '%s' "$1" | LC_ALL=C wc -c | tr -d ' '; }
 
+# Quote a value for POSIX shell reuse, as core create-new-feature.sh does.
+# printf %q is not used: outside a UTF-8 locale (macOS defaults) it escapes
+# each non-ASCII byte as $'\ooo', which is not valid UTF-8 text.
+shell_quote() {
+    local value="$1" LC_ALL=C
+    if [[ "$value" =~ ^[A-Za-z0-9_@%+=:,./-]+$ ]]; then
+        printf '%s' "$value"
+    else
+        local q="'\"'\"'"
+        printf "'%s'" "${value//\'/$q}"
+    fi
+}
+
 # Drop the last UTF-8 character by bytes. A locale-aware ${var%?} is not safe:
 # MSYS/Cygwin bash has a 16-bit wchar_t, so it would split a character outside
 # the BMP and leave a broken sequence.
@@ -704,7 +717,7 @@ if [ "$DRY_RUN" != true ]; then
         >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
     fi
 
-    printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
+    printf '# To persist: export SPECIFY_FEATURE=%s\n' "$(shell_quote "$BRANCH_NAME")" >&2
 fi
 
 if $JSON_MODE; then
@@ -738,6 +751,6 @@ else
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "FEATURE_NUM: $FEATURE_NUM"
     if [ "$DRY_RUN" != true ]; then
-        printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"
+        printf '# To persist in your shell: export SPECIFY_FEATURE=%s\n' "$(shell_quote "$BRANCH_NAME")"
     fi
 fi
