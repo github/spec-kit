@@ -110,6 +110,36 @@ class TestPresetResolve:
         assert "project override" in result.output
         assert "Error:" not in result.output
 
+    def test_project_override_names_hidden_enabled_presets(self, temp_dir, project_dir):
+        self._install(temp_dir, project_dir, strategy="replace", pack_id="team-base")
+        self._install(temp_dir, project_dir, strategy="append", pack_id="team-review", priority=5)
+        manager = self._install(temp_dir, project_dir, strategy="append", pack_id="disabled-pack")
+        manager.registry.update("disabled-pack", {"enabled": False})
+        override = project_dir / ".specify/templates/overrides/spec-template.md"
+        override.parent.mkdir(parents=True, exist_ok=True)
+        override.write_text("# Local template\n", encoding="utf-8")
+
+        result = self._invoke(project_dir, ["preset", "resolve", "spec-template"])
+
+        assert result.exit_code == 0, result.output
+        assert "project override" in result.stdout
+        assert "Composition chain" not in result.stdout
+        assert "team-review" not in result.stdout
+        assert "Project override hides preset layers: team-review (append), team-base (replace)." in result.stderr
+        assert "disabled-pack" not in result.stderr
+
+    def test_project_override_without_matching_preset_has_no_warning(self, temp_dir, project_dir):
+        self._install(temp_dir, project_dir, strategy="append")
+        override = project_dir / ".specify/templates/overrides/plan-template.md"
+        override.parent.mkdir(parents=True, exist_ok=True)
+        override.write_text("# Local plan\n", encoding="utf-8")
+
+        result = self._invoke(project_dir, ["preset", "resolve", "plan-template"])
+
+        assert result.exit_code == 0, result.output
+        assert "project override" in result.stdout
+        assert result.stderr == ""
+
     def test_resolve_rejects_invalid_template_name(self, project_dir):
         """``preset resolve`` rejects names before joining them into paths."""
         result = self._invoke(project_dir, ["preset", "resolve", "no[/red]such"])
@@ -244,6 +274,7 @@ class TestPresetResolve:
         assert "Composition chain" in output, output
         assert "[base]" in output, output
         assert "[append]" in output, output
+        assert result.stderr == ""
 
     def test_resolve_falls_back_to_script_artifacts(self, temp_dir, project_dir):
         """A preset may register an executable artifact as a script.
