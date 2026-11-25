@@ -64,6 +64,19 @@ def test_load_json_accepts_single_utf8_bom(tmp_path: Path):
     assert load_json(path) == {"name": "café", "note": "\ufeff"}
 
 
+def test_load_json_reads_symlinked_file_outside_parent(tmp_path: Path):
+    target = tmp_path / "records.json"
+    target.write_text('{"name": "café"}', encoding="utf-8")
+    link_dir = tmp_path / "links"
+    link_dir.mkdir()
+    link = link_dir / "records.json"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot create symlink: {exc}")
+    assert load_json(link) == {"name": "café"}
+
+
 @pytest.mark.parametrize(
     "text",
     [
