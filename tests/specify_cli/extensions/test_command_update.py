@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 
 from specify_cli import app
 from specify_cli.extensions import (
+    CommandRegistrar,
     ExtensionCatalog,
     ExtensionManager,
     HookExecutor,
@@ -380,6 +381,161 @@ class TestExtensionUpdateCLI:
             project_dir / ".specify" / "extensions" / "test-ext" / "linear-config.yml"
         ).read_text()
         assert restored_config_content == original_config_content
+
+    @pytest.mark.parametrize("previously_registered", [True, False])
+    def test_update_preserves_other_registered_integration(
+        self, tmp_path, previously_registered
+    ):
+        project_dir = tmp_path / "project"
+        (project_dir / ".specify").mkdir(parents=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        (project_dir / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "claude", "script": "sh"}), encoding="utf-8"
+        )
+
+        manager = ExtensionManager(project_dir)
+        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
+        manager.install_from_directory(v1_dir, "0.1.0")
+        codex_skill = project_dir / ".agents" / "skills" / "speckit-test-ext-hello" / "SKILL.md"
+        if previously_registered:
+            commands = CommandRegistrar(project_dir).register_commands_for_agent(
+                "codex", manager.get_extension("test-ext"),
+                manager.extensions_dir / "test-ext", project_dir,
+            )
+            manager.registry.update("test-ext", {
+                "registered_commands": {
+                    **manager.registry.get("test-ext")["registered_commands"],
+                    "codex": commands,
+                }
+            })
+            assert codex_skill.is_file()
+
+        v2_dir = self._create_extension_source(tmp_path, "2.0.0")
+        (v2_dir / "commands" / "hello.md").write_text(
+            "---\ndescription: Updated\n---\n\nUpdated content\n", encoding="utf-8"
+        )
+        zip_path = tmp_path / "test-ext-update.zip"
+        self._create_catalog_zip(zip_path, "2.0.0")
+
+        def fake_install_from_zip(self_obj, _zip_path, speckit_version, *, catalog_name=None):
+            return self_obj.install_from_directory(
+                v2_dir, speckit_version, catalog_name=catalog_name
+            )
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                 "id": "test-ext", "name": "Test Extension", "version": "2.0.0",
+                 "_install_allowed": True,
+             }), \
+             patch.object(ExtensionCatalog, "download_extension", return_value=zip_path), \
+             patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip):
+            result = CliRunner().invoke(
+                app, ["extension", "update", "test-ext"], input="y\n"
+            )
+
+        assert result.exit_code == 0, result.output
+        registered = ExtensionManager(project_dir).registry.get("test-ext")["registered_commands"]
+        if previously_registered:
+            assert "Updated content" in codex_skill.read_text(encoding="utf-8")
+            assert registered["codex"] == ["speckit.test-ext.hello"]
+        else:
+            assert not codex_skill.exists()
+            assert "codex" not in registered
+
+    @pytest.mark.parametrize("case", ["shared", "missing-output", "missing-marker", "rollback"])
+    def test_update_secondary_registration_safeguards(self, tmp_path, monkeypatch, case):
+        project_dir = tmp_path / "project"
+        (project_dir / ".specify").mkdir(parents=True)
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+        active = "codex" if case == "shared" else "claude"
+        secondary = {"shared": "zed", "missing-marker": "hermes"}.get(case, "codex")
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        (project_dir / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": active, "script": "sh"}), encoding="utf-8"
+        )
+        if secondary == "hermes":
+            (project_dir / ".hermes" / "skills").mkdir(parents=True)
+            (home / ".hermes" / "skills").mkdir(parents=True)
+        output_dir = home / ".hermes" / "skills" if secondary == "hermes" else project_dir / ".agents" / "skills"
+        manager = ExtensionManager(project_dir)
+        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
+        manager.install_from_directory(v1_dir, "0.1.0")
+        commands = CommandRegistrar(project_dir).register_commands_for_agent(
+            secondary, manager.get_extension("test-ext"), manager.extensions_dir / "test-ext", project_dir,
+        )
+        manager.registry.update("test-ext", {"registered_commands": {
+            **manager.registry.get("test-ext")["registered_commands"], secondary: commands,
+        }})
+        before_registry = manager.registry.get("test-ext")
+        if case == "missing-output":
+            shutil.rmtree(output_dir)
+        elif case == "missing-marker":
+            shutil.rmtree(project_dir / ".hermes")
+
+        v2_dir = self._create_extension_source(tmp_path, "2.0.0")
+        (v2_dir / "commands" / "hello.md").write_text(
+            "---\ndescription: Updated\n---\n\nUpdated content __SPECKIT_COMMAND_PLAN__\n", encoding="utf-8"
+        )
+        manifest = yaml.safe_load((v2_dir / "extension.yml").read_text())
+        manifest["provides"]["commands"][0]["aliases"] = ["speckit.test-ext.new", "speckit.test-ext.existing"]
+        (v2_dir / "extension.yml").write_text(yaml.safe_dump(manifest))
+        zip_path = tmp_path / "test-ext-update.zip"
+        import zipfile
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            archive.writestr("extension.yml", yaml.safe_dump(manifest))
+        existing = output_dir / "speckit-test-ext-existing" / "SKILL.md"
+        original_bytes = b"Existing user content\r\n\x00preserve bytes\n"
+        if case == "rollback":
+            existing.parent.mkdir()
+            existing.write_bytes(original_bytes)
+        previous_files = {str(p.relative_to(output_dir)): p.read_bytes() for p in output_dir.rglob("*") if p.is_file()}
+        real_register = CommandRegistrar.register_commands_for_all_agents
+        active_content = []
+
+        def register_then_check(self_obj, manifest, extension_dir, project_root, **kwargs):
+            result = real_register(self_obj, manifest, extension_dir, project_root, **kwargs)
+            if active == "codex" and "codex" in result:
+                active_content.append((output_dir / "speckit-test-ext-hello" / "SKILL.md").read_bytes())
+            if case == "rollback" and kwargs.get("only_agent") == secondary:
+                assert existing.read_bytes() != original_bytes
+                assert (output_dir / "speckit-test-ext-new" / "SKILL.md").is_file()
+                raise RuntimeError("Secondary registration failed after writing outputs")
+            return result
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(CommandRegistrar, "register_commands_for_all_agents", register_then_check)
+        monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda *args: {
+            "id": "test-ext", "name": "Test Extension", "version": "2.0.0", "_install_allowed": True,
+        })
+        monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda *args: zip_path)
+        monkeypatch.setattr(ExtensionManager, "install_from_zip", lambda self_obj, path, version, **kwargs:
+            self_obj.install_from_directory(v2_dir, version, **kwargs))
+        result = CliRunner().invoke(app, ["extension", "update", "test-ext"], input="y\n")
+        after_registry = ExtensionManager(project_dir).registry.get("test-ext")
+        if case == "rollback":
+            assert result.exit_code == 1, result.output
+            assert "Secondary registration failed after writing outputs" in result.output
+            assert "Rollback successful" in result.output
+            assert after_registry == before_registry
+            assert not (output_dir / "speckit-test-ext-new").exists()
+            assert {str(p.relative_to(output_dir)): p.read_bytes() for p in output_dir.rglob("*") if p.is_file()} == previous_files
+        else:
+            assert result.exit_code == 0, result.output
+            registered = after_registry["registered_commands"]
+            if case == "shared":
+                assert active_content
+                assert (output_dir / "speckit-test-ext-hello" / "SKILL.md").read_bytes() == active_content[-1]
+                assert registered["zed"] == registered["codex"]
+            else:
+                assert secondary not in registered
+                assert not (output_dir / "speckit-test-ext-new").exists()
+                if case == "missing-output":
+                    assert not output_dir.exists()
 
     def test_update_installs_bundled_extension_from_local_copy(self, tmp_path):
         """A bundled extension (no download URL) updates from the copy shipped
