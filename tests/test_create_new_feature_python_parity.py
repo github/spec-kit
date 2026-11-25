@@ -196,6 +196,44 @@ def test_unicode_number_categories_match(
     assert json_stdout(result)["BRANCH_NAME"] == expected
 
 
+@pytest.mark.parametrize(
+    "variant",
+    [
+        pytest.param("bash", marks=requires_bash),
+        "python",
+        pytest.param(
+            "powershell",
+            marks=pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available"),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("नमस्ते दुनिया", "001-नमस्ते-दुनिया"),
+        ("สร้างระบบล็อกอิน", "001-สร้างระบบล็อกอิน"),
+        ("مَرْحَبًا بالعالم", "001-مَرْحَبًا-بالعالم"),
+        ("cafe\u0301 menu", "001-cafe\u0301-menu"),
+    ],
+    ids=["devanagari", "thai", "arabic_diacritics", "decomposed_accent"],
+)
+def test_combining_marks_stay_inside_words(
+    repo: Path, variant: str, description: str, expected: str
+) -> None:
+    powershell = variant == "powershell"
+    args = (
+        ("-Json", "-DryRun", description)
+        if powershell
+        else ("--json", "--dry-run", description)
+    )
+    command = {"bash": bash_cmd, "python": py_cmd, "powershell": ps_cmd}[variant]
+
+    result = run(command(repo, SCRIPT, *args), repo)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result)["BRANCH_NAME"] == expected
+
+
 @requires_bash
 def test_bash_reports_missing_utf8_locale_for_unicode_only(
     repo: Path, tmp_path: Path
