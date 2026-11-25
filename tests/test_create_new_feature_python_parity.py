@@ -17,6 +17,7 @@ from scripts.python.common import persist_feature_json
 from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
+    HAS_PWSH,
     WINDOWS_POWERSHELL,
     _bash_posix_path,
     bash_cmd,
@@ -74,8 +75,14 @@ def repo_pair(tmp_path: Path) -> tuple[Path, Path]:
         pytest.param("bash", marks=requires_bash),
         "python",
         pytest.param(
-            "powershell",
-            marks=pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available"),
+            "pwsh",
+            marks=pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available"),
+        ),
+        pytest.param(
+            "windows-powershell-5.1",
+            marks=pytest.mark.skipif(
+                not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
+            ),
         ),
     ],
 )
@@ -220,15 +227,15 @@ def test_unicode_number_categories_match(
 def test_combining_marks_stay_inside_words(
     repo: Path, variant: str, description: str, expected: str
 ) -> None:
-    powershell = variant == "powershell"
-    args = (
-        ("-Json", "-DryRun", description)
-        if powershell
-        else ("--json", "--dry-run", description)
-    )
-    command = {"bash": bash_cmd, "python": py_cmd, "powershell": ps_cmd}[variant]
+    if variant in ("pwsh", "windows-powershell-5.1"):
+        exe = "pwsh" if variant == "pwsh" else WINDOWS_POWERSHELL
+        script = repo / ".specify/scripts/powershell/create-new-feature.ps1"
+        cmd = [exe, "-NoProfile", "-File", str(script), "-Json", "-DryRun", description]
+    else:
+        command = {"bash": bash_cmd, "python": py_cmd}[variant]
+        cmd = command(repo, SCRIPT, "--json", "--dry-run", description)
 
-    result = run(command(repo, SCRIPT, *args), repo)
+    result = run(cmd, repo)
 
     assert result.returncode == 0, result.stderr
     assert json_stdout(result)["BRANCH_NAME"] == expected
