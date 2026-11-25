@@ -1836,9 +1836,10 @@ class TestExpressions:
                 evaluate_expression("{{ " + text + " }}", StepContext(inputs={}))
 
     def test_exponent_strings_are_not_implicitly_coerced_in_comparisons(self):
-        """Exponent-form strings stay strings during comparisons rather than
-        being implicitly converted to floats, while exponent numeric literals
-        compare as numbers."""
+        """Integer-mantissa exponent strings stay strings during comparisons
+        rather than being implicitly converted to floats, while existing
+        decimal-mantissa float coercion and exponent numeric literals remain
+        unchanged."""
         from specify_cli.workflows.base import StepContext
         from specify_cli.workflows.expressions import (
             evaluate_condition,
@@ -1851,10 +1852,12 @@ class TestExpressions:
                 "upper": "2E3",
                 "small": "5e-2",
                 "neg": "-1e2",
+                "dec_eq": "1.0e3",
+                "dec_gt": "1.5e3",
                 "n": 1000,
             }
         )
-        # Exponent-form strings do not implicitly coerce to numbers.
+        # Integer-mantissa exponent strings do not implicitly coerce to numbers.
         assert evaluate_expression("{{ inputs.s == 1000 }}", ctx) is False
         assert evaluate_expression("{{ inputs.s == 1e3 }}", ctx) is False
         assert evaluate_expression("{{ inputs.s != 1000 }}", ctx) is True
@@ -1868,6 +1871,12 @@ class TestExpressions:
         # String-to-string ordering stays lexicographic ("1e3" < "2e1", "2E3" < "900").
         assert evaluate_expression("{{ inputs.s > '2e1' }}", ctx) is False
         assert evaluate_expression("{{ inputs.upper > '900' }}", ctx) is False
+        # Decimal-mantissa exponent strings keep existing float() coercion.
+        assert evaluate_expression("{{ inputs.dec_eq == 1000 }}", ctx) is True
+        assert evaluate_expression("{{ inputs.dec_eq == 1e3 }}", ctx) is True
+        assert evaluate_expression("{{ inputs.dec_eq == '1000' }}", ctx) is True
+        assert evaluate_condition("{{ inputs.dec_gt > 100 }}", ctx) is True
+        assert evaluate_expression("{{ inputs.dec_eq == inputs.s }}", ctx) is False
         # Exponent numeric literals still compare numerically.
         assert evaluate_expression("{{ 1e3 == 1000 }}", ctx) is True
         assert evaluate_expression("{{ 1e3 > 100 }}", ctx) is True
