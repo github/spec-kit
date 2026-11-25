@@ -604,7 +604,7 @@ class PresetResolver:
                         try:
                             cmd_content = candidate.read_text(encoding="utf-8")
                             lines = cmd_content.splitlines(keepends=True)
-                            if lines and lines[0].rstrip("\r\n") == "---":
+                            if lines and lines[0].removeprefix("\ufeff").rstrip("\r\n") == "---":
                                 fence_end = -1
                                 for fi, fline in enumerate(lines[1:], start=1):
                                     if fline.rstrip("\r\n") == "---":
@@ -883,7 +883,8 @@ class PresetResolver:
             Uses line-based fence detection (fence must be ``---`` on its
             own line) to avoid false matches on ``---`` inside YAML values.
             """
-            lines = text.splitlines(keepends=True)
+            frontmatter_text = text.removeprefix("\ufeff")
+            lines = frontmatter_text.splitlines(keepends=True)
             if not lines or lines[0].rstrip("\r\n") != "---":
                 return None, text
 
