@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 
 import pytest
 
@@ -18,6 +19,40 @@ def _symlink_or_skip(link, target, *, target_is_directory=False):
         link.symlink_to(target, target_is_directory=target_is_directory)
     except (OSError, NotImplementedError) as exc:
         pytest.skip(f"symlinks are unavailable: {exc}")
+
+
+def test_nonblocking_lock_rejects_immediately_and_keeps_the_file(tmp_path):
+    started = threading.Event()
+    release = threading.Event()
+    errors: list[BaseException] = []
+
+    def _hold():
+        try:
+            with _exclusive_project_lock(tmp_path, LOCK_NAME, context="test"):
+                started.set()
+                if not release.wait(10):
+                    raise AssertionError("holder was not released")
+        except BaseException as exc:  # noqa: BLE001 - surfaced below
+            errors.append(exc)
+
+    holder = threading.Thread(target=_hold, name="lock-holder", daemon=True)
+    holder.start()
+    assert started.wait(10)
+    started_at = time.monotonic()
+    with pytest.raises(OSError, match="already held"):
+        with _exclusive_project_lock(
+            tmp_path, LOCK_NAME, context="test", blocking=False
+        ):
+            pass
+    assert time.monotonic() - started_at < 0.5
+    release.set()
+    holder.join(10)
+    assert not errors
+    assert (tmp_path / ".specify" / LOCK_NAME).is_file()
+    with _exclusive_project_lock(
+        tmp_path, LOCK_NAME, context="test", blocking=False
+    ):
+        pass
 
 
 def test_lock_creates_lock_file_under_specify(tmp_path):

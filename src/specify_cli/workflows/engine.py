@@ -10,6 +10,7 @@ The engine is the orchestrator that:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -1052,6 +1053,44 @@ class RunState:
                     f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+_resume_run_owners: ContextVar[tuple[str, ...]] = ContextVar(
+    "specify_resume_run_owners",
+    default=(),
+)
+
+
+@contextlib.contextmanager
+def _resume_run_lock(project_root: Path, run_id: str):
+    """Own one workflow run across processes for the duration of resume.
+
+    The lock is acquired before the caller loads or writes that run and is
+    released on every exit. The owning thread may re-enter, so the CLI can
+    hold the lock across its legacy checkpoint and ``WorkflowEngine.resume``.
+    A different process or thread is rejected immediately. The lock file stays
+    at ``.specify/workflow-run-<run_id>.lock`` and is not removed.
+    """
+    from ..shared_infra import _exclusive_project_lock, _shared_relative_path
+
+    RunState._validate_run_id(run_id)
+    root = Path(project_root).resolve()
+    lock_name = f"workflow-run-{run_id}.lock"
+    relative = _shared_relative_path(root, root / ".specify" / lock_name)
+    if relative.parts != (".specify", lock_name):
+        raise ValueError(f"Workflow run lock escapes project root: {relative}")
+    key = os.path.normcase(str(root)) + "\n" + run_id
+    if key in _resume_run_owners.get():
+        yield
+        return
+    with _exclusive_project_lock(
+        root, lock_name, context="workflow run", blocking=False
+    ):
+        token = _resume_run_owners.set(_resume_run_owners.get() + (key,))
+        try:
+            yield
+        finally:
+            _resume_run_owners.reset(token)
+
+
 # -- Workflow Engine ------------------------------------------------------
 
 
@@ -1255,6 +1294,14 @@ class WorkflowEngine:
         workflow inputs. Keys not supplied keep their persisted values; an
         empty/``None`` ``inputs`` leaves the run's inputs unchanged.
         """
+        with _resume_run_lock(self.project_root, run_id):
+            return self._resume_owned(run_id, inputs)
+
+    def _resume_owned(
+        self,
+        run_id: str,
+        inputs: dict[str, Any] | None,
+    ) -> RunState:
         self._execution_state.set(None)
         self._load_integrations()
         state = RunState.load(run_id, self.project_root)

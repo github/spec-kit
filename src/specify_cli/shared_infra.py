@@ -243,12 +243,20 @@ def _validate_safe_shared_directory(project_path: Path, directory: Path) -> None
 
 
 @contextlib.contextmanager
-def _exclusive_project_lock(project_root: Path, lock_name: str, *, context: str):
+def _exclusive_project_lock(
+    project_root: Path,
+    lock_name: str,
+    *,
+    context: str,
+    blocking: bool = True,
+):
     """Hold an exclusive inter-process lock on ``.specify/<lock_name>``.
 
     Callers use one lock file per mutable project resource so that its
     directory and registry changes are serialized across processes. Every
-    failure to acquire the lock is raised as ``OSError``.
+    failure to acquire the lock is raised as ``OSError``. ``blocking`` waits
+    for the current holder; ``blocking=False`` raises immediately instead.
+    Releasing the lock closes its descriptor and does not delete the file.
     """
     project_root = Path(project_root)
     lock_dir = project_root / ".specify"
@@ -286,11 +294,27 @@ def _exclusive_project_lock(project_root: Path, lock_name: str, *, context: str)
                 except OSError as exc:
                     if exc.errno not in (errno.EACCES, errno.EDEADLK):
                         raise
+                    if not blocking:
+                        raise OSError(
+                            f"Exclusive {context} lock is already held"
+                        ) from exc
                     time.sleep(0.05)
         else:
+            import errno
             import fcntl
 
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            operation = fcntl.LOCK_EX
+            if not blocking:
+                operation |= fcntl.LOCK_NB
+            try:
+                fcntl.flock(fd, operation)
+            except OSError as exc:
+                busy = exc.errno in (errno.EAGAIN, errno.EWOULDBLOCK)
+                if not blocking and busy:
+                    raise OSError(
+                        f"Exclusive {context} lock is already held"
+                    ) from exc
+                raise
         yield
     finally:
         os.close(fd)
