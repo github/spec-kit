@@ -182,10 +182,11 @@ def _describe_artifact_file(path: Path, kind: ArtifactKind) -> str:
     of the core/preset layer it hides.
     """
     try:
-        # A UTF-8 BOM is an encoding marker, not artifact content.
-        text = path.read_text(encoding="utf-8").removeprefix("\ufeff")
+        text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return ""
+    # A UTF-8 BOM is an encoding marker, not artifact content.
+    text = text.removeprefix("\ufeff")
     if kind == "script":
         return _extract_script_description(text)
     return _extract_frontmatter_description(text)
