@@ -138,6 +138,58 @@ def test_unclosed_fence_cannot_end_selected_body() -> None:
     ) == "## Target\n"
 
 
+# Characters str.splitlines() treats as line breaks that Markdown does not.
+NON_MARKDOWN_LINE_SEPARATORS = ["\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"]
+
+
+@pytest.mark.parametrize("separator", NON_MARKDOWN_LINE_SEPARATORS)
+def test_non_markdown_line_separators_do_not_end_selected_body(separator: str) -> None:
+    content = f"## Notes\nSee page{separator}## Fake\nmore\n## Next\nkeep\n"
+    assert replace_section(
+        content, "new\n", "notes",
+        preset="team", contribution="body.md", artifact="spec-template",
+    ) == "## Notes\nnew\n## Next\nkeep\n"
+
+
+@pytest.mark.parametrize("separator", NON_MARKDOWN_LINE_SEPARATORS)
+def test_non_markdown_line_separators_do_not_open_fences(separator: str) -> None:
+    content = f"# Notes\ntext{separator}```\n## Target\nold\n## Next\nkeep\n"
+    assert replace_section(
+        content, "new\n", "target",
+        preset="team", contribution="body.md", artifact="spec-template",
+    ) == f"# Notes\ntext{separator}```\n## Target\nnew\n## Next\nkeep\n"
+
+
+@pytest.mark.parametrize("separator", NON_MARKDOWN_LINE_SEPARATORS)
+def test_non_markdown_line_separators_do_not_create_headings(separator: str) -> None:
+    content = f"## Notes\nSee page{separator}## Fake\nmore\n## Next\nkeep\n"
+    with pytest.raises(SectionReplacementError, match="SECTION_NOT_FOUND"):
+        replace_section(
+            content, "new\n", "fake",
+            preset="team", contribution="body.md", artifact="spec-template",
+        )
+
+
+def test_non_markdown_line_separator_does_not_shift_diagnostic_lines() -> None:
+    content = "intro\u2028still intro\n## Target\nold\n## Target\nagain\n"
+    with pytest.raises(SectionReplacementError) as caught:
+        replace_section(
+            content, "new\n", "target",
+            preset="team", contribution="body.md", artifact="spec-template",
+        )
+    assert caught.value.details["code"] == "SECTION_AMBIGUOUS"
+    assert [candidate["line"] for candidate in caught.value.details["candidates"]] == [2, 4]
+
+
+@pytest.mark.parametrize("newline", ["\r", "\r\n"])
+def test_carriage_return_line_endings_remain_supported(newline: str) -> None:
+    content = f"## Notes{newline}old{newline}## Next{newline}keep"
+    assert replace_section(
+        content, f"new{newline}", "notes",
+        preset="team", contribution="body.md", artifact="spec-template",
+    ) == f"## Notes{newline}new{newline}## Next{newline}keep"
+
+
 def test_code_underscores_do_not_match_emphasis_anchor() -> None:
     with pytest.raises(SectionReplacementError, match="SECTION_NOT_FOUND"):
         replace_section(
