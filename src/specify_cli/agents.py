@@ -102,7 +102,10 @@ class CommandRegistrar:
         Returns:
             Tuple of (frontmatter_dict, body_content)
         """
-        if not content.startswith("---"):
+        # A UTF-8 BOM before the opening delimiter is an encoding marker, not
+        # content. Inputs without frontmatter are still returned unchanged.
+        text = content.removeprefix("\ufeff")
+        if not text.startswith("---"):
             return {}, content
 
         # The closing delimiter is a line that is exactly ``---`` (a YAML
@@ -113,7 +116,7 @@ class CommandRegistrar:
         # which truncates the frontmatter and spills the remainder into the
         # body. Match on line boundaries instead, mirroring the line-anchored
         # scan in ``VibeIntegration._inject_frontmatter_flag``.
-        lines = content.splitlines(keepends=True)
+        lines = text.splitlines(keepends=True)
         end_line = next(
             (i for i in range(1, len(lines)) if lines[i].rstrip() == "---"),
             None,
