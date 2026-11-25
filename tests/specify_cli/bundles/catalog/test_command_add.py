@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import io  # noqa: F401
-import json  # noqa: F401
+import json
 from pathlib import Path
 from unittest.mock import patch  # noqa: F401
 
@@ -40,3 +40,18 @@ def test_catalog_add_and_remove(project: Path):
 
     removed = runner.invoke(app, ["bundle", "catalog", "remove", "local"])
     assert removed.exit_code == 0
+
+
+def test_catalog_add_and_search_accept_utf8_bom(project: Path):
+    catalog = project / "bom-catalog.json"
+    write_catalog_file(catalog, {"demo": catalog_entry_dict("demo")})
+    catalog.write_bytes(b"\xef\xbb\xbf" + catalog.read_bytes())
+
+    added = runner.invoke(
+        app, ["bundle", "catalog", "add", str(catalog), "--id", "bom"]
+    )
+    assert added.exit_code == 0, added.output
+
+    searched = runner.invoke(app, ["bundle", "search", "demo", "--offline", "--json"])
+    assert searched.exit_code == 0, searched.output
+    assert any(entry["id"] == "demo" for entry in json.loads(searched.output))

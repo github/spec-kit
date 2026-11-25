@@ -102,7 +102,8 @@ def load_json(path: Path) -> Any:
         raise BundlerError(f"File not found: {path}")
     try:
         with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+            text = handle.read()
+        return json.loads(text.removeprefix("\ufeff"))
     # JSONDecodeError stays FIRST: it and UnicodeDecodeError are sibling
     # ValueError subclasses (neither subsumes the other), so malformed-but-
     # decodable JSON keeps its more specific "Invalid JSON" message while a
@@ -128,7 +129,7 @@ def loads_json(text: str, *, origin: str = "<string>") -> Any:
         return result
 
     try:
-        return json.loads(text, object_pairs_hook=unique_object)
+        return json.loads(text.removeprefix("\ufeff"), object_pairs_hook=unique_object)
     except json.JSONDecodeError as exc:
         raise BundlerError(f"Invalid JSON from {origin}: {exc}") from exc
 
