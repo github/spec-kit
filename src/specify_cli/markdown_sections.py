@@ -135,7 +135,9 @@ def replace_section(
     fence_length = 0
     metadata = content.startswith(("---\n", "---\r\n"))
     offset = 0
-    for number, line in enumerate(content.splitlines(keepends=True), 1):
+    for number, line in enumerate(
+        re.findall(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+", content), 1
+    ):
         start = offset
         offset += len(line)
         text = line.rstrip("\r\n")
