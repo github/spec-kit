@@ -73,7 +73,8 @@ def _read_integration_json_data(
     except (OSError, FileHelperError) as exc:
         return None, IntegrationReadError(kind="os", detail=str(exc))
     try:
-        data = json.loads(raw)
+        # Ignore one leading UTF-8 BOM (for example files saved on Windows).
+        data = json.loads(raw.removeprefix("\ufeff"))
     except json.JSONDecodeError as exc:
         return None, IntegrationReadError(kind="decode", detail=str(exc))
     if not isinstance(data, dict):
