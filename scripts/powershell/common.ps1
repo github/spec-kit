@@ -208,8 +208,22 @@ function Get-FeaturePathsEnv {
             if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
                 $featureDir = Join-Path $repoRoot $featureDir
             }
-            if (-not (Test-Path -LiteralPath $featureDir -PathType Container)) {
-                [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json points to an existing directory.")
+            $featureDirExists = Test-Path -LiteralPath $featureDir -PathType Container
+            if ($featureDirExists) {
+                $featureDirItem = Get-Item -LiteralPath $featureDir -Force -ErrorAction SilentlyContinue
+                if ($null -ne $featureDirItem -and ($featureDirItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+                    # On Windows, Test-Path -PathType Container returns $true for a dangling directory symlink;
+                    # open the directory enumerator to confirm the symlink target actually resolves.
+                    try {
+                        $entries = [System.IO.Directory]::EnumerateFileSystemEntries($featureDir).GetEnumerator()
+                        $entries.Dispose()
+                    } catch {
+                        $featureDirExists = $false
+                    }
+                }
+            }
+            if (-not $featureDirExists) {
+                [Console]::Error.WriteLine("ERROR: Feature directory not found: $featureDir. Set SPECIFY_FEATURE_DIRECTORY or run the specify command to update .specify/feature.json.")
                 if ($ReturnNullOnError) { return $null }
                 exit 1
             }

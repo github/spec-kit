@@ -918,6 +918,7 @@ def test_setup_tasks_ps_does_not_match_wildcard_shaped_neighbor(
 ) -> None:
     """A bracketed feature path must not accept a neighboring feature's plan."""
     feature_name = "001-my-feature [v2]"
+    (tasks_repo / "specs" / feature_name).mkdir(parents=True)
     neighbor = tasks_repo / "specs" / "001-my-feature v"
     neighbor.mkdir(parents=True)
     (neighbor / "spec.md").write_text("# neighbor spec\n", encoding="utf-8")

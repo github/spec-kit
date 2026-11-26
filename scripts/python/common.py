@@ -170,8 +170,8 @@ def get_feature_paths(
             feature_dir = repo_root / feature_dir
         if not feature_dir.is_dir():
             print(
-                "ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY "
-                "or ensure .specify/feature.json points to an existing directory.",
+                f"ERROR: Feature directory not found: {feature_dir}. "
+                "Set SPECIFY_FEATURE_DIRECTORY or run the specify command to update .specify/feature.json.",
                 file=sys.stderr,
             )
             raise SystemExit(1)

@@ -187,6 +187,7 @@ def test_composes_with_feature_directory_override(tmp_path: Path) -> None:
 def test_composes_with_target_feature_json(tmp_path: Path) -> None:
     """P6: the target project's .specify/feature.json is honored."""
     web = _make_project(tmp_path, "web")
+    (web / "specs" / "004-fj").mkdir(parents=True)
     (web / ".specify" / "feature.json").write_text(
         '{"feature_directory": "specs/004-fj"}'
     )

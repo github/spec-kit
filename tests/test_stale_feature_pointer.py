@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.parity_helpers import clean_env, install_scripts
+from tests.parity_helpers import PROJECT_ROOT, install_scripts
 
 
 def _find_bash() -> str | None:
@@ -36,6 +36,7 @@ HAS_POWERSHELL = HAS_PWSH or _WINDOWS_POWERSHELL is not None
 
 STALE_POINTER = "specs/001-gone"
 LIVE_POINTER = "specs/002-live"
+STALE_KINDS = ("missing_dir", "regular_file", "dangling_symlink")
 
 
 @pytest.fixture
@@ -43,8 +44,13 @@ def project(tmp_path: Path) -> Path:
     repo = tmp_path / "proj"
     repo.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    (repo / ".specify").mkdir()
+    (repo / ".specify" / "templates").mkdir(parents=True)
+    shutil.copy(
+        PROJECT_ROOT / "templates" / "plan-template.md",
+        repo / ".specify" / "templates" / "plan-template.md",
+    )
     install_scripts(repo, "check-prerequisites")
+    install_scripts(repo, "setup-plan")
     return repo
 
 
@@ -55,8 +61,25 @@ def _write_pointer(repo: Path, value: str) -> None:
     )
 
 
+def _prepare_stale_target(repo: Path, kind: str) -> None:
+    target = repo / STALE_POINTER
+    if kind == "missing_dir":
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if kind == "regular_file":
+        target.write_text("not a directory\n", encoding="utf-8")
+        return
+    if kind == "dangling_symlink":
+        try:
+            target.symlink_to(repo / "specs" / "001-deleted-target", target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"symlinks unavailable in this environment: {exc}")
+        return
+    raise ValueError(f"Unknown stale target kind: {kind}")
+
+
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    env = clean_env()
+    env = os.environ.copy()
     for key in list(env):
         if key.startswith("SPECIFY_"):
             del env[key]
@@ -79,11 +102,30 @@ def _powershell_cmd(repo: Path) -> list[str]:
     return [exe, "-NoProfile", "-File", str(script), "-Json", "-PathsOnly"]
 
 
-def _assert_stale_pointer_rejected(result: subprocess.CompletedProcess[str]) -> None:
+def _python_setup_plan_cmd(repo: Path) -> list[str]:
+    script = repo / ".specify" / "scripts" / "python" / "setup_plan.py"
+    return [sys.executable, str(script), "--json"]
+
+
+def _bash_setup_plan_cmd(repo: Path) -> list[str]:
+    script = repo / ".specify" / "scripts" / "bash" / "setup-plan.sh"
+    return [BASH_EXE or "bash", str(script), "--json"]
+
+
+def _powershell_setup_plan_cmd(repo: Path) -> list[str]:
+    script = repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    return [exe, "-NoProfile", "-File", str(script), "-Json"]
+
+
+def _assert_stale_pointer_rejected(
+    result: subprocess.CompletedProcess[str], repo: Path
+) -> None:
     assert result.returncode == 1, result.stderr
     assert result.stdout == ""
-    assert "Feature directory not found" in result.stderr
-    assert STALE_POINTER not in result.stderr
+    assert "Feature directory not found:" in result.stderr
+    normalized_stderr = result.stderr.replace("\\", "/")
+    assert f"/{repo.name}/{STALE_POINTER}" in normalized_stderr, result.stderr
 
 
 def _assert_live_pointer_resolved(result: subprocess.CompletedProcess[str]) -> None:
@@ -94,10 +136,12 @@ def _assert_live_pointer_resolved(result: subprocess.CompletedProcess[str]) -> N
     assert str(feature_dir).replace("\\", "/").endswith(LIVE_POINTER)
 
 
-def test_python_rejects_stale_feature_json_pointer(project: Path) -> None:
+@pytest.mark.parametrize("kind", STALE_KINDS)
+def test_python_rejects_stale_feature_json_pointer(project: Path, kind: str) -> None:
+    _prepare_stale_target(project, kind)
     _write_pointer(project, STALE_POINTER)
 
-    _assert_stale_pointer_rejected(_run(_python_cmd(project), project))
+    _assert_stale_pointer_rejected(_run(_python_cmd(project), project), project)
 
 
 def test_python_accepts_existing_feature_json_pointer(project: Path) -> None:
@@ -107,11 +151,20 @@ def test_python_accepts_existing_feature_json_pointer(project: Path) -> None:
     _assert_live_pointer_resolved(_run(_python_cmd(project), project))
 
 
-@requires_local_bash
-def test_bash_rejects_stale_feature_json_pointer(project: Path) -> None:
+def test_python_setup_plan_does_not_recreate_deleted_feature_dir(project: Path) -> None:
     _write_pointer(project, STALE_POINTER)
 
-    _assert_stale_pointer_rejected(_run(_bash_cmd(project), project))
+    _assert_stale_pointer_rejected(_run(_python_setup_plan_cmd(project), project), project)
+    assert not (project / STALE_POINTER).exists()
+
+
+@requires_local_bash
+@pytest.mark.parametrize("kind", STALE_KINDS)
+def test_bash_rejects_stale_feature_json_pointer(project: Path, kind: str) -> None:
+    _prepare_stale_target(project, kind)
+    _write_pointer(project, STALE_POINTER)
+
+    _assert_stale_pointer_rejected(_run(_bash_cmd(project), project), project)
 
 
 @requires_local_bash
@@ -122,11 +175,21 @@ def test_bash_accepts_existing_feature_json_pointer(project: Path) -> None:
     _assert_live_pointer_resolved(_run(_bash_cmd(project), project))
 
 
-@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
-def test_powershell_rejects_stale_feature_json_pointer(project: Path) -> None:
+@requires_local_bash
+def test_bash_setup_plan_does_not_recreate_deleted_feature_dir(project: Path) -> None:
     _write_pointer(project, STALE_POINTER)
 
-    _assert_stale_pointer_rejected(_run(_powershell_cmd(project), project))
+    _assert_stale_pointer_rejected(_run(_bash_setup_plan_cmd(project), project), project)
+    assert not (project / STALE_POINTER).exists()
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("kind", STALE_KINDS)
+def test_powershell_rejects_stale_feature_json_pointer(project: Path, kind: str) -> None:
+    _prepare_stale_target(project, kind)
+    _write_pointer(project, STALE_POINTER)
+
+    _assert_stale_pointer_rejected(_run(_powershell_cmd(project), project), project)
 
 
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
@@ -135,3 +198,11 @@ def test_powershell_accepts_existing_feature_json_pointer(project: Path) -> None
     _write_pointer(project, LIVE_POINTER)
 
     _assert_live_pointer_resolved(_run(_powershell_cmd(project), project))
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_setup_plan_does_not_recreate_deleted_feature_dir(project: Path) -> None:
+    _write_pointer(project, STALE_POINTER)
+
+    _assert_stale_pointer_rejected(_run(_powershell_setup_plan_cmd(project), project), project)
+    assert not (project / STALE_POINTER).exists()

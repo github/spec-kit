@@ -83,6 +83,7 @@ def plan_repo(tmp_path: Path) -> Path:
     _minimal_templates(repo)
     _install_bash_scripts(repo)
     _install_ps_scripts(repo)
+    (repo / "specs" / "001-my-feature").mkdir(parents=True)
     _write_feature_json(repo)
     return repo
 
@@ -115,7 +116,7 @@ def test_setup_plan_creates_plan_when_missing(plan_repo: Path) -> None:
 def test_setup_plan_preserves_existing_plan(plan_repo: Path) -> None:
     """Rerun must not overwrite an existing plan.md."""
     feat = plan_repo / "specs" / "001-my-feature"
-    feat.mkdir(parents=True)
+    feat.mkdir(parents=True, exist_ok=True)
     existing_content = "# My carefully authored plan\n\nDo not overwrite me.\n"
     (feat / "plan.md").write_text(existing_content, encoding="utf-8")
 
@@ -137,7 +138,7 @@ def test_setup_plan_preserves_existing_plan(plan_repo: Path) -> None:
 def test_setup_plan_skip_message_on_stderr_in_json_mode(plan_repo: Path) -> None:
     """In --json mode, status messages must go to stderr, not stdout."""
     feat = plan_repo / "specs" / "001-my-feature"
-    feat.mkdir(parents=True)
+    feat.mkdir(parents=True, exist_ok=True)
     (feat / "plan.md").write_text("# existing\n", encoding="utf-8")
 
     script = plan_repo / ".specify" / "scripts" / "bash" / "setup-plan.sh"
@@ -205,7 +206,7 @@ def test_ps_setup_plan_preserves_existing_plan(plan_repo: Path, feature_name: st
     """Rerun must not overwrite an existing plan.md."""
     _write_feature_json(plan_repo, f"specs/{feature_name}")
     feat = plan_repo / "specs" / feature_name
-    feat.mkdir(parents=True)
+    feat.mkdir(parents=True, exist_ok=True)
     existing_content = "# My carefully authored plan\n\nDo not overwrite me.\n"
     (feat / "plan.md").write_text(existing_content, encoding="utf-8")
 
@@ -232,6 +233,7 @@ def test_ps_setup_plan_preserves_existing_plan(plan_repo: Path, feature_name: st
 def test_ps_setup_plan_does_not_match_another_features_plan(plan_repo: Path) -> None:
     """A wildcard-shaped feature path must not match a neighboring plan."""
     feature_name = "001-my-feature [v2]"
+    (plan_repo / "specs" / feature_name).mkdir(parents=True)
     _write_feature_json(plan_repo, f"specs/{feature_name}")
     neighbor = plan_repo / "specs" / "001-my-feature v"
     neighbor.mkdir(parents=True)
