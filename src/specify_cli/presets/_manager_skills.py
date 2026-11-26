@@ -212,9 +212,12 @@ class _PresetSkillMethods:
                                     pack_dir / ".composed" / f"{cmd_name}.md",
                                     root=self.project_root,
                                 )
-                            # Otherwise a replace base still exists, so resolution
-                            # failed because a surviving layer could not be read
-                            # or decoded: skip reconciliation and keep outputs.
+                            else:
+                                # A replace base still exists, so a surviving
+                                # layer could not be read or decoded: keep the
+                                # cache and render the skill from it, as a
+                                # rescaffold does.
+                                preset_cmds.setdefault(pack_id, []).append(cmd_name)
                         else:
                             preset_cmds.setdefault(pack_id, []).append(cmd_name)
                             composed_winners[cmd_name] = pack_id

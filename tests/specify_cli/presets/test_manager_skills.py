@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import warnings
 from pathlib import Path
 
 import pytest
@@ -2147,12 +2148,13 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert skill_file.read_text(encoding="utf-8") == original_skill
         assert cache.read_text(encoding="utf-8") == original_cache
 
-    def test_remove_override_preset_skips_reconciliation_for_unreadable_composing_stack(
+    def test_remove_override_preset_keeps_cached_composition_for_unreadable_stack(
         self, project_dir, temp_dir
     ):
         """Removing a higher-priority replace preset over an unreadable
-        composing stack must preserve the survivor's cache and skip
-        reconciling its unreadable stack into the restored skill."""
+        composing stack must keep the survivor's cache and render the skill
+        from it, as a rescaffold does, not fall back to the core template
+        while a replace base is still installed."""
         manager, skill_file = self._install_composed_specify_stack(
             project_dir,
             temp_dir,
@@ -2181,8 +2183,15 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         )
         assert cache.read_text(encoding="utf-8") == original_cache
         restored = skill_file.read_text(encoding="utf-8")
-        assert "Core specify body" in restored
-        assert "Base preset body" not in restored
+        assert "Base preset body" in restored
+        assert "Appended body" in restored
+        assert "Override body" not in restored
+        assert "Core specify body" not in restored
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            manager.register_enabled_presets_for_agent("claude")
+        assert skill_file.read_text(encoding="utf-8") == restored
 
     def test_shared_skills_dir_restored_once_using_active_agent(
         self, project_dir, temp_dir
