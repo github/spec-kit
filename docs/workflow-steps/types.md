@@ -321,6 +321,17 @@ for the remaining trust boundary.
 
 Shell `timeout` must be a positive number and defaults to `300` seconds. A timeout kills the command and fails the step. Shell output is captured for later expressions.
 
+By default, stdout and stderr are decoded with the locale's preferred encoding, falling back to the system locale encoding. This preserves the behavior of existing workflows: identical bytes can mean different characters in different encodings, so the locale keeps deciding. Set `output_encoding` to decode both streams strictly with a named Python codec instead:
+
+```yaml
+- id: version
+  type: shell
+  run: specify version
+  output_encoding: utf-8
+```
+
+Use this for CLIs that always write UTF-8 under a legacy code page (such as `cp1252` or `cp936` on Windows). The name must be a known text encoding and is validated before the command runs. Bytes that are invalid for that encoding fail the step, and `output_format: json` parses the explicitly decoded stdout, preserving Unicode values in `output.data`.
+
 Set `output_format: json` to parse stdout into typed `output.data`. Invalid JSON,
 including bare `NaN`, `Infinity`, and `-Infinity` constants, fails the step while
 preserving `stdout`, `stderr`, and `exit_code`. Quoted strings such as `"NaN"`

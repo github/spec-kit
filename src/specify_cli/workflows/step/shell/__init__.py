@@ -88,6 +88,15 @@ class ShellStep(StepBase):
                 output={"exit_code": -1, "stdout": "", "stderr": "invalid timeout"},
             )
 
+        output_encoding = config.get("output_encoding")
+        encoding_error = self._output_encoding_error(config)
+        if encoding_error is not None:
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=encoding_error,
+                output={"exit_code": -1, "stdout": "", "stderr": "invalid output encoding"},
+            )
+
         env = {**os.environ}
         for name, template in config.get("env", {}).items():
             try:
@@ -127,13 +136,20 @@ class ShellStep(StepBase):
             )
             # Decode in this thread so malformed output becomes a step
             # failure on Windows too, where subprocess uses reader threads.
-            # Preserve text=True's locale encoding and universal newlines.
+            # An explicit output_encoding is strict; otherwise keep the
+            # locale-first decoding and fallback of text mode, and preserve
+            # universal newlines.
             output = {"exit_code": proc.returncode, "stdout": "", "stderr": ""}
             encoding = locale.getpreferredencoding(False)
             decode_errors = []
             for name in ("stdout", "stderr"):
                 try:
-                    output[name] = _decode_output(getattr(proc, name), encoding)
+                    data = getattr(proc, name)
+                    output[name] = (
+                        _decode_output(data, encoding)
+                        if output_encoding is None
+                        else _read_text(data, output_encoding)
+                    )
                 except UnicodeDecodeError as exc:
                     decode_errors.append(f"Shell command {name} could not be decoded: {exc}")
             if decode_errors:
@@ -228,6 +244,30 @@ class ShellStep(StepBase):
         return errors
 
     @staticmethod
+    def _output_encoding_error(config: dict[str, Any]) -> str | None:
+        """Return an error message if ``config['output_encoding']`` is invalid, else None.
+
+        Shared by execute() and validate() so an unknown or non-string codec
+        fails before a process is launched instead of raising LookupError from
+        the decoder.
+        """
+        if "output_encoding" not in config:
+            return None
+        encoding = config["output_encoding"]
+        prefix = f"Shell step {config.get('id', '?')!r}: "
+        if not isinstance(encoding, str):
+            return prefix + (
+                f"'output_encoding' must be a string, got {type(encoding).__name__}."
+            )
+        try:
+            info = codecs.lookup(encoding)
+        except (LookupError, ValueError):
+            return prefix + f"'output_encoding' {encoding!r} is not a known text encoding."
+        if not getattr(info, "_is_text_encoding", True):
+            return prefix + f"'output_encoding' {encoding!r} is not a known text encoding."
+        return None
+
+    @staticmethod
     def _timeout_error(config: dict[str, Any]) -> str | None:
         """Return an error message if ``config['timeout']`` is invalid, else None.
 
@@ -283,6 +323,9 @@ class ShellStep(StepBase):
                 f"Shell step {config.get('id', '?')!r}: 'output_format' must "
                 f"be 'json' when present, got {output_format!r}."
             )
+        output_encoding_error = self._output_encoding_error(config)
+        if output_encoding_error is not None:
+            errors.append(output_encoding_error)
         timeout_error = self._timeout_error(config)
         if timeout_error is not None:
             errors.append(timeout_error)
