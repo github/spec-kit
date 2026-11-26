@@ -1020,9 +1020,11 @@ def test_junction_fallback_distinguishes_reparse_points(tmp_path: Path, monkeypa
 def test_sentinel_write_codes_keep_access_failures() -> None:
     contention = _resume_sentinel_write_error(33)
     sharing = _resume_sentinel_write_error(32)
-    denied = _resume_sentinel_write_error(5)
     assert "already held" in str(contention)
     assert "already held" in str(sharing)
+    if os.name != "nt":
+        return
+    denied = _resume_sentinel_write_error(5)
     assert "already held" not in str(denied)
     assert getattr(denied, "winerror", None) == 5
 
