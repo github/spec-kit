@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import locale
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -682,7 +683,9 @@ def test_output_invalid_in_code_page_too_fails_step(project_dir, utf8_mode_code_
     assert result.output["stdout"] == ""
 
 
-class TestLegacyLocaleUtf8Output:
+class TestOutputEncoding:
+    """``output_encoding`` opts into strict decoding; the default stays locale-first."""
+
     @staticmethod
     def _set_locale(monkeypatch, preferred: str, system: str | None = None) -> None:
         monkeypatch.setattr(
@@ -692,194 +695,150 @@ class TestLegacyLocaleUtf8Output:
             locale, "getencoding", lambda: preferred if system is None else system
         )
 
+    @staticmethod
+    def _execute(project_dir, body, *, encoding=None, output_format=None):
+        config = {
+            "id": "encoded-output",
+            "type": "shell",
+            "run": _python_run(project_dir, body),
+        }
+        if encoding is not None:
+            config["output_encoding"] = encoding
+        if output_format is not None:
+            config["output_format"] = output_format
+        return ShellStep().execute(config, StepContext(project_root=str(project_dir)))
+
     @pytest.mark.parametrize("output_format", [None, "json"], ids=["text", "json"])
-    def test_utf8_with_cp1252_undefined_bytes_decodes_under_cp1252(
+    def test_default_keeps_locale_decoding_for_ambiguous_bytes(
         self, project_dir, monkeypatch, output_format
     ):
-        self._set_locale(monkeypatch, "cp1252")
-        stdout = (
-            '{"title": "\u540e\u53f0", "quote": "say \u201dhi\u201d", '
-            '"box": "\u2550\u255d"}\r\n'
-        )
-        stderr = "warn: \U0001f50d \u540e\u53f0\r\n"
-        run = _python_run(
+        # cp936 bytes for 路 are also valid UTF-8 for ·. Without an explicit
+        # encoding, the locale must keep deciding, as text mode always has.
+        self._set_locale(monkeypatch, "cp936")
+        stdout = '{"path": "路"}\r\n'
+        result = self._execute(
             project_dir,
-            f"import os\nos.write(1, {stdout.encode('utf-8')!r})\n"
-            f"os.write(2, {stderr.encode('utf-8')!r})\n",
+            f"import os\nos.write(1, {stdout.encode('cp936')!r})\n",
+            output_format=output_format,
         )
-        config = {"id": "utf8-under-cp1252", "type": "shell", "run": run}
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.error is None
+        assert result.output["stdout"] == '{"path": "路"}\n'
+        if output_format == "json":
+            assert result.output["data"] == {"path": "路"}
+
+    @pytest.mark.parametrize("output_format", [None, "json"], ids=["text", "json"])
+    def test_explicit_utf8_decodes_output_invalid_in_the_locale(
+        self, project_dir, monkeypatch, output_format
+    ):
+        # U+540E encodes to E5 90 8E; 0x90 is undefined in cp1252, so the
+        # default decoder fails and only output_encoding: utf-8 can read it.
+        self._set_locale(monkeypatch, "cp1252")
+        stdout = '{"title": "后台"}\r\n'
+        body = f"import os\nos.write(1, {stdout.encode('utf-8')!r})\n"
+        config = {
+            "id": "explicit-utf8",
+            "type": "shell",
+            "run": _python_run(project_dir, body),
+        }
         if output_format is not None:
             config["output_format"] = output_format
 
+        default_result = ShellStep().execute(
+            config, StepContext(project_root=str(project_dir))
+        )
+        assert default_result.status == StepStatus.FAILED
+        assert "stdout could not be decoded" in default_result.error
+
+        config["output_encoding"] = "utf-8"
         result = ShellStep().execute(config, StepContext(project_root=str(project_dir)))
+        assert result.status == StepStatus.COMPLETED
+        assert result.error is None
+        assert result.output["stdout"] == '{"title": "后台"}\n'
+        if output_format == "json":
+            assert result.output["data"] == {"title": "后台"}
+
+    def test_explicit_encoding_decodes_stderr(self, project_dir, monkeypatch):
+        self._set_locale(monkeypatch, "utf-8")
+        stderr = "avertissement: café\r\n"
+        result = self._execute(
+            project_dir,
+            f"import os\nos.write(2, {stderr.encode('cp1252')!r})\n",
+            encoding="cp1252",
+        )
 
         assert result.status == StepStatus.COMPLETED
         assert result.error is None
-        assert result.output["stdout"] == (
-            '{"title": "\u540e\u53f0", "quote": "say \u201dhi\u201d", '
-            '"box": "\u2550\u255d"}\n'
-        )
-        assert result.output["stderr"] == "warn: \U0001f50d \u540e\u53f0\n"
-        if output_format == "json":
-            assert result.output["data"] == {
-                "title": "\u540e\u53f0",
-                "quote": "say \u201dhi\u201d",
-                "box": "\u2550\u255d",
-            }
+        assert result.output["stderr"] == "avertissement: café\n"
 
-    @pytest.mark.parametrize("output_format", [None, "json"], ids=["text", "json"])
-    def test_utf8_without_cp1252_undefined_bytes_is_not_mojibaked(
-        self, project_dir, monkeypatch, output_format
+    @pytest.mark.parametrize("stream", ["stdout", "stderr"], ids=["stdout", "stderr"])
+    def test_invalid_bytes_for_explicit_encoding_fail_cleanly(
+        self, project_dir, monkeypatch, stream
     ):
         self._set_locale(monkeypatch, "cp1252")
-        stdout = '{"name": "caf\u00e9", "status": "\u2713 \u2192 \U0001f3af"}\r\n'
-        stderr = "caf\u00e9 \u2713\r\n"
-        run = _python_run(
+        number = 1 if stream == "stdout" else 2
+        result = self._execute(
             project_dir,
-            f"import os\nos.write(1, {stdout.encode('utf-8')!r})\n"
-            f"os.write(2, {stderr.encode('utf-8')!r})\n",
+            f"import os\nos.write({number}, b'\\xff')\nraise SystemExit(2)\n",
+            encoding="utf-8",
         )
-        config = {"id": "utf8-no-mojibake", "type": "shell", "run": run}
-        if output_format is not None:
-            config["output_format"] = output_format
-
-        result = ShellStep().execute(config, StepContext(project_root=str(project_dir)))
-
-        assert result.status == StepStatus.COMPLETED
-        assert result.error is None
-        assert result.output["stdout"] == (
-            '{"name": "caf\u00e9", "status": "\u2713 \u2192 \U0001f3af"}\n'
-        )
-        assert result.output["stderr"] == "caf\u00e9 \u2713\n"
-        if output_format == "json":
-            assert result.output["data"] == {
-                "name": "caf\u00e9",
-                "status": "\u2713 \u2192 \U0001f3af",
-            }
-
-    def test_specify_version_succeeds_under_cp1252_locale(
-        self, project_dir, monkeypatch
-    ):
-        self._set_locale(monkeypatch, "cp1252")
-        run = _python_run(
-            project_dir,
-            "import sys\nfrom specify_cli import main\n"
-            "sys.argv = ['specify', 'version']\nmain()\n",
-        )
-        config = {"id": "specify-version", "type": "shell", "run": run}
-
-        result = ShellStep().execute(config, StepContext(project_root=str(project_dir)))
-
-        assert result.status == StepStatus.COMPLETED, result.error
-        assert result.output["exit_code"] == 0
-        assert "Specify CLI Information" in result.output["stdout"]
-        assert "\u2550" in result.output["stdout"]
-
-    @pytest.mark.parametrize("output_format", [None, "json"], ids=["text", "json"])
-    def test_utf8_output_decodes_under_ascii_locale(
-        self, project_dir, monkeypatch, output_format
-    ):
-        self._set_locale(monkeypatch, "ascii")
-        stdout = '{"msg": "caf\u00e9 \u540e\u53f0"}\r\n'
-        stderr = "note: caf\u00e9\r\n"
-        run = _python_run(
-            project_dir,
-            f"import os\nos.write(1, {stdout.encode('utf-8')!r})\n"
-            f"os.write(2, {stderr.encode('utf-8')!r})\n",
-        )
-        config = {"id": "utf8-under-ascii", "type": "shell", "run": run}
-        if output_format is not None:
-            config["output_format"] = output_format
-
-        result = ShellStep().execute(config, StepContext(project_root=str(project_dir)))
-
-        assert result.status == StepStatus.COMPLETED
-        assert result.error is None
-        assert result.output["stdout"] == '{"msg": "caf\u00e9 \u540e\u53f0"}\n'
-        assert result.output["stderr"] == "note: caf\u00e9\n"
-        if output_format == "json":
-            assert result.output["data"] == {"msg": "caf\u00e9 \u540e\u53f0"}
-
-    @pytest.mark.parametrize(
-        ("codepage", "raw_stdout", "expected_stdout"),
-        [
-            ("cp1252", "caf\u00e9 \u20ac50\r\n".encode("cp1252"), "caf\u00e9 \u20ac50\n"),
-            ("cp936", '{"message": "\u5b8c\u6210"}\r\n'.encode("cp936"), '{"message": "\u5b8c\u6210"}\n'),
-        ],
-        ids=["cp1252", "cp936"],
-    )
-    def test_legacy_code_page_output_still_decodes_via_fallback(
-        self, project_dir, monkeypatch, codepage, raw_stdout, expected_stdout
-    ):
-        self._set_locale(monkeypatch, codepage)
-        run = _python_run(
-            project_dir, f"import os\nos.write(1, {raw_stdout!r})\n"
-        )
-        config = {"id": "legacy-codepage", "type": "shell", "run": run}
-
-        result = ShellStep().execute(config, StepContext(project_root=str(project_dir)))
-
-        assert result.status == StepStatus.COMPLETED
-        assert result.error is None
-        assert result.output["stdout"] == expected_stdout
-
-    def test_bytes_invalid_in_utf8_and_cp1252_still_fail_cleanly(
-        self, project_dir, monkeypatch
-    ):
-        self._set_locale(monkeypatch, "cp1252")
-        stderr = "ok: caf\u00e9 \u540e\u53f0\r\n".encode("utf-8")
-        run = _python_run(
-            project_dir,
-            f"import os\nos.write(1, b'\\x90')\nos.write(2, {stderr!r})\n"
-            "raise SystemExit(2)\n",
-        )
-        config = {"id": "invalid-both-cp1252", "type": "shell", "run": run}
-
-        result = ShellStep().execute(config, StepContext(project_root=str(project_dir)))
 
         assert result.status == StepStatus.FAILED
         assert result.output["exit_code"] == 2
-        assert result.output["stdout"] == ""
-        assert result.output["stderr"] == "ok: caf\u00e9 \u540e\u53f0\n"
-        assert "stdout could not be decoded" in result.error
+        assert result.output[stream] == ""
+        assert f"{stream} could not be decoded" in result.error
         assert "utf-8" in result.error
+        assert "data" not in result.output
 
-    def test_bytes_invalid_in_utf8_and_ascii_still_fail_cleanly(
-        self, project_dir, monkeypatch
-    ):
-        self._set_locale(monkeypatch, "ascii")
-        run = _python_run(project_dir, "import os\nos.write(1, b'\\xff')\n")
-        config = {"id": "invalid-both-ascii", "type": "shell", "run": run}
+    def test_unknown_output_encoding_fails_before_execution(self, project_dir, monkeypatch):
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("subprocess.run must not be called")
 
-        result = ShellStep().execute(config, StepContext(project_root=str(project_dir)))
+        monkeypatch.setattr(subprocess, "run", fail_if_called)
+        result = self._execute(
+            project_dir, "print('hello')\n", encoding="nonexistent-codec-xyz"
+        )
 
         assert result.status == StepStatus.FAILED
-        assert result.output["stdout"] == ""
-        assert "stdout could not be decoded" in result.error
+        assert "not a known text encoding" in result.error
+        assert "nonexistent-codec-xyz" in result.error
+        assert result.output == {
+            "exit_code": -1,
+            "stdout": "",
+            "stderr": "invalid output encoding",
+        }
 
-    def test_unknown_preferred_encoding_does_not_raise_lookup_error(
-        self, project_dir, monkeypatch
-    ):
-        self._set_locale(monkeypatch, "nonexistent-codec-xyz", "cp1252")
-        payload = "caf\u00e9\r\n".encode("utf-8")
-        valid_run = _python_run(
-            project_dir,
-            f"import os\nos.write(1, {payload!r})\n",
-        )
-        valid_result = ShellStep().execute(
-            {"id": "unknown-codec-valid", "type": "shell", "run": valid_run},
-            StepContext(project_root=str(project_dir)),
-        )
-        assert valid_result.status == StepStatus.COMPLETED
-        assert valid_result.output["stdout"] == "caf\u00e9\n"
+    def test_non_string_output_encoding_fails_before_execution(self, project_dir, monkeypatch):
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("subprocess.run must not be called")
 
-        invalid_run = _python_run(project_dir, "import os\nos.write(1, b'\\x90')\n")
-        invalid_result = ShellStep().execute(
-            {"id": "unknown-codec-invalid", "type": "shell", "run": invalid_run},
-            StepContext(project_root=str(project_dir)),
+        monkeypatch.setattr(subprocess, "run", fail_if_called)
+        result = self._execute(project_dir, "print('hello')\n", encoding=65001)
+
+        assert result.status == StepStatus.FAILED
+        assert "'output_encoding' must be a string" in result.error
+        assert "int" in result.error
+
+    def test_validate_accepts_known_encodings_and_rejects_unknown(self):
+        step = ShellStep()
+        assert (
+            step.validate({"id": "known", "run": "echo hi", "output_encoding": "utf-8"})
+            == []
         )
-        assert invalid_result.status == StepStatus.FAILED
-        assert "stdout could not be decoded" in invalid_result.error
+        assert step.validate(
+            {
+                "id": "unknown",
+                "run": "echo hi",
+                "output_encoding": "nonexistent-codec-xyz",
+            }
+        ) == [
+            "Shell step 'unknown': 'output_encoding' 'nonexistent-codec-xyz' "
+            "is not a known text encoding."
+        ]
+        assert step.validate(
+            {"id": "number", "run": "echo hi", "output_encoding": 65001}
+        ) == ["Shell step 'number': 'output_encoding' must be a string, got int."]
 
 
 @pytest.mark.parametrize("continue_on_error", [False, True], ids=["halt", "continue"])

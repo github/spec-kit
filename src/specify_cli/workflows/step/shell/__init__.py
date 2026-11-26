@@ -27,30 +27,28 @@ def _read_text(data: bytes, encoding: str) -> str:
 
 
 def _decode_output(data: bytes, encoding: str) -> str:
-    """Decode captured output as UTF-8, falling back to the locale encoding.
+    """Decode captured output with *encoding*, as ``text=True`` would.
 
-    Try strict UTF-8 first so CLIs that write UTF-8 (including ``specify``,
-    ``git``, ``gh``, and UTF-8 scripts) decode cleanly even outside Python's
-    UTF-8 mode on legacy code pages, then retry with any distinct preferred or
-    system locale encoding for native tools that emit the legacy code page.
+    In Python's UTF-8 mode (``PYTHONUTF8=1``, and the default from Python 3.15)
+    the preferred encoding is always UTF-8, but cmd.exe and other native
+    programs still write in the locale code page, e.g. cp936 on Chinese
+    Windows. If the output is not valid in *encoding*, retry with the locale
+    encoding that ``text=True`` used outside UTF-8 mode.
     """
     try:
-        return _read_text(data, "utf-8")
+        return _read_text(data, encoding)
     except UnicodeDecodeError as exc:
-        seen = {codecs.lookup("utf-8").name}
-        for fallback in (encoding, locale.getencoding()):
-            try:
-                canonical = codecs.lookup(fallback).name
-            except LookupError:
-                continue
-            if canonical in seen:
-                continue
-            seen.add(canonical)
-            try:
-                return _read_text(data, fallback)
-            except UnicodeDecodeError:
-                continue
-        raise exc from None
+        fallback = locale.getencoding()
+        try:
+            same = codecs.lookup(fallback).name == codecs.lookup(encoding).name
+        except LookupError:
+            same = True
+        if same:
+            raise
+        try:
+            return _read_text(data, fallback)
+        except UnicodeDecodeError:
+            raise exc from None
 
 
 class ShellStep(StepBase):
@@ -88,6 +86,15 @@ class ShellStep(StepBase):
                 status=StepStatus.FAILED,
                 error=timeout_error,
                 output={"exit_code": -1, "stdout": "", "stderr": "invalid timeout"},
+            )
+
+        output_encoding = config.get("output_encoding")
+        encoding_error = self._output_encoding_error(config)
+        if encoding_error is not None:
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=encoding_error,
+                output={"exit_code": -1, "stdout": "", "stderr": "invalid output encoding"},
             )
 
         env = {**os.environ}
@@ -129,13 +136,20 @@ class ShellStep(StepBase):
             )
             # Decode in this thread so malformed output becomes a step
             # failure on Windows too, where subprocess uses reader threads.
-            # Try UTF-8 with locale fallback and preserve universal newlines.
+            # An explicit output_encoding is strict; otherwise keep the
+            # locale-first decoding and fallback of text mode, and preserve
+            # universal newlines.
             output = {"exit_code": proc.returncode, "stdout": "", "stderr": ""}
             encoding = locale.getpreferredencoding(False)
             decode_errors = []
             for name in ("stdout", "stderr"):
                 try:
-                    output[name] = _decode_output(getattr(proc, name), encoding)
+                    data = getattr(proc, name)
+                    output[name] = (
+                        _decode_output(data, encoding)
+                        if output_encoding is None
+                        else _read_text(data, output_encoding)
+                    )
                 except UnicodeDecodeError as exc:
                     decode_errors.append(f"Shell command {name} could not be decoded: {exc}")
             if decode_errors:
@@ -230,6 +244,28 @@ class ShellStep(StepBase):
         return errors
 
     @staticmethod
+    def _output_encoding_error(config: dict[str, Any]) -> str | None:
+        """Return an error message if ``config['output_encoding']`` is invalid, else None.
+
+        Shared by execute() and validate() so an unknown or non-string codec
+        fails before a process is launched instead of raising LookupError from
+        the decoder.
+        """
+        if "output_encoding" not in config:
+            return None
+        encoding = config["output_encoding"]
+        prefix = f"Shell step {config.get('id', '?')!r}: "
+        if not isinstance(encoding, str):
+            return prefix + (
+                f"'output_encoding' must be a string, got {type(encoding).__name__}."
+            )
+        try:
+            codecs.lookup(encoding)
+        except LookupError:
+            return prefix + f"'output_encoding' {encoding!r} is not a known text encoding."
+        return None
+
+    @staticmethod
     def _timeout_error(config: dict[str, Any]) -> str | None:
         """Return an error message if ``config['timeout']`` is invalid, else None.
 
@@ -285,6 +321,9 @@ class ShellStep(StepBase):
                 f"Shell step {config.get('id', '?')!r}: 'output_format' must "
                 f"be 'json' when present, got {output_format!r}."
             )
+        output_encoding_error = self._output_encoding_error(config)
+        if output_encoding_error is not None:
+            errors.append(output_encoding_error)
         timeout_error = self._timeout_error(config)
         if timeout_error is not None:
             errors.append(timeout_error)
