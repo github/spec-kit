@@ -6,8 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
-import pytest
 import anyio
+import pytest
 from mcp import ClientSession
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -17,7 +17,8 @@ from typer.testing import CliRunner
 
 from specify_cli import app
 from specify_cli.mcp_server.server import create_server
-from specify_cli.workflows import _mcp, _operation_list as operation, mcp_list
+from specify_cli.workflows import _mcp, mcp_list
+from specify_cli.workflows import _operation_list as operation
 
 
 def _run(coro):
@@ -37,8 +38,7 @@ def test_actual_discovery_schema_annotations_and_collision(tmp_path):
     server = MCPServer(name="test")
     _mcp.register(server, launch_directory=tmp_path)
     tools = _run(server.list_tools())
-    assert len(tools) == 1
-    tool = tools[0]
+    tool = next(tool for tool in tools if tool.name == "specify_workflow_list")
     assert tool.name == "specify_workflow_list"
     assert (
         tool.input_schema["properties"]
@@ -73,7 +73,10 @@ def test_actual_discovery_schema_annotations_and_collision(tmp_path):
     assert tool.annotations.open_world_hint is False
     with pytest.raises(ValueError, match="collision"):
         _mcp.register(server, launch_directory=tmp_path)
-    assert len(_run(server.list_tools())) == 1
+    assert {tool.name for tool in _run(server.list_tools())} == {
+        "specify_workflow_list",
+        "specify_workflow_step_list",
+    }
 
 
 def test_shared_operation_used_by_both_adapters(tmp_path, monkeypatch):

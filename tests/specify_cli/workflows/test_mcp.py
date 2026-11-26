@@ -28,7 +28,25 @@ from specify_cli.mcp_server.server import create_server
 from specify_cli.workflows import _commands, _mcp
 from specify_cli.workflows._operation_list import WORKFLOW_LIST_OPERATION
 from specify_cli.workflows.mcp_list import WorkflowListToolInput, WorkflowListToolResult
+from specify_cli.workflows.step import _operation_list as step_operation
 from specify_cli.workflows.step import catalog as step_catalog
+from specify_cli.workflows.step import mcp_list as step_mcp_list
+
+# One contract per available workflow operation: descriptor plus the MCP
+# adapter's input/output models. An available record with no entry here has
+# no operation contract evidence and fails parity.
+_AVAILABLE_CONTRACTS = {
+    "workflow.list": (
+        WORKFLOW_LIST_OPERATION,
+        WorkflowListToolInput,
+        WorkflowListToolResult,
+    ),
+    "workflow.step.list": (
+        step_operation.WORKFLOW_STEP_LIST_OPERATION,
+        step_mcp_list.WorkflowStepListToolInput,
+        step_mcp_list.WorkflowStepListToolResult,
+    ),
+}
 
 
 def _workflow_cli_paths() -> list[str]:
@@ -123,17 +141,19 @@ def _assert_inventory(
                 f"Available reason: {item.operation_id}"
             )
             _assert_synthetic_discovery_shape(item, tools)
-            assert item.operation_id == WORKFLOW_LIST_OPERATION.operation_id, (
+            contract = _AVAILABLE_CONTRACTS.get(item.operation_id)
+            assert contract is not None, (
                 f"No workflow operation contract evidence: {item.operation_id}"
             )
-            assert item.contract_version == WORKFLOW_LIST_OPERATION.contract_version
-            assert item.capabilities == WORKFLOW_LIST_OPERATION.capabilities
-            assert item.network_access == WORKFLOW_LIST_OPERATION.network_access
+            descriptor, input_model, result_model = contract
+            assert item.contract_version == descriptor.contract_version
+            assert item.capabilities == descriptor.capabilities
+            assert item.network_access == descriptor.network_access
             tool = matching[0]
-            expected_input = WorkflowListToolInput.model_json_schema()
+            expected_input = input_model.model_json_schema()
             assert tool.input_schema["properties"] == expected_input["properties"]
             assert tool.input_schema["additionalProperties"] is False
-            assert tool.output_schema == WorkflowListToolResult.model_json_schema()
+            assert tool.output_schema == result_model.model_json_schema()
         else:
             assert item.contract_version is None, (
                 f"Nonavailable tool has contract version: {item.operation_id}"
@@ -401,7 +421,7 @@ def test_uninventoried_workflow_tool_is_rejected(available_record_and_tool):
         _assert_inventory([], [], [tool])
 
 
-def test_server_adds_only_workflow_list_and_preserves_legacy_catalog(tmp_path):
+def test_server_adds_workflow_tools_and_preserves_legacy_catalog(tmp_path):
     tools = asyncio.run(create_server(launch_directory=tmp_path).list_tools())
     assert Counter(tool.name for tool in tools) == Counter(
         {
@@ -409,6 +429,7 @@ def test_server_adds_only_workflow_list_and_preserves_legacy_catalog(tmp_path):
             "specify_artifact_list": 1,
             "specify_artifact_info": 1,
             "specify_workflow_list": 1,
+            "specify_workflow_step_list": 1,
             "specify_list_commands": 1,
             "specify_describe_command": 1,
             "specify_run_command": 1,
@@ -423,7 +444,7 @@ def test_server_adds_only_workflow_list_and_preserves_legacy_catalog(tmp_path):
         item.operation_id
         for item in _mcp.WORKFLOW_TOOLS
         if item.disposition == "available"
-    ] == ["workflow.list"]
+    ] == ["workflow.list", "workflow.step.list"]
 
 
 @pytest.mark.parametrize("operation_id", ["workflow.run", "workflow.resume"])
