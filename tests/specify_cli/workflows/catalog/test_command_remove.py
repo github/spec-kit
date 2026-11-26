@@ -23,6 +23,20 @@ def test_workflow_catalog_remove_deletes_selected_source(project_dir, monkeypatc
     )
 
 
+def test_workflow_catalog_remove_prints_bracketed_name_literally(
+    project_dir, monkeypatch
+):
+    monkeypatch.chdir(project_dir)
+    monkeypatch.delenv("SPECKIT_WORKFLOW_CATALOG_URL", raising=False)
+    catalog = WorkflowCatalog(project_dir)
+    catalog.add_catalog("https://example.com/workflows.json", "QA [/beta]")
+
+    result = CliRunner().invoke(app, ["workflow", "catalog", "remove", "0"])
+
+    assert result.exit_code == 0, result.output
+    assert "'QA [/beta]' removed" in result.output
+
+
 def test_workflow_catalog_remove_uses_listed_index(project_dir, monkeypatch):
     monkeypatch.chdir(project_dir)
     monkeypatch.delenv("SPECKIT_WORKFLOW_CATALOG_URL", raising=False)
