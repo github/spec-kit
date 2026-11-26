@@ -890,6 +890,47 @@ def test_resume_completion_log_failure_keeps_terminal_state(
     assert probe["next"] == 1
 
 
+def test_run_log_write_failure_persists_failed_state(tmp_path, monkeypatch, probe):
+    original = RunState.append_log
+    broken = True
+
+    def log(self, entry):
+        if broken:
+            raise OSError("log failed")
+        original(self, entry)
+
+    monkeypatch.setattr(RunState, "append_log", log)
+    root = definition("parent", [{"id": "work", "type": "probe"}])
+    with pytest.raises(OSError, match="log failed"):
+        WorkflowEngine(tmp_path).execute(root, run_id="broken-log")
+
+    persisted = RunState.load("broken-log", tmp_path)
+    assert persisted.status == RunStatus.FAILED
+
+    broken = False
+    resumed = WorkflowEngine(tmp_path).resume("broken-log")
+    assert resumed.status == RunStatus.COMPLETED
+
+
+def test_run_completion_log_failure_keeps_terminal_state(
+    tmp_path, monkeypatch, probe
+):
+    original = RunState.append_log
+
+    def log(self, entry):
+        if entry["event"] == "workflow_finished":
+            raise OSError("log failed")
+        original(self, entry)
+
+    monkeypatch.setattr(RunState, "append_log", log)
+    root = definition("parent", [{"id": "work", "type": "probe"}])
+    with pytest.raises(OSError, match="log failed"):
+        WorkflowEngine(tmp_path).execute(root, run_id="finish-log")
+
+    assert RunState.load("finish-log", tmp_path).status == RunStatus.COMPLETED
+    assert probe["work"] == 1
+
+
 @pytest.mark.parametrize("failure", [KeyboardInterrupt, RuntimeError])
 def test_leave_failure_preserves_step_exception(tmp_path, monkeypatch, failure):
     from specify_cli.workflows._execution import Execution

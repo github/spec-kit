@@ -1223,8 +1223,8 @@ class WorkflowEngine:
             self._execute_steps(definition.steps, context, state, STEP_REGISTRY)
         except KeyboardInterrupt:
             state.status = RunStatus.PAUSED
-            state.append_log({"event": "workflow_interrupted"})
             state.save()
+            state.append_log({"event": "workflow_interrupted"})
             return state
         except Exception as exc:
             if state._checkpoint_failed:
@@ -1232,14 +1232,14 @@ class WorkflowEngine:
             state.status = RunStatus.FAILED
             state.error = str(exc)
             state._recorded_exception = exc
-            state.append_log({"event": "workflow_failed", "error": str(exc)})
             state.save()
+            state.append_log({"event": "workflow_failed", "error": str(exc)})
             raise
 
         if state.status == RunStatus.RUNNING:
             state.status = RunStatus.COMPLETED
-        state.append_log({"event": "workflow_finished", "status": state.status.value})
         state.save()
+        state.append_log({"event": "workflow_finished", "status": state.status.value})
         return state
 
     def resume(
