@@ -2193,6 +2193,180 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             manager.register_enabled_presets_for_agent("claude")
         assert skill_file.read_text(encoding="utf-8") == restored
 
+    def _install_custom_command_stack(
+        self, project_dir, temp_dir, layers, *, ai="copilot", command_name="speckit.custom"
+    ):
+        """Install ``(preset_id, body, strategy, priority)`` layers for a custom command."""
+        self._write_init_options(project_dir, ai=ai, ai_skills=True)
+        manager = PresetManager(project_dir)
+        preset_dirs = {}
+        for preset_id, body, strategy, priority in layers:
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, command_name, preset_id, body
+            )
+            if strategy != "replace":
+                manifest_path = preset_dir / "preset.yml"
+                manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+                manifest["provides"]["templates"][0]["strategy"] = strategy
+                manifest_path.write_text(yaml.dump(manifest), encoding="utf-8")
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+            preset_dirs[preset_id] = preset_dir
+        skills_dir = manager._get_skills_dir()
+        assert skills_dir is not None
+        skill_name, _legacy = manager._skill_names_for_command(command_name)
+        return manager, skills_dir / skill_name / "SKILL.md", preset_dirs
+
+    def test_remove_base_in_three_layer_custom_stack_invalidates_all_caches_before_rescaffold(
+        self, project_dir, temp_dir
+    ):
+        """Removing the sole replace base of a 3-layer custom stack must
+        invalidate every surviving preset's .composed cache so a subsequent
+        Copilot skills-mode rescaffold cannot resurrect the removed skill."""
+        manager, skill_file, preset_dirs = self._install_custom_command_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 20),
+                ("middle-preset", "Middle body", "append", 10),
+                ("top-preset", "Top body", "append", 5),
+            ],
+            ai="copilot",
+        )
+        middle_cache = (
+            manager.presets_dir / "middle-preset" / ".composed" / "speckit.custom.md"
+        )
+        top_cache = (
+            manager.presets_dir / "top-preset" / ".composed" / "speckit.custom.md"
+        )
+        unrelated_cache = (
+            manager.presets_dir / "middle-preset" / ".composed" / "speckit.other.md"
+        )
+        unrelated_cache.write_text("unrelated cached content\n", encoding="utf-8")
+
+        initial_skill = skill_file.read_text(encoding="utf-8")
+        assert "Base preset body" in initial_skill
+        assert "Middle body" in initial_skill
+        assert "Top body" in initial_skill
+        assert "preset:top-preset" in initial_skill
+        assert middle_cache.exists()
+        assert top_cache.exists()
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+
+        assert not skill_file.exists()
+        assert not top_cache.exists()
+        assert not middle_cache.exists()
+        assert unrelated_cache.read_text(encoding="utf-8") == "unrelated cached content\n"
+
+        with pytest.warns(UserWarning, match="no base"):
+            manager.register_enabled_presets_for_agent("copilot")
+
+        assert not skill_file.exists()
+        assert not top_cache.exists()
+        assert not middle_cache.exists()
+
+        # Re-installing a replace base must cleanly re-compose the surviving stack.
+        manager.install_from_directory(preset_dirs["base-preset"], "0.1.5", priority=20)
+        reinstalled = skill_file.read_text(encoding="utf-8")
+        assert "Base preset body" in reinstalled
+        assert "Middle body" in reinstalled
+        assert "Top body" in reinstalled
+        assert "preset:top-preset" in reinstalled
+
+    def test_remove_override_over_baseless_three_layer_stack_invalidates_all_caches(
+        self, project_dir, temp_dir
+    ):
+        """Removing a higher-priority replace overlay after the lower base was
+        removed must drop stale caches across the entire surviving baseless stack."""
+        manager, skill_file, _preset_dirs = self._install_custom_command_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 30),
+                ("middle-preset", "Middle prepend body", "prepend", 20),
+                ("top-preset", "Top append body", "append", 10),
+                ("override-preset", "Override body", "replace", 5),
+            ],
+            ai="copilot",
+        )
+        middle_cache = (
+            manager.presets_dir / "middle-preset" / ".composed" / "speckit.custom.md"
+        )
+        top_cache = (
+            manager.presets_dir / "top-preset" / ".composed" / "speckit.custom.md"
+        )
+        assert middle_cache.exists()
+        assert top_cache.exists()
+        assert "Override body" in skill_file.read_text(encoding="utf-8")
+
+        assert manager.remove("base-preset") is True
+        assert "Override body" in skill_file.read_text(encoding="utf-8")
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("override-preset") is True
+
+        assert not skill_file.exists()
+        assert not top_cache.exists()
+        assert not middle_cache.exists()
+
+        with pytest.warns(UserWarning, match="no base"):
+            manager.register_enabled_presets_for_agent("copilot")
+
+        assert not skill_file.exists()
+
+    def test_remove_override_keeps_caches_in_unreadable_three_layer_stack(
+        self, project_dir, temp_dir
+    ):
+        """When a replace base still exists underneath an unreadable 3-layer
+        composing stack, removing a higher-priority replace preset must preserve
+        all caches and render from the winner's cached composition."""
+        manager, skill_file, _preset_dirs = self._install_custom_command_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 30),
+                ("middle-preset", "Middle body", "append", 20),
+                ("top-preset", "Top body", "append", 10),
+                ("override-preset", "Override body", "replace", 5),
+            ],
+            ai="copilot",
+        )
+        middle_cache = (
+            manager.presets_dir / "middle-preset" / ".composed" / "speckit.custom.md"
+        )
+        top_cache = (
+            manager.presets_dir / "top-preset" / ".composed" / "speckit.custom.md"
+        )
+        original_middle_cache = middle_cache.read_text(encoding="utf-8")
+        original_top_cache = top_cache.read_text(encoding="utf-8")
+
+        (
+            manager.presets_dir / "middle-preset" / "commands" / "speckit.custom.md"
+        ).write_bytes(
+            b"---\ndescription: \xff\xfe invalid utf-8\n---\n\nMiddle\n"
+        )
+
+        with pytest.warns(UserWarning, match="no base layer") as caught:
+            assert manager.remove("override-preset") is True
+
+        assert all(
+            "Post-removal reconciliation failed" not in str(w.message)
+            for w in caught
+        )
+        assert middle_cache.read_text(encoding="utf-8") == original_middle_cache
+        assert top_cache.read_text(encoding="utf-8") == original_top_cache
+        restored = skill_file.read_text(encoding="utf-8")
+        assert "Base preset body" in restored
+        assert "Middle body" in restored
+        assert "Top body" in restored
+        assert "Override body" not in restored
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            manager.register_enabled_presets_for_agent("copilot")
+        assert skill_file.read_text(encoding="utf-8") == restored
+
     def test_shared_skills_dir_restored_once_using_active_agent(
         self, project_dir, temp_dir
     ):

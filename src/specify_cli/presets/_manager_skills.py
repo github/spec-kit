@@ -205,13 +205,24 @@ class _PresetSkillMethods:
                                 layer["strategy"] == "replace"
                                 for layer in layers
                             ):
-                                # Nothing left to compose onto: drop the stale
-                                # cache so it can't be rendered back into a skill.
+                                # Nothing left to compose onto: drop stale
+                                # caches across the baseless stack so none can
+                                # be rendered back into a skill.
                                 unresolved_winners[cmd_name] = pack_id
-                                unlink_in_directory(
-                                    pack_dir / ".composed" / f"{cmd_name}.md",
-                                    root=self.project_root,
-                                )
+                                for layer_pack_id, _layer_meta in presets_by_priority:
+                                    if not PresetResolver._is_safe_registry_id(
+                                        layer_pack_id
+                                    ):
+                                        continue
+                                    layer_pack_dir = self.presets_dir / layer_pack_id
+                                    if any(
+                                        layer["path"].is_relative_to(layer_pack_dir)
+                                        for layer in layers
+                                    ):
+                                        unlink_in_directory(
+                                            layer_pack_dir / ".composed" / f"{cmd_name}.md",
+                                            root=self.project_root,
+                                        )
                             else:
                                 # A replace base still exists, so a surviving
                                 # layer could not be read or decoded: keep the
