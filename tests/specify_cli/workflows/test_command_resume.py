@@ -10,6 +10,20 @@ from pathlib import Path
 import pytest
 
 
+def _json_documents(text: str) -> list[object]:
+    decoder = json.JSONDecoder()
+    documents: list[object] = []
+    index = 0
+    while index < len(text):
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index >= len(text):
+            break
+        document, index = decoder.raw_decode(text, index)
+        documents.append(document)
+    return documents
+
+
 
 class TestWorkflowJsonOutput:
     """Test the --json machine-readable output for run/resume/status."""
@@ -99,6 +113,146 @@ steps:
         )
         assert resumed["run_id"] == rid
         assert resumed["status"] == "paused"
+
+    def test_resume_json_is_emitted_after_unlock(self, project_dir, monkeypatch):
+        if os.name != "nt":
+            pytest.skip("Windows unlock is the propagating release path")
+        import msvcrt
+
+        from specify_cli.workflows import _commands as commands
+
+        wf = self._write_wf(project_dir, self._WF, "gated-order")
+        rid = json.loads(
+            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
+        )["run_id"]
+        events: list[str] = []
+        real_lock = msvcrt.locking
+        real_emit = commands._emit_workflow_json
+
+        def locking(fd, mode, length):
+            if mode == msvcrt.LK_UNLCK:
+                events.append("unlock")
+            return real_lock(fd, mode, length)
+
+        def emit(payload, *, max_nodes=None):
+            events.append("emit")
+            return real_emit(payload, max_nodes=max_nodes)
+
+        monkeypatch.setattr(msvcrt, "locking", locking)
+        monkeypatch.setattr(commands, "_emit_workflow_json", emit)
+        result = self._invoke(project_dir, ["workflow", "resume", rid, "--json"])
+        documents = _json_documents(result.stdout)
+        assert documents[0]["status"] == "paused"
+        assert len(documents) == 1
+        assert events == ["unlock", "emit"]
+
+    def test_resume_json_unlock_failure_is_the_only_outcome(self, project_dir, monkeypatch):
+        if os.name != "nt":
+            pytest.skip("Windows unlock is the propagating release path")
+        import msvcrt
+
+        wf = self._write_wf(project_dir, self._WF, "gated-unlock")
+        rid = json.loads(
+            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
+        )["run_id"]
+        real_lock = msvcrt.locking
+
+        def locking(fd, mode, length):
+            if mode == msvcrt.LK_UNLCK:
+                raise OSError(13, "unlock failed")
+            return real_lock(fd, mode, length)
+
+        monkeypatch.setattr(msvcrt, "locking", locking)
+        result = self._invoke(project_dir, ["workflow", "resume", rid, "--json"])
+        documents = _json_documents(result.stdout)
+        assert result.exit_code == 1
+        assert len(documents) == 1
+        assert documents[0]["status"] == "failed"
+        assert "unlock failed" in documents[0]["error"]
+        assert documents[0].get("status") != "paused"
+
+    def test_resume_execution_error_is_rendered_after_unlock(
+        self, project_dir, monkeypatch
+    ):
+        if os.name != "nt":
+            pytest.skip("Windows unlock is the propagating release path")
+        import msvcrt
+
+        from specify_cli.workflows import _commands as commands
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        wf = self._write_wf(project_dir, self._WF, "gated-exec")
+        rid = json.loads(
+            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
+        )["run_id"]
+        events: list[str] = []
+        real_lock = msvcrt.locking
+        real_emit = commands._emit_workflow_json
+
+        def locking(fd, mode, length):
+            if mode == msvcrt.LK_UNLCK:
+                events.append("unlock")
+            return real_lock(fd, mode, length)
+
+        def emit(payload, *, max_nodes=None):
+            events.append("emit")
+            return real_emit(payload, max_nodes=max_nodes)
+
+        def owned(self, run_id, inputs):
+            raise OSError(13, "disk failed")
+
+        monkeypatch.setattr(msvcrt, "locking", locking)
+        monkeypatch.setattr(commands, "_emit_workflow_json", emit)
+        monkeypatch.setattr(WorkflowEngine, "_resume_owned", owned)
+        result = self._invoke(project_dir, ["workflow", "resume", rid, "--json"])
+        documents = _json_documents(result.stdout)
+        assert result.exit_code == 1
+        assert len(documents) == 1
+        assert documents[0]["status"] == "failed"
+        assert "disk failed" in documents[0]["error"]
+        assert events == ["unlock", "emit"]
+
+    def test_resume_recorded_error_is_rendered_after_unlock(
+        self, project_dir, monkeypatch
+    ):
+        if os.name != "nt":
+            pytest.skip("Windows unlock is the propagating release path")
+        import msvcrt
+
+        from specify_cli.workflows import _commands as commands
+
+        wf = self._write_wf(project_dir, self._WF_RAISE, "raise-order")
+        rid = json.loads(
+            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
+        )["run_id"]
+        events: list[str] = []
+        real_lock = msvcrt.locking
+        real_emit = commands._emit_workflow_json
+
+        def locking(fd, mode, length):
+            if mode == msvcrt.LK_UNLCK:
+                events.append("unlock")
+            return real_lock(fd, mode, length)
+
+        def emit(payload, *, max_nodes=None):
+            events.append("emit")
+            return real_emit(payload, max_nodes=max_nodes)
+
+        monkeypatch.setattr(msvcrt, "locking", locking)
+        monkeypatch.setattr(commands, "_emit_workflow_json", emit)
+        result = self._invoke(
+            project_dir,
+            [
+                "workflow", "resume", rid, "--json",
+                "--input", "verdict=approve", "--input", "payload=not json",
+            ],
+        )
+        documents = _json_documents(result.stdout)
+        assert result.exit_code == 1
+        assert len(documents) == 1
+        assert documents[0]["status"] == "failed"
+        assert documents[0]["error"].startswith("from_json: invalid JSON")
+        assert events == ["unlock", "emit"]
 
     def test_resume_json_step_exception_reports_failed_run(self, project_dir):
         wf = self._write_wf(project_dir, self._WF_RAISE, "raise")
@@ -396,6 +550,9 @@ steps:
         from specify_cli.workflows.engine import RunState
 
         monkeypatch.chdir(project_dir)
+        (
+            project_dir / ".specify" / "workflows" / "runs" / "unreadable-run"
+        ).mkdir(parents=True)
         with patch.object(
             RunState, "load", side_effect=OSError("permission [denied]")
         ):
@@ -787,3 +944,151 @@ steps:
 
         result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
         assert result.exit_code == 0, result.output
+
+
+def test_cli_legacy_second_resume_does_not_write(tmp_path, monkeypatch):
+    """The legacy metadata save is inside the same ownership boundary."""
+    import hashlib
+
+    from tests.workflows.test_resume_run_lock import (
+        _effect_lines,
+        _finish,
+        _finished_events,
+        _make_legacy,
+        _read_result,
+        _spawn,
+        _start_paused,
+        _state_path,
+        _stop_processes,
+    )
+
+    project = tmp_path / "project"
+    log = project / "effect.log"
+    gate = project / "gate"
+    gate.mkdir(parents=True)
+    run_id = "legacy-run"
+    _start_paused(project, log, None, run_id, monkeypatch)
+    paused = _make_legacy(project, run_id)
+    paused_hash = hashlib.sha256(paused).hexdigest()
+    results = [project / "a.json", project / "b.json"]
+    procs = [
+        _spawn(
+            "cli-barrier",
+            [str(project), run_id, role, str(gate), str(result)],
+            cwd=project,
+        )
+        for role, result in (("a", results[0]), ("b", results[1]))
+    ]
+    try:
+        finished = [_finish(proc) for proc in procs]
+    finally:
+        _stop_processes(procs)
+    payloads = [_read_result(path) for path in results]
+    owners = [payload for payload in payloads if payload.get("ok") is True]
+    rejected = [payload for payload in payloads if payload.get("ok") is not True]
+    assert all(item["timed_out"] is False for item in finished), finished
+    assert len(owners) == 1, payloads
+    assert len(rejected) == 1, payloads
+    assert "already held" in str(rejected[0].get("output", "")), rejected
+    assert rejected[0]["state_sha256"] == paused_hash, rejected
+    assert len(_effect_lines(log)) == 1
+    final = json.loads(_state_path(project, run_id).read_text(encoding="utf-8"))
+    assert final["status"] == "completed"
+    assert "installed_workflow_id" in final
+    assert "installed_registry_root" in final
+    completed = [
+        event for event in _finished_events(project, run_id)
+        if event.get("status") == "completed"
+    ]
+    assert len(completed) == 1
+    assert completed[0]["event"] == "workflow_finished"
+
+
+def test_cli_cannot_overwrite_engine_owner(tmp_path, monkeypatch):
+    """A CLI resume shares the engine owner's lock and does not save over it."""
+    import time
+
+    from tests.workflows.test_resume_run_lock import (
+        _effect_lines,
+        _finish,
+        _make_legacy,
+        _read_result,
+        _spawn,
+        _start_paused,
+        _state_path,
+        _stop_processes,
+    )
+
+    project = tmp_path / "project"
+    log = project / "effect.log"
+    release = project / "release"
+    run_id = "shared-run"
+    _start_paused(project, log, release, run_id, monkeypatch)
+    _make_legacy(project, run_id)
+    holder_result = project / "holder.json"
+    holder = _spawn(
+        "engine-plain", [str(project), run_id, str(holder_result)], cwd=project
+    )
+    deadline = time.time() + 15
+    while time.time() < deadline and len(_effect_lines(log)) < 1:
+        time.sleep(0.02)
+    assert _effect_lines(log), "owner never entered the resumed step"
+    owned = _state_path(project, run_id).read_bytes()
+    cli_result = project / "cli.json"
+    cli = _spawn("cli-plain", [str(project), run_id, str(cli_result)], cwd=project)
+    try:
+        cli_done = _finish(cli, timeout=20)
+        assert cli_done["timed_out"] is False, cli_done
+        assert _state_path(project, run_id).read_bytes() == owned
+        rejected = _read_result(cli_result)
+        assert rejected["ok"] is False, rejected
+        assert "already held" in str(rejected.get("output", "")), rejected
+        release.write_text("go", encoding="utf-8")
+        holder_done = _finish(holder)
+        assert holder_done["timed_out"] is False, holder_done
+        assert _read_result(holder_result)["ok"] is True
+    finally:
+        _stop_processes([cli, holder])
+
+
+def test_resume_json_lock_contention_emits_one_object(tmp_path, monkeypatch):
+    """Lock loss under --json is one JSON object and leaves the owner untouched."""
+    import threading
+    from unittest.mock import patch
+
+    from typer.testing import CliRunner
+
+    from specify_cli import app
+    from tests.workflows.test_resume_run_lock import (
+        _resume_run_lock,
+        _start_paused,
+        _state_path,
+    )
+
+    project = tmp_path / "project"
+    run_id = "json-lock"
+    _start_paused(project, project / "effect.log", None, run_id, monkeypatch)
+    before = _state_path(project, run_id).read_bytes()
+    held = threading.Event()
+    release = threading.Event()
+
+    def hold() -> None:
+        with _resume_run_lock(project, run_id):
+            held.set()
+            release.wait(20)
+
+    thread = threading.Thread(target=hold)
+    thread.start()
+    assert held.wait(10)
+    try:
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project):
+            result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
+    finally:
+        release.set()
+        thread.join(10)
+    assert result.exit_code != 0
+    payload = json.loads(result.stdout)
+    assert payload["run_id"] == run_id
+    assert "already held" in payload["error"]
+    assert _state_path(project, run_id).read_bytes() == before

@@ -431,7 +431,7 @@ def test_execution_command_effects_include_persistence_and_optional_network(
     operation_id,
 ):
     # command_run.workflow_run reads a definition and calls WorkflowEngine.execute;
-    # command_resume.workflow_resume reads RunState and calls WorkflowEngine.resume.
+    # command_resume.workflow_resume reads RunState and resumes through the engine.
     # Both engine paths save checkpoints and dispatch executable steps. Command
     # steps can run offline; prompt steps can invoke networked integrations, so
     # networking is optional rather than required. See step/command and step/prompt.
