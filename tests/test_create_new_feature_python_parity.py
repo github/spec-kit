@@ -17,6 +17,7 @@ from scripts.python.common import persist_feature_json
 from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
+    HAS_PWSH,
     WINDOWS_POWERSHELL,
     _bash_posix_path,
     bash_cmd,
@@ -86,6 +87,8 @@ def repo_pair(tmp_path: Path) -> tuple[Path, Path]:
         ("添加用户", None, "添加用户", False),
         ("добавить", None, "добавить", False),
         ("!!! ??? ***", None, "", True),
+        ("\U0001F389", None, "", True),
+        ("\U0001F600 \u2764\ufe0f", None, "", True),
         ("添加用户", "user-auth", "user-auth", False),
         ("Add users", "用户", "用户", False),
         ("Add user authentication", None, "user-authentication", False),
@@ -191,6 +194,62 @@ def test_unicode_number_categories_match(
     command = {"bash": bash_cmd, "python": py_cmd, "powershell": ps_cmd}[variant]
 
     result = run(command(repo, SCRIPT, *args), repo)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result)["BRANCH_NAME"] == expected
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        pytest.param("bash", marks=requires_bash),
+        "python",
+        pytest.param(
+            "pwsh",
+            marks=pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available"),
+        ),
+        pytest.param(
+            "windows-powershell-5.1",
+            marks=pytest.mark.skipif(
+                not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
+            ),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("नमस्ते दुनिया", "001-नमस्ते-दुनिया"),
+        ("สร้างระบบล็อกอิน", "001-สร้างระบบล็อกอิน"),
+        ("مَرْحَبًا بالعالم", "001-مَرْحَبًا-بالعالم"),
+        ("cafe\u0301 menu", "001-cafe\u0301-menu"),
+        (
+            "Add \u2699\ufe0f user login screen settings",
+            "001-user-login-screen-settings",
+        ),
+        ("login \u2764\ufe0f screen", "001-login-screen"),
+    ],
+    ids=[
+        "devanagari",
+        "thai",
+        "arabic_diacritics",
+        "decomposed_accent",
+        "orphan_variation_selector",
+        "variation_selector_between_words",
+    ],
+)
+def test_combining_marks_stay_inside_words(
+    repo: Path, variant: str, description: str, expected: str
+) -> None:
+    if variant in ("pwsh", "windows-powershell-5.1"):
+        exe = "pwsh" if variant == "pwsh" else WINDOWS_POWERSHELL
+        script = repo / ".specify/scripts/powershell/create-new-feature.ps1"
+        cmd = [exe, "-NoProfile", "-File", str(script), "-Json", "-DryRun", description]
+    else:
+        command = {"bash": bash_cmd, "python": py_cmd}[variant]
+        cmd = command(repo, SCRIPT, "--json", "--dry-run", description)
+
+    result = run(cmd, repo)
 
     assert result.returncode == 0, result.stderr
     assert json_stdout(result)["BRANCH_NAME"] == expected
