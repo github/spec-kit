@@ -158,7 +158,7 @@ class TestManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "github"
-        assert m.version == "1.0.6"
+        assert m.version == "1.0.7"
         assert [c["name"] for c in m.commands] == [COMMAND_NAME]
 
     def test_manifest_does_not_restore_legacy_alias(self):
