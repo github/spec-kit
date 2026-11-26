@@ -193,6 +193,14 @@ def replace_section(
         last_newline = content.rfind("\n")
         separator = "\r\n" if last_newline > 0 and content[last_newline - 1] == "\r" else "\n"
         replacement = separator + replacement
+    if (
+        replacement
+        and body_end < len(content)
+        and not replacement.endswith(("\n", "\r"))
+    ):
+        # Keep the following heading on its own line, using the line ending
+        # that already precedes it in the target.
+        replacement += "\r\n" if content.endswith("\r\n", 0, body_end) else content[body_end - 1]
     return content[:body_start] + replacement + content[body_end:]
 
 
