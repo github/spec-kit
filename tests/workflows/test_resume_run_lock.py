@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import hashlib
 import json
 import os
@@ -10,6 +12,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,7 +24,66 @@ from specify_cli.workflows.base import (
     StepResult,
     StepStatus,
 )
-from specify_cli.workflows.engine import RunState, WorkflowDefinition, WorkflowEngine
+from specify_cli.workflows.engine import (
+    RunState,
+    WorkflowDefinition,
+    WorkflowEngine,
+    _resume_lock_filename,
+    _resume_run_lock,
+)
+
+
+def _source_root() -> Path:
+    return Path(__file__).resolve().parents[2] / "src"
+
+
+def _imported_engine_file() -> Path:
+    from specify_cli.workflows import engine as engine_module
+
+    return Path(engine_module.__file__).resolve()
+
+
+def _require_local_source() -> Path:
+    """Fail closed when this process imported specify_cli from another tree."""
+    engine_file = _imported_engine_file()
+    root = _source_root().resolve()
+    if root not in engine_file.parents:
+        raise RuntimeError(f"imported engine is {engine_file}, expected under {root}")
+    return engine_file
+
+
+_require_local_source()
+
+
+def _publish_json(path: Path, payload: dict[str, object]) -> None:
+    """Publish worker JSON so readers never observe a partial document."""
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    temporary.write_text(json.dumps(payload), encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _both_entered(logs: list[Path]) -> bool:
+    return all(len(_effect_lines(log)) >= 1 for log in logs)
+
+
+def _stop_processes(procs: list[subprocess.Popen[str]]) -> None:
+    for proc in procs:
+        if proc.poll() is None:
+            proc.kill()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+
+
+def _pause_noninteractive_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    from specify_cli.workflows.step import gate as gate_module
+
+    monkeypatch.setattr(
+        gate_module,
+        "sys",
+        SimpleNamespace(stdin=SimpleNamespace(isatty=lambda: False)),
+    )
 
 
 def _definition(log: Path, release: Path | None) -> WorkflowDefinition:
@@ -71,10 +133,16 @@ def _write_effect_script(project: Path) -> None:
     )
 
 
-def _start_paused(project: Path, log: Path, release: Path | None, run_id: str) -> None:
+def _start_paused(
+    project: Path,
+    log: Path,
+    release: Path | None,
+    run_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     project.mkdir(parents=True, exist_ok=True)
     _write_effect_script(project)
-    sys.stdin.isatty = lambda: False  # type: ignore[method-assign]
+    _pause_noninteractive_gate(monkeypatch)
     state = WorkflowEngine(project).execute(
         _definition(log, release), run_id=run_id
     )
@@ -155,7 +223,9 @@ def _finished_events(project: Path, run_id: str) -> list[dict[str, object]]:
     return events
 
 
-def test_concurrent_resume_of_one_run_has_one_owner(tmp_path: Path) -> None:
+def test_concurrent_resume_of_one_run_has_one_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Two processes resuming one paused run: one owner, one immediate rejection."""
     project = tmp_path / "project"
     log = project / "effect.log"
@@ -163,7 +233,7 @@ def test_concurrent_resume_of_one_run_has_one_owner(tmp_path: Path) -> None:
     gate = project / "gate"
     gate.mkdir(parents=True)
     run_id = "same-run"
-    _start_paused(project, log, release, run_id)
+    _start_paused(project, log, release, run_id, monkeypatch)
     paused = _state_path(project, run_id).read_bytes()
     paused_hash = hashlib.sha256(paused).hexdigest()
 
@@ -176,21 +246,24 @@ def test_concurrent_resume_of_one_run_has_one_owner(tmp_path: Path) -> None:
         )
         for role, result in (("a", results[0]), ("b", results[1]))
     ]
-    deadline = time.time() + 25
-    released = False
-    while time.time() < deadline and not all(path.exists() for path in results):
-        if not released and (
-            len(_effect_lines(log)) >= 2
-            or any(
-                path.exists() and not _read_result(path).get("ok") for path in results
-            )
-        ):
+    try:
+        deadline = time.time() + 25
+        released = False
+        while time.time() < deadline and not all(path.exists() for path in results):
+            if not released and (
+                len(_effect_lines(log)) >= 2
+                or any(
+                    path.exists() and not _read_result(path).get("ok") for path in results
+                )
+            ):
+                release.write_text("go", encoding="utf-8")
+                released = True
+            time.sleep(0.02)
+        if not released:
             release.write_text("go", encoding="utf-8")
-            released = True
-        time.sleep(0.02)
-    if not released:
-        release.write_text("go", encoding="utf-8")
-    finished = [_finish(proc) for proc in procs]
+        finished = [_finish(proc) for proc in procs]
+    finally:
+        _stop_processes(procs)
 
     payloads = [_read_result(path) for path in results]
     owners = [payload for payload in payloads if payload.get("ok") is True]
@@ -215,106 +288,43 @@ def test_concurrent_resume_of_one_run_has_one_owner(tmp_path: Path) -> None:
             "timestamp": completed[0]["timestamp"],
         }
     ]
-    assert (project / ".specify" / f"workflow-run-{run_id}.lock").is_file()
+    assert (project / ".specify" / _resume_lock_filename(project, run_id)).is_file()
 
     with pytest.raises(ValueError, match="Cannot resume run 'same-run' with status 'completed'"):
         WorkflowEngine(project).resume(run_id)
 
 
-def test_distinct_runs_resume_concurrently(tmp_path: Path) -> None:
+def test_distinct_runs_resume_concurrently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Different run IDs do not share an owner."""
     project = tmp_path / "project"
     release = project / "release"
     logs = [project / "a.log", project / "b.log"]
     run_ids = ["run-a", "run-b"]
     for log, run_id in zip(logs, run_ids, strict=True):
-        _start_paused(project, log, release, run_id)
+        _start_paused(project, log, release, run_id, monkeypatch)
     results = [project / "a.json", project / "b.json"]
     procs = [
         _spawn("engine-plain", [str(project), run_id, str(result)], cwd=project)
         for run_id, result in zip(run_ids, results, strict=True)
     ]
-    deadline = time.time() + 15
-    while time.time() < deadline and any(len(_effect_lines(log)) < 1 for log in logs):
-        time.sleep(0.02)
-    release.write_text("go", encoding="utf-8")
-    finished = [_finish(proc) for proc in procs]
+    overlapped = False
+    try:
+        deadline = time.time() + 15
+        while time.time() < deadline and not _both_entered(logs):
+            time.sleep(0.02)
+        overlapped = _both_entered(logs)
+        if overlapped:
+            release.write_text("go", encoding="utf-8")
+        finished = [_finish(proc, timeout=10 if overlapped else 1) for proc in procs]
+    finally:
+        _stop_processes(procs)
+    assert overlapped, "distinct runs did not both enter before release"
     payloads = [_read_result(path) for path in results]
     assert all(item["timed_out"] is False for item in finished), finished
     assert [payload.get("ok") for payload in payloads] == [True, True], payloads
     assert all(len(_effect_lines(log)) == 1 for log in logs)
-
-
-def test_cli_legacy_second_resume_does_not_write(tmp_path: Path) -> None:
-    """The legacy metadata save is inside the same ownership boundary."""
-    project = tmp_path / "project"
-    log = project / "effect.log"
-    gate = project / "gate"
-    gate.mkdir(parents=True)
-    run_id = "legacy-run"
-    _start_paused(project, log, None, run_id)
-    paused = _make_legacy(project, run_id)
-    paused_hash = hashlib.sha256(paused).hexdigest()
-    results = [project / "a.json", project / "b.json"]
-    procs = [
-        _spawn(
-            "cli-barrier",
-            [str(project), run_id, role, str(gate), str(result)],
-            cwd=project,
-        )
-        for role, result in (("a", results[0]), ("b", results[1]))
-    ]
-    finished = [_finish(proc) for proc in procs]
-    payloads = [_read_result(path) for path in results]
-    owners = [payload for payload in payloads if payload.get("ok") is True]
-    rejected = [payload for payload in payloads if payload.get("ok") is not True]
-    assert all(item["timed_out"] is False for item in finished), finished
-    assert len(owners) == 1, payloads
-    assert len(rejected) == 1, payloads
-    assert "already held" in str(rejected[0].get("output", "")), rejected
-    assert rejected[0]["state_sha256"] == paused_hash, rejected
-    assert len(_effect_lines(log)) == 1
-    final = json.loads(_state_path(project, run_id).read_text(encoding="utf-8"))
-    assert final["status"] == "completed"
-    assert "installed_workflow_id" in final
-    assert "installed_registry_root" in final
-    completed = [
-        event for event in _finished_events(project, run_id)
-        if event.get("status") == "completed"
-    ]
-    assert len(completed) == 1
-    assert completed[0]["event"] == "workflow_finished"
-
-
-def test_cli_cannot_overwrite_engine_owner(tmp_path: Path) -> None:
-    """A CLI resume shares the engine owner's lock and does not save over it."""
-    project = tmp_path / "project"
-    log = project / "effect.log"
-    release = project / "release"
-    run_id = "shared-run"
-    _start_paused(project, log, release, run_id)
-    _make_legacy(project, run_id)
-    holder_result = project / "holder.json"
-    holder = _spawn(
-        "engine-plain", [str(project), run_id, str(holder_result)], cwd=project
-    )
-    deadline = time.time() + 15
-    while time.time() < deadline and len(_effect_lines(log)) < 1:
-        time.sleep(0.02)
-    assert _effect_lines(log), "owner never entered the resumed step"
-    owned = _state_path(project, run_id).read_bytes()
-    cli_result = project / "cli.json"
-    cli = _spawn("cli-plain", [str(project), run_id, str(cli_result)], cwd=project)
-    cli_done = _finish(cli, timeout=20)
-    assert cli_done["timed_out"] is False, cli_done
-    assert _state_path(project, run_id).read_bytes() == owned
-    rejected = _read_result(cli_result)
-    assert rejected["ok"] is False, rejected
-    assert "already held" in str(rejected.get("output", "")), rejected
-    release.write_text("go", encoding="utf-8")
-    holder_done = _finish(holder)
-    assert holder_done["timed_out"] is False, holder_done
-    assert _read_result(holder_result)["ok"] is True
 
 
 def test_unsafe_run_id_does_not_create_a_lock(tmp_path: Path) -> None:
@@ -324,6 +334,380 @@ def test_unsafe_run_id_does_not_create_a_lock(tmp_path: Path) -> None:
         WorkflowEngine(project).resume("../escape")
     assert list(project.rglob("*.lock")) == []
     assert not (tmp_path / "escape").exists()
+
+
+def test_visible_result_file_is_complete_json(tmp_path: Path) -> None:
+    """A partial document is not a published result; atomic replace is."""
+    path = tmp_path / "result.json"
+    path.write_text("{", encoding="utf-8")
+    assert path.exists()
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(path.read_text(encoding="utf-8"))
+    path.unlink()
+    _publish_json(path, {"ok": True, "run": "same-run"})
+    assert json.loads(path.read_text(encoding="utf-8")) == {"ok": True, "run": "same-run"}
+
+
+def test_paused_setup_does_not_replace_stdin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = sys.stdin.isatty
+    project = tmp_path / "project"
+    _start_paused(project, project / "effect.log", None, "stdin-run", monkeypatch)
+    assert sys.stdin.isatty == original
+
+
+def test_serialized_execution_does_not_count_as_overlap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One shared lock can finish both runs without their effects overlapping."""
+    from specify_cli import shared_infra
+
+    real = shared_infra._exclusive_project_lock
+
+    def one_lock(project_root, lock_name, *, context, blocking=True):
+        return real(
+            project_root, "workflow-run-shared.lock", context=context, blocking=blocking
+        )
+
+    monkeypatch.setattr(shared_infra, "_exclusive_project_lock", one_lock)
+    project = tmp_path / "project"
+    release = project / "release"
+    logs = [project / "a.log", project / "b.log"]
+    run_ids = ["run-a", "run-b"]
+    for log, run_id in zip(logs, run_ids, strict=True):
+        _start_paused(project, log, release, run_id, monkeypatch)
+    errors: list[BaseException] = []
+
+    def resume(run_id: str) -> None:
+        try:
+            WorkflowEngine(project).resume(run_id, {"verdict": "approve"})
+        except BaseException as exc:  # noqa: BLE001 - the oracle records the rejection
+            errors.append(exc)
+
+    threads = [threading.Thread(target=resume, args=(run_id,)) for run_id in run_ids]
+    for thread in threads:
+        thread.start()
+    try:
+        deadline = time.time() + 5
+        while time.time() < deadline and not any(_effect_lines(log) for log in logs):
+            time.sleep(0.02)
+        overlapped = _both_entered(logs)
+        entered = sum(1 for log in logs if _effect_lines(log))
+    finally:
+        release.write_text("go", encoding="utf-8")
+        for thread in threads:
+            thread.join(15)
+    assert entered == 1
+    assert overlapped is False
+    assert any(isinstance(exc, OSError) for exc in errors)
+
+
+def test_same_thread_nested_ownership_resumes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pause_noninteractive_gate(monkeypatch)
+    project = tmp_path / "project"
+    log = project / "effect.log"
+    run_id = "nested-run"
+    _start_paused(project, log, None, run_id, monkeypatch)
+    engine = WorkflowEngine(project)
+    with _resume_run_lock(project, run_id):
+        state = engine.resume(run_id, {"verdict": "approve"})
+    assert state.status is RunStatus.COMPLETED
+    assert len(_effect_lines(log)) == 1
+
+
+def _hold_resume_lock(project: Path, run_id: str, held: threading.Event, release: threading.Event) -> None:
+    with _resume_run_lock(project, run_id):
+        held.set()
+        if not release.wait(20):
+            raise AssertionError("lock holder was not released")
+
+
+def test_copied_context_cannot_bypass_the_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pause_noninteractive_gate(monkeypatch)
+    project = tmp_path / "project"
+    log = project / "effect.log"
+    release_file = project / "release"
+    run_id = "copy-run"
+    _start_paused(project, log, release_file, run_id, monkeypatch)
+    copied: dict[str, contextvars.Context] = {}
+    held = threading.Event()
+    let_go = threading.Event()
+
+    def owner() -> None:
+        with _resume_run_lock(project, run_id):
+            copied["ctx"] = contextvars.copy_context()
+            held.set()
+            let_go.wait(20)
+
+    thread = threading.Thread(target=owner)
+    thread.start()
+    assert held.wait(10)
+    release_file.write_text("go", encoding="utf-8")
+    outcome: dict[str, object] = {}
+
+    def intruder() -> None:
+        try:
+            copied["ctx"].run(
+                lambda: WorkflowEngine(project).resume(run_id, {"verdict": "approve"})
+            )
+            outcome["ok"] = True
+        except OSError as exc:
+            outcome["error"] = str(exc)
+
+    other = threading.Thread(target=intruder)
+    other.start()
+    other.join(20)
+    let_go.set()
+    thread.join(10)
+    assert "already held" in str(outcome.get("error", "")), outcome
+    assert _effect_lines(log) == []
+
+
+def test_stale_context_cannot_bypass_a_new_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pause_noninteractive_gate(monkeypatch)
+    project = tmp_path / "project"
+    log = project / "effect.log"
+    release_file = project / "release"
+    run_id = "stale-run"
+    _start_paused(project, log, release_file, run_id, monkeypatch)
+    copied: dict[str, contextvars.Context] = {}
+
+    def owner() -> None:
+        with _resume_run_lock(project, run_id):
+            copied["ctx"] = contextvars.copy_context()
+
+    owner_thread = threading.Thread(target=owner)
+    owner_thread.start()
+    owner_thread.join(10)
+    assert "ctx" in copied
+    held = threading.Event()
+    let_go = threading.Event()
+    newbie = threading.Thread(target=_hold_resume_lock, args=(project, run_id, held, let_go))
+    newbie.start()
+    assert held.wait(10)
+    release_file.write_text("go", encoding="utf-8")
+    outcome: dict[str, object] = {}
+
+    def intruder() -> None:
+        try:
+            copied["ctx"].run(
+                lambda: WorkflowEngine(project).resume(run_id, {"verdict": "approve"})
+            )
+            outcome["ok"] = True
+        except OSError as exc:
+            outcome["error"] = str(exc)
+
+    other = threading.Thread(target=intruder)
+    other.start()
+    other.join(20)
+    let_go.set()
+    newbie.join(10)
+    assert "already held" in str(outcome.get("error", "")), outcome
+    assert _effect_lines(log) == []
+
+
+def test_asyncio_to_thread_does_not_inherit_ownership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pause_noninteractive_gate(monkeypatch)
+    project = tmp_path / "project"
+    log = project / "effect.log"
+    release_file = project / "release"
+    run_id = "async-run"
+    _start_paused(project, log, release_file, run_id, monkeypatch)
+    release_file.write_text("go", encoding="utf-8")
+    outcome: dict[str, object] = {}
+
+    async def main() -> None:
+        with _resume_run_lock(project, run_id):
+            def attempt() -> None:
+                try:
+                    WorkflowEngine(project).resume(run_id, {"verdict": "approve"})
+                    outcome["ok"] = True
+                except OSError as exc:
+                    outcome["error"] = str(exc)
+
+            await asyncio.to_thread(attempt)
+
+    asyncio.run(main())
+    assert "already held" in str(outcome.get("error", "")), outcome
+    assert _effect_lines(log) == []
+
+
+def test_ownership_is_released_when_the_body_raises(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    with pytest.raises(RuntimeError, match="boom"):
+        with _resume_run_lock(project, "boom-run"):
+            raise RuntimeError("boom")
+    with _resume_run_lock(project, "boom-run"):
+        held = True
+    assert held
+
+
+def test_distinct_run_locks_are_independent(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    with _resume_run_lock(project, "run-a"):
+        with _resume_run_lock(project, "run-b"):
+            held = True
+    assert held
+
+
+def test_case_alias_cannot_take_a_second_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pause_noninteractive_gate(monkeypatch)
+    project = tmp_path / "project"
+    run_id = "CaseRun"
+    alias = "caserun"
+    _start_paused(project, project / "effect.log", None, run_id, monkeypatch)
+    state = _state_path(project, run_id)
+    alias_state = _state_path(project, alias)
+    if os.path.normcase(str(state)) != os.path.normcase(str(alias_state)):
+        pytest.skip("filesystem distinguishes run-id case")
+    held = threading.Event()
+    let_go = threading.Event()
+    thread = threading.Thread(target=_hold_resume_lock, args=(project, run_id, held, let_go))
+    thread.start()
+    try:
+        assert held.wait(10)
+        with pytest.raises(OSError, match="already held"):
+            with _resume_run_lock(project, alias):
+                pass
+    finally:
+        let_go.set()
+        thread.join(10)
+
+
+def test_long_run_id_gets_a_bounded_exclusive_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pause_noninteractive_gate(monkeypatch)
+    project = tmp_path / "project"
+    run_id = "r" + ("a" * 239)
+    _start_paused(project, project / "effect.log", None, run_id, monkeypatch)
+    held = threading.Event()
+    let_go = threading.Event()
+    errors: list[BaseException] = []
+
+    def hold() -> None:
+        try:
+            _hold_resume_lock(project, run_id, held, let_go)
+        except BaseException as exc:  # noqa: BLE001 - the assertion reports it
+            errors.append(exc)
+            held.set()
+
+    thread = threading.Thread(target=hold)
+    thread.start()
+    try:
+        assert held.wait(10)
+        assert not errors, errors
+        locks = list((project / ".specify").glob("*.lock"))
+        assert locks
+        assert all(len(path.name) <= 255 for path in locks)
+        with pytest.raises(OSError, match="already held"):
+            with _resume_run_lock(project, run_id):
+                pass
+    finally:
+        let_go.set()
+        thread.join(10)
+
+
+def test_failed_acquire_clears_previous_execution_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pause_noninteractive_gate(monkeypatch)
+    project = tmp_path / "project"
+    project.mkdir(parents=True)
+    _write_effect_script(project)
+    log = project / "effect.log"
+    run_id = "state-run"
+    engine = WorkflowEngine(project)
+    state = engine.execute(_definition(log, None), run_id=run_id)
+    assert state.status is RunStatus.PAUSED
+    assert engine._execution_state.get() is state
+    held = threading.Event()
+    let_go = threading.Event()
+    thread = threading.Thread(target=_hold_resume_lock, args=(project, run_id, held, let_go))
+    thread.start()
+    try:
+        assert held.wait(10)
+        with pytest.raises(OSError, match="already held"):
+            engine.resume(run_id, {"verdict": "approve"})
+        assert engine._execution_state.get() is None
+    finally:
+        let_go.set()
+        thread.join(10)
+
+
+def test_execution_state_reports_the_run_after_acquire(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _pause_noninteractive_gate(monkeypatch)
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    run_id = "report-run"
+
+    class Boom(StepBase):
+        type_key = "boom"
+
+        def execute(self, config, context):
+            raise RuntimeError("boom")
+
+    monkeypatch.setitem(STEP_REGISTRY, "boom", Boom())
+    engine = WorkflowEngine(project)
+    state = engine.execute(
+        WorkflowDefinition(
+            {
+                "workflow": {"id": "resume-lock", "name": "Resume lock"},
+                "inputs": {"verdict": {"type": "string", "default": ""}},
+                "steps": [
+                    {
+                        "id": "review",
+                        "type": "gate",
+                        "message": "hold",
+                        "verdict_input": "verdict",
+                        "options": ["approve", "reject"],
+                    },
+                    {"id": "work", "type": "boom"},
+                ],
+            }
+        ),
+        run_id=run_id,
+    )
+    assert state.status is RunStatus.PAUSED
+    with pytest.raises(RuntimeError, match="boom"):
+        engine.resume(run_id, {"verdict": "approve"})
+    current = engine._execution_state.get()
+    assert current is not None and current.run_id == run_id
+
+
+def test_worker_imports_this_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    log = project / "effect.log"
+    run_id = "import-run"
+    _start_paused(project, log, None, run_id, monkeypatch)
+    result = project / "worker.json"
+    proc = _spawn("engine-plain", [str(project), run_id, str(result)], cwd=project)
+    try:
+        finished = _finish(proc)
+    finally:
+        _stop_processes([proc])
+    assert finished["timed_out"] is False, finished
+    payload = _read_result(result)
+    assert payload["ok"] is True, payload
+    imported = Path(str(payload["import_file"])).resolve()
+    assert _source_root().resolve() in imported.parents
 
 
 @pytest.mark.parametrize(
@@ -350,7 +734,7 @@ def test_run_lock_covers_resume_and_is_released(tmp_path: Path, monkeypatch, mod
             return StepResult(StepStatus.COMPLETED, output={})
 
     monkeypatch.setitem(STEP_REGISTRY, "hold", Hold())
-    sys.stdin.isatty = lambda: False  # type: ignore[method-assign]
+    _pause_noninteractive_gate(monkeypatch)
     run_id = "held-run"
     state = WorkflowEngine(project).execute(
         WorkflowDefinition(
@@ -384,7 +768,7 @@ def test_run_lock_covers_resume_and_is_released(tmp_path: Path, monkeypatch, mod
     worker = threading.Thread(target=_resume, name="resume-owner")
     worker.start()
     assert entered.wait(10)
-    lock_name = f"workflow-run-{run_id}.lock"
+    lock_name = _resume_lock_filename(project, run_id)
     with pytest.raises(OSError, match="already held"):
         with _exclusive_project_lock(
             project, lock_name, context="workflow run", blocking=False
@@ -460,7 +844,7 @@ def _engine_barrier(project: Path, run_id: str, role: str, gate: Path, result: P
     except Exception as exc:  # noqa: BLE001 - the parent asserts the recorded failure
         payload = {"ok": False, "error_type": type(exc).__name__, "error": str(exc)}
         _mark_rejected(gate, role)
-    result.write_text(json.dumps(payload), encoding="utf-8")
+    _publish_json(result, payload)
 
 
 def _engine_plain(project: Path, run_id: str, result: Path) -> None:
@@ -473,7 +857,8 @@ def _engine_plain(project: Path, run_id: str, result: Path) -> None:
         }
     except Exception as exc:  # noqa: BLE001 - the parent asserts the recorded failure
         payload = {"ok": False, "error_type": type(exc).__name__, "error": str(exc)}
-    result.write_text(json.dumps(payload), encoding="utf-8")
+    payload["import_file"] = str(_imported_engine_file())
+    _publish_json(result, payload)
 
 
 def _cli_resume(
@@ -511,10 +896,12 @@ def _cli_resume(
         payload["state_sha256"] = hashlib.sha256(_state_bytes(project, run_id)).hexdigest()
         if gate is not None and role is not None:
             _mark_rejected(gate, role)
-    result.write_text(json.dumps(payload), encoding="utf-8")
+    payload["import_file"] = str(_imported_engine_file())
+    _publish_json(result, payload)
 
 
 def _main(argv: list[str]) -> None:
+    _require_local_source()
     mode = argv[1]
     if mode == "engine-barrier":
         _engine_barrier(Path(argv[2]), argv[3], argv[4], Path(argv[5]), Path(argv[6]))

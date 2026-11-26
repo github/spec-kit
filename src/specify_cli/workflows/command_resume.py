@@ -150,5 +150,7 @@ def workflow_resume(
         err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)
     except OSError as exc:
+        if json_output:
+            cli._fail_integration_load(exc, json_output=True, run_id=run_id)
         err.print(f"[red]Resume failed:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)

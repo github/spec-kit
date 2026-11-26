@@ -11,6 +11,7 @@ The engine is the orchestrator that:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -1053,10 +1054,67 @@ class RunState:
                     f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-_resume_run_owners: ContextVar[tuple[str, ...]] = ContextVar(
-    "specify_resume_run_owners",
-    default=(),
-)
+class _ThreadResumeOwners(threading.local):
+    """Per-thread resume ownership. A copied context does not carry this."""
+
+    def __init__(self) -> None:
+        self.depths: dict[str, int] = {}
+
+
+_thread_resume_owners = _ThreadResumeOwners()
+_case_fold_cache: dict[str, bool] = {}
+_case_fold_guard = threading.Lock()
+
+
+def _directory_folds_case(directory: Path) -> bool:
+    """Whether ``directory`` treats letter case as the same directory entry."""
+    directory = Path(directory).resolve()
+    key = os.path.normcase(str(directory))
+    with _case_fold_guard:
+        cached = _case_fold_cache.get(key)
+    if cached is not None:
+        return cached
+    directory.mkdir(parents=True, exist_ok=True)
+    token = f".case-{os.getpid()}-{threading.get_ident()}"
+    upper = directory / f"{token}A"
+    lower = directory / f"{token}a"
+    upper.write_bytes(b"")
+    try:
+        folds = lower.exists()
+    finally:
+        try:
+            upper.unlink()
+        except OSError:
+            pass
+    with _case_fold_guard:
+        _case_fold_cache[key] = folds
+    return folds
+
+
+def _physical_run_id(project_root: Path, run_id: str) -> str:
+    """Identity of one run directory entry on this project's filesystem."""
+    RunState._validate_run_id(run_id)
+    specify = Path(project_root).resolve() / ".specify"
+    if _directory_folds_case(specify):
+        return run_id.casefold()
+    return run_id
+
+
+def _resume_lock_filename(project_root: Path, run_id: str) -> str:
+    """Bounded lock-file name for ``run_id``.
+
+    The run directory keeps the validated id. The lock component is a digest
+    of that id's filesystem identity, so a long legal id still fits in one
+    directory entry and two aliases of the same physical run share one lock.
+    """
+    identity = _physical_run_id(project_root, run_id)
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32]
+    return f"workflow-run-{digest}.lock"
+
+
+def _resume_owner_key(project_root: Path, run_id: str) -> str:
+    root = Path(project_root).resolve()
+    return os.path.normcase(str(root)) + "\n" + _physical_run_id(root, run_id)
 
 
 @contextlib.contextmanager
@@ -1066,29 +1124,38 @@ def _resume_run_lock(project_root: Path, run_id: str):
     The lock is acquired before the caller loads or writes that run and is
     released on every exit. The owning thread may re-enter, so the CLI can
     hold the lock across its legacy checkpoint and ``WorkflowEngine.resume``.
-    A different process or thread is rejected immediately. The lock file stays
-    at ``.specify/workflow-run-<run_id>.lock`` and is not removed.
+    Ownership lives on this thread, not in a copyable context. A different
+    process or thread is rejected immediately. The lock file stays in
+    ``.specify`` and is not removed.
     """
     from ..shared_infra import _exclusive_project_lock, _shared_relative_path
 
-    RunState._validate_run_id(run_id)
     root = Path(project_root).resolve()
-    lock_name = f"workflow-run-{run_id}.lock"
+    lock_name = _resume_lock_filename(root, run_id)
     relative = _shared_relative_path(root, root / ".specify" / lock_name)
     if relative.parts != (".specify", lock_name):
         raise ValueError(f"Workflow run lock escapes project root: {relative}")
-    key = os.path.normcase(str(root)) + "\n" + run_id
-    if key in _resume_run_owners.get():
-        yield
+    key = _resume_owner_key(root, run_id)
+    owners = _thread_resume_owners.depths
+    if owners.get(key, 0) > 0:
+        owners[key] += 1
+        try:
+            yield
+        finally:
+            owners[key] -= 1
+            if owners[key] == 0:
+                del owners[key]
         return
     with _exclusive_project_lock(
         root, lock_name, context="workflow run", blocking=False
     ):
-        token = _resume_run_owners.set(_resume_run_owners.get() + (key,))
+        owners[key] = 1
         try:
             yield
         finally:
-            _resume_run_owners.reset(token)
+            owners[key] -= 1
+            if owners[key] == 0:
+                del owners[key]
 
 
 # -- Workflow Engine ------------------------------------------------------
@@ -1294,6 +1361,7 @@ class WorkflowEngine:
         workflow inputs. Keys not supplied keep their persisted values; an
         empty/``None`` ``inputs`` leaves the run's inputs unchanged.
         """
+        self._execution_state.set(None)
         with _resume_run_lock(self.project_root, run_id):
             return self._resume_owned(run_id, inputs)
 
