@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import requires_bash
+from tests.parity_helpers import make_python3_path_shim
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
@@ -189,6 +190,67 @@ def test_setup_plan_survives_broken_python3_stub(plan_repo: Path) -> None:
     )
     assert result.returncode == 0, result.stderr + result.stdout
     assert (feat / "plan.md").is_file()
+
+
+@requires_bash
+@pytest.mark.parametrize("ensure_ascii", [False, True], ids=["raw-utf8", "ascii-escaped"])
+@pytest.mark.parametrize(
+    ("code_page", "name"),
+    [("cp1252", "001-café"), ("gbk", "001-添加用户")],
+    ids=["cp1252-latin", "gbk-cjk"],
+)
+def test_setup_plan_reads_non_ascii_feature_json_through_a_legacy_stdout(
+    plan_repo: Path, tmp_path: Path, code_page: str, name: str, ensure_ascii: bool
+) -> None:
+    """The python3 feature.json parser must hand bash UTF-8, not the code page.
+
+    On Windows a piped stdout uses the ANSI code page (cp1252 on Western
+    systems, GBK on Simplified Chinese ones) rather than UTF-8. Without jq,
+    printing the parsed path re-encoded it in that code page ("é" became the
+    single byte 0xE9), so setup-plan.sh reported, and on some platforms
+    created, a different directory from the one feature.json names.
+    """
+    subprocess.run(
+        ["git", "checkout", "-q", "-b", "feature/my-feature-branch"],
+        cwd=plan_repo,
+        check=True,
+    )
+    feat = plan_repo / "specs" / name
+    feat.mkdir(parents=True)
+    (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+    (plan_repo / ".specify" / "feature.json").write_text(
+        json.dumps({"feature_directory": f"specs/{name}"}, ensure_ascii=ensure_ascii),
+        encoding="utf-8",
+    )
+
+    # A working python3 (Windows venvs only ship python.exe) and a failing jq,
+    # so feature.json is parsed by python3 even on runners that have jq.
+    stub_dir = make_python3_path_shim(tmp_path / "bin")
+    jq_stub = stub_dir / "jq"
+    jq_stub.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8", newline="\n")
+    jq_stub.chmod(0o755)
+    env = _clean_env()
+    env["PATH"] = f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"
+    env["PYTHONIOENCODING"] = code_page
+
+    script = plan_repo / ".specify" / "scripts" / "bash" / "setup-plan.sh"
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=plan_repo,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
+    assert (feat / "plan.md").is_file()
+    assert [p.name for p in (plan_repo / "specs").iterdir()] == [name]
+    # The reported paths must be UTF-8 too: agents read them from this output.
+    feature_dir_line = next(
+        line
+        for line in result.stdout.decode("utf-8").splitlines()
+        if line.startswith("FEATURE_DIR: ")
+    )
+    assert feature_dir_line.endswith(f"/specs/{name}")
 
 
 @requires_bash
