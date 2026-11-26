@@ -204,12 +204,16 @@ import sys
 import unicodedata
 value = sys.stdin.buffer.read().decode("utf-8")
 lower = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
-result = "".join(
-    char
-    if char.isalpha() or char.isdecimal() or unicodedata.category(char).startswith("M")
-    else sys.argv[1]
-    for char in value.translate(lower)
-)
+chars = []
+in_word = False
+for char in value.translate(lower):
+    if char.isalpha() or char.isdecimal():
+        in_word = True
+    elif not (in_word and unicodedata.category(char).startswith("M")):
+        in_word = False
+        char = sys.argv[1]
+    chars.append(char)
+result = "".join(chars)
 sys.stdout.buffer.write(result.encode("utf-8"))
 ' "$separator"
     else

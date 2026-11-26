@@ -177,14 +177,18 @@ def _clean_branch_name(name: str) -> str:
 
 
 def _unicode_words(name: str, separator: str) -> str:
-    return "".join(
-        char
-        if char.isalpha()
-        or char.isdecimal()
-        or unicodedata.category(char).startswith("M")
-        else separator
-        for char in name.translate(_ASCII_LOWER)
-    )
+    # Combining marks stay only when they follow a kept letter, digit, or mark,
+    # so an orphan emoji variation selector (U+FE0F) cannot survive on its own.
+    chars: list[str] = []
+    in_word = False
+    for char in name.translate(_ASCII_LOWER):
+        if char.isalpha() or char.isdecimal():
+            in_word = True
+        elif not (in_word and unicodedata.category(char).startswith("M")):
+            in_word = False
+            char = separator
+        chars.append(char)
+    return "".join(chars)
 
 
 def _generate_branch_name(description: str) -> str:

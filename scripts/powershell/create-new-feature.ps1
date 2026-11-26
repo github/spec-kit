@@ -93,14 +93,20 @@ function ConvertTo-UnicodeWords {
     param([string]$Name, [string]$Separator)
 
     $lowerName = ConvertTo-AsciiLower -Name $Name
-    return [regex]::Replace($lowerName, '[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\p{L}\p{M}\p{Nd}]', {
+    # Combining marks stay only after a kept letter, digit, or mark, so an orphan
+    # emoji variation selector (U+FE0F) becomes a separator instead of surviving.
+    $state = @{ InWord = $false }
+    return [regex]::Replace($lowerName, '[\uD800-\uDBFF][\uDC00-\uDFFF]|[\s\S]', {
         param($match)
-        if ($match.Length -eq 2) {
-            $category = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($match.Value, 0)
-            if ($category.ToString() -match '(Letter|Mark|DecimalDigitNumber)$') {
-                return $match.Value
-            }
+        $category = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($match.Value, 0).ToString()
+        if ($category -match '(Letter|DecimalDigitNumber)$') {
+            $state.InWord = $true
+            return $match.Value
         }
+        if ($state.InWord -and $category -match 'Mark$') {
+            return $match.Value
+        }
+        $state.InWord = $false
         return $Separator
     })
 }

@@ -87,6 +87,8 @@ def repo_pair(tmp_path: Path) -> tuple[Path, Path]:
         ("添加用户", None, "添加用户", False),
         ("добавить", None, "добавить", False),
         ("!!! ??? ***", None, "", True),
+        ("\U0001F389", None, "", True),
+        ("\U0001F600 \u2764\ufe0f", None, "", True),
         ("添加用户", "user-auth", "user-auth", False),
         ("Add users", "用户", "用户", False),
         ("Add user authentication", None, "user-authentication", False),
@@ -221,8 +223,20 @@ def test_unicode_number_categories_match(
         ("สร้างระบบล็อกอิน", "001-สร้างระบบล็อกอิน"),
         ("مَرْحَبًا بالعالم", "001-مَرْحَبًا-بالعالم"),
         ("cafe\u0301 menu", "001-cafe\u0301-menu"),
+        (
+            "Add \u2699\ufe0f user login screen settings",
+            "001-user-login-screen-settings",
+        ),
+        ("login \u2764\ufe0f screen", "001-login-screen"),
     ],
-    ids=["devanagari", "thai", "arabic_diacritics", "decomposed_accent"],
+    ids=[
+        "devanagari",
+        "thai",
+        "arabic_diacritics",
+        "decomposed_accent",
+        "orphan_variation_selector",
+        "variation_selector_between_words",
+    ],
 )
 def test_combining_marks_stay_inside_words(
     repo: Path, variant: str, description: str, expected: str
