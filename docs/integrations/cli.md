@@ -295,7 +295,18 @@ Recovery does not bypass catalog policy or replacement-package trust.
 
 Failed operations roll back their own changes, not unrelated user files or
 workflow progress. Conflicting concurrent edits are reported with recovery
-snapshots retained. Adapter authors should follow the
+snapshots retained, including a file replaced while rollback restores it and a
+mode, time or attribute changed after the operation wrote the file. A file
+edited in place while the operation snapshots it stops the operation before
+it writes. A file the operation rewrote in place gets its original
+bytes back in that same file, so it keeps its owner, hard links and Windows
+access-control list, and its mode, times, user extended attributes and POSIX
+access ACL are set back where the platform allows it safely. If some of that
+metadata does not come back, or the file is replaced while its bytes are being
+restored, the file is reported as not fully restored, with recovery snapshots
+retained. A file the operation replaced or removed, one rollback
+cannot safely identify as the original, and a directory are recreated from
+their snapshots instead. Adapter authors should follow the
 [setup and file ownership contract](api.md#setup-and-file-ownership)
 and [lifecycle guarantees](api.md#external-adapter-lifecycle-guarantees) for safe writes and recovery.
 

@@ -347,7 +347,13 @@ code.
 
 Failed lifecycle operations restore their own tracked changes while preserving
 unrelated files, workflow progress, and conflicting external edits. Recovery
-failures report retained snapshots for manual recovery. Upgrade and uninstall
+failures report retained snapshots for manual recovery. Individual files the
+operation rewrote in place are restored in place; replaced or removed files,
+and directories, are recreated from their snapshots. A file whose bytes are
+restored without all of its metadata (mode, times, extended attributes, or BSD
+file flags) is reported with its snapshots retained, and captured extended
+attributes are kept beside each snapshot as `<snapshot>.xattrs.json`; see the
+[shared CLI reference](cli.md#upgrade-an-integration). Upgrade and uninstall
 preserve modified generated files unless forced; forced recovery still needs
 local ownership proof to delete old files and does not bypass catalog policy
 or replacement-package trust.
