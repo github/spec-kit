@@ -178,7 +178,39 @@ function Get-NextBranchNumber {
     return $maxNum + 1
 }
 
+# Branch names keep Unicode letters and decimal digits, matching the core
+# create-new-feature scripts (UTF-8 feature names, #4574). Only ASCII letters
+# are lowercased so no culture-specific case folding can make the twins differ.
+function ConvertTo-AsciiLower {
+    param([string]$Name)
+    return [regex]::Replace($Name, '[A-Z]', { param($match) $match.Value.ToLowerInvariant() })
+}
+
+function ConvertTo-UnicodeWords {
+    param([string]$Name, [string]$Separator)
+
+    $lowerName = ConvertTo-AsciiLower -Name $Name
+    # A surrogate pair is one character outside the BMP; keep it when it is a
+    # letter or decimal digit, as Python's str.isalpha()/isdecimal() would.
+    return [regex]::Replace($lowerName, '[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\p{L}\p{Nd}]', {
+        param($match)
+        if ($match.Length -eq 2) {
+            $category = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($match.Value, 0)
+            if ($category.ToString() -match '(Letter|DecimalDigitNumber)$') {
+                return $match.Value
+            }
+        }
+        return $Separator
+    })
+}
+
 function ConvertTo-CleanBranchName {
+    param([string]$Name)
+    return (ConvertTo-UnicodeWords -Name $Name -Separator '-') -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
+}
+
+# ASCII-only cleaning for the {author} and {app} template tokens.
+function ConvertTo-AsciiToken {
     param([string]$Name)
     return $Name.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
 }
@@ -297,7 +329,7 @@ function ConvertTo-BranchToken {
         [string]$Fallback
     )
 
-    $cleaned = ConvertTo-CleanBranchName -Name $Value
+    $cleaned = ConvertTo-AsciiToken -Name $Value
     if ($cleaned) { return $cleaned }
     return $Fallback
 }
@@ -425,13 +457,16 @@ function Get-BranchName {
         'want', 'need', 'add', 'get', 'set'
     )
 
-    $cleanName = $Description.ToLower() -replace '[^a-z0-9\s]', ' '
+    $cleanName = ConvertTo-UnicodeWords -Name $Description -Separator ' '
     $words = $cleanName -split '\s+' | Where-Object { $_ }
 
     $meaningfulWords = @()
     foreach ($word in $words) {
-        if ($stopWords -contains $word) { continue }
-        if ($word.Length -ge 3) {
+        # -ccontains: words are already ASCII-lowercased, and -contains would
+        # also match a stop word against Unicode case variants.
+        if ($stopWords -ccontains $word) { continue }
+        # Keep non-ASCII words even when short (CJK words are often 2 chars).
+        if ($word.Length -ge 3 -or $word -match '[^\x00-\x7F]') {
             $meaningfulWords += $word
         } elseif ($Description -cmatch "(?<![0-9A-Za-z_])$($word.ToUpper())(?![0-9A-Za-z_])") {
             # Case-sensitive (-cmatch) to mirror the bash twin's case-sensitive
@@ -450,7 +485,9 @@ function Get-BranchName {
         return $result
     } else {
         $result = ConvertTo-CleanBranchName -Name $Description
-        $fallbackWords = ($result -split '-') | Where-Object { $_ } | Select-Object -First 3
+        # @() keeps this an array when the description has no usable words;
+        # [string]::Join throws ArgumentNullException on $null.
+        $fallbackWords = @(($result -split '-') | Where-Object { $_ } | Select-Object -First 3)
         return [string]::Join('-', $fallbackWords)
     }
 }
@@ -509,7 +546,12 @@ if ((Get-Utf8ByteCount -Value $branchName) -gt $maxBranchLength) {
     $originalBranchName = $branchName
     $truncatedSuffix = $branchSuffix
     while ((Get-Utf8ByteCount -Value $branchName) -gt $maxBranchLength -and $truncatedSuffix.Length -gt 0) {
-        $truncatedSuffix = $truncatedSuffix.Substring(0, $truncatedSuffix.Length - 1) -replace '-$', ''
+        $dropLength = 1
+        # Drop a whole surrogate pair so truncation never leaves a lone surrogate.
+        if ($truncatedSuffix.Length -ge 2 -and [char]::IsLowSurrogate($truncatedSuffix[-1]) -and [char]::IsHighSurrogate($truncatedSuffix[-2])) {
+            $dropLength = 2
+        }
+        $truncatedSuffix = $truncatedSuffix.Substring(0, $truncatedSuffix.Length - $dropLength) -replace '-$', ''
         $branchName = New-BranchName -FeatureNum $featureNum -BranchSuffix $truncatedSuffix
     }
     if ((Get-Utf8ByteCount -Value $branchName) -gt $maxBranchLength) {

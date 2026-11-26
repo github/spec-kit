@@ -205,16 +205,101 @@ check_existing_branches() {
     echo $((max_num + 1))
 }
 
-# Function to clean and format a branch name
-#
-# Three details keep this byte-identical to the Python and PowerShell twins:
-#   * LC_ALL=C -- in a UTF-8 locale glibc resolves the a-z *range* through
-#     collation, so [^a-z0-9] keeps accented lowercase letters that
-#     re.sub(r"[^a-z0-9]", ...) and .NET's -replace both strip.
-#   * `--*` instead of the GNU-only `\+`, which POSIX/BSD sed reads as a literal
-#     '+', leaving repeated separators uncollapsed on macOS.
-#   * printf instead of echo, so a name of "-n"/"-e"/"-E" is text, not options.
+# Branch names keep Unicode letters and decimal digits, mirroring the core
+# create-new-feature.sh (UTF-8 feature names, #4574).
+contains_non_ascii() {
+    LC_ALL=C grep -q '[^[:print:][:cntrl:]]'
+}
+
+# Python classifies Unicode because POSIX [:alnum:] differs by platform. Probe
+# here rather than relying on common.sh's _python3_command: this script may
+# have loaded git-common.sh or an older core common.sh without it. Naming needs
+# no PyYAML, so a configured override is accepted without that check.
+_unicode_python_command() {
+    local override="${SPECKIT_PYTHON_EXECUTABLE:-${SPECKIT_PYTHON:-}}"
+    local candidate
+    for candidate in "$override" python3 python; do
+        if [ -n "$candidate" ] && command -v "$candidate" >/dev/null 2>&1 &&
+            "$candidate" -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    if command -v py >/dev/null 2>&1 && py -3 -c 'import sys' >/dev/null 2>&1; then
+        printf '%s\n' "py" "-3"
+        return 0
+    fi
+    return 1
+}
+
+# ASCII-only input stays shell-only under LC_ALL=C, where glibc cannot resolve
+# the a-z *range* through collation.
+unicode_words() {
+    local name="${1//$'\n'/ }"
+    local separator="$2"
+    if printf '%s' "$name" | contains_non_ascii; then
+        local -a python_cmd=()
+        local python_line
+        while IFS= read -r python_line; do
+            python_cmd+=("$python_line")
+        done < <(_unicode_python_command)
+        if [ "${#python_cmd[@]}" -eq 0 ]; then
+            echo "Error: Python 3 is required to create a Unicode branch name" >&2
+            return 1
+        fi
+        printf '%s' "$name" | "${python_cmd[@]}" -c '
+import sys
+value = sys.stdin.buffer.read().decode("utf-8")
+lower = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+result = "".join(
+    char if char.isalpha() or char.isdecimal() else sys.argv[1]
+    for char in value.translate(lower)
+)
+sys.stdout.buffer.write(result.encode("utf-8"))
+' "$separator"
+    else
+        printf '%s' "$name" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C sed "s/[^a-z0-9]/$separator/g"
+    fi
+}
+
+# `--*` instead of the GNU-only `\+`, which POSIX/BSD sed reads as a literal
+# '+'; printf instead of echo, so a name of "-n"/"-e"/"-E" is text.
 clean_branch_name() {
+    local name="$1"
+    local cleaned
+    cleaned=$(unicode_words "$name" '-') || return 1
+    printf '%s\n' "$cleaned" | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//'
+}
+
+# Pick a UTF-8 locale for character-safe splitting and truncation. An explicit
+# LC_ALL is honored rather than overridden, as in the core script.
+UNICODE_LOCALE=""
+locale_candidates=(C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8 "${LC_CTYPE:-${LANG:-}}")
+if [ -n "${LC_ALL:-}" ]; then
+    locale_candidates=("$LC_ALL")
+fi
+for candidate in "${locale_candidates[@]}"; do
+    if [ -n "$candidate" ] && [ "$(printf 'é。' | LC_ALL="$candidate" sed 's/[^[:alnum:]]/-/g' 2>/dev/null)" = 'é-' ]; then
+        UNICODE_LOCALE="$candidate"
+        break
+    fi
+done
+
+if [ -z "$UNICODE_LOCALE" ]; then
+    UNICODE_LOCALE=C
+    if [ -z "${GIT_BRANCH_NAME:-}" ] && printf '%s' "${SHORT_NAME:-$FEATURE_DESCRIPTION}" | contains_non_ascii; then
+        if [ -n "${LC_ALL:-}" ]; then
+            echo "Error: A UTF-8 locale is required to create a Unicode branch name; LC_ALL=$LC_ALL is not usable" >&2
+        else
+            echo "Error: A UTF-8 locale is required to create a Unicode branch name" >&2
+        fi
+        exit 1
+    fi
+fi
+
+# ASCII-only cleaning for the {author} and {app} template tokens. LC_ALL=C
+# because glibc resolves the a-z *range* through collation in UTF-8 locales.
+clean_ascii_token() {
     local name="$1"
     local -x LC_ALL=C
     printf '%s\n' "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//'
@@ -318,7 +403,7 @@ branch_token() {
     local value="$1"
     local fallback="$2"
     local cleaned
-    cleaned=$(clean_branch_name "$value")
+    cleaned=$(clean_ascii_token "$value")
     if [ -n "$cleaned" ]; then
         printf '%s\n' "$cleaned"
     else
@@ -453,21 +538,23 @@ generate_branch_name() {
 
     local stop_words="^(i|a|an|the|to|for|of|in|on|at|by|with|from|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|should|could|can|may|might|must|shall|this|that|these|those|my|your|our|their|want|need|add|get|set)$"
 
-    # LC_ALL=C for the same collation reason documented on clean_branch_name,
-    # and so the `grep -qw` acronym probe below uses ASCII word boundaries like
+    # A UTF-8 locale keeps word splitting character-safe. The stop-word and
+    # acronym probes pin LC_ALL=C so `grep -qw` uses ASCII word boundaries like
     # the Python twin's (?<![0-9A-Za-z_]) lookarounds.
-    local -x LC_ALL=C
-    local clean_name=$(printf '%s' "$description" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/ /g')
+    local -x LC_ALL="$UNICODE_LOCALE"
+    local clean_name
+    clean_name=$(unicode_words "$description" ' ') || return 1
 
     local meaningful_words=()
     for word in $clean_name; do
         [ -z "$word" ] && continue
-        if ! echo "$word" | grep -qiE "$stop_words"; then
-            if [ ${#word} -ge 3 ]; then
+        if ! printf '%s\n' "$word" | LC_ALL=C grep -qE "$stop_words"; then
+            # Keep non-ASCII words even when short (CJK words are often 2 chars).
+            if [ ${#word} -ge 3 ] || printf '%s' "$word" | contains_non_ascii; then
                 meaningful_words+=("$word")
             # Uppercase via tr (portable) rather than bash's 4+ "^^" case
             # expansion, which breaks on macOS's default bash 3.2 (bad substitution).
-            elif printf '%s' "$description" | grep -qw -- "$(printf '%s' "$word" | tr '[:lower:]' '[:upper:]')"; then
+            elif printf '%s' "$description" | LC_ALL=C grep -qw -- "$(printf '%s' "$word" | LC_ALL=C tr '[:lower:]' '[:upper:]')"; then
                 meaningful_words+=("$word")
             fi
         fi
@@ -539,6 +626,36 @@ fi
 # GitHub enforces a 244-byte limit on branch names
 MAX_BRANCH_LENGTH=244
 _byte_length() { printf '%s' "$1" | LC_ALL=C wc -c | tr -d ' '; }
+
+# Quote a value for POSIX shell reuse, as core create-new-feature.sh does.
+# printf %q is not used: outside a UTF-8 locale (macOS defaults) it escapes
+# each non-ASCII byte as $'\ooo', which is not valid UTF-8 text.
+shell_quote() {
+    local value="$1" LC_ALL=C
+    if [[ "$value" =~ ^[A-Za-z0-9_@%+=:,./-]+$ ]]; then
+        printf '%s' "$value"
+    else
+        local q="'\"'\"'"
+        printf "'%s'" "${value//\'/$q}"
+    fi
+}
+
+# Drop the last UTF-8 character by bytes. A locale-aware ${var%?} is not safe:
+# MSYS/Cygwin bash has a 16-bit wchar_t, so it would split a character outside
+# the BMP and leave a broken sequence.
+drop_last_utf8_char() {
+    local value="$1" byte
+    local -x LC_ALL=C
+    while [ -n "$value" ]; do
+        byte="${value#"${value%?}"}"
+        value="${value%?}"
+        case "$byte" in
+            [$'\x80'-$'\xbf']) ;;
+            *) break ;;
+        esac
+    done
+    printf '%s' "$value"
+}
 BRANCH_BYTE_LEN=$(_byte_length "$BRANCH_NAME")
 if [ -n "${GIT_BRANCH_NAME:-}" ] && [ "$BRANCH_BYTE_LEN" -gt $MAX_BRANCH_LENGTH ]; then
     >&2 echo "Error: GIT_BRANCH_NAME must be 244 bytes or fewer in UTF-8. Provided value is ${BRANCH_BYTE_LEN} bytes."
@@ -547,7 +664,7 @@ elif [ "$BRANCH_BYTE_LEN" -gt $MAX_BRANCH_LENGTH ]; then
     ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
     TRUNCATED_SUFFIX="$BRANCH_SUFFIX"
     while [ "$(_byte_length "$BRANCH_NAME")" -gt "$MAX_BRANCH_LENGTH" ] && [ -n "$TRUNCATED_SUFFIX" ]; do
-        TRUNCATED_SUFFIX="${TRUNCATED_SUFFIX%?}"
+        TRUNCATED_SUFFIX=$(drop_last_utf8_char "$TRUNCATED_SUFFIX")
         TRUNCATED_SUFFIX="${TRUNCATED_SUFFIX%-}"
         BRANCH_NAME=$(build_branch_name "$FEATURE_NUM" "$TRUNCATED_SUFFIX")
     done
@@ -600,7 +717,7 @@ if [ "$DRY_RUN" != true ]; then
         >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
     fi
 
-    printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
+    printf '# To persist: export SPECIFY_FEATURE=%s\n' "$(shell_quote "$BRANCH_NAME")" >&2
 fi
 
 if $JSON_MODE; then
@@ -634,6 +751,6 @@ else
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "FEATURE_NUM: $FEATURE_NUM"
     if [ "$DRY_RUN" != true ]; then
-        printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"
+        printf '# To persist in your shell: export SPECIFY_FEATURE=%s\n' "$(shell_quote "$BRANCH_NAME")"
     fi
 fi

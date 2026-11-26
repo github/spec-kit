@@ -148,11 +148,14 @@ def _run_bash(script_name: str, cwd: Path, *args: str, env_extra: dict | None = 
     """Run an extension bash script."""
     script = cwd / ".specify" / "extensions" / "git" / "scripts" / "bash" / script_name
     env = {**os.environ, **_GIT_ENV, **(env_extra or {})}
+    # bash and jq write UTF-8; the locale default (e.g. cp936) would garble
+    # non-ASCII branch names before a test can compare them.
     return subprocess.run(
         ["bash", str(script), *args],
         cwd=cwd,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=env,
     )
 
@@ -186,7 +189,7 @@ class TestGitExtensionManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "git"
-        assert m.version == "1.0.9"
+        assert m.version == "1.0.10"
 
     def test_manifest_commands(self):
         """Manifest declares expected commands."""
@@ -2351,6 +2354,93 @@ class TestPowerShellUtf8Inputs:
         assert self._git_lines(project, "branch", "--show-current") == [
             "équipe/001-guided-tour"
         ]
+
+    @pytest.mark.parametrize(
+        ("args", "expected"),
+        [
+            (("添加待办事项",), "001-添加待办事项"),
+            (("Ünïcödé café",), "001-Ünïcödé-café"),
+            (("-ShortName", "待办 事项!", "x"), "001-待办-事项"),
+        ],
+        ids=["cjk_only", "accented", "cjk_short_name"],
+    )
+    def test_create_branch_keeps_unicode_words(
+        self, tmp_path: Path, exe: str, args: tuple[str, ...], expected: str
+    ):
+        """Non-Latin names keep their words, matching the core script (#5553).
+
+        On main a CJK-only description left no ASCII words, so the fallback
+        passed $null to [string]::Join and the script failed (surfacing as
+        MethodInvocationException on 5.1) instead of creating a branch.
+        """
+        project = _setup_project(tmp_path)
+
+        result = _run_pwsh("create-new-feature-branch.ps1", project, *args, exe=exe)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert self._git_lines(project, "branch", "--show-current") == [expected]
+
+    @pytest.mark.parametrize(
+        ("short_name", "expected_suffix"),
+        [
+            ("汉" * 100, "汉" * 80),
+            ("𠀀" * 70, "𠀀" * 60),
+            ("a" + "𠀀" * 70, "a" + "𠀀" * 59),
+        ],
+        ids=["bmp", "astral", "astral_after_ascii"],
+    )
+    def test_unicode_branch_name_truncates_on_character_boundary(
+        self, tmp_path: Path, exe: str, short_name: str, expected_suffix: str
+    ):
+        """Truncation to 244 bytes drops whole surrogate pairs, never half of one."""
+        project = _setup_project(tmp_path)
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-ShortName", short_name, "x",
+            exe=exe,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        branch = self._git_lines(project, "branch", "--show-current")[0]
+        assert branch == f"001-{expected_suffix}"
+        assert len(branch.encode("utf-8")) <= 244
+
+    @pytest.mark.parametrize(
+        ("short_name", "expected"),
+        [
+            ("x²", "001-x"),
+            ("xⅫ", "001-x"),
+            ("x٥", "001-x٥"),
+            ("x𝟘", "001-x𝟘"),
+        ],
+        ids=["superscript_number", "roman_numeral", "decimal_digit", "supplementary_decimal"],
+    )
+    def test_unicode_number_categories_match(
+        self, tmp_path: Path, exe: str, short_name: str, expected: str
+    ):
+        """Only decimal digits (Nd) are kept, including outside the BMP (x𝟘)."""
+        project = _setup_project(tmp_path)
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", short_name, "x",
+            exe=exe,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout)["BRANCH_NAME"] == expected
+
+    def test_create_branch_without_words_does_not_throw(self, tmp_path: Path, exe: str):
+        """Punctuation-only input still reaches the fallback; @() keeps it safe."""
+        project = _setup_project(tmp_path)
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project, "-Json", "-DryRun", "!!!", exe=exe,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout)["BRANCH_NAME"] == "001-"
 
 
 # ── auto-commit.ps1 CRLF warning tests (issue #2253) ────────────────────────

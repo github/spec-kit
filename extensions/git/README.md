@@ -84,6 +84,8 @@ auto_commit:
 
 For simple namespace-only customization, `branch_prefix` is also accepted as a shorthand and expands to `<branch_prefix>/{number}-{slug}`.
 
+`{slug}` keeps Unicode letters and decimal digits, matching the core `specs/` directory names, so `添加待办事项` produces the branch `001-添加待办事项`. Only ASCII letters are lowercased. `{author}` and `{app}` remain ASCII-only. In Bash, a non-ASCII slug requires Python 3 and a UTF-8 locale.
+
 ## Installation
 
 ```bash
