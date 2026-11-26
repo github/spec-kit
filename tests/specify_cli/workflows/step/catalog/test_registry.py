@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -31,3 +32,14 @@ def test_save_keeps_existing_registry_when_json_serialization_fails(project_dir)
 
     assert registry.registry_path.read_bytes() == before
     assert json.loads(before)["steps"]["first"]["type_key"] == "first"
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs are POSIX-only")
+def test_load_ignores_a_fifo_registry_file(project_dir):
+    steps_dir = project_dir / ".specify" / "workflows" / "steps"
+    steps_dir.mkdir(parents=True)
+    os.mkfifo(steps_dir / "step-registry.json")
+
+    registry = StepRegistry(project_dir)
+
+    assert registry.list() == {}

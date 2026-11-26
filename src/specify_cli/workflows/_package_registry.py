@@ -64,6 +64,10 @@ class PackageRegistry:
             return default_registry
         if self.registry_path.exists():
             try:
+                # Refuse to open a non-regular file (e.g. a FIFO), which
+                # would block the read until a writer shows up.
+                if not stat.S_ISREG(os.stat(self.registry_path).st_mode):
+                    return default_registry
                 with open(self.registry_path, encoding="utf-8") as f:
                     data = json.load(f)
                 # Validate shape: must be a dict with a dict records field
