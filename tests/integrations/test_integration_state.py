@@ -328,3 +328,73 @@ def test_with_integration_setting_recomputes_separator_from_retained_options():
     assert settings2["copilot"]["script"] == "ps"
     # ... so the separator must reflect them, not the (None) argument.
     assert settings2["copilot"]["invoke_separator"] == "."
+
+
+@pytest.mark.parametrize("reader", [try_read_integration_json, try_read_integration_json_with_raw])
+def test_read_integration_json_accepts_utf8_bom(tmp_path, reader):
+    """A single leading UTF-8 BOM in .specify/integration.json must be accepted (#5591)."""
+    from specify_cli.bundles.project import active_integration
+
+    payload = {
+        "version": "1.4.5",
+        "integration_state_schema": 1,
+        "integration": "claude",
+        "default_integration": "claude",
+        "installed_integrations": ["claude"],
+    }
+    state_file = tmp_path / INTEGRATION_JSON
+    state_file.parent.mkdir(parents=True)
+    state_file.write_bytes(b"\xef\xbb\xbf" + (json.dumps(payload) + "\n").encode("utf-8"))
+
+    *states, error = reader(tmp_path)
+
+    assert error is None
+    assert states[0] is not None
+    assert states[0]["integration"] == "claude"
+    assert states[0]["default_integration"] == "claude"
+    assert states[0]["installed_integrations"] == ["claude"]
+    assert active_integration(tmp_path) == "claude"
+    if len(states) == 2:
+        assert states[1] == payload
+
+
+@pytest.mark.parametrize("reader", [try_read_integration_json, try_read_integration_json_with_raw])
+@pytest.mark.parametrize(
+    "raw_bytes",
+    [
+        b"\xef\xbb\xbf\xef\xbb\xbf{}",
+        b"\xef\xbb\xbf",
+        b"\xef\xbb\xbf{invalid",
+    ],
+    ids=["double-bom", "bom-only", "bom-malformed-json"],
+)
+def test_read_integration_json_rejects_invalid_bom_inputs(tmp_path, reader, raw_bytes):
+    """Only one leading UTF-8 BOM before valid JSON is accepted."""
+    state_file = tmp_path / INTEGRATION_JSON
+    state_file.parent.mkdir(parents=True)
+    state_file.write_bytes(raw_bytes)
+
+    *states, error = reader(tmp_path)
+
+    assert all(state is None for state in states)
+    assert error is not None
+    assert error.kind == "decode"
+
+
+@pytest.mark.parametrize("reader", [try_read_integration_json, try_read_integration_json_with_raw])
+def test_read_integration_json_bom_preserves_shape_and_schema_errors(tmp_path, reader):
+    """Non-object and newer-schema checks still apply after stripping a leading BOM."""
+    state_file = tmp_path / INTEGRATION_JSON
+    state_file.parent.mkdir(parents=True)
+
+    state_file.write_bytes(b"\xef\xbb\xbf[]\n")
+    *states, error = reader(tmp_path)
+    assert all(state is None for state in states)
+    assert error is not None and error.kind == "not_object"
+
+    state_file.write_bytes(
+        b"\xef\xbb\xbf" + b'{"integration_state_schema": 99, "integration": "claude"}\n'
+    )
+    *states, error = reader(tmp_path)
+    assert all(state is None for state in states)
+    assert error is not None and error.kind == "schema_too_new" and error.schema == 99
