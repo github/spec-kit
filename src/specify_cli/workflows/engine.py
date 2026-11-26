@@ -11,7 +11,6 @@ The engine is the orchestrator that:
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import json
 import os
 import re
@@ -1054,134 +1053,174 @@ class RunState:
                     f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-class _ThreadResumeOwners(threading.local):
-    """Per-thread resume ownership of one process.
+_RESUME_LOCK_NAME = ".resume.lock"
+# FILE_ATTRIBUTE_REPARSE_POINT. Used only when Path.is_junction is absent.
+_FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 
-    A copied context does not carry this. A forked child starts with no
-    ownership: the depths are cleared after fork and are also bound to the
-    process id, so a copy made by any fork path is never live ownership.
+
+def _is_directory_junction(path: Path) -> bool:
+    """Whether ``path`` is a Windows directory junction.
+
+    Symlinks are reported separately by ``Path.is_symlink``. Python 3.12 and
+    later expose ``Path.is_junction``; earlier versions treat a non-symlink
+    reparse point as a junction.
     """
-
-    def __init__(self) -> None:
-        self.depths: dict[str, int] = {}
-        self.pid = os.getpid()
-
-
-_thread_resume_owners = _ThreadResumeOwners()
-
-
-def _current_resume_owners() -> dict[str, int]:
-    """This thread's live resume ownership in the current process."""
-    owners = _thread_resume_owners
-    pid = os.getpid()
-    if owners.pid != pid:
-        owners.depths = {}
-        owners.pid = pid
-    return owners.depths
-
-
-def _clear_resume_owners_after_fork() -> None:
-    _thread_resume_owners.depths = {}
-    _thread_resume_owners.pid = os.getpid()
-
-
-if hasattr(os, "register_at_fork"):
-    os.register_at_fork(after_in_child=_clear_resume_owners_after_fork)
-_case_fold_cache: dict[str, bool] = {}
-_case_fold_guard = threading.Lock()
-
-
-def _directory_folds_case(directory: Path) -> bool:
-    """Whether ``directory`` treats letter case as the same directory entry."""
-    directory = Path(directory).resolve()
-    key = os.path.normcase(str(directory))
-    with _case_fold_guard:
-        cached = _case_fold_cache.get(key)
-    if cached is not None:
-        return cached
-    directory.mkdir(parents=True, exist_ok=True)
-    token = f".case-{os.getpid()}-{threading.get_ident()}"
-    upper = directory / f"{token}A"
-    lower = directory / f"{token}a"
-    upper.write_bytes(b"")
-    try:
-        folds = lower.exists()
-    finally:
+    checker = getattr(path, "is_junction", None)
+    if checker is not None:
         try:
-            upper.unlink()
+            return bool(checker())
         except OSError:
-            pass
-    with _case_fold_guard:
-        _case_fold_cache[key] = folds
-    return folds
+            return False
+    if os.name != "nt":
+        return False
+    try:
+        attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return bool(attributes & _FILE_ATTRIBUTE_REPARSE_POINT) and not path.is_symlink()
 
 
-def _physical_run_id(project_root: Path, run_id: str) -> str:
-    """Identity of one run directory entry on this project's filesystem."""
-    RunState._validate_run_id(run_id)
-    specify = Path(project_root).resolve() / ".specify"
-    if _directory_folds_case(specify):
-        return run_id.casefold()
-    return run_id
+def _resume_run_directory(project_root: Path, run_id: str) -> Path:
+    """Return the existing run directory, or raise without creating anything.
 
-
-def _resume_lock_filename(project_root: Path, run_id: str) -> str:
-    """Bounded lock-file name for ``run_id``.
-
-    The run directory keeps the validated id. The lock component is a digest
-    of that id's filesystem identity, so a long legal id still fits in one
-    directory entry and two aliases of the same physical run share one lock.
+    ``run_id`` is validated before any path is built. Each existing component
+    of ``.specify/workflows/runs/<id>`` must be a real directory inside the
+    project root. Symlinks and Windows junctions are refused, including a
+    symlinked run directory that upstream ``RunState.load`` would follow.
+    A missing component is a missing run: ``FileNotFoundError`` with the same
+    message as ``RunState.load``, and no directory or lock file is created.
     """
-    identity = _physical_run_id(project_root, run_id)
-    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32]
-    return f"workflow-run-{digest}.lock"
+    from ..shared_infra import (
+        SymlinkedSharedPathError,
+        _shared_destination_label,
+        _shared_relative_path,
+    )
+
+    RunState._validate_run_id(run_id)
+    project_root = Path(project_root)
+    run_dir = project_root / ".specify" / "workflows" / "runs" / run_id
+    relative = _shared_relative_path(project_root, run_dir)
+    root = project_root.resolve()
+    current = project_root
+    for part in relative.parts:
+        current = current / part
+        label = _shared_destination_label(project_root, current)
+        if current.is_symlink() or _is_directory_junction(current):
+            kind = "junction" if _is_directory_junction(current) else "symlinked"
+            raise SymlinkedSharedPathError(
+                f"Refusing to use {kind} workflow run path: {label}"
+            )
+        if not current.exists():
+            state_path = run_dir / "state.json"
+            raise FileNotFoundError(f"Run state not found: {state_path}")
+        if not current.is_dir():
+            raise ValueError(f"Workflow run path is not a directory: {label}")
+        try:
+            current.resolve().relative_to(root)
+        except (OSError, ValueError):
+            raise ValueError(
+                f"Workflow run path escapes project root: {label}"
+            ) from None
+    return current
 
 
-def _resume_owner_key(project_root: Path, run_id: str) -> str:
-    root = Path(project_root).resolve()
-    return os.path.normcase(str(root)) + "\n" + _physical_run_id(root, run_id)
+def _resume_lock_file(run_dir: Path) -> Path:
+    """Fixed lock name inside the run directory, independent of id length.
+
+    The directory itself is the lock identity. Two paths that name that
+    directory share this file; a different directory does not.
+    """
+    return run_dir / _RESUME_LOCK_NAME
 
 
 @contextlib.contextmanager
 def _resume_run_lock(project_root: Path, run_id: str):
-    """Own one workflow run across processes for the duration of resume.
+    """Hold the exclusive non-blocking lock for one physical workflow run.
 
-    The lock is acquired before the caller loads or writes that run and is
-    released on every exit. The owning thread may re-enter, so the CLI can
-    hold the lock across its legacy checkpoint and ``WorkflowEngine.resume``.
-    Ownership lives on this thread of this process, not in a copyable
-    context, and a forked child does not inherit it. A different process or
-    thread, including a forked child, is rejected immediately. The lock file
-    stays in ``.specify`` and is not removed.
+    The lock file is ``.specify/workflows/runs/<id>/.resume.lock``. It is
+    opened only after :func:`_resume_run_directory` accepts the existing
+    directory. The open uses ``O_NOFOLLOW`` and ``O_CLOEXEC`` where the
+    platform provides them, and mode ``0o600``. Acquisition does not wait.
+    The file is left in place after release; ``list_runs`` ignores it.
+
+    The acquiring process id is recorded only so release can unlock. On
+    POSIX, ``LOCK_UN`` runs only in that process, then the descriptor is
+    closed. A forked child that unwinds this scope closes its inherited
+    descriptor and does not unlock, so the parent keeps the lock. There is
+    no descriptor registry, ownership table, or fork callback. A child that
+    opens the lock itself is a new contender and is rejected while the
+    parent holds it. The parent's normal release lets a new owner acquire
+    even if a fork-without-exec child is still alive.
+
+    Residual: if the owner is killed without unlocking while such a child
+    still holds the inherited descriptor, that child can delay the next
+    acquisition until it exits. This delay is not eliminated.
+
+    The supported guarantee assumes the run directory and this lock file
+    are not deleted or replaced during an active resume. On POSIX, an
+    external replacement of the run directory can leave the holder on the
+    old inode and let another resume lock the new directory. Ordinary Spec
+    Kit operations do not do that. Integration rollback removes only
+    journaled integration outputs; ``runs`` is a reserved workflow id, and
+    the engine only creates and writes inside an existing run directory.
     """
-    from ..shared_infra import _exclusive_project_lock, _shared_relative_path
+    run_dir = _resume_run_directory(project_root, run_id)
+    lock_path = _resume_lock_file(run_dir)
+    if lock_path.is_symlink() or _is_directory_junction(lock_path):
+        raise OSError(f"Refusing to use symlinked workflow run lock: {lock_path}")
 
-    root = Path(project_root).resolve()
-    lock_name = _resume_lock_filename(root, run_id)
-    relative = _shared_relative_path(root, root / ".specify" / lock_name)
-    if relative.parts != (".specify", lock_name):
-        raise ValueError(f"Workflow run lock escapes project root: {relative}")
-    key = _resume_owner_key(root, run_id)
-    owners = _current_resume_owners()
-    if owners.get(key, 0) > 0:
-        owners[key] += 1
-        try:
-            yield
-        finally:
-            owners[key] -= 1
-            if owners[key] == 0:
-                del owners[key]
-        return
-    with _exclusive_project_lock(
-        root, lock_name, context="workflow run", blocking=False
-    ):
-        owners[key] = 1
-        try:
-            yield
-        finally:
-            owners[key] -= 1
-            if owners[key] == 0:
-                del owners[key]
+    flags = os.O_RDWR | os.O_CREAT
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(lock_path, flags, 0o600)
+    owner_pid = os.getpid()
+    locked = False
+    try:
+        if lock_path.is_symlink() or _is_directory_junction(lock_path):
+            raise OSError(f"Refusing to use symlinked workflow run lock: {lock_path}")
+        if os.name == "nt":
+            import errno
+            import msvcrt
+
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"\0")
+            os.lseek(fd, 0, os.SEEK_SET)
+            try:
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            except OSError as exc:
+                if exc.errno not in (errno.EACCES, errno.EDEADLK):
+                    raise
+                raise OSError(
+                    "Exclusive workflow run lock is already held"
+                ) from exc
+        else:
+            import errno
+            import fcntl
+
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as exc:
+                busy = exc.errno in (errno.EAGAIN, errno.EWOULDBLOCK)
+                if busy:
+                    raise OSError(
+                        "Exclusive workflow run lock is already held"
+                    ) from exc
+                raise
+            locked = True
+        yield
+    finally:
+        if fd >= 0:
+            try:
+                if locked and owner_pid == os.getpid():
+                    import fcntl
+
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+                    except OSError:
+                        pass
+            finally:
+                os.close(fd)
+                fd = -1
 
 
 # -- Workflow Engine ------------------------------------------------------
@@ -1381,7 +1420,9 @@ class WorkflowEngine:
     ) -> RunState:
         """Resume a paused or failed workflow run.
 
-        When ``inputs`` is provided, the values are merged over the run's
+        Clears any stale execution state, acquires this run's exclusive lock
+        once, and releases it on every exit. When ``inputs`` is provided,
+        the values are merged over the run's
         persisted inputs and re-resolved through the same typed validation
         path used by :meth:`execute`, so the resumed step sees updated
         workflow inputs. Keys not supplied keep their persisted values; an
@@ -1396,6 +1437,13 @@ class WorkflowEngine:
         run_id: str,
         inputs: dict[str, Any] | None,
     ) -> RunState:
+        """Resume a run whose exclusive lock the caller already holds.
+
+        Not a lock-free public entry point. :meth:`resume` acquires the lock
+        and then calls this. The CLI holds that same lock across its
+        pre-state checks and legacy metadata write, then calls this without
+        acquiring the lock again.
+        """
         self._execution_state.set(None)
         self._load_integrations()
         state = RunState.load(run_id, self.project_root)

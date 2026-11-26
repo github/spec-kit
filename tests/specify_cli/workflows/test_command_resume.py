@@ -396,6 +396,9 @@ steps:
         from specify_cli.workflows.engine import RunState
 
         monkeypatch.chdir(project_dir)
+        (
+            project_dir / ".specify" / "workflows" / "runs" / "unreadable-run"
+        ).mkdir(parents=True)
         with patch.object(
             RunState, "load", side_effect=OSError("permission [denied]")
         ):

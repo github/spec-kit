@@ -18,6 +18,15 @@ from specify_cli.workflows.engine import (
 )
 
 
+def checkpoint_files(run_dir):
+    """Checkpoint bytes in a run directory, ignoring the resume lock file."""
+    return {
+        path.name: path.read_bytes()
+        for path in run_dir.iterdir()
+        if path.name != ".resume.lock"
+    }
+
+
 def definition(name, steps, **fields):
     return WorkflowDefinition(
         {"workflow": {"id": name, "name": name}, "steps": steps, **fields}
@@ -469,12 +478,12 @@ def test_version_one_tree_rejected_without_writes(tmp_path, probe):
     data = json.loads(path.read_text())
     data["execution"]["version"] = 1
     path.write_text(json.dumps(data))
-    before = {p.name: p.read_bytes() for p in state.runs_dir.iterdir()}
+    before = checkpoint_files(state.runs_dir)
 
     with pytest.raises(ValueError, match="Unsupported execution version"):
         WorkflowEngine(tmp_path).resume(state.run_id)
 
-    assert {p.name: p.read_bytes() for p in state.runs_dir.iterdir()} == before
+    assert checkpoint_files(state.runs_dir) == before
 
 
 @pytest.mark.parametrize(
@@ -2727,10 +2736,10 @@ def test_resume_rejects_offset_skipping_blocked_step_without_writes(tmp_path, pr
         "nodes": [{"phase": "ready"} for _ in steps[offset:]],
     })
     path.write_text(json.dumps(data))
-    before = {p.name: p.read_bytes() for p in state.runs_dir.iterdir()}
+    before = checkpoint_files(state.runs_dir)
     with pytest.raises(ValueError, match="offset"):
         engine.resume(state.run_id)
-    assert {p.name: p.read_bytes() for p in state.runs_dir.iterdir()} == before
+    assert checkpoint_files(state.runs_dir) == before
     assert probe == {"wait": 1}
 
 
@@ -2788,10 +2797,10 @@ def test_lifecycle_rejects_invalid_completed_fan_out_without_writes(tmp_path, pr
     data = json.loads(path.read_text())
     mutation(data["execution"]["sequence"]["nodes"][0])
     path.write_text(json.dumps(data))
-    before = {p.name: p.read_bytes() for p in state.runs_dir.iterdir()}
+    before = checkpoint_files(state.runs_dir)
     with pytest.raises(ValueError):
         engine.resume(state.run_id)
-    assert {p.name: p.read_bytes() for p in state.runs_dir.iterdir()} == before
+    assert checkpoint_files(state.runs_dir) == before
 
 
 @pytest.mark.parametrize("field,value", [("fan_results", []), ("template", "{}\n")])
@@ -2804,12 +2813,12 @@ def test_non_fan_out_rejects_fan_out_fields(tmp_path, probe, field, value):
     data = json.loads(path.read_text())
     data["execution"]["sequence"]["nodes"][0][field] = value
     path.write_text(json.dumps(data))
-    before = {p.name: p.read_bytes() for p in state.runs_dir.iterdir()}
+    before = checkpoint_files(state.runs_dir)
 
     with pytest.raises(ValueError, match="Invalid fan-out"):
         WorkflowEngine(tmp_path).resume(state.run_id)
 
-    assert {p.name: p.read_bytes() for p in state.runs_dir.iterdir()} == before
+    assert checkpoint_files(state.runs_dir) == before
 
 
 @pytest.mark.parametrize("invalid", ["restart-completed", "override-phase", "finish-unfinished", "foreign-field"])
@@ -2839,11 +2848,11 @@ def test_lifecycle_rejects_invalid_transitions_before_mutation(tmp_path, probe, 
     else:
         operation, changes = "settle", {"outcome": "completed", "error": None}
     before_node = deepcopy(occurrence.node)
-    before_files = {p.name: p.read_bytes() for p in state.runs_dir.iterdir()}
+    before_files = checkpoint_files(state.runs_dir)
     with pytest.raises(ValueError):
         executor.transition(operation, occurrence, changes)
     assert occurrence.node == before_node
-    assert {p.name: p.read_bytes() for p in state.runs_dir.iterdir()} == before_files
+    assert checkpoint_files(state.runs_dir) == before_files
 
 
 def test_execution_shares_workflow_fan_out_and_loop_sources(tmp_path, probe):

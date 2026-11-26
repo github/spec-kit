@@ -16,7 +16,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from specify_cli.shared_infra import _exclusive_project_lock
 from specify_cli.workflows import STEP_REGISTRY
 from specify_cli.workflows.base import (
     RunStatus,
@@ -28,7 +27,7 @@ from specify_cli.workflows.engine import (
     RunState,
     WorkflowDefinition,
     WorkflowEngine,
-    _resume_lock_filename,
+    _resume_lock_file,
     _resume_run_lock,
 )
 
@@ -288,7 +287,12 @@ def test_concurrent_resume_of_one_run_has_one_owner(
             "timestamp": completed[0]["timestamp"],
         }
     ]
-    assert (project / ".specify" / _resume_lock_filename(project, run_id)).is_file()
+    lock_file = _resume_lock_file(
+        project / ".specify" / "workflows" / "runs" / run_id
+    )
+    assert lock_file.is_file()
+    assert lock_file.name == ".resume.lock"
+    assert not list((project / ".specify").glob("workflow-run-*.lock"))
 
     with pytest.raises(ValueError, match="Cannot resume run 'same-run' with status 'completed'"):
         WorkflowEngine(project).resume(run_id)
@@ -361,16 +365,12 @@ def test_serialized_execution_does_not_count_as_overlap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """One shared lock can finish both runs without their effects overlapping."""
-    from specify_cli import shared_infra
+    from specify_cli.workflows import engine as engine_module
 
-    real = shared_infra._exclusive_project_lock
+    def one_file(run_dir: Path) -> Path:
+        return run_dir.parents[1] / "shared-resume.lock"
 
-    def one_lock(project_root, lock_name, *, context, blocking=True):
-        return real(
-            project_root, "workflow-run-shared.lock", context=context, blocking=blocking
-        )
-
-    monkeypatch.setattr(shared_infra, "_exclusive_project_lock", one_lock)
+    monkeypatch.setattr(engine_module, "_resume_lock_file", one_file)
     project = tmp_path / "project"
     release = project / "release"
     logs = [project / "a.log", project / "b.log"]
@@ -403,9 +403,10 @@ def test_serialized_execution_does_not_count_as_overlap(
     assert any(isinstance(exc, OSError) for exc in errors)
 
 
-def test_same_thread_nested_ownership_resumes(
+def test_public_resume_does_not_reenter_under_the_held_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The public entry always locks; the protected body does not lock again."""
     _pause_noninteractive_gate(monkeypatch)
     project = tmp_path / "project"
     log = project / "effect.log"
@@ -413,7 +414,9 @@ def test_same_thread_nested_ownership_resumes(
     _start_paused(project, log, None, run_id, monkeypatch)
     engine = WorkflowEngine(project)
     with _resume_run_lock(project, run_id):
-        state = engine.resume(run_id, {"verdict": "approve"})
+        with pytest.raises(OSError, match="already held"):
+            engine.resume(run_id, {"verdict": "approve"})
+        state = engine._resume_owned(run_id, {"verdict": "approve"})
     assert state.status is RunStatus.COMPLETED
     assert len(_effect_lines(log)) == 1
 
@@ -543,18 +546,21 @@ def test_asyncio_to_thread_does_not_inherit_ownership(
 
 def test_ownership_is_released_when_the_body_raises(tmp_path: Path) -> None:
     project = tmp_path / "project"
-    (project / ".specify").mkdir(parents=True)
+    run_dir = project / ".specify" / "workflows" / "runs" / "boom-run"
+    run_dir.mkdir(parents=True)
     with pytest.raises(RuntimeError, match="boom"):
         with _resume_run_lock(project, "boom-run"):
             raise RuntimeError("boom")
     with _resume_run_lock(project, "boom-run"):
         held = True
     assert held
+    assert _resume_lock_file(run_dir).is_file()
 
 
 def test_distinct_run_locks_are_independent(tmp_path: Path) -> None:
     project = tmp_path / "project"
-    (project / ".specify").mkdir(parents=True)
+    for run_id in ("run-a", "run-b"):
+        (project / ".specify" / "workflows" / "runs" / run_id).mkdir(parents=True)
     with _resume_run_lock(project, "run-a"):
         with _resume_run_lock(project, "run-b"):
             held = True
@@ -571,8 +577,8 @@ def test_case_alias_cannot_take_a_second_lock(
     _start_paused(project, project / "effect.log", None, run_id, monkeypatch)
     state = _state_path(project, run_id)
     alias_state = _state_path(project, alias)
-    if os.path.normcase(str(state)) != os.path.normcase(str(alias_state)):
-        pytest.skip("filesystem distinguishes run-id case")
+    if not alias_state.exists() or not os.path.samefile(state, alias_state):
+        pytest.skip("filesystem does not alias this run directory")
     held = threading.Event()
     let_go = threading.Event()
     thread = threading.Thread(target=_hold_resume_lock, args=(project, run_id, held, let_go))
@@ -610,9 +616,12 @@ def test_long_run_id_gets_a_bounded_exclusive_lock(
     try:
         assert held.wait(10)
         assert not errors, errors
-        locks = list((project / ".specify").glob("*.lock"))
-        assert locks
-        assert all(len(path.name) <= 255 for path in locks)
+        lock_file = _resume_lock_file(
+            project / ".specify" / "workflows" / "runs" / run_id
+        )
+        assert lock_file.is_file()
+        assert lock_file.name == ".resume.lock"
+        assert len(lock_file.name) < len(run_id)
         with pytest.raises(OSError, match="already held"):
             with _resume_run_lock(project, run_id):
                 pass
@@ -768,11 +777,11 @@ def test_run_lock_covers_resume_and_is_released(tmp_path: Path, monkeypatch, mod
     worker = threading.Thread(target=_resume, name="resume-owner")
     worker.start()
     assert entered.wait(10)
-    lock_name = _resume_lock_filename(project, run_id)
+    lock_file = _resume_lock_file(
+        project / ".specify" / "workflows" / "runs" / run_id
+    )
     with pytest.raises(OSError, match="already held"):
-        with _exclusive_project_lock(
-            project, lock_name, context="workflow run", blocking=False
-        ):
+        with _resume_run_lock(project, run_id):
             pass
     release.set()
     worker.join(10)
@@ -782,11 +791,127 @@ def test_run_lock_covers_resume_and_is_released(tmp_path: Path, monkeypatch, mod
     else:
         assert outcome.get("status") is expected
         assert "error" not in outcome
-    with _exclusive_project_lock(
-        project, lock_name, context="workflow run", blocking=False
-    ):
-        assert (project / ".specify" / lock_name).is_file()
-    assert (project / ".specify" / lock_name).is_file()
+    with _resume_run_lock(project, run_id):
+        assert lock_file.is_file()
+    listed = WorkflowEngine(project).list_runs()
+    assert [item["run_id"] for item in listed] == [run_id]
+
+
+def _symlink_or_skip(link: Path, target: Path, *, target_is_directory: bool = False) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks are unavailable: {exc}")
+
+
+def test_missing_run_creates_nothing(tmp_path: Path) -> None:
+    project = tmp_path / "bare"
+    project.mkdir()
+    with pytest.raises(FileNotFoundError, match="Run state not found"):
+        WorkflowEngine(project).resume("missing-run")
+    assert list(project.iterdir()) == []
+
+
+def test_symlinked_run_directory_is_refused(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    outside = tmp_path / "outside-run"
+    outside.mkdir()
+    (outside / "state.json").write_text("{}", encoding="utf-8")
+    runs = project / ".specify" / "workflows" / "runs"
+    runs.mkdir(parents=True)
+    _symlink_or_skip(runs / "linked-run", outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="Refusing to use symlinked workflow run path"):
+        with _resume_run_lock(project, "linked-run"):
+            pass
+    assert not (outside / ".resume.lock").exists()
+
+
+def test_symlinked_lock_file_is_refused(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    run_dir = project / ".specify" / "workflows" / "runs" / "link-lock"
+    run_dir.mkdir(parents=True)
+    outside = tmp_path / "outside.lock"
+    outside.write_bytes(b"keep")
+    _symlink_or_skip(run_dir / ".resume.lock", outside)
+    with pytest.raises(OSError, match="symlinked workflow run lock"):
+        with _resume_run_lock(project, "link-lock"):
+            pass
+    assert outside.read_bytes() == b"keep"
+
+
+def test_junction_run_directory_is_refused(tmp_path: Path) -> None:
+    if os.name != "nt":
+        pytest.skip("directory junctions are Windows reparse points")
+    project = tmp_path / "project"
+    outside = tmp_path / "outside-run"
+    outside.mkdir()
+    runs = project / ".specify" / "workflows" / "runs"
+    runs.mkdir(parents=True)
+    link = runs / "joined-run"
+    completed = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(outside)],
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        pytest.skip(f"cannot create a junction: {completed.stderr}")
+    with pytest.raises(ValueError, match="Refusing to use junction workflow run path"):
+        with _resume_run_lock(project, "joined-run"):
+            pass
+    assert not (outside / ".resume.lock").exists()
+
+
+def test_case_distinct_directories_keep_independent_locks(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    runs = project / ".specify" / "workflows" / "runs"
+    runs.mkdir(parents=True)
+    if os.name == "nt":
+        completed = subprocess.run(
+            ["fsutil", "file", "setCaseSensitiveInfo", str(runs), "enable"],
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            pytest.skip(f"cannot enable case-sensitive directory: {completed.stderr}")
+    (runs / "CaseRun").mkdir()
+    (runs / "caserun").mkdir()
+    if os.path.samefile(runs / "CaseRun", runs / "caserun"):
+        pytest.skip("filesystem aliases the two run directories")
+    with _resume_run_lock(project, "CaseRun"):
+        with _resume_run_lock(project, "caserun"):
+            held = True
+    assert held
+
+
+def test_terminated_holder_releases_the_lock(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    run_id = "kill-run"
+    (project / ".specify" / "workflows" / "runs" / run_id).mkdir(parents=True)
+    held = project / "held"
+    proc = _spawn("hold-until-killed", [str(project), run_id, str(held)], cwd=project)
+    try:
+        deadline = time.time() + 15
+        while time.time() < deadline and not held.exists():
+            if proc.poll() is not None:
+                break
+            time.sleep(0.02)
+        assert held.exists(), "holder did not acquire the lock"
+        proc.kill()
+        proc.wait(10)
+    finally:
+        _stop_processes([proc])
+    deadline = time.time() + 5
+    while True:
+        try:
+            with _resume_run_lock(project, run_id):
+                acquired = True
+            break
+        except OSError as exc:
+            if "already held" not in str(exc) or time.time() >= deadline:
+                raise
+            time.sleep(0.05)
+    assert acquired
+    assert proc.poll() is not None
 
 
 def _signal_loaded(gate: Path, role: str, status: str) -> None:
@@ -916,6 +1041,14 @@ def _main(argv: list[str]) -> None:
         return
     if mode == "cli-plain":
         _cli_resume(Path(argv[2]), argv[3], Path(argv[4]))
+        return
+    if mode == "hold-until-killed":
+        project = Path(argv[2])
+        run_id = argv[3]
+        held = Path(argv[4])
+        with _resume_run_lock(project, run_id):
+            held.write_text("held", encoding="utf-8")
+            time.sleep(60)
         return
     raise SystemExit(f"unknown worker mode {mode!r}")
 

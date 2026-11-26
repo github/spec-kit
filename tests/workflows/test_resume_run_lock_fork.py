@@ -1,9 +1,12 @@
-"""A forked child never inherits ownership of a workflow run lock."""
+"""A forked child does not release or inherit a workflow run lock.
+
+These checks are POSIX-only. They do not install a fork callback or a
+descriptor registry. ``LOCK_UN`` is allowed only in the process that
+acquired the lock.
+"""
 
 from __future__ import annotations
 
-import errno
-import hashlib
 import json
 import os
 import time
@@ -14,14 +17,8 @@ from typing import Callable
 import pytest
 
 from specify_cli import shared_infra
-from specify_cli.shared_infra import _exclusive_project_lock
 from specify_cli.workflows.base import RunStatus
-from specify_cli.workflows.engine import (
-    WorkflowEngine,
-    _resume_lock_filename,
-    _resume_run_lock,
-    _thread_resume_owners,
-)
+from specify_cli.workflows.engine import WorkflowEngine, _resume_run_lock
 from tests.workflows.test_resume_run_lock import (
     _effect_lines,
     _pause_noninteractive_gate,
@@ -59,7 +56,10 @@ def _fork(child: Callable[[], dict[str, object]], result: Path) -> int:
         try:
             payload = child()
         except BaseException as exc:  # noqa: BLE001 - reported to the parent
-            payload = {"crash": f"{type(exc).__name__}: {exc}", "tb": traceback.format_exc()}
+            payload = {
+                "crash": f"{type(exc).__name__}: {exc}",
+                "tb": traceback.format_exc(),
+            }
             code = 1
         try:
             payload.setdefault("pid", os.getpid())
@@ -83,12 +83,7 @@ def _reap(pid: int, timeout: float = WAIT) -> int:
 
 def _lock_is_free(project: Path, run_id: str) -> bool:
     try:
-        with _exclusive_project_lock(
-            project,
-            _resume_lock_filename(project, run_id),
-            context="workflow run",
-            blocking=False,
-        ):
+        with _resume_run_lock(project, run_id):
             return True
     except OSError as exc:
         if "already held" in str(exc):
@@ -97,9 +92,7 @@ def _lock_is_free(project: Path, run_id: str) -> bool:
 
 
 def _try_resume(project: Path, run_id: str) -> dict[str, object]:
-    payload: dict[str, object] = {
-        "inherited_depths": dict(_thread_resume_owners.depths),
-    }
+    payload: dict[str, object] = {}
     try:
         state = WorkflowEngine(project).resume(run_id, {"verdict": "approve"})
         payload.update(ok=True, status=state.status.value)
@@ -109,7 +102,15 @@ def _try_resume(project: Path, run_id: str) -> dict[str, object]:
 
 
 def _sha(path: Path) -> str:
+    import hashlib
+
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _ensure_run(project: Path, run_id: str) -> None:
+    (project / ".specify" / "workflows" / "runs" / run_id).mkdir(
+        parents=True, exist_ok=True
+    )
 
 
 def test_forked_child_cannot_resume_a_run_the_parent_owns(
@@ -126,14 +127,9 @@ def test_forked_child_cannot_resume_a_run_the_parent_owns(
     with _resume_run_lock(project, run_id):
         pid = _fork(lambda: _try_resume(project, run_id), result)
         assert _reap(pid) == 0
-        assert _thread_resume_owners.depths, "parent lost its ownership"
         assert not _lock_is_free(project, run_id)
-        with _resume_run_lock(project, run_id):
-            nested = True
-        assert nested
 
     payload = json.loads(result.read_text(encoding="utf-8"))
-    assert payload["inherited_depths"] == {}, payload
     assert payload["ok"] is False, payload
     assert "already held" in str(payload["error"])
     assert _effect_lines(log) == []
@@ -184,37 +180,42 @@ def test_forked_child_acquires_its_own_lock_after_the_parent_leaves(
 def test_inherited_descriptor_does_not_block_the_next_owner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Parent unlock lets a new owner in while the child still holds the fd."""
     project = tmp_path / "project"
-    (project / ".specify").mkdir(parents=True)
     run_id = "fd-run"
+    _ensure_run(project, run_id)
     ready = tmp_path / "ready"
     finish = tmp_path / "finish"
     result = tmp_path / "child.json"
+    opened: list[int] = []
+    real_open = os.open
+
+    def spy(path: object, flags: int, mode: int = 0o777) -> int:
+        fd = real_open(path, flags, mode)
+        if str(path).endswith(".resume.lock"):
+            opened.append(fd)
+        return fd
+
+    monkeypatch.setattr(os, "open", spy)
 
     with _resume_run_lock(project, run_id):
-        fds = [held.fd for held in getattr(shared_infra, "_held_project_locks", ())]
+        assert opened, "the lock descriptor was not opened"
+        inherited = opened[-1]
 
         def child() -> dict[str, object]:
-            closed = []
-            for fd in fds:
-                try:
-                    os.fstat(fd)
-                    closed.append(False)
-                except OSError as exc:
-                    closed.append(exc.errno == errno.EBADF)
+            try:
+                os.fstat(inherited)
+                descriptor_open = True
+            except OSError:
+                descriptor_open = False
             ready.write_text("ready", encoding="utf-8")
             waited = _wait_for(finish)
-            return {
-                "closed": closed,
-                "registry": len(getattr(shared_infra, "_held_project_locks", ())),
-                "waited": waited,
-            }
+            return {"descriptor_open": descriptor_open, "waited": waited}
 
         pid = _fork(child, result)
         assert _wait_for(ready)
 
     try:
-        # The child is alive and still running, yet the parent's release is final.
         assert _lock_is_free(project, run_id)
         with _resume_run_lock(project, run_id):
             assert not _lock_is_free(project, run_id)
@@ -224,17 +225,16 @@ def test_inherited_descriptor_does_not_block_the_next_owner(
 
     payload = json.loads(result.read_text(encoding="utf-8"))
     assert payload["waited"] is True
-    assert fds, "the held lock descriptor was not tracked"
-    assert payload["closed"] and all(payload["closed"]), payload
-    assert payload["registry"] == 0, payload
+    assert payload["descriptor_open"] is True, payload
+    assert not hasattr(shared_infra, "_held_project_locks")
 
 
 def test_forked_child_leaving_the_scope_keeps_the_parent_lock(
     tmp_path: Path,
 ) -> None:
     project = tmp_path / "project"
-    (project / ".specify").mkdir(parents=True)
     run_id = "scope-run"
+    _ensure_run(project, run_id)
     result = tmp_path / "child.json"
     parent = os.getpid()
 
@@ -245,7 +245,6 @@ def test_forked_child_leaving_the_scope_keeps_the_parent_lock(
                 return 0
             assert _reap(pid) == 0
             assert not _lock_is_free(project, run_id)
-            assert _thread_resume_owners.depths
             return pid
 
     try:
@@ -256,13 +255,12 @@ def test_forked_child_leaving_the_scope_keeps_the_parent_lock(
         raise
     if pid == 0:
         try:
-            _publish(result, {"pid": os.getpid(), "depths": dict(_thread_resume_owners.depths)})
+            _publish(result, {"pid": os.getpid(), "unwound": True})
         finally:
             os._exit(0)
     payload = json.loads(result.read_text(encoding="utf-8"))
-    assert payload["depths"] == {}
+    assert payload["unwound"] is True
     assert _lock_is_free(project, run_id)
-
 
 
 def test_forked_child_may_resume_a_distinct_run(

@@ -91,7 +91,7 @@ def workflow_resume(
 
         try:
             with cli._stdout_to_stderr_when(json_output):
-                state = engine.resume(run_id, inputs or None)
+                state = engine._resume_owned(run_id, inputs or None)
         except FileNotFoundError as exc:
             if engine._execution_state.get() is not None:
                 cli._fail_workflow_execution(
@@ -146,6 +146,9 @@ def workflow_resume(
     try:
         with _resume_run_lock(project_root, run_id):
             _resume_under_lock()
+    except FileNotFoundError:
+        err.print(f"[red]Error:[/red] Run not found: {run_id}")
+        raise cli.typer.Exit(1)
     except ValueError as exc:
         err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)

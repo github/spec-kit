@@ -3371,7 +3371,7 @@ def test_round3_resume_disappearing_run_has_specific_missing_run_error(tmp_path,
     def disappear(engine, run_id, inputs):
         raise FileNotFoundError("sample state disappeared")
 
-    monkeypatch.setattr(WorkflowEngine, "resume", disappear)
+    monkeypatch.setattr(WorkflowEngine, "_resume_owned", disappear)
     result = run(project, ["workflow", "resume", "sample-run", *(["--json"] if json_output else [])])
     assert result.exit_code == 1, result.output
     if json_output:
