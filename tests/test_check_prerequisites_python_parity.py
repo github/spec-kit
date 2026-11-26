@@ -386,9 +386,9 @@ def test_python_text_output_survives_a_legacy_stdout_code_page(
     console — which is every time an agent or a workflow step captures the
     output. U+2713 is unencodable in cp1252, so printing it raised
     UnicodeEncodeError and truncated the report right after "AVAILABLE_DOCS:".
-    The ASCII fallback is the rendering these markers already have in-tree
-    (Test-FileExists in scripts/powershell/common.ps1, and
-    normalize_status_text here).
+    The script entrypoint now reconfigures stdout to UTF-8, so the real glyphs
+    survive; the ASCII fallback for direct in-process callers is covered in
+    test_check_prerequisites_utf8_output.py.
     """
     feat = prereq_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True)
@@ -403,7 +403,7 @@ def test_python_text_output_survives_a_legacy_stdout_code_page(
 
     env = _clean_env()
     env["PYTHONIOENCODING"] = "cp1252"
-    result = _run(_py_cmd(prereq_repo, "--include-tasks"), prereq_repo, env=env)
+    result = run(_py_cmd(prereq_repo, "--include-tasks"), prereq_repo, env=env)
 
     assert result.returncode == 0, result.stderr
     assert "UnicodeEncodeError" not in result.stderr
@@ -418,9 +418,9 @@ def test_python_text_output_survives_a_legacy_stdout_code_page(
         "tasks.md",
     ):
         assert doc in result.stdout, (doc, result.stdout)
-    # Both fallback markers, so neither branch of _status_marker can regress.
-    assert "[OK] research.md" in result.stdout, result.stdout
-    assert "[FAIL] quickstart.md" in result.stdout, result.stdout
+    # Both glyphs, so neither branch of _status_marker can regress.
+    assert "  \u2713 research.md" in result.stdout, result.stdout
+    assert "  \u2717 quickstart.md" in result.stdout, result.stdout
 
 
 @requires_bash
