@@ -593,3 +593,175 @@ class TestForgeCommandRegistrar:
             "Found '/speckit.specify' (dot notation) in generated Forge git.feature command body. "
             "Forge requires hyphen notation for ZSH compatibility."
         )
+
+
+class TestForgeFrontmatterTransformations:
+    """Regression tests for ForgeIntegration._apply_forge_transformations (#5589)."""
+
+    def test_strips_handoffs_across_blank_lines_producing_valid_yaml(self):
+        import yaml
+        from specify_cli.integrations.forge import ForgeIntegration
+
+        forge = ForgeIntegration()
+        raw = (
+            "---\n"
+            "description: Create spec\n"
+            "handoffs:\n"
+            "  - label: Build Technical Plan\n"
+            "    agent: speckit.plan\n"
+            "\n"
+            "  - label: Clarify Spec Requirements\n"
+            "    agent: speckit.clarify\n"
+            "---\n\n"
+            "# Body\n"
+        )
+
+        transformed = forge._apply_forge_transformations(raw, "specify")
+        parts = transformed.split("---\n", 2)
+        assert len(parts) == 3
+        frontmatter = yaml.safe_load(parts[1])
+        assert frontmatter == {
+            "name": "speckit-specify",
+            "description": "Create spec",
+        }
+        assert "handoffs" not in transformed
+        assert parts[2] == "\n# Body\n"
+
+    def test_strips_handoffs_across_blank_lines_preserving_following_key(self):
+        import yaml
+        from specify_cli.integrations.forge import ForgeIntegration
+
+        forge = ForgeIntegration()
+        raw = (
+            "---\n"
+            "description: Create spec\n"
+            "handoffs:\n"
+            "  - label: Plan\n"
+            "\n"
+            "  - label: Clarify\n"
+            "\n"
+            "category: planning\n"
+            "---\n\n"
+            "# Body\n"
+        )
+
+        transformed = forge._apply_forge_transformations(raw, "plan")
+        parts = transformed.split("---\n", 2)
+        frontmatter = yaml.safe_load(parts[1])
+        assert frontmatter == {
+            "name": "speckit-plan",
+            "description": "Create spec",
+            "category": "planning",
+        }
+
+    def test_injects_top_level_name_and_preserves_nested_keys(self):
+        import yaml
+        from specify_cli.integrations.forge import ForgeIntegration
+
+        forge = ForgeIntegration()
+        raw = (
+            "---\n"
+            "description: Custom command\n"
+            "metadata:\n"
+            "  name: custom-meta\n"
+            "  handoffs: keep-me\n"
+            "---\n\n"
+            "# Body\n"
+        )
+
+        transformed = forge._apply_forge_transformations(raw, "specify")
+        parts = transformed.split("---\n", 2)
+        frontmatter = yaml.safe_load(parts[1])
+        assert frontmatter == {
+            "name": "speckit-specify",
+            "description": "Custom command",
+            "metadata": {
+                "name": "custom-meta",
+                "handoffs": "keep-me",
+            },
+        }
+
+    def test_preserves_existing_top_level_name_and_crlf_line_endings(self):
+        import yaml
+        from specify_cli.integrations.forge import ForgeIntegration
+
+        forge = ForgeIntegration()
+        raw = (
+            "---\r\n"
+            "name: custom-command\r\n"
+            "description: Custom command\r\n"
+            "handoffs:\r\n"
+            "  - label: Plan\r\n"
+            "\r\n"
+            "  - label: Clarify\r\n"
+            "---\r\n\r\n"
+            "# Body\r\n"
+        )
+
+        transformed = forge._apply_forge_transformations(raw, "specify")
+        assert "\r\n" in transformed
+        parts = transformed.split("---\r\n", 2)
+        frontmatter = yaml.safe_load(parts[1])
+        assert frontmatter == {
+            "name": "custom-command",
+            "description": "Custom command",
+        }
+        assert parts[1].count("name:") == 1
+
+    def test_content_without_complete_frontmatter_unchanged(self):
+        from specify_cli.integrations.forge import ForgeIntegration
+
+        forge = ForgeIntegration()
+        plain = "# Just a heading\n\nNo frontmatter here.\n"
+        unclosed = "---\ndescription: Missing closing fence\n"
+
+        assert forge._apply_forge_transformations(plain, "specify") == plain
+        assert forge._apply_forge_transformations(unclosed, "specify") == unclosed
+
+    def test_setup_writes_valid_yaml_for_blank_handoffs_and_nested_name(
+        self, tmp_path, monkeypatch
+    ):
+        import yaml
+        from specify_cli.integrations.forge import ForgeIntegration
+
+        template_dir = tmp_path / "src_templates"
+        template_dir.mkdir()
+        template_file = template_dir / "custom.md"
+        template_file.write_text(
+            "---\n"
+            "description: Custom workflow\n"
+            "handoffs:\n"
+            "  - label: Step 1\n"
+            "    agent: speckit.plan\n"
+            "\n"
+            "  - label: Step 2\n"
+            "    agent: speckit.tasks\n"
+            "metadata:\n"
+            "  name: team-author\n"
+            "  handoffs: preserved\n"
+            "---\n\n"
+            "Run with $ARGUMENTS\n",
+            encoding="utf-8",
+        )
+
+        project = tmp_path / "project"
+        project.mkdir()
+        forge = ForgeIntegration()
+        monkeypatch.setattr(forge, "list_command_templates", lambda: [template_file])
+        manifest = IntegrationManifest("forge", project)
+        created = forge.setup(project, manifest)
+
+        output_file = project / ".forge" / "commands" / "speckit.custom.md"
+        assert output_file in created
+        written = output_file.read_text(encoding="utf-8")
+        parts = written.split("---\n", 2)
+        frontmatter = yaml.safe_load(parts[1])
+        assert frontmatter == {
+            "name": "speckit-custom",
+            "description": "Custom workflow",
+            "metadata": {
+                "name": "team-author",
+                "handoffs": "preserved",
+            },
+        }
+        assert "{{parameters}}" in parts[2]
