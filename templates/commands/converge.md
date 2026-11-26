@@ -241,6 +241,10 @@ Append to the **end** of `tasks.md`, per the append contract:
 
 ### 9. Check for extension hooks
 
+**You MUST complete this section before reporting converge as finished.** These hooks are the
+only completion signal this command produces, so a run that ends without them has not told
+anything downstream that convergence finished.
+
 After producing the result, check if `.specify/extensions.yml` exists in the project root.
 
 - If it exists, read it and look for entries under the `hooks.after_converge` key
