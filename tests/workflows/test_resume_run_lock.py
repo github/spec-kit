@@ -544,6 +544,78 @@ def test_asyncio_to_thread_does_not_inherit_ownership(
     assert _effect_lines(log) == []
 
 
+def _windows_lock_events(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, ...]]:
+    import msvcrt
+
+    events: list[tuple[object, ...]] = []
+    real_lock = msvcrt.locking
+    real_close = os.close
+
+    def spy_lock(fd: int, mode: int, nbytes: int) -> None:
+        events.append(("lock", mode, nbytes, os.lseek(fd, 0, os.SEEK_CUR)))
+        real_lock(fd, mode, nbytes)
+
+    def spy_close(fd: int) -> None:
+        events.append(("close", fd))
+        real_close(fd)
+
+    monkeypatch.setattr(msvcrt, "locking", spy_lock)
+    monkeypatch.setattr(os, "close", spy_close)
+    return events
+
+
+def _assert_windows_unlock_before_close(events: list[tuple[object, ...]]) -> None:
+    import msvcrt
+
+    unlocks = [
+        index
+        for index, event in enumerate(events)
+        if event[0] == "lock" and event[1] == msvcrt.LK_UNLCK
+    ]
+    assert unlocks, events
+    unlock = events[unlocks[-1]]
+    assert unlock[2] == 1
+    assert unlock[3] == 0
+    closes = [
+        index
+        for index, event in enumerate(events)
+        if event[0] == "close" and index > unlocks[-1]
+    ]
+    assert closes, events
+
+
+def test_windows_release_unlocks_the_acquired_byte_before_close(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if os.name != "nt":
+        pytest.skip("Windows byte-range locks")
+    import msvcrt
+
+    project = tmp_path / "project"
+    run_dir = project / ".specify" / "workflows" / "runs" / "win-unlock"
+    run_dir.mkdir(parents=True)
+    events = _windows_lock_events(monkeypatch)
+    with _resume_run_lock(project, "win-unlock"):
+        pass
+    locks = [event for event in events if event[0] == "lock" and event[1] == msvcrt.LK_NBLCK]
+    assert locks == [("lock", msvcrt.LK_NBLCK, 1, 0)]
+    _assert_windows_unlock_before_close(events)
+
+    events.clear()
+    with pytest.raises(RuntimeError, match="boom"):
+        with _resume_run_lock(project, "win-unlock"):
+            raise RuntimeError("boom")
+    _assert_windows_unlock_before_close(events)
+
+    events.clear()
+    with _resume_run_lock(project, "win-unlock"):
+        with pytest.raises(OSError, match="already held"):
+            with _resume_run_lock(project, "win-unlock"):
+                pass
+        assert [event for event in events if event[0] == "lock" and event[1] == msvcrt.LK_UNLCK] == []
+    _assert_windows_unlock_before_close(events)
+
+
 def test_ownership_is_released_when_the_body_raises(tmp_path: Path) -> None:
     project = tmp_path / "project"
     run_dir = project / ".specify" / "workflows" / "runs" / "boom-run"

@@ -1145,7 +1145,12 @@ def _resume_run_lock(project_root: Path, run_id: str):
 
     The acquiring process id is recorded only so release can unlock. On
     POSIX, ``LOCK_UN`` runs only in that process, then the descriptor is
-    closed. A forked child that unwinds this scope closes its inherited
+    closed. On Windows, a successful ``LK_NBLCK`` of the one byte at
+    offset 0 is released with ``LK_UNLCK`` of that byte before the
+    descriptor is closed. A failed acquisition does not unlock. An
+    unexpected Windows unlock error is not discarded. Closing the
+    descriptor does not claim to release a lock left by abrupt process
+    termination. A forked child that unwinds this scope closes its inherited
     descriptor and does not unlock, so the parent keeps the lock. There is
     no descriptor registry, ownership table, or fork callback. A child that
     opens the lock itself is a new contender and is rejected while the
@@ -1193,6 +1198,7 @@ def _resume_run_lock(project_root: Path, run_id: str):
                 raise OSError(
                     "Exclusive workflow run lock is already held"
                 ) from exc
+            locked = True
         else:
             import errno
             import fcntl
@@ -1209,16 +1215,22 @@ def _resume_run_lock(project_root: Path, run_id: str):
             locked = True
         yield
     finally:
-        if fd >= 0:
-            try:
-                if locked and owner_pid == os.getpid():
+        try:
+            if locked and owner_pid == os.getpid():
+                if os.name == "nt":
+                    import msvcrt
+
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                else:
                     import fcntl
 
                     try:
                         fcntl.flock(fd, fcntl.LOCK_UN)
                     except OSError:
                         pass
-            finally:
+        finally:
+            if fd >= 0:
                 os.close(fd)
                 fd = -1
 
