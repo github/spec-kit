@@ -820,6 +820,22 @@ class TestOutputEncoding:
         assert "'output_encoding' must be a string" in result.error
         assert "int" in result.error
 
+    @pytest.mark.parametrize(
+        "encoding", ["base64_codec", "utf\x008"], ids=["binary-codec", "nul-in-name"]
+    )
+    def test_non_text_or_malformed_encoding_fails_before_execution(
+        self, project_dir, monkeypatch, encoding
+    ):
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("subprocess.run must not be called")
+
+        monkeypatch.setattr(subprocess, "run", fail_if_called)
+        result = self._execute(project_dir, "print('hello')\n", encoding=encoding)
+
+        assert result.status == StepStatus.FAILED
+        assert "is not a known text encoding" in result.error
+        assert result.output["exit_code"] == -1
+
     def test_validate_accepts_known_encodings_and_rejects_unknown(self):
         step = ShellStep()
         assert (
@@ -839,6 +855,12 @@ class TestOutputEncoding:
         assert step.validate(
             {"id": "number", "run": "echo hi", "output_encoding": 65001}
         ) == ["Shell step 'number': 'output_encoding' must be a string, got int."]
+        assert step.validate(
+            {"id": "binary", "run": "echo hi", "output_encoding": "base64_codec"}
+        ) == [
+            "Shell step 'binary': 'output_encoding' 'base64_codec' "
+            "is not a known text encoding."
+        ]
 
 
 @pytest.mark.parametrize("continue_on_error", [False, True], ids=["halt", "continue"])

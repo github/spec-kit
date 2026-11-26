@@ -260,8 +260,10 @@ class ShellStep(StepBase):
                 f"'output_encoding' must be a string, got {type(encoding).__name__}."
             )
         try:
-            codecs.lookup(encoding)
-        except LookupError:
+            info = codecs.lookup(encoding)
+        except (LookupError, ValueError):
+            return prefix + f"'output_encoding' {encoding!r} is not a known text encoding."
+        if not getattr(info, "_is_text_encoding", True):
             return prefix + f"'output_encoding' {encoding!r} is not a known text encoding."
         return None
 
