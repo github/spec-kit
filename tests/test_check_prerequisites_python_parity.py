@@ -403,7 +403,7 @@ def test_python_text_output_survives_a_legacy_stdout_code_page(
 
     env = _clean_env()
     env["PYTHONIOENCODING"] = "cp1252"
-    result = _run(_py_cmd(prereq_repo, "--include-tasks"), prereq_repo, env=env)
+    result = run(_py_cmd(prereq_repo, "--include-tasks"), prereq_repo, env=env)
 
     assert result.returncode == 0, result.stderr
     assert "UnicodeEncodeError" not in result.stderr
