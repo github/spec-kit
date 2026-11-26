@@ -112,7 +112,10 @@ read_feature_json_feature_directory() {
     fi
     if [[ -z "$_fd" ]] && command -v python3 >/dev/null 2>&1; then
         # Use Python so pretty-printed/multi-line JSON still parses correctly.
-        if ! _fd=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); v=d.get('feature_directory'); print(v if v else '')" "$fj" 2>/dev/null); then
+        # Write UTF-8 bytes instead of print(): on Windows a piped stdout uses
+        # the ANSI code page, which re-encodes non-ASCII names in that code
+        # page instead of UTF-8 (cp1252 turns "é" into the single byte 0xE9).
+        if ! _fd=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); v=d.get('feature_directory'); sys.stdout.buffer.write(str(v).encode('utf-8') if v else b'')" "$fj" 2>/dev/null); then
             _fd=''
         fi
     fi

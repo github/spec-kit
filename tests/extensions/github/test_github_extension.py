@@ -31,6 +31,7 @@ from tests.parity_helpers import (
     HAS_PWSH,
     POWERSHELL_EXE,
     WINDOWS_POWERSHELL,
+    make_python3_path_shim,
 )
 
 
@@ -157,7 +158,7 @@ class TestManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "github"
-        assert m.version == "1.0.6"
+        assert m.version == "1.0.7"
         assert [c["name"] for c in m.commands] == [COMMAND_NAME]
 
     def test_manifest_does_not_restore_legacy_alias(self):
@@ -1070,6 +1071,53 @@ class TestResolveTasksBash:
 
         assert result.returncode == 1
         assert "tasks.md not found" in result.stderr
+
+    @pytest.mark.parametrize(
+        ("code_page", "name"),
+        [("cp1252", "001-café"), ("gbk", "001-功能")],
+        ids=["cp1252-latin", "gbk-cjk"],
+    )
+    def test_feature_json_survives_a_legacy_stdout(
+        self, tmp_path: Path, code_page: str, name: str
+    ):
+        """Regression: the python3 feature.json parser printed in the code page.
+
+        Without jq, ``read_feature_json_feature_directory`` parses feature.json
+        with python3, whose piped stdout uses the ANSI code page on Windows
+        (cp1252, or GBK on Simplified Chinese systems), so the directory
+        reached bash in that encoding instead of UTF-8.
+        """
+        project = tmp_path / "project"
+        feature = project / "specs" / name
+        feature.mkdir(parents=True)
+        (project / ".specify").mkdir()
+        (project / ".specify" / "feature.json").write_text(
+            json.dumps({"feature_directory": f"specs/{name}"}), encoding="utf-8"
+        )
+        (feature / "plan.md").write_text("# Plan\n", encoding="utf-8")
+        (feature / "tasks.md").write_text("- [ ] T001 Task\n", encoding="utf-8")
+
+        # A working python3 and a failing jq, so python3 parses feature.json
+        # even on runners that have jq.
+        shim_dir = make_python3_path_shim(tmp_path / "bin")
+        jq_stub = shim_dir / "jq"
+        jq_stub.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8", newline="\n")
+        jq_stub.chmod(0o755)
+        env = {
+            **_resolver_env(),
+            "PATH": f"{shim_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "PYTHONIOENCODING": code_page,
+        }
+        result = subprocess.run(
+            ["bash", str(SH_SCRIPT), "--json"],
+            cwd=project,
+            capture_output=True,
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
+        payload = json.loads(result.stdout.decode("utf-8"))
+        assert Path(payload["FEATURE_DIR"]).name == name
 
 
 # -- Override contract, across all three twins --------------------------------

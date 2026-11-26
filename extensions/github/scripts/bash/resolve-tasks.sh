@@ -152,7 +152,9 @@ read_feature_json_feature_directory() {
         fi
     fi
     if [[ -z "$_fd" ]] && command -v python3 >/dev/null 2>&1; then
-        if ! _fd=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); v=d.get('feature_directory'); print(v if v else '')" "$fj" 2>/dev/null); then
+        # Read and write UTF-8 explicitly, as core does: Windows defaults both
+        # the file and the piped stdout to the ANSI code page.
+        if ! _fd=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); v=d.get('feature_directory'); sys.stdout.buffer.write(str(v).encode('utf-8') if v else b'')" "$fj" 2>/dev/null); then
             _fd=''
         fi
     fi
