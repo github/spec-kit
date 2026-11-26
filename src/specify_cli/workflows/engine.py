@@ -1055,13 +1055,38 @@ class RunState:
 
 
 class _ThreadResumeOwners(threading.local):
-    """Per-thread resume ownership. A copied context does not carry this."""
+    """Per-thread resume ownership of one process.
+
+    A copied context does not carry this. A forked child starts with no
+    ownership: the depths are cleared after fork and are also bound to the
+    process id, so a copy made by any fork path is never live ownership.
+    """
 
     def __init__(self) -> None:
         self.depths: dict[str, int] = {}
+        self.pid = os.getpid()
 
 
 _thread_resume_owners = _ThreadResumeOwners()
+
+
+def _current_resume_owners() -> dict[str, int]:
+    """This thread's live resume ownership in the current process."""
+    owners = _thread_resume_owners
+    pid = os.getpid()
+    if owners.pid != pid:
+        owners.depths = {}
+        owners.pid = pid
+    return owners.depths
+
+
+def _clear_resume_owners_after_fork() -> None:
+    _thread_resume_owners.depths = {}
+    _thread_resume_owners.pid = os.getpid()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_clear_resume_owners_after_fork)
 _case_fold_cache: dict[str, bool] = {}
 _case_fold_guard = threading.Lock()
 
@@ -1124,9 +1149,10 @@ def _resume_run_lock(project_root: Path, run_id: str):
     The lock is acquired before the caller loads or writes that run and is
     released on every exit. The owning thread may re-enter, so the CLI can
     hold the lock across its legacy checkpoint and ``WorkflowEngine.resume``.
-    Ownership lives on this thread, not in a copyable context. A different
-    process or thread is rejected immediately. The lock file stays in
-    ``.specify`` and is not removed.
+    Ownership lives on this thread of this process, not in a copyable
+    context, and a forked child does not inherit it. A different process or
+    thread, including a forked child, is rejected immediately. The lock file
+    stays in ``.specify`` and is not removed.
     """
     from ..shared_infra import _exclusive_project_lock, _shared_relative_path
 
@@ -1136,7 +1162,7 @@ def _resume_run_lock(project_root: Path, run_id: str):
     if relative.parts != (".specify", lock_name):
         raise ValueError(f"Workflow run lock escapes project root: {relative}")
     key = _resume_owner_key(root, run_id)
-    owners = _thread_resume_owners.depths
+    owners = _current_resume_owners()
     if owners.get(key, 0) > 0:
         owners[key] += 1
         try:

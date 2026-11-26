@@ -8,6 +8,7 @@ import hmac
 import logging
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -242,6 +243,46 @@ def _validate_safe_shared_directory(project_path: Path, directory: Path) -> None
             raise ValueError(f"Shared infrastructure directory escapes project root: {label}") from None
 
 
+class _HeldProjectLock:
+    """One open lock descriptor and the process that opened it."""
+
+    __slots__ = ("fd", "pid")
+
+    def __init__(self, fd: int) -> None:
+        self.fd = fd
+        self.pid = os.getpid()
+
+
+_held_project_locks: set[_HeldProjectLock] = set()
+_held_project_locks_guard = threading.Lock()
+
+
+def _drop_inherited_project_locks() -> None:
+    """In a forked child, close the lock descriptors copied from the parent.
+
+    A forked child shares each open file description with its parent, so a
+    copied descriptor would keep the parent's ``flock`` alive after the parent
+    releases it. The child closes its copies without unlocking; the parent
+    stays the only owner. The guard is replaced because another parent thread
+    may have held it at fork time.
+    """
+    global _held_project_locks_guard
+    _held_project_locks_guard = threading.Lock()
+    inherited = list(_held_project_locks)
+    _held_project_locks.clear()
+    for held in inherited:
+        fd, held.fd = held.fd, -1
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_drop_inherited_project_locks)
+
+
 @contextlib.contextmanager
 def _exclusive_project_lock(
     project_root: Path,
@@ -256,7 +297,9 @@ def _exclusive_project_lock(
     directory and registry changes are serialized across processes. Every
     failure to acquire the lock is raised as ``OSError``. ``blocking`` waits
     for the current holder; ``blocking=False`` raises immediately instead.
-    Releasing the lock closes its descriptor and does not delete the file.
+    Releasing the lock unlocks and closes its descriptor and does not delete
+    the file. A forked child never holds the parent's lock: it closes its
+    copied descriptor and must acquire the lock itself.
     """
     project_root = Path(project_root)
     lock_dir = project_root / ".specify"
@@ -274,6 +317,10 @@ def _exclusive_project_lock(
     flags |= getattr(os, "O_NOFOLLOW", 0)
     flags |= getattr(os, "O_CLOEXEC", 0)
     fd = os.open(lock_file, flags, 0o600)
+    held = _HeldProjectLock(fd)
+    with _held_project_locks_guard:
+        _held_project_locks.add(held)
+    locked = False
     try:
         if lock_file.is_symlink():
             raise OSError(f"Refusing to use symlinked {context} lock: {lock_file}")
@@ -315,9 +362,26 @@ def _exclusive_project_lock(
                         f"Exclusive {context} lock is already held"
                     ) from exc
                 raise
+            locked = True
         yield
     finally:
-        os.close(fd)
+        with _held_project_locks_guard:
+            _held_project_locks.discard(held)
+        fd, held.fd = held.fd, -1
+        if fd >= 0:
+            try:
+                # Unlock explicitly: ``flock`` belongs to the open file
+                # description, which a forked child may still reference.
+                # Only the process that took the lock may release it.
+                if locked and held.pid == os.getpid():
+                    import fcntl
+
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+                    except OSError:
+                        pass
+            finally:
+                os.close(fd)
 
 
 def _ensure_safe_shared_destination(
