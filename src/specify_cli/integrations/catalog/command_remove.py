@@ -3,6 +3,7 @@ from __future__ import annotations
 
 
 import typer
+from rich.markup import escape as _rich_escape
 
 from ..._console import console
 from . import catalog_app
@@ -25,4 +26,5 @@ def integration_catalog_remove(
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
 
-    console.print(f"[green]✓[/green] Catalog source '{removed_name}' removed")
+    safe_name = _rich_escape(removed_name)
+    console.print(f"[green]✓[/green] Catalog source '{safe_name}' removed")

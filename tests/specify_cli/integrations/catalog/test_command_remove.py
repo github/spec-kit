@@ -45,6 +45,30 @@ class TestIntegrationCatalogRemove(IntegrationCatalogCliTestBase):
         assert result.exit_code == 1
         assert "out of range" in result.output
 
+    def test_catalog_remove_prints_bracketed_name_literally(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        add = self._invoke(
+            [
+                "integration",
+                "catalog",
+                "add",
+                "https://only.example.com/catalog.json",
+                "--name",
+                "QA [/beta]",
+            ],
+            project,
+        )
+        assert add.exit_code == 0, add.output
+
+        remove = self._invoke(
+            ["integration", "catalog", "remove", "0"], project
+        )
+        assert remove.exit_code == 0, remove.output
+        assert "'QA [/beta]' removed" in remove.output
+
     def test_catalog_remove_without_config(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         result = self._invoke(

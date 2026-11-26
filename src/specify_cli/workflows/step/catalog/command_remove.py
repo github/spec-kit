@@ -24,4 +24,5 @@ def workflow_step_catalog_remove(
         cli.console.print(f"[red]Error:[/red] {exc}")
         raise cli.typer.Exit(1)
 
-    cli.console.print(f"[green]✓[/green] Step catalog source '{removed_name}' removed")
+    safe_name = cli._escape_markup(removed_name)
+    cli.console.print(f"[green]✓[/green] Step catalog source '{safe_name}' removed")
