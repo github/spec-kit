@@ -86,6 +86,45 @@ def test_unterminated_heading_remains_selectable_for_later_replacements():
     ) == "## Target\nsecond\n"
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+@pytest.mark.parametrize(
+    "content,selector,expected",
+    [
+        ("# First{n}old{n}# Second{n}keep{n}", "first", "# First{n}new body{n}# Second{n}keep{n}"),
+        ("# Doc{n}## Target{n}old{n}# Next{n}keep{n}", "target", "# Doc{n}## Target{n}new body{n}# Next{n}keep{n}"),
+        ("## Target{n}## Next{n}keep{n}", "target", "## Target{n}new body{n}## Next{n}keep{n}"),
+        ("## Target{n}old{n}### Child{n}nested{n}## Next{n}keep", "target", "## Target{n}new body{n}## Next{n}keep"),
+    ],
+)
+def test_replacement_without_trailing_newline_keeps_next_heading_on_its_own_line(
+    newline: str, content: str, selector: str, expected: str,
+) -> None:
+    result = replace_section(
+        content.format(n=newline), "new body", selector,
+        preset="team", contribution="body.md", artifact="spec-template",
+    )
+    assert result == expected.format(n=newline)
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+def test_heading_after_unterminated_replacement_remains_selectable(newline: str) -> None:
+    first = replace_section(
+        f"# First{newline}old{newline}# Second{newline}keep{newline}", "new body", "first",
+        preset="first", contribution="first.md", artifact="spec-template",
+    )
+    assert replace_section(
+        first, f"changed{newline}", "second",
+        preset="second", contribution="second.md", artifact="spec-template",
+    ) == f"# First{newline}new body{newline}# Second{newline}changed{newline}"
+
+
+def test_unterminated_replacement_at_end_of_document_is_unchanged() -> None:
+    assert replace_section(
+        "# Doc\n## Target\nold\n", "new body", "target",
+        preset="team", contribution="body.md", artifact="spec-template",
+    ) == "# Doc\n## Target\nnew body"
+
+
 @pytest.mark.parametrize(
     "fence,close",
     [("```md", "```"), ("~~~~ text", "~~~~~"), ("   ```", "   ````")],
