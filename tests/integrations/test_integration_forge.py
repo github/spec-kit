@@ -636,9 +636,9 @@ class TestForgeFrontmatterTransformations:
             "---\n"
             "description: Create spec\n"
             "handoffs:\n"
-            "  - label: Plan\n"
+            "- label: Plan\n"
             "\n"
-            "  - label: Clarify\n"
+            "- label: Clarify\n"
             "\n"
             "category: planning\n"
             "---\n\n"
@@ -653,6 +653,28 @@ class TestForgeFrontmatterTransformations:
             "description": "Create spec",
             "category": "planning",
         }
+
+    def test_accepts_delimiters_with_trailing_whitespace(self):
+        from specify_cli.integrations.forge import ForgeIntegration
+
+        forge = ForgeIntegration()
+        raw = (
+            "--- \n"
+            "description: Create spec\n"
+            "handoffs:\n"
+            "  - label: Plan\n"
+            "--- \t\n\n"
+            "# Body\n"
+        )
+
+        transformed = forge._apply_forge_transformations(raw, "specify")
+        assert transformed == (
+            "--- \n"
+            "name: speckit-specify\n"
+            "description: Create spec\n"
+            "--- \t\n\n"
+            "# Body\n"
+        )
 
     def test_injects_top_level_name_and_preserves_nested_keys(self):
         import yaml

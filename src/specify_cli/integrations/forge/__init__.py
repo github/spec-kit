@@ -204,13 +204,13 @@ class ForgeIntegration(MarkdownIntegration):
         2. Inject 'name' field if missing (using hyphenated format)
         """
         lines = content.splitlines(keepends=True)
-        if not lines or lines[0].rstrip("\r\n") != "---":
+        if not lines or lines[0].rstrip() != "---":
             return content
 
         # Find end of frontmatter
         frontmatter_end = -1
         for i in range(1, len(lines)):
-            if lines[i].rstrip("\r\n") == "---":
+            if lines[i].rstrip() == "---":
                 frontmatter_end = i
                 break
 
