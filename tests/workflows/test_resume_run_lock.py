@@ -873,9 +873,16 @@ def test_case_distinct_directories_keep_independent_locks(tmp_path: Path) -> Non
         )
         if completed.returncode != 0:
             pytest.skip(f"cannot enable case-sensitive directory: {completed.stderr}")
-    (runs / "CaseRun").mkdir()
-    (runs / "caserun").mkdir()
-    if os.path.samefile(runs / "CaseRun", runs / "caserun"):
+    first = runs / "CaseRun"
+    second = runs / "caserun"
+    first.mkdir()
+    try:
+        second.mkdir()
+    except FileExistsError:
+        if os.path.samefile(first, second):
+            pytest.skip("filesystem aliases the two run directories")
+        raise
+    if os.path.samefile(first, second):
         pytest.skip("filesystem aliases the two run directories")
     with _resume_run_lock(project, "CaseRun"):
         with _resume_run_lock(project, "caserun"):
