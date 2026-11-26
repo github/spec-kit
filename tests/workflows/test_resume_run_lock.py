@@ -27,8 +27,10 @@ from specify_cli.workflows.engine import (
     RunState,
     WorkflowDefinition,
     WorkflowEngine,
+    _is_directory_junction,
     _resume_lock_file,
     _resume_run_lock,
+    _resume_sentinel_write_error,
 )
 
 
@@ -222,6 +224,37 @@ def _finished_events(project: Path, run_id: str) -> list[dict[str, object]]:
     return events
 
 
+def _is_lock_rejection(payload: dict[str, object]) -> bool:
+    """True only for the exclusive-lock rejection, not any OSError.
+
+    ``TimeoutError`` is an ``OSError`` and the barrier records it with
+    ``error_type`` ``OSError``. A permission error is an ``OSError`` too.
+    Neither message is the lock contention outcome.
+    """
+    return (
+        payload.get("ok") is not True
+        and payload.get("error_type") == "OSError"
+        and "already held" in str(payload.get("error", ""))
+    )
+
+
+def test_lock_rejection_oracle_rejects_timeout_and_unrelated_oserror() -> None:
+    timeout = {
+        "ok": False,
+        "error_type": "OSError",
+        "error": "peer did not load or reject",
+    }
+    unrelated = {"ok": False, "error_type": "OSError", "error": "Permission denied"}
+    held = {
+        "ok": False,
+        "error_type": "OSError",
+        "error": "Exclusive workflow run lock is already held",
+    }
+    assert _is_lock_rejection(timeout) is False
+    assert _is_lock_rejection(unrelated) is False
+    assert _is_lock_rejection(held) is True
+
+
 def test_concurrent_resume_of_one_run_has_one_owner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -270,7 +303,7 @@ def test_concurrent_resume_of_one_run_has_one_owner(
     assert finished[0]["timed_out"] is False and finished[1]["timed_out"] is False, finished
     assert len(owners) == 1, payloads
     assert len(rejected) == 1, payloads
-    assert rejected[0]["error_type"] == "OSError", rejected
+    assert _is_lock_rejection(rejected[0]), rejected
     assert rejected[0]["state_sha256"] == paused_hash, rejected
     assert len(_effect_lines(log)) == 1
     assert _state_path(project, run_id).read_bytes() != paused
@@ -930,6 +963,156 @@ def test_junction_run_directory_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Refusing to use junction workflow run path"):
         with _resume_run_lock(project, "joined-run"):
             pass
+    assert not (outside / ".resume.lock").exists()
+
+
+def _hide_is_junction(monkeypatch: pytest.MonkeyPatch, path: Path) -> None:
+    """Force the pre-3.12 attribute fallback without running Python 3.11.
+
+    ``is_junction`` can sit on more than one class in the path MRO. Hiding
+    only the first leaves the base method in place, so the fallback never runs.
+    """
+    found = False
+    for owner in type(path).__mro__:
+        if "is_junction" in getattr(owner, "__dict__", {}):
+            monkeypatch.delattr(owner, "is_junction")
+            found = True
+    if not found:
+        pytest.skip("this runtime has no Path.is_junction to hide")
+
+
+def _snapshot(root: Path) -> list[str]:
+    return sorted(
+        item.relative_to(root).as_posix()
+        for item in root.rglob("*")
+        if item.is_file() or item.is_dir()
+    )
+
+
+def test_junction_fallback_distinguishes_reparse_points(tmp_path: Path, monkeypatch) -> None:
+    """Compatibility branch only. This process is not Python 3.11."""
+    if os.name != "nt":
+        pytest.skip("the junction fallback is Windows-only")
+    ordinary = tmp_path / "ordinary"
+    ordinary.mkdir()
+    _hide_is_junction(monkeypatch, ordinary)
+    assert _is_directory_junction(ordinary) is False
+
+    linked = tmp_path / "linked"
+    target = tmp_path / "target"
+    target.mkdir()
+    _symlink_or_skip(linked, target, target_is_directory=True)
+    assert _is_directory_junction(linked) is False
+
+    outside = tmp_path / "joined-target"
+    outside.mkdir()
+    junction = tmp_path / "joined"
+    completed = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        pytest.skip(f"cannot create a junction: {completed.stderr}")
+    assert _is_directory_junction(junction) is True
+
+
+def test_sentinel_write_codes_keep_access_failures() -> None:
+    contention = _resume_sentinel_write_error(33)
+    sharing = _resume_sentinel_write_error(32)
+    denied = _resume_sentinel_write_error(5)
+    assert "already held" in str(contention)
+    assert "already held" in str(sharing)
+    assert "already held" not in str(denied)
+    assert getattr(denied, "winerror", None) == 5
+
+
+def test_windows_empty_observation_while_held_is_contention(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if os.name != "nt":
+        pytest.skip("byte-range lock writes are Windows-only")
+    project = tmp_path / "project"
+    run_dir = project / ".specify" / "workflows" / "runs" / "first-write"
+    run_dir.mkdir(parents=True)
+    real_fstat = os.fstat
+
+    def fstat(fd: int):
+        stat = real_fstat(fd)
+        values = list(stat)
+        values[6] = 0
+        return os.stat_result(values)
+
+    with _resume_run_lock(project, "first-write"):
+        monkeypatch.setattr(os, "fstat", fstat)
+        with pytest.raises(OSError, match="already held"):
+            with _resume_run_lock(project, "first-write"):
+                pass
+
+
+def test_windows_sentinel_io_error_is_not_contention(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if os.name != "nt":
+        pytest.skip("the sentinel write is Windows-only")
+    project = tmp_path / "project"
+    run_dir = project / ".specify" / "workflows" / "runs" / "io-error"
+    run_dir.mkdir(parents=True)
+
+    def fail_write(fd: int) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(
+        "specify_cli.workflows.engine._write_resume_lock_sentinel", fail_write
+    )
+    with pytest.raises(OSError, match="No space left on device") as raised:
+        with _resume_run_lock(project, "io-error"):
+            pass
+    assert "already held" not in str(raised.value)
+    assert not (run_dir / ".resume.lock").exists() or (run_dir / ".resume.lock").stat().st_size == 0
+
+
+def test_non_directory_component_creates_no_run_artifacts(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    workflows = project / ".specify" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "runs").write_text("not a directory", encoding="utf-8")
+    before = _snapshot(project)
+    with pytest.raises(ValueError, match="not a directory"):
+        with _resume_run_lock(project, "blocked-run"):
+            pass
+    assert _snapshot(project) == before
+    assert not (workflows / "runs" / "blocked-run").exists()
+
+
+def test_root_escape_creates_no_run_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    runs = project / ".specify" / "workflows" / "runs"
+    runs.mkdir(parents=True)
+    junction = runs / "escape-run"
+    if os.name == "nt":
+        completed = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            pytest.skip(f"cannot create a junction: {completed.stderr}")
+    else:
+        _symlink_or_skip(junction, outside, target_is_directory=True)
+    before = _snapshot(outside)
+    monkeypatch.setattr(
+        "specify_cli.workflows.engine._is_directory_junction", lambda path: False
+    )
+    monkeypatch.setattr(Path, "is_symlink", lambda self: False)
+    with pytest.raises(ValueError, match="escapes project root"):
+        with _resume_run_lock(project, "escape-run"):
+            pass
+    assert _snapshot(outside) == before
     assert not (outside / ".resume.lock").exists()
 
 

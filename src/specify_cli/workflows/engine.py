@@ -1124,6 +1124,58 @@ def _resume_run_directory(project_root: Path, run_id: str) -> Path:
     return current
 
 
+# Win32 codes WriteFile reports for a byte another handle already locks.
+# Access denied and disk errors use different codes and must not be relabeled.
+_WINERROR_SHARING_VIOLATION = 32
+_WINERROR_LOCK_VIOLATION = 33
+
+
+def _resume_sentinel_write_error(code: int) -> OSError:
+    """Return the error for a failed Windows lock-byte write.
+
+    Lock and sharing violations are contention. Every other code stays an
+    I/O or access failure, with its Win32 code intact.
+    """
+    if code in (_WINERROR_SHARING_VIOLATION, _WINERROR_LOCK_VIOLATION):
+        return OSError("Exclusive workflow run lock is already held")
+    if code:
+        import ctypes
+
+        return ctypes.WinError(code)
+    return OSError("Cannot initialize workflow run lock")
+
+
+def _write_resume_lock_sentinel(fd: int) -> None:
+    """Write the one byte ``LK_NBLCK`` locks.
+
+    ``os.write`` turns a lock conflict into ``EACCES`` and drops
+    ``GetLastError``, so a first-acquisition collision is indistinguishable
+    from a real access failure. ``WriteFile`` still reports the Win32 code.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    import msvcrt
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    write_file = kernel.WriteFile
+    write_file.argtypes = [
+        wintypes.HANDLE,
+        wintypes.LPCVOID,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        wintypes.LPVOID,
+    ]
+    write_file.restype = wintypes.BOOL
+    data = (ctypes.c_char * 1)(b"\0")
+    written = wintypes.DWORD(0)
+    ctypes.set_last_error(0)
+    ok = write_file(msvcrt.get_osfhandle(fd), data, 1, ctypes.byref(written), None)
+    if ok and written.value == 1:
+        return
+    raise _resume_sentinel_write_error(ctypes.get_last_error())
+
+
 def _resume_lock_file(run_dir: Path) -> Path:
     """Fixed lock name inside the run directory, independent of id length.
 
@@ -1145,9 +1197,11 @@ def _resume_run_lock(project_root: Path, run_id: str):
 
     The acquiring process id is recorded only so release can unlock. On
     POSIX, ``LOCK_UN`` runs only in that process, then the descriptor is
-    closed. On Windows, a successful ``LK_NBLCK`` of the one byte at
-    offset 0 is released with ``LK_UNLCK`` of that byte before the
-    descriptor is closed. A failed acquisition does not unlock. An
+    closed.     On Windows, an empty lock file is initialized with ``WriteFile``.
+    A lock or sharing violation on that write is contention; any other
+    write failure propagates unchanged. A successful ``LK_NBLCK`` of the
+    one byte at offset 0 is released with ``LK_UNLCK`` of that byte before
+    the descriptor is closed. A failed acquisition does not unlock. An
     unexpected Windows unlock error is not discarded. Closing the
     descriptor does not claim to release a lock left by abrupt process
     termination. A forked child that unwinds this scope closes its inherited
@@ -1188,7 +1242,7 @@ def _resume_run_lock(project_root: Path, run_id: str):
             import msvcrt
 
             if os.fstat(fd).st_size == 0:
-                os.write(fd, b"\0")
+                _write_resume_lock_sentinel(fd)
             os.lseek(fd, 0, os.SEEK_SET)
             try:
                 msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)

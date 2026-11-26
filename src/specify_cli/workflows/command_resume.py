@@ -6,6 +6,18 @@ from . import _command_resume_state as resume_state
 from . import _commands as cli
 
 
+class _ResumeTerminal(Exception):
+    """A resume outcome held until the lock context has been left."""
+
+    def __init__(self, render) -> None:
+        super().__init__()
+        self.render = render
+
+
+def _defer_resume(render) -> None:
+    raise _ResumeTerminal(render)
+
+
 @cli.workflow_app.command("resume")
 def workflow_resume(
     run_id: str = cli.typer.Argument(..., help="Run ID to resume"),
@@ -58,17 +70,25 @@ def workflow_resume(
         # guard `workflow run` enforces. Runs without installed_workflow_id
         # (a direct/non-installed source, or a run persisted before this field
         # existed) are unaffected and resume exactly as before.
+        # Terminal output is deferred until the lock context exits. Checkpoint
+        # writes and resume execution stay inside this ownership.
         try:
             pre_state = RunState.load(run_id, project_root)
         except FileNotFoundError:
-            err.print(f"[red]Error:[/red] Run not found: {run_id}")
-            raise cli.typer.Exit(1)
+            def render_missing() -> None:
+                err.print(f"[red]Error:[/red] Run not found: {run_id}")
+                raise cli.typer.Exit(1)
+            _defer_resume(render_missing)
         except ValueError as exc:
-            err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
-            raise cli.typer.Exit(1)
+            def render_invalid(exc: ValueError = exc) -> None:
+                err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
+                raise cli.typer.Exit(1)
+            _defer_resume(render_invalid)
         except OSError as exc:
-            err.print(f"[red]Resume failed:[/red] {cli._escape_markup(str(exc))}")
-            raise cli.typer.Exit(1)
+            def render_load(exc: OSError = exc) -> None:
+                err.print(f"[red]Resume failed:[/red] {cli._escape_markup(str(exc))}")
+                raise cli.typer.Exit(1)
+            _defer_resume(render_load)
 
         if pre_state.installed_workflow_id is not None:
             try:
@@ -76,8 +96,10 @@ def workflow_resume(
                     pre_state.installed_registry_root, project_root
                 )
             except ValueError as exc:
-                err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
-                raise cli.typer.Exit(1)
+                def render_owner(exc: ValueError = exc) -> None:
+                    err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
+                    raise cli.typer.Exit(1)
+                _defer_resume(render_owner)
             cli._require_enabled_workflow(owner_root, pre_state.installed_workflow_id, err)
         elif not pre_state.installed_origin_tracked:
             if cli._require_enabled_workflow(project_root, pre_state.workflow_id, err):
@@ -86,66 +108,104 @@ def workflow_resume(
             try:
                 pre_state.save()
             except (OSError, CheckpointError) as exc:
-                err.print(f"[red]Resume failed:[/red] {cli._escape_markup(str(exc))}")
-                raise cli.typer.Exit(1)
+                def render_save(exc: Exception = exc) -> None:
+                    err.print(f"[red]Resume failed:[/red] {cli._escape_markup(str(exc))}")
+                    raise cli.typer.Exit(1)
+                _defer_resume(render_save)
 
         try:
             with cli._stdout_to_stderr_when(json_output):
                 state = engine._resume_owned(run_id, inputs or None)
         except FileNotFoundError as exc:
-            if engine._execution_state.get() is not None:
-                cli._fail_workflow_execution(
-                    exc, json_output=json_output, state=engine._execution_state.get(), resume=True,
+            execution_state = engine._execution_state.get()
+            def render_missing_run(
+                exc: FileNotFoundError = exc,
+                execution_state: RunState | None = execution_state,
+            ) -> None:
+                if execution_state is not None:
+                    cli._fail_workflow_execution(
+                        exc, json_output=json_output, state=execution_state, resume=True,
+                    )
+                cli._fail_integration_load(
+                    FileNotFoundError(f"Run not found: {run_id}"),
+                    json_output=json_output,
+                    run_id=run_id,
                 )
-            cli._fail_integration_load(
-                FileNotFoundError(f"Run not found: {run_id}"), json_output=json_output, run_id=run_id,
-            )
+            _defer_resume(render_missing_run)
         except IntegrationInstallError as exc:
             execution_state = engine._execution_state.get()
-            if execution_state is None:
-                cli._fail_integration_load(exc, json_output=json_output, run_id=run_id)
-            cli._fail_workflow_execution(
-                exc, json_output=json_output, state=execution_state, resume=True,
-            )
+            def render_integration(
+                exc: IntegrationInstallError = exc,
+                execution_state: RunState | None = execution_state,
+            ) -> None:
+                if execution_state is None:
+                    cli._fail_integration_load(exc, json_output=json_output, run_id=run_id)
+                cli._fail_workflow_execution(
+                    exc, json_output=json_output, state=execution_state, resume=True,
+                )
+            _defer_resume(render_integration)
         except OSError as exc:
-            cli._fail_workflow_execution(
-                exc, json_output=json_output, state=engine._execution_state.get(), resume=True,
-            )
+            execution_state = engine._execution_state.get()
+            def render_execution(
+                exc: OSError = exc,
+                execution_state: RunState | None = execution_state,
+            ) -> None:
+                cli._fail_workflow_execution(
+                    exc, json_output=json_output, state=execution_state, resume=True,
+                )
+            _defer_resume(render_execution)
         except ValueError as exc:
-            cli._fail_recorded_run(
-                exc, json_output=json_output, state=engine._execution_state.get(), resume=True,
-            )
-            err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
-            raise cli.typer.Exit(1)
+            execution_state = engine._execution_state.get()
+            def render_recorded_value(
+                exc: ValueError = exc,
+                execution_state: RunState | None = execution_state,
+            ) -> None:
+                cli._fail_recorded_run(
+                    exc, json_output=json_output, state=execution_state, resume=True,
+                )
+                err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
+                raise cli.typer.Exit(1)
+            _defer_resume(render_recorded_value)
         except Exception as exc:
-            cli._fail_recorded_run(
-                exc, json_output=json_output, state=engine._execution_state.get(), resume=True,
-            )
-            err.print(f"[red]Resume failed:[/red] {cli._escape_markup(str(exc))}")
-            raise cli.typer.Exit(1)
+            execution_state = engine._execution_state.get()
+            def render_recorded(
+                exc: Exception = exc,
+                execution_state: RunState | None = execution_state,
+            ) -> None:
+                cli._fail_recorded_run(
+                    exc, json_output=json_output, state=execution_state, resume=True,
+                )
+                err.print(f"[red]Resume failed:[/red] {cli._escape_markup(str(exc))}")
+                raise cli.typer.Exit(1)
+            _defer_resume(render_recorded)
 
-        if json_output:
-            cli._emit_workflow_json(cli._workflow_run_payload(state))
+        def render_success(state: RunState = state) -> None:
+            if json_output:
+                cli._emit_workflow_json(cli._workflow_run_payload(state))
+                raise cli.typer.Exit(cli._run_outcome_exit_code(state.status.value))
+
+            status_colors = {
+                "completed": "green",
+                "paused": "yellow",
+                "failed": "red",
+                "aborted": "red",
+            }
+            color = status_colors.get(state.status.value, "white")
+            cli.console.print(f"\n[{color}]Status: {state.status.value}[/{color}]")
+
+            err_msg = cli._failed_step_error(state)
+            if err_msg:
+                cli.console.print(f"[red]Error:[/red] {cli._escape_markup(err_msg)}")
+
             raise cli.typer.Exit(cli._run_outcome_exit_code(state.status.value))
 
-        status_colors = {
-            "completed": "green",
-            "paused": "yellow",
-            "failed": "red",
-            "aborted": "red",
-        }
-        color = status_colors.get(state.status.value, "white")
-        cli.console.print(f"\n[{color}]Status: {state.status.value}[/{color}]")
-
-        err_msg = cli._failed_step_error(state)
-        if err_msg:
-            cli.console.print(f"[red]Error:[/red] {cli._escape_markup(err_msg)}")
-
-        raise cli.typer.Exit(cli._run_outcome_exit_code(state.status.value))
+        _defer_resume(render_success)
 
     try:
         with _resume_run_lock(project_root, run_id):
             _resume_under_lock()
+    except _ResumeTerminal as pending:
+        pending.render()
     except FileNotFoundError:
         err.print(f"[red]Error:[/red] Run not found: {run_id}")
         raise cli.typer.Exit(1)

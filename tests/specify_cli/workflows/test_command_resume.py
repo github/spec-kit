@@ -10,6 +10,20 @@ from pathlib import Path
 import pytest
 
 
+def _json_documents(text: str) -> list[object]:
+    decoder = json.JSONDecoder()
+    documents: list[object] = []
+    index = 0
+    while index < len(text):
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index >= len(text):
+            break
+        document, index = decoder.raw_decode(text, index)
+        documents.append(document)
+    return documents
+
+
 
 class TestWorkflowJsonOutput:
     """Test the --json machine-readable output for run/resume/status."""
@@ -99,6 +113,146 @@ steps:
         )
         assert resumed["run_id"] == rid
         assert resumed["status"] == "paused"
+
+    def test_resume_json_is_emitted_after_unlock(self, project_dir, monkeypatch):
+        if os.name != "nt":
+            pytest.skip("Windows unlock is the propagating release path")
+        import msvcrt
+
+        from specify_cli.workflows import _commands as commands
+
+        wf = self._write_wf(project_dir, self._WF, "gated-order")
+        rid = json.loads(
+            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
+        )["run_id"]
+        events: list[str] = []
+        real_lock = msvcrt.locking
+        real_emit = commands._emit_workflow_json
+
+        def locking(fd, mode, length):
+            if mode == msvcrt.LK_UNLCK:
+                events.append("unlock")
+            return real_lock(fd, mode, length)
+
+        def emit(payload, *, max_nodes=None):
+            events.append("emit")
+            return real_emit(payload, max_nodes=max_nodes)
+
+        monkeypatch.setattr(msvcrt, "locking", locking)
+        monkeypatch.setattr(commands, "_emit_workflow_json", emit)
+        result = self._invoke(project_dir, ["workflow", "resume", rid, "--json"])
+        documents = _json_documents(result.stdout)
+        assert documents[0]["status"] == "paused"
+        assert len(documents) == 1
+        assert events == ["unlock", "emit"]
+
+    def test_resume_json_unlock_failure_is_the_only_outcome(self, project_dir, monkeypatch):
+        if os.name != "nt":
+            pytest.skip("Windows unlock is the propagating release path")
+        import msvcrt
+
+        wf = self._write_wf(project_dir, self._WF, "gated-unlock")
+        rid = json.loads(
+            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
+        )["run_id"]
+        real_lock = msvcrt.locking
+
+        def locking(fd, mode, length):
+            if mode == msvcrt.LK_UNLCK:
+                raise OSError(13, "unlock failed")
+            return real_lock(fd, mode, length)
+
+        monkeypatch.setattr(msvcrt, "locking", locking)
+        result = self._invoke(project_dir, ["workflow", "resume", rid, "--json"])
+        documents = _json_documents(result.stdout)
+        assert result.exit_code == 1
+        assert len(documents) == 1
+        assert documents[0]["status"] == "failed"
+        assert "unlock failed" in documents[0]["error"]
+        assert documents[0].get("status") != "paused"
+
+    def test_resume_execution_error_is_rendered_after_unlock(
+        self, project_dir, monkeypatch
+    ):
+        if os.name != "nt":
+            pytest.skip("Windows unlock is the propagating release path")
+        import msvcrt
+
+        from specify_cli.workflows import _commands as commands
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        wf = self._write_wf(project_dir, self._WF, "gated-exec")
+        rid = json.loads(
+            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
+        )["run_id"]
+        events: list[str] = []
+        real_lock = msvcrt.locking
+        real_emit = commands._emit_workflow_json
+
+        def locking(fd, mode, length):
+            if mode == msvcrt.LK_UNLCK:
+                events.append("unlock")
+            return real_lock(fd, mode, length)
+
+        def emit(payload, *, max_nodes=None):
+            events.append("emit")
+            return real_emit(payload, max_nodes=max_nodes)
+
+        def owned(self, run_id, inputs):
+            raise OSError(13, "disk failed")
+
+        monkeypatch.setattr(msvcrt, "locking", locking)
+        monkeypatch.setattr(commands, "_emit_workflow_json", emit)
+        monkeypatch.setattr(WorkflowEngine, "_resume_owned", owned)
+        result = self._invoke(project_dir, ["workflow", "resume", rid, "--json"])
+        documents = _json_documents(result.stdout)
+        assert result.exit_code == 1
+        assert len(documents) == 1
+        assert documents[0]["status"] == "failed"
+        assert "disk failed" in documents[0]["error"]
+        assert events == ["unlock", "emit"]
+
+    def test_resume_recorded_error_is_rendered_after_unlock(
+        self, project_dir, monkeypatch
+    ):
+        if os.name != "nt":
+            pytest.skip("Windows unlock is the propagating release path")
+        import msvcrt
+
+        from specify_cli.workflows import _commands as commands
+
+        wf = self._write_wf(project_dir, self._WF_RAISE, "raise-order")
+        rid = json.loads(
+            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
+        )["run_id"]
+        events: list[str] = []
+        real_lock = msvcrt.locking
+        real_emit = commands._emit_workflow_json
+
+        def locking(fd, mode, length):
+            if mode == msvcrt.LK_UNLCK:
+                events.append("unlock")
+            return real_lock(fd, mode, length)
+
+        def emit(payload, *, max_nodes=None):
+            events.append("emit")
+            return real_emit(payload, max_nodes=max_nodes)
+
+        monkeypatch.setattr(msvcrt, "locking", locking)
+        monkeypatch.setattr(commands, "_emit_workflow_json", emit)
+        result = self._invoke(
+            project_dir,
+            [
+                "workflow", "resume", rid, "--json",
+                "--input", "verdict=approve", "--input", "payload=not json",
+            ],
+        )
+        documents = _json_documents(result.stdout)
+        assert result.exit_code == 1
+        assert len(documents) == 1
+        assert documents[0]["status"] == "failed"
+        assert documents[0]["error"].startswith("from_json: invalid JSON")
+        assert events == ["unlock", "emit"]
 
     def test_resume_json_step_exception_reports_failed_run(self, project_dir):
         wf = self._write_wf(project_dir, self._WF_RAISE, "raise")

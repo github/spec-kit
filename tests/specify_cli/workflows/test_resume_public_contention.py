@@ -21,6 +21,34 @@ from specify_cli.workflows.base import RunStatus
 from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
 
 
+def _require_same_engine_as_parent(payloads: list[dict[str, object]]) -> Path:
+    """Workers must import the engine module this process is testing.
+
+    Two workers that agree with each other still fail when that shared file
+    is not the parent's engine. Baseline and candidate runs both compare
+    against whichever engine the parent actually imported.
+    """
+    from specify_cli.workflows import engine as engine_module
+
+    parent = Path(str(engine_module.__file__)).resolve()
+    imported = {Path(str(item["import_file"])).resolve() for item in payloads}
+    if imported != {parent}:
+        raise AssertionError(
+            f"worker engine {sorted(imported)!s} is not the parent engine {parent}"
+        )
+    return parent
+
+
+def test_worker_engine_identity_rejects_a_shared_wrong_origin(tmp_path: Path) -> None:
+    wrong = tmp_path / "other-engine.py"
+    payloads = [
+        {"import_file": str(wrong)},
+        {"import_file": str(wrong.resolve())},
+    ]
+    with pytest.raises(AssertionError, match="not the parent engine"):
+        _require_same_engine_as_parent(payloads)
+
+
 def _pause_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     from specify_cli.workflows.step import gate as gate_module
 
@@ -133,8 +161,7 @@ def test_public_cli_same_run_resume_has_one_winner(
     assert len(owners) == 1, payloads
     assert len(rejected) == 1, payloads
     assert "already held" in str(rejected[0].get("output", "")), rejected
-    imported = {Path(str(item["import_file"])).resolve() for item in payloads}
-    assert len(imported) == 1
+    _require_same_engine_as_parent(payloads)
 
 
 def _read(path: Path) -> dict[str, object]:
