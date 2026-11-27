@@ -117,7 +117,9 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         )
         assert refs == {"file": "C:\\speckit.foo.md", "agent": "speckit-foo-md"}
 
-    def _register_junie_command(self, tmp_path, source_id, body, frontmatter=""):
+    def _register_junie_command(
+        self, tmp_path, source_id, body, frontmatter="", *, extension_id=None
+    ):
         from specify_cli.agents import CommandRegistrar
 
         source = tmp_path / "src"
@@ -134,6 +136,7 @@ class TestJunieIntegration(MarkdownIntegrationTests):
             source_id,
             source,
             project,
+            extension_id=extension_id,
         )
         out = project / ".junie" / "commands" / "speckit-git-commit.md"
         return out.read_text(encoding="utf-8")
@@ -190,6 +193,94 @@ class TestJunieIntegration(MarkdownIntegrationTests):
             {"handoff": "speckit-plan", "file": "commands/speckit.plan.md"},
             "Run /speckit-plan; see commands/speckit.plan.md.",
         )
+
+    def test_registered_extension_command_keeps_script_paths_and_dotted_directories(
+        self, tmp_path
+    ):
+        """Non-.md path-qualified names, `{SCRIPT}`, and dotted directories keep dots."""
+        text = self._register_junie_command(
+            tmp_path,
+            "git",
+            "Invoke {SCRIPT}, read scripts/speckit.git.commit.sh, "
+            "open /tmp/speckit.demo/commands/speckit.git.commit.md and "
+            "speckit.demo/commands/speckit.git.commit.md, "
+            "then run /speckit.git.status and /speckit.foo.sh.\n",
+            frontmatter=(
+                "scripts:\n"
+                '  sh: \'scripts/speckit.git.commit.sh "{ARGS}"\'\n'
+                "notes: /tmp/speckit.demo/commands/speckit.git.commit.md\n"
+            ),
+            extension_id="git",
+        )
+        assert '.specify/extensions/git/scripts/speckit.git.commit.sh "$ARGUMENTS"' in text
+        assert "scripts/speckit.git.commit.sh" in text
+        assert "/tmp/speckit.demo/commands/speckit.git.commit.md" in text
+        assert "speckit.demo/commands/speckit.git.commit.md" in text
+        assert "notes: /tmp/speckit.demo/commands/speckit.git.commit.md" in text
+        assert "then run /speckit-git-status and /speckit-foo-sh." in text
+        assert "speckit-demo" not in text
+        assert "speckit-git-commit-sh" not in text
+
+    def test_frontmatter_refs_memoize_shared_and_cyclic_yaml_aliases(self, tmp_path):
+        """Shared YAML aliases keep identity and cyclic containers do not overflow."""
+        import yaml
+        from specify_cli.agents import CommandRegistrar
+
+        shared_yaml = (
+            "shared: &shared\n"
+            "  next: /speckit.git.status\n"
+            "  script: scripts/speckit.git.commit.sh\n"
+            "first: *shared\n"
+            "second: *shared\n"
+        )
+        loaded = yaml.safe_load(shared_yaml)
+        out = _hyphenate_frontmatter_refs(loaded)
+        assert out["first"] is out["second"]
+        assert out["shared"] is out["first"]
+        assert out["first"] == {
+            "next": "/speckit-git-status",
+            "script": "scripts/speckit.git.commit.sh",
+        }
+        assert loaded["shared"]["next"] == "/speckit.git.status"
+
+        # End-to-end registration with YAML aliases in frontmatter.
+        source = tmp_path / "src"
+        (source / "commands").mkdir(parents=True)
+        (source / "commands" / "commit.md").write_text(
+            f"---\ndescription: Commit\n{shared_yaml}---\n\nRun /speckit.git.status.\n",
+            encoding="utf-8",
+        )
+        project = tmp_path / "project"
+        project.mkdir()
+        CommandRegistrar().register_commands(
+            "junie",
+            [{"name": "speckit.git.commit", "file": "commands/commit.md"}],
+            "git",
+            source,
+            project,
+        )
+        rendered = (
+            project / ".junie" / "commands" / "speckit-git-commit.md"
+        ).read_text(encoding="utf-8")
+        assert "/speckit-git-status" in rendered
+        assert "scripts/speckit.git.commit.sh" in rendered
+
+        # Cyclic dict and cyclic list must not recurse infinitely or mutate inputs.
+        cyclic_dict: dict[str, object] = {"cmd": "speckit.plan"}
+        cyclic_dict["self"] = cyclic_dict
+        transformed_dict = _hyphenate_frontmatter_refs(cyclic_dict)
+        assert transformed_dict is not cyclic_dict
+        assert transformed_dict["cmd"] == "speckit-plan"
+        assert transformed_dict["self"] is transformed_dict
+        assert cyclic_dict["cmd"] == "speckit.plan"
+
+        cyclic_list: list[object] = ["speckit.plan"]
+        cyclic_list.append(cyclic_list)
+        transformed_list = _hyphenate_frontmatter_refs(cyclic_list)
+        assert transformed_list is not cyclic_list
+        assert transformed_list[0] == "speckit-plan"
+        assert transformed_list[1] is transformed_list
+        assert cyclic_list[0] == "speckit.plan"
 
     def test_junie_hook_instruction_injection(self):
         """Verify junie injects the dot-to-hyphen note for hooks."""

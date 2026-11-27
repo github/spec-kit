@@ -109,31 +109,29 @@ def _is_drive_prefix(text: str, sep: int) -> bool:
 
 
 def _hyphenate_ref_match(match: re.Match[str]) -> str:
-    """Hyphenate one dotted speckit reference, leaving ``.md`` file names alone.
+    """Hyphenate one dotted speckit reference, leaving path components alone.
 
-    Command names may themselves end in an ``md`` segment: extension
-    commands are ``speckit.<extension>.<command>`` and preset command names
-    may contain further dots, so ``/speckit.foo.md`` and
-    ``speckit.foo.bar.md`` can both be valid command references.  The
-    ``.md`` suffix and the segment count therefore cannot tell a file name
-    apart from a command.  A ``.md`` token is kept as a file name only when
-    it sits inside a path (``commands/speckit.git.commit.md``), that is,
-    when the separator before it ends a directory name (see
-    ``_ends_directory``: ``commands/``, ``C:\\Program Files (x86)\\``,
-    ``%TEMP%\\``, ``commands[old]/``) or follows a Windows drive
-    (``C:\\speckit.foo.md``, ``C:/speckit.foo.md``).  A bare or
-    slash-prefixed token is treated as a command reference, including after
-    an opening bracket or other punctuation (``[/speckit.foo.md]``,
-    ``(/speckit.foo.md)``).
+    Command names may themselves end in a file-like segment (for example
+    ``/speckit.foo.md`` or ``speckit.foo.bar.md``), so suffix alone cannot tell
+    a path apart from a command.  A token is preserved verbatim when it sits
+    inside a path regardless of suffix: either preceded by a directory name or
+    Windows drive (``commands/speckit.git.commit.md``,
+    ``scripts/speckit.git.commit.sh``, ``C:\\speckit.foo.md``), or directly
+    followed by a path separator as an ancestor directory segment
+    (``/tmp/speckit.demo/commands/...``, ``speckit.demo/commands/...``).  A bare
+    or slash-prefixed command reference stays hyphenated, including after
+    punctuation such as ``[/speckit.foo.md]`` or ``(/speckit.foo.md)``.
     """
     ref = match.group(0)
-    if ref.endswith(".md"):
-        start = match.start()
-        text = match.string
-        if start >= 2 and text[start - 1] in "/\\" and (
-            _ends_directory(text, start - 1) or _is_drive_prefix(text, start - 1)
-        ):
-            return ref
+    start = match.start()
+    end = match.end()
+    text = match.string
+    if start >= 2 and text[start - 1] in "/\\" and (
+        _ends_directory(text, start - 1) or _is_drive_prefix(text, start - 1)
+    ):
+        return ref
+    if end < len(text) and text[end] in "/\\":
+        return ref
     return ref.replace(".", "-")
 
 
@@ -142,12 +140,32 @@ def hyphenate_command_refs(text: str) -> str:
     return _SPECKIT_DOTTED_REF.sub(_hyphenate_ref_match, text)
 
 
-def _hyphenate_frontmatter_refs(val: Any) -> Any:
+def _hyphenate_frontmatter_refs(
+    val: Any, _memo: dict[int, Any] | None = None
+) -> Any:
     """Recursively hyphenate dotted ``speckit.*`` references in frontmatter values."""
     if isinstance(val, dict):
-        return {k: _hyphenate_frontmatter_refs(v) for k, v in val.items()}
+        if _memo is None:
+            _memo = {}
+        obj_id = id(val)
+        if obj_id in _memo:
+            return _memo[obj_id]
+        out_dict: dict[Any, Any] = {}
+        _memo[obj_id] = out_dict
+        for k, v in val.items():
+            out_dict[k] = _hyphenate_frontmatter_refs(v, _memo)
+        return out_dict
     if isinstance(val, list):
-        return [_hyphenate_frontmatter_refs(x) for x in val]
+        if _memo is None:
+            _memo = {}
+        obj_id = id(val)
+        if obj_id in _memo:
+            return _memo[obj_id]
+        out_list: list[Any] = []
+        _memo[obj_id] = out_list
+        for item in val:
+            out_list.append(_hyphenate_frontmatter_refs(item, _memo))
+        return out_list
     if isinstance(val, str):
         return hyphenate_command_refs(val)
     return val
@@ -245,8 +263,9 @@ class JunieIntegration(MarkdownIntegration):
 
         Junie only registers hyphenated slash commands, so references such as
         ``/speckit.git.commit`` in extension and preset command content are
-        rewritten to ``/speckit-git-commit``.  ``speckit.*.md`` file names
-        inside a path keep their extension.  Core commands (``source_id ==
+        rewritten to ``/speckit-git-commit``.  Path components (``speckit.*.md``
+        file names, script paths, and dotted ancestor directories) keep their
+        dots.  Core commands (``source_id ==
         "core"``) are left unchanged; their references are rendered through
         ``invoke_separator`` instead.
         """
