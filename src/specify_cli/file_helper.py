@@ -486,14 +486,14 @@ class FileHelper:
         The entry is found and anchored as ``stat`` finds it, so a leaf link is
         refused or resolved by the normal policy walk; a leaf swapped for a link
         after that walk is followed. Like ``os.access``, the answer uses the
-        real user and group ids and is advisory: act through a descriptor and
-        handle its errors.
+        real user and group ids on POSIX; on Windows it reflects only existence
+        and the read-only attribute, not the DACL. It is advisory: act through a
+        descriptor and handle its errors.
         """
         destination = self._path(path)
-        if destination == self._canonical_root:
-            return os.access(destination, mode)
         if os.name == "nt":
             # Pin the hierarchy as ``stat`` does; Windows ``os.access`` has no ``dir_fd``.
+            # The root's own handle refuses a root since replaced by a reparse point.
             parts = destination.relative_to(self._canonical_root).parts
             with ExitStack() as stack:
                 parent = stack.enter_context(_windows_handle(
@@ -507,6 +507,11 @@ class FileHelper:
         unsupported = "Anchored access check is unsupported on this platform"
         if os.access not in os.supports_dir_fd:
             raise OSError(errno.ENOTSUP, unsupported)
+        if destination == self._canonical_root:
+            # Query the root through a no-follow descriptor, so a missing root raises
+            # and a root since replaced by a link is refused rather than followed.
+            with self._posix_directory(destination, unsupported_message=unsupported) as root:
+                return os.access(".", mode, dir_fd=root)
         with self._posix_directory(destination.parent, unsupported_message=unsupported) as directory:
             # No ``follow_symlinks=False``: the walk already handled a leaf link,
             # and without ``faccessat2`` libc emulates that flag from mode bits.
@@ -739,7 +744,10 @@ class FileHelper:
     def create_private_bytes(self, path: Path | str, content: bytes) -> None:
         """Exclusively create a file only the current user can open, flushed to disk.
 
-        A failure after creation removes only the file this call created.
+        A failure after creation removes the file this call created, best effort:
+        the name is unlinked only if it still has the created file's identity, but
+        that check is not atomic with the unlink, so a file another process swaps
+        in between the two can be removed instead.
         """
         if os.name == "nt" and ":" in Path(path).name:
             # A named NTFS stream shares its base file's security descriptor, so

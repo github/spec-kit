@@ -263,10 +263,14 @@ descriptor-relative or change their documented concurrency limitations.
   anchored as `stat` finds it; the policy walk refuses or resolves a leaf link.
   POSIX checks relative to the anchored parent descriptor with a plain
   `faccessat` (no `AT_SYMLINK_NOFOLLOW`, which libc emulates from mode bits
-  where `faccessat2` is missing); Windows pins the parent hierarchy first. It
-  uses the real user and group ids, so it also reports a read-only filesystem
-  or a file owned by someone else, which mode bits miss. It is advisory, like
-  `stat`.
+  where `faccessat2` is missing); Windows pins the parent hierarchy first. The
+  root is queried through a no-follow descriptor (POSIX) or a non-reparse
+  handle (Windows), so a missing root raises and a root replaced by a link is
+  refused. On POSIX it uses the real user and group ids, so it also reports a
+  read-only filesystem or a file owned by someone else, which mode bits miss.
+  On Windows, `os.access` checks only existence and the read-only attribute,
+  not the DACL, so `W_OK` can be granted where the DACL denies writing. It is
+  advisory, like `stat`.
 - `canonical_root` is the root with OS and link aliases resolved, fixed on
   construction; it is the base that resolved operation paths share.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
@@ -314,8 +318,8 @@ descriptor-relative or change their documented concurrency limitations.
   inherited ACL. It refuses a stream-qualified leaf (`file:stream`), since a
   named NTFS stream shares its base file's security descriptor, and, before any
   content is written, a volume without `FILE_PERSISTENT_ACLS` (FAT, exFAT),
-  which would drop the descriptor. A failure after creation removes only the
-  file this call created: POSIX unlinks the name only while it still has the
+  which would drop the descriptor. A failure after creation removes the file
+  this call created, best effort: POSIX unlinks the name only while it still has the
   created file's identity, checked immediately before the unlink rather than
   atomically with it (an identity never read leaves the name in place), with
   the created inode held open until the check is done so its number cannot be
@@ -531,8 +535,8 @@ under concurrent renames, nor does parent anchoring make every leaf preflight
 atomic with the subsequent open.
 On Windows, exclusive creation (including `create_private_bytes`), text
 overwrite and `open_rewrite` still open their leaf by pathname after pinning
-the parent hierarchy, and `stat` queries its leaf the same way. Attribute-only
-reparse updates can redirect those opens; they do not have the read path's
+the parent hierarchy, and `stat` and `access` query their leaf the same way.
+Attribute-only reparse updates can redirect those opens and queries; they do not have the read path's
 parent-relative handle protection.
 The helper does not constrain subprocesses or third-party code.
 

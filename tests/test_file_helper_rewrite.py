@@ -663,7 +663,7 @@ def test_windows_create_private_bytes_sets_an_owner_only_protected_acl(tmp_path)
     # SDDL abbreviates well-known accounts (the built-in Administrator is "LA"),
     # so compare resolved SIDs rather than the descriptor string.
     script = (
-        f"$acl = Get-Acl -LiteralPath '{tmp_path / REL}'; "
+        f"$acl = Get-Acl -LiteralPath '{str(tmp_path / REL).replace(chr(39), chr(39) * 2)}'; "
         "$sid = [System.Security.Principal.SecurityIdentifier]; "
         "$acl.GetOwner($sid).Value; "
         "$acl.AreAccessRulesProtected; "
@@ -725,6 +725,58 @@ def test_access_is_not_redirected_by_a_parent_swapped_after_resolution(tmp_path,
     with FileHelper(tmp_path) as files, pytest.raises(OSError) as raised:
         files.access(REL, os.R_OK)
     assert raised.value.errno in _NOFOLLOW_REFUSALS
+
+
+@pytest.mark.skipif(os.name != "nt", reason="needs Windows junctions")
+def test_access_is_not_redirected_by_a_parent_junctioned_after_resolution(tmp_path, monkeypatch):
+    path = _seed(tmp_path, b"inside")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "file").write_bytes(b"outside")
+    original = FileHelper._path
+
+    def swap_after(self, *args, **kwargs):
+        resolved = original(self, *args, **kwargs)
+        path.parent.rename(tmp_path / "moved")
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(path.parent), str(outside)],
+            check=True, capture_output=True,
+        )
+        return resolved
+
+    monkeypatch.setattr(FileHelper, "_path", swap_after)
+    with FileHelper(tmp_path) as files, pytest.raises(OSError) as raised:
+        files.access(REL, os.R_OK)
+    assert raised.value.errno == errno.ELOOP
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the retained root handle withholds delete sharing")
+def test_access_of_a_missing_root_raises(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    with FileHelper(root) as files:
+        root.rmdir()
+        with pytest.raises(FileNotFoundError):
+            files.access(".", os.R_OK)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs POSIX symlinks")
+def test_access_refuses_a_root_replaced_by_a_symlink(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    other = tmp_path / "other"
+    other.mkdir()
+    with FileHelper(root) as files:
+        root.rename(tmp_path / "moved")
+        root.symlink_to(other, target_is_directory=True)
+        with pytest.raises(OSError) as raised:
+            files.access(".", os.R_OK)
+    assert raised.value.errno in _NOFOLLOW_REFUSALS
+
+
+def test_access_of_the_root(tmp_path):
+    with FileHelper(tmp_path) as files:
+        assert files.access(".", os.R_OK)
 
 
 def test_stat_of_the_root(tmp_path):
