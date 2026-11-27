@@ -174,6 +174,31 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         assert "`/speckit-git-commit`" in out
         assert "replace dots with underscores" in out
 
+    def test_junie_hook_note_bounded_lookback_crlf_and_many_sections(self):
+        """Bounded lookback handles CRLF, non-exact suffixes, and many hook sections."""
+        junie = get_integration("junie")
+        instruction = "- For each executable hook, output the following:"
+        crlf_doc = f"## Hooks\r\n  {instruction}\r\n"
+        injected_crlf = junie._inject_hook_command_note(crlf_doc)
+        assert injected_crlf.count("replace dots (`.`) with hyphens (`-`)") == 1
+        assert junie._inject_hook_command_note(injected_crlf) == injected_crlf
+
+        suffix_only_doc = (
+            "prefix - When constructing slash commands from hook command names, "
+            "replace dots (`.`) with hyphens (`-`). "
+            "For example, `speckit.git.commit` \u2192 `/speckit-git-commit`.\n"
+            f"{instruction}\n"
+        )
+        injected_suffix = junie._inject_hook_command_note(suffix_only_doc)
+        assert injected_suffix.count("replace dots (`.`) with hyphens (`-`)") == 2
+
+        many_sections = "\n".join(
+            f"## Section {idx}\n{instruction}\n" for idx in range(500)
+        )
+        injected_many = junie._inject_hook_command_note(many_sections)
+        assert injected_many.count("replace dots (`.`) with hyphens (`-`)") == 500
+        assert junie._inject_hook_command_note(injected_many) == injected_many
+
     def test_init_next_steps_show_hyphenated_commands(self, tmp_path):
         """Next Steps must list the `/speckit-<name>` commands Junie installs."""
         from typer.testing import CliRunner

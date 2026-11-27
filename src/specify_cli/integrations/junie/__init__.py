@@ -105,16 +105,28 @@ class JunieIntegration(MarkdownIntegration):
         def repl(m: re.Match[str]) -> str:
             indent = m.group(1)
             instruction = m.group(2)
-            # Check the line immediately above this instruction, mirroring
-            # ClineIntegration / SkillsIntegration. The previous whole-document
+            # Check only the line immediately above this instruction in O(1)
+            # instead of splitting the entire prefix, mirroring
+            # ClineIntegration / SkillsIntegration without quadratic work on
+            # documents with many hook instructions. The previous whole-document
             # ``if "replace dots" in content`` scan meant unrelated prose
             # containing that phrase suppressed the note entirely -- leaving the
             # agent told to emit ``/speckit.git.commit``, which Junie never
             # registers -- and a second un-noted hook section was skipped when
             # an earlier section already carried the note.
-            previous_lines = content[:m.start()].splitlines()
-            if previous_lines and previous_lines[-1] == indent + note:
-                return m.group(0)
+            expected = indent + note
+            prev_end = m.start()
+            if prev_end > 0 and content[prev_end - 1] == "\n":
+                prev_end -= 1
+                if prev_end > 0 and content[prev_end - 1] == "\r":
+                    prev_end -= 1
+                prev_start = prev_end - len(expected)
+                if (
+                    prev_start >= 0
+                    and content[prev_start:prev_end] == expected
+                    and (prev_start == 0 or content[prev_start - 1] in "\r\n")
+                ):
+                    return m.group(0)
             # ``eol`` is empty when the regex matched via ``$`` because the
             # instruction was the final line of a file with no trailing
             # newline. Default to ``\n`` so the note never collapses onto

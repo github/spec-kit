@@ -23,6 +23,9 @@ Markdown commands are installed under `.junie/commands/`, using hyphenated
 filenames such as `speckit-specify.md`.
 Invoke them in Junie's chat as `/speckit-specify` or
 `/speckit-bug-assess` for the installed bug extension, not dotted commands.
+Each hook-output instruction in an installed command receives the
+dot-to-hyphen note independently, and unrelated `"replace dots"` prose
+elsewhere in the command does not suppress it.
 
 Handoff references and extension/preset command content are also normalized to
 hyphenated names.
