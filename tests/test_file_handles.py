@@ -25,6 +25,204 @@ from specify_cli._file_handles import (
 from specify_cli.file_helper import FileHelper, UnsupportedPathError
 
 
+@pytest.mark.parametrize("kind", ["same", "alias", "different", "file", "missing"])
+def test_installation_directory_identity_uses_os_objects(tmp_path, kind):
+    from tests.workflows.test_subprocess_composition import symlink_or_skip
+    expected = tmp_path / "expected"
+    expected.mkdir()
+    actual = expected
+    if kind == "alias":
+        actual = tmp_path / "alias"
+        symlink_or_skip(actual, expected, directory=True)
+    elif kind == "different":
+        actual = tmp_path / "different"
+        actual.mkdir()
+    elif kind == "file":
+        actual = tmp_path / "file"
+        actual.write_text("file")
+        expected = actual
+    elif kind == "missing":
+        actual = tmp_path / "missing"
+    assert handles.installation_directory_exists(actual) == (kind not in {"file", "missing"})
+    if kind == "missing":
+        with pytest.raises(FileNotFoundError):
+            handles.same_installation_directory(actual, expected)
+    else:
+        assert handles.same_installation_directory(actual, expected) == (
+            kind != "file" and os.path.samefile(actual, expected))
+
+
+def test_installation_directory_errors_remain_native(tmp_path, monkeypatch):
+    def denied(*args, **kwargs):
+        raise PermissionError("metadata denied")
+    monkeypatch.setattr(Path, "stat", denied)
+    monkeypatch.setattr(Path, "is_dir", denied)
+    for operation in (lambda: handles.installation_directory_exists(tmp_path),
+                      lambda: handles.same_installation_directory(tmp_path, tmp_path)):
+        with pytest.raises(PermissionError, match="metadata denied"):
+            operation()
+
+
+def _stdio_child(code, *args, input=b"controller input"):
+    bootstrap = Path(handles.__file__).parent / "workflows/_subprocess_bootstrap.py"
+    load = """
+import importlib.util, os, sys
+class ApplicationGuard:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.startswith('specify_cli') or fullname in {'yaml', 'typer', 'rich', '_ctypes'}:
+            raise AssertionError('application/native dependency imported before stdio: ' + fullname)
+sys.meta_path.insert(0, ApplicationGuard())
+spec = importlib.util.spec_from_file_location('owned_bootstrap', sys.argv[1])
+bootstrap = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(bootstrap)
+handles = bootstrap._load_handles()
+assert 'specify_cli' not in sys.modules
+"""
+    return subprocess.run([sys.executable, "-I", "-S", "-B", "-c", load + code, str(bootstrap), *args],
+                          input=input, capture_output=True, timeout=15)
+
+
+@pytest.mark.parametrize("outcome", ["normal", "error", "cancel", "closed"])
+def test_worker_stdio_owns_only_its_resources_in_real_child(outcome):
+    result = _stdio_child("""
+import errno, io
+previous = sys.stdin, sys.stdout, sys.stderr
+reused = None
+try:
+    with handles.worker_stdio() as control:
+        incoming_fd, outgoing_fd = control.incoming.fileno(), control.outgoing.fileno()
+        assert not os.get_inheritable(incoming_fd) and not os.get_inheritable(outgoing_fd)
+        assert isinstance(control.incoming, io.FileIO) and isinstance(control.outgoing, io.FileIO)
+        assert control.incoming.read() == b'controller input'
+        assert sys.stdin.read() == ''
+        assert all(stream.encoding == 'utf-8' for stream in (sys.stdin, sys.stdout, sys.stderr))
+        assert sys.stdout.line_buffering and sys.stderr.line_buffering
+        control.outgoing.write(b'CONTROL')
+        print('python-out')
+        print('python-err', file=sys.stderr)
+        os.write(1, b'native-out\\n')
+        os.write(2, b'native-err\\n')
+        if sys.argv[2] == 'error': raise RuntimeError('body failure')
+        if sys.argv[2] == 'cancel': raise KeyboardInterrupt
+        if sys.argv[2] == 'closed':
+            control.incoming.close()
+            reused = os.open(os.devnull, os.O_RDONLY)
+            assert reused == incoming_fd
+            control.outgoing.close()
+except BaseException as error:
+    assert (sys.argv[2] == 'error' and isinstance(error, RuntimeError)) or (sys.argv[2] == 'cancel' and isinstance(error, KeyboardInterrupt))
+assert (sys.stdin, sys.stdout, sys.stderr) == previous
+assert control.incoming.closed and control.outgoing.closed
+for fd in (incoming_fd, outgoing_fd):
+    if fd == reused: continue
+    try: os.fstat(fd)
+    except OSError as error: assert error.errno == errno.EBADF
+    else: raise AssertionError('owned descriptor leaked')
+if reused is not None:
+    os.fstat(reused)
+    os.close(reused)
+for fd in (0, 1, 2): os.fstat(fd)
+assert sys.stdin.read() == ''
+print('after-context')
+""", outcome)
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert result.stdout == b"CONTROL"
+    for text in (b"python-out", b"python-err", b"native-out", b"native-err", b"after-context"):
+        assert text in result.stderr
+
+
+@pytest.mark.parametrize("failure", ["dup-first", "dup-second", "inherit-first", "inherit-second",
+                                     "fdopen-first", "fdopen-second", "null-open", "null-dup",
+                                     "diagnostic-dup", "text-stdin", "text-stdout", "text-stderr",
+                                     "binary"])
+def test_worker_stdio_partial_initialization_closes_owned_descriptors(failure):
+    result = _stdio_child("""
+import builtins, errno
+from types import SimpleNamespace
+failure = sys.argv[2]
+previous = sys.stdin, sys.stdout, sys.stderr
+owned, calls = [], {}
+original = {name: getattr(os, name) for name in ('dup', 'set_inheritable', 'fdopen', 'open', 'dup2')}
+real_open = builtins.open
+def tick(name):
+    calls[name] = calls.get(name, 0) + 1
+    return calls[name]
+def fail(): raise OSError(errno.EIO, 'injected setup failure')
+def dup(fd):
+    index = tick('dup')
+    if failure == ('dup-first' if index == 1 else 'dup-second'): fail()
+    value = original['dup'](fd); owned.append(value); return value
+def inherit(fd, value):
+    index = tick('inherit')
+    if failure == ('inherit-first' if index == 1 else 'inherit-second'): fail()
+    return original['set_inheritable'](fd, value)
+def fdopen(fd, *args, **kwargs):
+    index = tick('fdopen')
+    if failure == ('fdopen-first' if index == 1 else 'fdopen-second'): fail()
+    return original['fdopen'](fd, *args, **kwargs)
+def null(*args, **kwargs):
+    if failure == 'null-open': fail()
+    value = original['open'](*args, **kwargs); owned.append(value); return value
+def dup2(source, target):
+    if failure == ('null-dup' if target == 0 else 'diagnostic-dup'): fail()
+    return original['dup2'](source, target)
+def text(fd, *args, **kwargs):
+    if failure == {0: 'text-stdin', 1: 'text-stdout', 2: 'text-stderr'}[fd]: fail()
+    return real_open(fd, *args, **kwargs)
+model = SimpleNamespace(**vars(os))
+model.dup, model.set_inheritable, model.fdopen, model.open, model.dup2 = dup, inherit, fdopen, null, dup2
+handles.os = model
+handles.open = text
+if failure == 'binary':
+    model.name, model.O_BINARY = 'nt', 0x8000
+    sys.modules['msvcrt'] = SimpleNamespace(setmode=lambda *args: fail())
+try:
+    with handles.worker_stdio(): raise AssertionError('setup must fail')
+except OSError as error:
+    assert error.errno == errno.EIO
+assert (sys.stdin, sys.stdout, sys.stderr) == previous
+for fd in owned:
+    try: os.fstat(fd)
+    except OSError as error: assert error.errno == errno.EBADF
+    else: raise AssertionError('partial setup leaked descriptor')
+for fd in (0, 1, 2): os.fstat(fd)
+""", failure)
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert result.stdout == b""
+
+
+@pytest.mark.parametrize("fd", [0, 1, 2])
+def test_worker_stdio_closed_standard_descriptor_fails_before_duplication(fd):
+    result = _stdio_child("""
+import errno
+os.close(int(sys.argv[2]))
+def forbidden(*args): raise AssertionError('must validate before allocating')
+handles.os.dup = forbidden
+try:
+    with handles.worker_stdio(): raise AssertionError('closed stdio accepted')
+except OSError as error:
+    assert error.errno == errno.EBADF
+""", str(fd))
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+
+
+def test_worker_stdio_windows_binary_mode_model():
+    result = _stdio_child("""
+from types import SimpleNamespace
+model = SimpleNamespace(**vars(os))
+model.name, model.O_BINARY = 'nt', 0x8000
+handles.os = model
+binary = []
+sys.modules['msvcrt'] = SimpleNamespace(setmode=lambda fd, mode: binary.append((fd, mode)))
+with handles.worker_stdio() as control:
+    assert binary == [(control.incoming.fileno(), 0x8000), (control.outgoing.fileno(), 0x8000)]
+    assert all(not os.get_inheritable(fd) for fd, mode in binary)
+    control.outgoing.write(b'binary')
+""")
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert result.stdout == b"binary"
+
+
 @pytest.mark.parametrize("directory", [False, True])
 @pytest.mark.parametrize("pin", [False, True])
 @pytest.mark.parametrize("outcome", ["success", "reparse", "wrong-type", "query-failure", "body-failure", "open-failure"])

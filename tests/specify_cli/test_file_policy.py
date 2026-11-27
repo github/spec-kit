@@ -14,6 +14,72 @@ from specify_cli import app
 from specify_cli.file_helper import FileHelper, FileHelperError
 
 
+@pytest.mark.parametrize("suffix", ["", "existing", "existing/../existing"])
+def test_strict_directory_root_preserves_lexical_checks(tmp_path, monkeypatch, suffix):
+    policy = policy_module()
+    (tmp_path / "existing").mkdir()
+    monkeypatch.setattr(policy, "read_project_options", lambda _: pytest.fail("must not read configuration"))
+    monkeypatch.setattr(policy, "prepare_init_root", lambda _: pytest.fail("must not prepare init"))
+    assert policy.resolve_nofollow_directory(tmp_path / suffix) == (tmp_path / "existing" if suffix else tmp_path)
+
+
+@pytest.mark.parametrize("suffix", ["missing", "file", "missing/../existing", "file/../existing"])
+def test_strict_directory_root_rejects_invalid_prefixes(tmp_path, suffix):
+    policy = policy_module()
+    (tmp_path / "existing").mkdir()
+    (tmp_path / "file").write_text("file")
+    with pytest.raises(policy.ProjectPolicyError):
+        policy.resolve_nofollow_directory(tmp_path / suffix)
+
+
+@pytest.mark.parametrize("kind", ["directory", "dangling", "cycle", "parent-traversal"])
+def test_strict_directory_root_denies_links(tmp_path, kind):
+    from tests.workflows.test_subprocess_composition import symlink_or_skip
+    policy = policy_module()
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "link"
+    destination = link if kind == "cycle" else tmp_path / "absent" if kind == "dangling" else target
+    symlink_or_skip(link, destination, directory=True)
+    value = link / ".." / "target" if kind == "parent-traversal" else link
+    with pytest.raises(policy.ProjectPolicyError, match="symlink or reparse"):
+        policy.resolve_nofollow_directory(value)
+
+
+def test_strict_directory_root_rejects_non_directory_before_parent_fold(tmp_path, monkeypatch):
+    """Model Windows probes folding '..'; reject the original file prefix first."""
+    import stat
+    from types import SimpleNamespace
+    policy = policy_module()
+    original = Path.lstat
+
+    def metadata(path):
+        if path == tmp_path / "file":
+            return SimpleNamespace(st_mode=stat.S_IFREG, st_file_attributes=0)
+        return original(path)
+
+    monkeypatch.setattr(Path, "lstat", metadata)
+    monkeypatch.setattr(Path, "resolve", lambda *a, **k: pytest.fail("must reject before resolve"))
+    with pytest.raises(policy.ProjectPolicyError, match="non-directory"):
+        policy.resolve_nofollow_directory(tmp_path / "file/../existing")
+
+
+def test_strict_directory_root_preserves_errors_and_rejects_relative(tmp_path, monkeypatch):
+    policy = policy_module()
+    with pytest.raises(policy.ProjectPolicyError, match="NUL-free"):
+        policy.resolve_nofollow_directory(tmp_path / "bad\x00root")
+    with pytest.raises(policy.ProjectPolicyError, match="absolute"):
+        policy.resolve_nofollow_directory(Path("relative"))
+
+    def denied(path):
+        raise PermissionError("root denied")
+
+    monkeypatch.setattr(Path, "lstat", denied)
+    with pytest.raises(policy.ProjectPolicyError, match="root denied") as raised:
+        policy.resolve_nofollow_directory(tmp_path)
+    assert isinstance(raised.value.__cause__, PermissionError)
+
+
 def policy_module():
     from specify_cli import _file_policy
 

@@ -282,3 +282,23 @@ gate) or failed.
 - [Expressions](expressions.md)
 - [Catalog schemas](catalogs.md)
 - [Step Python API reference](../workflow-steps/api.md)
+
+### Isolated call execution
+
+A `type: workflow` step can select `execution: {mode: subprocess,
+project_root: ...}`; omission or `{mode: in-process}` preserves same-process
+execution. Only isolated bindings add execution metadata. Source lookup and
+execution directories remain separate, and all child occurrence checkpoints
+belong to the root run. Structural positions and per-attempt identities bind
+the private transport to that subtree; reporting aliases are not transport IDs.
+
+The common occurrence runner validates a transition, checkpoints it in the
+parent, and emits its lifecycle notification before acknowledging the worker.
+A worker cannot start the next effect until that acknowledgement arrives.
+Nested workers proxy acknowledgements to the same writer. A failed checkpoint
+poisons that writer and withholds acknowledgement. Final outputs alone never
+replace intermediate progress. Memory-only exception unwinding retains its
+existing non-durable meaning. Private input mutations, including a retry gate
+consuming its verdict, cross the same checkpoint boundary without re-resolving
+defaults. See [isolated workflow calls](../workflow-steps/types.md#isolated-workflow-calls)
+for configuration, exception, startup and containment limits.

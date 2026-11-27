@@ -670,8 +670,9 @@ return value. No separate child run is created.
 and call-boundary contract failures, such as an unavailable target, invalid
 mapped input, cycle, depth limit, or invalid declared output. It does not catch
 step exceptions, expression errors (including `from_json` errors in `input:` or
-`outputs:`), interruptions, or checkpoint failures; those propagate exactly as
-they do at the root. An unavailable step implementation is terminal where the
+`outputs:`), interruptions, or checkpoint failures. Same-process calls preserve
+root exception behavior; isolated exception categories are described below.
+An unavailable step implementation is terminal where the
 step occurs; at a workflow call it is a reported child failure, whether it is
 detected while binding the target or later. Pauses and explicit aborts always
 stop execution.
@@ -752,3 +753,86 @@ target resolution and binding.
 - [Overlays and workflow slots](../workflows/overlays.md)
 - [Developing custom step packages](developing.md#custom-step-packages)
 - [Step management CLI](cli.md#step-management)
+
+## Isolated workflow calls
+
+A workflow call runs in the current process by default. To give a child workflow
+its own Python process and project directory, opt in on that call:
+
+```yaml
+- id: bootstrap-project
+  type: workflow
+  workflow: project-bootstrap
+  execution:
+    mode: subprocess
+    project_root: "{{ inputs.project_directory }}"
+    timeout: 600
+  input:
+    description: "{{ inputs.description }}"
+```
+
+`execution` accepts a literal `mode: in-process` with no other keys, or
+`mode: subprocess` with a required `project_root` and optional `timeout`.
+Unknown keys, null values, and expression-valued modes/timeouts are errors.
+The timeout is a finite positive number of seconds; omission sets no overall
+deadline. The root must resolve to a nonempty string naming an existing
+directory. Relative roots use the caller's project directory. There is no
+home or environment expansion, implicit directory creation, or fallback to cwd.
+Symlink/junction traversal and ambiguous Windows relative roots are refused.
+
+Workflow lookup, overlays, custom steps/functions, and companion assets stay
+with the source project, even when the execution directory is empty. Installed
+integrations load freshly from the execution project and must pass its usual
+trust and hash checks. An `integration: auto` child input reads that project's
+integration configuration. Inputs and outputs retain the same private-scope
+contract as other workflow calls.
+
+The effective home for user configuration and integration trust is made absolute
+before changing directory and inherited by nested workers. This includes the
+platform default when no home override is set. Ambiguous drive-relative or
+root-relative Windows homes are refused. Other tool configuration remains
+inherited; the boundary does not filter the environment to a whitelist.
+
+The subprocess boundary isolates cwd, streams, Python registries, and other
+process state. This permits a fan-out to call a bootstrap workflow for each
+precreated project directory; the bootstrap can run the ordinary `init` step
+before its downstream steps. `init` and fan-out scheduling retain their existing
+behavior. Same-process calls retain their existing process-global constraints.
+Worker stdin and workload subprocess stdin receive EOF, so an undecided gate
+pauses for root-run resume.
+
+Only the parent run is persisted. The worker waits for the parent to checkpoint
+each transition before advancing. Resume starts a fresh worker and replays
+completed occurrences without their implementations. Bound targets,
+definitions, execution roots and timeouts stay frozen; explicit resume inputs
+still cross the declared mappings. Missing or moved bound directories fail.
+An effect interrupted before its completion checkpoint can repeat. There is
+no exactly-once effect guarantee or filesystem rollback.
+
+Returned failures and timeouts can be handled with `continue_on_error`; pauses
+and explicit aborts still halt. Startup, protocol, checkpoint, expression and
+worker exceptions propagate. Ordinary remote exceptions become
+`RemoteWorkflowError`; arbitrary exception classes are not reconstructed.
+Interruptions propagate as `KeyboardInterrupt`, and `SystemExit` retains an
+integer, string or null code. Other remote `BaseException` instances use a
+private boundary wrapper. Same-process exception identity is unchanged.
+
+Workers use the current absolute Python interpreter and selected Specify tree,
+with isolated startup and explicit interpreter dependency directories. Directory
+installations and editable source trees are supported; user-site-only and
+`.pth`-dependent dependencies are not carried into workers. Startup hooks and
+Python startup overrides do not run. The JSON control protocol accepts frames
+up to 16 MiB and fails rather than truncating workflow values. Python and native
+stdout/stderr are drained separately from control; at most 65,536 raw diagnostic
+bytes (64 KiB) per invocation are retained before UTF-8 replacement decoding for
+scoped parent log evidence. Decoding and JSON escaping can make the serialized
+log larger. Diagnostics never enter successful declared outputs.
+
+Cancellation closes control to let nested workers and captures stop, allows up
+to two seconds of cooperation, then kills the owned POSIX process group or
+Windows job. Reaping is bounded to two seconds and final control/diagnostic
+draining to one shared second; incomplete teardown is reported. A timeout affects its
+invocation subtree. This is process-state isolation, not a security sandbox.
+Credentials and tool configuration remain inherited. Detached external helpers
+that escape the group/job, and workers unable to run their EOF monitor, are
+outside the nested cleanup guarantee.

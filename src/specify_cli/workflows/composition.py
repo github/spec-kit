@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
+import os
 from pathlib import Path
 from typing import Any
+
+from specify_cli._file_policy import ProjectPolicyError, resolve_nofollow_directory
 
 from .base import StepContext
 from .expressions import evaluate_expression
@@ -58,7 +62,93 @@ def validate_call(config: dict[str, Any]) -> list[str]:
             require_json(mapping)
         except ValueError as exc:
             errors.append(str(exc))
+    errors.extend(validate_execution_config(config))
     return errors
+
+
+def validate_execution_config(config):
+    """The execution boundary is opt-in and has no implicit launch defaults."""
+    if "execution" not in config:
+        return []
+    value = config["execution"]
+    if not isinstance(value, dict):
+        return ["'execution' must be a mapping"]
+    mode = value.get("mode")
+    if not isinstance(mode, str) or mode not in {"in-process", "subprocess"}:
+        return ["'execution.mode' must be literal 'in-process' or 'subprocess'"]
+    if mode == "in-process":
+        return [] if set(value) == {"mode"} else ["In-process execution accepts only 'mode'"]
+    errors = []
+    if set(value) - {"mode", "project_root", "timeout"}:
+        errors.append("Unknown subprocess execution keys")
+    root = value.get("project_root")
+    if not isinstance(root, str) or not root.strip() or "\x00" in root:
+        errors.append("'execution.project_root' must be a nonempty NUL-free string")
+    if "timeout" in value and not valid_timeout(value["timeout"]):
+        errors.append("'execution.timeout' must be a finite positive number")
+    return errors
+
+
+def valid_timeout(value):
+    try:
+        return type(value) in {int, float} and math.isfinite(value) and value > 0
+    except OverflowError:
+        return False
+
+
+def checked_root(value, base=None):
+    """Freeze an existing directory, refusing symlink/reparse traversal."""
+    if not isinstance(value, str) or not value.strip() or "\x00" in value:
+        raise CallError("Execution root must resolve to a nonempty NUL-free string")
+    path = Path(value)
+    if os.name == "nt" and bool(path.drive) != bool(path.root):
+        raise CallError("Execution root must not be drive-relative or root-relative")
+    if not path.is_absolute():
+        if base is None:
+            raise CallError("Stored execution root must be absolute")
+        path = Path(base).absolute() / path
+    try:
+        return str(resolve_nofollow_directory(path))
+    except ProjectPolicyError as exc:
+        if isinstance(exc.__cause__, OSError):
+            # Existing bind/resume callers own their distinct OS-error envelopes.
+            raise exc.__cause__
+        raise CallError(str(exc)) from exc
+
+
+def bind_execution(config, context, source_root):
+    value = config.get("execution", {"mode": "in-process"})
+    if value["mode"] == "in-process":
+        return None
+    root = evaluate_expression(value["project_root"], context)
+    try:
+        return {
+            "mode": "subprocess",
+            "source_root": checked_root(os.fspath(source_root), os.getcwd()),
+            "project_root": checked_root(root, context.project_root or os.getcwd()),
+            "timeout": value.get("timeout"),
+        }
+    except OSError as exc:
+        raise CallError(f"Cannot use execution root: {exc}") from exc
+
+
+def check_bound_execution(value, *, paths=False):
+    """Validate persisted metadata before it can select a worker or cwd."""
+    if (not isinstance(value, dict)
+            or set(value) != {"mode", "source_root", "project_root", "timeout"}
+            or value["mode"] != "subprocess"
+            or (value["timeout"] is not None and not valid_timeout(value["timeout"]))):
+        raise CallError("Invalid bound execution metadata")
+    for name in ("source_root", "project_root"):
+        root = value[name]
+        if not isinstance(root, str) or not root.strip() or "\x00" in root or not Path(root).is_absolute():
+            raise CallError("Invalid bound execution root")
+        if paths:
+            try:
+                if checked_root(root) != root:
+                    raise CallError("Bound execution root changed")
+            except OSError as exc:
+                raise CallError(f"Cannot use bound execution root: {exc}") from exc
 
 
 def validate_runtime_call(config: dict[str, Any]) -> None:
