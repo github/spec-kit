@@ -58,7 +58,9 @@ Ownership records are project-local, not tied to the global directory:
 
 ## Workflow Dispatch
 
-Workflow steps use `hermes chat -Q`. Slash-prefixed prompts select a skill with
-`-s`; remaining text is passed with `-q`. Other prompts use `-q` directly.
-The adapter forwards a configured model with `-m` and requests `--json` for
-structured output.
+Workflow steps use `hermes chat -Q`. Slash-prefixed prompts preload the skill
+with `-s` and pass the remaining text (or the slash command itself when no
+extra arguments are given) with `-q` so `hermes chat` stays in non-interactive
+single-query mode. Other prompts use `-q` directly. The adapter forwards a
+configured model with `-m` and requests `--format stream-json` for structured
+JSONL output.
