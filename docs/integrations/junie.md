@@ -27,6 +27,15 @@ Invoke them in Junie's chat as `/speckit-specify` or
 Handoff references and extension/preset command content are also normalized to
 hyphenated names.
 
+Commands that accept free-text input use Junie's `$prompt` placeholder with
+`allowPromptArgument: true` in the installed command frontmatter. Specify
+adapts `$ARGUMENTS` in core, extension, and preset commands during installation.
+For example, enter this in Junie's chat to pass a feature description:
+
+```text
+/speckit-specify Add a search field to the dashboard
+```
+
 ## Workflow Dispatch
 
 Workflow steps use `junie --task <prompt>`, with `--model` when configured and
