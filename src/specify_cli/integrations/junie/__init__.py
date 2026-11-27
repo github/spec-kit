@@ -97,14 +97,36 @@ class JunieIntegration(MarkdownIntegration):
 
         Targets the line ``- For each executable hook, output the following``
         and inserts the note on the line before it, matching its indentation.
-        Skips if the note is already present.
+        Skips individual instructions that already have the note immediately
+        above them.
         """
-        if "replace dots" in content:
-            return content
+        note = _HOOK_COMMAND_NOTE.rstrip("\n")
 
         def repl(m: re.Match[str]) -> str:
             indent = m.group(1)
             instruction = m.group(2)
+            # Check only the line immediately above this instruction in O(1)
+            # instead of splitting the entire prefix, mirroring
+            # ClineIntegration / SkillsIntegration without quadratic work on
+            # documents with many hook instructions. The previous whole-document
+            # ``if "replace dots" in content`` scan meant unrelated prose
+            # containing that phrase suppressed the note entirely -- leaving the
+            # agent told to emit ``/speckit.git.commit``, which Junie never
+            # registers -- and a second un-noted hook section was skipped when
+            # an earlier section already carried the note.
+            expected = indent + note
+            prev_end = m.start()
+            if prev_end > 0 and content[prev_end - 1] == "\n":
+                prev_end -= 1
+                if prev_end > 0 and content[prev_end - 1] == "\r":
+                    prev_end -= 1
+                prev_start = prev_end - len(expected)
+                if (
+                    prev_start >= 0
+                    and content[prev_start:prev_end] == expected
+                    and (prev_start == 0 or content[prev_start - 1] in "\r\n")
+                ):
+                    return m.group(0)
             # ``eol`` is empty when the regex matched via ``$`` because the
             # instruction was the final line of a file with no trailing
             # newline. Default to ``\n`` so the note never collapses onto
@@ -112,15 +134,19 @@ class JunieIntegration(MarkdownIntegration):
             eol = m.group(3) or "\n"
             return (
                 indent
-                + _HOOK_COMMAND_NOTE.rstrip("\n")
+                + note
                 + eol
                 + indent
                 + instruction
                 + eol
             )
 
+        # ``[ \t]*`` rather than ``\s*``: ``\s`` matches newlines, so the
+        # captured "indent" could swallow a preceding blank line and re-emit it
+        # between the note and the instruction, preventing the per-instruction
+        # check above from lining up.
         return re.sub(
-            r"(?m)^(\s*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
+            r"(?m)^([ \t]*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
             repl,
             content,
         )
