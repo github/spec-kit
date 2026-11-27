@@ -55,80 +55,17 @@ _SPECKIT_DOTTED_REF = re.compile(r"\bspeckit\.[A-Za-z0-9-_]+(?:\.[A-Za-z0-9-_]+)
 
 def _is_path_char(ch: str) -> bool:
     """Whether *ch* can end the directory part of a path before a separator."""
-    return ch.isalnum() or ch in "._-~/\\}$"
-
-
-# A ``%VAR%`` environment variable reference ending a directory name
-# (``%TEMP%``, ``%ProgramFiles(x86)%``).
-_ENV_VAR_DIR = re.compile(r"%[A-Za-z_][A-Za-z0-9_()]*%\Z")
-
-_BRACKET_OPENERS = {")": "(", "]": "["}
+    return ch.isalnum() or ch in "._-~/\\}$+"
 
 
 _SEGMENT_CHARS = frozenset("._-~+@$%")
+_QUOTE_OPEN_BOUNDARY = frozenset(' \t\r\n"\'`([<{:=-')
+_SEP_LEADING_BOUNDARY = frozenset(' \t\r\n"\'`([<{')
 
 
 def _is_segment_char(ch: str) -> bool:
     """Whether *ch* can appear inside an unquoted filename or directory segment."""
     return ch.isalnum() or ch in _SEGMENT_CHARS
-
-
-def _has_explicit_path_prefix(text: str, opener: int) -> bool:
-    """Whether *opener* (``(`` or ``[``) sits inside an explicit directory path."""
-    if opener > 0 and _is_segment_char(text[opener - 1]):
-        return True
-    prev_sep = max(text.rfind("/", 0, opener), text.rfind("\\", 0, opener))
-    if prev_sep < 0:
-        return False
-    between = text[prev_sep + 1 : opener]
-    if not all(_is_segment_char(c) or c == " " for c in between):
-        return False
-    if prev_sep >= 1 and (
-        _ends_directory(text, prev_sep) or _is_drive_prefix(text, prev_sep)
-    ):
-        return True
-    return (
-        text[prev_sep] == "/"
-        and (prev_sep == 0 or text[prev_sep - 1] in ' \t\r\n"\'`([<{')
-        and bool(between)
-        and _is_segment_char(between[0])
-        and not between.startswith("speckit.")
-    )
-
-
-def _ends_directory(text: str, sep: int) -> bool:
-    """Whether the text before the separator at *sep* ends a directory name.
-
-    Besides plain path-name characters this accepts a closing bracket that
-    closes a whitespace-free group (``Program Files (x86)``,
-    ``commands[old]``), a whitespace-containing group attached to an explicit
-    path prefix (``C:\\Program Files (old versions)\\``,
-    ``./commands[old files]/``), and a ``%VAR%`` environment variable
-    reference (``%TEMP%``).  An opening bracket, or a closing one around
-    unprefixed prose such as ``(see docs)`` or ``[Run command]``, does not
-    end a directory, so ``[/speckit.foo.md]`` and ``(see docs)/speckit.foo.md``
-    stay command references.
-    """
-    ch = text[sep - 1]
-    if _is_path_char(ch):
-        return True
-    if ch in _BRACKET_OPENERS:
-        opener = text.rfind(_BRACKET_OPENERS[ch], 0, sep - 1)
-        group = text[opener + 1 : sep - 1]
-        if (
-            opener < 0
-            or not group
-            or ch in group
-            or "\n" in group
-            or "\r" in group
-        ):
-            return False
-        if not any(c.isspace() for c in group):
-            return True
-        return _has_explicit_path_prefix(text, opener)
-    if ch == "%":
-        return _ENV_VAR_DIR.search(text, 0, sep) is not None
-    return False
 
 
 def _is_drive_prefix(text: str, sep: int) -> bool:
@@ -147,41 +84,295 @@ def _is_drive_prefix(text: str, sep: int) -> bool:
     )
 
 
-def _hyphenate_ref_match(match: re.Match[str]) -> str:
-    """Hyphenate one dotted speckit reference, leaving path components alone.
+def _scan_path_structure(text: str) -> tuple[set[int], dict[int, int]]:
+    """Precompute directory separators and inline bracket pairs in one linear pass."""
+    dir_seps: set[int] = set()
+    bracket_end: dict[int, int] = {}
 
-    Command names may themselves end in a file-like segment (for example
-    ``/speckit.foo.md`` or ``speckit.foo.bar.md``), so suffix alone cannot tell
-    a path apart from a command.  A token is preserved verbatim whenever its
-    containing path segment sits inside a path regardless of suffix or
-    filename prefix: either preceded by a directory name or Windows drive
-    (``commands/speckit.git.commit.md``, ``scripts/run-speckit.git.commit.sh``,
-    ``commands/archived.speckit.git.commit.md``, ``C:\\speckit.foo.md``), or
-    directly followed by a path separator as an ancestor directory segment
-    (``/tmp/speckit.demo/commands/...``, ``/tmp/my-speckit.demo/commands/...``).
-    A bare or slash-prefixed command reference stays hyphenated, including after
-    punctuation such as ``[/speckit.foo.md]`` or ``(/speckit.foo.md)``.
-    """
-    ref = match.group(0)
-    text = match.string
-    seg_start = match.start()
-    while seg_start > 0 and _is_segment_char(text[seg_start - 1]):
-        seg_start -= 1
-    seg_end = match.end()
-    while seg_end < len(text) and _is_segment_char(text[seg_end]):
-        seg_end += 1
-    if seg_start >= 2 and text[seg_start - 1] in "/\\" and (
-        _ends_directory(text, seg_start - 1) or _is_drive_prefix(text, seg_start - 1)
+    # Tracks open bracket candidates on the current line:
+    # (open_idx, closer_char, has_prefix, space_count_at_open, slash_count_at_open).
+    open_stack: list[tuple[int, str, bool, int, int]] = []
+    # Latest same-line closing bracket immediately preceding index idx:
+    # (close_idx, has_space, has_prefix).
+    last_closed_bracket: tuple[int, bool, bool] | None = None
+
+    # Linear %VAR% state machine.
+    pct_start = -1
+    pct_valid_body = False
+    pct_valid_end = -1
+
+    # Linear tracking of the latest separator on the current line.
+    last_sep = -1
+    last_sep_explicit = False
+    since_sep_valid = True
+    between_starts_speckit = False
+    since_sep_len = 0
+
+    space_count = 0
+    slash_count = 0
+
+    for idx, ch in enumerate(text):
+        if ch in "\r\n":
+            open_stack.clear()
+            last_closed_bracket = None
+            pct_start = -1
+            pct_valid_body = False
+            last_sep = -1
+            last_sep_explicit = False
+            since_sep_valid = True
+            between_starts_speckit = False
+            since_sep_len = 0
+            slash_count += 1
+            continue
+
+        if ch in "/\\":
+            is_dir = False
+            if idx >= 1:
+                prev = text[idx - 1]
+                if _is_path_char(prev) or _is_drive_prefix(text, idx):
+                    is_dir = True
+                elif (
+                    last_closed_bracket is not None
+                    and last_closed_bracket[0] == idx - 1
+                    and (not last_closed_bracket[1] or last_closed_bracket[2])
+                ):
+                    is_dir = True
+                elif pct_valid_end == idx - 1:
+                    is_dir = True
+
+            if is_dir:
+                dir_seps.add(idx)
+
+            last_sep = idx
+            last_sep_explicit = is_dir or (
+                ch == "/" and (idx == 0 or text[idx - 1] in _SEP_LEADING_BOUNDARY)
+            )
+            since_sep_valid = True
+            between_starts_speckit = False
+            since_sep_len = 0
+            slash_count += 1
+            pct_start = -1
+            pct_valid_body = False
+            continue
+
+        if ch in ("(", "["):
+            closer = ")" if ch == "(" else "]"
+            has_prefix = False
+            if idx > 0 and _is_segment_char(text[idx - 1]):
+                has_prefix = True
+            elif (
+                last_sep >= 0
+                and since_sep_valid
+                and since_sep_len > 0
+                and last_sep_explicit
+                and not (last_sep not in dir_seps and between_starts_speckit)
+            ):
+                has_prefix = True
+            open_stack.append((idx, closer, has_prefix, space_count, slash_count))
+        elif ch in (")", "]"):
+            if open_stack and open_stack[-1][1] == ch:
+                open_idx, _, has_prefix, open_spaces, open_slashes = open_stack.pop()
+                if slash_count == open_slashes and idx > open_idx + 1:
+                    bracket_end[open_idx] = idx
+                    last_closed_bracket = (
+                        idx,
+                        space_count > open_spaces,
+                        has_prefix,
+                    )
+            else:
+                open_stack.clear()
+
+        if ch == " ":
+            space_count += 1
+        elif ch.isspace():
+            space_count += 1
+            since_sep_valid = False
+        elif not _is_segment_char(ch):
+            since_sep_valid = False
+
+        if last_sep >= 0:
+            if since_sep_len == 0:
+                between_starts_speckit = text.startswith("speckit.", last_sep + 1)
+            since_sep_len += 1
+
+        if ch == "%":
+            if pct_start >= 0 and pct_valid_body and idx > pct_start + 1:
+                pct_valid_end = idx
+                pct_start = -1
+                pct_valid_body = False
+            else:
+                pct_start = idx
+                pct_valid_body = True
+        elif pct_start >= 0:
+            rel = idx - pct_start
+            if rel == 1:
+                if not (ch.isascii() and (ch.isalpha() or ch == "_")):
+                    pct_start = -1
+                    pct_valid_body = False
+            elif not (ch.isascii() and (ch.isalnum() or ch in "_()")):
+                pct_start = -1
+                pct_valid_body = False
+
+    return dir_seps, bracket_end
+
+
+def _is_path_content(
+    text: str, inner_start: int, inner_end: int, dir_seps: set[int]
+) -> bool:
+    """Whether ``text[inner_start:inner_end]`` is an explicit directory-qualified path."""
+    inner = text[inner_start:inner_end]
+    if (
+        not inner
+        or inner[0].isspace()
+        or inner[-1].isspace()
+        or "," in inner
+        or ";" in inner
+        or " /" in inner
+        or " \\" in inner
     ):
-        return ref
-    if seg_end < len(text) and text[seg_end] in "/\\":
-        return ref
-    return ref.replace(".", "-")
+        return False
+
+    slash = inner.find("/")
+    backslash = inner.find("\\")
+    if slash < 0:
+        rel_sep = backslash
+    elif backslash < 0:
+        rel_sep = slash
+    else:
+        rel_sep = min(slash, backslash)
+    if rel_sep < 0:
+        return False
+
+    if rel_sep > 0:
+        head = inner[:rel_sep]
+        return not any(c.isspace() for c in head) and (
+            (inner_start + rel_sep) in dir_seps
+        )
+
+    next_slash = inner.find("/", 1)
+    next_backslash = inner.find("\\", 1)
+    if next_slash < 0:
+        rel_sep2 = next_backslash
+    elif next_backslash < 0:
+        rel_sep2 = next_slash
+    else:
+        rel_sep2 = min(next_slash, next_backslash)
+    if rel_sep2 < 2:
+        return False
+    first_seg = inner[1:rel_sep2]
+    return not any(c.isspace() for c in first_seg) and (
+        (inner_start + rel_sep2) in dir_seps
+    )
+
+
+def _find_quoted_path_spans(
+    text: str, dir_seps: set[int]
+) -> list[tuple[int, int]]:
+    """Find content spans of explicit same-line quoted paths in linear time."""
+    spans: list[tuple[int, int]] = []
+    n = len(text)
+    for quote in ('"', "'", "`"):
+        if quote not in text:
+            continue
+        open_idx = -1
+        idx = text.find(quote)
+        while idx >= 0:
+            if open_idx >= 0 and ("\n" in text[open_idx:idx] or "\r" in text[open_idx:idx]):
+                open_idx = -1
+            if quote == "'" and 0 < idx < n - 1 and text[idx - 1].isalnum() and text[idx + 1].isalpha():
+                idx = text.find(quote, idx + 1)
+                continue
+            if open_idx < 0:
+                if idx == 0 or text[idx - 1] in _QUOTE_OPEN_BOUNDARY:
+                    open_idx = idx
+            else:
+                if _is_path_content(text, open_idx + 1, idx, dir_seps):
+                    spans.append((open_idx + 1, idx))
+                open_idx = -1
+            idx = text.find(quote, idx + 1)
+    return spans
+
+
+def _find_protected_segments(
+    text: str, dir_seps: set[int], bracket_end: dict[int, int]
+) -> list[tuple[int, int]]:
+    """Compute unquoted path-qualified segments in a single linear pass."""
+    spans: list[tuple[int, int]] = []
+    n = len(text)
+    i = 0
+    while i < n:
+        if _is_segment_char(text[i]) or i in bracket_end:
+            seg_start = i
+            while i < n:
+                if _is_segment_char(text[i]):
+                    i += 1
+                elif i in bracket_end:
+                    i = bracket_end[i] + 1
+                else:
+                    break
+            seg_end = i
+            if (seg_start >= 2 and (seg_start - 1) in dir_seps) or (
+                seg_end < n and seg_end in dir_seps
+            ):
+                spans.append((seg_start, seg_end))
+        else:
+            i += 1
+    return spans
 
 
 def hyphenate_command_refs(text: str) -> str:
-    """Hyphenate dotted ``speckit.*`` command references in *text*."""
-    return _SPECKIT_DOTTED_REF.sub(_hyphenate_ref_match, text)
+    """Hyphenate dotted ``speckit.*`` command references in *text*.
+
+    Uses linear-time passes to preserve directory-qualified file names,
+    script paths, dotted ancestor directories, bracketed path components, and
+    quoted paths containing spaces, while hyphenating bare, slash-prefixed,
+    and punctuation-wrapped command references.
+    """
+    if "speckit." not in text:
+        return text
+
+    dir_seps, bracket_end = _scan_path_structure(text)
+    raw_spans = _find_protected_segments(text, dir_seps, bracket_end)
+    raw_spans.extend(_find_quoted_path_spans(text, dir_seps))
+
+    merged: list[tuple[int, int]] = []
+    if raw_spans:
+        raw_spans.sort()
+        cur_start, cur_end = raw_spans[0]
+        for start, end in raw_spans[1:]:
+            if start <= cur_end:
+                if end > cur_end:
+                    cur_end = end
+            else:
+                merged.append((cur_start, cur_end))
+                cur_start, cur_end = start, end
+        merged.append((cur_start, cur_end))
+
+    parts: list[str] = []
+    last = 0
+    span_idx = 0
+    span_count = len(merged)
+
+    for match in _SPECKIT_DOTTED_REF.finditer(text):
+        m_start = match.start()
+        m_end = match.end()
+        while span_idx < span_count and merged[span_idx][1] < m_end:
+            span_idx += 1
+        parts.append(text[last:m_start])
+        if (
+            span_idx < span_count
+            and merged[span_idx][0] <= m_start
+            and m_end <= merged[span_idx][1]
+        ):
+            parts.append(match.group(0))
+        else:
+            parts.append(match.group(0).replace(".", "-"))
+        last = m_end
+
+    if last == 0:
+        return text
+    parts.append(text[last:])
+    return "".join(parts)
 
 
 def _hyphenate_frontmatter_refs(
@@ -211,6 +402,11 @@ def _hyphenate_frontmatter_refs(
             out_list.append(_hyphenate_frontmatter_refs(item, _memo))
         return out_list
     if isinstance(val, str):
+        if "speckit." not in val:
+            return val
+        dir_seps, _ = _scan_path_structure(val)
+        if _is_path_content(val, 0, len(val), dir_seps):
+            return val
         return hyphenate_command_refs(val)
     return val
 

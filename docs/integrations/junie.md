@@ -26,9 +26,13 @@ Invoke them in Junie's chat as `/speckit-specify` or
 
 Handoff references and extension/preset command content are also normalized
 to hyphenated command names, so `/speckit.git.commit` in an extension command
-becomes `/speckit-git-commit`. Path-qualified names and dotted directory
-segments—such as `.specify/extensions/git/commands/speckit.git.commit.md`,
+becomes `/speckit-git-commit`. Path-qualified names, quoted paths, and
+bracketed or dotted directory segments—such as
+`.specify/extensions/git/commands/speckit.git.commit.md`,
 `scripts/speckit.git.commit.sh`, `scripts/run-speckit.git.commit.sh`,
+`scripts/C++/speckit.git.commit.sh`, `"scripts/my speckit.git.commit.sh"`,
+`commands/[old]speckit.git.commit.md`,
+`speckit.demo[old]/commands/speckit.git.commit.md`,
 `/tmp/speckit.demo/commands/speckit.git.commit.md`, `C:\speckit.foo.md`,
 `C:\Program Files (x86)\speckit.foo.md`,
 `C:\Program Files (old versions)\speckit.foo.md`, `%TEMP%\speckit.foo.md`,

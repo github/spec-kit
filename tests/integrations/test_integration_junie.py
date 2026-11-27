@@ -321,6 +321,70 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         assert "archived-speckit-git-commit-md" not in text
         assert "my-speckit-demo" not in text
 
+    def test_registered_extension_command_keeps_plus_quoted_and_bracketed_paths(
+        self, tmp_path
+    ):
+        """Plus-named dirs, quoted spaced paths, and bracketed segments stay intact."""
+        text = self._register_junie_command(
+            tmp_path,
+            "git",
+            "Invoke {SCRIPT}, read C:\\C++\\speckit.git.commit.md, "
+            '"scripts/my speckit.git.commit.sh", '
+            "'scripts/my speckit.git.commit.sh', "
+            "`scripts/my speckit.git.commit.sh`, "
+            '"C:\\Program Files\\my speckit.git.commit.sh", '
+            '"/tmp/my dir/my speckit.git.commit.md", '
+            "commands/[old]speckit.git.commit.md, "
+            "speckit.demo[old]/commands/speckit.git.commit.md, and "
+            "speckit.demo[old files]/commands/speckit.git.commit.md. "
+            'Compare "Run /speckit.git.commit", "/speckit.foo.md", '
+            '"ab:/speckit.foo.md", "Run speckit.plan and edit scripts/foo.sh", '
+            '"don\'t run /speckit.git.status", [/speckit.foo.md], '
+            "([/speckit.foo.md]), and [Run](/speckit.foo.md).\n",
+            frontmatter=(
+                "scripts:\n"
+                '  sh: \'scripts/C++/speckit.git.commit.sh "{ARGS}"\'\n'
+                'quoted: "scripts/my speckit.git.commit.sh"\n'
+                "bracketed: commands/[old]speckit.git.commit.md\n"
+            ),
+            extension_id="git",
+        )
+        assert '.specify/extensions/git/scripts/C++/speckit.git.commit.sh "$ARGUMENTS"' in text
+        assert "C:\\C++\\speckit.git.commit.md" in text
+        assert '".specify/extensions/git/scripts/my speckit.git.commit.sh"' in text
+        assert "'.specify/extensions/git/scripts/my speckit.git.commit.sh'" in text
+        assert "`.specify/extensions/git/scripts/my speckit.git.commit.sh`" in text
+        assert '"C:\\Program Files\\my speckit.git.commit.sh"' in text
+        assert '"/tmp/my dir/my speckit.git.commit.md"' in text
+        assert "commands/[old]speckit.git.commit.md" in text
+        assert "speckit.demo[old]/commands/speckit.git.commit.md" in text
+        assert "speckit.demo[old files]/commands/speckit.git.commit.md" in text
+        assert "quoted: scripts/my speckit.git.commit.sh" in text
+        assert "bracketed: commands/[old]speckit.git.commit.md" in text
+        assert '"Run /speckit-git-commit"' in text
+        assert '"/speckit-foo-md"' in text
+        assert '"ab:/speckit-foo-md"' in text
+        assert '"Run speckit-plan and edit .specify/extensions/git/scripts/foo.sh"' in text
+        assert '"don\'t run /speckit-git-status"' in text
+        assert "[/speckit-foo-md], ([/speckit-foo-md]), and [Run](/speckit-foo-md)." in text
+        assert "my speckit-git-commit" not in text
+
+    def test_hyphenate_command_refs_linear_scaling_in_long_segment(self):
+        """Scanning many matches in one segment or unmatched brackets scales linearly."""
+        import time
+
+        t0 = time.monotonic()
+        non_path = "a" + "-speckit.x" * 10_000
+        assert hyphenate_command_refs(non_path) == "a" + "-speckit-x" * 10_000
+
+        path_seg = "scripts/a" + "-speckit.x" * 10_000
+        assert hyphenate_command_refs(path_seg) == path_seg
+
+        unmatched = "]" * 20_000 + "/speckit.foo"
+        assert hyphenate_command_refs(unmatched) == "]" * 20_000 + "/speckit-foo"
+        elapsed = time.monotonic() - t0
+        assert elapsed < 5.0, f"linear normalization took too long: {elapsed:.2f}s"
+
     def test_junie_hook_instruction_injection(self):
         """Verify junie injects the dot-to-hyphen note for hooks."""
         junie = get_integration("junie")
