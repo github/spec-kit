@@ -109,6 +109,71 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         # Instruction stays on its own line rather than being mashed onto the note.
         assert "\n- For each executable hook, output the following:" in injected
 
+    def test_junie_hook_note_not_suppressed_by_unrelated_prose(self):
+        """Unrelated prose must not suppress the note for a real instruction."""
+        junie = get_integration("junie")
+        content = (
+            "# DB extension command\n\n"
+            "When normalizing table names, replace dots with underscores.\n\n"
+            "## Pre-Execution Hooks\n"
+            "- For each executable hook, output the following:\n"
+        )
+        injected = junie._inject_hook_command_note(content)
+        assert "`/speckit-git-commit`" in injected, injected
+        assert "replace dots with underscores" in injected
+
+    def test_junie_hook_note_added_to_every_un_noted_instruction(self):
+        """A second, un-noted hook section must still get its own note."""
+        junie = get_integration("junie")
+        instruction = "- For each executable hook, output the following:\n"
+        first = junie._inject_hook_command_note("## Hooks A\n" + instruction)
+        content = first + "\n## Hooks B\n" + instruction
+
+        injected = junie._inject_hook_command_note(content)
+        assert injected.count("replace dots (`.`) with hyphens (`-`)") == 2, injected
+        assert junie._inject_hook_command_note(injected) == injected
+
+    def test_junie_hook_note_sits_directly_above_indented_instruction(self):
+        """No blank line may be inserted between the note and the instruction."""
+        junie = get_integration("junie")
+        content = "## Hooks\n\n  - For each executable hook, output the following:\n"
+        injected = junie._inject_hook_command_note(content)
+        lines = injected.splitlines()
+        instruction_idx = next(
+            i for i, line in enumerate(lines) if "For each executable hook" in line
+        )
+        assert "replace dots" in lines[instruction_idx - 1], injected
+        assert lines[instruction_idx].startswith("  - For each")
+        assert lines[instruction_idx - 1].startswith("  - When constructing")
+
+    def test_registered_extension_command_keeps_hook_note_with_unrelated_prose(self, tmp_path):
+        """Extension command registration must inject the hook note even when prose mentions 'replace dots'."""
+        from specify_cli.agents import CommandRegistrar
+
+        ext = tmp_path / "ext"
+        (ext / "commands").mkdir(parents=True)
+        (ext / "commands" / "check.md").write_text(
+            "---\ndescription: Check\n---\n\n"
+            "When normalizing table names, replace dots with underscores.\n\n"
+            "## Pre-Execution Hooks\n"
+            "- For each executable hook, output the following:\n",
+            encoding="utf-8",
+        )
+        project = tmp_path / "project"
+        project.mkdir()
+        CommandRegistrar().register_commands(
+            "junie",
+            [{"name": "speckit.db.check", "file": "commands/check.md"}],
+            "db",
+            ext,
+            project,
+        )
+        out = (project / ".junie" / "commands" / "speckit-db-check.md").read_text(
+            encoding="utf-8"
+        )
+        assert "`/speckit-git-commit`" in out
+        assert "replace dots with underscores" in out
+
     def test_init_next_steps_show_hyphenated_commands(self, tmp_path):
         """Next Steps must list the `/speckit-<name>` commands Junie installs."""
         from typer.testing import CliRunner
