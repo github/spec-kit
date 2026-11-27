@@ -65,15 +65,49 @@ _ENV_VAR_DIR = re.compile(r"%[A-Za-z_][A-Za-z0-9_()]*%\Z")
 _BRACKET_OPENERS = {")": "(", "]": "["}
 
 
+_SEGMENT_CHARS = frozenset("._-~+@$%")
+
+
+def _is_segment_char(ch: str) -> bool:
+    """Whether *ch* can appear inside an unquoted filename or directory segment."""
+    return ch.isalnum() or ch in _SEGMENT_CHARS
+
+
+def _has_explicit_path_prefix(text: str, opener: int) -> bool:
+    """Whether *opener* (``(`` or ``[``) sits inside an explicit directory path."""
+    if opener > 0 and _is_segment_char(text[opener - 1]):
+        return True
+    prev_sep = max(text.rfind("/", 0, opener), text.rfind("\\", 0, opener))
+    if prev_sep < 0:
+        return False
+    between = text[prev_sep + 1 : opener]
+    if not all(_is_segment_char(c) or c == " " for c in between):
+        return False
+    if prev_sep >= 1 and (
+        _ends_directory(text, prev_sep) or _is_drive_prefix(text, prev_sep)
+    ):
+        return True
+    return (
+        text[prev_sep] == "/"
+        and (prev_sep == 0 or text[prev_sep - 1] in ' \t\r\n"\'`([<{')
+        and bool(between)
+        and _is_segment_char(between[0])
+        and not between.startswith("speckit.")
+    )
+
+
 def _ends_directory(text: str, sep: int) -> bool:
     """Whether the text before the separator at *sep* ends a directory name.
 
     Besides plain path-name characters this accepts a closing bracket that
     closes a whitespace-free group (``Program Files (x86)``,
-    ``commands[old]``) and a ``%VAR%`` environment variable reference
-    (``%TEMP%``).  An opening bracket, or a closing one around prose such as
-    ``(see docs)``, does not end a directory, so ``[/speckit.foo.md]`` and
-    ``(/speckit.foo.md)`` stay command references.
+    ``commands[old]``), a whitespace-containing group attached to an explicit
+    path prefix (``C:\\Program Files (old versions)\\``,
+    ``./commands[old files]/``), and a ``%VAR%`` environment variable
+    reference (``%TEMP%``).  An opening bracket, or a closing one around
+    unprefixed prose such as ``(see docs)`` or ``[Run command]``, does not
+    end a directory, so ``[/speckit.foo.md]`` and ``(see docs)/speckit.foo.md``
+    stay command references.
     """
     ch = text[sep - 1]
     if _is_path_char(ch):
@@ -81,12 +115,17 @@ def _ends_directory(text: str, sep: int) -> bool:
     if ch in _BRACKET_OPENERS:
         opener = text.rfind(_BRACKET_OPENERS[ch], 0, sep - 1)
         group = text[opener + 1 : sep - 1]
-        return (
-            opener >= 0
-            and bool(group)
-            and ch not in group
-            and not any(c.isspace() for c in group)
-        )
+        if (
+            opener < 0
+            or not group
+            or ch in group
+            or "\n" in group
+            or "\r" in group
+        ):
+            return False
+        if not any(c.isspace() for c in group):
+            return True
+        return _has_explicit_path_prefix(text, opener)
     if ch == "%":
         return _ENV_VAR_DIR.search(text, 0, sep) is not None
     return False
@@ -113,24 +152,29 @@ def _hyphenate_ref_match(match: re.Match[str]) -> str:
 
     Command names may themselves end in a file-like segment (for example
     ``/speckit.foo.md`` or ``speckit.foo.bar.md``), so suffix alone cannot tell
-    a path apart from a command.  A token is preserved verbatim when it sits
-    inside a path regardless of suffix: either preceded by a directory name or
-    Windows drive (``commands/speckit.git.commit.md``,
-    ``scripts/speckit.git.commit.sh``, ``C:\\speckit.foo.md``), or directly
-    followed by a path separator as an ancestor directory segment
-    (``/tmp/speckit.demo/commands/...``, ``speckit.demo/commands/...``).  A bare
-    or slash-prefixed command reference stays hyphenated, including after
+    a path apart from a command.  A token is preserved verbatim whenever its
+    containing path segment sits inside a path regardless of suffix or
+    filename prefix: either preceded by a directory name or Windows drive
+    (``commands/speckit.git.commit.md``, ``scripts/run-speckit.git.commit.sh``,
+    ``commands/archived.speckit.git.commit.md``, ``C:\\speckit.foo.md``), or
+    directly followed by a path separator as an ancestor directory segment
+    (``/tmp/speckit.demo/commands/...``, ``/tmp/my-speckit.demo/commands/...``).
+    A bare or slash-prefixed command reference stays hyphenated, including after
     punctuation such as ``[/speckit.foo.md]`` or ``(/speckit.foo.md)``.
     """
     ref = match.group(0)
-    start = match.start()
-    end = match.end()
     text = match.string
-    if start >= 2 and text[start - 1] in "/\\" and (
-        _ends_directory(text, start - 1) or _is_drive_prefix(text, start - 1)
+    seg_start = match.start()
+    while seg_start > 0 and _is_segment_char(text[seg_start - 1]):
+        seg_start -= 1
+    seg_end = match.end()
+    while seg_end < len(text) and _is_segment_char(text[seg_end]):
+        seg_end += 1
+    if seg_start >= 2 and text[seg_start - 1] in "/\\" and (
+        _ends_directory(text, seg_start - 1) or _is_drive_prefix(text, seg_start - 1)
     ):
         return ref
-    if end < len(text) and text[end] in "/\\":
+    if seg_end < len(text) and text[seg_end] in "/\\":
         return ref
     return ref.replace(".", "-")
 

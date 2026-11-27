@@ -282,6 +282,45 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         assert transformed_list[1] is transformed_list
         assert cyclic_list[0] == "speckit.plan"
 
+    def test_registered_extension_command_keeps_prefixed_filenames_and_spaced_bracket_dirs(
+        self, tmp_path
+    ):
+        """Prefixed filenames inside paths and spaced bracketed directories stay intact."""
+        text = self._register_junie_command(
+            tmp_path,
+            "git",
+            "Invoke {SCRIPT}, read commands/archived.speckit.git.commit.md, "
+            "open C:\\Program Files (old versions)\\speckit.git.commit.md, "
+            "C:/Program Files (old versions)/speckit.git.commit.md, "
+            "./commands[old files]/speckit.git.commit.md, "
+            "commands[old files]/speckit.git.commit.md, and "
+            "/tmp/my-speckit.demo (old versions)/commands/archived.speckit.git.commit.md. "
+            "Also check (see docs)/speckit.foo.md, [Run command]/speckit.foo.md, "
+            "Edit C:\\foo\\bar.txt, then run (see docs)/speckit.foo.md, "
+            "and /speckit.git.status.\n",
+            frontmatter=(
+                "scripts:\n"
+                '  sh: \'scripts/run-speckit.git.commit.sh "{ARGS}"\'\n'
+                "spaced_dir: 'C:\\Program Files (old versions)\\speckit.git.commit.md'\n"
+                "archived: commands/archived.speckit.git.commit.md\n"
+            ),
+            extension_id="git",
+        )
+        assert '.specify/extensions/git/scripts/run-speckit.git.commit.sh "$ARGUMENTS"' in text
+        assert "commands/archived.speckit.git.commit.md" in text
+        assert "C:\\Program Files (old versions)\\speckit.git.commit.md" in text
+        assert "C:/Program Files (old versions)/speckit.git.commit.md" in text
+        assert "./commands[old files]/speckit.git.commit.md" in text
+        assert "commands[old files]/speckit.git.commit.md" in text
+        assert "/tmp/my-speckit.demo (old versions)/commands/archived.speckit.git.commit.md" in text
+        assert "(see docs)/speckit-foo-md" in text
+        assert "[Run command]/speckit-foo-md" in text
+        assert "Edit C:\\foo\\bar.txt, then run (see docs)/speckit-foo-md" in text
+        assert "and /speckit-git-status." in text
+        assert "run-speckit-git-commit-sh" not in text
+        assert "archived-speckit-git-commit-md" not in text
+        assert "my-speckit-demo" not in text
+
     def test_junie_hook_instruction_injection(self):
         """Verify junie injects the dot-to-hyphen note for hooks."""
         junie = get_integration("junie")

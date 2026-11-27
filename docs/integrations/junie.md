@@ -28,9 +28,12 @@ Handoff references and extension/preset command content are also normalized
 to hyphenated command names, so `/speckit.git.commit` in an extension command
 becomes `/speckit-git-commit`. Path-qualified names and dotted directory
 segments—such as `.specify/extensions/git/commands/speckit.git.commit.md`,
-`scripts/speckit.git.commit.sh`, `/tmp/speckit.demo/commands/speckit.git.commit.md`,
-`C:\speckit.foo.md`, `C:\Program Files (x86)\speckit.foo.md`,
-`%TEMP%\speckit.foo.md`, and `./commands[old]/speckit.foo.md`—keep their dots.
+`scripts/speckit.git.commit.sh`, `scripts/run-speckit.git.commit.sh`,
+`/tmp/speckit.demo/commands/speckit.git.commit.md`, `C:\speckit.foo.md`,
+`C:\Program Files (x86)\speckit.foo.md`,
+`C:\Program Files (old versions)\speckit.foo.md`, `%TEMP%\speckit.foo.md`,
+`./commands[old]/speckit.foo.md`, and
+`./commands[old files]/speckit.foo.md`—keep their dots.
 A bare or slash-prefixed token such as `/speckit.foo.md` is treated as a
 command reference and hyphenated. Core command content is not rewritten this
 way.
