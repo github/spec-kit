@@ -323,9 +323,12 @@ descriptor-relative or change their documented concurrency limitations.
   the attributes of an existing file.
 - `open_rewrite(path)` is a context manager yielding a blocking, binary,
   writable descriptor on an existing regular file at offset 0, for in-place byte
-  rewrites that must keep the file's identity, owner, mode, ACL and hard links.
-  It uses `overwrite_text`'s anchored, non-truncating open, but never creates:
-  POSIX omits `O_CREAT` and Windows does not fall back to creation, so a leaf
+  rewrites that must keep the file's identity, owner, permission bits, ACL and
+  hard links. POSIX may clear the set-user-ID and set-group-ID bits when the
+  caller writes or truncates through it, as for any unprivileged write; the
+  helper keeps that OS behaviour and does not restore them. It uses
+  `overwrite_text`'s anchored, non-truncating open, but never creates: POSIX
+  omits `O_CREAT` and Windows does not fall back to creation, so a leaf
   removed after resolution raises `FileNotFoundError`. The opened file type is
   checked with `fstat` before the descriptor is yielded. The helper closes the
   descriptor on exit, so callers must not close it; wrap it with
@@ -337,8 +340,10 @@ descriptor-relative or change their documented concurrency limitations.
   byte (retrying short writes), truncates to the new length after writing, then
   `fsync`s, adding `F_FULLFSYNC` on macOS where the filesystem supports it. An
   append-mode descriptor is refused (`EINVAL`) before anything is written,
-  since its writes ignore the seek and the truncate would cut them off.
-  A failure can leave partial content; restoring it is the caller's job.
+  since its writes ignore the seek and the truncate would cut them off. Like
+  any write, it may clear the set-user-ID and set-group-ID bits on POSIX, and
+  they are not restored. A failure can leave partial content; restoring it is
+  the caller's job.
 - `delete(path, recursive=False)` unlinks files/links or removes directories.
   Nonrecursive directory deletion requires an empty directory. The established
   root cannot be deleted. Recursive enumeration and each removal use anchored
@@ -476,8 +481,8 @@ under concurrent renames, nor does parent anchoring make every leaf preflight
 atomic with the subsequent open.
 On Windows, exclusive creation, text overwrite and `open_rewrite` still open
 their leaf by pathname after pinning the parent hierarchy, and `stat` queries
-its leaf the same way. Attribute-only reparse updates can redirect those opens; they do not have the read path's parent-relative
-handle protection.
+its leaf the same way. Attribute-only reparse updates can redirect those
+opens; they do not have the read path's parent-relative handle protection.
 The helper does not constrain subprocesses or third-party code.
 
 Existing safe-write mechanisms informed this helper, but existing shared

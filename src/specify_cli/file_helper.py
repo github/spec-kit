@@ -671,8 +671,10 @@ class FileHelper:
 
         The descriptor starts at offset 0 and the helper closes it on exit, so the
         caller must not close it (wrap it with ``os.fdopen(fd, "wb", closefd=False)``).
-        The caller owns writing, truncating and flushing; owner, mode and links are
-        unchanged.
+        The caller owns writing, truncating and flushing; owner, permission bits
+        and links are unchanged. On POSIX, the caller's write or truncate may clear
+        the set-user-ID and set-group-ID bits, as any unprivileged write does; the
+        helper keeps that behaviour and does not restore them.
         """
         destination = self._path(path)
         self._require_file(destination)
@@ -693,8 +695,10 @@ class FileHelper:
         space is reused rather than freed first), then ``fsync``s, adding
         ``F_FULLFSYNC`` on macOS where the filesystem supports it. An append-mode
         descriptor is refused before anything is written, since its writes
-        ignore the seek and the truncate would then cut them off. A failure can
-        leave partial content; restoring it is the caller's job.
+        ignore the seek and the truncate would then cut them off. On POSIX the
+        write may clear the set-user-ID and set-group-ID bits; they are not
+        restored. A failure can leave partial content; restoring it is the
+        caller's job.
         """
         if os.name != "nt":
             import fcntl

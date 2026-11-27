@@ -100,6 +100,36 @@ def test_open_rewrite_keeps_the_mode(tmp_path):
     assert stat.S_IMODE(path.stat().st_mode) == before
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX set-user-ID and set-group-ID bits")
+def test_open_rewrite_leaves_setid_clearing_to_the_os(tmp_path):
+    # POSIX lets a write by a process without privilege clear these bits. The
+    # helper keeps that behaviour rather than restoring them: its result must
+    # match a plain write to an identical file, with permission bits unchanged.
+    path = _seed(tmp_path)
+    control = tmp_path / "control"
+    control.write_bytes(path.read_bytes())
+    for target in (path, control):
+        target.chmod(0o6750)
+    before = stat.S_IMODE(path.stat().st_mode)
+    if not before & (stat.S_ISUID | stat.S_ISGID):
+        pytest.skip("The filesystem did not keep the set-user-ID or set-group-ID bit")
+    assert stat.S_IMODE(control.stat().st_mode) == before
+
+    fd = os.open(control, os.O_WRONLY)
+    try:
+        os.write(fd, b"new")
+        os.ftruncate(fd, 3)
+    finally:
+        os.close(fd)
+    with FileHelper(tmp_path) as files, files.open_rewrite(REL) as fd:
+        FileHelper.rewrite_descriptor(fd, b"new")
+
+    after = stat.S_IMODE(path.stat().st_mode)
+    assert path.read_bytes() == b"new"
+    assert after & 0o777 == before & 0o777
+    assert after == stat.S_IMODE(control.stat().st_mode)
+
+
 def test_open_rewrite_closes_the_descriptor(tmp_path):
     _seed(tmp_path)
     with FileHelper(tmp_path) as files:
