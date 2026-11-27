@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -97,20 +98,36 @@ def test_powershell_json_preserves_non_ascii_feature_on_legacy_stdout(repo: Path
 
 @pytest.mark.parametrize("port", PORTS)
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
-@pytest.mark.parametrize("template_state", ["missing", "empty", "empty_override"])
+@pytest.mark.parametrize(
+    "template_state",
+    [
+        "missing",
+        "empty",
+        "empty_override",
+        "whitespace",
+        "whitespace_override",
+        "unicode_whitespace_override",
+    ],
+)
 def test_plan_template_failure_and_retry(
     tmp_path: Path, port: str, json_mode: bool, template_state: str
 ) -> None:
     repo = _setup_repo(tmp_path, template=False)
     template = repo / ".specify" / "templates" / "plan-template.md"
     if template_state != "missing":
+        if template_state == "unicode_whitespace_override":
+            content = "\u00a0\u2003\n".encode("utf-8")
+        elif "whitespace" in template_state:
+            content = b"\n   \t\r\n"
+        else:
+            content = b""
         template.parent.mkdir(parents=True)
-        template.write_bytes(b"")
-        if template_state == "empty_override":
+        template.write_bytes(content)
+        if template_state.endswith("_override"):
             template.write_bytes(TEMPLATE_BODY.encode("utf-8"))
             template = template.parent / "overrides" / template.name
             template.parent.mkdir()
-            template.write_bytes(b"")
+            template.write_bytes(content)
     plan = repo / "specs" / "001-my-feature" / "plan.md"
 
     result = run(_command(repo, port, json_mode), repo)
@@ -141,7 +158,9 @@ def test_plan_template_failure_and_retry(
 @pytest.mark.parametrize("port", PORTS)
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
 @pytest.mark.parametrize("template_state", ["missing", "empty", "valid"])
-@pytest.mark.parametrize("body", [b"", b"# Existing plan\n"], ids=["empty", "nonempty"])
+@pytest.mark.parametrize(
+    "body", [b"", b" \t\r\n", b"# Existing plan\n"], ids=["empty", "whitespace", "nonempty"]
+)
 def test_existing_plan_is_preserved(
     tmp_path: Path, port: str, json_mode: bool, template_state: str, body: bytes
 ) -> None:
@@ -168,16 +187,64 @@ def test_existing_plan_is_preserved(
 
 @pytest.mark.parametrize("port", PORTS)
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
-def test_whitespace_plan_template_is_not_empty(
-    repo: Path, port: str, json_mode: bool
+@pytest.mark.parametrize(
+    "body",
+    [
+        b" \t\n\n",
+        b"\r\n  \t \r\n",
+        "\u00a0\u2003\n".encode("utf-8"),
+        "\u3000\r\n\u202f\t".encode("utf-8"),
+    ],
+    ids=[
+        "lf_whitespace",
+        "crlf_whitespace",
+        "unicode_nbsp_em_space",
+        "unicode_ideographic_nnbsp",
+    ],
+)
+def test_whitespace_plan_template_is_rejected(
+    repo: Path, port: str, json_mode: bool, body: bytes
 ) -> None:
-    body = b" \t\n\n"
     (repo / ".specify" / "templates" / "plan-template.md").write_bytes(body)
+    plan = repo / "specs" / "001-my-feature" / "plan.md"
 
     result = run(_command(repo, port, json_mode), repo)
 
-    assert result.returncode == 0, result.stderr
-    assert (repo / "specs" / "001-my-feature" / "plan.md").read_bytes() == body
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == (
+        "ERROR: Plan template is empty; no new plan.md was created.\n"
+        "Restore a valid plan template and rerun plan setup.\n"
+    )
+    assert not plan.exists()
+
+
+@requires_bash
+def test_bash_rejects_unicode_whitespace_template_without_python(
+    repo: Path, tmp_path: Path
+) -> None:
+    (repo / ".specify" / "templates" / "plan-template.md").write_bytes(
+        "\u00a0\u2003\u3000\r\n".encode("utf-8")
+    )
+    stub_dir = tmp_path / "stubbin"
+    stub_dir.mkdir()
+    for name in ("python3", "python", "py"):
+        stub = stub_dir / name
+        stub.write_text("#!/bin/sh\nexit 49\n", encoding="utf-8")
+        stub.chmod(0o755)
+    env = clean_env()
+    env["PATH"] = f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"
+    plan = repo / "specs" / "001-my-feature" / "plan.md"
+
+    result = run(bash_cmd(repo, SCRIPT, "--json"), repo, env)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == (
+        "ERROR: Plan template is empty; no new plan.md was created.\n"
+        "Restore a valid plan template and rerun plan setup.\n"
+    )
+    assert not plan.exists()
 
 
 @requires_bash
