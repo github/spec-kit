@@ -1,13 +1,18 @@
 """Transport-neutral step-type contract and effect boundaries."""
 
+import io
 import json
+import os
+import subprocess
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
 
+from specify_cli.file_helper import FileHelper
 from specify_cli.workflows import BUILTIN_STEP_TYPES
 from specify_cli.workflows.step import _operation_list as operation
+from specify_cli.workflows.step.catalog import StepRegistry
 
 
 def _registry(root, entries):
@@ -84,13 +89,13 @@ def test_builtin_snapshot_ignores_live_registry_mutation(tmp_path, monkeypatch):
             operation.WorkflowStepListRequest(Path("relative")),
             "invalid_project_directory",
         ),
-        (operation.WorkflowStepListRequest(Path("/tmp"), limit=0), "invalid_limit"),
+        (operation.WorkflowStepListRequest(Path.cwd(), limit=0), "invalid_limit"),
         (
-            operation.WorkflowStepListRequest(Path("/tmp"), limit=1001),
+            operation.WorkflowStepListRequest(Path.cwd(), limit=1001),
             "invalid_limit",
         ),
         (
-            operation.WorkflowStepListRequest(Path("/tmp"), limit="10"),  # type: ignore[arg-type]
+            operation.WorkflowStepListRequest(Path.cwd(), limit="10"),  # type: ignore[arg-type]
             "invalid_limit",
         ),
     ],
@@ -123,3 +128,133 @@ def test_operation_descriptor_contract():
     assert descriptor.contract_version == "1"
     assert descriptor.capabilities == frozenset({"local-read"})
     assert descriptor.network_access == "none"
+
+
+def _symlink(link, target):
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"Symlink creation unavailable: {exc}")
+
+
+def test_limit_stops_at_first_installed_entry(tmp_path):
+    _registry(
+        tmp_path,
+        {
+            f"step-{letter}": {"name": letter, "version": "1.0.0"}
+            for letter in "abcde"
+        },
+    )
+    result = operation.list_step_types(
+        operation.WorkflowStepListRequest(
+            tmp_path, limit=len(BUILTIN_STEP_TYPES) + 1
+        )
+    )
+    assert len(result.items) == len(BUILTIN_STEP_TYPES) + 1
+    assert result.truncated is True
+    assert result.items[-1].id == "step-a"
+
+
+def test_registry_size_cap_is_enforced_before_parsing(tmp_path, monkeypatch):
+    path = _registry(tmp_path, {"a-custom": {"name": "Ay", "version": "1.0.0"}})
+    size = path.stat().st_size
+    monkeypatch.setattr(StepRegistry, "MAX_REGISTRY_BYTES", size)
+    result = operation.list_step_types(operation.WorkflowStepListRequest(tmp_path))
+    assert "a-custom" in {item.id for item in result.items}
+    monkeypatch.setattr(StepRegistry, "MAX_REGISTRY_BYTES", size - 1)
+    result = operation.list_step_types(operation.WorkflowStepListRequest(tmp_path))
+    assert {item.id for item in result.items} == set(BUILTIN_STEP_TYPES)
+
+
+def test_symlinked_steps_directory_is_rejected(tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    (root / ".specify" / "workflows").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "step-registry.json").write_text(
+        json.dumps({"steps": {"outside-secret": {"name": "Leaked"}}}),
+        encoding="utf-8",
+    )
+    _symlink(root / ".specify" / "workflows" / "steps", outside)
+    opened = []
+    original_open = io.open
+
+    def track(file, *args, **kwargs):
+        if Path(file).name == "step-registry.json":
+            opened.append(file)
+        return original_open(file, *args, **kwargs)
+
+    monkeypatch.setattr(io, "open", track)
+    with pytest.raises(operation.WorkflowStepListError) as excinfo:
+        operation.list_step_types(operation.WorkflowStepListRequest(root))
+    assert excinfo.value.code == "step_registry_read_failed"
+    assert opened == []
+
+
+def test_unreadable_registry_is_read_failed(tmp_path, monkeypatch):
+    path = _registry(tmp_path, {"ok": {"name": "Ok"}})
+    original = FileHelper.read_bytes
+
+    def denied(files, file):
+        if Path(file) == path:
+            raise PermissionError("private registry details")
+        return original(files, file)
+
+    monkeypatch.setattr(FileHelper, "read_bytes", denied)
+    with pytest.raises(operation.WorkflowStepListError) as excinfo:
+        operation.list_step_types(operation.WorkflowStepListRequest(tmp_path))
+    assert excinfo.value.code == "step_registry_read_failed"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows directory junction regression")
+@pytest.mark.parametrize("registry_present", [False, True])
+def test_step_list_rejects_junction_at_registry_read_boundary(
+    tmp_path, monkeypatch, registry_present
+):
+    from typer.testing import CliRunner
+
+    from specify_cli import app
+    from specify_cli.workflows.step import mcp_list
+
+    root = tmp_path / "project"
+    (root / ".specify" / "workflows").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    registry = outside / "step-registry.json"
+    if registry_present:
+        registry.write_text('{"steps": {"outside-secret": {}}}', encoding="utf-8")
+    before = registry.read_bytes() if registry_present else None
+    junction = root / ".specify" / "workflows" / "steps"
+    created = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert created.returncode == 0, created.stderr
+    assert not junction.is_symlink()
+    opened = []
+    original_open = io.open
+
+    def track(file, *args, **kwargs):
+        if Path(file).name == "step-registry.json":
+            opened.append(file)
+        return original_open(file, *args, **kwargs)
+
+    monkeypatch.setattr(io, "open", track)
+    with pytest.raises(operation.WorkflowStepListError) as error:
+        operation.list_step_types(operation.WorkflowStepListRequest(root))
+    assert error.value.code == "step_registry_read_failed"
+    response = mcp_list.create_workflow_step_list_tool(launch_directory=root)()
+    assert response.is_error is True
+    assert (
+        response.structured_content["error"]["code"] == "step_registry_read_failed"
+    )
+    monkeypatch.setenv("SPECIFY_INIT_DIR", str(root))
+    cli = CliRunner().invoke(app, ["workflow", "step", "list"])
+    assert cli.exit_code == 1
+    assert "Failed to read step registry" in cli.output
+    assert "outside-secret" not in cli.output
+    assert opened == []
+    if registry_present:
+        assert registry.read_bytes() == before

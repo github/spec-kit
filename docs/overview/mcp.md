@@ -112,9 +112,11 @@ positions. The limit counts built-ins, installed entries, and warnings.
 retrieve more, up to 1000. There is no continuation cursor. The CLI retains
 its complete listing.
 
-Missing registry files produce only the built-in items. Corrupt or unreadable
-registry files produce `step_registry_read_failed`; unsafe storage produces
-`unsafe_workflow_storage`. Other expected errors are `invalid_project_directory`
+Missing registry files produce only the built-in items. Corrupt registry files
+are treated as empty (built-ins only), and registry input over 1 MiB is
+rejected the same way. Unreadable registry files and policy violations
+(symlinked or junctioned paths) produce `step_registry_read_failed`; unsafe
+storage produces `unsafe_workflow_storage`. Other expected errors are `invalid_project_directory`
 and `not_a_spec_kit_project`. Errors contain `code`, `message`,
 `details`, and `retryable` under `error`, with `isError: true`.
 Unexpected failures use sanitized `internal_error`; invalid operation outcomes
@@ -126,12 +128,13 @@ Out-of-range `limit` values are rejected before the operation runs and produce
 text-only input-validation errors with no structured content; see
 [Input validation errors](#input-validation-errors).
 
-Step listing enters the selected project's `FileHelper` policy owner, which
-rejects Windows junctions and unsupported reparse points at the read boundary.
-The registry itself is read through the step registry's own read-only loader,
-which refuses symlinked registry parents and registry files. These checks do
-not provide an OS sandbox or race-free filesystem confinement; the registry is
-still parsed in full before the entry limit is applied.
+Step listing enters the selected project's `FileHelper` policy owner and reads
+the registry through it, which rejects Windows junctions and unsupported
+reparse points at the read boundary. The registry loader also refuses
+symlinked registry parents and registry files. Registry input over 1 MiB is
+rejected before parsing, and result entries stop being built once the
+requested limit is filled. These checks do not provide an OS sandbox or
+race-free filesystem confinement.
 
 Operation outcomes exceeding the requested entry limit, or claiming truncation
 without filling that limit, are rejected as `invalid_operation_result`. The

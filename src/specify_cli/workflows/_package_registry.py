@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
+from ..file_helper import FileHelper, FileHelperError
+
 
 class PackageRegistry:
     """Registry of installed packages under ``.specify/workflows/<DIRECTORY>``."""
@@ -28,11 +30,31 @@ class PackageRegistry:
     LABEL: ClassVar[str]  # lowercase kind name used in messages
     ERROR: ClassVar[type[Exception]]  # raised when the registry cannot be written
     SCHEMA_VERSION: ClassVar[str] = "1.0"
+    # Read bound for policy-aware list operations. Registries are small JSON
+    # maps of installed-package metadata, so 1 MiB is generous headroom and
+    # matches the MCP wire-response cap; a larger file cannot be served in
+    # full anyway. The bound is opt-in (see __init__): existing callers keep
+    # the established unbounded load, since silently emptying an oversized
+    # registry under a later save() could discard installed packages.
+    MAX_REGISTRY_BYTES: ClassVar[int] = 1 * 1024 * 1024
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(
+        self,
+        project_root: Path,
+        *,
+        read_files: FileHelper | None = None,
+        max_bytes: int | None = None,
+    ) -> None:
         self.project_root = project_root
         self.base_dir = project_root / ".specify" / "workflows" / self.DIRECTORY
         self.registry_path = self.base_dir / self.REGISTRY_FILE
+        # Optional policy-aware read handoff for read-only list operations.
+        # Existing callers and all mutation paths retain their established
+        # behavior when it is not passed.
+        self._read_files = read_files
+        # Optional input bound, rejected before parsing. None keeps the
+        # established unbounded load for existing callers.
+        self._max_bytes = max_bytes
         self.data = self._load()
 
     @property
@@ -54,6 +76,8 @@ class PackageRegistry:
             "schema_version": self.SCHEMA_VERSION,
             self.RECORDS_KEY: {},
         }
+        if self._read_files is not None:
+            return self._load_via_helper(default_registry, self._read_files)
         # Defense-in-depth: refuse to read the registry if any parent directory
         # is a symlink, which could redirect the read outside the project root.
         if self._has_symlinked_parent():
@@ -68,8 +92,16 @@ class PackageRegistry:
                 # would block the read until a writer shows up.
                 if not stat.S_ISREG(os.stat(self.registry_path).st_mode):
                     return default_registry
-                with open(self.registry_path, encoding="utf-8") as f:
-                    data = json.load(f)
+                if self._max_bytes is None:
+                    with open(self.registry_path, encoding="utf-8") as f:
+                        data = json.load(f)
+                else:
+                    # Reject oversized input before parsing it.
+                    with open(self.registry_path, "rb") as f:
+                        raw = f.read(self._max_bytes + 1)
+                    if len(raw) > self._max_bytes:
+                        return default_registry
+                    data = json.loads(raw.decode("utf-8"))
                 # Validate shape: must be a dict with a dict records field
                 if not isinstance(data, dict):
                     return default_registry
@@ -79,6 +111,69 @@ class PackageRegistry:
             except (json.JSONDecodeError, ValueError, OSError, UnicodeError):
                 return default_registry
         return default_registry
+
+    def _load_via_helper(
+        self, default_registry: dict[str, Any], read_files: FileHelper
+    ) -> dict[str, Any]:
+        """Load through the retained project policy helper.
+
+        Unlike the legacy path above, a policy-aware read fails closed: a
+        symlinked parent or registry file, a junction, or an unreadable file
+        raises OSError instead of fabricating an empty registry, mirroring
+        WorkflowRegistry. Missing files, non-regular files, oversized input,
+        and corrupt content still fall back to the default registry, matching
+        this loader's best-effort contract for its other callers.
+        """
+        # Fail closed on symlinked paths before reading: the helper read
+        # below would refuse them too, but only at read time, after the
+        # size probe. (is_symlink misses Windows junctions; those are
+        # refused by the helper read itself.)
+        if self._has_symlinked_parent() or self.registry_path.is_symlink():
+            raise OSError(
+                f"Refusing to read {self.LABEL} registry at {self.registry_path}: "
+                "a parent directory or the registry file itself is a symlink"
+            )
+        try:
+            # Enforce the read policy on the parent chain before probing: a
+            # junction at the steps directory must fail closed even when no
+            # registry file exists under it, matching WorkflowRegistry. The
+            # read below re-validates the full path, so a swap between this
+            # check and the read is still refused there.
+            if not read_files.directory_exists(self.base_dir):
+                return default_registry
+            # Probe type and size before reading: a non-regular file (e.g. a
+            # FIFO) stays an empty registry, and oversized input is rejected
+            # before it is read or parsed. The probe only observes metadata
+            # and may follow an intermediate junction; the read below goes
+            # through the policy helper, which refuses junctions and
+            # symlinks at the read boundary, and the length check after the
+            # read catches growth between probe and read.
+            try:
+                info = os.stat(self.registry_path)
+            except (FileNotFoundError, NotADirectoryError):
+                return default_registry
+            if not stat.S_ISREG(info.st_mode):
+                return default_registry
+            if self._max_bytes is not None and info.st_size > self._max_bytes:
+                return default_registry
+            raw = read_files.read_bytes(self.registry_path)
+        except (FileNotFoundError, NotADirectoryError):
+            return default_registry
+        except (OSError, FileHelperError) as exc:
+            raise OSError(
+                f"Failed to read {self.LABEL} registry at {self.registry_path}: {exc}"
+            ) from exc
+        if self._max_bytes is not None and len(raw) > self._max_bytes:
+            return default_registry
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, ValueError, UnicodeError):
+            return default_registry
+        if not isinstance(data, dict):
+            return default_registry
+        if not isinstance(data.get(self.RECORDS_KEY), dict):
+            data[self.RECORDS_KEY] = {}
+        return data
 
     def save(self) -> None:
         """Persist registry atomically without truncating an existing file."""

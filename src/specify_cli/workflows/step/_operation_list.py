@@ -5,7 +5,6 @@ from __future__ import annotations
 import stat
 from contextlib import ExitStack
 from dataclasses import dataclass
-from itertools import islice
 from pathlib import Path
 from typing import Literal
 
@@ -88,10 +87,14 @@ def list_step_types(request: WorkflowStepListRequest) -> WorkflowStepListResult:
     live ``STEP_REGISTRY``: in a long-lived MCP server process a custom step
     loaded for one project would otherwise look built-in for the next.
     Installed entries come from the step registry file only; no step package
-    is imported. The registry loader is read-only and refuses symlinked
-    parents and registry files, and the project-files owner is entered first
-    so the project policy boundary (e.g. ``allow_symlinks``) is enforced the
-    same way as for workflow listing.
+    is imported. The registry is read through the retained project-files
+    owner, so the read policy (including Windows junction rejection) applies
+    at the read boundary the same way as for workflow listing, and registry
+    input over ``StepRegistry.MAX_REGISTRY_BYTES`` is rejected before it is
+    parsed. A missing, corrupt, or oversized registry still lists built-ins
+    only; an unreadable or policy-rejected registry is a
+    ``step_registry_read_failed`` error. Result entries stop being built
+    once the requested limit is filled.
     """
     root = request.project_directory
     if not isinstance(root, Path) or not root.is_absolute():
@@ -118,7 +121,7 @@ def list_step_types(request: WorkflowStepListRequest) -> WorkflowStepListResult:
                     "not_a_spec_kit_project",
                     "Not a Spec Kit project (no .specify/ directory)",
                 )
-            owners.enter_context(project_files(root))
+            files = owners.enter_context(project_files(root))
             if not (root / ".specify").is_dir():
                 raise WorkflowStepListError(
                     "not_a_spec_kit_project",
@@ -129,27 +132,44 @@ def list_step_types(request: WorkflowStepListRequest) -> WorkflowStepListResult:
             raise WorkflowStepListError("unsafe_workflow_storage", str(exc)) from exc
 
         try:
-            installed = StepRegistry(root).list()
+            installed = StepRegistry(
+                root,
+                read_files=files,
+                max_bytes=StepRegistry.MAX_REGISTRY_BYTES,
+            ).list()
         except OSError as exc:
             raise WorkflowStepListError(
                 "step_registry_read_failed", f"Failed to read step registry: {exc}"
             ) from exc
 
-    ordered: list[WorkflowStepListEntry | WorkflowStepListWarning] = [
-        WorkflowStepListEntry(id=key, name=key, version=None, kind="builtin")
-        for key in sorted(BUILTIN_STEP_TYPES)
-    ]
-    for step_id in sorted(installed):
+    builtin_ids = sorted(BUILTIN_STEP_TYPES)
+    installed_ids = sorted(installed)
+    total = len(builtin_ids) + len(installed_ids)
+    truncated = limit is not None and total > limit
+    # Each id yields exactly one item (an entry, or a warning for a
+    # non-dict entry), so the total and the truncation flag are known
+    # from the counts alone. Build entries only up to the limit.
+    take = total if limit is None else min(limit, total)
+    items: list[WorkflowStepListEntry | WorkflowStepListWarning] = []
+    for key in builtin_ids:
+        if len(items) >= take:
+            break
+        items.append(
+            WorkflowStepListEntry(id=key, name=key, version=None, kind="builtin")
+        )
+    for step_id in installed_ids:
+        if len(items) >= take:
+            break
         metadata = installed[step_id]
         if not isinstance(metadata, dict):
-            ordered.append(
+            items.append(
                 WorkflowStepListWarning(
                     step_id=step_id,
                     message=f"Skipping corrupted registry entry '{step_id}'.",
                 )
             )
             continue
-        ordered.append(
+        items.append(
             WorkflowStepListEntry(
                 id=step_id,
                 name=str(metadata.get("name", step_id)),
@@ -157,7 +177,4 @@ def list_step_types(request: WorkflowStepListRequest) -> WorkflowStepListResult:
                 kind="custom",
             )
         )
-    selected = ordered if limit is None else list(islice(ordered, limit))
-    return WorkflowStepListResult(
-        items=tuple(selected), truncated=limit is not None and len(ordered) > limit
-    )
+    return WorkflowStepListResult(items=tuple(items), truncated=truncated)
