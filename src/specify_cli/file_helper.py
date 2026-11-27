@@ -34,6 +34,29 @@ _DELETE_DIRECTORY_CACHE_SIZE = 8
 _POSIX_OPEN = os.open
 
 
+def _full_fsync(fd: int) -> None:
+    """Flush to stable storage; macOS ``fsync`` alone leaves data in the drive cache."""
+    os.fsync(fd)
+    if sys.platform == "darwin":
+        import fcntl
+
+        try:
+            fcntl.fcntl(fd, fcntl.F_FULLFSYNC)
+        except OSError as error:
+            # Not every filesystem supports it, and fsync has already run.
+            if error.errno not in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL, errno.ENOTTY):
+                raise
+
+
+def _write_all(fd: int, content: bytes) -> None:
+    view = memoryview(content)
+    while view:
+        count = os.write(fd, view)
+        if count == 0:
+            raise OSError(errno.EIO, "Write made no progress")
+        view = view[count:]
+
+
 def _strip_extended_length_prefix(path: _PathType) -> _PathType:
     """Normalize Windows extended drive/UNC spellings for comparison only."""
     raw = str(path)
@@ -391,6 +414,29 @@ class FileHelper:
         if not stat.S_ISDIR(path.stat().st_mode):
             raise NotADirectoryError(path)
 
+    def stat(self, path: Path | str) -> os.stat_result:
+        """Return the metadata of an existing entry, resolving only allowed links."""
+        destination = self._path(path)
+        if destination == self._canonical_root:
+            return os.stat(destination, follow_symlinks=False)
+        # Stat through the anchored parent so a swapped ancestor cannot redirect it.
+        if os.name == "nt":
+            parts = destination.relative_to(self._canonical_root).parts
+            with ExitStack() as stack:
+                parent = stack.enter_context(_windows_handle(
+                    self._canonical_root, directory=True, traverse=True,
+                ))
+                for part in parts[:-1]:
+                    parent = stack.enter_context(_windows_handle(
+                        Path(part), directory=True, parent=parent, traverse=True,
+                    ))
+                return os.stat(destination, follow_symlinks=False)
+        unsupported = "Anchored stat is unsupported on this platform"
+        if os.stat not in os.supports_dir_fd or os.stat not in os.supports_follow_symlinks:
+            raise OSError(errno.ENOTSUP, unsupported)
+        with self._posix_directory(destination.parent, unsupported_message=unsupported) as directory:
+            return os.stat(destination.name, dir_fd=directory, follow_symlinks=False)
+
     def directory_exists(self, path: Path | str) -> bool:
         """Return False for absence only; reject wrong types and forbidden paths."""
         try:
@@ -725,7 +771,52 @@ class FileHelper:
                 stream.write(content)
 
     @contextmanager
-    def _overwrite_descriptor(self, destination: Path) -> Iterator[int]:
+    def open_rewrite(self, path: Path | str) -> Iterator[int]:
+        """Yield a blocking binary write descriptor on an existing regular file, untruncated.
+
+        The descriptor starts at offset 0 and the helper closes it on exit, so the
+        caller must not close it (wrap it with ``os.fdopen(fd, "wb", closefd=False)``).
+        The caller owns writing, truncating and flushing; owner, permission bits
+        and links are unchanged. On POSIX, the caller's write or truncate may clear
+        the set-user-ID and set-group-ID bits, as any unprivileged write does; the
+        helper keeps that behaviour and does not restore them.
+        """
+        destination = self._path(path)
+        self._require_file(destination)
+        with self._overwrite_descriptor(destination, create=False) as fd:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise UnsupportedPathError(f"Expected a regular file: {destination}")
+            if os.name != "nt":
+                # Opened non-blocking only so a FIFO swapped in cannot hang the open.
+                os.set_blocking(fd, True)
+            yield fd
+
+    @staticmethod
+    def rewrite_descriptor(fd: int, content: bytes) -> None:
+        """Replace everything in the open file ``fd`` with ``content``, flushed to disk.
+
+        Only for a descriptor from ``open_rewrite``. It writes from offset 0
+        whatever the current offset, truncates after writing (so the old bytes'
+        space is reused rather than freed first), then ``fsync``s, adding
+        ``F_FULLFSYNC`` on macOS where the filesystem supports it. An append-mode
+        descriptor is refused before anything is written, since its writes
+        ignore the seek and the truncate would then cut them off. On POSIX the
+        write may clear the set-user-ID and set-group-ID bits; they are not
+        restored. A failure can leave partial content; restoring it is the
+        caller's job.
+        """
+        if os.name != "nt":
+            import fcntl
+
+            if fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_APPEND:
+                raise OSError(errno.EINVAL, "Refusing to rewrite through an append-mode descriptor")
+        os.lseek(fd, 0, os.SEEK_SET)
+        _write_all(fd, content)
+        os.ftruncate(fd, len(content))
+        _full_fsync(fd)
+
+    @contextmanager
+    def _overwrite_descriptor(self, destination: Path, *, create: bool = True) -> Iterator[int]:
         """Anchor the resolved hierarchy before opening a non-truncating leaf."""
         with ExitStack() as stack:
             if os.name == "nt":
@@ -735,7 +826,7 @@ class FileHelper:
                 for part in parts[:-1]:
                     current = current / part
                     stack.enter_context(_windows_handle(current, directory=True))
-                yield stack.enter_context(_windows_overwrite_fd(destination))
+                yield stack.enter_context(_windows_overwrite_fd(destination, create=create))
                 return
 
             unsupported = "Scoped text overwrite is unsupported on this platform"
@@ -743,8 +834,8 @@ class FileHelper:
                 raise OSError(errno.ENOTSUP, unsupported)
             with self._posix_directory(destination.parent, unsupported_message=unsupported) as parent:
                 flags = (
-                    os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK
-                    | getattr(os, "O_CLOEXEC", 0)
+                    os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+                    | (os.O_CREAT if create else 0)
                 )
                 fd = os.open(destination.name, flags, 0o666, dir_fd=parent)
                 try:

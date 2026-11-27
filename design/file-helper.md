@@ -252,6 +252,15 @@ descriptor-relative or change their documented concurrency limitations.
   with cleanup details attached as a note. The yielded path uses the same
   spelling rule as `iterdir`; cleanup uses the resolved staging location.
 - `read_bytes(path)` / `read_text(path, encoding="utf-8")` read regular files.
+- `stat(path)` returns the metadata of an existing entry after the normal policy
+  walk: allowed contained links, including a leaf link, are resolved, and the
+  resolved entry itself is not followed. The entry is queried relative to the
+  anchored parent hierarchy, so a parent swapped after resolution cannot
+  redirect it. The root itself is queried without following a link, so a root
+  replaced by a link after construction is not followed. Missing entries raise
+  `FileNotFoundError`. It is a
+  point-in-time query, not an anchor: callers that act on the result must
+  re-check identity on the descriptor they act through.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
   create files with existing parents. A no-follow `lstat` preflight rejects
   existing leaves, including dangling links, before opening the destination.
@@ -323,6 +332,29 @@ descriptor-relative or change their documented concurrency limitations.
   Windows creation also honors the CRT process mask: masking the owner-write
   bit creates a read-only file, matching native text creation, without changing
   the attributes of an existing file.
+- `open_rewrite(path)` is a context manager yielding a blocking, binary,
+  writable descriptor on an existing regular file at offset 0, for in-place byte
+  rewrites that must keep the file's identity, owner, permission bits, ACL and
+  hard links. POSIX may clear the set-user-ID and set-group-ID bits when the
+  caller writes or truncates through it, as for any unprivileged write; the
+  helper keeps that OS behaviour and does not restore them. It uses
+  `overwrite_text`'s anchored, non-truncating open, but never creates: POSIX
+  omits `O_CREAT` and Windows does not fall back to creation, so a leaf
+  removed after resolution raises `FileNotFoundError`. The opened file type is
+  checked with `fstat` before the descriptor is yielded. The helper closes the
+  descriptor on exit, so callers must not close it; wrap it with
+  `closefd=False`. Writing, truncating, flushing and any rollback belong to the
+  caller; nothing is written or truncated by the helper. There is no newline
+  translation on either platform.
+- `rewrite_descriptor(fd, content)` (static) replaces the whole content of a
+  descriptor returned by `open_rewrite`: it seeks to offset 0, writes every
+  byte (retrying short writes), truncates to the new length after writing, then
+  `fsync`s, adding `F_FULLFSYNC` on macOS where the filesystem supports it. An
+  append-mode descriptor is refused (`EINVAL`) before anything is written,
+  since its writes ignore the seek and the truncate would cut them off. Like
+  any write, it may clear the set-user-ID and set-group-ID bits on POSIX, and
+  they are not restored. A failure can leave partial content; restoring it is
+  the caller's job.
 - `delete(path, recursive=False)` unlinks files/links or removes directories.
   Nonrecursive directory deletion requires an empty directory. The established
   root cannot be deleted. Recursive enumeration and each removal use anchored
@@ -458,10 +490,10 @@ its replacement: creation stays with the opened directory, even if it is
 renamed out of the root. This is not a guarantee of stable namespace membership
 under concurrent renames, nor does parent anchoring make every leaf preflight
 atomic with the subsequent open.
-On Windows, exclusive creation and text overwrite still open their leaf by
-pathname after pinning the parent hierarchy. Attribute-only reparse updates
-can redirect those opens; they do not have the read path's parent-relative
-handle protection.
+On Windows, exclusive creation, text overwrite and `open_rewrite` still open
+their leaf by pathname after pinning the parent hierarchy, and `stat` queries
+its leaf the same way. Attribute-only reparse updates can redirect those
+opens; they do not have the read path's parent-relative handle protection.
 The helper does not constrain subprocesses or third-party code.
 
 Shared infrastructure content writes always use deny mode. The caller retains

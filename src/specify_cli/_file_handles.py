@@ -462,11 +462,13 @@ def windows_read_fd(handle: int) -> Iterator[int]:
 
 
 @contextmanager
-def _windows_overwrite_fd(path: Path) -> Iterator[int]:
+def _windows_overwrite_fd(path: Path, *, create: bool = True) -> Iterator[int]:
     """Open/create without following a new leaf or changing the CRT mask."""
     try:
         handle = _open_windows_handle(path, directory=False, overwrite=True)
     except FileNotFoundError:
+        if not create:
+            raise
         attributes = _windows_creation_attributes()
         handle = _open_windows_handle(
             path, directory=False, overwrite=True, create_attributes=attributes
