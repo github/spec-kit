@@ -37,6 +37,7 @@ HAS_POWERSHELL = HAS_PWSH or _WINDOWS_POWERSHELL is not None
 STALE_POINTER = "specs/001-gone"
 LIVE_POINTER = "specs/002-live"
 STALE_KINDS = ("missing_dir", "regular_file", "dangling_symlink")
+LIVE_KINDS = ("directory", "symlink")
 
 
 @pytest.fixture
@@ -76,6 +77,20 @@ def _prepare_stale_target(repo: Path, kind: str) -> None:
             pytest.skip(f"symlinks unavailable in this environment: {exc}")
         return
     raise ValueError(f"Unknown stale target kind: {kind}")
+
+
+def _prepare_live_target(repo: Path, kind: str) -> None:
+    live = repo / LIVE_POINTER
+    live.parent.mkdir(parents=True, exist_ok=True)
+    if kind == "directory":
+        live.mkdir()
+        return
+    real = repo / "specs" / "002-real"
+    real.mkdir(parents=True, exist_ok=True)
+    try:
+        live.symlink_to(real, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable in this environment: {exc}")
 
 
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -144,8 +159,9 @@ def test_python_rejects_stale_feature_json_pointer(project: Path, kind: str) -> 
     _assert_stale_pointer_rejected(_run(_python_cmd(project), project), project)
 
 
-def test_python_accepts_existing_feature_json_pointer(project: Path) -> None:
-    (project / LIVE_POINTER).mkdir(parents=True)
+@pytest.mark.parametrize("kind", LIVE_KINDS)
+def test_python_accepts_existing_feature_json_pointer(project: Path, kind: str) -> None:
+    _prepare_live_target(project, kind)
     _write_pointer(project, LIVE_POINTER)
 
     _assert_live_pointer_resolved(_run(_python_cmd(project), project))
@@ -168,8 +184,9 @@ def test_bash_rejects_stale_feature_json_pointer(project: Path, kind: str) -> No
 
 
 @requires_local_bash
-def test_bash_accepts_existing_feature_json_pointer(project: Path) -> None:
-    (project / LIVE_POINTER).mkdir(parents=True)
+@pytest.mark.parametrize("kind", LIVE_KINDS)
+def test_bash_accepts_existing_feature_json_pointer(project: Path, kind: str) -> None:
+    _prepare_live_target(project, kind)
     _write_pointer(project, LIVE_POINTER)
 
     _assert_live_pointer_resolved(_run(_bash_cmd(project), project))
@@ -193,8 +210,9 @@ def test_powershell_rejects_stale_feature_json_pointer(project: Path, kind: str)
 
 
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
-def test_powershell_accepts_existing_feature_json_pointer(project: Path) -> None:
-    (project / LIVE_POINTER).mkdir(parents=True)
+@pytest.mark.parametrize("kind", LIVE_KINDS)
+def test_powershell_accepts_existing_feature_json_pointer(project: Path, kind: str) -> None:
+    _prepare_live_target(project, kind)
     _write_pointer(project, LIVE_POINTER)
 
     _assert_live_pointer_resolved(_run(_powershell_cmd(project), project))
