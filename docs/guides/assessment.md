@@ -77,7 +77,7 @@ The agent records the scorecard, rationale, and verdict in `decision.md`.
 | Verdict | What it means | What to do |
 | --- | --- | --- |
 | `go` | The problem and evidence are adequate and a concept is recommended | Decide whether to act; optionally hand a software idea to SDD |
-| `needs-clarification` | Specific unknowns still block a defensible decision | Refine the affected artifacts with the missing information |
+| `needs-clarification` | Specific unknowns still block a defensible decision | Refine the affected artifacts, then re-run `/speckit-assess-decide` |
 | `kill` | The idea is not worth pursuing now | Keep the recorded rationale; stopping is a successful outcome |
 
 All five artifacts live under `.specify/assessments/offline-mode/`. None of the
@@ -90,14 +90,15 @@ The usual flow runs each command once. When an artifact contains
 in free-form chat to incorporate the missing information:
 
 ```text
-Update .specify/assessments/offline-mode/problem.md with these confirmed success metrics: <your metrics>. Update any dependent wording and revise decision.md if this resolves the blocker. Preserve source and confidence tags.
+Update .specify/assessments/offline-mode/problem.md with these confirmed success metrics: <your metrics>. Update any dependent wording. Preserve source and confidence tags.
 ```
 
-Do not automatically regenerate the entire stage. Ask the agent to review
-whether the new facts clear the blocker and revise the downstream scorecard,
-verdict, or handoff accordingly. Rerunning a command is an exception, such as
-replacing a discarded draft, and existing artifacts must not be overwritten
-without confirmation.
+Do not automatically regenerate the entire stage. Once the refined artifacts
+answer the blocking questions, request reassessment by re-running
+`/speckit-assess-decide`: it rebuilds the scorecard, verdict, and handoff from
+the updated artifacts, and asks before overwriting the existing `decision.md`.
+Rerunning an earlier command is an exception, such as replacing a discarded
+draft, and existing artifacts must not be overwritten without confirmation.
 
 ## Optional handoff to SDD
 

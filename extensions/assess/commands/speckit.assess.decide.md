@@ -4,7 +4,7 @@ description: "Apply a go / needs-clarification / kill gate and hand survivors of
 
 # Decide: Go, Clarify, or Kill
 
-Render the **verdict** on an assessed idea and record it at `.specify/assessments/<slug>/decision.md`. This is the gate between discovery and delivery: a **go** hands the idea off to `__SPECKIT_COMMAND_SPECIFY__`; a **kill** stops it with a documented reason; **needs-clarification** sends it back to an earlier stage. Killing ideas here is a success, not a failure — that is the entire point of an assessment pipeline.
+Render the **verdict** on an assessed idea and record it at `.specify/assessments/<slug>/decision.md`. This is the gate between discovery and delivery: a **go** hands the idea off to `__SPECKIT_COMMAND_SPECIFY__`; a **kill** stops it with a documented reason; **needs-clarification** reports the blocking unknowns and waits for the user to refine the artifacts and re-run `decide`. Killing ideas here is a success, not a failure — that is the entire point of an assessment pipeline.
 
 Decide **judges; it does not spec or build.** It weighs the evidence already gathered and commits to a defensible call.
 
@@ -85,7 +85,7 @@ Write `ASSESS_DIR/decision.md`:
 - The path `.specify/assessments/<ASSESS_SLUG>/decision.md`.
 - The next step, by verdict:
   - **go** → `__SPECKIT_COMMAND_SPECIFY__` using the handoff summary as its input.
-  - **needs-clarification** → re-run the named stage (e.g. `__SPECKIT_COMMAND_ASSESS_RESEARCH__ slug=<ASSESS_SLUG>`).
+  - **needs-clarification** → report the blocking questions and stop — do not resolve them here. The user supplies the missing information by refining the named artifact in place (editing the Markdown directly, or explicitly directing an agent), then requests reassessment by re-running `__SPECKIT_COMMAND_ASSESS_DECIDE__ slug=<ASSESS_SLUG>`, which consumes the updated artifacts. Re-run an earlier stage (e.g. `__SPECKIT_COMMAND_ASSESS_RESEARCH__ slug=<ASSESS_SLUG>`) only when the answer changes that stage's inputs.
   - **kill** → none; the assessment is closed. The record remains for future reference.
 
 ## Guardrails

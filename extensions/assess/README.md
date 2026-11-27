@@ -26,8 +26,8 @@ flowchart LR
     A[intake] --> R[research] --> D[define] --> S[shape] --> C{decide}
     C -->|go| SPEC[/"/speckit-specify"/]
     C -->|kill| X[closed, recorded]
-    C -.->|needs-clarification| F[refine named artifact in place]
-    F -.->|then revise decision.md| C
+    C -.->|needs-clarification| F[user refines named artifact in place]
+    F -.->|then re-run decide| C
 ```
 
 ## Commands
@@ -65,11 +65,11 @@ Resolve them by refining the existing file:
 1. **Edit the Markdown directly** (fill in the missing metric, owner, constraint, and so on), or
 2. **Ask the agent in free-form chat** to incorporate the missing information into that artifact.
 
-Then ask whether the new information clears the blocker and to update any downstream wording that depended on it. That includes `decision.md`: you can supply the missing facts and ask the agent to revise the scorecard, rationale, verdict, or handoff. That is artifact refinement, not command iteration.
+Then ask whether the new information clears the blocker and to review and update dependent wording across the affected artifacts — a clarification in `problem.md` can leave downstream `concept.md` wording stale, and `decide` reads both. `decision.md` is the exception — it is rebuilt by the command, not edited in place: once the refined artifacts answer the blocking questions, request reassessment by re-running `/speckit-assess-decide`. It rebuilds the scorecard, rationale, verdict, and handoff from the updated artifacts, and asks before overwriting the previous decision.
 
 When you add evidence, keep the source and confidence tags the research stage already uses (`ASSUMPTION` vs cited claims). Do not invent citations.
 
-Rerunning an earlier assessment command is the exception (for example after a wrong slug or a discarded draft), not the default path for answering clarification markers.
+Rerunning an assessment command earlier than `decide` is the exception (for example after a wrong slug or a discarded draft), not the default path for answering clarification markers.
 
 ## Slug Conventions
 
