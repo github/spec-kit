@@ -274,6 +274,35 @@ gate) or failed.
 | Project catalogs | `.specify/workflow-catalogs.yml` | YAML | Project-level catalog sources |
 | User catalogs | `~/.specify/workflow-catalogs.yml` | YAML | User-level catalog sources |
 
+### Persisted-run storage boundary
+
+The `.specify/workflows/runs` tree is a project-owned persistence boundary.
+Accessed storage ancestors, run directories, and persisted artifacts must be
+real filesystem objects rather than symlinks or Windows reparse points
+(including directory junctions). `RunState` shares `FileHelper`'s deny-mode
+entry classification before reading or writing `state.json`, `inputs.json`,
+`workflow.yml`, or `log.jsonl`; artifact opens also use no-follow flags and
+directory descriptors where supported.
+The descriptor-backed path opens the project root and walks `.specify`,
+`workflows`, and `runs` one component at a time with no-follow directory opens.
+Directory creation, run enumeration, atomic JSON replacement, and log appends
+use those descriptors directly (operations `FileHelper` does not anchor via
+directory descriptors), preventing an ancestor replacement from redirecting
+access outside the project.
+A symlink encountered by one of those no-follow opens after the pre-access
+checks is reported with the same policy error as one that existed beforehand;
+once a directory descriptor is open, descriptor-relative accesses continue
+against that directory even if its path is replaced, and atomic JSON writes
+replace a late artifact symlink in that directory without following it.
+On Windows, artifact reads delegate to a deny-mode `FileHelper(project_root)`
+for parent-relative handle-backed reads; other descriptor-free operations
+recheck path components with `lstat()` before access and use atomic replacement
+for state writes, rejecting existing symlinks and Windows reparse points
+(including directory junctions) though pathname writes and listings cannot
+prevent concurrent path replacement.
+Both write paths create state and input temporary files with owner-only
+permissions (`0600` on POSIX), retained when atomically replacing the artifacts.
+
 ## See also
 
 - [Workflow CLI and JSON contracts](cli.md)

@@ -82,6 +82,13 @@ against symlinked write destinations before snapshotting and mutation.
 This guarantee does not cover unmigrated consumers such as
 `bundles.project.active_integration`, whose containment-checked reads can still
 follow contained state-file links.
+Persisted workflow runs under `.specify/workflows/runs` are likewise an
+always-deny managed-storage boundary: `RunState` shares `FileHelper`'s
+deny-mode entry classification (`FileHelper._entry_mode`) and Windows
+handle-backed reads (`FileHelper.read_bytes`). Where the platform supports
+directory descriptors, `RunState` uses them for directory creation, run
+enumeration, owner-only (`0600`) atomic JSON replacement, and append-only log
+writes.
 
 The shared CLI resolver and bundle ancestor search use a deny-mode FileHelper
 probe for the `.specify` marker. Their Path-returning resolvers preflight
