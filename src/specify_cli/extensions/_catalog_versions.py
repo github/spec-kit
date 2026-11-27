@@ -13,6 +13,7 @@ from typing import Any
 
 from packaging.version import InvalidVersion, Version
 
+from .._download_security import is_https_or_localhost_http
 from . import ExtensionError
 
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -93,6 +94,10 @@ def _validated_releases(entry: dict[str, Any]) -> dict[str, dict[str, Any]]:
         ):
             raise ExtensionError(
                 f"Extension '{extension_id}' release '{release_version}' needs a download_url."
+            )
+        if not is_https_or_localhost_http(record["download_url"]):
+            raise ExtensionError(
+                f"Extension '{extension_id}' release '{release_version}' has an invalid download_url."
             )
         digest = record.get("sha256")
         if isinstance(digest, str):
