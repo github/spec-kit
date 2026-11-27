@@ -1,0 +1,4 @@
+id: boundary-functions
+functions:
+  - name: boundary_suffix
+    handler: suffix

@@ -2,24 +2,19 @@
 
 Runs the same scaffolding as ``specify init`` so a workflow can create
 (or merge into) a project before driving the rest of the spec-driven
-process.  The step invokes the ``init`` command in an isolated child
-process and captures its exit code and output.
+process.  The step invokes the ``init`` command in-process and captures
+its exit code and output.
 """
 
 from __future__ import annotations
 
-import json
 import os
-from pathlib import Path
-import subprocess
-import sys
 from typing import Any
 
 from specify_cli._agent_config import (
     SCRIPT_TYPE_CHOICES,
     resolve_default_init_integration,
 )
-from specify_cli.integrations._capture import UNLIMITED_CAPTURE, run_captured
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
 
@@ -31,91 +26,6 @@ VALID_SCRIPT_TYPES = tuple(SCRIPT_TYPE_CHOICES.keys())
 #: that ``here: true`` works without requiring ``force: true`` when the
 #: only pre-existing content is engine run-state.
 _ENGINE_OWNED_DIRS = {".specify"}
-
-# Pin the child to this package, independent of its cwd and PATH. The source
-# parent travels as argv data, never as interpolated Python or shell source.
-_INIT_BOOTSTRAP = """
-import json
-from pathlib import Path
-import sys
-
-source = sys.argv.pop(1)
-dependencies = json.loads(sys.argv.pop(1))
-package = Path(source) / 'specify_cli'
-
-def validate_packages():
-    # These stdlib identity checks must precede imports from Specify, including
-    # FileHelper. Compare directories, never the resolved initializer leaf:
-    # distinct package trees can share an initializer through a symlink.
-    for name, module in tuple(sys.modules.items()):
-        if name != 'specify_cli' and not name.startswith('specify_cli.'):
-            continue
-        try:
-            spec = getattr(module, '__spec__', None)
-            if spec is None or spec.name != name or not spec.has_location:
-                raise ValueError('missing file-backed module spec')
-            is_package = spec.submodule_search_locations is not None
-            parts = name.split('.')[1:]
-            expected = package.joinpath(*(parts if is_package else parts[:-1]))
-            for location in (getattr(module, '__file__', None), spec.origin):
-                if not isinstance(location, str) or not Path(location).is_absolute():
-                    raise ValueError('missing absolute module location')
-                if not Path(location).parent.samefile(expected):
-                    raise ValueError('module directory differs')
-            paths = getattr(module, '__path__', None)
-            if is_package:
-                if not paths or not spec.submodule_search_locations:
-                    raise ValueError('missing package search locations')
-                for location in [*paths, *spec.submodule_search_locations]:
-                    if not isinstance(location, str) or not Path(location).is_absolute():
-                        raise ValueError('missing absolute package directory')
-                    if not Path(location).samefile(expected):
-                        raise ValueError('package search directory differs')
-            elif paths is not None or name == 'specify_cli':
-                raise ValueError('inconsistent package metadata')
-        except (OSError, TypeError, ValueError) as exc:
-            raise SystemExit(f'Cannot use {name}: expected package tree {package!s}: {exc}')
-
-validate_packages()
-# Startup has finished. Restore approved dependencies by direct insertion:
-# their location does not authorize startup hooks or change package identity.
-sys.path[:0] = [source, *dependencies]
-sys.argv[0] = 'specify'
-from specify_cli import main
-validate_packages()
-main()
-"""
-
-
-def _windows_default_user_base(child_env: dict[str, str]) -> str:
-    """Mirror site's joinuser(base, 'Python') using the copied environment.
-
-    ntpath expands only an initial ~ or ~user, after joining. In particular,
-    the separator following ~ can make a drive-only home absolute; joining
-    'Python' directly to a drive-only APPDATA does not do that.
-    """
-    path = os.path.join(child_env.get("APPDATA") or "~", "Python")
-    if not path.startswith("~"):
-        return path
-    end = 1
-    while end < len(path) and path[end] not in "\\/":
-        end += 1
-    if "USERPROFILE" in child_env:
-        home = child_env["USERPROFILE"]
-    elif "HOMEPATH" not in child_env:
-        return path
-    else:
-        home = os.path.join(child_env.get("HOMEDRIVE", ""), child_env["HOMEPATH"])
-    if end != 1:
-        target_user = path[1:end]
-        current_user = child_env.get("USERNAME")
-        if target_user != current_user:
-            # Match ntpath's guarded sibling-profile guess, including its
-            # case-sensitive comparison. Unknown ~user stays unresolved.
-            if current_user != os.path.basename(home):
-                return path
-            home = os.path.join(os.path.dirname(home), target_user)
-    return home + path[end:]
 
 
 class InitStep(StepBase):
@@ -166,12 +76,6 @@ class InitStep(StepBase):
     type_key = "init"
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
-        # Capture one absolute base for preflight and execution. Joining a
-        # relative root preserves traversal/symlink spelling for CLI validation.
-        base = os.fspath(context.project_root) if context.project_root else os.getcwd()
-        if not os.path.isabs(base):
-            base = os.path.join(os.getcwd(), base)
-
         project = self._resolve(config.get("project"), context)
         here = self._resolve_bool(config.get("here"), context)
 
@@ -212,9 +116,6 @@ class InitStep(StepBase):
             # No explicit target → initialize the current directory.
             argv.append(".")
 
-        # Enforce the unattended contract independently of stdin's TTY status.
-        argv.append("--non-interactive")
-
         # Build the full argv (except --force, which may be set implicitly
         # below) so early-return outputs always reflect the complete command.
         if integration:
@@ -237,6 +138,7 @@ class InitStep(StepBase):
         # --force so init can proceed unattended.
         targets_current_dir = here or not project or str(project) == "."
         if targets_current_dir and not force:
+            base = context.project_root or os.getcwd()
             has_engine_dirs = False
             try:
                 with os.scandir(base) as it:
@@ -307,7 +209,7 @@ class InitStep(StepBase):
         if force:
             argv.append("--force")
 
-        exit_code, stdout, stderr = self._run_init(argv, base)
+        exit_code, stdout, stderr = self._run_init(argv, context)
 
         output: dict[str, Any] = {
             "argv": argv,
@@ -352,136 +254,76 @@ class InitStep(StepBase):
         return bool(resolved)
 
     @staticmethod
-    def _run_init(argv: list[str], base: str) -> tuple[int, str, str]:
-        """Run the real CLI without changing parent cwd, streams or registries."""
-        import specify_cli
+    def _run_init(
+        argv: list[str], context: StepContext
+    ) -> tuple[int, str, str]:
+        """Invoke ``specify init`` in-process and capture exit code/output.
 
+        Runs with the working directory set to ``context.project_root`` so
+        that ``--here`` and relative project paths target the right place.
+        """
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        prev_cwd = os.getcwd()
+        if context.project_root:
+            try:
+                os.chdir(context.project_root)
+            except OSError as exc:
+                return (1, "", f"Cannot enter project root: {exc}")
         try:
-            parent_cwd = os.getcwd()
-        except OSError as exc:
-            return (1, "", f"Cannot run specify init in project root {base!r}: {exc}")
-        child_env = os.environ.copy()
-        flags = ["-P"]
-        if sys.flags.isolated:
-            flags.append("-I")
-        else:
-            if sys.flags.ignore_environment:
-                flags.append("-E")
-            if sys.flags.no_user_site:
-                flags.append("-s")
-        if sys.flags.no_site:
-            flags.append("-S")
-        if sys.dont_write_bytecode:
-            flags.append("-B")
+            result = runner.invoke(app, argv, catch_exceptions=True)
+        finally:
+            try:
+                os.chdir(prev_cwd)
+            except OSError:
+                # Best-effort cleanup: avoid masking the init command result
+                # if restoring the previous working directory fails.
+                pass
 
-        # Match explicit configuration to active absolute parent entries. A
-        # relative entry is eligible only when this cwd anchors it to an active
-        # match; after chdir, never guess the original anchor from path suffixes.
-        # Keep active spellings, order and duplicates, including symlink/.. paths.
-        dependencies = []
-        if not sys.flags.ignore_environment:
-            configured = {
-                os.path.normpath(path if Path(path).is_absolute()
-                                 else os.path.join(parent_cwd, path))
-                for path in child_env.get("PYTHONPATH", "").split(os.pathsep)
-                if path
-            }
-            dependencies = [path for path in sys.path
-                            if isinstance(path, str) and Path(path).is_absolute()
-                            and os.path.normpath(path) in configured]
-        # -P omits the unsafe cwd entry but still honors PYTHONPATH. Drop it
-        # before startup can import project-controlled sitecustomize code;
-        # bootstrap source pinning happens too late to protect that boundary.
-        child_env.pop("PYTHONPATH", None)
-        child_env["PYTHONIOENCODING"] = "utf-8"
+        stdout = result.output or ""
+        # click >= 8.2 captures stderr separately; older versions mix it into
+        # stdout and raise when ``result.stderr`` is accessed.
         try:
-            # getpath partitions PYTHONHOME at the first platform separator;
-            # empty fields keep CPython's own fallback behavior. -E/-I ignore it.
-            if not sys.flags.ignore_environment:
-                home = child_env.get("PYTHONHOME", "")
-                prefix, _, exec_prefix = home.partition(os.pathsep)
-                if any(field and not Path(field).is_absolute()
-                       for field in (prefix, exec_prefix)):
-                    raise ValueError("PYTHONHOME prefix and exec-prefix must be absolute or empty.")
+            stderr = result.stderr or ""
+        except (ValueError, AttributeError):
+            # Older Click: stderr is mixed into stdout.  On failure, treat
+            # stdout as stderr so workflows can consistently read
+            # steps.<id>.output.stderr for error details.
+            stderr = stdout if result.exit_code != 0 else ""
 
-            # site may disable user sites implicitly (notably in a venv), and
-            # reads PYTHONUSERBASE itself even under -E. Do not consult cached
-            # USER_BASE: the inherited environment may have changed since import.
-            site = sys.modules.get("site")
-            user_site_enabled = (
-                not sys.flags.no_user_site and not sys.flags.no_site
-                and getattr(site, "ENABLE_USER_SITE", None) is not False
-                and (sys.flags.ignore_environment or not child_env.get("PYTHONNOUSERSITE"))
-            )
-            if user_site_enabled:
-                userbase = child_env.get("PYTHONUSERBASE")
-                setting = "PYTHONUSERBASE"
-                if not userbase:
-                    if os.name == "nt":
-                        setting = "APPDATA or USERPROFILE"
-                        userbase = _windows_default_user_base(child_env)
-                    else:
-                        setting = "HOME"
-                        if "HOME" in child_env:
-                            userbase = child_env["HOME"].rstrip(os.sep) or os.sep
-                        else:
-                            import pwd
-
-                            try:
-                                userbase = pwd.getpwuid(os.getuid()).pw_dir
-                            except KeyError:
-                                userbase = "~"
-                if not Path(userbase).is_absolute():
-                    raise ValueError(f"{setting} must select an absolute user base when user-site startup is enabled.")
-            source = getattr(specify_cli, "__file__", None)
-            source_error = (
-                "Cannot identify an absolute file location for loaded specify_cli; "
-                "use a file-backed installation with absolute module metadata."
-            )
-            if not isinstance(source, str) or not source:
-                raise ValueError(source_error)
-            if not Path(source).is_absolute():
-                # A relative __file__ cannot be anchored to the current cwd:
-                # it may have changed since import. Only matching metadata from
-                # this same loaded module can supply the original absolute pin.
-                spec = getattr(specify_cli, "__spec__", None)
-                origin = getattr(spec, "origin", None)
-                if (
-                    Path(source).drive or Path(source).root
-                    or getattr(spec, "name", None) != specify_cli.__name__
-                    or not getattr(spec, "has_location", False)
-                    or not isinstance(origin, str) or not Path(origin).is_absolute()
-                    or not origin.endswith(os.sep + source)
-                ):
-                    raise ValueError(source_error)
-                source = origin
-            # Preserve the loaded package tree, including symlink/.. spelling.
-            # Resolving the initializer leaf can select a different package.
-            package_parent = os.path.dirname(os.path.dirname(source))
-            result = run_captured(
-                [sys.executable, *flags, "-c", _INIT_BOOTSTRAP, package_parent, json.dumps(dependencies), *argv],
-                cwd=base,
-                stdin=subprocess.DEVNULL,
-                max_bytes=UNLIMITED_CAPTURE,
-                post_exit_drain_timeout=2.0,
-                env=child_env,
-            )
-        except (OSError, ValueError) as exc:
-            return (1, "", f"Cannot run specify init in project root {base!r}: {exc}")
-
-        stdout = result.stdout or ""
-        stderr = result.stderr or ""
-        if result.timed_out:
-            stderr = (stderr.rstrip() + "\n" if stderr else "") + (
-                "specify init exited but its output pipes remained open; "
-                "a descendant may still be running. Stop the helper or close "
-                "its inherited stdout/stderr pipes."
-            )
-        if result.exit_code != 0 and not stderr.strip():
-            # Ordinary init failures print Rich diagnostics to stdout. Keep
-            # output.stderr useful to downstream steps without inventing a
-            # SystemExit diagnostic or replacing a real child traceback.
+        # Record the exception only for an UNEXPECTED crash. ``typer.Exit(n)``
+        # -- how ``specify init`` reports every ordinary failure -- surfaces
+        # through ``CliRunner`` as ``result.exception = SystemExit(n)``, so this
+        # branch used to fire on routine errors too. ``init`` prints its
+        # diagnostics through Rich to stdout, leaving ``result.stderr`` empty,
+        # so the synthesized "SystemExit: 1" became the whole of ``stderr`` and
+        # preempted ``execute``'s ``stderr.strip() or stdout.strip()`` fallback.
+        # Every failing init step then reported ``error: 'SystemExit: 1'`` while
+        # init's real message -- e.g. the list of valid integrations for a
+        # typo'd ``integration:`` -- sat unread in stdout.
+        if (
+            result.exit_code != 0
+            and result.exception is not None
+            and not isinstance(result.exception, SystemExit)
+        ):
+            detail = f"{type(result.exception).__name__}: {result.exception}"
+            stderr = f"{stderr}\n{detail}".strip() if stderr else detail
+        elif result.exit_code != 0 and not stderr.strip():
+            # Ordinary failure with no real stderr: under click >= 8.2 the
+            # streams are separate and ``init`` prints its diagnostics through
+            # Rich to stdout, so ``result.stderr`` is genuinely empty. Merely
+            # dropping the synthesized "SystemExit: 1" would leave
+            # ``steps.<id>.output.stderr`` empty -- still no diagnostic for a
+            # downstream step to read, and still contrary to the contract above
+            # ("treat stdout as stderr so workflows can consistently read
+            # steps.<id>.output.stderr for error details"). Carry the captured
+            # output across, matching what the older-Click branch already does.
             stderr = stdout.strip()
+
         return (result.exit_code, stdout, stderr)
 
     def validate(self, config: dict[str, Any]) -> list[str]:

@@ -155,3 +155,24 @@ registry metadata.
 3. Update the [workflow step reference](https://github.github.io/spec-kit/workflow-steps/types.html) when a
    built-in step changes the YAML users can write. Keep agent-specific CLI
    dispatch in integrations rather than duplicating it in step types.
+
+## Isolated workflow-call boundary
+
+`execution` is workflow-call metadata, not a new registered step. The engine
+binds an opt-in execution root alongside the frozen child definition. The
+common `Execution.transition` accepts a private synchronous sink; its default
+path remains the in-process writer. A worker uses the same traversal and
+transition checks with transient state, never `WorkflowEngine.execute/resume`
+or a child RunState directory. The authoritative parent resolves structural
+positions only within the bound subtree and persists before ACK. Nested
+workers proxy those ACKs, preserving replay of acknowledged completions.
+
+The stdlib bootstrap selects the current package and explicit dependency
+directories after isolated Python startup. Before importing plugins it
+separates framed control descriptors from native/Python workload streams and
+replaces workload stdin with DEVNULL. Fresh source-project step/function
+registries and execution-project integration trust checks run in the worker.
+Execution-scoped supervisors own new groups/jobs; the existing fan-out
+scheduler and capture cancellation semantics remain intact. See the
+[isolated-call reference](../docs/workflow-steps/types.md#isolated-workflow-calls)
+for deadlines, bounded teardown and containment limits.

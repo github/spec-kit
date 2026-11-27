@@ -155,3 +155,32 @@ def prepare_init_root(target: Path) -> Path:
     with FileHelper(_existing_init_parent(target)) as files:
         files.mkdir(target, parents=True, exist_ok=True)
     return target
+
+
+def resolve_nofollow_directory(target: Path) -> Path:
+    """Establish a strict existing root without reading project configuration.
+
+    Inspect lexical prefixes before resolving, including the directory before
+    each '..'. This is separate from FileHelper's trusted root-alias contract.
+    """
+    try:
+        target = Path(target)
+        if "\x00" in str(target):
+            raise FileHelperError("Directory root must be NUL-free")
+        if not target.is_absolute():
+            raise FileHelperError("Directory root must be absolute")
+        current = Path(target.anchor)
+        for part in ("", *target.parts[1:]):
+            current /= part
+            entry = current.lstat()
+            if (stat.S_ISLNK(entry.st_mode)
+                    or getattr(entry, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT):
+                raise FileHelperError("Directory root traverses a symlink or reparse point")
+            if not stat.S_ISDIR(entry.st_mode):
+                raise NotADirectoryError(f"Directory root traverses a non-directory: {current}")
+        resolved = target.resolve(strict=True)
+        if not resolved.is_dir():
+            raise NotADirectoryError(f"Directory root is not a directory: {target}")
+        return resolved
+    except (OSError, FileHelperError, RuntimeError) as exc:
+        raise ProjectPolicyError(f"Cannot establish directory root {target}: {exc}") from exc

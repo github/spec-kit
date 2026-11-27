@@ -1,7 +1,7 @@
 """Private platform handles for confined filesystem operations."""
 
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager, suppress
 import errno
 import os
 import secrets
@@ -9,7 +9,7 @@ import stat
 import struct
 import tempfile
 from pathlib import Path, PureWindowsPath
-from typing import Literal, NamedTuple
+from typing import BinaryIO, Literal, NamedTuple, TextIO
 
 
 _IdentityKind = Literal["fileid128", "legacy64"]
@@ -468,3 +468,83 @@ def _windows_creation_attributes() -> int:
                     os.close(fd)
                     os.unlink(probe)
     return 0x1 if readonly else 0
+
+
+# Trusted installation metadata and standalone worker stdio.
+def installation_directory_exists(path: Path) -> bool:
+    """Probe trusted installation metadata, following its ordinary OS aliases."""
+    return path.is_dir()
+
+
+def same_installation_directory(path: Path, expected: Path) -> bool:
+    """Compare directory objects with OS samefile identity, not path spelling."""
+    actual_stat, expected_stat = path.stat(), expected.stat()
+    return (stat.S_ISDIR(actual_stat.st_mode) and stat.S_ISDIR(expected_stat.st_mode)
+            and os.path.samestat(actual_stat, expected_stat))
+
+
+class WorkerStdio(NamedTuple):
+    incoming: BinaryIO
+    outgoing: BinaryIO
+
+
+def _close_stdio_stream(stream: BinaryIO | TextIO) -> None:
+    with suppress(OSError):
+        stream.close()
+
+
+@contextmanager
+def _stdio_control(fd: int, mode: str) -> Iterator[BinaryIO]:
+    duplicate = os.dup(fd)
+    try:
+        os.set_inheritable(duplicate, False)
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.setmode(duplicate, os.O_BINARY)
+        stream = os.fdopen(duplicate, mode, buffering=0)
+    except BaseException:
+        with suppress(OSError):
+            os.close(duplicate)
+        raise
+    try:
+        yield stream
+    finally:
+        _close_stdio_stream(stream)
+
+
+@contextmanager
+def worker_stdio() -> Iterator[WorkerStdio]:
+    """Own control streams and isolate workload stdio before application imports.
+
+    Borrow fd0/1/2 without closing them. Redirection stays in place on exit;
+    restoring control fd1 would expose framing to subsequent workload output.
+    """
+    import sys
+
+    # A closed standard descriptor must not be reused by the first duplicate.
+    for fd in (0, 1, 2):
+        os.fstat(fd)
+    previous = sys.stdin, sys.stdout, sys.stderr
+    with ExitStack() as owners:
+        incoming = owners.enter_context(_stdio_control(0, "rb"))
+        outgoing = owners.enter_context(_stdio_control(1, "wb"))
+        null = os.open(os.devnull, os.O_RDONLY)
+        try:
+            os.dup2(null, 0)
+        finally:
+            os.close(null)
+        os.dup2(2, 1)
+        streams = []
+        for fd, mode, options in (
+            (0, "r", {}),
+            (1, "w", {"errors": "replace", "buffering": 1}),
+            (2, "w", {"errors": "replace", "buffering": 1}),
+        ):
+            stream = open(fd, mode, encoding="utf-8", closefd=False, **options)
+            owners.callback(_close_stdio_stream, stream)
+            streams.append(stream)
+        sys.stdin, sys.stdout, sys.stderr = streams
+        try:
+            yield WorkerStdio(incoming, outgoing)
+        finally:
+            sys.stdin, sys.stdout, sys.stderr = previous

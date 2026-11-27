@@ -153,3 +153,21 @@ Cover valid and invalid inputs, gate verdicts and rejection policies, step failu
 - [Expressions and shell safety](expressions.md)
 - [Publishing workflows](publishing.md)
 - [Developing custom step packages](../workflow-steps/developing.md)
+
+## Testing isolated child workflows
+
+Use an installed source workflow and a precreated execution directory with
+`execution.mode: subprocess`. Keep companion-file references rooted in
+`context.workflow_dir`; the worker cwd is the execution project. Map every
+input explicitly, including verdict inputs needed for resume. Resume the
+parent run and verify that completed effects, scaffold contents and timestamps
+do not change when a new worker continues after a gate.
+
+Use real installed step/function fixture packages for subprocess tests.
+Parent-process monkeypatches and registry objects do not cross the boundary.
+Exercise successful work, invalid roots, worker exceptions, checkpoint failure,
+worker loss, stdin EOF and scoped cancellation. Run a concurrent two-project
+bootstrap with the built-in init offline to check process isolation. Test
+native Windows job/startup behavior on Windows; POSIX results do not establish
+native parity. Keep homes, credentials and temporary paths isolated in test
+launchers; production workers inherit ordinary tool configuration.

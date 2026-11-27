@@ -14,12 +14,14 @@ from typing import Any
 
 import yaml
 
-from specify_cli.integrations._capture import cancel_captures
+from ._subprocess import cancel_captures, execution_scope
 
 from .base import StepContext, StepResult, StepStatus
 from .composition import (
     CallError,
     bind_inputs,
+    bind_execution,
+    check_bound_execution,
     evaluate_outputs,
     resolve_target,
     validate_runtime_call,
@@ -150,7 +152,7 @@ def walk_execution(
 
 def check_sequence(seq, steps=None, *, shared=False):
     """Walk a stored sequence, checking every occurrence and its descendants."""
-    if not isinstance(seq, dict) or (shared and "source" in seq):
+    if not isinstance(seq, dict) or set(seq) != ({"nodes"} if shared else {"source", "nodes"}):
         raise ValueError("Invalid execution sequence")
     if shared:
         if not isinstance(steps, list):
@@ -186,6 +188,8 @@ def check_node(step, node, *, changed=None, new_children=()):
         "ready", "children", "outputs", "blocked", "done",
     }:
         raise ValueError("Invalid execution phase")
+    if node.keys() - {"phase", "active", "result", "children", "binding", "template", "outcome", "error", "fan_results"}:
+        raise ValueError("Unknown execution node fields")
     result = node.get("result")
     if result is not None and (
         not isinstance(result, dict)
@@ -240,6 +244,12 @@ def check_node(step, node, *, changed=None, new_children=()):
                 or not isinstance(bound_definition.get("steps"), list)
             ):
                 raise ValueError("Invalid bound workflow definition or inputs")
+            if "execution" in binding:
+                check_bound_execution(binding["execution"])
+                from pathlib import Path
+                if (set(binding) != {"workflow", "definition", "inputs", "workflow_dir", "execution"}
+                        or (binding["workflow_dir"] is not None and not Path(binding["workflow_dir"]).is_absolute())):
+                    raise ValueError("Invalid isolated workflow binding")
     elif kind == "workflow" and children:
         raise ValueError("Workflow children require a binding")
     if kind == "fan-out" and children and (changed is None or "template" in changed):
@@ -269,6 +279,10 @@ def check_node(step, node, *, changed=None, new_children=()):
                 raise ValueError("Completed execution has unfinished children")
     if node["phase"] == "outputs" and binding is None:
         raise ValueError("Output finalization requires a workflow binding")
+    if node["phase"] == "outputs" and any(
+        nested["phase"] != "done" for child in children for nested in child["nodes"]
+    ):
+        raise ValueError("Output finalization has unfinished children")
     if node["phase"] == "children" and (
         not children or (binding is None and result is None)
     ):
@@ -283,7 +297,7 @@ def check_node(step, node, *, changed=None, new_children=()):
 
 def check_sequence_shape(seq, steps=None, *, shared=False):
     """Check a newly attached child sequence without visiting its nodes' descendants."""
-    if not isinstance(seq, dict) or (shared and "source" in seq):
+    if not isinstance(seq, dict) or set(seq) != ({"nodes"} if shared else {"source", "nodes"}):
         raise ValueError("Invalid execution sequence")
     if shared:
         if not isinstance(steps, list):
@@ -374,7 +388,7 @@ def child_context_for_call(parent, binding, definition):
     """Create the private context for one bound workflow call."""
     return StepContext(
         inputs=binding["inputs"],
-        project_root=parent.project_root,
+        project_root=binding.get("execution", {}).get("project_root", parent.project_root),
         run_id=parent.run_id,
         is_resume=parent.is_resume,
         inside_fan_out=parent.inside_fan_out,
@@ -457,9 +471,11 @@ class MissingImplementation:
 
 
 class Execution:
-    def __init__(self, engine, state, registry, *, rebind=False):
+    def __init__(self, engine, state, registry, *, rebind=False, transition_sink=None, source_root=None):
         self.engine, self.state, self.registry = engine, state, registry
         self.rebind = rebind
+        self.transition_sink = transition_sink
+        self.source_root = source_root or state.project_root
 
     def project(self, context, name, result, *, public, qualified):
         """Apply an occurrence result to its local and public views."""
@@ -482,6 +498,7 @@ class Execution:
         *,
         publish=False,
         announce=True,
+        input_update=None,
     ):
         """The only writer of occurrence progress and its checkpointed views.
 
@@ -537,6 +554,15 @@ class Execution:
             # The same node rules are checked when a checkpoint is loaded.
             check_node(occurrence.config, candidate, changed=set(changes or ()),
                        new_children=new_children)
+            if input_update is not None:
+                from .composition import require_json
+                require_json(input_update[1])
+            if self.transition_sink is not None:
+                self.transition_sink(operation, occurrence, changes or {}, publish, announce, input_update)
+            if input_update is not None:
+                owner, inputs = input_update
+                owner["inputs"].clear()
+                owner["inputs"].update(inputs)
             node.clear()
             node.update(candidate)
             if operation == "begin":
@@ -618,15 +644,10 @@ class Execution:
                     self.state.current_step_index = index + self.state.execution.get(
                         "offset", 0
                     )
-            outcome = self.step(
-                config,
-                node,
-                context,
-                ancestry,
-                occurrence,
-                public,
-                qualified,
-            )
+            with execution_scope(self):
+                outcome = self.step(
+                    config, node, context, ancestry, occurrence, public, qualified,
+                )
             if outcome in HALTING:
                 return outcome, node.get("error")
         return "completed", None
@@ -837,19 +858,26 @@ class Execution:
         from .engine import WorkflowDefinition, workflow_dir_for
 
         config, node, context = occurrence.config, occurrence.node, occurrence.context
-        ancestry, path = occurrence.ancestry, occurrence.path
+        ancestry = occurrence.ancestry
         binding = node.get("binding")
         target = binding["workflow"] if binding else config.get("workflow")
         if binding is None:
             try:
                 validate_runtime_call(config)
                 target = evaluate_expression(target, context)
-                definition = resolve_target(self.state.project_root, target, ancestry)
+                metadata = bind_execution(config, context, self.source_root)
+                definition = resolve_target(self.source_root, target, ancestry)
+                input_engine = self.engine
+                if metadata is not None:
+                    from .engine import WorkflowEngine
+                    from pathlib import Path
+                    input_engine = WorkflowEngine(Path(metadata["project_root"]))
                 binding = {
                     "workflow": target,
                     "definition": yaml.safe_dump(definition.data, sort_keys=False),
-                    "inputs": bind_inputs(self.engine, definition, config, context),
+                    "inputs": bind_inputs(input_engine, definition, config, context),
                     "workflow_dir": workflow_dir_for(definition),
+                    **({"execution": metadata} if metadata is not None else {}),
                 }
                 self.transition(
                     "bind", occurrence,
@@ -867,12 +895,31 @@ class Execution:
                 )
         else:
             definition = WorkflowDefinition(yaml.safe_load(binding["definition"]))
+            metadata = binding.get("execution")
+            if metadata is not None:
+                check_bound_execution(metadata, paths=True)
             if self.rebind:
+                input_engine = self.engine
+                if metadata is not None:
+                    from .engine import WorkflowEngine
+                    from pathlib import Path
+                    input_engine = WorkflowEngine(Path(metadata["project_root"]))
                 inputs = bind_inputs(
-                    self.engine, definition, config, context, binding["inputs"]
+                    input_engine, definition, config, context, binding["inputs"]
                 )
                 binding = {**binding, "inputs": inputs}
                 self.transition("rebind", occurrence, {"binding": binding})
+        if "execution" in binding:
+            from ._subprocess import isolated_call
+            return isolated_call(self, occurrence)
+        return self.bound_workflow(occurrence, definition)
+
+    def bound_workflow(self, occurrence, definition):
+        """Run a frozen child tree; also used by the isolated worker."""
+        config, node, context = occurrence.config, occurrence.node, occurrence.context
+        ancestry, path = occurrence.ancestry, occurrence.path
+        binding = node["binding"]
+        target = binding["workflow"]
         child_context = child_context_for_call(context, binding, definition)
         outcome, error = self.run(
             node["children"][0],

@@ -364,6 +364,30 @@ delete includes the entire selected tree; there is no exclusion filter in this
 foundation. Future operations with exclusions must inspect only included
 entries, not reject a whole project for excluded/unrelated links.
 
+## Runtime root and native-resource boundaries
+
+`_file_policy.resolve_nofollow_directory` establishes an existing execution root
+before a project policy exists. It inspects every original lexical prefix with
+no-follow metadata before strict resolution, requiring directories and rejecting
+symlinks and all Windows reparse points, including before `..`. It neither reads
+project configuration nor prepares an init target. This stricter operation is
+separate from the trusted root aliases accepted by `FileHelper`; it does not
+change `allow_symlinks` or existing configuration/bootstrap APIs.
+
+`_file_handles.installation_directory_exists` and `same_installation_directory`
+inspect trusted interpreter/package metadata. They follow ordinary installation
+aliases and compare OS directory identities, including on Windows. They are not
+project-file access APIs and do not bypass project policy.
+
+`_file_handles.worker_stdio` owns duplicated, non-inheritable binary control
+streams and UTF-8 workload wrappers. It supplies stdin EOF and separates workload
+diagnostics from control output, releasing owned resources on exit and failed
+setup. Standard descriptors remain borrowed; control fd1 is never restored for
+workload output. The standalone bootstrap loads this adjacent stdlib-only helper
+from its selected absolute script location before application/dependency/plugin
+imports. Process launch, framing, groups/jobs, captures, cancellation and workflow
+state remain with their existing owners.
+
 ## Safety limits and migration
 
 POSIX reads, exclusive file creation, and text overwrites share one parent
