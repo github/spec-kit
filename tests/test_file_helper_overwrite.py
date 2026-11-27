@@ -540,7 +540,8 @@ def test_windows_overwrite_pins_resolved_hierarchy_until_stream_closes(
             events.append(("unpin", path))
 
     @contextmanager
-    def open_leaf(path):
+    def open_leaf(path, *, create=True):
+        assert create
         assert active == [tmp_path, parent]
         assert leaf.read_text() == "old"
         fd = os.open(path, os.O_WRONLY)
@@ -582,12 +583,12 @@ def test_native_windows_overwrite_holds_every_parent_and_leaf(tmp_path, monkeypa
     parents_checked = []
 
     @contextmanager
-    def open_while_pinned(path):
+    def open_while_pinned(path, *, create=True):
         for directory in (root, parent):
             with pytest.raises(PermissionError):
                 directory.rename(directory.with_name(directory.name + "-moved"))
             parents_checked.append(directory)
-        with open_leaf(path) as fd:
+        with open_leaf(path, create=create) as fd:
             yield fd
 
     def truncate(fd, length):
@@ -630,11 +631,11 @@ def test_native_windows_leaf_swap_at_open_never_follows_new_link(
     original = file_helper._windows_overwrite_fd
 
     @contextmanager
-    def swap(path):
+    def swap(path, *, create=True):
         if existing:
             leaf.rename(root / "original")
         leaf.symlink_to(outside)
-        with original(path) as fd:
+        with original(path, create=create) as fd:
             yield fd
 
     monkeypatch.setattr(file_helper, "_windows_overwrite_fd", swap)
