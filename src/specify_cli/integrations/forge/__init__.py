@@ -203,48 +203,60 @@ class ForgeIntegration(MarkdownIntegration):
         1. Strip 'handoffs' frontmatter key (from Claude Code templates; incompatible with Forge)
         2. Inject 'name' field if missing (using hyphenated format)
         """
-        # Parse frontmatter
-        lines = content.split('\n')
-        if not lines or lines[0].strip() != '---':
+        lines = content.splitlines(keepends=True)
+        if not lines or lines[0].rstrip() != "---":
             return content
 
         # Find end of frontmatter
         frontmatter_end = -1
         for i in range(1, len(lines)):
-            if lines[i].strip() == '---':
+            if lines[i].rstrip() == "---":
                 frontmatter_end = i
                 break
 
         if frontmatter_end == -1:
             return content
 
+        eol = "\r\n" if lines[0].endswith("\r\n") else "\n"
         frontmatter_lines = lines[1:frontmatter_end]
         body_lines = lines[frontmatter_end + 1:]
 
-        # 1. Strip 'handoffs' key
-        filtered_frontmatter = []
+        # 1. Strip top-level 'handoffs' key and its block (including blank lines
+        # separating entries and zero-indent YAML sequence items).
+        filtered_frontmatter: list[str] = []
         skip_until_outdent = False
+        pending_blanks: list[str] = []
         for line in frontmatter_lines:
+            stripped = line.rstrip("\r\n")
             if skip_until_outdent:
-                # Skip indented lines under handoffs:
-                if line and (line[0] == ' ' or line[0] == '\t'):
+                if stripped.strip() == "":
+                    pending_blanks.append(line)
                     continue
-                else:
-                    skip_until_outdent = False
+                if (
+                    stripped[0] in (" ", "\t")
+                    or stripped == "-"
+                    or stripped.startswith(("- ", "-\t"))
+                ):
+                    pending_blanks.clear()
+                    continue
+                filtered_frontmatter.extend(pending_blanks)
+                pending_blanks.clear()
+                skip_until_outdent = False
 
-            if line.strip().startswith('handoffs:'):
+            if not stripped[:1].isspace() and stripped.startswith("handoffs:"):
                 skip_until_outdent = True
                 continue
 
             filtered_frontmatter.append(line)
 
-        # 2. Inject 'name' field if missing (using centralized formatter)
-        has_name = any(line.strip().startswith('name:') for line in filtered_frontmatter)
+        # 2. Inject top-level 'name' field if missing (using centralized formatter)
+        has_name = any(
+            not line[:1].isspace() and line.startswith("name:")
+            for line in filtered_frontmatter
+        )
         if not has_name:
             # Use centralized formatter to ensure consistent hyphenated format
             cmd_name = format_forge_command_name(template_name)
-            filtered_frontmatter.insert(0, f'name: {cmd_name}')
+            filtered_frontmatter.insert(0, f"name: {cmd_name}{eol}")
 
-        # Reconstruct content
-        result = ['---'] + filtered_frontmatter + ['---'] + body_lines
-        return '\n'.join(result)
+        return "".join([lines[0], *filtered_frontmatter, lines[frontmatter_end], *body_lines])
