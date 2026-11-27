@@ -730,6 +730,29 @@ class TestForgeFrontmatterTransformations:
         }
         assert parts[1].count("name:") == 1
 
+    def test_injects_top_level_name_with_crlf_line_endings(self):
+        from specify_cli.integrations.forge import ForgeIntegration
+
+        forge = ForgeIntegration()
+        raw = (
+            "---\r\n"
+            "description: Custom command\r\n"
+            "handoffs:\r\n"
+            "  - label: Plan\r\n"
+            "\r\n"
+            "  - label: Clarify\r\n"
+            "---\r\n\r\n"
+            "# Body\r\n"
+        )
+
+        assert forge._apply_forge_transformations(raw, "specify") == (
+            "---\r\n"
+            "name: speckit-specify\r\n"
+            "description: Custom command\r\n"
+            "---\r\n\r\n"
+            "# Body\r\n"
+        )
+
     def test_content_without_complete_frontmatter_unchanged(self):
         from specify_cli.integrations.forge import ForgeIntegration
 
