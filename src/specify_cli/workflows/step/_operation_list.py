@@ -91,8 +91,8 @@ def list_step_types(request: WorkflowStepListRequest) -> WorkflowStepListResult:
     owner, so the read policy (including Windows junction rejection) applies
     at the read boundary the same way as for workflow listing, and registry
     input over ``StepRegistry.MAX_REGISTRY_BYTES`` is rejected before it is
-    parsed. A missing, corrupt, or oversized registry still lists built-ins
-    only; an unreadable or policy-rejected registry is a
+    parsed. A missing or corrupt registry still lists built-ins
+    only; an unreadable, policy-rejected, or oversized registry is a
     ``step_registry_read_failed`` error. Result entries stop being built
     once the requested limit is filled.
     """

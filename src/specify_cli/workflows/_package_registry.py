@@ -87,6 +87,23 @@ class PackageRegistry:
         if self.registry_path.is_symlink():
             return default_registry
         if self.registry_path.exists():
+            if self._max_bytes is not None:
+                # Reject oversized input before parsing it. Failing closed
+                # matters here: silently emptying an oversized registry
+                # would hide every installed step behind a successful
+                # built-ins-only listing. This check sits outside the
+                # best-effort try below, whose OSError handler would
+                # otherwise swallow it back into an empty registry.
+                try:
+                    oversized = os.stat(self.registry_path).st_size > self._max_bytes
+                except OSError:
+                    return default_registry
+                if oversized:
+                    raise OSError(
+                        f"Refusing to read {self.LABEL} registry at "
+                        f"{self.registry_path}: input exceeds "
+                        f"{self._max_bytes} bytes"
+                    )
             try:
                 # Refuse to open a non-regular file (e.g. a FIFO), which
                 # would block the read until a writer shows up.
@@ -96,11 +113,8 @@ class PackageRegistry:
                     with open(self.registry_path, encoding="utf-8") as f:
                         data = json.load(f)
                 else:
-                    # Reject oversized input before parsing it.
                     with open(self.registry_path, "rb") as f:
                         raw = f.read(self._max_bytes + 1)
-                    if len(raw) > self._max_bytes:
-                        return default_registry
                     data = json.loads(raw.decode("utf-8"))
                 # Validate shape: must be a dict with a dict records field
                 if not isinstance(data, dict):
@@ -120,9 +134,11 @@ class PackageRegistry:
         Unlike the legacy path above, a policy-aware read fails closed: a
         symlinked parent or registry file, a junction, or an unreadable file
         raises OSError instead of fabricating an empty registry, mirroring
-        WorkflowRegistry. Missing files, non-regular files, oversized input,
-        and corrupt content still fall back to the default registry, matching
-        this loader's best-effort contract for its other callers.
+        WorkflowRegistry. Oversized input raises too, so the list operation
+        reports it instead of silently listing built-ins only. Missing
+        files, non-regular files, and corrupt content still fall back to
+        the default registry, matching this loader's best-effort contract
+        for its other callers.
         """
         # Fail closed on symlinked paths before reading: the helper read
         # below would refuse them too, but only at read time, after the
@@ -155,7 +171,11 @@ class PackageRegistry:
             if not stat.S_ISREG(info.st_mode):
                 return default_registry
             if self._max_bytes is not None and info.st_size > self._max_bytes:
-                return default_registry
+                raise OSError(
+                    f"Refusing to read {self.LABEL} registry at "
+                    f"{self.registry_path}: input exceeds "
+                    f"{self._max_bytes} bytes"
+                )
             raw = read_files.read_bytes(self.registry_path)
         except (FileNotFoundError, NotADirectoryError):
             return default_registry
@@ -164,7 +184,13 @@ class PackageRegistry:
                 f"Failed to read {self.LABEL} registry at {self.registry_path}: {exc}"
             ) from exc
         if self._max_bytes is not None and len(raw) > self._max_bytes:
-            return default_registry
+            # The file grew past the cap between the probe and the read;
+            # fail closed rather than listing a partial registry as empty.
+            raise OSError(
+                f"Refusing to read {self.LABEL} registry at "
+                f"{self.registry_path}: input exceeds "
+                f"{self._max_bytes} bytes"
+            )
         try:
             data = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, ValueError, UnicodeError):

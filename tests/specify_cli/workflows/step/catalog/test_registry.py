@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 import pytest
 
 from specify_cli._file_policy import project_files
+from specify_cli.file_helper import FileHelper
 from specify_cli.workflows.step.catalog import StepRegistry, StepValidationError
 
 
@@ -60,7 +62,8 @@ def test_load_rejects_oversized_registry_without_helper(project_dir):
     assert StepRegistry(project_dir, max_bytes=size).list() == {
         "first": _entry("first")
     }
-    assert StepRegistry(project_dir, max_bytes=size - 1).list() == {}
+    with pytest.raises(OSError):
+        StepRegistry(project_dir, max_bytes=size - 1)
 
 
 def test_load_via_helper_rejects_oversized_registry(project_dir):
@@ -70,10 +73,31 @@ def test_load_via_helper_rejects_oversized_registry(project_dir):
         assert StepRegistry(
             project_dir, read_files=files, max_bytes=size
         ).list() == {"first": _entry("first")}
-        assert (
-            StepRegistry(project_dir, read_files=files, max_bytes=size - 1).list()
-            == {}
-        )
+        with pytest.raises(OSError):
+            StepRegistry(project_dir, read_files=files, max_bytes=size - 1)
+
+
+def test_load_via_helper_rejects_registry_that_grows_past_cap(
+    project_dir, monkeypatch
+):
+    # The size probe sees a small file, but the read returns more than the
+    # cap: the post-read length check must fail closed instead of listing
+    # built-ins only.
+    path = _write_registry(project_dir, {"first": _entry("first")})
+    size = path.stat().st_size
+    original = FileHelper.read_bytes
+
+    def grown(files, file):
+        if Path(file) == path:
+            return b" " * (size + 1)
+        return original(files, file)
+
+    monkeypatch.setattr(FileHelper, "read_bytes", grown)
+    with (
+        project_files(project_dir) as files,
+        pytest.raises(OSError),
+    ):
+        StepRegistry(project_dir, read_files=files, max_bytes=size)
 
 
 def test_load_via_helper_fails_closed_on_symlinked_steps(project_dir):

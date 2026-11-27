@@ -162,8 +162,9 @@ def test_registry_size_cap_is_enforced_before_parsing(tmp_path, monkeypatch):
     result = operation.list_step_types(operation.WorkflowStepListRequest(tmp_path))
     assert "a-custom" in {item.id for item in result.items}
     monkeypatch.setattr(StepRegistry, "MAX_REGISTRY_BYTES", size - 1)
-    result = operation.list_step_types(operation.WorkflowStepListRequest(tmp_path))
-    assert {item.id for item in result.items} == set(BUILTIN_STEP_TYPES)
+    with pytest.raises(operation.WorkflowStepListError) as excinfo:
+        operation.list_step_types(operation.WorkflowStepListRequest(tmp_path))
+    assert excinfo.value.code == "step_registry_read_failed"
 
 
 def test_symlinked_steps_directory_is_rejected(tmp_path, monkeypatch):
