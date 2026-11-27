@@ -306,16 +306,21 @@ class HermesIntegration(SkillsIntegration):
         if model:
             args.extend(["-m", model])
         if output_json:
-            args.append("--json")
+            # ``hermes chat`` has no ``--json`` flag (exits 2 with
+            # ``unrecognized arguments: --json``); its ``--format`` option
+            # accepts ``text`` and ``stream-json`` (JSONL events).
+            args.extend(["--format", "stream-json"])
 
-        # If prompt starts with a slash command, pass it directly
-        # so Hermes can dispatch to the appropriate skill.
+        # If prompt starts with a slash command, preload the skill via ``-s``
+        # and always pass a non-empty ``-q`` query.  ``-s/--skills`` only
+        # preloads skills into the session; omitting ``-q`` makes
+        # ``--format stream-json`` exit 2 (``requires -q/--query``) and makes
+        # text mode enter the interactive REPL instead of single-query mode.
         if prompt.startswith("/"):
             command, _, remainder = prompt[1:].partition(" ")
             if command:
                 args.extend(["-s", command])
-                if remainder:
-                    args.extend(["-q", remainder])
+                args.extend(["-q", remainder if remainder.strip() else f"/{command}"])
             else:
                 args.extend(["-q", prompt])
         else:

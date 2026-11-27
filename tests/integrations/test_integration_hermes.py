@@ -364,26 +364,62 @@ class TestHermesBuildExecArgs:
 
     def test_build_exec_args_default_shape(self):
         i = get_integration("hermes")
+        assert i is not None
         assert i.build_exec_args("/speckit-plan hi", output_json=True) == [
-            "hermes", "chat", "-Q", "--json", "-s", "speckit-plan", "-q", "hi",
+            "hermes", "chat", "-Q", "--format", "stream-json",
+            "-s", "speckit-plan", "-q", "hi",
+        ]
+
+    def test_build_exec_args_text_mode_omits_stream_json(self):
+        """Streaming dispatch (output_json=False) omits --format stream-json."""
+        i = get_integration("hermes")
+        assert i is not None
+        assert i.build_exec_args("/speckit-plan hi", output_json=False) == [
+            "hermes", "chat", "-Q", "-s", "speckit-plan", "-q", "hi",
+        ]
+
+    def test_build_exec_args_bare_slash_command_keeps_query_flag(self):
+        """A bare slash command (e.g. /speckit-analyze) or whitespace-only
+        remainder must still pass -q so hermes chat runs in single-query mode
+        instead of exiting 2 under --format stream-json or hanging in REPL."""
+        i = get_integration("hermes")
+        assert i is not None
+        assert i.build_exec_args("/speckit-analyze", output_json=True) == [
+            "hermes", "chat", "-Q", "--format", "stream-json",
+            "-s", "speckit-analyze", "-q", "/speckit-analyze",
+        ]
+        assert i.build_exec_args("/speckit-analyze   ", output_json=False) == [
+            "hermes", "chat", "-Q",
+            "-s", "speckit-analyze", "-q", "/speckit-analyze",
+        ]
+
+    def test_build_exec_args_plain_and_bare_slash_prompts(self):
+        i = get_integration("hermes")
+        assert i is not None
+        assert i.build_exec_args("plain prompt", output_json=False, model="m1") == [
+            "hermes", "chat", "-Q", "-m", "m1", "-q", "plain prompt",
+        ]
+        assert i.build_exec_args("/", output_json=False) == [
+            "hermes", "chat", "-Q", "-q", "/",
         ]
 
     def test_build_exec_args_honors_extra_args(self, monkeypatch):
         """SPECKIT_INTEGRATION_HERMES_EXTRA_ARGS is injected before the
-        canonical -m/--json/-s/-q flags (same env hook as codex/opencode/
+        canonical -m/--format/-s/-q flags (same env hook as codex/opencode/
         devin; hermes previously skipped _apply_extra_args_env_var entirely).
         """
         monkeypatch.setenv(
             "SPECKIT_INTEGRATION_HERMES_EXTRA_ARGS", "--temperature 0.2"
         )
         i = get_integration("hermes")
+        assert i is not None
         args = i.build_exec_args("/speckit-plan hi", output_json=True)
         assert args == [
             "hermes", "chat", "-Q", "--temperature", "0.2",
-            "--json", "-s", "speckit-plan", "-q", "hi",
+            "--format", "stream-json", "-s", "speckit-plan", "-q", "hi",
         ]
         # Injected before the canonical flags so it can't displace them.
-        assert args.index("--temperature") < args.index("--json")
+        assert args.index("--temperature") < args.index("--format")
         assert args.index("--temperature") < args.index("-s")
 
     def test_build_exec_args_honors_executable_override(self, monkeypatch):
@@ -391,4 +427,7 @@ class TestHermesBuildExecArgs:
             "SPECKIT_INTEGRATION_HERMES_EXECUTABLE", "/custom/hermes"
         )
         i = get_integration("hermes")
-        assert i.build_exec_args("/speckit-plan hi")[0] == "/custom/hermes"
+        assert i is not None
+        exec_args = i.build_exec_args("/speckit-plan hi")
+        assert exec_args is not None
+        assert exec_args[0] == "/custom/hermes"
