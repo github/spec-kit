@@ -259,6 +259,16 @@ descriptor-relative or change their documented concurrency limitations.
   `FileNotFoundError`. It is a
   point-in-time query, not an anchor: callers that act on the result must
   re-check identity on the descriptor they act through.
+- `access(path, mode)` answers `os.access` for an existing entry found and
+  anchored as `stat` finds it; the policy walk refuses or resolves a leaf link.
+  POSIX checks relative to the anchored parent descriptor with a plain
+  `faccessat` (no `AT_SYMLINK_NOFOLLOW`, which libc emulates from mode bits
+  where `faccessat2` is missing); Windows pins the parent hierarchy first. It
+  uses the real user and group ids, so it also reports a read-only filesystem
+  or a file owned by someone else, which mode bits miss. It is advisory, like
+  `stat`.
+- `canonical_root` is the root with OS and link aliases resolved, fixed on
+  construction; it is the base that resolved operation paths share.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
   create files with existing parents. A no-follow `lstat` preflight rejects
   existing leaves, including dangling links, before opening the destination.
@@ -281,6 +291,44 @@ descriptor-relative or change their documented concurrency limitations.
   anchoring; they are not banned. Parents must already exist, and the supplied
   mode remains filtered by the process umask. Unsupported anchoring primitives
   fail explicitly rather than falling back to unanchored creation.
+- `create_private_bytes(path, content)` exclusively creates a file only the
+  current user can open, with existing parents, and flushes it before
+  returning. It shares `create_bytes`'s policy walk, no-follow `lstat`
+  preflight and anchored parent hierarchy. POSIX creates the leaf with `0o600`
+  relative to the anchored parent. Before any content is written, it refuses
+  (removing the still-empty file, with `PermissionError`) when the file came
+  out with group or other mode bits, which means the filesystem ignored the
+  mode; when it is owned by a uid other than the caller's effective uid, which
+  means the filesystem mapped ownership (some network and container mounts);
+  or, on macOS, with inherited ACL allow entries, which a directory-relative
+  create cannot withhold (inherited deny entries are accepted). Linux default ACLs are
+  bounded by the mask the mode sets. NFSv4-style inherited ACLs on other
+  systems are not inspected. It writes and `fsync`s through that one
+  descriptor, adding `F_FULLFSYNC` on macOS where the filesystem supports it,
+  then flushes the parent best effort through a readable descriptor opened
+  from the anchor (search-only and `O_PATH` anchors reject `fsync`); a
+  parent that cannot be flushed does not fail the call. Windows creates the leaf
+  with `CREATE_NEW`, no sharing, `FILE_FLAG_OPEN_REPARSE_POINT`, and a security
+  descriptor naming the current user as owner with a protected DACL granting
+  only that user full access, so the content is never readable under an
+  inherited ACL. It refuses a stream-qualified leaf (`file:stream`), since a
+  named NTFS stream shares its base file's security descriptor, and, before any
+  content is written, a volume without `FILE_PERSISTENT_ACLS` (FAT, exFAT),
+  which would drop the descriptor. A failure after creation removes only the
+  file this call created: POSIX unlinks the name only while it still has the
+  created file's identity, checked immediately before the unlink rather than
+  atomically with it (an identity never read leaves the name in place), with
+  the created inode held open until the check is done so its number cannot be
+  reused by a replacement. A name that already holds another file is left, and
+  the note names it; a name found empty gets a note that the partial file may
+  have been moved rather than a removal failure. A failed close of that held
+  descriptor after a complete write raises, leaving the file and saying so in a
+  note. A replacement swapped in between the check and the unlink
+  is an accepted residual race, since POSIX has no unlink-if-identity primitive.
+  Windows marks the open handle for deletion. If that
+  removal or the close fails, the original exception is kept and carries a note
+  naming the file. A Windows close failure after a complete write leaves the
+  file and says so in the note.
 - `write_bytes(path, content, mode=0o644)` / `write_text(...)` atomically
   create or update files with existing parents. Text variants also accept
   `encoding="utf-8"`. Replacement files use the supplied mode; metadata and
@@ -342,8 +390,10 @@ descriptor-relative or change their documented concurrency limitations.
   append-mode descriptor is refused (`EINVAL`) before anything is written,
   since its writes ignore the seek and the truncate would cut them off. Like
   any write, it may clear the set-user-ID and set-group-ID bits on POSIX, and
-  they are not restored. A failure can leave partial content; restoring it is
-  the caller's job.
+  they are not restored. It shares that write loop and flush policy with
+  `create_private_bytes`, so a caller's in-place rewrite and its private backup
+  have the same durability. A failure can leave partial content; restoring it
+  is the caller's job.
 - `delete(path, recursive=False)` unlinks files/links or removes directories.
   Nonrecursive directory deletion requires an empty directory. The established
   root cannot be deleted. Recursive enumeration and each removal use anchored
@@ -479,10 +529,11 @@ its replacement: creation stays with the opened directory, even if it is
 renamed out of the root. This is not a guarantee of stable namespace membership
 under concurrent renames, nor does parent anchoring make every leaf preflight
 atomic with the subsequent open.
-On Windows, exclusive creation, text overwrite and `open_rewrite` still open
-their leaf by pathname after pinning the parent hierarchy, and `stat` queries
-its leaf the same way. Attribute-only reparse updates can redirect those
-opens; they do not have the read path's parent-relative handle protection.
+On Windows, exclusive creation (including `create_private_bytes`), text
+overwrite and `open_rewrite` still open their leaf by pathname after pinning
+the parent hierarchy, and `stat` queries its leaf the same way. Attribute-only
+reparse updates can redirect those opens; they do not have the read path's
+parent-relative handle protection.
 The helper does not constrain subprocesses or third-party code.
 
 Existing safe-write mechanisms informed this helper, but existing shared
