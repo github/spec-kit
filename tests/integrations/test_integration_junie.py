@@ -449,6 +449,82 @@ class TestJunieIntegration(MarkdownIntegrationTests):
             assert normalized.rstrip("\n").endswith("Run /speckit-git-status")
             assert peak < 4 * len(sample), f"excessive peak memory: {peak} bytes"
 
+    def test_round5_hash_dirs_spaced_dotted_dirs_arbitrary_suffixes_and_punct_prose(
+        self, tmp_path
+    ):
+        """# dirs, spaced dotted dirs, arbitrary spaced suffixes, and punctuated prose."""
+        assert (
+            hyphenate_command_refs("Open C:\\C#\\speckit.git.commit.md")
+            == "Open C:\\C#\\speckit.git.commit.md"
+        )
+        assert (
+            hyphenate_command_refs('"speckit.demo files/commands/speckit.git.commit.md"')
+            == '"speckit.demo files/commands/speckit.git.commit.md"'
+        )
+        assert (
+            hyphenate_command_refs('"scripts/v1.0 speckit.git.commit.sh"')
+            == '"scripts/v1.0 speckit.git.commit.sh"'
+        )
+        assert (
+            hyphenate_command_refs('"migrations/my speckit.schema.sql"')
+            == '"migrations/my speckit.schema.sql"'
+        )
+        assert (
+            hyphenate_command_refs('"Run speckit.plan. Then read docs/usage.md"')
+            == '"Run speckit-plan. Then read docs/usage.md"'
+        )
+        assert (
+            hyphenate_command_refs('"Run `speckit.plan` then read docs/setup.md"')
+            == '"Run `speckit-plan` then read docs/setup.md"'
+        )
+
+        fm_in = {
+            "csharp": "C:\\C#\\speckit.git.commit.md",
+            "dotted_dir": "speckit.demo files/commands/speckit.git.commit.md",
+            "versioned": "scripts/v1.0 speckit.git.commit.sh",
+            "migration": "migrations/my speckit.schema.sql",
+            "sentence": "Run speckit.plan. Then read docs/usage.md",
+            "backticked": "Run `speckit.plan` then read docs/setup.md",
+        }
+        assert _hyphenate_frontmatter_refs(fm_in) == {
+            "csharp": "C:\\C#\\speckit.git.commit.md",
+            "dotted_dir": "speckit.demo files/commands/speckit.git.commit.md",
+            "versioned": "scripts/v1.0 speckit.git.commit.sh",
+            "migration": "migrations/my speckit.schema.sql",
+            "sentence": "Run speckit-plan. Then read docs/usage.md",
+            "backticked": "Run `speckit-plan` then read docs/setup.md",
+        }
+
+        text = self._register_junie_command(
+            tmp_path,
+            "git",
+            'Invoke {SCRIPT}, Open C:\\C#\\speckit.git.commit.md, '
+            '"speckit.demo files/commands/speckit.git.commit.md", '
+            '"migrations/my speckit.schema.sql", "Run speckit.plan. Then read docs/usage.md", '
+            'and "Run `speckit.plan` then read docs/setup.md".\n',
+            frontmatter=(
+                "scripts:\n"
+                '  sh: \'"scripts/v1.0 speckit.git.commit.sh" "{ARGS}"\'\n'
+                "csharp: C:\\C#\\speckit.git.commit.md\n"
+                "dotted_dir: speckit.demo files/commands/speckit.git.commit.md\n"
+                "migration: migrations/my speckit.schema.sql\n"
+                'sentence: "Run speckit.plan. Then read docs/usage.md"\n'
+                'backticked: "Run `speckit.plan` then read docs/setup.md"\n'
+            ),
+            extension_id="git",
+        )
+        assert "Open C:\\C#\\speckit.git.commit.md" in text
+        assert '"speckit.demo files/commands/speckit.git.commit.md"' in text
+        assert '"migrations/my speckit.schema.sql"' in text
+        assert '"Run speckit-plan. Then read docs/usage.md"' in text
+        assert '"Run `speckit-plan` then read docs/setup.md"' in text
+        assert "csharp: C:\\C#\\speckit.git.commit.md" in text
+        assert "dotted_dir: speckit.demo files/commands/speckit.git.commit.md" in text
+        assert "migration: migrations/my speckit.schema.sql" in text
+        assert "sentence: Run speckit-plan. Then read docs/usage.md" in text
+        assert "backticked: Run `speckit-plan` then read docs/setup.md" in text
+        assert '".specify/extensions/git/scripts/v1.0 speckit.git.commit.sh" "$ARGUMENTS"' in text
+
     def test_junie_hook_instruction_injection(self):
         """Verify junie injects the dot-to-hyphen note for hooks."""
         junie = get_integration("junie")

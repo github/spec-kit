@@ -55,38 +55,30 @@ _SPECKIT_DOTTED_REF = re.compile(r"\bspeckit\.[A-Za-z0-9-_]+(?:\.[A-Za-z0-9-_]+)
 
 def _is_path_char(ch: str) -> bool:
     """Whether *ch* can end the directory part of a path before a separator."""
-    return ch.isalnum() or ch in "._-~/\\}$+"
+    return ch.isalnum() or ch in "._-~/\\}$+#@&"
 
 
-_SEGMENT_CHARS = frozenset("._-~+@$%")
+_SEGMENT_CHARS = frozenset("._-~+@$%#&")
 _QUOTE_OPEN_BOUNDARY = frozenset(' \t\r\n"\'`([<{:=-')
 _SEP_LEADING_BOUNDARY = frozenset(' \t\r\n"\'`([<{')
-_PATH_FILE_EXTENSIONS = frozenset(
+_WRAP_PUNCT = "\"'`.,;:!?()[]{}\u2018\u2019\u201c\u201d"
+_PROSE_CONNECTORS = frozenset(
     {
-        "md",
-        "sh",
-        "ps1",
-        "py",
-        "js",
-        "ts",
-        "mjs",
-        "cjs",
-        "json",
-        "yml",
-        "yaml",
-        "toml",
-        "txt",
-        "bat",
-        "cmd",
-        "exe",
-        "rb",
-        "pl",
-        "cfg",
-        "ini",
-        "conf",
-        "xml",
-        "csv",
-        "log",
+        "then",
+        "and",
+        "or",
+        "before",
+        "after",
+        "run",
+        "read",
+        "edit",
+        "use",
+        "open",
+        "see",
+        "check",
+        "invoke",
+        "execute",
+        "call",
     }
 )
 
@@ -149,6 +141,15 @@ def _is_contraction_apostrophe(line: str, idx: int) -> bool:
     return 0 < idx < len(line) - 1 and line[idx - 1].isalnum() and line[idx + 1].isalpha()
 
 
+def _has_punct_wrapped_speckit(word: str) -> bool:
+    """Whether *word* is a punctuation-wrapped ``speckit.*`` prose reference."""
+    return (
+        bool(word)
+        and (word[0] in _WRAP_PUNCT or word[-1] in _WRAP_PUNCT)
+        and _SPECKIT_DOTTED_REF.search(word) is not None
+    )
+
+
 def _is_valid_dir_component(comp: str, is_first: bool) -> bool:
     """Validate one directory component inside a standalone path string."""
     if not comp:
@@ -164,10 +165,20 @@ def _is_valid_dir_component(comp: str, is_first: bool) -> bool:
         if comp.endswith(closer) and any(c.isspace() for c in comp[1:-1]):
             return False
     if " " in comp:
-        for word in comp.split():
+        words = comp.split()
+        for idx, word in enumerate(words):
+            if _has_punct_wrapped_speckit(word):
+                return False
             stripped = word.lstrip("/")
             if _SPECKIT_DOTTED_REF.fullmatch(stripped) is not None:
-                return False
+                if 0 < idx < len(words) - 1:
+                    return False
+                if len(words) >= 3 and any(
+                    other.lower() in _PROSE_CONNECTORS
+                    for j, other in enumerate(words)
+                    if j != idx
+                ):
+                    return False
     return _is_path_char(comp[-1]) or comp[-1] in ")]"
 
 
@@ -183,6 +194,14 @@ def _is_standalone_path(text: str, start: int, end: int) -> bool:
         or "\t" in inner
         or "," in inner
         or ";" in inner
+        or "`" in inner
+        or '"' in inner
+        or ". " in inner
+        or ": " in inner
+        or "?" in inner
+        or "!" in inner
+        or "<" in inner
+        or ">" in inner
         or " /" in inner
         or " \\" in inner
     ):
@@ -209,12 +228,13 @@ def _is_standalone_path(text: str, start: int, end: int) -> bool:
         return True
 
     words = base.split()
-    if any("." in w for w in words[:-1]):
+    if any(_has_punct_wrapped_speckit(w) for w in words):
         return False
-    last_word = words[-1]
-    if "." not in last_word:
+    if any("." in w and w.rsplit(".", 1)[-1].isalpha() for w in words[:-1]):
         return False
-    return last_word.rsplit(".", 1)[-1].lower() in _PATH_FILE_EXTENSIONS
+    if len(words) >= 3 and any(w.lower() in _PROSE_CONNECTORS for w in words[1:-1]):
+        return False
+    return True
 
 
 def _rewrite_segment(segment: str) -> str:
