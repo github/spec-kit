@@ -382,8 +382,72 @@ class TestJunieIntegration(MarkdownIntegrationTests):
 
         unmatched = "]" * 20_000 + "/speckit.foo"
         assert hyphenate_command_refs(unmatched) == "]" * 20_000 + "/speckit-foo"
+
+        contractions = "'" + "don't " * 10_000 + "/speckit.foo'"
+        assert hyphenate_command_refs(contractions) == "'" + "don't " * 10_000 + "/speckit-foo'"
         elapsed = time.monotonic() - t0
         assert elapsed < 5.0, f"linear normalization took too long: {elapsed:.2f}s"
+
+    def test_spaced_first_dir_quoted_path_leading_prose_and_bounded_memory(self, tmp_path):
+        """Spaced initial directory paths stay intact, path-leading/multiline prose still hyphenates, and large inputs stay memory-bounded."""
+        import tracemalloc
+
+        # Spaced first directory component in quoted body & frontmatter.
+        assert (
+            hyphenate_command_refs('"my scripts/my speckit.git.commit.sh"')
+            == '"my scripts/my speckit.git.commit.sh"'
+        )
+        assert _hyphenate_frontmatter_refs(
+            {"spaced_first": "my scripts/my speckit.git.commit.sh"}
+        ) == {"spaced_first": "my scripts/my speckit.git.commit.sh"}
+
+        # Path-leading prose and multiline frontmatter values still hyphenate commands.
+        assert (
+            hyphenate_command_refs('"docs/setup.md then run speckit.plan"')
+            == '"docs/setup.md then run speckit-plan"'
+        )
+        fm_prose = _hyphenate_frontmatter_refs(
+            {
+                "prose_path": "docs/setup.md then run speckit.plan",
+                "multiline": "docs/usage.md\n/speckit.plan",
+            }
+        )
+        assert fm_prose == {
+            "prose_path": "docs/setup.md then run speckit-plan",
+            "multiline": "docs/usage.md\n/speckit-plan",
+        }
+
+        text = self._register_junie_command(
+            tmp_path,
+            "git",
+            '"my scripts/my speckit.git.commit.sh" vs "docs/setup.md then run speckit.plan".\n',
+            frontmatter=(
+                'spaced_first: "my scripts/my speckit.git.commit.sh"\n'
+                'prose_path: "docs/setup.md then run speckit.plan"\n'
+                'multiline: |\n'
+                '  docs/usage.md\n'
+                '  /speckit.plan\n'
+            ),
+        )
+        assert '"my .specify/scripts/my speckit.git.commit.sh"' in text
+        assert '"docs/setup.md then run speckit-plan"' in text
+        assert "spaced_first: my scripts/my speckit.git.commit.sh" in text
+        assert "prose_path: docs/setup.md then run speckit-plan" in text
+        assert "/speckit-plan" in text
+
+        # Bounded extra memory on ~1 MiB commands (both multi-line and single-line).
+        big_line = "a/b[c]/d/e(f)/" * 8
+        big_doc = (big_line + "\n") * 9_000 + "Run /speckit.git.status\n"
+        single_line = big_line * 8_000 + " Run /speckit.git.status"
+        for sample in (big_doc, single_line):
+            tracemalloc.start()
+            try:
+                normalized = hyphenate_command_refs(sample)
+                _, peak = tracemalloc.get_traced_memory()
+            finally:
+                tracemalloc.stop()
+            assert normalized.rstrip("\n").endswith("Run /speckit-git-status")
+            assert peak < 4 * len(sample), f"excessive peak memory: {peak} bytes"
 
     def test_junie_hook_instruction_injection(self):
         """Verify junie injects the dot-to-hyphen note for hooks."""

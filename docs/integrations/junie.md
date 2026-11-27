@@ -31,7 +31,7 @@ bracketed or dotted directory segments—such as
 `.specify/extensions/git/commands/speckit.git.commit.md`,
 `scripts/speckit.git.commit.sh`, `scripts/run-speckit.git.commit.sh`,
 `scripts/C++/speckit.git.commit.sh`, `"scripts/my speckit.git.commit.sh"`,
-`commands/[old]speckit.git.commit.md`,
+`"my scripts/my speckit.git.commit.sh"`, `commands/[old]speckit.git.commit.md`,
 `speckit.demo[old]/commands/speckit.git.commit.md`,
 `/tmp/speckit.demo/commands/speckit.git.commit.md`, `C:\speckit.foo.md`,
 `C:\Program Files (x86)\speckit.foo.md`,
