@@ -51,7 +51,14 @@ else
             echo "Restore a valid plan template and rerun plan setup." >&2
             exit 1
         fi
-        cat "$template_file" > "$IMPL_PLAN"
+        # Fill the literal [DATE] placeholder with today's local date (#4335).
+        # The sentinel keeps trailing newlines; parameter expansion keeps the
+        # template text literal and the escaped brackets match only the token.
+        plan_content=$(cat "$template_file"; printf x)
+        plan_content=${plan_content%x}
+        plan_today=$(date +%Y-%m-%d)
+        plan_content=${plan_content//\[DATE\]/$plan_today}
+        printf '%s' "$plan_content" > "$IMPL_PLAN"
         if $JSON_MODE; then
             echo "Copied plan template to $IMPL_PLAN" >&2
         else

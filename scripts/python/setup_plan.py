@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import sys
 from pathlib import Path
@@ -81,6 +82,10 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 1
+            # Fill the literal [DATE] placeholder with today's local date (#4335).
+            template_content = template_content.replace(
+                "[DATE]", datetime.date.today().isoformat()
+            )
             paths.impl_plan.write_bytes(template_content.encode("utf-8"))
             print(f"Copied plan template to {paths.impl_plan}", file=status_stream)
         else:
