@@ -58,6 +58,16 @@ def test_preserves_everything_outside_body(
     ) == expected
 
 
+@pytest.mark.parametrize("closing", ["---", "--- ", "---\t"])
+def test_front_matter_end_with_trailing_whitespace(closing: str) -> None:
+    front = "---\ndescription: |\n  ## Target\n" + closing + "\n"
+    body = "\n# Doc\n## Target\nold\n## Next\nkeep\n"
+    assert replace_section(
+        front + body, "new\n", "target",
+        preset="team", contribution="body.md", artifact="spec-template",
+    ) == front + "\n# Doc\n## Target\nnew\n## Next\nkeep\n"
+
+
 @pytest.mark.parametrize(
     "content,replacement,expected",
     [
