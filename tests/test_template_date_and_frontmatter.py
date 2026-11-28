@@ -264,11 +264,14 @@ def test_create_new_feature_preserves_dry_run_missing_template_and_existing_spec
     existing_dir.mkdir(parents=True)
     existing_bytes = b"Existing literal [DATE] must stay untouched\n"
     (existing_dir / "spec.md").write_bytes(existing_bytes)
+    # Pin the feature number so the run targets the seeded 001-existing directory.
+    number_args = ("-Number", "1") if port == "powershell" else ("--number", "1")
     existing_result = run(
         _create_feature_cmd(
             existing_repo,
             port,
             "Existing",
+            *number_args,
             json_mode=True,
             allow_existing=True,
             short_name="existing",
@@ -276,6 +279,7 @@ def test_create_new_feature_preserves_dry_run_missing_template_and_existing_spec
         existing_repo,
     )
     assert existing_result.returncode == 0, existing_result.stderr
+    assert json_stdout(existing_result)["BRANCH_NAME"] == "001-existing"
     assert (existing_dir / "spec.md").read_bytes() == existing_bytes
 
 
