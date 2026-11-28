@@ -207,6 +207,17 @@ def _is_standalone_path(text: str, start: int, end: int) -> bool:
     ):
         return False
 
+    if inner.startswith("/speckit."):
+        first_ws = inner.find(" ")
+        if first_ws > 1:
+            first_tok = inner[1:first_ws]
+            if (
+                "/" not in first_tok
+                and "\\" not in first_tok
+                and _SPECKIT_DOTTED_REF.fullmatch(first_tok) is not None
+            ):
+                return False
+
     last_sep = max(inner.rfind("/"), inner.rfind("\\"))
     if last_sep <= 0:
         return False

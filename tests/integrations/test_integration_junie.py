@@ -525,6 +525,59 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         assert "backticked: Run `speckit-plan` then read docs/setup.md" in text
         assert '".specify/extensions/git/scripts/v1.0 speckit.git.commit.sh" "$ARGUMENTS"' in text
 
+    def test_quoted_and_frontmatter_slash_commands_with_path_args(self, tmp_path):
+        """Leading slash-commands with path arguments still hyphenate in quotes and frontmatter."""
+        assert (
+            hyphenate_command_refs("Run `/speckit.plan docs/design.md` now.")
+            == "Run `/speckit-plan docs/design.md` now."
+        )
+        assert (
+            hyphenate_command_refs('Run "/speckit.plan generates specs/plan.md".')
+            == 'Run "/speckit-plan generates specs/plan.md".'
+        )
+        assert (
+            hyphenate_command_refs("See `/speckit.foo.md docs/speckit.git.commit.md`.")
+            == "See `/speckit-foo-md docs/speckit.git.commit.md`."
+        )
+        assert (
+            hyphenate_command_refs('Open "/speckit.demo/my dir/my speckit.git.commit.md".')
+            == 'Open "/speckit.demo/my dir/my speckit.git.commit.md".'
+        )
+
+        fm_out = _hyphenate_frontmatter_refs(
+            {
+                "cmd": "/speckit.plan docs/design.md",
+                "summary": "/speckit.plan generates specs/plan.md",
+                "abs_path": "/speckit.demo/my dir/my speckit.git.commit.md",
+            }
+        )
+        assert fm_out == {
+            "cmd": "/speckit-plan docs/design.md",
+            "summary": "/speckit-plan generates specs/plan.md",
+            "abs_path": "/speckit.demo/my dir/my speckit.git.commit.md",
+        }
+
+        text = self._register_junie_command(
+            tmp_path,
+            "git",
+            "Run `/speckit.plan docs/design.md`, "
+            '"/speckit.plan generates specs/plan.md", '
+            "and `/speckit.foo.md docs/speckit.git.commit.md`. "
+            'Keep "/speckit.demo/my dir/my speckit.git.commit.md".\n',
+            frontmatter=(
+                "cmd: /speckit.plan docs/design.md\n"
+                "summary: /speckit.plan generates specs/plan.md\n"
+                "abs_path: /speckit.demo/my dir/my speckit.git.commit.md\n"
+            ),
+        )
+        assert "`/speckit-plan docs/design.md`" in text
+        assert '"/speckit-plan generates specs/plan.md"' in text
+        assert "`/speckit-foo-md docs/speckit.git.commit.md`" in text
+        assert '"/speckit.demo/my dir/my speckit.git.commit.md"' in text
+        assert "cmd: /speckit-plan docs/design.md" in text
+        assert "summary: /speckit-plan generates specs/plan.md" in text
+        assert "abs_path: /speckit.demo/my dir/my speckit.git.commit.md" in text
+
     def test_junie_hook_instruction_injection(self):
         """Verify junie injects the dot-to-hyphen note for hooks."""
         junie = get_integration("junie")
