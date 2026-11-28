@@ -30,6 +30,7 @@ from ._file_changes import directory_creation_observer, file_change_observer
 _init_directory: ContextVar[tuple[Path, bool, list[Path]] | None] = ContextVar(
     "external_integration_init_directory", default=None
 )
+_init_root: ContextVar[Path | None] = ContextVar("external_integration_init_root", default=None)
 _success_messages: ContextVar[list[str] | None] = ContextVar(
     "external_integration_success_messages", default=None
 )
@@ -55,12 +56,11 @@ def initial_directory_state(path: Path) -> tuple[bool, list[Path]] | None:
     """Init validation sees the directory before the lifecycle lock created it.
 
     The lifecycle records the target as spelled (``parent/../proj``) while
-    init later works with the resolved path, so compare resolved forms.
+    init later works with the resolved path, so also match the root the
+    lifecycle resolved through ``preflight_init_root``.
     """
     state = _init_directory.get()
-    if state is None:
-        return None
-    if state[0] == path or state[0].resolve() == path.resolve():
+    if state is not None and path in (state[0], _init_root.get()):
         return state[1], state[2]
     return None
 
@@ -658,6 +658,8 @@ def external_lifecycle(operation: str):
                             (creation_root, root.exists(), list(root.iterdir()) if root.is_dir() else [])
                         )
                         stack.callback(_init_directory.reset, token)
+                        root_token = _init_root.set(root)
+                        stack.callback(_init_root.reset, root_token)
                     transaction = (
                         _transaction(root, key, state, records, creation_root=creation_root)
                         if operation == "init"

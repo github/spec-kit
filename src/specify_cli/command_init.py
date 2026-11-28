@@ -547,7 +547,7 @@ def register(app: typer.Typer) -> None:
         from ._file_policy import (
             ProjectPolicyError, prepare_init_root, read_project_options,
         )
-        from .file_helper import FileHelperError
+        from .file_helper import FileHelper, FileHelperError
 
         try:
             # Existing targets are checked before any integration or scaffold mutation.
@@ -1053,7 +1053,13 @@ def register(app: typer.Typer) -> None:
                     and initial_directory_state(project_path) is None
                     and not lifecycle_owns_rollback()
                 ):
-                    shutil.rmtree(project_path, ignore_errors=True)
+                    # Deny-mode, handle-based removal beneath the trusted
+                    # parent; best effort, so the step's own error stands.
+                    try:
+                        with FileHelper(project_path.parent) as files:
+                            files.delete(project_path.name, recursive=True)
+                    except (OSError, FileHelperError):
+                        pass
                 raise
             except Exception as e:
                 tracker.error("final", str(e))

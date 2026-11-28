@@ -257,17 +257,20 @@ def test_invalid_integration_value_is_rendered_literally(tmp_path: Path):
     assert "nope[/red]" in _strip(result.stdout)
 
 
-def _fail_shared_infra(monkeypatch, unowned: str | None = None):
+def _fail_shared_infra(monkeypatch, unowned: str | None = None, probe=None):
     """Make the shared-infrastructure step fail part-way, as a full disk would.
 
     ``_install_shared_infra_or_exit`` turns the ``OSError`` into
     ``typer.Exit(1)``, which is how init sees a real shared-infra failure.
     ``unowned`` names a project-root file written outside any journalled
     scope, standing in for a concurrent write the rollback must preserve.
+    ``probe`` is called with the project path init passed to the installer.
     """
     import specify_cli
 
     def partial_install(project_path, *args, **kwargs):
+        if probe is not None:
+            probe(Path(project_path))
         scripts = Path(project_path) / ".specify" / "scripts"
         scripts.mkdir(parents=True, exist_ok=True)
         (scripts / "partial.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
@@ -311,16 +314,30 @@ def test_shared_infra_failure_leaves_noncanonical_target_to_lifecycle(
     instead of deleting the whole target.
     """
     from specify_cli.integrations import installer
+    from specify_cli.integrations._lifecycle import initial_directory_state
 
     (tmp_path / "anchor").mkdir()
     monkeypatch.setattr(installer, "read_records", lambda root: {"generic": {}})
     monkeypatch.setattr(installer, "load_installed_integrations", lambda root: None)
-    _fail_shared_infra(monkeypatch, unowned="concurrent.txt")
+    lookups: dict[str, object] = {}
+
+    def probe(project_path: Path) -> None:
+        # The deletion guard also checks lifecycle_owns_rollback(), so assert
+        # the lookup itself: it must match the resolved target init uses and
+        # still reject an unrelated directory.
+        lookups["target"] = project_path
+        lookups["resolved"] = initial_directory_state(project_path)
+        lookups["unrelated"] = initial_directory_state(tmp_path / "anchor")
+
+    _fail_shared_infra(monkeypatch, unowned="concurrent.txt", probe=probe)
 
     result = _init(tmp_path, str(Path("anchor") / ".." / "proj"))
 
     assert result.exit_code == 1, _strip(result.stdout)
     project = tmp_path / "proj"
+    assert lookups["target"] == project.resolve()
+    assert lookups["resolved"] == (False, [])
+    assert lookups["unrelated"] is None
     assert (project / "concurrent.txt").read_text(encoding="utf-8") == "unowned\n"
 
 
