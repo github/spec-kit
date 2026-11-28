@@ -3507,6 +3507,66 @@ class TestExtensionManager:
         assert not manager.registry.is_installed("test-ext")
         assert not ext_dir.exists()
 
+    @staticmethod
+    def _link_registry(project_dir, temp_dir):
+        """Move the registry out of the project and leave a symlink to it."""
+        if not can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+        registry_path = project_dir / ".specify" / "extensions" / ExtensionRegistry.REGISTRY_FILE
+        target = temp_dir / "linked-registry.json"
+        target.write_bytes(registry_path.read_bytes())
+        registry_path.unlink()
+        registry_path.symlink_to(target)
+        return target
+
+    @staticmethod
+    def _tree(root):
+        return {
+            str(path.relative_to(root)): (
+                "link" if path.is_symlink() else path.read_bytes() if path.is_file() else "dir"
+            )
+            for path in sorted(root.rglob("*"))
+        }
+
+    def test_remove_refused_for_symlinked_registry_deletes_nothing(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        """An uninstall the registry save would refuse fails before any
+        destructive step: files, commands and hooks all stay in place."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        target = self._link_registry(project_dir, temp_dir)
+        before = self._tree(project_dir)
+        saved = target.read_bytes()
+
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ExtensionError, match="symlinked extension registry"):
+            manager.remove("test-ext", keep_config=False)
+
+        assert self._tree(project_dir) == before
+        assert target.read_bytes() == saved
+        assert ExtensionManager(project_dir).registry.is_installed("test-ext")
+
+    def test_install_refused_for_symlinked_registry_writes_nothing(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        """An install the registry save would refuse fails before writing
+        any extension file."""
+        ExtensionRegistry(project_dir / ".specify" / "extensions").add(
+            "other-ext", {"version": "1.0.0"}
+        )
+        target = self._link_registry(project_dir, temp_dir)
+        before = self._tree(project_dir)
+        saved = target.read_bytes()
+
+        with pytest.raises(ExtensionError, match="symlinked extension registry"):
+            ExtensionManager(project_dir).install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        assert self._tree(project_dir) == before
+        assert target.read_bytes() == saved
+
     def test_remove_nonexistent(self, project_dir):
         """Test removing non-existent extension."""
         manager = ExtensionManager(project_dir)
