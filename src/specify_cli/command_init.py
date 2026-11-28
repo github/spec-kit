@@ -547,7 +547,7 @@ def register(app: typer.Typer) -> None:
         from ._file_policy import (
             ProjectPolicyError, prepare_init_root, read_project_options,
         )
-        from .file_helper import FileHelperError
+        from .file_helper import FileHelper, FileHelperError
 
         try:
             # Existing targets are checked before any integration or scaffold mutation.
@@ -1041,7 +1041,26 @@ def register(app: typer.Typer) -> None:
                 ensure_constitution_from_template(project_path, tracker=tracker)
 
                 tracker.complete("final", "project ready")
-            except (typer.Exit, SystemExit):
+            except (typer.Exit, SystemExit) as exc:
+                # A failing step that already reported its own error exits
+                # here (e.g. a shared-infrastructure OSError becomes
+                # typer.Exit(1)); remove a directory this run created, as the
+                # generic failure path below does.
+                exit_code = getattr(exc, "exit_code", getattr(exc, "code", 1))
+                if (
+                    exit_code not in (0, None)
+                    and not here and not dir_existed_before
+                    and initial_directory_state(project_path) is None
+                    and not lifecycle_owns_rollback()
+                ):
+                    # Deny-mode, handle-based removal beneath the trusted
+                    # parent; best effort, so the step's own error stands
+                    # (an already-missing target raises FileNotFoundError).
+                    try:
+                        with FileHelper(project_path.parent) as files:
+                            files.delete(project_path.name, recursive=True)
+                    except (OSError, FileHelperError):
+                        pass
                 raise
             except Exception as e:
                 tracker.error("final", str(e))
