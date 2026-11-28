@@ -1,5 +1,6 @@
 """Tests for setup-plan preserving existing plan.md (#2653)."""
 
+import datetime
 import json
 import os
 import shutil
@@ -240,6 +241,7 @@ def test_ps_setup_plan_does_not_match_another_features_plan(plan_repo: Path) -> 
 
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    before = datetime.date.today().isoformat()
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json"],
         cwd=plan_repo,
@@ -248,11 +250,16 @@ def test_ps_setup_plan_does_not_match_another_features_plan(plan_repo: Path) -> 
         check=False,
         env=_clean_env(),
     )
+    after = datetime.date.today().isoformat()
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
     plan_path = plan_repo / "specs" / feature_name / "plan.md"
     assert Path(data["IMPL_PLAN"]) == plan_path
-    assert plan_path.read_text(encoding="utf-8") == PLAN_TEMPLATE.read_text(encoding="utf-8")
+    # setup-plan fills the template's [DATE] placeholder with today's date (#4335).
+    template = PLAN_TEMPLATE.read_text(encoding="utf-8")
+    assert plan_path.read_text(encoding="utf-8") in {
+        template.replace("[DATE]", day) for day in (before, after)
+    }
     assert (neighbor / "plan.md").read_text(encoding="utf-8") == existing_content
     assert "Copied plan template" in result.stderr
 

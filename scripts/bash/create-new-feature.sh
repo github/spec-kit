@@ -454,6 +454,11 @@ if [ "$DRY_RUN" != true ]; then
 
     if [ "$NEEDS_SPEC" = true ]; then
         if [ "$SPEC_TEMPLATE_FOUND" = true ]; then
+            # Fill the literal [DATE] placeholder with today's local date (#4335).
+            # Parameter expansion keeps the template text literal; the escaped
+            # brackets match only the exact token.
+            SPEC_TODAY=$(date +%Y-%m-%d)
+            SPEC_TEMPLATE_CONTENT=${SPEC_TEMPLATE_CONTENT//\[DATE\]/$SPEC_TODAY}
             printf '%s' "$SPEC_TEMPLATE_CONTENT" > "$SPEC_FILE"
         else
             echo "Warning: Spec template not found; created empty spec file" >&2

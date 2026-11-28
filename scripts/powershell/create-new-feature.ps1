@@ -307,6 +307,10 @@ if (-not $DryRun) {
 
     if ($needsSpec) {
         if ($null -ne $content) {
+            # Fill the literal [DATE] placeholder with today's local date (#4335).
+            # String.Replace is ordinal and literal (no regex, no expansion).
+            $today = (Get-Date).ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+            $content = $content.Replace('[DATE]', $today)
             $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
             [System.IO.File]::WriteAllText($specFile, $content, $utf8NoBom)
         } else {

@@ -419,6 +419,10 @@ def main(argv: list[str] | None = None) -> int:
 
         if needs_spec:
             if template_content is not None:
+                # Fill the literal [DATE] placeholder with today's local date (#4335).
+                template_content = template_content.replace(
+                    "[DATE]", datetime.date.today().isoformat()
+                )
                 spec_file.write_bytes(template_content.encode("utf-8"))
             else:
                 print(

@@ -55,6 +55,10 @@ if (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf) {
             [Console]::Error.WriteLine("Restore a valid plan template and rerun plan setup.")
             exit 1
         }
+        # Fill the literal [DATE] placeholder with today's local date (#4335).
+        # String.Replace is ordinal and literal (no regex, no expansion).
+        $today = (Get-Date).ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+        $content = $content.Replace('[DATE]', $today)
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
         # Emit the copy status like the bash twin (setup-plan.sh); route to stderr
