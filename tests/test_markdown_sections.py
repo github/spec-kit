@@ -68,6 +68,21 @@ def test_front_matter_end_with_trailing_whitespace(closing: str) -> None:
     ) == front + "\n# Doc\n## Target\nnew\n## Next\nkeep\n"
 
 
+@pytest.mark.parametrize("closing", ["---- ", "--- text"])
+def test_front_matter_end_rejects_non_delimiter_lines(closing: str) -> None:
+    front = "---\ndescription: |\n  ## Target\n" + closing + "\n"
+    body = "\n# Doc\n## Target\nold\n## Next\nkeep\n"
+    with pytest.raises(SectionReplacementError) as caught:
+        replace_section(
+            front + body, "new\n", "target",
+            preset="team", contribution="body.md", artifact="spec-template",
+        )
+    details = caught.value.details
+    assert details["code"] == "SECTION_NOT_FOUND"
+    assert details["match_count"] == 0
+    assert details["candidates"] == []
+
+
 @pytest.mark.parametrize(
     "content,replacement,expected",
     [
