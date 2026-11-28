@@ -142,7 +142,7 @@ def replace_section(
         offset += len(line)
         text = line.rstrip("\r\n")
         if metadata:
-            if number > 1 and text == "---":
+            if number > 1 and re.fullmatch(r"---[ \t]*", text):
                 metadata = False
             continue
         if fence_marker:
