@@ -186,7 +186,7 @@ class TestGitExtensionManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "git"
-        assert m.version == "1.0.9"
+        assert m.version == "1.0.10"
 
     def test_manifest_commands(self):
         """Manifest declares expected commands."""
@@ -2351,6 +2351,134 @@ class TestPowerShellUtf8Inputs:
         assert self._git_lines(project, "branch", "--show-current") == [
             "équipe/001-guided-tour"
         ]
+
+
+# ── PowerShell commit messages with double quotes ────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "exe",
+    [
+        pytest.param(
+            "pwsh",
+            marks=pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available"),
+            id="pwsh",
+        ),
+        pytest.param(
+            WINDOWS_POWERSHELL,
+            marks=pytest.mark.skipif(
+                not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
+            ),
+            id="windows-powershell-5.1",
+        ),
+    ],
+)
+class TestPowerShellQuotedCommitMessages:
+    """Commit messages with double quotes must reach git unchanged.
+
+    Windows PowerShell 5.1 does not escape embedded double quotes when it
+    builds a native command line, so `git commit -m 'add "remember me" option'`
+    arrived as extra arguments that git rejected as pathspecs, and a quoted
+    word with no space lost its quotes. PowerShell 7.3+ escapes them, so only
+    the windows-powershell-5.1 case can reproduce it.
+    """
+
+    @staticmethod
+    def _subject(project: Path) -> str:
+        out = subprocess.run(
+            ["git", "log", "-1", "--format=%s"], cwd=project, capture_output=True, check=True
+        )
+        return out.stdout.decode("utf-8").strip()
+
+    @staticmethod
+    def _temp_env(tmp_path: Path) -> tuple[Path, dict]:
+        """Point the script's temp directory at an empty folder we can inspect."""
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+        return temp_dir, {"TEMP": str(temp_dir), "TMP": str(temp_dir), "TMPDIR": str(temp_dir)}
+
+    @pytest.mark.parametrize(
+        "message",
+        ['feat: add "remember me" option', 'feat:"x"'],
+        ids=["quoted-words", "quotes-without-spaces"],
+    )
+    def test_auto_commit_message_file_keeps_double_quotes(
+        self, tmp_path: Path, exe: str, message: str
+    ):
+        project = _setup_project(tmp_path / "project")
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        msg_file = project / "commit-msg.txt"
+        msg_file.write_text(f"{message}\n", encoding="utf-8")
+        temp_dir, temp_env = self._temp_env(tmp_path)
+
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "-MessageFile", str(msg_file),
+            env_extra=temp_env, exe=exe,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert self._subject(project) == message
+        assert list(temp_dir.iterdir()) == []
+
+    def test_auto_commit_configured_message_keeps_double_quotes(self, tmp_path: Path, exe: str):
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            """    message: 'Add "remember me" spec'\n"""
+        ))
+        (project / "new-file.txt").write_text("content")
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify", exe=exe)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert self._subject(project) == 'Add "remember me" spec'
+
+    def test_initialize_repo_init_commit_message_keeps_double_quotes(
+        self, tmp_path: Path, exe: str
+    ):
+        project = _setup_project(tmp_path, git=False)
+        _write_config(project, """init_commit_message: 'Initial "Spec Kit" setup'\n""")
+
+        result = _run_pwsh("initialize-repo.ps1", project, exe=exe)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert self._subject(project) == 'Initial "Spec Kit" setup'
+
+    def test_auto_commit_rejected_commit_fails_without_leaving_temp_files(
+        self, tmp_path: Path, exe: str
+    ):
+        """A commit that git refuses still fails the script and cleans up."""
+        project = _setup_project(tmp_path / "project")
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        hook = project / ".git" / "hooks" / "commit-msg"
+        hook.write_text("#!/bin/sh\necho 'rejected by hook' >&2\nexit 1\n", encoding="utf-8", newline="\n")
+        hook.chmod(0o755)
+        (project / "new-file.txt").write_text("content")
+        temp_dir, temp_env = self._temp_env(tmp_path)
+
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", env_extra=temp_env, exe=exe
+        )
+
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "git commit failed" in result.stdout + result.stderr
+        assert self._subject(project) == "seed"
+        assert list(temp_dir.iterdir()) == []
 
 
 # ── auto-commit.ps1 CRLF warning tests (issue #2253) ────────────────────────

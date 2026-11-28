@@ -218,7 +218,16 @@ $ErrorActionPreference = 'Continue'
 try {
     $out = git add . 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) { throw "git add failed: $out" }
-    $out = git commit -q -m $commitMsg 2>&1 | Out-String
+    # Pass the message in a file: Windows PowerShell 5.1 does not escape
+    # double quotes in native arguments, so `-m` split a message such as
+    # 'add "remember me" option' into extra pathspecs.
+    $msgFile = [System.IO.Path]::GetTempFileName()
+    try {
+        [System.IO.File]::WriteAllText($msgFile, $commitMsg, (New-Object System.Text.UTF8Encoding($false)))
+        $out = git commit -q -F $msgFile 2>&1 | Out-String
+    } finally {
+        Remove-Item -LiteralPath $msgFile -Force -ErrorAction SilentlyContinue
+    }
     if ($LASTEXITCODE -ne 0) { throw "git commit failed: $out" }
 } catch {
     Write-Warning "[specify] Error: $_"
