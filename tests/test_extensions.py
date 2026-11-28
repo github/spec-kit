@@ -1651,6 +1651,159 @@ class TestExtensionRegistry:
         assert registry.list() == {}
         assert not registry.is_installed("test-ext")
 
+    def test_unserializable_value_keeps_previous_registry(self, temp_dir):
+        """A value json cannot encode must not truncate the saved registry.
+
+        ``_save()`` used to open the registry with ``"w"`` (truncating it) and
+        then stream the JSON, so an encoding error part-way left a truncated
+        file. ``_load()`` reads that as corrupt and replaces it with an empty
+        registry, so every installed extension disappeared from it.
+        """
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("first-ext", {"version": "1.0.0"})
+        saved = registry.registry_path.read_text(encoding="utf-8")
+
+        with pytest.raises(TypeError):
+            registry.add("second-ext", {"version": "2.0.0", "tags": {"not-json"}})
+
+        assert registry.registry_path.read_text(encoding="utf-8") == saved
+        reloaded = ExtensionRegistry(extensions_dir)
+        assert reloaded.is_installed("first-ext")
+        assert not reloaded.is_installed("second-ext")
+
+    def test_interrupted_save_keeps_previous_registry(self, temp_dir, monkeypatch):
+        """A write that fails part-way (disk full) keeps the previous registry
+        and leaves no staging file next to it."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("first-ext", {"version": "1.0.0"})
+        saved = registry.registry_path.read_text(encoding="utf-8")
+
+        real_fdopen = os.fdopen
+
+        class PartialStream:
+            def __init__(self, stream):
+                self._stream = stream
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self._stream.close()
+
+            def write(self, data):
+                self._stream.write(data[:20])
+                self._stream.flush()
+                raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(
+            os, "fdopen", lambda fd, *a, **kw: PartialStream(real_fdopen(fd, *a, **kw))
+        )
+        with pytest.raises(OSError, match="No space left"):
+            registry.add("second-ext", {"version": "2.0.0"})
+        monkeypatch.undo()
+
+        assert registry.registry_path.read_text(encoding="utf-8") == saved
+        reloaded = ExtensionRegistry(extensions_dir)
+        assert reloaded.is_installed("first-ext")
+        assert not reloaded.is_installed("second-ext")
+        assert sorted(p.name for p in extensions_dir.iterdir()) == [
+            ExtensionRegistry.REGISTRY_FILE
+        ]
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
+    def test_save_replaces_registry_and_keeps_its_mode(self, temp_dir):
+        """A successful save writes the new data, keeps the file mode, and
+        leaves no temporary file next to the registry."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("first-ext", {"version": "1.0.0"})
+        registry.registry_path.chmod(0o640)
+
+        registry.add("second-ext", {"version": "2.0.0"})
+
+        data = json.loads(registry.registry_path.read_text(encoding="utf-8"))
+        assert sorted(data["extensions"]) == ["first-ext", "second-ext"]
+        assert registry.registry_path.stat().st_mode & 0o777 == 0o640
+        assert sorted(p.name for p in extensions_dir.iterdir()) == [
+            ExtensionRegistry.REGISTRY_FILE
+        ]
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
+    def test_private_registry_is_never_staged_readable(self, temp_dir, monkeypatch):
+        """Under umask 022 an existing 0600 registry's replacement is written
+        to an owner-only staging file, not a 0644 one, and stays 0600."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("first-ext", {"version": "1.0.0"})
+        registry.registry_path.chmod(0o600)
+
+        staged_modes = []
+        real_fdopen = os.fdopen
+
+        def recording_fdopen(fd, *args, **kwargs):
+            staged_modes.append(os.fstat(fd).st_mode & 0o777)
+            return real_fdopen(fd, *args, **kwargs)
+
+        previous = os.umask(0o022)
+        try:
+            monkeypatch.setattr(os, "fdopen", recording_fdopen)
+            registry.add("second-ext", {"version": "2.0.0"})
+        finally:
+            monkeypatch.undo()
+            os.umask(previous)
+
+        assert staged_modes == [0o600]
+        assert registry.registry_path.stat().st_mode & 0o777 == 0o600
+        data = json.loads(registry.registry_path.read_text(encoding="utf-8"))
+        assert sorted(data["extensions"]) == ["first-ext", "second-ext"]
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
+    @pytest.mark.parametrize("umask, expected", [(0o077, 0o600), (0o022, 0o644)])
+    def test_new_registry_mode_follows_umask(self, temp_dir, umask, expected):
+        """A newly created registry gets the mode the umask allows, as the
+        previous ``open(..., "w")`` writer did, rather than a fixed mode."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        previous = os.umask(umask)
+        try:
+            ExtensionRegistry(extensions_dir).add("first-ext", {"version": "1.0.0"})
+        finally:
+            os.umask(previous)
+
+        registry_path = extensions_dir / ExtensionRegistry.REGISTRY_FILE
+        assert registry_path.stat().st_mode & 0o777 == expected
+
+    def test_save_refuses_a_symlinked_registry(self, temp_dir):
+        """A ``.registry`` symlink is neither written through nor replaced:
+        the save is refused and both the link and its target are unchanged."""
+        if not can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        target = temp_dir / "shared-registry.json"
+        original = json.dumps(
+            {"schema_version": "1.0", "extensions": {"first-ext": {"version": "1.0.0"}}}
+        )
+        target.write_text(original, encoding="utf-8")
+        registry_path = extensions_dir / ExtensionRegistry.REGISTRY_FILE
+        registry_path.symlink_to(target)
+
+        registry = ExtensionRegistry(extensions_dir)
+        with pytest.raises(ExtensionError, match="symlinked extension registry"):
+            registry.add("second-ext", {"version": "2.0.0"})
+
+        assert registry_path.is_symlink()
+        assert target.read_text(encoding="utf-8") == original
+        assert sorted(p.name for p in extensions_dir.iterdir()) == [
+            ExtensionRegistry.REGISTRY_FILE
+        ]
+
 
 # ===== ExtensionManager Tests =====
 
@@ -3353,6 +3506,66 @@ class TestExtensionManager:
         assert result is True
         assert not manager.registry.is_installed("test-ext")
         assert not ext_dir.exists()
+
+    @staticmethod
+    def _link_registry(project_dir, temp_dir):
+        """Move the registry out of the project and leave a symlink to it."""
+        if not can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+        registry_path = project_dir / ".specify" / "extensions" / ExtensionRegistry.REGISTRY_FILE
+        target = temp_dir / "linked-registry.json"
+        target.write_bytes(registry_path.read_bytes())
+        registry_path.unlink()
+        registry_path.symlink_to(target)
+        return target
+
+    @staticmethod
+    def _tree(root):
+        return {
+            str(path.relative_to(root)): (
+                "link" if path.is_symlink() else path.read_bytes() if path.is_file() else "dir"
+            )
+            for path in sorted(root.rglob("*"))
+        }
+
+    def test_remove_refused_for_symlinked_registry_deletes_nothing(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        """An uninstall the registry save would refuse fails before any
+        destructive step: files, commands and hooks all stay in place."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        target = self._link_registry(project_dir, temp_dir)
+        before = self._tree(project_dir)
+        saved = target.read_bytes()
+
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ExtensionError, match="symlinked extension registry"):
+            manager.remove("test-ext", keep_config=False)
+
+        assert self._tree(project_dir) == before
+        assert target.read_bytes() == saved
+        assert ExtensionManager(project_dir).registry.is_installed("test-ext")
+
+    def test_install_refused_for_symlinked_registry_writes_nothing(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        """An install the registry save would refuse fails before writing
+        any extension file."""
+        ExtensionRegistry(project_dir / ".specify" / "extensions").add(
+            "other-ext", {"version": "1.0.0"}
+        )
+        target = self._link_registry(project_dir, temp_dir)
+        before = self._tree(project_dir)
+        saved = target.read_bytes()
+
+        with pytest.raises(ExtensionError, match="symlinked extension registry"):
+            ExtensionManager(project_dir).install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        assert self._tree(project_dir) == before
+        assert target.read_bytes() == saved
 
     def test_remove_nonexistent(self, project_dir):
         """Test removing non-existent extension."""

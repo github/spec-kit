@@ -137,6 +137,32 @@ def test_plain_operations(root, allow):
     assert list(root.iterdir()) == []
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
+def test_file_mode_reports_regular_file_permissions(root):
+    with FileHelper(root) as files:
+        files.create_bytes("private", b"x", mode=0o600)
+        (root / "private").chmod(0o640)
+        assert files.file_mode("private") == 0o640
+        assert files.file_mode(root / "private") == 0o640
+        with pytest.raises(FileNotFoundError):
+            files.file_mode("missing")
+        files.mkdir("directory")
+        with pytest.raises(UnsupportedPathError):
+            files.file_mode("directory")
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_file_mode_applies_link_policy(root, link, allow):
+    (root / "target").write_bytes(b"x")
+    link(root / "alias", root / "target")
+    with FileHelper(root, allow_symlinks=allow) as files:
+        if allow:
+            assert files.file_mode("alias") == files.file_mode("target")
+        else:
+            with pytest.raises(SymlinkDeniedError):
+                files.file_mode("alias")
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shared directory traversal")
 @pytest.mark.parametrize("operation", ["read_bytes", "create_bytes", "overwrite_text"])
 def test_posix_operations_share_parent_walk_and_preserve_leaf_flags(root, monkeypatch, operation):

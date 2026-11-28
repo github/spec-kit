@@ -859,14 +859,72 @@ class ExtensionRegistry:
             return True
         return False
 
+    @contextlib.contextmanager
+    def _registry_files(self):
+        """Yield a deny-mode helper for the registry directory.
+
+        Policy and path errors become ``ExtensionError``, so callers and the
+        CLI report a refused registry like any other extension failure.
+        """
+        from ..file_helper import FileHelper, FileHelperError, SymlinkDeniedError
+
+        try:
+            with FileHelper(self.extensions_dir) as files:
+                yield files
+        except SymlinkDeniedError as exc:
+            raise ExtensionError(
+                f"Refusing to write symlinked extension registry {self.registry_path}. "
+                "Replace the link with a regular file."
+            ) from exc
+        except FileHelperError as exc:
+            raise ExtensionError(
+                f"Cannot write extension registry {self.registry_path}: {exc}"
+            ) from exc
+
+    def _existing_mode(self, files) -> int | None:
+        try:
+            return files.file_mode(self.REGISTRY_FILE)
+        except FileNotFoundError:
+            return None
+
+    def check_writable(self) -> None:
+        """Raise ``ExtensionError`` if ``_save()`` would refuse the registry.
+
+        Callers that remove or write extension files before saving run this
+        first, so a refused save cannot strand an entry whose files are gone.
+        A missing directory or registry passes: saving creates them.
+        """
+        try:
+            with self._registry_files() as files:
+                self._existing_mode(files)
+        except FileNotFoundError:
+            pass
+
     def _save(self):
-        """Save registry to disk."""
+        """Save registry to disk.
+
+        An existing registry is replaced atomically, so a write that fails
+        part-way (disk full, interrupted process) leaves the previous registry
+        intact; truncating it in place would leave a partial file that
+        ``_load()`` treats as corrupt and empty. The replacement keeps the
+        registry's mode and is staged owner-only, so its contents are never
+        readable more widely than the registry itself. A new registry is
+        created exclusively, with the mode the process umask allows. A
+        symlinked registry is refused rather than written through or
+        replaced; see ``check_writable()``.
+        """
         from ..integrations._file_changes import after_file_change, before_file_change
 
+        # Encode first: a value json cannot serialize never reaches the disk.
+        content = json.dumps(self.data, indent=2).encode("utf-8")
         before_file_change(self.registry_path)
         self.extensions_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.registry_path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+        with self._registry_files() as files:
+            mode = self._existing_mode(files)
+            if mode is None:
+                files.create_bytes(self.REGISTRY_FILE, content, mode=0o666)
+            else:
+                files.write_bytes(self.REGISTRY_FILE, content, mode=mode)
         after_file_change(self.registry_path)
 
     def add(self, extension_id: str, metadata: dict):
@@ -2512,6 +2570,8 @@ class ExtensionManager:
 
         # Check compatibility
         self.check_compatibility(manifest, speckit_version)
+        # Refuse an unwritable registry before any extension file is written.
+        self.registry.check_writable()
 
         # Preserve ownership across a force reinstall, whose removal precedes rendering.
         from ._skill_resources import recorded_resource_hashes
@@ -3646,6 +3706,8 @@ class ExtensionManager:
         """
         if not self.registry.is_installed(extension_id):
             return False
+        # Removal ends with a registry save; refuse it before deleting anything.
+        self.registry.check_writable()
 
         # Get registered commands and skills before removal
         metadata = self.registry.get(extension_id)
@@ -3752,6 +3814,7 @@ class ExtensionManager:
         metadata = self.registry.get(extension_id)
         if not metadata:
             raise ExtensionError(f"Extension '{extension_id}' is not installed")
+        self.registry.check_writable()
 
         registered = metadata.get("registered_commands", {})
         commands = self._valid_name_list(registered.get("generic")) if isinstance(registered, dict) else []
@@ -3898,6 +3961,8 @@ class ExtensionManager:
         registrar = CommandRegistrar(self.project_root)
         if agent_name not in registrar.AGENT_CONFIGS:
             return
+        if self.registry.keys():
+            self.registry.check_writable()
 
         # Resolve the skills directory for the specific agent so cleanup is
         # agent-scoped and does not depend on the currently-active agent in
@@ -4126,6 +4191,8 @@ class ExtensionManager:
             written_resource_hashes,
         )
 
+        if self.registry.keys():
+            self.registry.check_writable()
         registrar = CommandRegistrar(self.project_root)
         agent_config = registrar.AGENT_CONFIGS.get(agent_name)
         init_options = load_init_options(self.project_root)

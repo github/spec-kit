@@ -402,6 +402,17 @@ class FileHelper:
         self._require_directory(directory)
         return True
 
+    def file_mode(self, path: Path | str) -> int:
+        """Return an existing regular file's permission bits under the link policy.
+
+        Callers use it to keep a file's mode across an atomic ``write_bytes``.
+        A missing file raises ``FileNotFoundError``; other entry types raise
+        ``UnsupportedPathError``.
+        """
+        destination = self._path(path)
+        self._require_file(destination)
+        return stat.S_IMODE(destination.stat().st_mode)
+
     def mkdir(
         self, path: Path | str, *, parents: bool = False, exist_ok: bool = False
     ) -> None:
