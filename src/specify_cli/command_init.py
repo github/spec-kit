@@ -1049,12 +1049,13 @@ def register(app: typer.Typer) -> None:
                 exit_code = getattr(exc, "exit_code", getattr(exc, "code", 1))
                 if (
                     exit_code not in (0, None)
-                    and not here and project_path.exists() and not dir_existed_before
+                    and not here and not dir_existed_before
                     and initial_directory_state(project_path) is None
                     and not lifecycle_owns_rollback()
                 ):
                     # Deny-mode, handle-based removal beneath the trusted
-                    # parent; best effort, so the step's own error stands.
+                    # parent; best effort, so the step's own error stands
+                    # (an already-missing target raises FileNotFoundError).
                     try:
                         with FileHelper(project_path.parent) as files:
                             files.delete(project_path.name, recursive=True)
