@@ -251,6 +251,11 @@ descriptor-relative or change their documented concurrency limitations.
   not a path. If both the body and cleanup fail, the body exception propagates
   with cleanup details attached as a note. The yielded path uses the same
   spelling rule as `iterdir`; cleanup uses the resolved staging location.
+- `file_mode(path)` returns an existing regular file's permission bits under
+  the helper's link policy, so a caller can keep them across `write_bytes`.
+  A missing file raises `FileNotFoundError`; other entry types raise
+  `UnsupportedPathError`. Like `write_bytes`' own destination check, it is
+  pathname-based rather than descriptor-anchored.
 - `read_bytes(path)` / `read_text(path, encoding="utf-8")` read regular files.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
   create files with existing parents. A no-follow `lstat` preflight rejects

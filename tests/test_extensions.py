@@ -1651,12 +1651,12 @@ class TestExtensionRegistry:
         assert registry.list() == {}
         assert not registry.is_installed("test-ext")
 
-    def test_interrupted_save_keeps_previous_registry(self, temp_dir, monkeypatch):
-        """A write that fails part-way must not truncate the saved registry.
+    def test_unserializable_value_keeps_previous_registry(self, temp_dir):
+        """A value json cannot encode must not truncate the saved registry.
 
         ``_save()`` used to open the registry with ``"w"`` (truncating it) and
-        then stream the JSON. A disk-full error mid-write left a truncated
-        file, which ``_load()`` reads as corrupt and replaces with an empty
+        then stream the JSON, so an encoding error part-way left a truncated
+        file. ``_load()`` reads that as corrupt and replaces it with an empty
         registry, so every installed extension disappeared from it.
         """
         extensions_dir = temp_dir / "extensions"
@@ -1665,13 +1665,43 @@ class TestExtensionRegistry:
         registry.add("first-ext", {"version": "1.0.0"})
         saved = registry.registry_path.read_text(encoding="utf-8")
 
-        real_dumps = json.dumps
+        with pytest.raises(TypeError):
+            registry.add("second-ext", {"version": "2.0.0", "tags": {"not-json"}})
 
-        def partial_dump(obj, fp, **kwargs):
-            fp.write(real_dumps(obj, **kwargs)[:20])
-            raise OSError(28, "No space left on device")
+        assert registry.registry_path.read_text(encoding="utf-8") == saved
+        reloaded = ExtensionRegistry(extensions_dir)
+        assert reloaded.is_installed("first-ext")
+        assert not reloaded.is_installed("second-ext")
 
-        monkeypatch.setattr(_ext_module.json, "dump", partial_dump)
+    def test_interrupted_save_keeps_previous_registry(self, temp_dir, monkeypatch):
+        """A write that fails part-way (disk full) keeps the previous registry
+        and leaves no staging file next to it."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("first-ext", {"version": "1.0.0"})
+        saved = registry.registry_path.read_text(encoding="utf-8")
+
+        real_fdopen = os.fdopen
+
+        class PartialStream:
+            def __init__(self, stream):
+                self._stream = stream
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self._stream.close()
+
+            def write(self, data):
+                self._stream.write(data[:20])
+                self._stream.flush()
+                raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(
+            os, "fdopen", lambda fd, *a, **kw: PartialStream(real_fdopen(fd, *a, **kw))
+        )
         with pytest.raises(OSError, match="No space left"):
             registry.add("second-ext", {"version": "2.0.0"})
         monkeypatch.undo()
@@ -1704,6 +1734,36 @@ class TestExtensionRegistry:
         ]
 
     @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
+    def test_private_registry_is_never_staged_readable(self, temp_dir, monkeypatch):
+        """Under umask 022 an existing 0600 registry's replacement is written
+        to an owner-only staging file, not a 0644 one, and stays 0600."""
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("first-ext", {"version": "1.0.0"})
+        registry.registry_path.chmod(0o600)
+
+        staged_modes = []
+        real_fdopen = os.fdopen
+
+        def recording_fdopen(fd, *args, **kwargs):
+            staged_modes.append(os.fstat(fd).st_mode & 0o777)
+            return real_fdopen(fd, *args, **kwargs)
+
+        previous = os.umask(0o022)
+        try:
+            monkeypatch.setattr(os, "fdopen", recording_fdopen)
+            registry.add("second-ext", {"version": "2.0.0"})
+        finally:
+            monkeypatch.undo()
+            os.umask(previous)
+
+        assert staged_modes == [0o600]
+        assert registry.registry_path.stat().st_mode & 0o777 == 0o600
+        data = json.loads(registry.registry_path.read_text(encoding="utf-8"))
+        assert sorted(data["extensions"]) == ["first-ext", "second-ext"]
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
     @pytest.mark.parametrize("umask, expected", [(0o077, 0o600), (0o022, 0o644)])
     def test_new_registry_mode_follows_umask(self, temp_dir, umask, expected):
         """A newly created registry gets the mode the umask allows, as the
@@ -1719,9 +1779,9 @@ class TestExtensionRegistry:
         registry_path = extensions_dir / ExtensionRegistry.REGISTRY_FILE
         assert registry_path.stat().st_mode & 0o777 == expected
 
-    def test_save_through_symlinked_registry_replaces_the_link(self, temp_dir):
-        """Saving through a ``.registry`` symlink replaces the link with a
-        regular registry and leaves the link's original target untouched."""
+    def test_save_refuses_a_symlinked_registry(self, temp_dir):
+        """A ``.registry`` symlink is neither written through nor replaced:
+        the save is refused and both the link and its target are unchanged."""
         if not can_create_symlink(temp_dir):
             pytest.skip("Current platform/user cannot create symlinks")
         extensions_dir = temp_dir / "extensions"
@@ -1735,12 +1795,10 @@ class TestExtensionRegistry:
         registry_path.symlink_to(target)
 
         registry = ExtensionRegistry(extensions_dir)
-        registry.add("second-ext", {"version": "2.0.0"})
+        with pytest.raises(ExtensionError, match="symlinked extension registry"):
+            registry.add("second-ext", {"version": "2.0.0"})
 
-        assert not registry_path.is_symlink()
-        assert registry_path.is_file()
-        data = json.loads(registry_path.read_text(encoding="utf-8"))
-        assert sorted(data["extensions"]) == ["first-ext", "second-ext"]
+        assert registry_path.is_symlink()
         assert target.read_text(encoding="utf-8") == original
         assert sorted(p.name for p in extensions_dir.iterdir()) == [
             ExtensionRegistry.REGISTRY_FILE

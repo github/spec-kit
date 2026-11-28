@@ -862,39 +862,40 @@ class ExtensionRegistry:
     def _save(self):
         """Save registry to disk.
 
-        The JSON goes to a temporary file that then replaces the registry, so
-        a write that fails part-way (disk full, interrupted process) leaves
-        the previous registry intact. Truncating the registry in place would
-        leave a partial file that ``_load()`` treats as corrupt and empty.
+        An existing registry is replaced atomically, so a write that fails
+        part-way (disk full, interrupted process) leaves the previous registry
+        intact; truncating it in place would leave a partial file that
+        ``_load()`` treats as corrupt and empty. The replacement keeps the
+        registry's mode and is staged owner-only, so its contents are never
+        readable more widely than the registry itself. A new registry is
+        created exclusively, with the mode the process umask allows. A
+        symlinked registry is refused rather than written through or
+        replaced.
         """
+        from ..file_helper import FileHelper, FileHelperError, SymlinkDeniedError
         from ..integrations._file_changes import after_file_change, before_file_change
 
+        # Encode first: a value json cannot serialize never reaches the disk.
+        content = json.dumps(self.data, indent=2).encode("utf-8")
         before_file_change(self.registry_path)
         self.extensions_dir.mkdir(parents=True, exist_ok=True)
         try:
-            existing_mode: int | None = stat.S_IMODE(self.registry_path.stat().st_mode)
-        except OSError:
-            existing_mode = None
-        # Create with 0666 so the umask decides a new registry's mode, as the
-        # previous open(..., "w") did; mkstemp would always produce 0600.
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-        while True:
-            temp_path = self.extensions_dir / (
-                f"{self.REGISTRY_FILE}.{os.urandom(8).hex()}.tmp"
-            )
-            try:
-                fd = os.open(temp_path, flags, 0o666)
-                break
-            except FileExistsError:
-                continue
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(self.data, f, indent=2)
-            if existing_mode is not None:
-                temp_path.chmod(existing_mode)
-            os.replace(temp_path, self.registry_path)
-        finally:
-            temp_path.unlink(missing_ok=True)
+            with FileHelper(self.extensions_dir) as files:
+                try:
+                    mode = files.file_mode(self.REGISTRY_FILE)
+                except FileNotFoundError:
+                    files.create_bytes(self.REGISTRY_FILE, content, mode=0o666)
+                else:
+                    files.write_bytes(self.REGISTRY_FILE, content, mode=mode)
+        except SymlinkDeniedError as exc:
+            raise ExtensionError(
+                f"Refusing to write symlinked extension registry {self.registry_path}. "
+                "Replace the link with a regular file."
+            ) from exc
+        except FileHelperError as exc:
+            raise ExtensionError(
+                f"Cannot write extension registry {self.registry_path}: {exc}"
+            ) from exc
         after_file_change(self.registry_path)
 
     def add(self, extension_id: str, metadata: dict):
