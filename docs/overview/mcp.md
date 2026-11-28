@@ -112,12 +112,11 @@ positions. The limit counts built-ins, installed entries, and warnings.
 retrieve more, up to 1000. There is no continuation cursor. The CLI retains
 its complete listing.
 
-Missing registry files produce only the built-in items. Corrupt registry files
-are treated as empty (built-ins only). Registry input over 1 MiB produces
-`step_registry_read_failed` instead of a silent built-ins-only listing.
-Unreadable registry files and policy violations
-(symlinked or junctioned paths) produce `step_registry_read_failed`; unsafe
-storage produces `unsafe_workflow_storage`. Other expected errors are `invalid_project_directory`
+Missing registry files produce only the built-in items. Corrupt registry
+files, non-regular registry files, registry input over 1 MiB, unreadable
+registry files, and policy violations (symlinked or junctioned paths)
+produce `step_registry_read_failed` instead of a silent built-ins-only
+listing. Unsafe storage produces `unsafe_workflow_storage`. Other expected errors are `invalid_project_directory`
 and `not_a_spec_kit_project`. Errors contain `code`, `message`,
 `details`, and `retryable` under `error`, with `isError: true`.
 Unexpected failures use sanitized `internal_error`; invalid operation outcomes

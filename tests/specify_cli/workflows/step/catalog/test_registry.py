@@ -116,20 +116,38 @@ def test_load_via_helper_fails_closed_on_symlinked_steps(project_dir):
             StepRegistry(project_dir, read_files=files)
 
 
-def test_load_via_helper_keeps_best_effort_for_missing_and_corrupt(project_dir):
+def test_load_via_helper_keeps_best_effort_for_missing(project_dir):
     with project_files(project_dir) as files:
         assert StepRegistry(project_dir, read_files=files).list() == {}
+
+
+def test_load_via_helper_fails_closed_on_corrupt_registry(project_dir):
     steps_dir = project_dir / ".specify" / "workflows" / "steps"
     steps_dir.mkdir(parents=True)
     (steps_dir / "step-registry.json").write_text("{not json", encoding="utf-8")
     with project_files(project_dir) as files:
-        assert StepRegistry(project_dir, read_files=files).list() == {}
+        with pytest.raises(OSError):
+            StepRegistry(project_dir, read_files=files)
+
+
+def test_load_via_helper_fails_closed_on_invalid_registry_shape(
+    project_dir,
+):
+    steps_dir = project_dir / ".specify" / "workflows" / "steps"
+    steps_dir.mkdir(parents=True)
+    (steps_dir / "step-registry.json").write_text(
+        json.dumps({"steps": "not-a-mapping"}), encoding="utf-8"
+    )
+    with project_files(project_dir) as files:
+        with pytest.raises(OSError):
+            StepRegistry(project_dir, read_files=files)
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs are POSIX-only")
-def test_load_via_helper_ignores_a_fifo_registry_file(project_dir):
+def test_load_via_helper_rejects_a_fifo_registry_file(project_dir):
     steps_dir = project_dir / ".specify" / "workflows" / "steps"
     steps_dir.mkdir(parents=True)
     os.mkfifo(steps_dir / "step-registry.json")
     with project_files(project_dir) as files:
-        assert StepRegistry(project_dir, read_files=files).list() == {}
+        with pytest.raises(OSError):
+            StepRegistry(project_dir, read_files=files)

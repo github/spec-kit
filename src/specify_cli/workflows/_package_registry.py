@@ -132,13 +132,16 @@ class PackageRegistry:
         """Load through the retained project policy helper.
 
         Unlike the legacy path above, a policy-aware read fails closed: a
-        symlinked parent or registry file, a junction, or an unreadable file
-        raises OSError instead of fabricating an empty registry, mirroring
-        WorkflowRegistry. Oversized input raises too, so the list operation
-        reports it instead of silently listing built-ins only. Missing
-        files, non-regular files, and corrupt content still fall back to
-        the default registry, matching this loader's best-effort contract
-        for its other callers.
+        symlinked parent or registry file, a junction, a non-regular file,
+        or an unreadable file raises OSError instead of fabricating an
+        empty registry, mirroring WorkflowRegistry. Oversized input raises
+        too, so the list operation reports it instead of silently listing
+        built-ins only. Corrupt content and invalid shapes raise as well:
+        a malformed registry must surface as ``step_registry_read_failed``
+        rather than hiding installed steps behind a successful built-ins
+        only listing. Only a missing registry still falls back to the
+        default registry, matching this loader's best-effort contract for
+        its other callers.
         """
         # Fail closed on symlinked paths before reading: the helper read
         # below would refuse them too, but only at read time, after the
@@ -158,18 +161,21 @@ class PackageRegistry:
             if not read_files.directory_exists(self.base_dir):
                 return default_registry
             # Probe type and size before reading: a non-regular file (e.g. a
-            # FIFO) stays an empty registry, and oversized input is rejected
-            # before it is read or parsed. The probe only observes metadata
-            # and may follow an intermediate junction; the read below goes
-            # through the policy helper, which refuses junctions and
-            # symlinks at the read boundary, and the length check after the
-            # read catches growth between probe and read.
+            # FIFO) is refused before it is opened, and oversized input is
+            # rejected before it is read or parsed. The probe only observes
+            # metadata and may follow an intermediate junction; the read
+            # below goes through the policy helper, which refuses junctions
+            # and symlinks at the read boundary, and the length check after
+            # the read catches growth between probe and read.
             try:
                 info = os.stat(self.registry_path)
             except (FileNotFoundError, NotADirectoryError):
                 return default_registry
             if not stat.S_ISREG(info.st_mode):
-                return default_registry
+                raise OSError(
+                    f"Refusing to read {self.LABEL} registry at "
+                    f"{self.registry_path}: not a regular file"
+                )
             if self._max_bytes is not None and info.st_size > self._max_bytes:
                 raise OSError(
                     f"Refusing to read {self.LABEL} registry at "
@@ -193,12 +199,21 @@ class PackageRegistry:
             )
         try:
             data = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, ValueError, UnicodeError):
-            return default_registry
+        except (json.JSONDecodeError, ValueError, UnicodeError) as exc:
+            raise OSError(
+                f"Failed to read {self.LABEL} registry at {self.registry_path}: "
+                f"corrupt registry content ({exc})"
+            ) from exc
         if not isinstance(data, dict):
-            return default_registry
+            raise OSError(
+                f"Failed to read {self.LABEL} registry at {self.registry_path}: "
+                "registry content is not a JSON object"
+            )
         if not isinstance(data.get(self.RECORDS_KEY), dict):
-            data[self.RECORDS_KEY] = {}
+            raise OSError(
+                f"Failed to read {self.LABEL} registry at {self.registry_path}: "
+                f"registry {self.RECORDS_KEY!r} field is not an object"
+            )
         return data
 
     def save(self) -> None:

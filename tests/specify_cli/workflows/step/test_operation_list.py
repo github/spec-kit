@@ -207,6 +207,34 @@ def test_unreadable_registry_is_read_failed(tmp_path, monkeypatch):
     assert excinfo.value.code == "step_registry_read_failed"
 
 
+def test_corrupt_registry_is_read_failed(tmp_path):
+    directory = tmp_path / ".specify" / "workflows" / "steps"
+    directory.mkdir(parents=True)
+    (directory / "step-registry.json").write_text("{not json", encoding="utf-8")
+    with pytest.raises(operation.WorkflowStepListError) as excinfo:
+        operation.list_step_types(operation.WorkflowStepListRequest(tmp_path))
+    assert excinfo.value.code == "step_registry_read_failed"
+
+
+def test_invalid_registry_shape_is_read_failed(tmp_path):
+    _registry(tmp_path, {"ok": {"name": "Ok"}})
+    path = tmp_path / ".specify" / "workflows" / "steps" / "step-registry.json"
+    path.write_text(json.dumps({"steps": "not-a-mapping"}), encoding="utf-8")
+    with pytest.raises(operation.WorkflowStepListError) as excinfo:
+        operation.list_step_types(operation.WorkflowStepListRequest(tmp_path))
+    assert excinfo.value.code == "step_registry_read_failed"
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs are POSIX-only")
+def test_fifo_registry_is_read_failed(tmp_path):
+    directory = tmp_path / ".specify" / "workflows" / "steps"
+    directory.mkdir(parents=True)
+    os.mkfifo(directory / "step-registry.json")
+    with pytest.raises(operation.WorkflowStepListError) as excinfo:
+        operation.list_step_types(operation.WorkflowStepListRequest(tmp_path))
+    assert excinfo.value.code == "step_registry_read_failed"
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows directory junction regression")
 @pytest.mark.parametrize("registry_present", [False, True])
 def test_step_list_rejects_junction_at_registry_read_boundary(
