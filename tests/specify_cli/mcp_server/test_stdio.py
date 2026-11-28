@@ -39,6 +39,14 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools(tmp
                     workflows = await session.call_tool(
                         "specify_workflow_list", {"project_directory": str(tmp_path)}
                     )
+                    steps = await session.call_tool(
+                        "specify_workflow_step_list",
+                        {"project_directory": str(tmp_path)},
+                    )
+                    step_failure = await session.call_tool(
+                        "specify_workflow_step_list",
+                        {"project_directory": "relative"},
+                    )
                     workflow_failure = await session.call_tool(
                         "specify_workflow_list", {"project_directory": "relative"}
                     )
@@ -74,6 +82,7 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools(tmp
             "specify_artifact_list",
             "specify_artifact_info",
             "specify_workflow_list",
+            "specify_workflow_step_list",
         ]
         assert listed.structured_content["commands"][0]["command"] == "version"
         assert set(version.structured_content) == {
@@ -85,6 +94,16 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools(tmp
         assert version.is_error is False
         assert workflows.is_error is False
         assert workflows.structured_content == {"items": [], "truncated": False}
+        assert steps.is_error is False
+        assert [item["kind"] for item in steps.structured_content["items"]] == [
+            "builtin"
+        ] * 14
+        assert steps.structured_content["truncated"] is False
+        assert step_failure.is_error is True
+        assert (
+            step_failure.structured_content["error"]["code"]
+            == "invalid_project_directory"
+        )
         assert workflow_failure.is_error is True
         assert (
             workflow_failure.structured_content["error"]["code"]

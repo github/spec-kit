@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
 import pytest
 
+from specify_cli._file_policy import project_files
+from specify_cli.file_helper import FileHelper
 from specify_cli.workflows.step.catalog import StepRegistry, StepValidationError
 
 
@@ -31,3 +35,119 @@ def test_save_keeps_existing_registry_when_json_serialization_fails(project_dir)
 
     assert registry.registry_path.read_bytes() == before
     assert json.loads(before)["steps"]["first"]["type_key"] == "first"
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs are POSIX-only")
+def test_load_ignores_a_fifo_registry_file(project_dir):
+    steps_dir = project_dir / ".specify" / "workflows" / "steps"
+    steps_dir.mkdir(parents=True)
+    os.mkfifo(steps_dir / "step-registry.json")
+
+    registry = StepRegistry(project_dir)
+
+    assert registry.list() == {}
+
+
+def _write_registry(project_dir, entries):
+    steps_dir = project_dir / ".specify" / "workflows" / "steps"
+    steps_dir.mkdir(parents=True, exist_ok=True)
+    path = steps_dir / "step-registry.json"
+    path.write_text(json.dumps({"steps": entries}), encoding="utf-8")
+    return path
+
+
+def test_load_rejects_oversized_registry_without_helper(project_dir):
+    path = _write_registry(project_dir, {"first": _entry("first")})
+    size = path.stat().st_size
+    assert StepRegistry(project_dir, max_bytes=size).list() == {
+        "first": _entry("first")
+    }
+    with pytest.raises(OSError):
+        StepRegistry(project_dir, max_bytes=size - 1)
+
+
+def test_load_via_helper_rejects_oversized_registry(project_dir):
+    path = _write_registry(project_dir, {"first": _entry("first")})
+    size = path.stat().st_size
+    with project_files(project_dir) as files:
+        assert StepRegistry(
+            project_dir, read_files=files, max_bytes=size
+        ).list() == {"first": _entry("first")}
+        with pytest.raises(OSError):
+            StepRegistry(project_dir, read_files=files, max_bytes=size - 1)
+
+
+def test_load_via_helper_rejects_registry_that_grows_past_cap(
+    project_dir, monkeypatch
+):
+    # The size probe sees a small file, but the read returns more than the
+    # cap: the post-read length check must fail closed instead of listing
+    # built-ins only.
+    path = _write_registry(project_dir, {"first": _entry("first")})
+    size = path.stat().st_size
+    original = FileHelper.read_bytes
+
+    def grown(files, file):
+        if Path(file) == path:
+            return b" " * (size + 1)
+        return original(files, file)
+
+    monkeypatch.setattr(FileHelper, "read_bytes", grown)
+    with (
+        project_files(project_dir) as files,
+        pytest.raises(OSError),
+    ):
+        StepRegistry(project_dir, read_files=files, max_bytes=size)
+
+
+def test_load_via_helper_fails_closed_on_symlinked_steps(project_dir):
+    outside = project_dir / "outside"
+    outside.mkdir()
+    (outside / "step-registry.json").write_text(
+        json.dumps({"steps": {"first": _entry("first")}}), encoding="utf-8"
+    )
+    steps_dir = project_dir / ".specify" / "workflows" / "steps"
+    try:
+        steps_dir.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"Symlink creation unavailable: {exc}")
+    with project_files(project_dir) as files:
+        with pytest.raises(OSError):
+            StepRegistry(project_dir, read_files=files)
+
+
+def test_load_via_helper_keeps_best_effort_for_missing(project_dir):
+    with project_files(project_dir) as files:
+        assert StepRegistry(project_dir, read_files=files).list() == {}
+
+
+def test_load_via_helper_fails_closed_on_corrupt_registry(project_dir):
+    steps_dir = project_dir / ".specify" / "workflows" / "steps"
+    steps_dir.mkdir(parents=True)
+    (steps_dir / "step-registry.json").write_text("{not json", encoding="utf-8")
+    with project_files(project_dir) as files:
+        with pytest.raises(OSError):
+            StepRegistry(project_dir, read_files=files)
+
+
+def test_load_via_helper_fails_closed_on_invalid_registry_shape(
+    project_dir,
+):
+    steps_dir = project_dir / ".specify" / "workflows" / "steps"
+    steps_dir.mkdir(parents=True)
+    (steps_dir / "step-registry.json").write_text(
+        json.dumps({"steps": "not-a-mapping"}), encoding="utf-8"
+    )
+    with project_files(project_dir) as files:
+        with pytest.raises(OSError):
+            StepRegistry(project_dir, read_files=files)
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs are POSIX-only")
+def test_load_via_helper_rejects_a_fifo_registry_file(project_dir):
+    steps_dir = project_dir / ".specify" / "workflows" / "steps"
+    steps_dir.mkdir(parents=True)
+    os.mkfifo(steps_dir / "step-registry.json")
+    with project_files(project_dir) as files:
+        with pytest.raises(OSError):
+            StepRegistry(project_dir, read_files=files)

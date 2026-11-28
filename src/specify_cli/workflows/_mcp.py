@@ -1,7 +1,8 @@
 """Explicit MCP dispositions for the complete ``specify workflow`` hierarchy.
 
-Only workflow.list has a shared operation and adapter. Unavailable records
-describe the conservative union of CLI paths, not a future MCP contract.
+Only workflow.list and workflow.step.list have shared operations and
+adapters. Unavailable records describe the conservative union of CLI paths,
+not a future MCP contract.
 
 Effect boundaries worth retaining when adapters are introduced:
 
@@ -31,6 +32,8 @@ from mcp.server import MCPServer
 
 from ._operation_list import WORKFLOW_LIST_OPERATION
 from .mcp_list import register as register_list
+from .step._operation_list import WORKFLOW_STEP_LIST_OPERATION
+from .step.mcp_list import register as register_step_list
 
 WorkflowDisposition = Literal["available", "unavailable", "excluded"]
 WorkflowCapability = Literal[
@@ -362,12 +365,11 @@ WORKFLOW_TOOLS = (
         operation_id="workflow.step.list",
         cli_path="specify workflow step list",
         mcp_tool_name="specify_workflow_step_list",
-        disposition_reason=(
-            "The CLI combines STEP_REGISTRY and StepRegistry dictionaries for display; "
-            "no shared typed step-list outcome or MCP adapter."
-        ),
-        capabilities=_LOCAL_READ,
-        network_access="none",
+        disposition_reason=None,
+        disposition="available",
+        contract_version=WORKFLOW_STEP_LIST_OPERATION.contract_version,
+        capabilities=WORKFLOW_STEP_LIST_OPERATION.capabilities,
+        network_access=WORKFLOW_STEP_LIST_OPERATION.network_access,
     ),
     WorkflowToolInventory(
         operation_id="workflow.step.remove",
@@ -429,11 +431,17 @@ WORKFLOW_TOOLS = (
 
 
 def register(server: MCPServer, *, launch_directory: Path) -> None:
-    """Register only the workflow list operation from its owning hierarchy."""
-    record = next(
-        item for item in WORKFLOW_TOOLS if item.operation_id == "workflow.list"
-    )
-    if record.disposition == "available":
-        register_list(
-            server, launch_directory=launch_directory, tool_name=record.mcp_tool_name
+    """Register the available workflow operations from their owning hierarchy."""
+    for operation_id, register_adapter in (
+        ("workflow.list", register_list),
+        ("workflow.step.list", register_step_list),
+    ):
+        record = next(
+            item for item in WORKFLOW_TOOLS if item.operation_id == operation_id
         )
+        if record.disposition == "available":
+            register_adapter(
+                server,
+                launch_directory=launch_directory,
+                tool_name=record.mcp_tool_name,
+            )
